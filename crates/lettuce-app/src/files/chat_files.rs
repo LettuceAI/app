@@ -126,7 +126,7 @@ where
             ))
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
         };
-        let (prepared, launch_companion) =
+        let (prepared, launch_companion, time_awareness) =
             ConversationLaunchPlanner::new(self.sources).prepare_direct_parts(&request)?;
         let (plan, mut snapshots) = prepared.into_parts();
         let conversation_id = ConversationId::from_uuid(scope.source("conversation", &source_id));
@@ -161,13 +161,12 @@ where
                 participant_overrides: lettuce_conversations::ParticipantOverrides::default(),
                 model_settings: &model_settings,
                 background: None,
-                companion_clock: launch_companion
-                    .as_ref()
-                    .is_some_and(|(_, _, time_awareness)| *time_awareness)
-                    .then(|| lettuce_conversations::CompanionClockSettings {
+                companion_clock: time_awareness.then(|| {
+                    lettuce_conversations::ConversationClockSettings {
                         time_awareness_enabled: true,
                         ..Default::default()
-                    }),
+                    }
+                }),
             },
         )?;
         snapshots.extend(settings_snapshots);

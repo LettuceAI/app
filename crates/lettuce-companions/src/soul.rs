@@ -253,10 +253,6 @@ pub struct CompanionSoulConfig {
     pub relationship_defaults: RelationshipDefaults,
     #[serde(default)]
     pub prompting: CompanionPromptingConfig,
-    /// Whether this companion's conversations are time aware unless a
-    /// conversation sets its own clock (`timeAwareness`).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub time_awareness: bool,
     /// Whether the companion's conversations use one memory pool
     /// (`memory.sharedAcrossSessions`); off, each uses its own memory.
     #[serde(default = "shared", skip_serializing_if = "is_shared")]
@@ -283,7 +279,6 @@ impl Default for CompanionSoulConfig {
             authored_facts: Vec::new(),
             relationship_defaults: RelationshipDefaults::default(),
             prompting: CompanionPromptingConfig::default(),
-            time_awareness: false,
             share_memory_across_chats: true,
             share_soul_growth_across_chats: true,
         }
@@ -951,7 +946,6 @@ mod tests {
             }],
             relationship_defaults: RelationshipDefaults::default(),
             prompting: CompanionPromptingConfig::default(),
-            time_awareness: false,
             share_memory_across_chats: true,
             share_soul_growth_across_chats: true,
         };
@@ -998,7 +992,6 @@ mod tests {
                 prompt_template_id: Some(PromptDocumentId::new()),
                 style_notes: " restrained ".into(),
             },
-            time_awareness: false,
             share_memory_across_chats: true,
             share_soul_growth_across_chats: true,
         };

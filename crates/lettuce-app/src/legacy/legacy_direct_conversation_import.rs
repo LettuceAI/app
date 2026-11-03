@@ -129,7 +129,7 @@ pub(crate) struct SessionSettingsSource<'a> {
     pub speaker_selection: Option<lettuce_conversations::GroupSpeakerSelectionSnapshot>,
     pub model_settings: &'a lettuce_models::ModelSettingsLayer,
     pub background: Option<lettuce_conversations::ConversationBackground>,
-    pub companion_clock: Option<lettuce_conversations::CompanionClockSettings>,
+    pub companion_clock: Option<lettuce_conversations::ConversationClockSettings>,
     /// Legacy `persona_disabled`: the chat turned its persona off.
     pub persona_disabled: bool,
     /// A group session's own `chatType` override.
@@ -517,7 +517,7 @@ where
             persona,
             operation_key: launch_key(context.scope, &session.source_id)?,
         };
-        let (prepared, launch_companion) = ConversationLaunchPlanner::new(self.sources)
+        let (prepared, launch_companion, _) = ConversationLaunchPlanner::new(self.sources)
             .prepare_direct_parts(&request)
             .map_err(|_| Error::Conflict)?;
         let (plan, mut snapshots) = prepared.into_parts();
@@ -613,18 +613,22 @@ where
                     )
                     .as_deref(),
                 ),
-                companion_clock: session
-                    .companion_state_json
-                    .as_deref()
-                    .and_then(legacy_companion_clock)
-                    .or_else(|| {
-                        companion_time_awareness.then(|| {
-                            lettuce_conversations::CompanionClockSettings {
-                                time_awareness_enabled: true,
-                                ..Default::default()
-                            }
+                companion_clock: if companion_session {
+                    session
+                        .companion_state_json
+                        .as_deref()
+                        .and_then(legacy_companion_clock)
+                        .or_else(|| {
+                            companion_time_awareness.then(|| {
+                                lettuce_conversations::ConversationClockSettings {
+                                    time_awareness_enabled: true,
+                                    ..Default::default()
+                                }
+                            })
                         })
-                    }),
+                } else {
+                    None
+                },
             },
         )?;
         snapshots.extend(settings_snapshots);
@@ -917,8 +921,8 @@ fn attach_companion_pools(
 /// time override, where an override missing its anchor ran on real time. A
 /// session without saved state takes the companion's default, which legacy
 /// seeded on its next save.
-fn legacy_companion_clock(json: &str) -> Option<lettuce_conversations::CompanionClockSettings> {
-    use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
+fn legacy_companion_clock(json: &str) -> Option<lettuce_conversations::ConversationClockSettings> {
+    use lettuce_conversations::{ConversationClockSettings, ConversationTimeOverride};
     let state = serde_json::from_str::<serde_json::Value>(json).ok()?;
     if state.is_null() {
         return None;
@@ -944,16 +948,16 @@ fn legacy_companion_clock(json: &str) -> Option<lettuce_conversations::Companion
         .and_then(|value| value.get("mode"))
         .and_then(serde_json::Value::as_str)
     {
-        Some("frozen") => millis("anchorMs").map_or(CompanionTimeOverride::Live, |anchor_at| {
-            CompanionTimeOverride::Frozen { anchor_at }
+        Some("frozen") => millis("anchorMs").map_or(ConversationTimeOverride::Live, |anchor_at| {
+            ConversationTimeOverride::Frozen { anchor_at }
         }),
         Some("ticking") => match (millis("anchorMs"), millis("setAtMs")) {
-            (Some(anchor_at), Some(set_at)) => CompanionTimeOverride::Ticking { anchor_at, set_at },
-            _ => CompanionTimeOverride::Live,
+            (Some(anchor_at), Some(set_at)) => ConversationTimeOverride::Ticking { anchor_at, set_at },
+            _ => ConversationTimeOverride::Live,
         },
-        _ => CompanionTimeOverride::Live,
+        _ => ConversationTimeOverride::Live,
     };
-    Some(CompanionClockSettings {
+    Some(ConversationClockSettings {
         time_awareness_enabled,
         time_override,
     })
@@ -2520,7 +2524,7 @@ fn parts(
 
 #[cfg(test)]
 mod tests {
-    use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
+    use lettuce_conversations::{ConversationClockSettings, ConversationTimeOverride};
 
     use super::*;
 
@@ -2555,8 +2559,8 @@ mod tests {
                 "mode": mode, "anchorMs": u64::from_le_bytes(date.to_le_bytes()), "setAtMs": 4
             } } });
             let clock = legacy_companion_clock(&raw.to_string()).expect("legacy clock");
-            let expected = if mode == "frozen" { CompanionTimeOverride::Frozen { anchor_at: TimestampMillis::new(date) } }
-                else { CompanionTimeOverride::Ticking { anchor_at: TimestampMillis::new(date), set_at: TimestampMillis::new(4) } };
+            let expected = if mode == "frozen" { ConversationTimeOverride::Frozen { anchor_at: TimestampMillis::new(date) } }
+                else { ConversationTimeOverride::Ticking { anchor_at: TimestampMillis::new(date), set_at: TimestampMillis::new(4) } };
             assert_eq!(clock.time_override, expected);
             clock.validate().expect("valid clock");
         }
@@ -2575,11 +2579,11 @@ mod tests {
             assert_eq!(
                 clock.time_override,
                 if mode == "frozen" {
-                    CompanionTimeOverride::Frozen {
+                    ConversationTimeOverride::Frozen {
                         anchor_at: TimestampMillis::new(-315_619_200_000),
                     }
                 } else {
-                    CompanionTimeOverride::Ticking {
+                    ConversationTimeOverride::Ticking {
                         anchor_at: TimestampMillis::new(-315_619_200_000),
                         set_at: TimestampMillis::new(4),
                     }
@@ -2594,24 +2598,24 @@ mod tests {
         assert_eq!(legacy_companion_clock("null"), None);
         assert_eq!(
             legacy_companion_clock("{}"),
-            Some(CompanionClockSettings::default())
+            Some(ConversationClockSettings::default())
         );
         assert_eq!(
             legacy_companion_clock(
                 r#"{"preferences":{"time_awareness_enabled":true,"timeOverride":{"mode":"frozen"}}}"#
             ),
-            Some(CompanionClockSettings {
+            Some(ConversationClockSettings {
                 time_awareness_enabled: true,
-                time_override: CompanionTimeOverride::Live,
+                time_override: ConversationTimeOverride::Live,
             })
         );
         assert_eq!(
             legacy_companion_clock(
                 r#"{"preferences":{"timeAwarenessEnabled":true,"timeOverride":{"mode":"ticking","anchorMs":10,"setAtMs":4}}}"#
             ),
-            Some(CompanionClockSettings {
+            Some(ConversationClockSettings {
                 time_awareness_enabled: true,
-                time_override: CompanionTimeOverride::Ticking {
+                time_override: ConversationTimeOverride::Ticking {
                     anchor_at: TimestampMillis::new(10),
                     set_at: TimestampMillis::new(4),
                 },
@@ -2621,9 +2625,9 @@ mod tests {
             legacy_companion_clock(
                 r#"{"preferences":{"timeAwarenessEnabled":true,"timeOverride":{"mode":"ticking","anchorMs":-10,"setAtMs":-4}}}"#
             ),
-            Some(CompanionClockSettings {
+            Some(ConversationClockSettings {
                 time_awareness_enabled: true,
-                time_override: CompanionTimeOverride::Live,
+                time_override: ConversationTimeOverride::Live,
             })
         );
     }

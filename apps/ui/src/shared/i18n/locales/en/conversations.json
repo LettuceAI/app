@@ -526,6 +526,7 @@
       "chat": "This chat",
       "memory": "Memory",
       "companion": "Companion",
+      "time": "Time",
       "actions": "Chat",
       "generation": "Generation",
       "lorebooks": "Lorebooks",
@@ -700,8 +701,10 @@
       "count_one": "{{count}} value changed for this chat",
       "count_other": "{{count}} values changed for this chat"
     },
-    "companionTime": {
-      "title": "Companion time",
+    "time": {
+      "title": "Chat clock",
+      "awareness": "Time awareness",
+      "awarenessHint": "Give the model the date and time and stamp every message with it",
       "live": "Real time",
       "frozen": "Stopped",
       "ticking": "Running",

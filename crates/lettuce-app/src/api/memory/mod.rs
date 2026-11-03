@@ -85,7 +85,7 @@ fn allowed_categories(
     conversation: &lettuce_conversations::Conversation,
 ) -> Result<Vec<lettuce_memory::MemoryCategory>, ApiError> {
     use lettuce_memory::MemoryCategory as M;
-    let companion = crate::companion::companion_clock::companion_clock_context(database, conversation)
+    let companion = crate::companion::companion_clock::conversation_clock_context(database, conversation)
         .map_err(|_| api_error(ApiErrorCode::Internal, "the conversation mode could not be resolved"))?
         .companion;
     let mut categories = vec![

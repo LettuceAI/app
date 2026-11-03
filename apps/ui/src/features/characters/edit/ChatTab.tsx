@@ -27,6 +27,9 @@ export function ChatTab({ api, form, update }: StepProps) {
         <ListRowButton title={t("voice.title")} description={voiceLabel(defaults.voice, t("voice.saved")) ?? t("voice.none")} onClick={() => setSheet("voice")} />
         <ListRow title={t("voice.autoplay")} description={t("voice.autoplayBody")} trailing={<Switch checked={defaults.voice_autoplay} onChange={(voice_autoplay) => setDefaults({ voice_autoplay })} aria-label={t("voice.autoplay")} />} />
       </ListGroup>
+      <ListGroup label={t("time.group")}>
+        <ListRow title={t("time.awareness")} description={t("time.awarenessBody")} trailing={<Switch checked={defaults.time_awareness} onChange={(time_awareness) => setDefaults({ time_awareness })} aria-label={t("time.awareness")} />} />
+      </ListGroup>
       <LorebooksRow api={api} form={form} update={update} />
     </div>
     <ModelChoiceSheet api={api} open={sheet === "model"} value={defaults.model_profile_id} onChange={(model_profile_id) => setDefaults({ model_profile_id })} onClose={() => setSheet(null)} />

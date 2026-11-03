@@ -32,6 +32,7 @@ export function newCharacterDraft(name: string, description: string): CharacterD
       voice: null,
       voice_autoplay: false,
       companion_soul: null,
+      time_awareness: false,
     },
     media: [],
     image_recommendation: null,

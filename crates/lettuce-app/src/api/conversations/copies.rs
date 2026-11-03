@@ -350,7 +350,7 @@ async fn copy_character(
                 persona,
                 operation_key: key,
             };
-            let (launch, companion) = crate::ConversationLaunchPlanner::new(database)
+            let (launch, companion, time_awareness) = crate::ConversationLaunchPlanner::new(database)
                 .prepare_direct_parts(&launch_request)
                 .map_err(IntoApiError::into_api_error)?;
             let (mut plan, mut drafts) = launch.into_parts();
@@ -446,6 +446,18 @@ async fn copy_character(
                     .background = Some(lettuce_conversations::ConversationBackground::Hidden);
             }
             if !whole { preserve_copy_settings(database, &source.conversation, &mut plan, &mut drafts)?; }
+            if companion.is_none() && time_awareness {
+                plan.current_settings
+                    .get_or_insert_with(|| {
+                        lettuce_conversations::CurrentConversationSettings::inherited(
+                            lettuce_types::Revision::INITIAL,
+                        )
+                    })
+                    .companion_clock = Some(lettuce_conversations::ConversationClockSettings {
+                    time_awareness_enabled: true,
+                    ..Default::default()
+                });
+            }
             let launch = lettuce_conversations::PreparedConversationLaunch::new(plan, drafts)
                 .map_err(|_| {
                     api_error(

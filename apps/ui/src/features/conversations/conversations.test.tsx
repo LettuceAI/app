@@ -101,7 +101,7 @@ const settings: ConversationSettingsView = {
   speaker_selection: null,
   members: null,
   model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never,
-  companion_time: null,
+  time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
 };
 
 interface Setup {
@@ -913,7 +913,7 @@ describe("conversation screen", () => {
           ],
         } : {}) }),
         conversationSettingsGet: () => ({ status: "ok", data: { ...settings,
-          ...(kind === "companion" ? { companion_time: { mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 } } : {}),
+          ...(kind === "companion" ? { companion: true, time: { enabled: true, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 } } : {}),
           ...(group ? { kind: "group", members: {
             members_source: "conversation", muted_source: "conversation", models_source: "group",
             participants: [

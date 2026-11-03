@@ -293,6 +293,11 @@ pub(in crate::api) fn prepare(
         voice: import_voice(context, card.behavior.voice.provider.as_ref(), warnings)?,
         voice_autoplay: card.behavior.voice.autoplay,
         companion_soul,
+        time_awareness: card.behavior.time_awareness
+            || card
+                .companion
+                .as_ref()
+                .is_some_and(|companion| companion.time_awareness == Some(true)),
     };
     let character = Character::new(
         id,
@@ -688,6 +693,7 @@ pub(super) fn export(
             },
             lorebooks,
             image: export_uec3_image(context, character.image_recommendation.as_ref(), warnings)?,
+            time_awareness: character.defaults.time_awareness,
         },
         companion,
     };
@@ -979,7 +985,6 @@ fn prepare_companion(
             prompt_template_id: prompt(&source.prompting.prompt)?,
             style_notes: source.prompting.style_notes.clone(),
         },
-        time_awareness: source.time_awareness,
         share_memory_across_chats: source.share_memory_across_chats,
         share_soul_growth_across_chats: source.share_soul_growth_across_chats,
     };
@@ -1060,7 +1065,7 @@ fn export_companion(
             prompt: prompt(source.prompting.prompt_template_id)?,
             style_notes: source.prompting.style_notes.clone(),
         },
-        time_awareness: source.time_awareness,
+        time_awareness: None,
         share_memory_across_chats: source.share_memory_across_chats,
         share_soul_growth_across_chats: source.share_soul_growth_across_chats,
         scheduled_notes: notes

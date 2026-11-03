@@ -160,7 +160,7 @@ where
         else {
             return self.sources.begin_send(command, now).map_err(Into::into);
         };
-        let clock = crate::companion::companion_clock::companion_clock_context(
+        let clock = crate::companion::companion_clock::conversation_clock_context(
             self.sources,
             &aggregate.conversation,
         )
@@ -243,7 +243,7 @@ where
     if let Some(snapshot) = CompanionStateRepository::get(sources, owner)? {
         return Ok(Some(snapshot));
     }
-    if !crate::companion::companion_clock::companion_clock_context(sources, conversation)
+    if !crate::companion::companion_clock::conversation_clock_context(sources, conversation)
         .map_err(|_| CompanionTurnError::CharacterMissing)?
         .companion
     {

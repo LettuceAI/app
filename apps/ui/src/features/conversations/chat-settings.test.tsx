@@ -33,7 +33,7 @@ const settings: ConversationSettingsView = {
   persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null,
   lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" },
   scene: { id: null, source: "app_default" }, memory: { mode: "manual", source: "app_default" }, chat_mode: null,
-  disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, companion_time: null,
+  disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
 };
 
 interface Setup {
@@ -213,6 +213,17 @@ describe("chat settings panel", () => {
     await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(await screen.findByRole("button", { name: "Edit inline author's note" })).toBeTruthy();
+  });
+
+  it("shows the Time group for a normal chat and sends time awareness from its switch", async () => {
+    const update = vi.fn((_args: unknown) => ({ status: "ok" as const, data: { ...settings, settings_revision: 3, time: { ...settings.time, enabled: true } } }));
+    await open({ path: "/chat/c1?panel=settings", calls: { ...panelCalls, conversationSettingsUpdate: update } });
+    const toggle = await screen.findByRole("switch", { name: "Time awareness" });
+    expect(screen.queryByRole("button", { name: /^Chat clock/ })).toBeNull();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect((update.mock.calls[0]![0] as ConversationSettingsUpdateRequest_Deserialize).patch).toMatchObject({ time_awareness: true });
+    expect(await screen.findByRole("button", { name: /^Chat clock/ })).toBeTruthy();
   });
 
   it("navigates branches to its own page and omits scene and prompt controls", async () => {

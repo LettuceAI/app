@@ -25,6 +25,7 @@
     "group_roleplay_prompt_id": null,
     "voice": null,
     "voice_autoplay": false,
+    "time_awareness": false,
     "companion_soul": {
       "soul": {
         "essence": "",
@@ -74,7 +75,6 @@
         "prompt_template_id": null,
         "style_notes": ""
       },
-      "time_awareness": false,
       "share_memory_across_chats": true,
       "share_soul_growth_across_chats": true
     }

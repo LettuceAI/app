@@ -431,7 +431,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   );
 
   const sceneCharacter = useQuery(characterQuery(api, view?.source.type === "direct" ? view.source.character_id : null));
-  const companion = view?.kind === "direct" && (settings.data?.companion_time != null || sceneCharacter.data?.draft.defaults?.interaction_mode === "companion");
+  const companion = view?.kind === "direct" && (settings.data?.companion === true || sceneCharacter.data?.draft.defaults?.interaction_mode === "companion");
   const openMemories = () => void navigate({ to: companion ? "/chat/$conversationId/companion" : "/chat/$conversationId/memory", params: { conversationId } });
   const sceneMessage = timeline.windowed ? undefined : messages.find((message) => message.role === "scene");
   const scenes = useMemo(

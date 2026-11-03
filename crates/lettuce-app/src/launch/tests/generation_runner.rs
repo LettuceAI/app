@@ -6780,10 +6780,10 @@ async fn post_turn_memory_host_admits_only_this_companion_conversation_effects()
                         },
                         patch: lettuce_conversations::CurrentConversationSettingsPatch {
                             companion_clock: lettuce_conversations::PatchValue::Set(
-                                lettuce_conversations::CompanionClockSettings {
+                                lettuce_conversations::ConversationClockSettings {
                                     time_awareness_enabled: true,
                                     time_override:
-                                        lettuce_conversations::CompanionTimeOverride::Live,
+                                        lettuce_conversations::ConversationTimeOverride::Live,
                                 },
                             ),
                             ..lettuce_conversations::CurrentConversationSettingsPatch::default()
@@ -10088,4 +10088,307 @@ async fn failing_an_interrupted_memory_job_settles_its_attempt() {
         .database()
         .purge_conversation(conversation_id, TimestampMillis::new(1_060))
         .expect("no live attempt keeps the chat busy");
+}
+
+fn request_text(inference: &ScriptedInference, index: usize) -> String {
+    inference.requests.lock().expect("requests")[index]
+        .context
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn set_conversation_clock(
+    database: &Database,
+    conversation_id: ConversationId,
+    operation_key: &str,
+    clock: lettuce_conversations::ConversationClockSettings,
+    at: i64,
+) {
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id,
+                    expected_settings_revision: current_settings_revision(
+                        database,
+                        conversation_id,
+                    ),
+                    operation: OperationToken {
+                        key: key(operation_key),
+                        request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        companion_clock: lettuce_conversations::PatchValue::Set(clock),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared clock settings"),
+            TimestampMillis::new(at),
+        )
+        .expect("store the conversation clock");
+}
+
+#[tokio::test]
+async fn a_one_to_one_chat_that_is_not_a_companion_takes_time_awareness_from_its_stored_clock() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let engine = ScenarioEmbeddingEngine;
+    let mut texts = Vec::new();
+    for (aware, prefix) in [(true, "plain-time-on"), (false, "plain-time-off")] {
+        let scenario = direct_scenario_with(database, false, prefix, true, false, |defaults| {
+            defaults.time_awareness = aware;
+        });
+        let work = admit_and_claim(database, &scenario, 1_015);
+        let inference = scripted(vec![text_outcome(&format!("{prefix}-reply"), "Hi.", 5, 2)]);
+        backend
+            .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+            .run(
+                &work,
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_020),
+            )
+            .await
+            .expect("run");
+        texts.push(request_text(&inference, 0));
+    }
+    let stamp = crate::companion::companion_memory_inference::format_message_timestamp(
+        TimestampMillis::new(1_010),
+    );
+    assert!(
+        texts[0].contains(&format!("{stamp} Remember tea.")),
+        "{}",
+        texts[0]
+    );
+    assert!(texts[0].contains("# Time\nThe app attaches"), "{}", texts[0]);
+    assert!(texts[1].contains("Remember tea."));
+    assert!(!texts[1].contains("<time>"), "{}", texts[1]);
+    assert!(!texts[1].contains("# Time\n"), "{}", texts[1]);
+}
+
+#[tokio::test]
+async fn a_frozen_clock_changes_the_time_a_one_to_one_chat_that_is_not_a_companion_sees() {
+    use chrono::TimeZone;
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let engine = ScenarioEmbeddingEngine;
+    let scenario = direct_scenario_with(database, false, "frozen-plain", true, false, |defaults| {
+        defaults.time_awareness = true;
+    });
+    let first = scripted(vec![text_outcome("frozen-first", "Hi.", 5, 2)]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &first, &NoReplyMedia)
+        .run(
+            &admit_and_claim(database, &scenario, 1_015),
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("first turn");
+    let anchor = TimestampMillis::new(
+        chrono::Local
+            .with_ymd_and_hms(1890, 3, 14, 10, 0, 0)
+            .earliest()
+            .expect("local 1890 time")
+            .timestamp_millis(),
+    );
+    set_conversation_clock(
+        database,
+        scenario.conversation_id,
+        "frozen-plain-clock",
+        lettuce_conversations::ConversationClockSettings {
+            time_awareness_enabled: true,
+            time_override: lettuce_conversations::ConversationTimeOverride::Frozen {
+                anchor_at: anchor,
+            },
+        },
+        1_050,
+    );
+    let second = next_group_turn(
+        database,
+        &scenario,
+        "frozen-plain-second",
+        "What day is it?",
+        1_100,
+    );
+    let inference = scripted(vec![text_outcome("frozen-second", "Friday.", 5, 2)]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+        .run(
+            &admit_and_claim(database, &second, 1_115),
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_120),
+        )
+        .await
+        .expect("second turn");
+    let text = request_text(&inference, 0);
+    let stamp = crate::companion::companion_memory_inference::format_message_timestamp(anchor);
+    assert!(text.contains("Right now it is Friday, March 14, 1890"), "{text}");
+    assert!(text.contains(&format!("{stamp} What day is it?")), "{text}");
+}
+
+#[tokio::test]
+async fn a_group_chat_takes_time_awareness_from_its_stored_clock_and_stamps_every_line() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let engine = ScenarioEmbeddingEngine;
+    let (first, speakers) = group_scenario(
+        &backend,
+        "group-time",
+        lettuce_characters::SpeakerSelection::RoundRobin,
+        false,
+    );
+    enable_time_awareness(database, first.conversation_id, "group-time-clock");
+    let mut scenario = first;
+    let mut requests = Vec::new();
+    for turn in 0..3_i64 {
+        if turn > 0 {
+            scenario = next_group_turn(
+                database,
+                &scenario,
+                &format!("group-time-send-{turn}"),
+                &format!("Question {turn}."),
+                1_000 + turn * 100,
+            );
+        }
+        let inference = scripted(vec![text_outcome(
+            &format!("group-time-reply-{turn}"),
+            &format!("Reply {turn}."),
+            5,
+            2,
+        )]);
+        let result = backend
+            .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+            .run(
+                &admit_and_claim(database, &scenario, 1_015 + turn * 100),
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_020 + turn * 100),
+            )
+            .await
+            .expect("group turn");
+        assert_eq!(
+            result.candidate.author_participant_id,
+            speakers[usize::try_from(turn % 2).expect("speaker index")]
+        );
+        requests.push(request_text(&inference, 0));
+    }
+    let branch = scenario_branch(database, &scenario);
+    let timeline = branch_timeline(database, scenario.conversation_id, branch);
+    let stamp = |item: &lettuce_conversations::TimelineItem| {
+        crate::companion::companion_memory_inference::format_message_timestamp(
+            item.message.effective_time,
+        )
+    };
+    let by = |role: MessageRole, author: Option<lettuce_types::ConversationParticipantId>| {
+        timeline
+            .iter()
+            .find(|item| {
+                item.message.role == role
+                    && (role == MessageRole::User || item.message.author_participant_id == author)
+            })
+            .expect("timeline message")
+    };
+    let third = &requests[2];
+    assert!(third.contains("# Time\nThe app attaches"), "{third}");
+    assert!(third.contains("right after the speaker's name label"), "{third}");
+    assert!(
+        third.contains(&format!("]: {} Hello cast.", stamp(by(MessageRole::User, None)))),
+        "{third}"
+    );
+    assert!(
+        third.contains(&format!(
+            "[Bea]: {} Reply 1.",
+            stamp(by(MessageRole::Assistant, Some(speakers[1])))
+        )),
+        "{third}"
+    );
+    let own = format!(
+        "{} Reply 0.",
+        stamp(by(MessageRole::Assistant, Some(speakers[0])))
+    );
+    assert!(third.contains(&own), "{third}");
+    assert!(!third.contains(&format!("[Ada]: {own}")), "{third}");
+    assert!(!third.contains("[Ada]: "), "{third}");
+    for item in timeline.iter().filter(|item| {
+        matches!(item.message.role, MessageRole::User | MessageRole::Assistant)
+            && item.message.created_at.get() < 1_200
+    }) {
+        assert!(third.contains(&stamp(item)), "{third}");
+    }
+    assert!(requests[0].contains("# Time\nThe app attaches"), "{}", requests[0]);
+}
+
+#[tokio::test]
+async fn a_group_memory_run_takes_time_awareness_from_the_conversations_clock() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.summary_message_interval = 2;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("save dynamic memory settings");
+    let (scenario, _) = group_scenario_with(
+        &backend,
+        "group-memory-time",
+        lettuce_characters::SpeakerSelection::RoundRobin,
+        true,
+        "Hello cast.",
+        |group| group.memory_policy = MemoryPolicy::Dynamic,
+    );
+    let engine = ScenarioEmbeddingEngine;
+    backend
+        .prepared_conversation_generation_runner(
+            &engine,
+            &scripted(vec![text_outcome("group-memory-time", "Ada answers.", 10, 3)]),
+            &NoReplyMedia,
+        )
+        .run(
+            &admit_and_claim(database, &scenario, 1_015),
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("group turn");
+    let memory = scripted(Vec::new());
+    let host = backend.companion_memory_host(&engine, &memory);
+    let work = host
+        .trigger(
+            scenario.conversation_id,
+            None,
+            false,
+            WorkerId::new(),
+            TimestampMillis::new(1_032),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("a group memory cycle")
+        .into_iter()
+        .next()
+        .expect("claimed group memory work");
+    assert!(
+        !host
+            .resolve_runtime_inputs(&work.admission)
+            .expect("runtime inputs")
+            .time_awareness_enabled
+    );
+    enable_time_awareness(database, scenario.conversation_id, "group-memory-clock");
+    assert!(
+        host.resolve_runtime_inputs(&work.admission)
+            .expect("time-aware runtime inputs")
+            .time_awareness_enabled
+    );
 }

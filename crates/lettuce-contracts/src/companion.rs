@@ -164,7 +164,6 @@ pub struct CompanionSoulConfigView {
     pub authored_facts: Vec<SoulFactView>,
     pub relationship_defaults: CompanionRelationshipDefaults,
     pub prompting: CompanionPrompting,
-    pub time_awareness: bool,
     pub share_memory_across_chats: bool,
     pub share_soul_growth_across_chats: bool,
 }

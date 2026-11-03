@@ -188,3 +188,60 @@ async fn branch_targets_copy_only_local_companion_memories_into_an_independent_s
     };
     assert!(lettuce_companions::CompanionStateRepository::get(database, owner).expect("target state").is_some());
 }
+
+#[tokio::test]
+async fn a_copy_to_a_time_aware_character_starts_time_aware_like_a_launch() {
+    use lettuce_characters::CharacterRepository;
+    let harness = harness(Reply::Text("The earlier reply"));
+    let other = copy_second_character(&harness);
+    let database = harness.context.backend().database();
+    let character = CharacterRepository::get(database, other)
+        .expect("character")
+        .expect("exists")
+        .character;
+    let mut defaults = character.defaults.clone();
+    defaults.time_awareness = true;
+    CharacterRepository::update_defaults(
+        database,
+        other,
+        character.revision,
+        defaults,
+        harness.context.now(),
+    )
+    .expect("make the character time aware");
+    let (chat, cutoff) = replied_chat(&harness, "time-copy").await;
+    let current = open(&harness, &chat).await;
+    let copied = conversation_branch_direct_to_character(
+        &harness.context,
+        dto::ConversationCharacterCopyRequest {
+            conversation_id: chat.clone(),
+            message_id: cutoff,
+            character_id: other.to_string(),
+            expected_revision: Some(current.revision),
+            client_operation_id: "time-copy-target".into(),
+        },
+    )
+    .await
+    .expect("copy to the time aware character");
+    let target = lettuce_conversations::ConversationReader::get(
+        database,
+        copied.conversation_id.parse().expect("target id"),
+    )
+    .expect("target")
+    .conversation;
+    let clock = crate::companion::companion_clock::conversation_clock_context(database, &target)
+        .expect("clock context");
+    assert!(!clock.companion);
+    assert!(clock.time_awareness_enabled());
+    let source = lettuce_conversations::ConversationReader::get(
+        database,
+        chat.parse().expect("source id"),
+    )
+    .expect("source")
+    .conversation;
+    assert!(
+        !crate::companion::companion_clock::conversation_clock_context(database, &source)
+            .expect("source clock")
+            .time_awareness_enabled()
+    );
+}

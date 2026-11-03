@@ -121,7 +121,7 @@ pub enum ConversationBackground {
 #[serde(deny_unknown_fields)]
 pub struct CurrentConversationSettings {
     #[serde(default)]
-    pub companion_clock: Option<crate::CompanionClockSettings>,
+    pub companion_clock: Option<crate::ConversationClockSettings>,
     /// Model settings this conversation overrides
     /// (`advanced_model_settings`).
     #[serde(
@@ -396,11 +396,6 @@ impl CurrentConversationSettings {
         if matches!(kind, ConversationKind::Group(_)) && !self.model_settings.is_empty() {
             return Err(ValidationError::InvalidValue {
                 field: "conversation_settings.model_settings",
-            });
-        }
-        if matches!(kind, ConversationKind::Group(_)) && self.companion_clock.is_some() {
-            return Err(ValidationError::InvalidReference {
-                field: "conversation_settings.companion_clock",
             });
         }
         if matches!(kind, ConversationKind::Direct(_))

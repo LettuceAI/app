@@ -152,7 +152,10 @@ pub fn character_package(source: &CharacterExportSource, exported_at: i64) -> Ch
                 }
                 .to_owned(),
             ),
-            companion: defaults.companion_soul.as_ref().map(legacy_companion_value),
+            companion: defaults
+                .companion_soul
+                .as_ref()
+                .map(|config| legacy_companion_value(config, defaults.time_awareness)),
             companion_scheduled_notes: source
                 .scheduled_notes
                 .iter()
@@ -211,7 +214,7 @@ fn document_text(document: &SceneDocumentV1) -> String {
         .collect()
 }
 
-fn legacy_companion_value(config: &CompanionSoulConfig) -> Value {
+fn legacy_companion_value(config: &CompanionSoulConfig, time_awareness: bool) -> Value {
     let mut object = Map::new();
     let section = |value: Result<Value, serde_json::Error>| value.unwrap_or(Value::Null);
     object.insert("soul".into(), section(serde_json::to_value(&config.soul)));
@@ -234,7 +237,7 @@ fn legacy_companion_value(config: &CompanionSoulConfig) -> Value {
             "styleNotes": config.prompting.style_notes,
         }),
     );
-    object.insert("timeAwareness".into(), Value::Bool(config.time_awareness));
+    object.insert("timeAwareness".into(), Value::Bool(time_awareness));
     Value::Object(object)
 }
 

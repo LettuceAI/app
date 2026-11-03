@@ -350,7 +350,6 @@ pub(crate) fn config_view(config: &CompanionSoulConfig) -> dto::CompanionSoulCon
             prompt_template_id: config.prompting.prompt_template_id.map(|id| id.to_string()),
             style_notes: config.prompting.style_notes.clone(),
         },
-        time_awareness: config.time_awareness,
         share_memory_across_chats: config.share_memory_across_chats,
         share_soul_growth_across_chats: config.share_soul_growth_across_chats,
     }
@@ -365,7 +364,6 @@ pub(crate) fn config_from(config: &dto::CompanionSoulConfigView) -> Result<Compa
             prompt_template_id: config.prompting.prompt_template_id.as_deref().map(|id| parse_id(id, "companion_soul.prompt_template_id")).transpose()?,
             style_notes: config.prompting.style_notes.clone(),
         },
-        time_awareness: config.time_awareness,
         share_memory_across_chats: config.share_memory_across_chats,
         share_soul_growth_across_chats: config.share_soul_growth_across_chats,
     })

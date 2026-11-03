@@ -118,6 +118,7 @@ impl LegacyJsonContext {
 pub(crate) struct LegacyCompanion {
     pub(crate) soul: Option<CompanionSoulConfig>,
     pub(crate) prompt_source_id: Option<String>,
+    pub(crate) time_awareness: bool,
 }
 
 /// Legacy `characters.companion`: keys the rewrite has no field for are
@@ -134,6 +135,7 @@ pub(crate) fn legacy_companion(
     let none = || LegacyCompanion {
         soul: None,
         prompt_source_id: None,
+        time_awareness: false,
     };
     let private_memory = || LegacyCompanion {
         soul: Some(CompanionSoulConfig {
@@ -141,6 +143,7 @@ pub(crate) fn legacy_companion(
             ..CompanionSoulConfig::default()
         }),
         prompt_source_id: None,
+        time_awareness: false,
     };
     let value = match value {
         Some(Value::String(text)) => match serde_json::from_str::<Value>(&text) {
@@ -216,7 +219,7 @@ pub(crate) fn legacy_companion(
             false
         }
     };
-    config.time_awareness = top_level || context;
+    let time_awareness = top_level || context;
     config.share_memory_across_chats = match object.remove("memory") {
         None => true,
         Some(Value::Object(mut memory)) => {
@@ -319,11 +322,13 @@ pub(crate) fn legacy_companion(
                 ..CompanionSoulConfig::default()
             }),
             prompt_source_id: None,
+            time_awareness: false,
         };
     }
     LegacyCompanion {
         soul: Some(config),
         prompt_source_id,
+        time_awareness,
     }
 }
 
@@ -1021,7 +1026,7 @@ mod tests {
         assert_eq!(soul.prompting.style_notes, "soft");
         assert!(soul.prompting.prompt_template_id.is_none());
         assert_eq!(companion.prompt_source_id.as_deref(), Some("prompt-1"));
-        assert!(soul.time_awareness);
+        assert!(companion.time_awareness);
         assert_eq!(skipped.len(), 3);
 
         assert!(soul.share_memory_across_chats);
@@ -1064,7 +1069,7 @@ mod tests {
             TimestampMillis::new(1),
             &mut context_skips,
         );
-        assert!(context.soul.expect("companion soul").time_awareness);
+        assert!(context.time_awareness);
         assert_eq!(context_skips.len(), 1);
 
         let mut roleplay = Vec::new();

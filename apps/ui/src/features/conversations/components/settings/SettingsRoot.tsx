@@ -263,10 +263,18 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
         </ListGroup>
       )}
 
+      <ListGroup label={t("settings.sections.time")}>
+        <ListRow
+          title={t("settings.time.awareness")}
+          description={t("settings.time.awarenessHint")}
+          trailing={<Switch checked={settings.time.enabled} disabled={ctx.busy} aria-label={t("settings.time.awareness")} onChange={(on) => void ctx.save({ time_awareness: on })} />}
+        />
+        {settings.time.enabled && <ListRowButton icon={<Clock size={icon.lg} />} title={t("settings.time.title")} description={settings.time.mode === "live" ? t("settings.time.live") : t(settings.time.mode === "frozen" ? "settings.time.stoppedAt" : "settings.time.runningFrom", { when: new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(settings.time.mode === "frozen" ? settings.time.anchor_at ?? settings.time.effective_at : settings.time.effective_at) })} onClick={() => ctx.openSheet("time")} />}
+      </ListGroup>
+
       {companion && (
         <ListGroup label={t("settings.sections.companion")}>
           <ListRowButton icon={<CalendarClock size={icon.lg} />} title={t("settings.notes.title")} description={t("settings.notes.rowHint")} onClick={() => ctx.open("notes")} />
-          {settings.companion_time && <ListRowButton icon={<Clock size={icon.lg} />} title={t("settings.companionTime.title")} description={settings.companion_time.mode === "live" ? t("settings.companionTime.live") : t(settings.companion_time.mode === "frozen" ? "settings.companionTime.stoppedAt" : "settings.companionTime.runningFrom", { when: new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(settings.companion_time.mode === "frozen" ? settings.companion_time.anchor_at ?? settings.companion_time.effective_at : settings.companion_time.effective_at) })} onClick={() => ctx.openSheet("companion_time")} />}
         </ListGroup>
       )}
 

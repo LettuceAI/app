@@ -6,22 +6,22 @@ use lettuce_companions::{
     CompanionStateOwner, CompanionStateRepository, CompanionStateRepositoryError,
 };
 use lettuce_conversations::{
-    CompanionClockSettings, Conversation, ConversationKind, PromptRuntimeValues,
+    Conversation, ConversationClockSettings, ConversationKind, PromptRuntimeValues,
 };
 use lettuce_types::TimestampMillis;
 use regex::Regex;
 
 /// Companion mode and the session time preferences of one conversation: a
 /// direct chat is a companion chat when its live character is a companion or
-/// it carries companion session state, and its clock counts only while time
-/// awareness is on.
+/// it carries companion session state. The clock is the stored clock while
+/// time awareness is on, for any direct or group chat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct CompanionClockContext {
+pub(crate) struct ConversationClockContext {
     pub(crate) companion: bool,
-    pub(crate) clock: Option<CompanionClockSettings>,
+    pub(crate) clock: Option<ConversationClockSettings>,
 }
 
-impl CompanionClockContext {
+impl ConversationClockContext {
     pub(crate) fn effective_now(&self, now: TimestampMillis) -> TimestampMillis {
         self.clock.map_or(now, |clock| clock.effective_now(now))
     }
@@ -32,38 +32,41 @@ impl CompanionClockContext {
 }
 
 #[derive(Debug)]
-pub(crate) enum CompanionClockError {
+pub(crate) enum ConversationClockError {
     Character(RepositoryError),
     MissingCharacter,
     Companion(CompanionStateRepositoryError),
 }
 
-pub(crate) fn companion_clock_context<R>(
+pub(crate) fn conversation_clock_context<R>(
     repository: &R,
     conversation: &Conversation,
-) -> Result<CompanionClockContext, CompanionClockError>
+) -> Result<ConversationClockContext, ConversationClockError>
 where
     R: CharacterRepository + CompanionStateRepository + ?Sized,
 {
-    let ConversationKind::Direct(details) = &conversation.kind else {
-        return Ok(CompanionClockContext::default());
-    };
-    let character = CharacterRepository::get(repository, details.character.source_id)
-        .map_err(CompanionClockError::Character)?
-        .ok_or(CompanionClockError::MissingCharacter)?;
-    let companion = character.character.defaults.interaction_mode == InteractionMode::Companion
-        || match companion_state_owner(conversation) {
-            Some(owner) => CompanionStateRepository::get(repository, owner)
-                .map_err(CompanionClockError::Companion)?
-                .is_some(),
-            None => false,
-        };
     let clock = conversation
         .current_settings
         .as_ref()
         .and_then(|settings| settings.companion_clock)
-        .filter(|clock| companion && clock.time_awareness_enabled);
-    Ok(CompanionClockContext { companion, clock })
+        .filter(|clock| clock.time_awareness_enabled);
+    let ConversationKind::Direct(details) = &conversation.kind else {
+        return Ok(ConversationClockContext {
+            companion: false,
+            clock,
+        });
+    };
+    let character = CharacterRepository::get(repository, details.character.source_id)
+        .map_err(ConversationClockError::Character)?
+        .ok_or(ConversationClockError::MissingCharacter)?;
+    let companion = character.character.defaults.interaction_mode == InteractionMode::Companion
+        || match companion_state_owner(conversation) {
+            Some(owner) => CompanionStateRepository::get(repository, owner)
+                .map_err(ConversationClockError::Companion)?
+                .is_some(),
+            None => false,
+        };
+    Ok(ConversationClockContext { companion, clock })
 }
 
 /// The companion state a direct conversation reads and writes: its character

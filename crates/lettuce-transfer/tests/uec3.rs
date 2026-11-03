@@ -311,7 +311,7 @@ fn character() -> Value {
             {"key":"t3","name":"Third","messages":[{"role":"assistant","text":"Again"}],"scene":null,"prompt":null,"lorebooks":["dep:l1"]}],
         "defaultStarter":"t1","behavior":{"interactionMode":"roleplay","memory":"dynamic","prompts":{"direct":"builtin:prompt_app_default","groupConversation":"builtin:prompt_app_group_chat","groupRoleplay":null},
             "model":{"name":"Chat","provider":"openai","externalId":"chat"},"voice":{"provider":null,"autoplay":true},
-            "lorebooks":[{"book":"dep:l1","enabled":false}],"image":{"fileName":"ink.safetensors","sha256":null,"strength":0.8f32}},
+            "lorebooks":[{"book":"dep:l1","enabled":false}],"image":{"fileName":"ink.safetensors","sha256":null,"strength":0.8f32},"timeAwareness":false},
         "companion":null
     });
     source["dependencies"] = json!([{"key":"l1","kind":"lorebook","entity":book}]);
@@ -336,9 +336,54 @@ fn character_authored_fields_scenes_variants_starters_and_media_round_trip() {
 }
 
 #[test]
+fn time_awareness_is_written_at_character_level_and_an_old_companion_key_is_still_read() {
+    let mut old = character();
+    old["entity"]["behavior"]["interactionMode"] = json!("companion");
+    old["entity"]["companion"] = json!({
+        "soul":{"essence":"","traits":"","backstory":"","appearance":"","goals":"","likes":"","voice":"","relationalStyle":"","vulnerabilities":"","fears":"","habits":"","boundaries":""},
+        "baselineAffect":{"warmth":0.1,"trust":0.2,"calm":0.3,"vulnerability":0.4,"longing":0.5,"hurt":0.6,"tension":0.7,"irritation":0.8,"affectionIntensity":0.9,"reassuranceNeed":1.0},
+        "regulationStyle":{"suppression":0.1,"volatility":0.2,"recoverySpeed":0.3,"conflictAvoidance":0.4,"reassuranceSeeking":0.5,"protestBehavior":0.6,"emotionalTransparency":0.7,"attachmentActivation":0.8,"pride":0.9},
+        "relationshipDefaults":{"closeness":0.1,"trust":0.2,"affection":0.3,"tension":0.4},
+        "authoredFacts":[],"prompting":{"prompt":null,"styleNotes":""},
+        "timeAwareness":true,"shareMemoryAcrossChats":true,"shareSoulGrowthAcrossChats":true,
+        "scheduledNotes":[]
+    });
+    let read = uec3::read(&old.to_string(), |_, _, _| Ok(())).expect("old file");
+    let Entity::Character(card) = &read.document.entity else {
+        panic!("character entity");
+    };
+    assert!(!card.behavior.time_awareness);
+    assert_eq!(
+        card.companion.as_ref().expect("companion").time_awareness,
+        Some(true)
+    );
+    let mut output = Vec::new();
+    uec3::write(&mut output, &read.document, |_, sink| {
+        std::io::Write::write_all(sink, b"image")?;
+        Ok(())
+    })
+    .expect("write");
+    let output: Value = serde_json::from_slice(&output).expect("JSON");
+    assert_eq!(output["entity"]["behavior"]["timeAwareness"], json!(false));
+
+    let mut current = character();
+    current["entity"]["behavior"]["timeAwareness"] = json!(true);
+    let read = uec3::read(&current.to_string(), |_, _, _| Ok(())).expect("current file");
+    let mut output = Vec::new();
+    uec3::write(&mut output, &read.document, |_, sink| {
+        std::io::Write::write_all(sink, b"image")?;
+        Ok(())
+    })
+    .expect("write");
+    let output: Value = serde_json::from_slice(&output).expect("JSON");
+    assert_eq!(output["entity"]["behavior"]["timeAwareness"], json!(true));
+}
+
+#[test]
 fn companion_identity_notes_and_optional_learned_state_round_trip_without_conversation_data() {
     let mut source = character();
     source["entity"]["behavior"]["interactionMode"] = json!("companion");
+    source["entity"]["behavior"]["timeAwareness"] = json!(true);
     source["entity"]["companion"] = json!({
         "soul":{"essence":"Essence","traits":"Traits","backstory":"Backstory","appearance":"Appearance","goals":"Goals","likes":"Likes","voice":"Voice","relationalStyle":"Style","vulnerabilities":"Vulnerable","fears":"Fears","habits":"Habits","boundaries":"Boundaries"},
         "baselineAffect":{"warmth":0.1,"trust":0.2,"calm":0.3,"vulnerability":0.4,"longing":0.5,"hurt":0.6,"tension":0.7,"irritation":0.8,"affectionIntensity":0.9,"reassuranceNeed":1.0},
@@ -346,7 +391,7 @@ fn companion_identity_notes_and_optional_learned_state_round_trip_without_conver
         "relationshipDefaults":{"closeness":0.1,"trust":0.2,"affection":0.3,"tension":0.4},
         "authoredFacts":[{"key":"f1","category":"likes","value":"Sea","policy":"adaptive","slot":"likes.sea","locked":true,"weight":0.8,"confidence":0.82,"evidenceCount":3,"validFrom":1,"validUntil":20}],
         "prompting":{"prompt":"builtin:prompt_app_companion","styleNotes":"Calm"},
-        "timeAwareness":true,"shareMemoryAcrossChats":true,"shareSoulGrowthAcrossChats":false,
+        "shareMemoryAcrossChats":true,"shareSoulGrowthAcrossChats":false,
         "scheduledNotes":[{"key":"n1","label":"Anniversary","content":"Remember","availableAt":1,"expiresAt":20,"recurrence":"yearly","recurrenceWindowMs":1000,"enabled":false}]
     });
     source["state"] = json!({"companion":{

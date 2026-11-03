@@ -834,7 +834,7 @@ where
             )
         })?;
         let companion = self.is_companion(&aggregate.conversation)?;
-        let clock = crate::companion::companion_clock::companion_clock_context(
+        let clock = crate::companion::companion_clock::conversation_clock_context(
             self.repository,
             &aggregate.conversation,
         )
@@ -1303,16 +1303,16 @@ where
 }
 
 fn clock_error(
-    error: crate::companion::companion_clock::CompanionClockError,
+    error: crate::companion::companion_clock::ConversationClockError,
 ) -> CompanionMemoryHostError {
     match error {
-        crate::companion::companion_clock::CompanionClockError::Character(error) => {
+        crate::companion::companion_clock::ConversationClockError::Character(error) => {
             CompanionMemoryHostError::Character(error)
         }
-        crate::companion::companion_clock::CompanionClockError::MissingCharacter => {
+        crate::companion::companion_clock::ConversationClockError::MissingCharacter => {
             CompanionMemoryHostError::Conversation(ConversationRepositoryError::NotFound)
         }
-        crate::companion::companion_clock::CompanionClockError::Companion(error) => {
+        crate::companion::companion_clock::ConversationClockError::Companion(error) => {
             CompanionMemoryHostError::Companion(error)
         }
     }

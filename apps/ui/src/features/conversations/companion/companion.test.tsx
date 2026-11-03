@@ -18,7 +18,7 @@ const ok = <T,>(data: T) => ({ status: "ok" as const, data });
 const vector = (patch: Partial<CompanionEmotionVector> = {}): CompanionEmotionVector => ({ warmth: null, trust: null, calm: null, vulnerability: null, longing: null, hurt: null, tension: null, irritation: null, affection_intensity: null, reassurance_need: null, ...patch });
 const message = (id = "a1", role: TimelineMessage["role"] = "assistant", text = "A reply."): TimelineMessage => ({ id, role, author_participant_id: role === "user" ? "pu" : "pc", parts: [{ type: "text", text }], reasoning: null, created_at: NOW, candidate_index: null, candidate_count: 1, pinned: false, scene_image: null });
 const conversation = (): ConversationView => ({ id: "c1", origin_conversation_id: null, origin_message_id: null, kind: "direct", title: "Harbour", branch: { branch_id: "b1", head_message_id: "a1" }, participants: [{ id: "pc", role: "character", name: "Mira", character_id: "ch1", avatar: null }, { id: "pu", role: "user", name: "You", character_id: null, avatar: null }], messages: { items: [message("u1", "user", "Hello."), message()], next_cursor: null }, pending_turn_id: null, can_send: true, revision: 4, settings_revision: 2, archived: false, source: { type: "direct", character_id: "ch1" }, chat_mode: null, missing_models: [], memory_blocked: null });
-const settings = (): ConversationSettingsView => ({ conversation_id: "c1", kind: "direct", title: "Harbour", revision: 4, settings_revision: 2, author_note: null, persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null, lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" }, scene: { id: null, source: "app_default" }, memory: { mode: "dynamic", source: "character" }, chat_mode: null, disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: null, companion_time: { mode: "live", anchor_at: null, set_at: null, effective_at: NOW } });
+const settings = (): ConversationSettingsView => ({ conversation_id: "c1", kind: "direct", title: "Harbour", revision: 4, settings_revision: 2, author_note: null, persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null, lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" }, scene: { id: null, source: "app_default" }, memory: { mode: "dynamic", source: "character" }, chat_mode: null, disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: null, companion: true, time: { enabled: true, mode: "live", anchor_at: null, set_at: null, effective_at: NOW } });
 const state = (): CompanionStateView => ({ conversation_id: "c1", character_id: "ch1", persona_id: null, relationship: { closeness: 0.46, trust: -0.38, affection: 0.52, tension: 0.22, stability: 0.71, interaction_count: 1284, last_interaction_at: NOW }, felt: vector({ warmth: 0.72, longing: 0.41 }), expressed: vector({ warmth: 0.58 }), blocked: vector({ hurt: 0.18 }), momentum: vector({ trust: 0.24 }), active_drivers: ["caring"], active_signals: [], confidence: null, emotions_updated_at: NOW, updated_at: NOW });
 const fact = (id = "f1", patch: Partial<SoulFactView> = {}): SoulFactView => ({ id, category: "likes", value: "Enjoys morning runs.", kind: "add", policy: "adaptive", slot: "running", confidence: 0.82, evidence_count: 1, weight: 0.7, valid_from: NOW, valid_until: null, locked: false, created_at: NOW, source_memory_ids: ["m1"], supersedes: [], superseded_by: null, superseded_at: null, ...patch });
 const soul = (): CompanionSoulView => {
@@ -38,7 +38,7 @@ async function open(setup: Setup = {}) {
   draft.profile.name = setup.name ?? "Mira";
   draft.profile.definition = "Patient and curious.";
   draft.defaults.interaction_mode = setup.companion === false ? "roleplay" : "companion";
-  if (setup.companion === false) world.settings.companion_time = null;
+  if (setup.companion === false) world.settings = { ...world.settings, companion: false, time: { ...world.settings.time, enabled: false } };
   const requests: { command: string; request: unknown }[] = [];
   const record = (command: string, request: unknown) => requests.push({ command, request: structuredClone(request) });
   const calls: MockCallHandlers = {
@@ -47,8 +47,8 @@ async function open(setup: Setup = {}) {
     conversationSettingsGet: () => ok(structuredClone(world.settings)),
     conversationSettingsUpdate: (request) => {
       record("conversationSettingsUpdate", request);
-      const time = request.patch.companion_time;
-      if (time) world.settings = { ...world.settings, settings_revision: (world.settings.settings_revision ?? 0) + 1, companion_time: time.type === "reset" || time.mode === "live" ? { mode: "live", anchor_at: null, set_at: null, effective_at: NOW } : { mode: time.mode, anchor_at: time.anchor_at, set_at: time.mode === "ticking" ? NOW : null, effective_at: time.anchor_at ?? NOW } };
+      const time = request.patch.time;
+      if (time) world.settings = { ...world.settings, settings_revision: (world.settings.settings_revision ?? 0) + 1, time: time.type === "reset" || time.mode === "live" ? { enabled: world.settings.time.enabled, mode: "live", anchor_at: null, set_at: null, effective_at: NOW } : { enabled: world.settings.time.enabled, mode: time.mode, anchor_at: time.anchor_at, set_at: time.mode === "ticking" ? NOW : null, effective_at: time.anchor_at ?? NOW } };
       return ok(structuredClone(world.settings));
     },
     characterGet: () => ok({ id: "ch1", archived: false, draft, assets: [], revision: 1, created_at: NOW, updated_at: NOW }),
@@ -289,32 +289,32 @@ describe("companion chat", () => {
 
   it.each(["live", "frozen", "ticking"] as const)("shows the %s time row and sends a set with the selected anchor", async (mode) => {
     const view = settings();
-    view.companion_time = { mode, anchor_at: mode === "live" ? null : NOW, set_at: mode === "ticking" ? NOW : null, effective_at: NOW };
+    view.time = { enabled: true, mode, anchor_at: mode === "live" ? null : NOW, set_at: mode === "ticking" ? NOW : null, effective_at: NOW };
     const app = await open({ path: "/chat/c1?panel=settings", world: { settings: view } });
-    const row = await screen.findByRole("button", { name: /^Companion time/ });
+    const row = await screen.findByRole("button", { name: /^Chat clock/ });
     expect(row.textContent).toContain(mode === "live" ? "Real time" : mode === "frozen" ? "Stopped at" : "Running from");
     fireEvent.click(row);
-    const sheet = await screen.findByRole("dialog", { name: "Companion time" });
+    const sheet = await screen.findByRole("dialog", { name: "Chat clock" });
     fireEvent.click(within(sheet).getByRole("radio", { name: "Running" }));
     fireEvent.click(within(sheet).getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(app.called("conversationSettingsUpdate")).toHaveLength(1));
-    expect(app.called("conversationSettingsUpdate")[0]?.request).toMatchObject({ conversation_id: "c1", expected_settings_revision: 2, patch: { companion_time: { type: "set", mode: "ticking", anchor_at: NOW } } });
+    expect(app.called("conversationSettingsUpdate")[0]?.request).toMatchObject({ conversation_id: "c1", expected_settings_revision: 2, patch: { time: { type: "set", mode: "ticking", anchor_at: NOW } } });
   });
 
-  it("resets only an overridden clock and omits the row for normal chats", async () => {
+  it("resets only an overridden clock and omits the row while time awareness is off", async () => {
     const view = settings();
-    view.companion_time = { mode: "frozen", anchor_at: NOW, set_at: null, effective_at: NOW };
+    view.time = { enabled: true, mode: "frozen", anchor_at: NOW, set_at: null, effective_at: NOW };
     const app = await open({ path: "/chat/c1?panel=settings", world: { settings: view } });
-    fireEvent.click(await screen.findByRole("button", { name: /^Companion time/ }));
-    fireEvent.click(within(await screen.findByRole("dialog", { name: "Companion time" })).getByRole("button", { name: "Reset" }));
-    await waitFor(() => expect(app.called("conversationSettingsUpdate")[0]?.request).toMatchObject({ patch: { companion_time: { type: "reset" } } }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Companion time" })).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: /^Companion time/ }));
-    expect(within(await screen.findByRole("dialog", { name: "Companion time" })).queryByRole("button", { name: "Reset" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: /^Chat clock/ }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Chat clock" })).getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(app.called("conversationSettingsUpdate")[0]?.request).toMatchObject({ patch: { time: { type: "reset" } } }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Chat clock" })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /^Chat clock/ }));
+    expect(within(await screen.findByRole("dialog", { name: "Chat clock" })).queryByRole("button", { name: "Reset" })).toBeNull();
     cleanup();
     await open({ path: "/chat/c1?panel=settings", companion: false });
     await screen.findByRole("button", { name: /^Open memories/ });
-    expect(screen.queryByRole("button", { name: /^Companion time/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Chat clock/ })).toBeNull();
   });
 
   it("closes sources on browser back and opens them fresh next time", async () => {
@@ -372,8 +372,8 @@ describe("companion chat", () => {
     let reads = 0;
     const update = vi.fn((request: { expected_settings_revision: number | null }) => reads > 1 && request.expected_settings_revision === 3 ? { status: "error" as const, error: { code: "unavailable" as const, message: "PRIVATE_DIAGNOSTIC", details: null } } : { status: "error" as const, error: { code: "conflict" as const, message: "PRIVATE_DIAGNOSTIC", details: null } });
     const app = await open({ path: "/chat/c1?panel=settings", calls: { conversationSettingsGet: () => { reads += 1; return ok({ ...settings(), settings_revision: reads > 1 ? 3 : 2 }); }, conversationSettingsUpdate: update } });
-    fireEvent.click(await screen.findByRole("button", { name: /^Companion time/ }));
-    const sheet = await screen.findByRole("dialog", { name: "Companion time" });
+    fireEvent.click(await screen.findByRole("button", { name: /^Chat clock/ }));
+    const sheet = await screen.findByRole("dialog", { name: "Chat clock" });
     fireEvent.click(within(sheet).getByRole("radio", { name: "Stopped" }));
     fireEvent.click(within(sheet).getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
@@ -400,9 +400,9 @@ describe("companion chat", () => {
 
   it("uses effective running time in the settings row and does not fabricate the first message date", async () => {
     const view = settings();
-    view.companion_time = { mode: "ticking", anchor_at: NOW, set_at: NOW, effective_at: NOW + 86_400_000 };
+    view.time = { enabled: true, mode: "ticking", anchor_at: NOW, set_at: NOW, effective_at: NOW + 86_400_000 };
     await open({ path: "/chat/c1?panel=settings", world: { settings: view } });
-    expect((await screen.findByRole("button", { name: /^Companion time/ })).textContent).toContain(new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(NOW + 86_400_000));
+    expect((await screen.findByRole("button", { name: /^Chat clock/ })).textContent).toContain(new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(NOW + 86_400_000));
     cleanup();
     await open({ calls: { conversationOpen: () => ok({ ...conversation(), messages: { ...conversation().messages, next_cursor: "older" } }) } });
     await screen.findByRole("meter", { name: "Closeness" });

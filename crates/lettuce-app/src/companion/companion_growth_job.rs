@@ -97,7 +97,7 @@ impl<
                 reason: "the character of the conversation is missing".to_owned(),
             },
         )?;
-        let clock = crate::companion::companion_clock::companion_clock_context(
+        let clock = crate::companion::companion_clock::conversation_clock_context(
             self.sources,
             &conversation.conversation,
         )

@@ -15,9 +15,8 @@ const affect: readonly (keyof CompanionEmotionVector)[] = ["warmth", "trust", "c
 const regulation: readonly (keyof CompanionRegulationStyle)[] = ["suppression", "volatility", "recovery_speed", "conflict_avoidance", "reassurance_seeking", "protest_behavior", "emotional_transparency", "attachment_activation", "pride"];
 const relationship: readonly (keyof CompanionRelationshipDefaults)[] = ["closeness", "trust", "affection", "tension"];
 
-type Sharing = "time_awareness" | "share_memory_across_chats" | "share_soul_growth_across_chats";
+type Sharing = "share_memory_across_chats" | "share_soul_growth_across_chats";
 const sharing = [
-  { key: "time_awareness", label: "timeAwareness" },
   { key: "share_memory_across_chats", label: "shareMemory" },
   { key: "share_soul_growth_across_chats", label: "shareGrowth" },
 ] as const satisfies readonly { key: Sharing; label: string }[];

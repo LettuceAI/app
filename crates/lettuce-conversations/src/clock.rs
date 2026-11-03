@@ -5,16 +5,16 @@ use crate::ValidationError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub struct CompanionClockSettings {
+pub struct ConversationClockSettings {
     #[serde(default)]
     pub time_awareness_enabled: bool,
     #[serde(default)]
-    pub time_override: CompanionTimeOverride,
+    pub time_override: ConversationTimeOverride,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
-pub enum CompanionTimeOverride {
+pub enum ConversationTimeOverride {
     #[default]
     Live,
     Frozen {
@@ -26,11 +26,11 @@ pub enum CompanionTimeOverride {
     },
 }
 
-impl CompanionClockSettings {
+impl ConversationClockSettings {
     pub fn validate(&self) -> Result<(), ValidationError> {
         let invalid = match self.time_override {
-            CompanionTimeOverride::Live | CompanionTimeOverride::Frozen { .. } => false,
-            CompanionTimeOverride::Ticking { set_at, .. } => set_at.get() < 0,
+            ConversationTimeOverride::Live | ConversationTimeOverride::Frozen { .. } => false,
+            ConversationTimeOverride::Ticking { set_at, .. } => set_at.get() < 0,
         };
         if invalid {
             return Err(ValidationError::InvalidValue {
@@ -46,9 +46,9 @@ impl CompanionClockSettings {
             return real_now;
         }
         match self.time_override {
-            CompanionTimeOverride::Live => real_now,
-            CompanionTimeOverride::Frozen { anchor_at } => anchor_at,
-            CompanionTimeOverride::Ticking { anchor_at, set_at } => TimestampMillis::new(
+            ConversationTimeOverride::Live => real_now,
+            ConversationTimeOverride::Frozen { anchor_at } => anchor_at,
+            ConversationTimeOverride::Ticking { anchor_at, set_at } => TimestampMillis::new(
                 anchor_at
                     .get()
                     .saturating_add(real_now.get().saturating_sub(set_at.get()).max(0)),
@@ -63,23 +63,23 @@ mod tests {
 
     #[test]
     fn disabled_frozen_and_ticking_clocks_follow_the_legacy_effective_time() {
-        let mut clock = CompanionClockSettings {
+        let mut clock = ConversationClockSettings {
             time_awareness_enabled: false,
-            time_override: CompanionTimeOverride::Frozen {
+            time_override: ConversationTimeOverride::Frozen {
                 anchor_at: TimestampMillis::new(100),
             },
         };
         assert_eq!(clock.effective_now(TimestampMillis::new(500)).get(), 500);
         clock.time_awareness_enabled = true;
         assert_eq!(clock.effective_now(TimestampMillis::new(500)).get(), 100);
-        clock.time_override = CompanionTimeOverride::Ticking {
+        clock.time_override = ConversationTimeOverride::Ticking {
             anchor_at: TimestampMillis::new(100),
             set_at: TimestampMillis::new(500),
         };
         assert_eq!(clock.effective_now(TimestampMillis::new(550)).get(), 150);
         assert_eq!(clock.effective_now(TimestampMillis::new(450)).get(), 100);
         assert_eq!(clock.validate(), Ok(()));
-        clock.time_override = CompanionTimeOverride::Ticking {
+        clock.time_override = ConversationTimeOverride::Ticking {
             anchor_at: TimestampMillis::new(100),
             set_at: TimestampMillis::new(-1),
         };
@@ -89,21 +89,21 @@ mod tests {
                 field: "companion_clock.time_override"
             })
         );
-        let old: CompanionClockSettings = serde_json::from_str("{}").expect("old settings");
-        assert_eq!(old, CompanionClockSettings::default());
+        let old: ConversationClockSettings = serde_json::from_str("{}").expect("old settings");
+        assert_eq!(old, ConversationClockSettings::default());
     }
 
     #[test]
     fn frozen_and_ticking_clocks_keep_an_1890_anchor() {
         let anchor = TimestampMillis::new(-2_519_820_000_000);
         let set_at = TimestampMillis::new(1_700_000_000_000);
-        let mut clock = CompanionClockSettings {
+        let mut clock = ConversationClockSettings {
             time_awareness_enabled: true,
-            time_override: CompanionTimeOverride::Frozen { anchor_at: anchor },
+            time_override: ConversationTimeOverride::Frozen { anchor_at: anchor },
         };
         assert_eq!(clock.validate(), Ok(()));
         assert_eq!(clock.effective_now(set_at), anchor);
-        clock.time_override = CompanionTimeOverride::Ticking {
+        clock.time_override = ConversationTimeOverride::Ticking {
             anchor_at: anchor,
             set_at,
         };
@@ -114,7 +114,7 @@ mod tests {
             TimestampMillis::new(anchor.get() + 90_000)
         );
         let json = serde_json::to_string(&clock).expect("encode clock");
-        let decoded: CompanionClockSettings = serde_json::from_str(&json).expect("decode clock");
+        let decoded: ConversationClockSettings = serde_json::from_str(&json).expect("decode clock");
         assert_eq!(decoded, clock);
     }
 }

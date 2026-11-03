@@ -1512,7 +1512,6 @@ export type CompanionSoulConfigView = {
 	authored_facts: SoulFactView[],
 	relationship_defaults: CompanionRelationshipDefaults,
 	prompting: CompanionPrompting,
-	time_awareness: boolean,
 	share_memory_across_chats: boolean,
 	share_soul_growth_across_chats: boolean,
 };
@@ -1619,17 +1618,6 @@ export type CompanionStateView = {
 	confidence: number | null,
 	emotions_updated_at: number,
 	updated_at: number,
-};
-
-export type CompanionTimeChange = { type: "set"; mode: CompanionTimeMode; anchor_at: number | null } | { type: "reset" };
-
-export type CompanionTimeMode = "live" | "frozen" | "ticking";
-
-export type CompanionTimeView = {
-	mode: CompanionTimeMode,
-	anchor_at: number | null,
-	set_at: number | null,
-	effective_at: number,
 };
 
 export type ComponentSource = "image_components" | "llm_library" | "image_downloads";
@@ -2010,7 +1998,8 @@ export type ConversationSettingsPatch = ConversationSettingsPatch_Serialize | Co
 
 /**  The fields a settings update changes; an absent field is kept. */
 export type ConversationSettingsPatch_Deserialize = {
-	companion_time?: CompanionTimeChange | null,
+	time?: TimeChange | null,
+	time_awareness?: boolean | null,
 	persona: ChoiceChange | null,
 	prompt: ChoiceChange | null,
 	roleplay_prompt: ChoiceChange | null,
@@ -2034,7 +2023,8 @@ export type ConversationSettingsPatch_Deserialize = {
 
 /**  The fields a settings update changes; an absent field is kept. */
 export type ConversationSettingsPatch_Serialize = {
-	companion_time?: CompanionTimeChange,
+	time?: TimeChange,
+	time_awareness?: boolean,
 	persona: ChoiceChange | null,
 	prompt: ChoiceChange | null,
 	roleplay_prompt: ChoiceChange | null,
@@ -2121,7 +2111,12 @@ export type ConversationSettingsView_Deserialize = {
 	 *  when it follows the model and app settings.
 	 */
 	model_settings: SettingsModelSettingsLayer | null,
-	companion_time: CompanionTimeView | null,
+	time: TimeView,
+	/**
+	 *  Whether the chat is a companion chat: a one-to-one chat whose live
+	 *  character is a companion or that carries companion state.
+	 */
+	companion: boolean,
 };
 
 /**
@@ -2160,7 +2155,12 @@ export type ConversationSettingsView_Serialize = {
 	 *  when it follows the model and app settings.
 	 */
 	model_settings: SettingsModelSettingsLayer | null,
-	companion_time: CompanionTimeView | null,
+	time: TimeView,
+	/**
+	 *  Whether the chat is a companion chat: a one-to-one chat whose live
+	 *  character is a companion or that carries companion state.
+	 */
+	companion: boolean,
 };
 
 /**  What a conversation was started from. */
@@ -4616,6 +4616,7 @@ export type LibraryCharacterDefaults_Deserialize = {
 	voice: LibraryVoicePreference_Deserialize | null,
 	voice_autoplay: boolean,
 	companion_soul: CompanionSoulConfigView | null,
+	time_awareness: boolean,
 };
 
 export type LibraryCharacterDefaults_Serialize = {
@@ -4630,6 +4631,7 @@ export type LibraryCharacterDefaults_Serialize = {
 	voice: LibraryVoicePreference_Serialize | null,
 	voice_autoplay: boolean,
 	companion_soul: CompanionSoulConfigView | null,
+	time_awareness: boolean,
 };
 
 export type LibraryCharacterMediaLink = {
@@ -9208,6 +9210,18 @@ export type SyncStatus_Deserialize = { type: "idle" } | { type: "sharing"; addre
 export type SyncStatus_Serialize = { type: "idle" } | { type: "sharing"; addresses: string[]; port: number; pin: string } | { type: "pending_approval"; device_name: string } | { type: "pending_start"; device_name: string } | { type: "connecting" } | { type: "syncing"; phase: SyncPhase; progress: SyncProgress } | { type: "completed"; counts: SyncCounts; conflicts: number; forks: number } | { type: "failed"; reason: ApiError_Serialize };
 
 export type ThymosStatus = { type: "not_installed" } | { type: "installed"; source_revision: string } | { type: "damaged" };
+
+export type TimeChange = { type: "set"; mode: TimeMode; anchor_at: number | null } | { type: "reset" };
+
+export type TimeMode = "live" | "frozen" | "ticking";
+
+export type TimeView = {
+	enabled: boolean,
+	mode: TimeMode,
+	anchor_at: number | null,
+	set_at: number | null,
+	effective_at: number,
+};
 
 export type TimelineMessage = TimelineMessage_Serialize | TimelineMessage_Deserialize;
 

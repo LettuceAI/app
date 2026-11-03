@@ -25,7 +25,8 @@
     "group_roleplay_prompt_id": null,
     "voice": null,
     "voice_autoplay": false,
-    "companion_soul": null
+    "companion_soul": null,
+    "time_awareness": false
   },
   "media": [],
   "presentation": {

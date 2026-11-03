@@ -759,6 +759,7 @@ pub struct LibraryCharacterDefaults {
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<crate::CompanionSoulConfigView>))]
     pub companion_soul: Option<crate::CompanionSoulConfigView>,
+    pub time_awareness: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

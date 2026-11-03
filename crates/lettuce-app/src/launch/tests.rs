@@ -853,10 +853,8 @@ fn a_time_aware_companion_starts_its_new_conversations_time_aware() {
     let seed = |time_awareness| {
         seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
             defaults.interaction_mode = InteractionMode::Companion;
-            defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig {
-                time_awareness,
-                ..lettuce_companions::CompanionSoulConfig::default()
-            });
+            defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+            defaults.time_awareness = time_awareness;
         })
     };
     let clock = |character_id, key: &str| {
@@ -867,18 +865,50 @@ fn a_time_aware_companion_starts_its_new_conversations_time_aware() {
         let conversation = ConversationReader::get(&database, launched.conversation.id)
             .expect("conversation")
             .conversation;
-        crate::companion::companion_clock::companion_clock_context(&database, &conversation)
+        crate::companion::companion_clock::conversation_clock_context(&database, &conversation)
             .expect("clock context")
             .clock
     };
     assert_eq!(
         clock(seed(true), "time-aware-companion"),
-        Some(lettuce_conversations::CompanionClockSettings {
+        Some(lettuce_conversations::ConversationClockSettings {
             time_awareness_enabled: true,
-            ..lettuce_conversations::CompanionClockSettings::default()
+            ..lettuce_conversations::ConversationClockSettings::default()
         })
     );
     assert_eq!(clock(seed(false), "plain-companion"), None);
+}
+
+#[test]
+fn a_time_aware_character_starts_its_new_direct_conversations_time_aware() {
+    let database = database_with_builtins();
+    let clock = |time_awareness: bool, key: &str| {
+        let character_id =
+            seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+                defaults.time_awareness = time_awareness;
+            });
+        let launched = ConversationLaunchPlanner::new(&database)
+            .launch_direct(&request(character_id, key), NOW)
+            .expect("launch")
+            .value;
+        let conversation = ConversationReader::get(&database, launched.conversation.id)
+            .expect("conversation")
+            .conversation;
+        crate::companion::companion_clock::conversation_clock_context(&database, &conversation)
+            .expect("clock context")
+    };
+    let on = clock(true, "time-aware-direct");
+    assert!(!on.companion);
+    assert_eq!(
+        on.clock,
+        Some(lettuce_conversations::ConversationClockSettings {
+            time_awareness_enabled: true,
+            ..lettuce_conversations::ConversationClockSettings::default()
+        })
+    );
+    let off = clock(false, "plain-direct");
+    assert!(!off.companion);
+    assert_eq!(off.clock, None);
 }
 
 #[test]
@@ -3849,10 +3879,10 @@ fn companion_turn_uses_the_conversation_clock_for_decay_and_stamps() {
                         },
                         patch: lettuce_conversations::CurrentConversationSettingsPatch {
                             companion_clock: lettuce_conversations::PatchValue::Set(
-                                lettuce_conversations::CompanionClockSettings {
+                                lettuce_conversations::ConversationClockSettings {
                                     time_awareness_enabled: true,
                                     time_override:
-                                        lettuce_conversations::CompanionTimeOverride::Frozen {
+                                        lettuce_conversations::ConversationTimeOverride::Frozen {
                                             anchor_at: anchor,
                                         },
                                 },
@@ -4323,6 +4353,42 @@ async fn companion_context_renders_defaults_when_state_is_missing() {
         .join("\n");
     assert!(text.contains("Soul essence: Quietly steadfast."));
     assert!(!text.contains("this chat is episode"));
+}
+
+fn enable_time_awareness(
+    database: &Database,
+    conversation_id: lettuce_types::ConversationId,
+    operation_key: &str,
+) {
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id,
+                    expected_settings_revision: current_settings_revision(
+                        database,
+                        conversation_id,
+                    ),
+                    operation: OperationToken {
+                        key: key(operation_key),
+                        request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        companion_clock: lettuce_conversations::PatchValue::Set(
+                            lettuce_conversations::ConversationClockSettings {
+                                time_awareness_enabled: true,
+                                ..Default::default()
+                            },
+                        ),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared clock settings"),
+            TimestampMillis::new(NOW.get() + 1),
+        )
+        .expect("enable time awareness");
 }
 
 fn current_settings_revision(

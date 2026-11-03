@@ -141,7 +141,7 @@ impl ImageRecommendation {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "CharacterDefaultsRecord")]
 pub struct CharacterDefaults {
     pub interaction_mode: InteractionMode,
     pub memory_policy: MemoryPolicy,
@@ -155,6 +155,72 @@ pub struct CharacterDefaults {
     pub voice_autoplay: bool,
     #[serde(default)]
     pub companion_soul: Option<CompanionSoulConfig>,
+    /// Whether new direct conversations with this character start time aware.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub time_awareness: bool,
+}
+
+/// The stored shape of [`CharacterDefaults`]. A companion soul written
+/// before time awareness became a character setting carries `timeAwareness`
+/// inside the soul; decoding lifts it into the character setting.
+/// The stored document is JSON, which this record relies on; it is not a
+/// bincode type.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CharacterDefaultsRecord {
+    interaction_mode: InteractionMode,
+    memory_policy: MemoryPolicy,
+    model_profile_id: Option<ModelProfileId>,
+    default_scene_id: Option<SceneId>,
+    default_starter_id: Option<ConversationStarterId>,
+    direct_prompt_id: Option<PromptDocumentId>,
+    group_conversation_prompt_id: Option<PromptDocumentId>,
+    group_roleplay_prompt_id: Option<PromptDocumentId>,
+    voice: Option<VoicePreference>,
+    voice_autoplay: bool,
+    #[serde(default)]
+    companion_soul: Option<serde_json::Value>,
+    #[serde(default)]
+    time_awareness: bool,
+}
+
+impl TryFrom<CharacterDefaultsRecord> for CharacterDefaults {
+    type Error = String;
+
+    fn try_from(record: CharacterDefaultsRecord) -> Result<Self, Self::Error> {
+        let mut time_awareness = record.time_awareness;
+        let companion_soul = match record.companion_soul {
+            Some(serde_json::Value::Object(mut soul)) => {
+                if let Some(serde_json::Value::Bool(lifted)) = soul.get("timeAwareness") {
+                    time_awareness |= *lifted;
+                    soul.remove("timeAwareness");
+                }
+                Some(
+                    serde_json::from_value::<CompanionSoulConfig>(serde_json::Value::Object(soul))
+                        .map_err(|error| error.to_string())?,
+                )
+            }
+            Some(other) => Some(
+                serde_json::from_value::<CompanionSoulConfig>(other)
+                    .map_err(|error| error.to_string())?,
+            ),
+            None => None,
+        };
+        Ok(Self {
+            interaction_mode: record.interaction_mode,
+            memory_policy: record.memory_policy,
+            model_profile_id: record.model_profile_id,
+            default_scene_id: record.default_scene_id,
+            default_starter_id: record.default_starter_id,
+            direct_prompt_id: record.direct_prompt_id,
+            group_conversation_prompt_id: record.group_conversation_prompt_id,
+            group_roleplay_prompt_id: record.group_roleplay_prompt_id,
+            voice: record.voice,
+            voice_autoplay: record.voice_autoplay,
+            companion_soul,
+            time_awareness,
+        })
+    }
 }
 
 impl Default for CharacterDefaults {
@@ -171,6 +237,7 @@ impl Default for CharacterDefaults {
             voice: None,
             voice_autoplay: false,
             companion_soul: None,
+            time_awareness: false,
         }
     }
 }
@@ -523,6 +590,89 @@ mod tests {
                 field: "character.timestamps"
             })
         ));
+    }
+
+    fn defaults_json(
+        soul: Option<serde_json::Value>,
+        time_awareness: Option<bool>,
+    ) -> serde_json::Value {
+        let mut value = serde_json::to_value(CharacterDefaults {
+            interaction_mode: InteractionMode::Companion,
+            ..CharacterDefaults::default()
+        })
+        .expect("encode defaults");
+        let object = value.as_object_mut().expect("defaults object");
+        if let Some(soul) = soul {
+            object.insert("companion_soul".into(), soul);
+        }
+        if let Some(flag) = time_awareness {
+            object.insert("time_awareness".into(), flag.into());
+        }
+        value
+    }
+
+    #[test]
+    fn time_awareness_is_a_character_default_and_off_is_not_written() {
+        let off = serde_json::to_value(CharacterDefaults::default()).expect("encode off");
+        assert!(off.get("time_awareness").is_none());
+        let on = CharacterDefaults {
+            time_awareness: true,
+            ..CharacterDefaults::default()
+        };
+        let encoded = serde_json::to_value(&on).expect("encode on");
+        assert_eq!(encoded["time_awareness"], serde_json::json!(true));
+        let decoded: CharacterDefaults = serde_json::from_value(encoded).expect("decode on");
+        assert!(decoded.time_awareness);
+        let old: CharacterDefaults =
+            serde_json::from_value(defaults_json(None, None)).expect("decode without the key");
+        assert!(!old.time_awareness);
+    }
+
+    #[test]
+    fn an_old_companion_soul_time_awareness_lifts_into_the_character_default() {
+        let lifted: CharacterDefaults = serde_json::from_value(defaults_json(
+            Some(serde_json::json!({"timeAwareness": true})),
+            None,
+        ))
+        .expect("decode old row");
+        assert!(lifted.time_awareness);
+        assert_eq!(lifted.companion_soul, Some(CompanionSoulConfig::default()));
+        let reencoded = serde_json::to_value(&lifted).expect("encode lifted");
+        assert!(reencoded["companion_soul"].get("timeAwareness").is_none());
+        assert_eq!(reencoded["time_awareness"], serde_json::json!(true));
+
+        let off: CharacterDefaults = serde_json::from_value(defaults_json(
+            Some(serde_json::json!({"shareMemoryAcrossChats": false})),
+            None,
+        ))
+        .expect("decode old row without the key");
+        assert!(!off.time_awareness);
+        assert!(
+            !off.companion_soul
+                .expect("companion soul")
+                .share_memory_across_chats
+        );
+
+        let both: CharacterDefaults = serde_json::from_value(defaults_json(
+            Some(serde_json::json!({"timeAwareness": false})),
+            Some(true),
+        ))
+        .expect("decode mixed row");
+        assert!(both.time_awareness);
+    }
+
+    #[test]
+    fn unknown_companion_soul_keys_are_still_rejected() {
+        let rejected = serde_json::from_value::<CharacterDefaults>(defaults_json(
+            Some(serde_json::json!({"timeAwareness": "yes"})),
+            None,
+        ));
+        assert!(rejected.is_err());
+        let rejected = serde_json::from_value::<CharacterDefaults>(defaults_json(
+            Some(serde_json::json!({"unexpected": true})),
+            None,
+        ));
+        assert!(rejected.is_err());
     }
 
     #[test]

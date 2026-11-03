@@ -1138,7 +1138,7 @@ impl CompanionConversationCreator for Database {
                 if time_awareness {
                     let settings = lettuce_conversations::CurrentConversationSettingsPatch {
                         companion_clock: lettuce_conversations::PatchValue::Set(
-                            lettuce_conversations::CompanionClockSettings {
+                            lettuce_conversations::ConversationClockSettings {
                                 time_awareness_enabled: true,
                                 ..Default::default()
                             },

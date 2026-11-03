@@ -1012,12 +1012,13 @@ mod tests {
         assert_eq!(settings.model_settings.llama_cpp.threads, Some(8));
         assert_eq!(
             settings.companion_clock,
-            Some(lettuce_conversations::CompanionClockSettings {
+            (mode == "companion").then_some(lettuce_conversations::ConversationClockSettings {
                 time_awareness_enabled: true,
-                time_override: lettuce_conversations::CompanionTimeOverride::Frozen {
+                time_override: lettuce_conversations::ConversationTimeOverride::Frozen {
                     anchor_at: TimestampMillis::new(-315_619_200_000),
                 },
-            })
+            }),
+            "legacy honoured a session clock only in companion mode"
         );
         let Some(lettuce_conversations::ConversationBackground::Image { asset_id }) =
             settings.background

@@ -90,7 +90,7 @@ pub trait DirectLaunchSources:
 {
 }
 
-/// The companion state a direct launch seeds, and whether the companion
+/// The companion state a direct launch seeds, and whether the character
 /// starts it time aware.
 pub(crate) type LaunchCompanion = (
     CompanionStateOwner,
@@ -146,13 +146,15 @@ where
     ) -> Result<CreateConversationResult, ConversationLaunchError> {
         let intent = direct_launch_intent(request)
             .ok_or(ConversationLaunchError::InvalidRequest { field: "request" })?;
-        let (launch, companion) = match self.prepare_direct_parts(request) {
-            Ok((launch, companion)) => (launch.with_launch_intent(intent), companion),
+        let (launch, companion, time_awareness) = match self.prepare_direct_parts(request) {
+            Ok((launch, companion, time_awareness)) => {
+                (launch.with_launch_intent(intent), companion, time_awareness)
+            }
             Err(error) => {
                 return Err(self.already_launched_or(&request.operation_key, &intent, error));
             }
         };
-        if let Some((owner, initial, time_awareness)) = companion {
+        if let Some((owner, initial, _)) = companion {
             let launch = PreparedCompanionLaunch::new(launch, owner, initial)
                 .map_err(LaunchSourceError::Companion)?
                 .with_time_awareness(time_awareness);
@@ -168,6 +170,11 @@ where
                 other => LaunchSourceError::Companion(other).into(),
             });
         }
+        let launch = if time_awareness {
+            seed_time_awareness(launch)?
+        } else {
+            launch
+        };
         ConversationCreator::create(self.sources, launch, now).map_err(|error| match error {
             ConversationRepositoryError::Conflict => ConversationLaunchError::CreateConflict,
             other => LaunchSourceError::Conversation(other).into(),
@@ -202,14 +209,16 @@ where
         &self,
         request: &DirectConversationLaunchRequest,
     ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
-        self.prepare_direct_parts(request).map(|value| value.0)
+        self.prepare_direct_parts(request).map(|(launch, ..)| launch)
     }
 
     pub(crate) fn prepare_direct_parts(
         &self,
         request: &DirectConversationLaunchRequest,
-    ) -> Result<(PreparedConversationLaunch, Option<LaunchCompanion>), ConversationLaunchError>
-    {
+    ) -> Result<
+        (PreparedConversationLaunch, Option<LaunchCompanion>, bool),
+        ConversationLaunchError,
+    > {
         if request.format_version != DIRECT_LAUNCH_REQUEST_FORMAT_V1 {
             return Err(ConversationLaunchError::InvalidRequest {
                 field: "format_version",
@@ -240,6 +249,7 @@ where
                 .unwrap_or_default()
         });
         let defaults = character.character.defaults.clone();
+        let time_awareness = defaults.time_awareness;
 
         let starter = self.resolve_starter(request, &character)?;
         let scene = self.resolve_scene(request, &character, starter)?;
@@ -551,10 +561,10 @@ where
                     &config.soul.regulation_style,
                     &config.relationship_defaults,
                 ),
-                config.time_awareness,
+                time_awareness,
             )
         });
-        Ok((launch, companion))
+        Ok((launch, companion, time_awareness))
     }
 
     fn resolve_starter<'d>(
@@ -1604,6 +1614,29 @@ fn collect_model(
 
 fn retain(ids: Vec<LorebookId>, kept: &[LorebookId]) -> Vec<LorebookId> {
     ids.into_iter().filter(|id| kept.contains(id)).collect()
+}
+
+/// A launch whose conversation starts with time awareness on.
+fn seed_time_awareness(
+    launch: PreparedConversationLaunch,
+) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
+    let intent = launch.launch_intent().cloned();
+    let (mut plan, drafts) = launch.into_parts();
+    plan.current_settings
+        .get_or_insert_with(|| {
+            lettuce_conversations::CurrentConversationSettings::inherited(
+                lettuce_types::Revision::INITIAL,
+            )
+        })
+        .companion_clock = Some(lettuce_conversations::ConversationClockSettings {
+        time_awareness_enabled: true,
+        ..Default::default()
+    });
+    let launch = PreparedConversationLaunch::new(plan, drafts)?;
+    Ok(match intent {
+        Some(intent) => launch.with_launch_intent(intent),
+        None => launch,
+    })
 }
 
 /// A launch that turns the persona off records that as the conversation's

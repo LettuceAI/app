@@ -539,12 +539,17 @@ mod tests {
         );
         assert_eq!(
             crate::CHARACTER_SYNC_VERSION,
-            4,
-            "the character payload no longer carries rules"
+            5,
+            "time awareness is a character default and no longer part of the companion soul"
+        );
+        assert_eq!(
+            crate::CONVERSATION_SYNC_VERSION,
+            6,
+            "a group conversation may carry a clock"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "5aea47e5e251acc11b0349a9556c6cc839d295f5f42ef47fcde3f85fff232b2f"
+            "bbf7602431702fa5248cdddae95f589d9fc6bbcfa7f2e72eb7c4ff9dc7463150"
         );
     }
 

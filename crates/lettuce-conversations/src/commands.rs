@@ -1164,7 +1164,7 @@ pub enum PatchValue<T> {
 #[serde(deny_unknown_fields)]
 pub struct CurrentConversationSettingsPatch {
     #[serde(default)]
-    pub companion_clock: PatchValue<crate::CompanionClockSettings>,
+    pub companion_clock: PatchValue<crate::ConversationClockSettings>,
     #[serde(default)]
     pub model_settings: PatchValue<lettuce_models::ModelSettingsLayer>,
     #[serde(default)]

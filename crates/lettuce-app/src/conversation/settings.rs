@@ -3,8 +3,8 @@ use lettuce_characters::{
 };
 use lettuce_context::{LorebookRepository, PromptLookupResult, PromptPurpose, PromptRepository};
 use lettuce_conversations::{
-    CompanionTimeOverride, Conversation, ConversationBackground, ConversationKind,
-    ConversationReader, CurrentConversationSettingsPatch, GroupChatModeSnapshot,
+    Conversation, ConversationBackground, ConversationKind, ConversationReader,
+    ConversationTimeOverride, CurrentConversationSettingsPatch, GroupChatModeSnapshot,
     GroupSpeakerSelectionSnapshot, LorebookLaunchSnapshot, MemoryModeSnapshot,
     MemorySettingsSnapshot, OperationToken, PatchValue, PersonaLaunchSnapshot,
     PreparedConversationSettingsUpdate, PromptLaunchSnapshot, PromptPurposeSnapshot,
@@ -50,7 +50,9 @@ pub enum BackgroundChange {
 /// off; a blank author note removes it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConversationSettingsChange {
-    pub companion_time: Option<CompanionTimeOverride>,
+    pub time: Option<ConversationTimeOverride>,
+    /// Turns time awareness on or off, keeping any stored override.
+    pub time_awareness: Option<bool>,
     pub persona: Option<Choice<PersonaId>>,
     /// The one-to-one prompt, or a group's conversation-mode prompt.
     pub prompt: Option<Choice<PromptDocumentId>>,
@@ -232,22 +234,19 @@ impl Builder<'_> {
             return Err(invalid("roleplay_prompt"));
         }
         let mut patch = CurrentConversationSettingsPatch::default();
-        if let Some(time_override) = change.companion_time {
-            let context = crate::companion::companion_clock::companion_clock_context(
-                self.database,
-                self.conversation,
-            )
-            .map_err(source)?;
-            if !context.companion {
-                return Err(invalid("companion_time"));
-            }
+        if change.time.is_some() || change.time_awareness.is_some() {
             let mut clock = self
                 .conversation
                 .current_settings
                 .as_ref()
                 .and_then(|settings| settings.companion_clock)
                 .unwrap_or_default();
-            clock.time_override = time_override;
+            if let Some(time_override) = change.time {
+                clock.time_override = time_override;
+            }
+            if let Some(enabled) = change.time_awareness {
+                clock.time_awareness_enabled = enabled;
+            }
             clock.validate().map_err(|error| {
                 ConversationEditError::Conversation(
                     lettuce_conversations::ConversationRepositoryError::Invalid(error),

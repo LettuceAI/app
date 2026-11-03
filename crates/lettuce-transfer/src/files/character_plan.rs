@@ -154,6 +154,7 @@ pub fn character_plan_from_candidate<R: CharacterPlanResolver + ?Sized>(
             }),
             voice_autoplay: candidate.defaults.voice_autoplay,
             companion_soul,
+            time_awareness: candidate.defaults.time_awareness,
         },
         presentation: CharacterPresentationV1 {
             format_version: 1,

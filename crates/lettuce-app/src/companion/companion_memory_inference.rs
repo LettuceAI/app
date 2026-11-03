@@ -784,7 +784,7 @@ fn build_first_request(
                         .reasoning_budget_tokens
                         .is_some(),
                 companion_mode_enabled: run.supersession_enabled,
-                time_awareness_enabled: !is_group && run.time_awareness_enabled,
+                time_awareness_enabled: run.time_awareness_enabled,
                 ..Default::default()
             },
             values,
@@ -1660,7 +1660,7 @@ mod tests {
         assert!(
             !text_messages
                 .iter()
-                .any(|(_, text)| { text.starts_with("Companion temporal memory rules:\n") })
+                .any(|(_, text)| { text.starts_with("Temporal memory rules:\n") })
         );
         let (last_role, last_text) = text_messages.last().expect("runtime input");
         assert_eq!(*last_role, MessageRole::User);
@@ -1797,6 +1797,42 @@ mod tests {
             request.tools,
             Some(crate::companion::companion_memory_run::test_memory_tool_request(true, true))
         );
+
+        let mut plain_run = time_aware_run.clone();
+        plain_run.supersession_enabled = false;
+        let temporal_rules = |run: &DynamicMemoryRun, group: bool| {
+            build_first_request(
+                run,
+                &attempt,
+                &prompt,
+                &crate::generation::runtime_text::RuntimeText::from_seed(
+                    crate::BuiltInPromptId::MemoryRuntime,
+                ),
+                "Prior summary.",
+                &policy,
+                &memory,
+                &sources,
+                group,
+                2,
+                &handle,
+                None,
+                TimestampMillis::new(1),
+            )
+            .expect("request")
+            .context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .any(|part| {
+                matches!(part, ProviderContextPart::Text { text }
+                    if text.starts_with("Temporal memory rules:\n"))
+            })
+        };
+        assert!(temporal_rules(&plain_run, false));
+        assert!(temporal_rules(&plain_run, true));
+        plain_run.time_awareness_enabled = false;
+        assert!(!temporal_rules(&plain_run, false));
+        assert!(!temporal_rules(&plain_run, true));
     }
 
     #[test]

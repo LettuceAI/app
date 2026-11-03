@@ -7,8 +7,8 @@ use lettuce_context::{
 };
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
-    ArchiveConversation, CompanionTimeOverride, Conversation, ConversationBackground,
-    ConversationKind, ConversationLifecycle, ConversationReader, ConversationRepository,
+    ArchiveConversation, Conversation, ConversationBackground, ConversationKind,
+    ConversationLifecycle, ConversationReader, ConversationRepository, ConversationTimeOverride,
     GroupChatModeSnapshot, GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, ParticipantRole,
     ParticipantSource, RenameConversation, RestoreConversation, SettingProvenance, SnapshotSelection,
 };
@@ -102,7 +102,7 @@ pub(crate) fn settings_view(
         },
     };
     let background = background(context, &conversation, profile);
-    let companion_time = companion_time_view(context, &conversation)?;
+    let (time, companion) = time_view(context, &conversation)?;
     let model_settings = match &conversation.kind {
         ConversationKind::Direct(_) => Some(
             super::super::app::settings::convert(
@@ -214,7 +214,8 @@ pub(crate) fn settings_view(
                 speaker_selection: None,
                 members: None,
                 model_settings,
-                companion_time,
+                time,
+                companion,
             }
         }
         ConversationKind::Group(details) => {
@@ -333,47 +334,49 @@ pub(crate) fn settings_view(
                 }),
                 members: Some(members(context, &conversation, live)?),
                 model_settings,
-                companion_time,
+                time,
+                companion,
             }
         }
     };
     Ok(view)
 }
 
-fn companion_time_view(
+fn time_view(
     context: &ApiContext,
     conversation: &Conversation,
-) -> Result<Option<dto::CompanionTimeView>, ApiError> {
-    let clock = crate::companion::companion_clock::companion_clock_context(
+) -> Result<(dto::TimeView, bool), ApiError> {
+    let clock = crate::companion::companion_clock::conversation_clock_context(
         context.backend().database(),
         conversation,
     )
     .map_err(source_error)?;
-    if !clock.companion {
-        return Ok(None);
-    }
     let stored = conversation
         .current_settings
         .as_ref()
         .and_then(|settings| settings.companion_clock)
         .unwrap_or_default();
     let (mode, anchor_at, set_at) = match stored.time_override {
-        CompanionTimeOverride::Live => (dto::CompanionTimeMode::Live, None, None),
-        CompanionTimeOverride::Frozen { anchor_at } => {
-            (dto::CompanionTimeMode::Frozen, Some(anchor_at.get()), None)
+        ConversationTimeOverride::Live => (dto::TimeMode::Live, None, None),
+        ConversationTimeOverride::Frozen { anchor_at } => {
+            (dto::TimeMode::Frozen, Some(anchor_at.get()), None)
         }
-        CompanionTimeOverride::Ticking { anchor_at, set_at } => (
-            dto::CompanionTimeMode::Ticking,
+        ConversationTimeOverride::Ticking { anchor_at, set_at } => (
+            dto::TimeMode::Ticking,
             Some(anchor_at.get()),
             Some(set_at.get()),
         ),
     };
-    Ok(Some(dto::CompanionTimeView {
-        mode,
-        anchor_at,
-        set_at,
-        effective_at: clock.effective_now(context.now()).get(),
-    }))
+    Ok((
+        dto::TimeView {
+            enabled: clock.time_awareness_enabled(),
+            mode,
+            anchor_at,
+            set_at,
+            effective_at: clock.effective_now(context.now()).get(),
+        },
+        clock.companion,
+    ))
 }
 
 pub(crate) fn resolved_group_appearance(global: &lettuce_settings::GlobalSettings, group: Option<&GroupProfile>) -> Result<serde_json::Value, ApiError> {
@@ -584,7 +587,7 @@ fn direct_prompt(
     };
     let defaults = &character.character.defaults;
     let companion =
-        crate::companion::companion_clock::companion_clock_context(database, conversation)
+        crate::companion::companion_clock::conversation_clock_context(database, conversation)
             .map_err(source_error)?
             .companion;
     if companion {
@@ -760,33 +763,34 @@ fn settings_change(
     now: TimestampMillis,
 ) -> Result<conversation::ConversationSettingsChange, ApiError> {
     Ok(conversation::ConversationSettingsChange {
-        companion_time: patch
-            .companion_time
+        time: patch
+            .time
             .map(|change| match change {
-                dto::CompanionTimeChange::Reset {}
-                | dto::CompanionTimeChange::Set {
-                    mode: dto::CompanionTimeMode::Live,
+                dto::TimeChange::Reset {}
+                | dto::TimeChange::Set {
+                    mode: dto::TimeMode::Live,
                     anchor_at: None,
-                } => Ok(CompanionTimeOverride::Live),
-                dto::CompanionTimeChange::Set {
-                    mode: dto::CompanionTimeMode::Frozen,
+                } => Ok(ConversationTimeOverride::Live),
+                dto::TimeChange::Set {
+                    mode: dto::TimeMode::Frozen,
                     anchor_at: Some(anchor_at),
-                } => Ok(CompanionTimeOverride::Frozen {
+                } => Ok(ConversationTimeOverride::Frozen {
                     anchor_at: TimestampMillis::new(anchor_at),
                 }),
-                dto::CompanionTimeChange::Set {
-                    mode: dto::CompanionTimeMode::Ticking,
+                dto::TimeChange::Set {
+                    mode: dto::TimeMode::Ticking,
                     anchor_at: Some(anchor_at),
-                } => Ok(CompanionTimeOverride::Ticking {
+                } => Ok(ConversationTimeOverride::Ticking {
                     anchor_at: TimestampMillis::new(anchor_at),
                     set_at: now,
                 }),
                 _ => Err(invalid_field(
-                    "companion_time.anchor_at",
+                    "time.anchor_at",
                     "frozen and ticking require an anchor; live requires no anchor",
                 )),
             })
             .transpose()?,
+        time_awareness: patch.time_awareness,
         persona: choice_change::<PersonaId>(patch.persona, "persona_id")?,
         prompt: choice_change::<PromptDocumentId>(patch.prompt, "prompt_id")?,
         roleplay_prompt: choice_change::<PromptDocumentId>(

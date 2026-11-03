@@ -450,7 +450,7 @@ impl PreparedCompanionLaunch {
         })
     }
 
-    /// Starts the conversation time aware, the companion's default for new
+    /// Starts the conversation time aware, the character's default for new
     /// conversations.
     #[must_use]
     pub fn with_time_awareness(mut self, time_awareness: bool) -> Self {

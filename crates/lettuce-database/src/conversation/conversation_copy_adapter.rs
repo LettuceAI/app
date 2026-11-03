@@ -961,7 +961,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
                                 Revision::INITIAL,
                             );
                         settings.companion_clock =
-                            Some(lettuce_conversations::CompanionClockSettings {
+                            Some(lettuce_conversations::ConversationClockSettings {
                                 time_awareness_enabled: true,
                                 ..Default::default()
                             });
@@ -972,7 +972,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
                         if let Some(current) = stored {
                             settings = current;
                             settings.companion_clock =
-                                Some(lettuce_conversations::CompanionClockSettings {
+                                Some(lettuce_conversations::ConversationClockSettings {
                                     time_awareness_enabled: true,
                                     ..Default::default()
                                 });

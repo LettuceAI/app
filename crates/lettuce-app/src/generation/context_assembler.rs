@@ -716,7 +716,7 @@ where
                 request.swap_roles,
                 &runtime,
                 &group_user_name,
-                !group && request.prompt_runtime.time_awareness_enabled,
+                request.prompt_runtime.time_awareness_enabled,
             )? {
                 transcript.push(message);
             }
@@ -870,7 +870,7 @@ where
             return Ok(None);
         };
         let companion =
-            crate::companion::companion_clock::companion_clock_context(self.sources, conversation)
+            crate::companion::companion_clock::conversation_clock_context(self.sources, conversation)
                 .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
                 .companion;
         let character = CharacterRepository::get(self.sources, details.character.source_id)
@@ -1333,7 +1333,7 @@ where
         else {
             return Ok(None);
         };
-        if !crate::companion::companion_clock::companion_clock_context(
+        if !crate::companion::companion_clock::conversation_clock_context(
             self.sources,
             &aggregate.conversation,
         )
@@ -1416,7 +1416,7 @@ where
         let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
             return Ok(None);
         };
-        if !crate::companion::companion_clock::companion_clock_context(
+        if !crate::companion::companion_clock::conversation_clock_context(
             self.sources,
             &aggregate.conversation,
         )

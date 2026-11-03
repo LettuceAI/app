@@ -152,7 +152,10 @@ pub struct Companion {
     pub relationship_defaults: RelationshipDefaults,
     pub authored_facts: Vec<AuthoredFact>,
     pub prompting: Prompting,
-    pub time_awareness: bool,
+    /// Present only in files written before time awareness became a
+    /// character setting (`behavior.timeAwareness`); exports never set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_awareness: Option<bool>,
     pub share_memory_across_chats: bool,
     pub share_soul_growth_across_chats: bool,
     pub scheduled_notes: Vec<ScheduledNote>,

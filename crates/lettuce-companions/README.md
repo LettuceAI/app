@@ -8,7 +8,7 @@ The crate is pure. It never reads chat storage, renders prompt text or calls a m
 
 `soul.rs` holds the Soul model.
 
-- `CompanionSoulConfig` is what the author writes on a companion character (stored in `lettuce-characters`' defaults document): twelve identity text categories, typed authored facts, baseline affect, regulation style, relationship defaults, prompting (a companion prompt-template reference and style notes), whether time awareness is on for new conversations, and the two sharing toggles `share_memory_across_chats` and `share_soul_growth_across_chats` (both on by default). Serialized field names are camel case.
+- `CompanionSoulConfig` is what the author writes on a companion character (stored in `lettuce-characters`' defaults document): twelve identity text categories, typed authored facts, baseline affect, regulation style, relationship defaults, prompting (a companion prompt-template reference and style notes), and the two sharing toggles `share_memory_across_chats` and `share_soul_growth_across_chats` (both on by default). Serialized field names are camel case.
 - `SoulState` is the durable state: the facts and a revision. A `SoulFact` has a `SoulCategory`, a semantic slot, text, confidence, weight, source ids, evidence count, validity times, a kind (authored, core, growth) and a locked flag. `SoulMutability` per category and `SoulFactPolicy` decide what growth and consolidation may touch.
 - `initial_soul_state` turns authored facts into durable ones (`normalize_authored_fact`): a UUID for a blank id, confidence and weight clamped, a blank slot defaulted to its category, evidence count from the source ids, zero creation and valid-from times filled, historical facts locked.
 - `SoulOwner` says whose Soul a conversation uses. `SoulOwner::for_conversation` returns the character's shared Soul while `share_soul_growth_across_chats` is on, else `SoulOwner::Conversation`, the conversation's own copy.
@@ -67,7 +67,7 @@ Growth and consolidation checkpoints keep optional normalized inference usage, a
 
 Three prepared writes let storage commit companion state together with the conversation change it belongs to:
 
-- `PreparedCompanionLaunch` / `CompanionConversationCreator`: the initial state and continuity sequence commit atomically with a new direct conversation. `with_time_awareness` writes an enabled `companion_clock` into the new conversation's settings when the character's config asks for it; later changes to the character leave existing conversations alone.
+- `PreparedCompanionLaunch` / `CompanionConversationCreator`: the initial state and continuity sequence commit atomically with a new direct conversation. `with_time_awareness` writes an enabled `companion_clock` into the new conversation's settings when the character's `time_awareness` default asks for it; later changes to the character leave existing conversations alone.
 - `PreparedCompanionSend` / `CompanionConversationSender`: a state replacement is validated against the same conversation as the user message, and the message, generation turn and attempt, both state scopes, the operation and the outbox commit together. An exact replay does not apply the transition again.
 - `PreparedCompanionContinue` / `CompanionConversationContinuer`: the same for continuations.
 

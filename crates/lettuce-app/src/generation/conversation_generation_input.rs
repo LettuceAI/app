@@ -607,12 +607,12 @@ where
             .ok_or(ConversationGenerationInputError::MissingModel)?;
         let aggregate = ConversationReader::get(self.repository, work.conversation_id)
             .map_err(ConversationGenerationInputError::Repository)?;
-        let strip_time_stamps = match crate::companion::companion_clock::companion_clock_context(
+        let strip_time_stamps = match crate::companion::companion_clock::conversation_clock_context(
             self.repository,
             &aggregate.conversation,
         ) {
             Ok(clock) => clock.time_awareness_enabled(),
-            Err(crate::companion::companion_clock::CompanionClockError::MissingCharacter) => false,
+            Err(crate::companion::companion_clock::ConversationClockError::MissingCharacter) => false,
             Err(_) => {
                 return Err(ConversationGenerationInputError::Context(
                     ContextAssemblyError::ConversationUnavailable,
@@ -956,7 +956,7 @@ where
             None => MemoryModeSnapshot::Disabled,
         };
         let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
-        let clock = crate::companion::companion_clock::companion_clock_context(
+        let clock = crate::companion::companion_clock::conversation_clock_context(
             self.repository,
             &aggregate.conversation,
         )
@@ -1704,7 +1704,7 @@ where
             return Err(ConversationGenerationInputError::MemoryInputUnavailable);
         }
         let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
-        let clock = crate::companion::companion_clock::companion_clock_context(
+        let clock = crate::companion::companion_clock::conversation_clock_context(
             self.repository,
             &aggregate.conversation,
         )
@@ -2467,7 +2467,7 @@ struct MemoryPromptShape {
     operation: lettuce_conversations::GenerationOperation,
     group: bool,
     companion: bool,
-    clock: crate::companion::companion_clock::CompanionClockContext,
+    clock: crate::companion::companion_clock::ConversationClockContext,
 }
 
 fn history_window(

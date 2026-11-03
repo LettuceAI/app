@@ -70,6 +70,7 @@ pub struct LegacyBackupCharacterDefaults {
     pub companion_prompt_source_id: Option<String>,
     pub voice: Option<lettuce_characters::VoicePreference>,
     pub voice_autoplay: bool,
+    pub time_awareness: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1047,6 +1048,7 @@ pub(crate) fn map_character_row(
         group_roleplay_prompt_source_id,
         system_prompt: normalize(row.system_prompt),
         companion_soul: companion.soul,
+        time_awareness: companion.time_awareness,
         companion_prompt_source_id,
         voice: crate::legacy::legacy_backup_json_values::legacy_voice(
             row.voice_config,

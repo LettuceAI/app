@@ -468,9 +468,9 @@ pub(crate) fn required_models(
     conversation: &Conversation,
 ) -> Result<Vec<RequiredModel>, ApiError> {
     let companion =
-        match crate::companion::companion_clock::companion_clock_context(database, conversation) {
+        match crate::companion::companion_clock::conversation_clock_context(database, conversation) {
             Ok(clock) => clock.companion,
-            Err(crate::companion::companion_clock::CompanionClockError::MissingCharacter) => false,
+            Err(crate::companion::companion_clock::ConversationClockError::MissingCharacter) => false,
             Err(_) => {
                 return Err(api_error(
                     ApiErrorCode::Internal,

@@ -29,7 +29,7 @@ The public surface is kept small. Invariants live in the domain types and their 
 | `speaker_policy.rs` | Deterministic group speaker selection and `@mention` parsing |
 | `effective_settings.rs` | Resolves launch values against conversation overrides |
 | `membership.rs` | The participants a group conversation uses now: its own rows or its group's current membership |
-| `clock.rs` | `CompanionClockSettings` and effective time |
+| `clock.rs` | `ConversationClockSettings` and effective time |
 | `scene_tag.rs` | Extracts the `<img>…</img>` scene prompt from a reply |
 
 ## Conversations
@@ -46,7 +46,7 @@ Current settings also carry:
 
 - `model_settings`, a `lettuce_models::ModelSettingsLayer` of chat parameters, llama.cpp and stable-diffusion settings. Each unset field defers to the model and then the app settings. It is stored as `conversation_settings.model_settings_json` (NULL when empty) and travels with the conversation in backups; generation input passes it as the session layer of chat parameter resolution.
 - `background`: `Image { asset_id }` or `Hidden`. `None` follows the selected scene, then the character (direct) or group. It is stored as `background_asset_id` and `background_hidden`, the asset must be an image, and deleting a referenced asset is restricted. It travels in backups and sync with its media.
-- `companion_clock` for direct conversations (see Time below).
+- `companion_clock` for direct and group conversations (see Time below).
 - For groups, `speaker_selection`, `chat_mode` and `disable_character_lorebooks` as the conversation's own values; `None` follows the group, which the application reads live.
 - Historical group prompt slots remain readable for import and sync compatibility. Group generation ignores these overrides: the application reads the selected character’s prompt for the current group mode live, with the bundled mode default as fallback. New group prompt selections and disable actions are rejected. Direct conversations retain their `prompt` override.
 - For groups, `members_overridden`, `muted_overridden` and `member_models_overridden`: which participant aspects the conversation owns. An aspect it does not own follows the group live; the participant rows are then not the authority for it.
@@ -209,9 +209,9 @@ The async ports (`ContextAssembler`, `InferencePort`, `UsagePort` and the others
 
 ## Time
 
-`CompanionClockSettings` lets a direct conversation set its own clock. Time awareness is off by default, and the override is `Live`, `Frozen { anchor_at }` or `Ticking { anchor_at, set_at }`. `effective_now` returns real time when awareness is off or live, the anchor when frozen, and the anchor plus non-negative elapsed real time when ticking. An anchor is story time and may lie before 1970 as negative epoch milliseconds; `set_at` is real time and must not be negative. Clearing or resetting restores the live, disabled default without touching other settings. This is conversation data, not part of a character snapshot.
+`ConversationClockSettings` lets a direct or group conversation set its own clock. Time awareness is off by default, and the override is `Live`, `Frozen { anchor_at }` or `Ticking { anchor_at, set_at }`. `effective_now` returns real time when awareness is off or live, the anchor when frozen, and the anchor plus non-negative elapsed real time when ticking. An anchor is story time and may lie before 1970 as negative epoch milliseconds; `set_at` is real time and must not be negative. Clearing or resetting restores the live, disabled default without touching other settings. This is conversation data, not part of a character snapshot.
 
-The database stamps each new message of a companion direct chat with this effective time. The application reads it for prompt time values, history timestamps, memory lines, the memory cycle's time awareness and temporal-range retrieval.
+The database stamps each new message of a direct or group chat with this effective time. The application reads it for prompt time values, history timestamps, memory lines, the memory cycle's time awareness and temporal-range retrieval.
 
 ## Scene tags
 

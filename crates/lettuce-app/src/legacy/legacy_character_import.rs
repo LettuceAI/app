@@ -329,6 +329,7 @@ mod tests {
                 companion_prompt_source_id: Some(prompt_source.clone()),
                 voice: None,
                 voice_autoplay: true,
+                time_awareness: false,
             },
             presentation: LegacyBackupCharacterPresentation {
                 card_style: CardStyle::Circle,

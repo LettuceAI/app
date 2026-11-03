@@ -649,10 +649,7 @@ async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat(
         harness.context.backend().database(),
         "Mira",
         CharacterDefaults {
-            companion_soul: Some(lettuce_companions::CompanionSoulConfig {
-                time_awareness: true,
-                ..Default::default()
-            }),
+            time_awareness: true,
             ..companion_defaults()
         },
     );
@@ -671,8 +668,8 @@ async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat(
             conversation_id: chat.clone(),
             expected_settings_revision: settings.settings_revision,
             patch: dto::ConversationSettingsPatch {
-                companion_time: Some(dto::CompanionTimeChange::Set {
-                    mode: dto::CompanionTimeMode::Frozen,
+                time: Some(dto::TimeChange::Set {
+                    mode: dto::TimeMode::Frozen,
                     anchor_at: Some(-2_519_820_000_000),
                 }),
                 ..Default::default()
@@ -707,8 +704,8 @@ async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat(
             conversation_id: chat.clone(),
             expected_settings_revision: frozen.settings_revision,
             patch: dto::ConversationSettingsPatch {
-                companion_time: Some(dto::CompanionTimeChange::Set {
-                    mode: dto::CompanionTimeMode::Frozen,
+                time: Some(dto::TimeChange::Set {
+                    mode: dto::TimeMode::Frozen,
                     anchor_at: Some(-2_208_902_400_000),
                 }),
                 ..Default::default()

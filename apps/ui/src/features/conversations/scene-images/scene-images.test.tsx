@@ -20,7 +20,7 @@ const settings = {
   persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null, lorebooks: { ids: [], source: "app_default" },
   model: { id: "writer", source: "app_default" }, background: { asset: null, hidden: false, source: "app_default" },
   scene: { id: null, source: "app_default" }, memory: { mode: "disabled", source: "app_default" }, chat_mode: null,
-  disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, companion_time: null,
+  disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
 } satisfies ConversationSettingsView;
 const imageSettings = {
   avatar_enabled: false, avatar_model_profile_id: null, scene_enabled: true, scene_automatic_enabled: true, scene_mode: "ask_first" as const,

@@ -36,21 +36,26 @@ pub(in crate::api) fn view(context: &ApiContext, details: CharacterDetails) -> R
         root.remove(key);
     }
     root.insert("media".into(), value["character"]["media"]["links"].clone());
-    root.get_mut("defaults")
+    let defaults = root
+        .get_mut("defaults")
         .ok_or_else(mapping_error)?
         .as_object_mut()
-        .ok_or_else(mapping_error)?
-        .insert(
-            "companion_soul".into(),
-            serde_json::to_value(
-                character
-                    .defaults
-                    .companion_soul
-                    .as_ref()
-                    .map(crate::api::companion::config_view),
-            )
-            .map_err(|_| mapping_error())?,
-        );
+        .ok_or_else(mapping_error)?;
+    defaults.insert(
+        "companion_soul".into(),
+        serde_json::to_value(
+            character
+                .defaults
+                .companion_soul
+                .as_ref()
+                .map(crate::api::companion::config_view),
+        )
+        .map_err(|_| mapping_error())?,
+    );
+    defaults.insert(
+        "time_awareness".into(),
+        character.defaults.time_awareness.into(),
+    );
     for key in ["scenes", "variants", "starters"] {
         let children = value[key].as_array_mut().ok_or_else(mapping_error)?;
         for child in children.iter_mut() {
@@ -168,6 +173,8 @@ pub async fn character_draft_default(
 }
 
 fn default_draft() -> Result<dto::CharacterDraft, serde_json::Error> {
+    let mut defaults = serde_json::to_value(CharacterDefaults::default())?;
+    defaults["time_awareness"] = false.into();
     serde_json::from_value(serde_json::json!({
         "profile": {
             "name": "",
@@ -184,7 +191,7 @@ fn default_draft() -> Result<dto::CharacterDraft, serde_json::Error> {
             "sources": [],
             "tags": [],
         },
-        "defaults": serde_json::to_value(CharacterDefaults::default())?,
+        "defaults": defaults,
         "media": [],
         "presentation": serde_json::to_value(CharacterPresentationV1::default())?,
         "image_recommendation": null,

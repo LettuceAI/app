@@ -382,7 +382,7 @@ pub async fn lorebook_entry_draft(
                 let conversation =
                     lettuce_conversations::ConversationReader::get(db, conversation_id)
                         .map_err(failure)?;
-                let clock = crate::companion::companion_clock::companion_clock_context(
+                let clock = crate::companion::companion_clock::conversation_clock_context(
                     db,
                     &conversation.conversation,
                 )

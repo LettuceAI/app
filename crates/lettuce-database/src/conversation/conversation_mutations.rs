@@ -2040,24 +2040,15 @@ fn message_effective_time(
 ) -> Result<TimestampMillis, ConversationRepositoryError> {
     let value: Option<String> = transaction
         .query_row(
-            "SELECT settings.companion_clock_json FROM conversation_settings AS settings
-         JOIN conversations AS conversation ON conversation.id = settings.conversation_id
-         WHERE conversation.id = ?1 AND conversation.kind = 'direct'
-           AND settings.companion_clock_json IS NOT NULL
-           AND (EXISTS (SELECT 1 FROM conversation_participants AS participant
-               JOIN characters AS character ON character.id = participant.source_id
-               WHERE participant.conversation_id = conversation.id
-                 AND participant.source_kind = 'character'
-                 AND character.interaction_mode = 'companion')
-             OR EXISTS (SELECT 1 FROM companion_session_states AS state
-               WHERE state.conversation_id = conversation.id))",
+            "SELECT companion_clock_json FROM conversation_settings
+         WHERE conversation_id = ?1 AND companion_clock_json IS NOT NULL",
             [conversation_id.to_string()],
             |row| row.get(0),
         )
         .optional()
         .map_err(slice::db)?;
     let clock = value
-        .map(|value| slice::decode::<lettuce_conversations::CompanionClockSettings>(&value))
+        .map(|value| slice::decode::<lettuce_conversations::ConversationClockSettings>(&value))
         .transpose()?
         .unwrap_or_default();
     clock
@@ -17731,15 +17722,15 @@ mod tests {
 
     #[test]
     fn companion_clock_settings_survive_reopen_and_reset_without_losing_other_settings() {
-        use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
+        use lettuce_conversations::{ConversationClockSettings, ConversationTimeOverride};
         let path = std::env::temp_dir().join(format!(
             "lettuce-companion-clock-{}.db",
             ConversationId::new()
         ));
         let fixture = direct_fixture_on(std::rc::Rc::new(Database::open(&path).expect("database")));
-        let clock = CompanionClockSettings {
+        let clock = ConversationClockSettings {
             time_awareness_enabled: true,
-            time_override: CompanionTimeOverride::Ticking {
+            time_override: ConversationTimeOverride::Ticking {
                 anchor_at: TimestampMillis::new(100),
                 set_at: TimestampMillis::new(20),
             },
@@ -17814,8 +17805,8 @@ mod tests {
     }
 
     #[test]
-    fn companion_messages_take_their_effective_time_from_the_session_clock() {
-        use lettuce_conversations::{CompanionClockSettings, CompanionTimeOverride};
+    fn messages_take_their_effective_time_from_the_stored_clock_in_any_direct_chat() {
+        use lettuce_conversations::{ConversationClockSettings, ConversationTimeOverride};
         let mut fixture = direct_fixture();
         let settings = fixture
             .database
@@ -17826,9 +17817,9 @@ mod tests {
                         expected_settings_revision: None,
                         operation: token("clock-frozen", "cd"),
                         patch: CurrentConversationSettingsPatch {
-                            companion_clock: PatchValue::Set(CompanionClockSettings {
+                            companion_clock: PatchValue::Set(ConversationClockSettings {
                                 time_awareness_enabled: true,
-                                time_override: CompanionTimeOverride::Frozen {
+                                time_override: ConversationTimeOverride::Frozen {
                                     anchor_at: TimestampMillis::new(5_000),
                                 },
                             }),
@@ -17916,8 +17907,8 @@ mod tests {
             )
             .expect("roleplay character");
         let (user, assistant) = turn(&mut fixture, "roleplay", 20);
-        assert_eq!(effective_time(&fixture, user), 20);
-        assert_eq!(effective_time(&fixture, assistant), 30);
+        assert_eq!(effective_time(&fixture, user), 5_000);
+        assert_eq!(effective_time(&fixture, assistant), 5_000);
         let raw = fixture.database.connection().expect("connection");
         raw.execute(
             "INSERT INTO companion_relationship_states (character_id,persona_key,persona_id,closeness,trust,affection,tension,stability,interaction_count,last_interaction_at,revision,created_at,updated_at) SELECT source_id,'__default__',NULL,0.0,0.0,0.0,0.0,0.5,0,1,1,1,1 FROM conversation_participants WHERE conversation_id = ?1 AND source_kind = 'character'",
@@ -17990,6 +17981,48 @@ mod tests {
         let (user, assistant) = turn(&mut fixture, "cleared", 70);
         assert_eq!(effective_time(&fixture, user), 70);
         assert_eq!(effective_time(&fixture, assistant), 80);
+    }
+
+    #[test]
+    fn group_messages_take_their_effective_time_from_the_stored_clock() {
+        use lettuce_conversations::{ConversationClockSettings, ConversationTimeOverride};
+        let fixture = group_fixture();
+        let effective_now = |fixture: &Fixture| {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            message_effective_time(
+                &transaction,
+                fixture.conversation_id,
+                TimestampMillis::new(20),
+            )
+            .expect("effective time")
+        };
+        assert_eq!(effective_now(&fixture), TimestampMillis::new(20));
+        fixture
+            .database
+            .update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: None,
+                        operation: token("group-clock-frozen", "cd"),
+                        patch: CurrentConversationSettingsPatch {
+                            companion_clock: PatchValue::Set(ConversationClockSettings {
+                                time_awareness_enabled: true,
+                                time_override: ConversationTimeOverride::Frozen {
+                                    anchor_at: TimestampMillis::new(5_000),
+                                },
+                            }),
+                            ..Default::default()
+                        },
+                    },
+                    Vec::new(),
+                )
+                .expect("prepare clock"),
+                TimestampMillis::new(10),
+            )
+            .expect("save the group clock");
+        assert_eq!(effective_now(&fixture), TimestampMillis::new(5_000));
     }
 
     #[test]

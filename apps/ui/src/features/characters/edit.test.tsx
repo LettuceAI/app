@@ -384,12 +384,26 @@ describe("character edit page", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Baseline affect/ }));
     const warmth = await screen.findByRole("slider", { name: "Warmth" });
     fireEvent.change(warmth, { target: { value: "70" } });
-    fireEvent.click(screen.getByRole("switch", { name: "Time awareness" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Share memory" }));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     const soul = save.mock.calls[0]![0].draft.defaults.companion_soul!;
     expect(soul.soul.baseline_affect.warmth).toBe(0.7);
-    expect(soul.time_awareness).toBe(true);
+    expect(soul.share_memory_across_chats).toBe(false);
+  });
+
+  it("writes time awareness to the character defaults from the Chat tab, for any mode", async () => {
+    for (const view of [roleplay(), companion()]) {
+      const save = vi.fn((request: CharacterSaveRequest_Deserialize) => ok(saved(request)));
+      await renderEdit(view, { characterSave: save });
+      fireEvent.click(tab("Chat"));
+      const toggle = await screen.findByRole("switch", { name: "Time awareness" });
+      fireEvent.click(toggle);
+      fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+      await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+      expect(save.mock.calls[0]![0].draft.defaults.time_awareness).toBe(true);
+      cleanup();
+    }
   });
 
   it("writes a provider voice and clears it with None", async () => {

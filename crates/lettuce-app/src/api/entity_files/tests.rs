@@ -3537,7 +3537,6 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
             .get(crate::generation::built_in_prompts::BuiltInPromptId::Companion),
     );
     config.prompting.style_notes = "Stay curious".into();
-    config.time_awareness = true;
     config.share_memory_across_chats = false;
     config.share_soul_growth_across_chats = false;
     let authored = SoulFact {
@@ -3643,6 +3642,7 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
         CharacterDefaults {
             interaction_mode: InteractionMode::Companion,
             companion_soul: Some(config),
+            time_awareness: true,
             ..Default::default()
         },
         Default::default(),
@@ -3826,6 +3826,36 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
             .len(),
         1
     );
+    assert_eq!(plain["entity"]["behavior"]["timeAwareness"], true);
+    assert!(plain["entity"]["companion"].get("timeAwareness").is_none());
+    let mut old = plain.clone();
+    old["entity"]["behavior"]
+        .as_object_mut()
+        .expect("behavior")
+        .remove("timeAwareness");
+    old["entity"]["companion"]["timeAwareness"] = json!(true);
+    let old_path = root.join("old-time-awareness.uec");
+    std::fs::write(&old_path, old.to_string()).expect("write the old file");
+    let old_source = dto::FileSource {
+        uri: old_path.display().to_string(),
+    };
+    let p = preview(context, old_source.clone()).await;
+    let result = crate::api::import_commit(
+        context,
+        commit_request(old_source, p.digest, json!({}), "companion-old-time"),
+    )
+    .await
+    .expect("old file");
+    let dto::ImportCommitResult::Imported { id, .. } = result else {
+        panic!("imported")
+    };
+    let lifted = crate::api::character_export(context, export(id, false, "lifted.uec"))
+        .await
+        .expect("lifted export");
+    let lifted: Value =
+        serde_json::from_slice(&std::fs::read(lifted.uri).expect("file")).expect("JSON");
+    assert_eq!(lifted["entity"]["behavior"]["timeAwareness"], true);
+    assert!(lifted["entity"]["companion"].get("timeAwareness").is_none());
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 

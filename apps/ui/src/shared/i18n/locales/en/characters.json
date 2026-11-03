@@ -204,6 +204,11 @@
     "autoplay": "Read replies aloud",
     "autoplayBody": "Plays each reply as it arrives"
   },
+  "time": {
+    "group": "Time",
+    "awareness": "Time awareness",
+    "awarenessBody": "New chats give the model the local date and time, stamp messages with it and date memories"
+  },
   "soul": {
     "identity": "Identity",
     "feelings": "Feelings",
@@ -296,8 +301,6 @@
     "styleNotesHint": "How their replies should read. Added to the companion prompt.",
     "styleNotesPlaceholder": "Short replies, no emoji, never narrates his own feelings",
     "acrossChats": "Across chats",
-    "timeAwareness": "Time awareness",
-    "timeAwarenessBody": "New chats send the local time and date their memories",
     "shareMemory": "Share memory",
     "shareMemoryBody": "Every chat with them uses one memory",
     "shareGrowth": "Share how they grow",

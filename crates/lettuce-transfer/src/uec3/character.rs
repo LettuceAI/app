@@ -102,6 +102,8 @@ pub struct CharacterBehavior {
     pub voice: Voice,
     pub lorebooks: Vec<LorebookBinding>,
     pub image: Option<ImageRecommendation>,
+    #[serde(default)]
+    pub time_awareness: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
