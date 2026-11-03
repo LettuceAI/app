@@ -67,6 +67,7 @@ async function mount(
       settingsGet: () => ok(current),
       settingsUpdate: update,
       jobsList: () => ok({ items: [], next_cursor: null }),
+      promptsBuiltinUpdatesPending: () => ok({ count: 0, prompt_ids: [] }),
       ...options.calls,
     },
   });
@@ -75,7 +76,6 @@ async function mount(
   });
   const runtime = await createAppRuntime({ transport, history, i18n: await createTestI18n() });
   await act(async () => {
-      promptsBuiltinUpdatesPending: () => ok({ count: 0, prompt_ids: [] }),
     render(<App runtime={runtime} />);
   });
   return { runtime, transport, requests, update, current: () => current.global.ui_preferences };
