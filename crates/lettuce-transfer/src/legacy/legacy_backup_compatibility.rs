@@ -12,7 +12,7 @@ use crate::{
     LegacyBackupPricingError, LegacyBackupScheduledNoteError, LegacyBackupSessionError,
     LegacyBackupUsageError, plan_legacy_backup_asr, plan_legacy_backup_authored,
     plan_legacy_backup_authored_media, plan_legacy_backup_companion_shared_memory,
-    plan_legacy_backup_configuration, plan_legacy_backup_creation_helpers,
+    plan_legacy_backup_configuration,
     plan_legacy_backup_direct_sessions, plan_legacy_backup_group_sessions,
     plan_legacy_backup_memory_embeddings, plan_legacy_backup_pricing,
     plan_legacy_backup_scheduled_notes, plan_legacy_backup_usage,
@@ -328,7 +328,8 @@ pub fn plan_legacy_backup_compatibility(
     let notes = plan_legacy_backup_scheduled_notes(group)?;
     let shared = plan_legacy_backup_companion_shared_memory(notes)?;
     let embeddings = plan_legacy_backup_memory_embeddings(shared)?;
-    let creation_helpers = plan_legacy_backup_creation_helpers(embeddings)?;
+    let creation_helpers =
+        super::legacy_backup_creation_helper::skip_legacy_backup_creation_helpers(embeddings);
     meta_notices.extend(creation_helpers.notices.iter().cloned());
     meta_notices.extend(images.notices.iter().cloned());
     meta_notices.extend(llm_metrics.notices.iter().cloned());
@@ -643,6 +644,49 @@ mod tests {
             documents: Vec::new(),
             media: Vec::new(),
         }
+    }
+
+    #[test]
+    fn creation_helper_documents_are_skipped_without_parsing_their_contents() {
+        let empty = plan_legacy_backup_compatibility(inventory()).expect("empty plan");
+        let malformed_session = serde_json::to_vec(&serde_json::json!([{
+            "session_json": "{\"messages\":[{\"toolCalls\":[{\"id\":null}]}]}",
+            "uploaded_images_json": "not JSON"
+        }])).expect("creation helper document");
+        for bytes in [b"not JSON".to_vec(), malformed_session] {
+            let mut source = inventory();
+            source.documents.push(LegacyBackupDocument {
+                kind: LegacyBackupDocumentKind::CreationHelperSessions,
+                bytes: Zeroizing::new(bytes.clone()),
+            });
+
+            let plan = plan_legacy_backup_compatibility(source).expect("ignored creation helpers");
+
+            assert!(plan.creation_helpers.sessions.is_empty());
+            assert!(plan.notices.iter().any(|notice| {
+                notice.kind == crate::LegacyBackupConversionNoticeKind::Unsupported
+                    && notice.document == LegacyBackupDocumentKind::CreationHelperSessions
+                    && notice.field == "$"
+            }));
+            assert_eq!(plan.coverage.present_document_count, 1);
+            assert_eq!(plan.inventory().documents[0].bytes.as_slice(), bytes.as_slice());
+            assert_ne!(plan.fingerprint, empty.fingerprint);
+            plan.verify_seal().expect("ignored document remains sealed");
+        }
+    }
+
+    #[test]
+    fn skipping_creation_helpers_does_not_skip_other_document_validation() {
+        let mut source = inventory();
+        source.documents.push(LegacyBackupDocument {
+            kind: LegacyBackupDocumentKind::Settings,
+            bytes: Zeroizing::new(b"not JSON".to_vec()),
+        });
+
+        assert!(matches!(
+            plan_legacy_backup_compatibility(source),
+            Err(LegacyBackupCompatibilityError::Configuration(_))
+        ));
     }
 
     #[test]

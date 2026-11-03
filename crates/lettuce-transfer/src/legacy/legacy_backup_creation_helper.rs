@@ -232,21 +232,7 @@ struct ImageRow {
 pub fn plan_legacy_backup_creation_helpers(
     source: LegacyBackupMemoryEmbeddingPlan,
 ) -> Result<LegacyBackupCreationHelperPlan, LegacyBackupCreationHelperError> {
-    let document = source
-        .source
-        .source
-        .source
-        .source
-        .source
-        .source
-        .source
-        .source
-        .authored
-        .configuration
-        .source
-        .documents
-        .iter()
-        .find(|document| document.kind == LegacyBackupDocumentKind::CreationHelperSessions);
+    let document = creation_helper_document(&source);
     let mut notices = source.notices.clone();
     let sessions = match document {
         Some(document) => {
@@ -266,6 +252,45 @@ pub fn plan_legacy_backup_creation_helpers(
         notices,
         source,
     })
+}
+
+pub(crate) fn skip_legacy_backup_creation_helpers(
+    source: LegacyBackupMemoryEmbeddingPlan,
+) -> LegacyBackupCreationHelperPlan {
+    let mut notices = source.notices.clone();
+    let kind = if creation_helper_document(&source).is_some() {
+        LegacyBackupConversionNoticeKind::Unsupported
+    } else {
+        LegacyBackupConversionNoticeKind::Absent
+    };
+    notices.push(notice(kind, "$"));
+    notices.sort();
+    notices.dedup();
+    LegacyBackupCreationHelperPlan {
+        sessions: Vec::new(),
+        notices,
+        source,
+    }
+}
+
+fn creation_helper_document(
+    source: &LegacyBackupMemoryEmbeddingPlan,
+) -> Option<&crate::LegacyBackupDocument> {
+    source
+        .source
+        .source
+        .source
+        .source
+        .source
+        .source
+        .source
+        .source
+        .authored
+        .configuration
+        .source
+        .documents
+        .iter()
+        .find(|document| document.kind == LegacyBackupDocumentKind::CreationHelperSessions)
 }
 
 fn map_sessions(
@@ -992,6 +1017,21 @@ mod tests {
         let notes = plan_legacy_backup_scheduled_notes(group).expect("scheduled-note plan");
         let shared = plan_legacy_backup_companion_shared_memory(notes).expect("shared-memory plan");
         plan_legacy_backup_memory_embeddings(shared).expect("memory-embedding plan")
+    }
+
+    #[test]
+    fn skipped_creation_helpers_do_not_seed_even_valid_active_sessions() {
+        let session_id = id(1);
+        let nested = nested_session(&session_id, json!([]), "active");
+        let rows = json!([row(&session_id, nested, json!({}), "active")]);
+
+        let plan = skip_legacy_backup_creation_helpers(source(Some(rows), Vec::new()));
+
+        assert!(plan.sessions.is_empty());
+        assert!(plan.notices.iter().any(|notice| {
+            notice.kind == LegacyBackupConversionNoticeKind::Unsupported
+                && notice.document == LegacyBackupDocumentKind::CreationHelperSessions
+        }));
     }
 
     #[test]
