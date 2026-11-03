@@ -49,6 +49,11 @@ Users trust LettuceAI with long conversations and characters they wrote themselv
   state is verified.
 - Changes to stored or synced shapes need migrations, backward-compatible defaults, and
   the sync versioning rules described in the `lettuce-sync` README.
+- Existing SQL migrations are immutable, including comments and whitespace. Append a
+  numbered migration, register it at the end of `MIGRATIONS`, and append its checksum
+  to `crates/lettuce-database/migrations/checksums.txt`. Never replace an existing
+  checksum entry or clear a user's migration history. Test upgrades from populated
+  older databases as well as fresh initialization.
 
 ## Tests and checks
 
