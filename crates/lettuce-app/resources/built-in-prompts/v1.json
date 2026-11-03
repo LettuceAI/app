@@ -135,7 +135,7 @@
           "key": "entry_scene_image_protocol",
           "name": "Scene Image Protocol",
           "role": "system",
-          "content": "# Scene Image Generation\nIf you want the app to generate a scene image after your response is fully finished, append an image instruction using exactly this format at the very end of your reply:\n<img>detailed scene prompt here</img>\n\nRules:\n- Use this only after you have completed your normal text response.\n- Place the <img>...</img> block after the response body, never in the middle of it.\n- The content inside <img>...</img> must be only one final detailed image prompt, with no surrounding explanation.\n- Make the prompt rich and self-contained: describe who is present, their appearance, clothing, expressions, actions, the environment, mood, lighting, composition, camera framing, and other visually important details.\n- Preserve character and persona identity details when they are relevant to the scene.\n- Prefer concrete visual details over abstract summary.\n- Do not explain the tag, do not wrap it in code fences, and do not mention it in-character.\n- Use it only when a scene image would meaningfully add value.",
+          "content": "# Scene Image Generation\nIf you want the app to generate a scene image after your response is fully finished, append an image instruction using exactly this format at the very end of your reply:\n<img subjects=\"names of everyone visible\">detailed scene prompt here</img>\n\nRules:\n- Use this only after you have completed your normal text response.\n- Place the <img>...</img> block after the response body, never in the middle of it.\n- In subjects, list everyone from this chat who is visible in the image, by their exact names, separated by commas. Leave out anyone who is not in the picture.\n- The content inside <img>...</img> must be only one final detailed image prompt, with no surrounding explanation.\n- Make the prompt rich and self-contained: describe who is present, their appearance, clothing, expressions, actions, the environment, mood, lighting, composition, camera framing, and other visually important details.\n- Preserve each person's identity details when they are relevant to the scene, and keep different people's features separate.\n- Prefer concrete visual details over abstract summary.\n- Do not explain the tag, do not wrap it in code fences, and do not mention it in-character.\n- Use it only when a scene image would meaningfully add value.",
           "enabled": true,
           "injectionPosition": "relative",
           "injectionDepth": 0,
@@ -145,10 +145,6 @@
           "conditions": {
             "type": "all",
             "conditions": [
-              {
-                "type": "chatMode",
-                "value": "direct"
-              },
               {
                 "type": "isSceneGenerationLocalImageModel",
                 "value": false
@@ -165,7 +161,7 @@
           "key": "entry_scene_image_protocol_local",
           "name": "Scene Image Protocol (Local Model)",
           "role": "system",
-          "content": "# Scene Image Generation (Local Model)\nIf a scene image would meaningfully add value, append exactly one image instruction after your fully completed response, at the very end:\n<img>compact scene prompt here</img>\n\nLoRA subject bindings:\n- Assistant character: {{lora_keywords[character]}}\n- User persona: {{lora_keywords[persona]}}\n\nInside <img>...</img>, identify every depicted subject using its non-empty LoRA trigger keywords exactly as provided above. A blank binding means that LoRA is always active; do not invent or add a trigger for it. Keep each non-empty trigger adjacent to that subject's action so multiple subjects remain distinct. Never use character or persona names. Do not reconstruct identity, age, body, face, hair, skin, default clothing, or other appearance details supplied by the LoRAs.\n\nDescribe only concrete visual direction: action, pose, expression, interaction, subject placement, props, environment, camera angle and framing, lighting, palette, atmosphere, and mood. Keep it concise and composition-first. Do not write story prose, abstract interpretation, reference-image instructions, reasoning, labels, negative-prompt boilerplate, or quality-keyword spam.\n\nPlace nothing after </img>. Do not explain the tag, mention the image-generation process in-character, or wrap the instruction in a code fence.",
+          "content": "# Scene Image Generation (Local Model)\nIf a scene image would meaningfully add value, append exactly one image instruction after your fully completed response, at the very end:\n<img subjects=\"names of everyone visible\">compact scene prompt here</img>\n\nLoRA subject bindings:\n{{scene_cast_lora}}\n\nIn subjects, list everyone from this chat who is visible in the image, by their exact names, separated by commas.\n\nInside <img>...</img>, identify every depicted subject using its non-empty LoRA trigger keywords exactly as provided above. A blank binding means that LoRA is always active; do not invent or add a trigger for it. Keep each non-empty trigger adjacent to that subject's action so multiple subjects remain distinct. Never use names inside the prompt itself. Do not reconstruct identity, age, body, face, hair, skin, default clothing, or other appearance details supplied by the LoRAs.\n\nDescribe only concrete visual direction: action, pose, expression, interaction, subject placement, props, environment, camera angle and framing, lighting, palette, atmosphere, and mood. Keep it concise and composition-first. Do not write story prose, abstract interpretation, reference-image instructions, reasoning, labels, negative-prompt boilerplate, or quality-keyword spam.\n\nPlace nothing after </img>. Do not explain the tag, mention the image-generation process in-character, or wrap the instruction in a code fence.",
           "enabled": true,
           "injectionPosition": "relative",
           "injectionDepth": 0,
@@ -175,10 +171,6 @@
           "conditions": {
             "type": "all",
             "conditions": [
-              {
-                "type": "chatMode",
-                "value": "direct"
-              },
               {
                 "type": "isSceneGenerationLocalImageModel",
                 "value": true
@@ -1699,6 +1691,58 @@
           "promptEntryPayload": null
         },
         {
+          "key": "entry_scene_image_protocol",
+          "name": "Scene Image Protocol",
+          "role": "system",
+          "content": "# Scene Image Generation\nIf you want the app to generate a scene image after your response is fully finished, append an image instruction using exactly this format at the very end of your reply:\n<img subjects=\"names of everyone visible\">detailed scene prompt here</img>\n\nRules:\n- Use this only after you have completed your normal text response.\n- Place the <img>...</img> block after the response body, never in the middle of it.\n- In subjects, list everyone from this chat who is visible in the image, by their exact names, separated by commas. Leave out anyone who is not in the picture.\n- The content inside <img>...</img> must be only one final detailed image prompt, with no surrounding explanation.\n- Make the prompt rich and self-contained: describe who is present, their appearance, clothing, expressions, actions, the environment, mood, lighting, composition, camera framing, and other visually important details.\n- Preserve each person's identity details when they are relevant to the scene, and keep different people's features separate.\n- Prefer concrete visual details over abstract summary.\n- Do not explain the tag, do not wrap it in code fences, and do not mention it in-character.\n- Use it only when a scene image would meaningfully add value.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": true,
+          "conditions": {
+            "type": "all",
+            "conditions": [
+              {
+                "type": "isSceneGenerationLocalImageModel",
+                "value": false
+              },
+              {
+                "type": "sceneImageProtocol",
+                "value": "remote"
+              }
+            ]
+          },
+          "promptEntryPayload": null
+        },
+        {
+          "key": "entry_scene_image_protocol_local",
+          "name": "Scene Image Protocol (Local Model)",
+          "role": "system",
+          "content": "# Scene Image Generation (Local Model)\nIf a scene image would meaningfully add value, append exactly one image instruction after your fully completed response, at the very end:\n<img subjects=\"names of everyone visible\">compact scene prompt here</img>\n\nLoRA subject bindings:\n{{scene_cast_lora}}\n\nIn subjects, list everyone from this chat who is visible in the image, by their exact names, separated by commas.\n\nInside <img>...</img>, identify every depicted subject using its non-empty LoRA trigger keywords exactly as provided above. A blank binding means that LoRA is always active; do not invent or add a trigger for it. Keep each non-empty trigger adjacent to that subject's action so multiple subjects remain distinct. Never use names inside the prompt itself. Do not reconstruct identity, age, body, face, hair, skin, default clothing, or other appearance details supplied by the LoRAs.\n\nDescribe only concrete visual direction: action, pose, expression, interaction, subject placement, props, environment, camera angle and framing, lighting, palette, atmosphere, and mood. Keep it concise and composition-first. Do not write story prose, abstract interpretation, reference-image instructions, reasoning, labels, negative-prompt boilerplate, or quality-keyword spam.\n\nPlace nothing after </img>. Do not explain the tag, mention the image-generation process in-character, or wrap the instruction in a code fence.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": true,
+          "conditions": {
+            "type": "all",
+            "conditions": [
+              {
+                "type": "isSceneGenerationLocalImageModel",
+                "value": true
+              },
+              {
+                "type": "sceneImageProtocol",
+                "value": "local"
+              }
+            ]
+          },
+          "promptEntryPayload": null
+        },
+        {
           "key": "group_rules",
           "name": "Content Rules",
           "role": "system",
@@ -1847,6 +1891,58 @@
           "intervalTurns": null,
           "systemPrompt": true,
           "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "entry_scene_image_protocol",
+          "name": "Scene Image Protocol",
+          "role": "system",
+          "content": "# Scene Image Generation\nIf you want the app to generate a scene image after your response is fully finished, append an image instruction using exactly this format at the very end of your reply:\n<img subjects=\"names of everyone visible\">detailed scene prompt here</img>\n\nRules:\n- Use this only after you have completed your normal text response.\n- Place the <img>...</img> block after the response body, never in the middle of it.\n- In subjects, list everyone from this chat who is visible in the image, by their exact names, separated by commas. Leave out anyone who is not in the picture.\n- The content inside <img>...</img> must be only one final detailed image prompt, with no surrounding explanation.\n- Make the prompt rich and self-contained: describe who is present, their appearance, clothing, expressions, actions, the environment, mood, lighting, composition, camera framing, and other visually important details.\n- Preserve each person's identity details when they are relevant to the scene, and keep different people's features separate.\n- Prefer concrete visual details over abstract summary.\n- Do not explain the tag, do not wrap it in code fences, and do not mention it in-character.\n- Use it only when a scene image would meaningfully add value.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": true,
+          "conditions": {
+            "type": "all",
+            "conditions": [
+              {
+                "type": "isSceneGenerationLocalImageModel",
+                "value": false
+              },
+              {
+                "type": "sceneImageProtocol",
+                "value": "remote"
+              }
+            ]
+          },
+          "promptEntryPayload": null
+        },
+        {
+          "key": "entry_scene_image_protocol_local",
+          "name": "Scene Image Protocol (Local Model)",
+          "role": "system",
+          "content": "# Scene Image Generation (Local Model)\nIf a scene image would meaningfully add value, append exactly one image instruction after your fully completed response, at the very end:\n<img subjects=\"names of everyone visible\">compact scene prompt here</img>\n\nLoRA subject bindings:\n{{scene_cast_lora}}\n\nIn subjects, list everyone from this chat who is visible in the image, by their exact names, separated by commas.\n\nInside <img>...</img>, identify every depicted subject using its non-empty LoRA trigger keywords exactly as provided above. A blank binding means that LoRA is always active; do not invent or add a trigger for it. Keep each non-empty trigger adjacent to that subject's action so multiple subjects remain distinct. Never use names inside the prompt itself. Do not reconstruct identity, age, body, face, hair, skin, default clothing, or other appearance details supplied by the LoRAs.\n\nDescribe only concrete visual direction: action, pose, expression, interaction, subject placement, props, environment, camera angle and framing, lighting, palette, atmosphere, and mood. Keep it concise and composition-first. Do not write story prose, abstract interpretation, reference-image instructions, reasoning, labels, negative-prompt boilerplate, or quality-keyword spam.\n\nPlace nothing after </img>. Do not explain the tag, mention the image-generation process in-character, or wrap the instruction in a code fence.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": true,
+          "conditions": {
+            "type": "all",
+            "conditions": [
+              {
+                "type": "isSceneGenerationLocalImageModel",
+                "value": true
+              },
+              {
+                "type": "sceneImageProtocol",
+                "value": "local"
+              }
+            ]
+          },
           "promptEntryPayload": null
         },
         {
@@ -2238,7 +2334,7 @@
           "key": "scene_prompt_writer_task",
           "name": "Task",
           "role": "system",
-          "content": "You are an expert image-generation prompt writer for cinematic roleplay scenes. Your job is to turn the selected conversation moment into one dense, vivid, production-ready image prompt that an image model can use directly.\n\nWrite like a professional art director and cinematographer: make the scene inspectable, emotionally specific, visually grounded, and rich with concrete environmental evidence. The prompt must describe what the viewer sees, not what the story means in abstract.\n\nAlways preserve named identity. If the character is named Samuel, the prompt should say Samuel, not \"a man\". If a persona is present, use the persona name too. Names should anchor the visual subject so the image model knows exactly who the scene is about.",
+          "content": "You are an expert image-generation prompt writer for cinematic roleplay scenes. Your job is to turn the selected conversation moment into one dense, vivid, production-ready image prompt that an image model can use directly.\n\nWrite like a professional art director and cinematographer: make the scene inspectable, emotionally specific, visually grounded, and rich with concrete environmental evidence. The prompt must describe what the viewer sees, not what the story means in abstract.\n\nThe scene cast lists everyone who appears in the image, by name. Always preserve named identity: if a cast member is named Samuel, the prompt says Samuel, not \"a man\". Names anchor each visual subject so the image model knows exactly who is who.",
           "enabled": true,
           "injectionPosition": "relative",
           "injectionDepth": 0,
@@ -2272,7 +2368,7 @@
           "key": "scene_prompt_writer_context",
           "name": "Scene Context",
           "role": "user",
-          "content": "# Scene Context\nCharacter: {{char.name}}\n{{char.desc}}\n\nPersona: {{persona.name}}\n{{persona.desc}}\n\nRecent Messages:\n{{recent_messages}}",
+          "content": "# Scene Cast\n{{scene_cast}}\n\nRecent Messages:\n{{recent_messages}}",
           "enabled": true,
           "injectionPosition": "inChat",
           "injectionDepth": 0,
@@ -2286,8 +2382,8 @@
           "promptEntryPayload": null
         },
         {
-          "key": "scene_prompt_writer_character_image",
-          "name": "Character Reference Image",
+          "key": "scene_prompt_writer_cast_images",
+          "name": "Cast Reference Images",
           "role": "user",
           "content": "",
           "enabled": true,
@@ -2297,48 +2393,13 @@
           "intervalTurns": null,
           "systemPrompt": false,
           "conditions": {
-            "type": "all",
-            "conditions": [
-              {
-                "type": "isLocalImageGenerationModel",
-                "value": false
-              },
-              {
-                "type": "hasCharacterReferenceImages",
-                "value": true
-              }
-            ]
+            "type": "isLocalImageGenerationModel",
+            "value": false
           },
           "promptEntryPayload": {
             "type": "imageSlot",
-            "slot": "character"
+            "slot": "cast"
           }
-        },
-        {
-          "key": "scene_prompt_writer_character_reference",
-          "name": "Character Reference Text",
-          "role": "user",
-          "content": "{{reference[character]}}",
-          "enabled": true,
-          "injectionPosition": "inChat",
-          "injectionDepth": 0,
-          "conditionalMinMessages": null,
-          "intervalTurns": null,
-          "systemPrompt": false,
-          "conditions": {
-            "type": "all",
-            "conditions": [
-              {
-                "type": "isLocalImageGenerationModel",
-                "value": false
-              },
-              {
-                "type": "hasCharacterReferenceText",
-                "value": true
-              }
-            ]
-          },
-          "promptEntryPayload": null
         },
         {
           "key": "scene_prompt_writer_chat_background",
@@ -2370,61 +2431,6 @@
           }
         },
         {
-          "key": "scene_prompt_writer_persona_image",
-          "name": "Persona Reference Image",
-          "role": "user",
-          "content": "",
-          "enabled": true,
-          "injectionPosition": "inChat",
-          "injectionDepth": 0,
-          "conditionalMinMessages": null,
-          "intervalTurns": null,
-          "systemPrompt": false,
-          "conditions": {
-            "type": "all",
-            "conditions": [
-              {
-                "type": "isLocalImageGenerationModel",
-                "value": false
-              },
-              {
-                "type": "hasPersonaReferenceImages",
-                "value": true
-              }
-            ]
-          },
-          "promptEntryPayload": {
-            "type": "imageSlot",
-            "slot": "persona"
-          }
-        },
-        {
-          "key": "scene_prompt_writer_persona_reference",
-          "name": "Persona Reference Text",
-          "role": "user",
-          "content": "{{reference[persona]}}",
-          "enabled": true,
-          "injectionPosition": "inChat",
-          "injectionDepth": 0,
-          "conditionalMinMessages": null,
-          "intervalTurns": null,
-          "systemPrompt": false,
-          "conditions": {
-            "type": "all",
-            "conditions": [
-              {
-                "type": "isLocalImageGenerationModel",
-                "value": false
-              },
-              {
-                "type": "hasPersonaReferenceText",
-                "value": true
-              }
-            ]
-          },
-          "promptEntryPayload": null
-        },
-        {
           "key": "scene_prompt_writer_request",
           "name": "Scene Request",
           "role": "user",
@@ -2445,7 +2451,7 @@
           "key": "scene_prompt_writer_rules",
           "name": "Prompt Rules",
           "role": "system",
-          "content": "Write one polished scene prompt for an image model.\n\nRequired structure:\n- Start with the image type and named subject, such as \"cinematic still of Samuel\" or \"photorealistic environmental scene with Samuel and Maya\". Use exact character and persona names from context whenever they are available.\n- Never replace a named character with a generic label like \"a man\", \"a woman\", \"a girl\", \"a person\", \"the character\", or \"the user\". Generic labels are only allowed for unnamed background extras.\n- Describe each named subject with identity-preserving visual details from character/persona descriptions, design notes, and reference images: age impression, build, face, hair, skin tone, clothing, accessories, posture, expression, and any distinctive marks or style cues. Use only details supported by the context or references.\n- Describe the active moment from the recent messages with concrete visible details: poses, expressions, props, location, weather, era, and physical evidence in the environment.\n- Keep character and persona identities separate. Do not swap, merge, or borrow features between them. If two named people are present, make clear which visual details belong to which person.\n- Add camera and composition language: lens, perspective, framing, depth of field, focus priority, foreground/background relationship, and where the viewer's attention should land.\n- Add lighting and color language: time of day, light source, contrast, shadow quality, palette, atmosphere, and mood.\n- Add tactile texture and material details: worn fabric, cracked plaster, wet asphalt, dust in air, skin texture, metal scratches, glass reflections, etc. Choose details that fit the scene.\n- Add classic image-generation quality modifiers when appropriate: photorealistic, cinematic realism, ultra-detailed, 8k resolution, high dynamic range, realistic global illumination, volumetric light, natural film grain, professional color grading, award-winning cinematography, highly detailed textures.\n- End with negative constraints: no text, no logos, no watermark, no UI, no dialogue bubbles, no split panels, no stylized illustration unless the scene explicitly asks for a non-realistic style.\n\nStyle rules:\n- Prefer specific nouns, exact names, design-reference details, and visible evidence over generic adjectives.\n- Make the prompt self-contained; the image model will not see the chat or reference text.\n- Keep the final prompt as one cohesive paragraph or two compact paragraphs.\n- Do not include reasoning, analysis, XML tags, markdown, labels, or code fences.",
+          "content": "Write one polished scene prompt for an image model.\n\nRequired structure:\n- Start with the image type and the named subjects, such as \"cinematic still of Samuel\" or \"photorealistic environmental scene with Samuel, Maya and Ines\". Use the exact names from the scene cast.\n- Never replace a named cast member with a generic label like \"a man\", \"a woman\", \"a girl\", \"a person\", \"the character\", or \"the user\". Generic labels are only allowed for unnamed background extras.\n- Describe each named subject with identity-preserving visual details from their cast entry, design notes, and reference images: age impression, build, face, hair, skin tone, clothing, accessories, posture, expression, and any distinctive marks or style cues. Use only details supported by the context or references.\n- Describe the active moment from the recent messages with concrete visible details: who is where, poses, expressions, interactions, props, location, weather, era, and physical evidence in the environment.\n- Keep every subject's identity separate. Do not swap, merge, or borrow features between them. When several named people are present, make clear which visual details belong to which person and where each one is in the frame.\n- Add camera and composition language: lens, perspective, framing, depth of field, focus priority, foreground/background relationship, and where the viewer's attention should land.\n- Add lighting and color language: time of day, light source, contrast, shadow quality, palette, atmosphere, and mood.\n- Add tactile texture and material details: worn fabric, cracked plaster, wet asphalt, dust in air, skin texture, metal scratches, glass reflections, etc. Choose details that fit the scene.\n- Add classic image-generation quality modifiers when appropriate: photorealistic, cinematic realism, ultra-detailed, 8k resolution, high dynamic range, realistic global illumination, volumetric light, natural film grain, professional color grading, award-winning cinematography, highly detailed textures.\n- End with negative constraints: no text, no logos, no watermark, no UI, no dialogue bubbles, no split panels, no stylized illustration unless the scene explicitly asks for a non-realistic style.\n\nStyle rules:\n- Prefer specific nouns, exact names, design-reference details, and visible evidence over generic adjectives.\n- Make the prompt self-contained; the image model will not see the chat or reference text.\n- Keep the final prompt as one cohesive paragraph or two compact paragraphs.\n- Do not include reasoning, analysis, XML tags, markdown, labels, or code fences.",
           "enabled": true,
           "injectionPosition": "relative",
           "injectionDepth": 0,
@@ -2496,7 +2502,7 @@
           "key": "scene_prompt_writer_local_context",
           "name": "Local Scene Context",
           "role": "user",
-          "content": "Primary subject (Assistant) trigger keywords: {{lora_keywords[character]}}\n\nRecent Messages:\n{{recent_messages}}",
+          "content": "Subject trigger keywords:\n{{scene_cast_lora}}\n\nRecent Messages:\n{{recent_messages}}",
           "enabled": true,
           "injectionPosition": "inChat",
           "injectionDepth": 0,
@@ -2510,36 +2516,10 @@
           "promptEntryPayload": null
         },
         {
-          "key": "scene_prompt_writer_local_persona",
-          "name": "Local Persona Binding",
-          "role": "user",
-          "content": "Secondary subject (User) trigger keywords: {{lora_keywords[persona]}}",
-          "enabled": true,
-          "injectionPosition": "inChat",
-          "injectionDepth": 0,
-          "conditionalMinMessages": null,
-          "intervalTurns": null,
-          "systemPrompt": false,
-          "conditions": {
-            "type": "all",
-            "conditions": [
-              {
-                "type": "isLocalImageGenerationModel",
-                "value": true
-              },
-              {
-                "type": "hasPersona",
-                "value": true
-              }
-            ]
-          },
-          "promptEntryPayload": null
-        },
-        {
           "key": "scene_prompt_writer_local_rules",
           "name": "Local Prompt Rules",
           "role": "system",
-          "content": "Use non-empty trigger keywords exactly as provided whenever that subject appears. If a subject's binding is blank, do not invent or add a trigger for it; its LoRA is already active. Never use character or persona names. Never describe identity, age, body, face, hair, skin, default clothing, or other appearance traits. Describe only visible action, pose, expression, interaction, subject placement, props, environment, camera composition, lighting, and mood. Keep each non-empty trigger adjacent to its subject's action so multiple subjects remain distinct. Output one compact image prompt without reasoning, labels, markdown, or negative-prompt boilerplate.",
+          "content": "Use non-empty trigger keywords exactly as provided whenever that subject appears. If a subject's binding is blank, do not invent or add a trigger for it; its LoRA is already active. The names in the binding list only tell you which trigger belongs to whom: never write character or persona names in the prompt. Never describe identity, age, body, face, hair, skin, default clothing, or other appearance traits. Describe only visible action, pose, expression, interaction, subject placement, props, environment, camera composition, lighting, and mood. Keep each non-empty trigger adjacent to its subject's action so multiple subjects remain distinct. Output one compact image prompt without reasoning, labels, markdown, or negative-prompt boilerplate.",
           "enabled": true,
           "injectionPosition": "relative",
           "injectionDepth": 0,
@@ -3399,10 +3379,38 @@
           "promptEntryPayload": null
         },
         {
+          "key": "scene_image_only_references",
+          "name": "Scene Image Only References",
+          "role": "system",
+          "content": "Only {{subject_name}} have reference images attached. Do not invent {{other_subject_name}} from their appearance.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
           "key": "scene_image_persona_fallback_name",
           "name": "Scene Image Persona Fallback Name",
           "role": "system",
           "content": "the persona",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "scene_subject_list",
+          "name": "Scene Subject List",
+          "role": "system",
+          "content": "{{subject_name}} and {{other_subject_name}}",
           "enabled": true,
           "injectionPosition": "relative",
           "injectionDepth": 0,
@@ -3431,6 +3439,20 @@
           "name": "Scene LoRA Secondary Subject",
           "role": "system",
           "content": "secondary subject",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "scene_cast_lora_line",
+          "name": "Scene Cast LoRA Line",
+          "role": "system",
+          "content": "- {{subject_name}}: {{subject_description}}",
           "enabled": true,
           "injectionPosition": "relative",
           "injectionDepth": 0,
@@ -3543,6 +3565,48 @@
           "name": "Scene Writer Design Notes",
           "role": "system",
           "content": "Visual design notes: {{subject_description}}",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "scene_cast_member",
+          "name": "Scene Cast Member",
+          "role": "system",
+          "content": "{{subject_role}}: {{subject_name}}",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "scene_cast_role_character",
+          "name": "Scene Cast Character Role",
+          "role": "system",
+          "content": "Character",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "scene_cast_role_persona",
+          "name": "Scene Cast Persona Role",
+          "role": "system",
+          "content": "Persona",
           "enabled": true,
           "injectionPosition": "relative",
           "injectionDepth": 0,

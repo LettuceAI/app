@@ -104,6 +104,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::conversations::message_scene_image_dismiss,
             commands::conversations::message_scene_image_generate,
             commands::conversations::message_scene_prompt_generate,
+            commands::conversations::message_scene_cast,
             commands::conversations::message_prompt_snapshot,
             commands::conversations::conversation_speaker_selection_preview,
             commands::conversations::conversation_participation_stats,

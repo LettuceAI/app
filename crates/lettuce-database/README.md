@@ -43,7 +43,7 @@ If foreign key enforcement cannot be restored after a purge, the handle refuses 
 
 ## Migrations
 
-Each migration belongs to one domain and holds all of that domain's tables, triggers and indexes:
+The initial migrations establish each domain's tables, triggers and indexes. Later migrations append changes to that schema:
 
 | # | Domain |
 | --- | --- |
@@ -69,8 +69,11 @@ Each migration belongs to one domain and holds all of that domain's tables, trig
 | 20 | Backup restore admissions |
 | 21 | llama.cpp runtime reports and generation metrics |
 | 22 | Image generations, LoRA library, playground history |
+| 23 | Group appearance field inheritance |
 
-The schema has not shipped, so a domain's tables change inside that domain's migration instead of through follow-up migrations. The checksum check makes a database created from an earlier draft fail loudly on open rather than drift.
+The app is used with persistent databases. Existing migration files are immutable, including comments and whitespace: their exact bytes are checksummed on every open. Every schema change must be a new, consecutively numbered SQL file registered at the end of `MIGRATIONS`. Append its checksum to `migrations/checksums.txt`; never replace an existing checksum entry. The checksum snapshot test runs in CI and rejects changes to the registered migration history.
+
+Opening an existing database automatically applies only pending migrations in one transaction. Keep existing data intact and test a populated file from the preceding schema through upgrade and repeated startup. A failed migration rolls back. A checksum mismatch still stops startup; it must not be repaired by overwriting the recorded checksum or replaying an old migration. If an incompatible historical build needs support, add an explicit, tested upgrade from that known schema.
 
 ## Storage conventions
 
@@ -164,7 +167,7 @@ Snapshot and provider replay bytes live in private artifact tables (`conversatio
 
 `conversation_changes` is the conversation change feed: triggers on `conversations` move a conversation's single row to a new AUTOINCREMENT position on every insert and update (every mutation bumps the row, so messages, settings, lifecycle and title changes all count) and leave a `removed` row when a purge deletes it. `ConversationChangeFeed` reads the latest position and the changes after one. `change_signal.rs` watches the feed tables with the update hook, reports the feeds a transaction wrote from the commit hook and forgets them on rollback, so `on_conversation_change` and `on_job_change` listeners hear only committed changes.
 
-`scene_image_follow_ups` keeps the scene image a direct chat render asks for. Its target is exactly one owning generated candidate or native starter revision, checked by foreign keys and an exclusive target constraint. Finalization writes a candidate's own follow-up without replacing another variant's prompt or state. State transitions use compare-and-set and publish `message_signals`; image attachment receipts reuse conversation operation tokens. Follow-ups are included in full backups and remain device-local for sync. A starter attachment admitted before a later edit retains a historical revision without changing the later active render.
+`scene_image_follow_ups` keeps the scene image a chat render asks for, with the cast it depicts as JSON (`cast_json`, migration 24; null is the message's own cast). Its target is exactly one owning generated candidate or native starter revision, checked by foreign keys and an exclusive target constraint. Finalization writes a candidate's own follow-up without replacing another variant's prompt or state. State transitions use compare-and-set and publish `message_signals`; image attachment receipts reuse conversation operation tokens. Follow-ups are included in full backups and remain device-local for sync. A starter attachment admitted before a later edit retains a historical revision without changing the later active render.
 
 `job_details` stores application-defined job inputs, results and failures, while `job_operations` binds a client operation key to its canonical request digest and existing job identity. `admit_job_with_detail` commits job creation, detail and operation receipt together. Manual scene-image admission includes the frozen render follow-up and generation request in that transaction. Both generic tables are backed up. Conversation purge refuses live related feature jobs and removes their terminal details and receipts with the conversation's scene follow-ups and image requests.
 

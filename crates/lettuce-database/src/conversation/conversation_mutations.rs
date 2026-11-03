@@ -2700,7 +2700,7 @@ fn save_scene_follow_up(
     if let Some(draft) = draft {
         transaction
             .execute(
-                "INSERT INTO scene_image_follow_ups (conversation_id, target_kind, target_id, candidate_id, message_id, prompt, mode, state, generation, attempt, created_at, updated_at) VALUES (?1, 'candidate', ?2, ?2, ?3, ?4, ?5, 'pending', 0, 0, ?6, ?6)",
+                "INSERT INTO scene_image_follow_ups (conversation_id, target_kind, target_id, candidate_id, message_id, prompt, mode, state, generation, attempt, created_at, updated_at, cast_json) VALUES (?1, 'candidate', ?2, ?2, ?3, ?4, ?5, 'pending', 0, 0, ?6, ?6, ?7)",
                 params![
                     conversation_id.to_string(),
                     candidate_id.to_string(),
@@ -2708,6 +2708,14 @@ fn save_scene_follow_up(
                     draft.prompt,
                     if draft.ask_first { "ask_first" } else { "auto" },
                     now.get(),
+                    draft
+                        .cast
+                        .as_ref()
+                        .map(serde_json::to_string)
+                        .transpose()
+                        .map_err(|_| ConversationRepositoryError::Storage {
+                            reason: "save scene follow-up: the cast could not be encoded".to_owned(),
+                        })?,
                 ],
             )
             .map_err(kernel::map_constraint)?;
@@ -12862,6 +12870,10 @@ mod tests {
         use lettuce_conversations::SceneFollowUpRepository;
         let mut fixture = direct_fixture();
         let (message_id, first, second) = two_candidates(&mut fixture, "backup-scenes");
+        let cast = lettuce_conversations::SceneCastSelection {
+            character_ids: vec![lettuce_types::CharacterId::new()],
+            include_persona: true,
+        };
         for (candidate, prompt) in [(first, "First harbor"), (second, "Second harbor")] {
             fixture
                 .database
@@ -12871,6 +12883,7 @@ mod tests {
                     lettuce_conversations::SceneFollowUpTarget::Candidate(candidate),
                     prompt,
                     lettuce_conversations::SceneFollowUpMode::AskFirst,
+                    (candidate == first).then_some(&cast),
                     TimestampMillis::new(100),
                 )
                 .expect("follow-up");
@@ -12879,6 +12892,15 @@ mod tests {
         let graph =
             crate::backup::restore_writer::tests::assert_backup_round_trip(&fixture.database);
         assert_eq!(graph.conversation_history.scene_follow_ups.len(), 2);
+        assert_eq!(
+            graph
+                .conversation_history
+                .scene_follow_ups
+                .iter()
+                .filter_map(|follow_up| follow_up.cast.as_ref())
+                .collect::<Vec<_>>(),
+            [&cast]
+        );
         assert!(
             graph
                 .conversation_history

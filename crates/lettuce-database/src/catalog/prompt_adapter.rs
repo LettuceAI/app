@@ -2390,6 +2390,7 @@ mod tests {
             lettuce_context::PromptEntryImageSlot::ChatBackground,
             lettuce_context::PromptEntryImageSlot::Avatar,
             lettuce_context::PromptEntryImageSlot::References,
+            lettuce_context::PromptEntryImageSlot::Cast,
         ] {
             let mut entry = draft("slot");
             entry.conditions = None;

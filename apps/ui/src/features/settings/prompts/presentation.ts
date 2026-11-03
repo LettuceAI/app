@@ -76,6 +76,7 @@ export const SLOT_LABEL: Record<ImageSlot, string> = {
   chat_background: "Chat background",
   avatar: "Current avatar",
   references: "Reference pictures",
+  cast: "Pictures of everyone in the scene",
 };
 type RuleShape =
   | { kind: "flag" }

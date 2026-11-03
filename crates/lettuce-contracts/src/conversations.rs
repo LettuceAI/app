@@ -603,12 +603,59 @@ pub struct MessageSceneRequest {
     pub message_id: String,
 }
 
+/// Who a scene image depicts: characters of the conversation and whether
+/// the persona is in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SceneCastSelection {
+    pub character_ids: Vec<String>,
+    pub include_persona: bool,
+}
+
+/// A character a scene image of a message may depict; `selected` marks the
+/// message's cast.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SceneCastCharacter {
+    pub character_id: String,
+    pub name: String,
+    pub avatar: Option<AssetRef>,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SceneCastPersona {
+    pub name: String,
+    pub avatar: Option<AssetRef>,
+    pub selected: bool,
+}
+
+/// Everyone a scene image of a message may depict, with the message's cast
+/// selected: the one its pending scene image names, else the one picked from
+/// who wrote or is named around the message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SceneCastView {
+    pub characters: Vec<SceneCastCharacter>,
+    pub persona: Option<SceneCastPersona>,
+}
+
+/// Asks the scene prompt writer for a reply's scene prompt, for `cast` when
+/// the user picked one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct MessageScenePromptGenerateRequest {
     pub message_id: String,
     pub client_operation_id: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub cast: Option<SceneCastSelection>,
 }
 
 /// Approves the scene image a reply asked for, with the prompt as the user
@@ -620,6 +667,9 @@ pub struct MessageScenePromptGenerateRequest {
 pub struct MessageSceneImageApproveRequest {
     pub message_id: String,
     pub prompt: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub cast: Option<SceneCastSelection>,
 }
 
 /// Asks for a scene image of a reply from `prompt` (trimmed, not blank).
@@ -630,6 +680,9 @@ pub struct MessageSceneImageGenerateRequest {
     pub message_id: String,
     pub prompt: String,
     pub client_operation_id: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub cast: Option<SceneCastSelection>,
 }
 
 /// One page of visible messages in conversation order, oldest first;

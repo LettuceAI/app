@@ -35,6 +35,7 @@ pub struct ManualSceneImageAdmission<'a> {
     pub message_id: lettuce_types::MessageId,
     pub target: lettuce_conversations::SceneFollowUpTarget,
     pub prompt: &'a str,
+    pub cast: Option<&'a lettuce_conversations::SceneCastSelection>,
 }
 
 pub(crate) fn ensure_job_attempt_in(
@@ -630,6 +631,7 @@ impl Database {
             message_id,
             target,
             prompt,
+            cast,
         } = admission;
         let mut connection = self.connection().map_err(|error| StoreError::Storage {
             reason: error.to_string(),
@@ -678,13 +680,14 @@ impl Database {
                 attempt: 1,
                 request_id: Some(request.id),
                 failure: None,
+                cast: cast.cloned(),
                 created_at: current.as_ref().map_or(now, |current| current.created_at),
                 updated_at: current
                     .as_ref()
                     .map_or(now, |current| now.max(current.updated_at)),
             };
             if current.is_some() {
-                transaction.execute("UPDATE scene_image_follow_ups SET prompt = ?4, mode = 'manual', state = 'approved', generation = ?5, attempt = 1, request_id = ?6, failure = NULL, updated_at = ?7 WHERE conversation_id = ?1 AND target_kind = ?2 AND target_id = ?3", params![conversation_id.to_string(), target.kind(), target.id(), follow_up.prompt, follow_up.generation, request.id.to_string(), follow_up.updated_at.get()]).map_err(|error| StoreError::Storage { reason: error.to_string() })?;
+                transaction.execute("UPDATE scene_image_follow_ups SET prompt = ?4, mode = 'manual', state = 'approved', generation = ?5, attempt = 1, request_id = ?6, failure = NULL, updated_at = ?7, cast_json = ?8 WHERE conversation_id = ?1 AND target_kind = ?2 AND target_id = ?3", params![conversation_id.to_string(), target.kind(), target.id(), follow_up.prompt, follow_up.generation, request.id.to_string(), follow_up.updated_at.get(), crate::conversation::scene_follow_up_adapter::cast_json(cast).map_err(|error| StoreError::Storage { reason: error.to_string() })?]).map_err(|error| StoreError::Storage { reason: error.to_string() })?;
             } else {
                 crate::conversation::scene_follow_up_adapter::insert_restored_in(
                     &transaction,

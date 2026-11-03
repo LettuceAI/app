@@ -1,4 +1,4 @@
-//! Scene images of a one-to-one chat's replies. A reply that asks for one
+//! Scene images of a chat's replies. A reply that asks for one
 //! keeps a follow-up (see `lettuce_conversations::SceneFollowUp`): an
 //! automatic one starts when the reply is final, an ask-first one waits for
 //! `message_scene_image_approve` or `message_scene_image_dismiss`, and the
@@ -10,11 +10,11 @@ use std::collections::HashMap;
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
-    ConversationKind, ConversationReader, MessageRole, MessageVisibility, SceneFollowUp,
+    ConversationReader, MessageRole, MessageVisibility, SceneFollowUp,
     SceneFollowUpChange, SceneFollowUpMode, SceneFollowUpRepository, SceneFollowUpState,
     SceneFollowUpTarget,
 };
-use lettuce_types::{ConversationId, JobId, MessageId};
+use lettuce_types::{CharacterId, ConversationId, JobId, MessageId};
 
 use super::messages::on_timeline;
 use crate::api::ApiContext;
@@ -162,10 +162,12 @@ fn image_error(error: SceneImageFollowUpError) -> ApiError {
             ApiErrorCode::Unavailable,
             "no image model is configured for scenes",
         ),
-        SceneImageFollowUpError::Image(SceneImageError::NotDirect) => api_error(
-            ApiErrorCode::Unsupported,
-            "scene images are generated for one-to-one chats only",
-        ),
+        SceneImageFollowUpError::Image(SceneImageError::ForeignCastMember) => {
+            invalid_field("cast", "the cast names a character that is not in the chat")
+        }
+        SceneImageFollowUpError::Image(SceneImageError::EmptyCast) => {
+            invalid_field("cast", "the scene has nobody to depict")
+        }
         SceneImageFollowUpError::Image(SceneImageError::MessageNotFound) => {
             api_error(ApiErrorCode::NotFound, "the message was not found")
         }
@@ -176,8 +178,24 @@ fn image_error(error: SceneImageFollowUpError) -> ApiError {
     }
 }
 
-/// A reply of a one-to-one chat's selected branch that a scene image can
-/// be made for.
+/// The cast a request names, its ids parsed.
+pub(in crate::api) fn cast_of(
+    cast: Option<dto::SceneCastSelection>,
+) -> Result<Option<lettuce_conversations::SceneCastSelection>, ApiError> {
+    cast.map(|cast| {
+        Ok(lettuce_conversations::SceneCastSelection {
+            character_ids: cast
+                .character_ids
+                .iter()
+                .map(|id| parse_id::<CharacterId>(id, "cast"))
+                .collect::<Result<_, _>>()?,
+            include_persona: cast.include_persona,
+        })
+    })
+    .transpose()
+}
+
+/// A reply of a chat's selected branch that a scene image can be made for.
 pub(in crate::api) fn scene_target(
     context: &ApiContext,
     message_id: MessageId,
@@ -187,12 +205,6 @@ pub(in crate::api) fn scene_target(
     let conversation = ConversationReader::get(database, conversation_id)
         .map_err(IntoApiError::into_api_error)?
         .conversation;
-    if !matches!(conversation.kind, ConversationKind::Direct(_)) {
-        return Err(api_error(
-            ApiErrorCode::Unsupported,
-            "scene images are generated for one-to-one chats only",
-        ));
-    }
     let item = on_timeline(
         context,
         conversation_id,
@@ -226,8 +238,9 @@ pub async fn message_scene_image_generate(
     if prompt.is_empty() {
         return Err(invalid_field("prompt", "the scene prompt is blank"));
     }
+    let cast = cast_of(request.cast)?;
     let key = crate::api::jobs::local::operation_key("scene_image", &request.client_operation_id)?;
-    let digest = crate::api::jobs::local::digest(&(message_id.to_string(), &prompt))?;
+    let digest = crate::api::jobs::local::digest(&(message_id.to_string(), &prompt, &cast))?;
     let job_id = context
         .blocking(move |context| {
             let database = context.backend().database();
@@ -255,6 +268,7 @@ pub async fn message_scene_image_generate(
                     message_id,
                     scene_prompt: prompt.clone(),
                     request_id,
+                    cast: cast.clone(),
                 },
                 context.now(),
             )
@@ -272,6 +286,7 @@ pub async fn message_scene_image_generate(
                     message_id,
                     target,
                     prompt: &prompt,
+                    cast: cast.as_ref(),
                 })
                 .map(|job| job.id)
                 .map_err(|error| match error {
@@ -308,6 +323,7 @@ pub async fn message_scene_image_approve(
     if prompt.as_deref().is_some_and(str::is_empty) {
         return Err(invalid_field("prompt", "the scene prompt is blank"));
     }
+    let cast = cast_of(request.cast)?;
     let job_id = context
         .blocking(move |context| {
             let (conversation_id, target) = scene_target(context, message_id)?;
@@ -319,6 +335,7 @@ pub async fn message_scene_image_approve(
                 target,
                 &[SceneFollowUpState::Pending],
                 prompt.as_deref(),
+                cast.as_ref(),
                 None,
                 context.now(),
             ) {
@@ -401,6 +418,7 @@ pub async fn message_scene_prompt_generate(
     request: dto::MessageScenePromptGenerateRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
     let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
+    let cast = cast_of(request.cast)?;
     let (conversation_id, _) = context
         .blocking(move |context| scene_target(context, message_id))
         .await?;
@@ -408,9 +426,85 @@ pub async fn message_scene_prompt_generate(
         context,
         conversation_id,
         message_id,
+        cast,
         request.client_operation_id,
     )
     .await
+}
+
+/// Everyone a scene image of a reply may depict, with its cast selected:
+/// the one its pending scene image names, else the reply's own.
+pub async fn message_scene_cast(
+    context: &ApiContext,
+    request: dto::MessageSceneRequest,
+) -> Result<dto::SceneCastView, ApiError> {
+    let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
+    context
+        .blocking(move |context| {
+            let (conversation_id, target) = scene_target(context, message_id)?;
+            let database = context.backend().database();
+            let conversation = ConversationReader::get(database, conversation_id)
+                .map_err(IntoApiError::into_api_error)?
+                .conversation;
+            let stored = database
+                .get_follow_up(conversation_id, target)
+                .map_err(|_| storage())?
+                .and_then(|follow_up| follow_up.cast);
+            let chosen = crate::image::scene_cast::scene_cast(
+                database,
+                &conversation,
+                message_id,
+                stored.as_ref(),
+            )
+            .or_else(|error| match error {
+                crate::image::scene_cast::SceneCastError::ForeignCharacter
+                | crate::image::scene_cast::SceneCastError::Empty
+                    if stored.is_some() =>
+                {
+                    crate::image::scene_cast::scene_cast(database, &conversation, message_id, None)
+                }
+                error => Err(error),
+            })
+            .map_err(|error| {
+                image_error(SceneImageFollowUpError::Image(SceneImageError::from(error)))
+            })?;
+            let everyone = crate::image::scene_cast::chat_cast(database, &conversation)
+                .map_err(|error| {
+                    image_error(SceneImageFollowUpError::Image(SceneImageError::from(error)))
+                })?;
+            let avatar = |subject: &crate::image::scene_cast::CastSubject| {
+                subject
+                    .avatars
+                    .first()
+                    .map(|asset_id| context.asset_ref(*asset_id))
+            };
+            let mut view = dto::SceneCastView {
+                characters: Vec::new(),
+                persona: None,
+            };
+            for subject in &everyone {
+                let selected = chosen.subjects.iter().any(|chosen| chosen.kind == subject.kind);
+                match subject.kind {
+                    crate::image::scene_cast::CastSubjectKind::Character(id) => {
+                        view.characters.push(dto::SceneCastCharacter {
+                            character_id: id.to_string(),
+                            name: subject.name.clone(),
+                            avatar: avatar(subject),
+                            selected,
+                        });
+                    }
+                    crate::image::scene_cast::CastSubjectKind::Persona(_) => {
+                        view.persona = Some(dto::SceneCastPersona {
+                            name: subject.name.clone(),
+                            avatar: avatar(subject),
+                            selected,
+                        });
+                    }
+                }
+            }
+            Ok(view)
+        })
+        .await
 }
 
 /// Starts the scene image of a finalized reply whose follow-up is automatic.
@@ -422,15 +516,6 @@ pub(in crate::api) fn start_auto(
     target: SceneFollowUpTarget,
 ) -> Result<(), ApiError> {
     let database = context.backend().database();
-    if !matches!(
-        ConversationReader::get(database, conversation_id)
-            .map_err(IntoApiError::into_api_error)?
-            .conversation
-            .kind,
-        ConversationKind::Direct(_)
-    ) {
-        return Ok(());
-    }
     let Some(follow_up) = database
         .get_follow_up(conversation_id, target)
         .map_err(|_| storage())?
@@ -453,6 +538,7 @@ pub(in crate::api) fn start_auto(
         conversation_id,
         target,
         &[SceneFollowUpState::Pending],
+        None,
         None,
         None,
         context.now(),

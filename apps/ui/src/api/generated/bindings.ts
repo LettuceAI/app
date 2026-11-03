@@ -85,10 +85,11 @@ export const commands = {
 	conversationAddSystemMessage: (request: ConversationAddSystemMessageRequest_Deserialize) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_add_system_message", { request })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationHelpMeReply: (request: ConversationHelpMeReplyRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_help_me_reply", { request })),
-	messageSceneImageApprove: (request: MessageSceneImageApproveRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_approve", { request })),
+	messageSceneImageApprove: (request: MessageSceneImageApproveRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_approve", { request })),
 	messageSceneImageDismiss: (request: MessageSceneRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_dismiss", { request })),
-	messageSceneImageGenerate: (request: MessageSceneImageGenerateRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_generate", { request })),
-	messageScenePromptGenerate: (request: MessageScenePromptGenerateRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_prompt_generate", { request })),
+	messageSceneImageGenerate: (request: MessageSceneImageGenerateRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_generate", { request })),
+	messageScenePromptGenerate: (request: MessageScenePromptGenerateRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_prompt_generate", { request })),
+	messageSceneCast: (request: MessageSceneRequest) => typedError<SceneCastView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_scene_cast", { request })),
 	messagePromptSnapshot: (request: MessagePromptSnapshotRequest) => typedError<PromptSnapshot_Serialize, ApiError_Serialize>(__TAURI_INVOKE("message_prompt_snapshot", { request })),
 	conversationSpeakerSelectionPreview: (request: SpeakerSelectionPreviewRequest) => typedError<SpeakerSelectionPreview, ApiError_Serialize>(__TAURI_INVOKE("conversation_speaker_selection_preview", { request })),
 	conversationParticipationStats: (request: ConversationRequest) => typedError<ParticipationStats, ApiError_Serialize>(__TAURI_INVOKE("conversation_participation_stats", { request })),
@@ -6500,21 +6501,73 @@ export type MessageRole = "user" | "assistant" | "system" | "scene";
  *  edited it. `prompt` is trimmed and a blank one is refused; without it the
  *  reply's own prompt is used.
  */
-export type MessageSceneImageApproveRequest = {
+export type MessageSceneImageApproveRequest = MessageSceneImageApproveRequest_Serialize | MessageSceneImageApproveRequest_Deserialize;
+
+/**
+ *  Approves the scene image a reply asked for, with the prompt as the user
+ *  edited it. `prompt` is trimmed and a blank one is refused; without it the
+ *  reply's own prompt is used.
+ */
+export type MessageSceneImageApproveRequest_Deserialize = {
 	message_id: string,
 	prompt: string | null,
+	cast?: SceneCastSelection | null,
+};
+
+/**
+ *  Approves the scene image a reply asked for, with the prompt as the user
+ *  edited it. `prompt` is trimmed and a blank one is refused; without it the
+ *  reply's own prompt is used.
+ */
+export type MessageSceneImageApproveRequest_Serialize = {
+	message_id: string,
+	prompt: string | null,
+	cast?: SceneCastSelection | null,
 };
 
 /**  Asks for a scene image of a reply from `prompt` (trimmed, not blank). */
-export type MessageSceneImageGenerateRequest = {
+export type MessageSceneImageGenerateRequest = MessageSceneImageGenerateRequest_Serialize | MessageSceneImageGenerateRequest_Deserialize;
+
+/**  Asks for a scene image of a reply from `prompt` (trimmed, not blank). */
+export type MessageSceneImageGenerateRequest_Deserialize = {
 	message_id: string,
 	prompt: string,
 	client_operation_id: string,
+	cast?: SceneCastSelection | null,
 };
 
-export type MessageScenePromptGenerateRequest = {
+/**  Asks for a scene image of a reply from `prompt` (trimmed, not blank). */
+export type MessageSceneImageGenerateRequest_Serialize = {
+	message_id: string,
+	prompt: string,
+	client_operation_id: string,
+	cast?: SceneCastSelection | null,
+};
+
+/**
+ *  Asks the scene prompt writer for a reply's scene prompt, for `cast` when
+ *  the user picked one.
+ */
+export type MessageScenePromptGenerateRequest = MessageScenePromptGenerateRequest_Serialize | MessageScenePromptGenerateRequest_Deserialize;
+
+/**
+ *  Asks the scene prompt writer for a reply's scene prompt, for `cast` when
+ *  the user picked one.
+ */
+export type MessageScenePromptGenerateRequest_Deserialize = {
 	message_id: string,
 	client_operation_id: string,
+	cast?: SceneCastSelection | null,
+};
+
+/**
+ *  Asks the scene prompt writer for a reply's scene prompt, for `cast` when
+ *  the user picked one.
+ */
+export type MessageScenePromptGenerateRequest_Serialize = {
+	message_id: string,
+	client_operation_id: string,
+	cast?: SceneCastSelection | null,
 };
 
 /**  Names one message. */
@@ -7249,7 +7302,7 @@ export type PromptGetRequest = {
 	prompt_id: string,
 };
 
-export type PromptImageSlot = "character" | "persona" | "chat_background" | "avatar" | "references";
+export type PromptImageSlot = "character" | "persona" | "chat_background" | "avatar" | "references" | "cast";
 
 export type PromptInfoSource = "messages" | "memory" | "mixed";
 
@@ -7720,6 +7773,84 @@ export type RunnabilityLabel = "excellent" | "good" | "marginal" | "poor" | "unr
 export type RunnabilityStatus = "incompatible_runtime" | "not_installed" | "estimated_runnable" | "cpu_fallback" | "inconclusive" | "passed" | "failed";
 
 export type RuntimeNoticeCode = "mtp_disabled_for_vision" | "kv_cache_moved_to_ram";
+
+/**
+ *  A character a scene image of a message may depict; `selected` marks the
+ *  message's cast.
+ */
+export type SceneCastCharacter = SceneCastCharacter_Serialize | SceneCastCharacter_Deserialize;
+
+/**
+ *  A character a scene image of a message may depict; `selected` marks the
+ *  message's cast.
+ */
+export type SceneCastCharacter_Deserialize = {
+	character_id: string,
+	name: string,
+	avatar: AssetRef_Deserialize | null,
+	selected: boolean,
+};
+
+/**
+ *  A character a scene image of a message may depict; `selected` marks the
+ *  message's cast.
+ */
+export type SceneCastCharacter_Serialize = {
+	character_id: string,
+	name: string,
+	avatar: AssetRef_Serialize | null,
+	selected: boolean,
+};
+
+export type SceneCastPersona = SceneCastPersona_Serialize | SceneCastPersona_Deserialize;
+
+export type SceneCastPersona_Deserialize = {
+	name: string,
+	avatar: AssetRef_Deserialize | null,
+	selected: boolean,
+};
+
+export type SceneCastPersona_Serialize = {
+	name: string,
+	avatar: AssetRef_Serialize | null,
+	selected: boolean,
+};
+
+/**
+ *  Who a scene image depicts: characters of the conversation and whether
+ *  the persona is in it.
+ */
+export type SceneCastSelection = {
+	character_ids: string[],
+	include_persona: boolean,
+};
+
+/**
+ *  Everyone a scene image of a message may depict, with the message's cast
+ *  selected: the one its pending scene image names, else the one picked from
+ *  who wrote or is named around the message.
+ */
+export type SceneCastView = SceneCastView_Serialize | SceneCastView_Deserialize;
+
+/**
+ *  Everyone a scene image of a message may depict, with the message's cast
+ *  selected: the one its pending scene image names, else the one picked from
+ *  who wrote or is named around the message.
+ */
+export type SceneCastView_Deserialize = {
+	characters: SceneCastCharacter_Deserialize[],
+	persona: SceneCastPersona_Deserialize | null,
+};
+
+/**
+ *  Everyone a scene image of a message may depict, with the message's cast
+ *  selected: the one its pending scene image names, else the one picked from
+ *  who wrote or is named around the message.
+ */
+export type SceneCastView_Serialize = {
+	characters: SceneCastCharacter_Serialize[],
+	persona: SceneCastPersona_Serialize | null,
+};
 
 /**  Why a scene image failed, where the user can act on it. */
 export type SceneImageFailure = "media_unavailable" | "disabled" | "no_model" | "no_image" | "message_unavailable" | "interrupted" | "failed";

@@ -1,24 +1,23 @@
-//! Scene image prompts for a direct chat message: a writer model turns the
-//! messages around the chosen one into one image prompt. It sees the
-//! character, persona and chat background images when the scene image model
-//! is remote, and the subjects' LoRA keywords when it runs locally.
+//! Scene image prompts for a chat message: a writer model turns the messages
+//! around the chosen one into one image prompt. It sees the cast's and the
+//! chat background's images when the scene image model is remote, and the
+//! cast's LoRA keywords when it runs locally.
 
 use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
-use lettuce_characters::{CharacterRepository, PersonaRepository};
+use lettuce_characters::{CharacterRepository, GroupRepository, PersonaRepository};
 use lettuce_context::{
     PromptConditionContext, PromptDocument, PromptEntryChatMode, PromptEntryImageSlot,
     PromptEntryPosition, PromptEntryRole, PromptRenderContext, PromptRenderValues,
     PromptRepository, PromptVariable as Variable, SceneImageProtocolKind,
 };
 use lettuce_conversations::{
-    ConversationKind, ConversationReader, ConversationRepositoryError, GenerationOperation,
+    ConversationReader, ConversationRepositoryError, GenerationOperation,
     InferenceOutcome, InferencePort, InferenceRequest, MediaAssetRole, MessagePart,
     MessageRenderSource, MessageRole, OutputPolicy, PortError, ProviderContextPart,
     ProviderFailureKind, ProviderNeutralContext, ProviderNeutralMessage,
     ProviderReplayArtifactPort, ResolvedInferenceProfile, SafetyContext, TimelineItem, ToolPolicy,
-    effective_persona,
 };
 use lettuce_image_generation::ImageMedia;
 use lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository;
@@ -40,9 +39,8 @@ use crate::generation::feature_prompt_entries::{
     FeatureEntry, condense, message_role, render_feature_entries, strip_tokens,
 };
 use crate::generation::runtime_text::RuntimeText;
-use crate::image::scene_image::{
-    ReferenceSource, SceneReferences, SceneSubject, StoredSceneReferences,
-};
+use crate::image::scene_cast::{SceneCast, SceneCastError, SceneCastSelection};
+use crate::image::scene_image::{ReferenceSource, SceneReferences, SceneSubject};
 use crate::jobs::job_inference_usage::{JobInferenceError, run_job_inference};
 use crate::{BuiltInPromptId, ImageFeature, ImageFeatureModelError, cleanup_outcome_replays};
 
@@ -52,7 +50,9 @@ const CHARACTER_TOKEN: &str = "{{image[character]}}";
 const PERSONA_TOKEN: &str = "{{image[persona]}}";
 const BACKGROUND_TOKEN: &str = "{{image[chatBackground]}}";
 const BACKGROUND_ALIAS_TOKEN: &str = "{{image[chat_background]}}";
-const SCENE_TOKENS: [&str; 4] = [
+const CAST_TOKEN: &str = "{{image[cast]}}";
+const SCENE_TOKENS: [&str; 5] = [
+    CAST_TOKEN,
     CHARACTER_TOKEN,
     PERSONA_TOKEN,
     BACKGROUND_TOKEN,
@@ -65,6 +65,8 @@ pub struct ScenePromptRequest {
     pub message_id: MessageId,
     pub request_id: RequestId,
     pub recent_context: Option<String>,
+    /// The cast the user picked; `None` uses the message's own.
+    pub cast: Option<SceneCastSelection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,10 +81,12 @@ pub enum ScenePromptError {
     Model(#[from] ImageFeatureModelError),
     #[error("Session not found")]
     ConversationNotFound,
-    #[error("Scene images are generated for direct chats only")]
-    NotDirect,
     #[error("Character not found")]
     CharacterNotFound,
+    #[error("the cast names a character that is not in the conversation")]
+    ForeignCastMember,
+    #[error("the scene has nobody to depict")]
+    EmptyCast,
     #[error("Message not found in loaded session window")]
     MessageNotFound,
     #[error("No conversation context available for scene prompt generation")]
@@ -117,6 +121,18 @@ pub enum ScenePromptError {
     ReplayCleanup { reason: String },
     #[error("scene prompt result could not be stored: {reason}")]
     ResultStorage { reason: String },
+}
+
+impl From<SceneCastError> for ScenePromptError {
+    fn from(error: SceneCastError) -> Self {
+        match error {
+            SceneCastError::CharacterNotFound => Self::CharacterNotFound,
+            SceneCastError::ForeignCharacter => Self::ForeignCastMember,
+            SceneCastError::Empty => Self::EmptyCast,
+            SceneCastError::MessageNotFound => Self::MessageNotFound,
+            SceneCastError::Storage { reason } => Self::Storage { reason },
+        }
+    }
 }
 
 impl From<crate::jobs::one_shot_job::OneShotJobError> for ScenePromptError {
@@ -194,8 +210,9 @@ impl crate::jobs::one_shot_job::OneShotFailure for ScenePromptError {
             ),
             Self::Model(_)
             | Self::ConversationNotFound
-            | Self::NotDirect
             | Self::CharacterNotFound
+            | Self::ForeignCastMember
+            | Self::EmptyCast
             | Self::MessageNotFound
             | Self::NoContext
             | Self::NoEntries
@@ -219,6 +236,7 @@ pub trait ScenePromptSources:
     + ConversationReader
     + CharacterRepository
     + PersonaRepository
+    + GroupRepository
     + ModelCatalog
     + lettuce_models::GlobalModelSettingsRepository
     + PromptRepository
@@ -234,6 +252,7 @@ impl<T> ScenePromptSources for T where
         + ConversationReader
         + CharacterRepository
         + PersonaRepository
+        + GroupRepository
         + ModelCatalog
         + lettuce_models::GlobalModelSettingsRepository
         + PromptRepository
@@ -327,7 +346,8 @@ where
                     reason: error.to_string(),
                 }
             })?;
-        recent_messages(&text, &window, message_id)
+        let names = SpeakerNames::of(self.repository, &aggregate.conversation);
+        recent_messages(&text, &window, message_id, &names)
     }
 
     /// Queues the request as a job, or returns the one an earlier admission
@@ -460,22 +480,13 @@ where
                 }
             })?;
         let conversation = &aggregate.conversation;
-        let ConversationKind::Direct(details) = &conversation.kind else {
-            return Err(ScenePromptError::NotDirect);
-        };
         let window = self.session_window(conversation)?;
-        let character = CharacterRepository::get(self.repository, details.character.source_id)
-            .map_err(|error| ScenePromptError::Storage {
-                reason: error.to_string(),
-            })?
-            .ok_or(ScenePromptError::CharacterNotFound)?;
-        let persona = effective_persona(conversation)
-            .map(|persona| PersonaRepository::get(self.repository, persona.source_id))
-            .transpose()
-            .map_err(|error| ScenePromptError::Storage {
-                reason: error.to_string(),
-            })?
-            .flatten();
+        let cast = crate::image::scene_cast::scene_cast(
+            self.repository,
+            conversation,
+            request.message_id,
+            request.cast.as_ref(),
+        )?;
         let image_model =
             crate::image_feature_model(self.repository, settings, ImageFeature::Scene)?;
         let local = image_model.is_local_diffusion();
@@ -488,50 +499,49 @@ where
             })?;
         let recent = match &request.recent_context {
             Some(recent) => recent.clone(),
-            None => recent_messages(&text, &window, request.message_id)?,
+            None => {
+                let names = SpeakerNames::of(self.repository, conversation);
+                recent_messages(&text, &window, request.message_id, &names)?
+            }
         };
-        let stored = StoredSceneReferences::new(conversation, &character, persona.as_ref());
         let references = if local {
-            stored.resolve::<D>(None)
+            SceneReferences::resolve::<D>(&cast, None)
         } else {
-            stored.resolve(Some(self.media))
+            SceneReferences::resolve(&cast, Some(self.media))
         };
-        let (character_lora, persona_lora) = if local {
-            let (character_lora, persona_lora) = crate::image::scene_loras::subject_loras(
-                self.repository,
-                details.character.source_id,
-                persona.as_ref().map(|persona| persona.id),
-            );
-            let binding = |lora: Option<&lettuce_models::StableDiffusionLora>, filler: &str| {
-                match crate::image::scene_loras::subject_binding(lora) {
-                    lettuce_conversations::SceneLoraBinding::Keywords(keywords) => keywords,
-                    lettuce_conversations::SceneLoraBinding::NoLora => {
-                        text.render_with(filler, []).unwrap_or_default()
-                    }
+        let loras = cast
+            .subjects
+            .iter()
+            .map(|subject| {
+                if !local {
+                    return String::new();
                 }
-            };
-            (
-                binding(character_lora.as_ref(), "scene_lora_primary_subject"),
-                persona_lora
-                    .map(|lora| binding(lora.as_ref(), "scene_lora_secondary_subject"))
-                    .unwrap_or_default(),
-            )
-        } else {
-            (String::new(), String::new())
-        };
+                let lora = crate::image::scene_loras::recommendation_lora(
+                    self.repository,
+                    subject.recommendation.as_ref(),
+                );
+                match crate::image::scene_loras::subject_binding(lora.as_ref()) {
+                    lettuce_conversations::SceneLoraBinding::Keywords(keywords) => keywords,
+                    lettuce_conversations::SceneLoraBinding::NoLora => text
+                        .render_with(
+                            if subject.is_persona() {
+                                "scene_lora_secondary_subject"
+                            } else {
+                                "scene_lora_primary_subject"
+                            },
+                            [],
+                        )
+                        .unwrap_or_default(),
+                }
+            })
+            .collect::<Vec<_>>();
         let values = render_values(
             &text,
             WriterInputs {
-                character: &character.character.profile,
-                persona: persona.as_ref().map(|persona| WriterPersona {
-                    title: &persona.title,
-                    description: &persona.description,
-                    design_description: persona.design_description.as_deref(),
-                }),
+                cast: &cast,
                 references: &references,
+                loras: &loras,
                 recent: recent.clone(),
-                character_lora,
-                persona_lora,
                 image_model_instructions: image_model
                     .profile
                     .config
@@ -547,14 +557,32 @@ where
             .map_err(|error| ScenePromptError::Storage {
                 reason: error.to_string(),
             })?;
-        let scene_id = effective
-            .scene
-            .as_ref()
-            .map(|scene| scene.source_id)
-            .or(character.character.defaults.default_scene_id);
+        let primary = cast.primary();
+        let primary_character = match primary.map(|subject| subject.kind) {
+            Some(crate::image::scene_cast::CastSubjectKind::Character(id)) => {
+                CharacterRepository::get(self.repository, id).map_err(|error| {
+                    ScenePromptError::Storage {
+                        reason: error.to_string(),
+                    }
+                })?
+            }
+            _ => None,
+        };
+        let scene_id = effective.scene.as_ref().map(|scene| scene.source_id).or(
+            primary_character
+                .as_ref()
+                .filter(|_| !cast.group)
+                .and_then(|character| character.character.defaults.default_scene_id),
+        );
+        let primary_references = references.primary(&cast);
+        let persona_references = references.persona();
         let capabilities = &writer.profile.config.capabilities;
         let conditions = PromptConditionContext {
-            chat_mode: PromptEntryChatMode::Direct,
+            chat_mode: if cast.group {
+                PromptEntryChatMode::Group
+            } else {
+                PromptEntryChatMode::Direct
+            },
             scene_generation_enabled: true,
             avatar_generation_enabled: settings.image_generation.avatar_enabled,
             is_local_image_generation_model: local,
@@ -566,25 +594,25 @@ where
             }),
             has_scene: scene_id.is_some(),
             has_scene_direction: scene_id
-                .and_then(|id| character.scenes.iter().find(|scene| scene.id == id))
+                .zip(primary_character.as_ref())
+                .and_then(|(id, character)| character.scenes.iter().find(|scene| scene.id == id))
                 .and_then(|scene| scene.direction.as_deref())
                 .is_some_and(|direction| !direction.trim().is_empty()),
-            has_persona: persona.is_some(),
+            has_persona: cast.persona().is_some(),
             message_count: window.len(),
-            participant_count: 2,
+            participant_count: cast.subjects.len(),
             recent_text: recent,
             does_author_note_exists: effective
                 .author_note
                 .as_deref()
                 .is_some_and(|note| !note.trim().is_empty()),
-            has_character_reference_images: !references.character.references.is_empty(),
+            has_character_reference_images: primary_references
+                .is_some_and(|subject| !subject.references.is_empty()),
             has_chat_background: references.background.is_some(),
-            has_persona_reference_images: references
-                .persona
-                .as_ref()
+            has_persona_reference_images: persona_references
                 .is_some_and(|persona| !persona.references.is_empty()),
-            has_character_reference_text: has_reference_text(&references.character),
-            has_persona_reference_text: references.persona.as_ref().is_some_and(has_reference_text),
+            has_character_reference_text: primary_references.is_some_and(has_reference_text),
+            has_persona_reference_text: persona_references.is_some_and(has_reference_text),
             input_scopes: crate::generation::conversation_generation_input::modality_scopes(
                 capabilities.input_modalities,
             ),
@@ -725,44 +753,21 @@ where
     }
 }
 
-struct WriterPersona<'a> {
-    title: &'a str,
-    description: &'a str,
-    design_description: Option<&'a str>,
-}
-
 struct WriterInputs<'a> {
-    character: &'a lettuce_characters::CharacterProfile,
-    persona: Option<WriterPersona<'a>>,
+    cast: &'a SceneCast,
     references: &'a SceneReferences,
+    /// Each subject's LoRA binding, in cast order; blank for a remote model.
+    loras: &'a [String],
     recent: String,
-    character_lora: String,
-    persona_lora: String,
     image_model_instructions: String,
 }
 
-/// The placeholder values of the scene generation prompt.
-fn render_values(
-    text: &RuntimeText,
-    inputs: WriterInputs<'_>,
-) -> Result<PromptRenderValues, ScenePromptError> {
-    let WriterInputs {
-        character: profile,
-        persona,
-        references,
-        recent,
-        character_lora,
-        persona_lora,
-        image_model_instructions,
-    } = inputs;
-    let persona_name = persona.as_ref().map_or_else(
-        || {
-            text.render_with("scene_writer_default_persona_name", [])
-                .unwrap_or_default()
-        },
-        |persona| persona.title.to_owned(),
-    );
-    let design_notes = |notes: Option<&str>| {
+/// A subject's description followed by its design notes.
+fn subject_description(text: &RuntimeText, description: &str, notes: Option<&str>) -> String {
+    [
+        Some(description.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
         notes
             .map(str::trim)
             .filter(|notes| !notes.is_empty())
@@ -772,71 +777,163 @@ fn render_values(
                     [(Variable::SubjectDescription, notes.to_owned())],
                 )
                 .unwrap_or_default()
-            })
-    };
-    let character_description = [
-        profile
-            .definition
-            .as_deref()
-            .or(profile.description.as_deref())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned),
-        design_notes(profile.design_description.as_deref()),
+            }),
     ]
     .into_iter()
     .flatten()
     .collect::<Vec<_>>()
-    .join("\n\n");
-    let persona_description = persona
-        .as_ref()
-        .map(|persona| {
+    .join("\n\n")
+}
+
+/// `{{scene_cast}}`: one block per subject with its role, description,
+/// design notes and the hint about its reference images.
+fn cast_text(text: &RuntimeText, cast: &SceneCast, references: &SceneReferences) -> String {
+    cast.subjects
+        .iter()
+        .zip(&references.subjects)
+        .map(|(subject, reference)| {
+            let header = text
+                .render_with(
+                    "scene_cast_member",
+                    [
+                        (Variable::SubjectName, subject.name.clone()),
+                        (
+                            Variable::SubjectRole,
+                            text.render_with(
+                                if subject.is_persona() {
+                                    "scene_cast_role_persona"
+                                } else {
+                                    "scene_cast_role_character"
+                                },
+                                [],
+                            )
+                            .unwrap_or_default(),
+                        ),
+                    ],
+                )
+                .unwrap_or_default();
             [
-                Some(persona.description.trim())
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_owned),
-                design_notes(persona.design_description),
+                header,
+                subject_description(text, &subject.description, subject.design_notes.as_deref()),
+                reference_hint(text, reference),
             ]
             .into_iter()
-            .flatten()
+            .filter(|section| !section.is_empty())
             .collect::<Vec<_>>()
-            .join("\n\n")
+            .join("\n")
         })
-        .unwrap_or_default();
-    let scene_request = match &persona {
-        Some(persona) => text.render_with(
-            "scene_writer_request_with_persona",
-            [
-                (Variable::SubjectName, profile.name.clone()),
-                (Variable::OtherSubjectName, persona.title.to_owned()),
-            ],
-        ),
-        None => text.render_with(
-            "scene_writer_request",
-            [(Variable::SubjectName, profile.name.clone())],
-        ),
-    }
-    .map_err(|error| ScenePromptError::MissingPrompt {
-        reason: error.to_string(),
-    })?;
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// `{{scene_cast_lora}}`: one line per subject with its LoRA binding.
+fn cast_lora_text(text: &RuntimeText, cast: &SceneCast, loras: &[String]) -> String {
+    cast.subjects
+        .iter()
+        .zip(loras)
+        .map(|(subject, keywords)| {
+            text.render_with(
+                "scene_cast_lora_line",
+                [
+                    (Variable::SubjectName, subject.name.clone()),
+                    (Variable::SubjectDescription, keywords.clone()),
+                ],
+            )
+            .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The placeholder values of the scene generation prompt. The single
+/// character placeholders older prompts use name the cast's primary
+/// character and its persona.
+fn render_values(
+    text: &RuntimeText,
+    inputs: WriterInputs<'_>,
+) -> Result<PromptRenderValues, ScenePromptError> {
+    let WriterInputs {
+        cast,
+        references,
+        loras,
+        recent,
+        image_model_instructions,
+    } = inputs;
+    let missing = |error: crate::generation::runtime_text::RuntimeTextError| {
+        ScenePromptError::MissingPrompt {
+            reason: error.to_string(),
+        }
+    };
+    let index_of = |subject: Option<&crate::image::scene_cast::CastSubject>| {
+        subject.and_then(|subject| {
+            cast.subjects
+                .iter()
+                .position(|candidate| candidate.kind == subject.kind)
+        })
+    };
+    let primary = index_of(cast.primary());
+    let persona = index_of(cast.persona());
+    let persona_name = persona.map_or_else(
+        || {
+            text.render_with("scene_writer_default_persona_name", [])
+                .unwrap_or_default()
+        },
+        |index| cast.subjects[index].name.clone(),
+    );
+    let description = |index: Option<usize>| {
+        index
+            .map(|index| {
+                let subject = &cast.subjects[index];
+                subject_description(text, &subject.description, subject.design_notes.as_deref())
+            })
+            .unwrap_or_default()
+    };
+    let names = cast
+        .subjects
+        .iter()
+        .map(|subject| subject.name.as_str())
+        .collect::<Vec<_>>();
+    let scene_request = match names.as_slice() {
+        [] => String::new(),
+        [only] => text
+            .render_with(
+                "scene_writer_request",
+                [(Variable::SubjectName, (*only).to_owned())],
+            )
+            .map_err(missing)?,
+        [rest @ .., last] => text
+            .render_with(
+                "scene_writer_request_with_persona",
+                [
+                    (Variable::SubjectName, rest.join(", ")),
+                    (Variable::OtherSubjectName, (*last).to_owned()),
+                ],
+            )
+            .map_err(missing)?,
+    };
+    let lora = |index: Option<usize>| {
+        index
+            .and_then(|index| loras.get(index))
+            .cloned()
+            .unwrap_or_default()
+    };
+    let reference = |index: Option<usize>| {
+        index
+            .and_then(|index| references.subjects.get(index))
+            .map(|subject| reference_text(text, subject))
+            .unwrap_or_default()
+    };
     let mut purpose_values = BTreeMap::from([
         (Variable::RecentMessages, recent),
         (Variable::SceneRequest, scene_request),
-        (
-            Variable::CharacterReferenceText,
-            reference_text(text, &references.character),
-        ),
-        (
-            Variable::PersonaReferenceText,
-            references
-                .persona
-                .as_ref()
-                .map(|persona| reference_text(text, persona))
-                .unwrap_or_default(),
-        ),
-        (Variable::CharacterLoraKeywords, character_lora),
-        (Variable::PersonaLoraKeywords, persona_lora),
+        (Variable::SceneCast, cast_text(text, cast, references)),
+        (Variable::SceneCastLoraKeywords, cast_lora_text(text, cast, loras)),
+        (Variable::CharacterReferenceText, reference(primary)),
+        (Variable::PersonaReferenceText, reference(persona)),
+        (Variable::CharacterLoraKeywords, lora(primary)),
+        (Variable::PersonaLoraKeywords, lora(persona)),
         (Variable::ImageModelInstructions, image_model_instructions),
+        (Variable::CastImage, CAST_TOKEN.to_owned()),
         (Variable::CharacterImage, CHARACTER_TOKEN.to_owned()),
         (Variable::PersonaImage, PERSONA_TOKEN.to_owned()),
         (Variable::ChatBackgroundImage, BACKGROUND_TOKEN.to_owned()),
@@ -845,20 +942,81 @@ fn render_values(
         purpose_values.insert(
             Variable::ChatBackgroundReferenceText,
             text.render_with("scene_writer_background_notes", [])
-                .map_err(|error| ScenePromptError::MissingPrompt {
-                    reason: error.to_string(),
-                })?,
+                .map_err(missing)?,
         );
     }
     Ok(PromptRenderValues {
-        character_name: profile.name.clone(),
-        character_description,
+        character_name: primary.map_or_else(String::new, |index| cast.subjects[index].name.clone()),
+        character_description: description(primary),
         persona_name: persona_name.clone(),
-        persona_description,
+        persona_description: description(persona),
         user_name: persona_name,
         purpose_values,
         ..Default::default()
     })
+}
+
+/// The names the recent messages give their speakers: each character's
+/// live name, else its participant name, and the persona's.
+#[derive(Debug, Default)]
+struct SpeakerNames {
+    conversation: Option<lettuce_conversations::Conversation>,
+    characters: Vec<(lettuce_types::CharacterId, String)>,
+    persona: Option<String>,
+}
+
+impl SpeakerNames {
+    fn of<R: crate::image::scene_cast::SceneCastSources + ?Sized>(
+        repository: &R,
+        conversation: &lettuce_conversations::Conversation,
+    ) -> Self {
+        let subjects = crate::image::scene_cast::chat_cast(repository, conversation)
+            .inspect_err(|error| tracing::warn!(?error, "the scene speakers could not be read"))
+            .unwrap_or_default();
+        let mut names = Self {
+            conversation: Some(conversation.clone()),
+            ..Self::default()
+        };
+        for subject in subjects {
+            match subject.kind {
+                crate::image::scene_cast::CastSubjectKind::Character(id) => {
+                    names.characters.push((id, subject.name));
+                }
+                crate::image::scene_cast::CastSubjectKind::Persona(_) => {
+                    names.persona = Some(subject.name);
+                }
+            }
+        }
+        names
+    }
+
+    fn of_item(&self, item: &TimelineItem) -> Option<String> {
+        let conversation = self.conversation.as_ref()?;
+        match item.message.role {
+            MessageRole::User => self.persona.clone(),
+            MessageRole::Assistant => {
+                let character =
+                    crate::image::scene_cast::author_character(conversation, item);
+                character
+                    .and_then(|id| {
+                        self.characters
+                            .iter()
+                            .find(|(candidate, _)| *candidate == id)
+                            .map(|(_, name)| name.clone())
+                    })
+                    .or_else(|| {
+                        let author = item.message.author_participant_id?;
+                        conversation
+                            .participants
+                            .iter()
+                            .find(|participant| participant.id == author)
+                            .map(|participant| participant.display_name.clone())
+                    })
+            }
+            MessageRole::Scene | MessageRole::System => None,
+        }
+        .filter(|name| !name.trim().is_empty())
+    }
 }
 
 /// What a message shows now, without inline image tokens.
@@ -895,11 +1053,12 @@ fn strip_inline_image_tokens(text: &str) -> String {
 }
 
 /// The message and the two positions before it in the loaded window, as
-/// "Role: text" lines.
+/// "Speaker: text" lines; a speaker without a name gets its role's label.
 fn recent_messages(
     text: &RuntimeText,
     window: &[TimelineItem],
     message_id: MessageId,
+    names: &SpeakerNames,
 ) -> Result<String, ScenePromptError> {
     let target = window
         .iter()
@@ -918,11 +1077,14 @@ fn recent_messages(
         if content.is_empty() {
             continue;
         }
-        let label =
-            text.render_with(label, [])
+        let label = match names.of_item(item) {
+            Some(name) => name,
+            None => text
+                .render_with(label, [])
                 .map_err(|error| ScenePromptError::MissingPrompt {
                     reason: error.to_string(),
-                })?;
+                })?,
+        };
         lines.push(
             text.render_with(
                 "scene_writer_message_line",
@@ -1006,24 +1168,41 @@ fn render_entries(
 }
 
 /// The images an entry carries: its payload slot's, else those its image
-/// tokens name.
+/// tokens name. The character slot is the cast's primary character.
 fn entry_images(entry: &FeatureEntry, references: &SceneReferences) -> Vec<AssetId> {
     let persona = || {
         references
-            .persona
-            .as_ref()
+            .persona()
             .map(|persona| persona.references.clone())
             .unwrap_or_default()
     };
+    let character = || {
+        references
+            .characters()
+            .next()
+            .map(|character| character.references.clone())
+            .unwrap_or_default()
+    };
+    let cast = || {
+        references
+            .subjects
+            .iter()
+            .flat_map(|subject| subject.references.iter().copied())
+            .collect::<Vec<_>>()
+    };
     match entry.slot {
-        Some(PromptEntryImageSlot::Character) => references.character.references.clone(),
+        Some(PromptEntryImageSlot::Cast) => cast(),
+        Some(PromptEntryImageSlot::Character) => character(),
         Some(PromptEntryImageSlot::Persona) => persona(),
         Some(PromptEntryImageSlot::ChatBackground) => references.background.into_iter().collect(),
         Some(PromptEntryImageSlot::Avatar | PromptEntryImageSlot::References) => Vec::new(),
         None => {
             let mut images = Vec::new();
+            if entry.content.contains(CAST_TOKEN) {
+                images.extend(cast());
+            }
             if entry.content.contains(CHARACTER_TOKEN) {
-                images.extend(references.character.references.iter().copied());
+                images.extend(character());
             }
             if entry.content.contains(PERSONA_TOKEN) {
                 images.extend(persona());
@@ -1166,15 +1345,18 @@ mod tests {
     use lettuce_types::{ConversationBranchId, MessageRevisionId, Revision};
 
     use super::*;
+    use crate::image::scene_cast::{CastSubject, CastSubjectKind};
 
     fn subject(
         name: &str,
         notes: Option<&str>,
         references: Vec<AssetId>,
         source: Option<ReferenceSource>,
+        persona: bool,
     ) -> SceneSubject {
         SceneSubject {
             name: name.to_owned(),
+            persona,
             design_notes: notes.map(str::to_owned),
             stored_design_count: if source == Some(ReferenceSource::Design) {
                 references.len()
@@ -1187,14 +1369,31 @@ mod tests {
         }
     }
 
-    fn profile() -> lettuce_characters::CharacterProfile {
-        lettuce_characters::CharacterProfile {
-            name: "Mira".into(),
-            nickname: None,
-            description: Some("Unused description".into()),
-            definition: Some(" A sailor. ".into()),
-            design_description: Some("red coat".into()),
-            scenario: None,
+    fn cast_subject(name: &str, description: &str, notes: Option<&str>, persona: bool) -> CastSubject {
+        CastSubject {
+            kind: if persona {
+                CastSubjectKind::Persona(lettuce_types::PersonaId::new())
+            } else {
+                CastSubjectKind::Character(lettuce_types::CharacterId::new())
+            },
+            name: name.to_owned(),
+            description: description.to_owned(),
+            design_notes: notes.map(str::to_owned),
+            design: Vec::new(),
+            avatars: Vec::new(),
+            recommendation: None,
+        }
+    }
+
+    fn cast(subjects: Vec<CastSubject>, group: bool) -> SceneCast {
+        SceneCast {
+            speaker: subjects.iter().find_map(|subject| match subject.kind {
+                CastSubjectKind::Character(id) => Some(id),
+                CastSubjectKind::Persona(_) => None,
+            }),
+            subjects,
+            background: None,
+            group,
         }
     }
 
@@ -1224,72 +1423,75 @@ mod tests {
         PromptConditionContext {
             is_local_image_generation_model: local,
             is_scene_generation_local_image_model: local,
-            has_persona: references.persona.is_some(),
-            has_character_reference_images: !references.character.references.is_empty(),
+            has_persona: references.persona().is_some(),
             has_chat_background: references.background.is_some(),
-            has_persona_reference_images: references
-                .persona
-                .as_ref()
-                .is_some_and(|persona| !persona.references.is_empty()),
-            has_character_reference_text: has_reference_text(&references.character),
-            has_persona_reference_text: references.persona.as_ref().is_some_and(has_reference_text),
             ..Default::default()
         }
     }
 
-    #[test]
-    fn remote_writer_messages_follow_legacy_scene_prompt_order() {
+    fn rendered(
+        cast: &SceneCast,
+        references: &SceneReferences,
+        loras: &[String],
+        recent: &str,
+        local: bool,
+        condense: bool,
+    ) -> Vec<ProviderNeutralMessage> {
         let text = RuntimeText::from_seed(BuiltInPromptId::ChatRuntime);
+        let values = render_values(
+            &text,
+            WriterInputs {
+                cast,
+                references,
+                loras,
+                recent: recent.into(),
+                image_model_instructions: if local { String::new() } else { "Use tags.".into() },
+            },
+        )
+        .expect("values");
+        let mut document =
+            crate::generation::built_in_prompts::seed_document(BuiltInPromptId::ScenePromptWriter);
+        document.condense = condense;
+        let entries = render_entries(
+            &document,
+            PromptRenderContext {
+                conditions: conditions(local, references),
+                values,
+            },
+        )
+        .expect("entries");
+        writer_messages(&entries, references)
+    }
+
+    #[test]
+    fn remote_writer_messages_carry_the_whole_cast() {
         let (first, second, avatar, background) = (
             AssetId::new(),
             AssetId::new(),
             AssetId::new(),
             AssetId::new(),
         );
+        let cast = cast(
+            vec![
+                cast_subject("Mira", "A sailor.", Some("red coat"), false),
+                cast_subject("Sol", "A traveler.", None, true),
+            ],
+            false,
+        );
         let references = SceneReferences {
-            character: subject(
-                "Mira",
-                Some("red coat"),
-                vec![first, second],
-                Some(ReferenceSource::Design),
-            ),
-            persona: Some(subject(
-                "Sol",
-                None,
-                vec![avatar],
-                Some(ReferenceSource::Avatar),
-            )),
+            subjects: vec![
+                subject(
+                    "Mira",
+                    Some("red coat"),
+                    vec![first, second],
+                    Some(ReferenceSource::Design),
+                    false,
+                ),
+                subject("Sol", None, vec![avatar], Some(ReferenceSource::Avatar), true),
+            ],
             background: Some(background),
         };
-        let profile = profile();
-        let values = render_values(
-            &text,
-            WriterInputs {
-                character: &profile,
-                persona: Some(WriterPersona {
-                    title: "Sol",
-                    description: "A traveler.",
-                    design_description: None,
-                }),
-                references: &references,
-                recent: "User: Hello\n\nAssistant: Hi".into(),
-                character_lora: String::new(),
-                persona_lora: String::new(),
-                image_model_instructions: "Use tags.".into(),
-            },
-        )
-        .expect("values");
-        let document =
-            crate::generation::built_in_prompts::seed_document(BuiltInPromptId::ScenePromptWriter);
-        let entries = render_entries(
-            &document,
-            PromptRenderContext {
-                conditions: conditions(false, &references),
-                values,
-            },
-        )
-        .expect("entries");
-        let messages = writer_messages(&entries, &references);
+        let messages = rendered(&cast, &references, &[], "Sol: Hello\n\nMira: Hi", false, false);
         let roles = messages
             .iter()
             .map(|message| message.role)
@@ -1298,7 +1500,7 @@ mod tests {
             roles,
             [
                 [MessageRole::System; 4].as_slice(),
-                [MessageRole::User; 7].as_slice()
+                [MessageRole::User; 4].as_slice()
             ]
             .concat()
         );
@@ -1306,26 +1508,19 @@ mod tests {
         assert_eq!(
             texts(&messages[4]),
             [
-                "# Scene Context\nCharacter: Mira\nA sailor.\n\nVisual design notes: red coat\n\n\
-              Persona: Sol\nA traveler.\n\nRecent Messages:\nUser: Hello\n\nAssistant: Hi"
+                "# Scene Cast\nCharacter: Mira\nA sailor.\n\nVisual design notes: red coat\n\
+                 The image model will receive 2 saved design reference images for Mira.\n\n\
+                 Persona: Sol\nA traveler.\n\
+                 The image model will receive Sol's base avatar as a visual reference.\n\n\
+                 Recent Messages:\nSol: Hello\n\nMira: Hi"
             ]
         );
         assert!(texts(&messages[5]).is_empty());
-        assert_eq!(images(&messages[5]), [first, second]);
+        assert_eq!(images(&messages[5]), [first, second, avatar]);
+        assert!(texts(&messages[6])[0].starts_with("# Chat Background Reference\n"));
+        assert_eq!(images(&messages[6]), [background]);
         assert_eq!(
-            texts(&messages[6]),
-            ["# Mira Reference Notes\nred coat\n\n\
-              The image model will receive 2 saved design reference images for Mira."]
-        );
-        assert!(texts(&messages[7])[0].starts_with("# Chat Background Reference\n"));
-        assert_eq!(images(&messages[7]), [background]);
-        assert_eq!(images(&messages[8]), [avatar]);
-        assert_eq!(
-            texts(&messages[9]),
-            ["The image model will receive Sol's base avatar as a visual reference."]
-        );
-        assert_eq!(
-            texts(&messages[10]),
+            texts(&messages[7]),
             [
                 "# Scene Request\nCreate one polished scene image prompt for the visual moment \
               described by the recent messages. Focus on the currently active beat involving \
@@ -1334,76 +1529,77 @@ mod tests {
             ]
         );
 
-        let mut condensed = document.clone();
-        condensed.condense = true;
-        let values = render_values(
-            &text,
-            WriterInputs {
-                character: &profile,
-                persona: None,
-                references: &references,
-                recent: "User: Hello".into(),
-                character_lora: String::new(),
-                persona_lora: String::new(),
-                image_model_instructions: String::new(),
-            },
-        )
-        .expect("values");
-        let entries = render_entries(
-            &condensed,
-            PromptRenderContext {
-                conditions: conditions(false, &references),
-                values,
-            },
-        )
-        .expect("entries");
-        let messages = writer_messages(&entries, &references);
-        assert_eq!(messages.len(), 4);
+        let lone = super::tests::cast(
+            vec![cast_subject("Mira", "A sailor.", Some("red coat"), false)],
+            false,
+        );
+        let lone_references = SceneReferences {
+            subjects: vec![references.subjects[0].clone()],
+            background: Some(background),
+        };
+        let messages = rendered(&lone, &lone_references, &[], "User: Hello", false, true);
+        assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].role, MessageRole::System);
         let merged = texts(&messages[0])[0];
-        assert!(merged.contains("Persona: user\n\nRecent Messages:\nUser: Hello"));
+        assert!(merged.contains("Recent Messages:\nUser: Hello"));
         assert!(merged.contains("involving Mira. Make the result immediately usable"));
         assert!(merged.ends_with("do not wrap the result in quotes."));
         assert_eq!(images(&messages[1]), [first, second]);
         assert_eq!(images(&messages[2]), [background]);
-        assert_eq!(images(&messages[3]), [avatar]);
+    }
+
+    #[test]
+    fn group_writer_requests_name_every_subject() {
+        let cast = cast(
+            vec![
+                cast_subject("Mira", "", None, false),
+                cast_subject("Tom", "", None, false),
+                cast_subject("Sol", "", None, true),
+            ],
+            true,
+        );
+        let references = SceneReferences {
+            subjects: vec![
+                subject("Mira", None, Vec::new(), None, false),
+                subject("Tom", None, Vec::new(), None, false),
+                subject("Sol", None, Vec::new(), None, true),
+            ],
+            background: None,
+        };
+        let messages = rendered(&cast, &references, &[], "Tom: Look", false, false);
+        let request = messages
+            .iter()
+            .flat_map(texts)
+            .find(|text| text.starts_with("# Scene Request"))
+            .expect("request");
+        assert!(request.contains("involving Mira, Tom and Sol. Keep Mira, Tom and Sol visually distinct"));
+        assert!(messages.iter().all(|message| images(message).is_empty()));
     }
 
     #[test]
     fn local_writer_messages_carry_the_lora_bindings() {
-        let text = RuntimeText::from_seed(BuiltInPromptId::ChatRuntime);
+        let cast = cast(
+            vec![
+                cast_subject("Mira", "", Some("red coat"), false),
+                cast_subject("Sol", "", None, true),
+            ],
+            false,
+        );
         let references = SceneReferences {
-            character: subject("Mira", Some("red coat"), Vec::new(), None),
-            persona: Some(subject("Sol", None, Vec::new(), None)),
+            subjects: vec![
+                subject("Mira", Some("red coat"), Vec::new(), None, false),
+                subject("Sol", None, Vec::new(), None, true),
+            ],
             background: None,
         };
-        let profile = profile();
-        let values = render_values(
-            &text,
-            WriterInputs {
-                character: &profile,
-                persona: Some(WriterPersona {
-                    title: "Sol",
-                    description: "",
-                    design_description: None,
-                }),
-                references: &references,
-                recent: "User: Hello".into(),
-                character_lora: "mira_v2".into(),
-                persona_lora: "secondary subject".into(),
-                image_model_instructions: String::new(),
-            },
-        )
-        .expect("values");
-        let entries = render_entries(
-            &crate::generation::built_in_prompts::seed_document(BuiltInPromptId::ScenePromptWriter),
-            PromptRenderContext {
-                conditions: conditions(true, &references),
-                values,
-            },
-        )
-        .expect("entries");
-        let messages = writer_messages(&entries, &references);
+        let messages = rendered(
+            &cast,
+            &references,
+            &["mira_v2".into(), "secondary subject".into()],
+            "User: Hello",
+            true,
+            false,
+        );
         let roles = messages
             .iter()
             .map(|message| message.role)
@@ -1414,19 +1610,14 @@ mod tests {
                 MessageRole::System,
                 MessageRole::System,
                 MessageRole::System,
-                MessageRole::User,
                 MessageRole::User
             ]
         );
         assert_eq!(
             texts(&messages[3]),
             [
-                "Primary subject (Assistant) trigger keywords: mira_v2\n\nRecent Messages:\nUser: Hello"
+                "Subject trigger keywords:\n- Mira: mira_v2\n- Sol: secondary subject\n\nRecent Messages:\nUser: Hello"
             ]
-        );
-        assert_eq!(
-            texts(&messages[4]),
-            ["Secondary subject (User) trigger keywords: secondary subject"]
         );
     }
 
@@ -1451,8 +1642,7 @@ mod tests {
     fn in_chat_entries_are_placed_like_legacy() {
         use PromptEntryPosition::{Conditional, InChat, Interval, Relative};
         let references = SceneReferences {
-            character: subject("Mira", None, Vec::new(), None),
-            persona: None,
+            subjects: vec![subject("Mira", None, Vec::new(), None, false)],
             background: None,
         };
         let entries = [
@@ -1526,6 +1716,7 @@ mod tests {
     #[test]
     fn recent_messages_take_the_target_and_two_positions_before_it() {
         let text = RuntimeText::from_seed(BuiltInPromptId::ChatRuntime);
+        let names = SpeakerNames::default();
         let window = [
             timeline_item(MessageRole::User, "Too early"),
             timeline_item(MessageRole::System, "Rules"),
@@ -1534,11 +1725,11 @@ mod tests {
             timeline_item(MessageRole::User, "After"),
         ];
         assert_eq!(
-            recent_messages(&text, &window, window[3].message.id).expect("context"),
+            recent_messages(&text, &window, window[3].message.id, &names).expect("context"),
             "Scene: A harbor at dusk"
         );
         assert!(matches!(
-            recent_messages(&text, &window[1..4], window[3].message.id)
+            recent_messages(&text, &window[1..4], window[3].message.id, &names)
                 .map(|context| context.len()),
             Ok(23)
         ));
@@ -1547,15 +1738,15 @@ mod tests {
             timeline_item(MessageRole::Assistant, "{{image:x}}"),
         ];
         assert!(matches!(
-            recent_messages(&text, &silent, silent[1].message.id),
+            recent_messages(&text, &silent, silent[1].message.id, &names),
             Err(ScenePromptError::NoContext)
         ));
         assert!(matches!(
-            recent_messages(&text, &window, MessageId::new()),
+            recent_messages(&text, &window, MessageId::new(), &names),
             Err(ScenePromptError::MessageNotFound)
         ));
         assert_eq!(
-            recent_messages(&text, &window, window[4].message.id).expect("context"),
+            recent_messages(&text, &window, window[4].message.id, &names).expect("context"),
             "Scene: A harbor at dusk\n\nUser: After"
         );
     }

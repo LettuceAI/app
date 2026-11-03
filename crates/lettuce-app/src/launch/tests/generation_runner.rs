@@ -7723,6 +7723,7 @@ async fn direct_replies_hand_back_their_scene_tag_before_finalizing() {
     let mut tagged_input = input(&scenario);
     tagged_input.reply_images = Some(crate::ReplyImageFacts {
         scene_mode: Some(lettuce_settings::SceneGenerationMode::AskFirst),
+        cast_names: Vec::new(),
     });
     let result = ConversationGenerationJobRunner::new(&database, &inference)
         .run(&work, tagged_input, TimestampMillis::new(1_020))
@@ -7739,6 +7740,7 @@ async fn direct_replies_hand_back_their_scene_tag_before_finalizing() {
         Some(crate::SceneImageFollowUp {
             prompt: "a harbor at dusk".into(),
             ask_first: true,
+            cast: None,
         })
     );
 }

@@ -1,15 +1,11 @@
-//! Scene images for a direct chat message: the image request is built from
-//! the character, persona and background references, and the generated image
-//! is added to the message. The follow-up (`scene_follow_up.rs`) runs them as
+//! Scene images for a chat message: the image request is built from the
+//! cast's references and the chat background, and the generated image is
+//! added to the message. The follow-up (`scene_follow_up.rs`) runs them as
 //! image jobs.
 
-use lettuce_characters::{
-    CharacterMediaSlot, CharacterRepository, PersonaMediaSlot, PersonaRepository, SceneAssetSlot,
-};
 use lettuce_context::PromptVariable;
 use lettuce_conversations::{
-    ConversationBackground, ConversationKind, ConversationReader, ConversationRepository,
-    EditMessageResult, MediaAssetRole, OperationToken, TimelineItem,
+    ConversationReader, ConversationRepository, EditMessageResult, MediaAssetRole, OperationToken,
 };
 use lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository;
 use lettuce_image_generation::{
@@ -17,11 +13,13 @@ use lettuce_image_generation::{
 };
 use lettuce_models::{ModelCatalog, StableDiffusionLora};
 use lettuce_types::{
-    AssetId, ContentHash, ConversationId, MessageId, PageLimit, PageRequest, RequestId,
-    TimestampMillis,
+    AssetId, ContentHash, ConversationId, MessageId, RequestId, TimestampMillis,
 };
 
 use crate::generation::runtime_text::RuntimeText;
+use crate::image::scene_cast::{
+    CastSubject, SceneCast, SceneCastError, SceneCastSelection, SceneCastSources,
+};
 use crate::{BuiltInPromptId, ImageFeature, ImageFeatureModelError, image_feature_model};
 
 const MAX_INPUT_IMAGES: usize = 16;
@@ -35,6 +33,8 @@ pub struct SceneImageRequest {
     /// Identifies this generation; each attempt's image request and the
     /// message edit derive their ids from it, so a replay repeats them.
     pub request_id: RequestId,
+    /// The cast the user picked; `None` uses the message's own.
+    pub cast: Option<SceneCastSelection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -43,12 +43,14 @@ pub enum SceneImageError {
     EmptyPrompt,
     #[error("Session not found")]
     ConversationNotFound,
-    #[error("Scene images are generated for direct chats only")]
-    NotDirect,
     #[error("Message not found in loaded session window")]
     MessageNotFound,
     #[error("Session character not found")]
     CharacterNotFound,
+    #[error("the cast names a character that is not in the conversation")]
+    ForeignCastMember,
+    #[error("the scene has nobody to depict")]
+    EmptyCast,
     #[error(transparent)]
     Model(#[from] ImageFeatureModelError),
     #[error("{0}")]
@@ -57,6 +59,18 @@ pub enum SceneImageError {
     MessageUnavailable,
     #[error("scene image storage failed: {reason}")]
     Storage { reason: String },
+}
+
+impl From<SceneCastError> for SceneImageError {
+    fn from(error: SceneCastError) -> Self {
+        match error {
+            SceneCastError::CharacterNotFound => Self::CharacterNotFound,
+            SceneCastError::ForeignCharacter => Self::ForeignCastMember,
+            SceneCastError::Empty => Self::EmptyCast,
+            SceneCastError::MessageNotFound => Self::MessageNotFound,
+            SceneCastError::Storage { reason } => Self::Storage { reason },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +84,7 @@ pub(crate) enum ReferenceSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SceneSubject {
     pub(crate) name: String,
+    pub(crate) persona: bool,
     pub(crate) design_notes: Option<String>,
     pub(crate) references: Vec<AssetId>,
     pub(crate) source: Option<ReferenceSource>,
@@ -80,59 +95,146 @@ pub(crate) struct SceneSubject {
     pub(crate) stored_source: Option<ReferenceSource>,
 }
 
+fn references_of(
+    design: Vec<AssetId>,
+    avatar: Option<AssetId>,
+) -> (Vec<AssetId>, Option<ReferenceSource>) {
+    if !design.is_empty() {
+        (design, Some(ReferenceSource::Design))
+    } else if let Some(avatar) = avatar {
+        (vec![avatar], Some(ReferenceSource::Avatar))
+    } else {
+        (Vec::new(), None)
+    }
+}
+
 impl SceneSubject {
-    fn new(
-        name: String,
-        design_notes: Option<&str>,
-        design: Vec<AssetId>,
-        avatar: Option<AssetId>,
-    ) -> Self {
-        let (references, source) = if !design.is_empty() {
-            (design, Some(ReferenceSource::Design))
-        } else if let Some(avatar) = avatar {
-            (vec![avatar], Some(ReferenceSource::Avatar))
-        } else {
-            (Vec::new(), None)
+    /// The subject with only the images `media` can read; without media (a
+    /// local image model) no image is sent.
+    fn resolve<D: ImageMedia + ?Sized>(subject: &CastSubject, media: Option<&D>) -> Self {
+        let (stored, stored_source) =
+            references_of(subject.design.clone(), subject.avatars.first().copied());
+        let readable = |assets: &[AssetId]| {
+            media.map_or_else(Vec::new, |media| {
+                assets
+                    .iter()
+                    .copied()
+                    .filter(|asset| media.load_input(*asset).is_ok())
+                    .collect::<Vec<_>>()
+            })
         };
+        let (references, source) = references_of(
+            readable(&subject.design),
+            readable(&subject.avatars).first().copied(),
+        );
         Self {
-            name,
-            design_notes: design_notes
-                .map(str::trim)
-                .filter(|notes| !notes.is_empty())
-                .map(str::to_owned),
-            stored_design_count: if source == Some(ReferenceSource::Design) {
-                references.len()
+            name: subject.name.clone(),
+            persona: subject.is_persona(),
+            design_notes: subject.design_notes.clone(),
+            references,
+            source,
+            stored_design_count: if stored_source == Some(ReferenceSource::Design) {
+                stored.len()
             } else {
                 0
             },
-            stored_source: source,
-            references,
-            source,
+            stored_source,
         }
     }
 }
 
-/// The prompt and input images of a remote scene image, in this order:
-/// character references, the chat background, persona references. Past the
-/// request's input bound, persona references are dropped first.
+/// The references of a remote scene image: each subject's readable design
+/// references (else its readable avatar) and the readable chat background.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SceneReferences {
+    pub(crate) subjects: Vec<SceneSubject>,
+    pub(crate) background: Option<AssetId>,
+}
+
+impl SceneReferences {
+    pub(crate) fn resolve<D: ImageMedia + ?Sized>(cast: &SceneCast, media: Option<&D>) -> Self {
+        Self {
+            subjects: cast
+                .subjects
+                .iter()
+                .map(|subject| SceneSubject::resolve(subject, media))
+                .collect(),
+            background: media.and_then(|media| {
+                cast.background
+                    .filter(|asset| media.load_input(*asset).is_ok())
+            }),
+        }
+    }
+
+    pub(crate) fn characters(&self) -> impl Iterator<Item = &SceneSubject> {
+        self.subjects.iter().filter(|subject| !subject.persona)
+    }
+
+    pub(crate) fn persona(&self) -> Option<&SceneSubject> {
+        self.subjects.iter().find(|subject| subject.persona)
+    }
+
+    /// The references of the cast's primary character.
+    pub(crate) fn primary(&self, cast: &SceneCast) -> Option<&SceneSubject> {
+        let primary = cast.primary()?;
+        cast.subjects
+            .iter()
+            .position(|subject| subject.kind == primary.kind)
+            .and_then(|index| self.subjects.get(index))
+    }
+}
+
+/// `names` as one phrase: "A", "A and B", "A, B and C".
+pub(crate) fn subject_list(text: &RuntimeText, names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [only] => (*only).to_owned(),
+        [rest @ .., last] => text
+            .render_with(
+                "scene_subject_list",
+                [
+                    (PromptVariable::SubjectName, rest.join(", ")),
+                    (PromptVariable::OtherSubjectName, (*last).to_owned()),
+                ],
+            )
+            .unwrap_or_default(),
+    }
+}
+
+/// Fits the subjects' references and the background into the input bound:
+/// persona references go first, then the last subjects' extra references,
+/// then their last ones.
+fn bounded_references(subjects: &[SceneSubject], background: bool) -> Vec<Vec<AssetId>> {
+    let mut references = subjects
+        .iter()
+        .map(|subject| subject.references.clone())
+        .collect::<Vec<_>>();
+    let mut total = references.iter().map(Vec::len).sum::<usize>() + usize::from(background);
+    while total > MAX_INPUT_IMAGES {
+        let index = subjects
+            .iter()
+            .rposition(|subject| subject.persona)
+            .filter(|index| !references[*index].is_empty())
+            .or_else(|| references.iter().rposition(|refs| refs.len() > 1))
+            .or_else(|| references.iter().rposition(|refs| !refs.is_empty()));
+        let Some(index) = index else {
+            break;
+        };
+        references[index].pop();
+        total -= 1;
+    }
+    references
+}
+
+/// The prompt and input images of a remote scene image, in this order: the
+/// characters' references, the chat background, the persona's references.
 fn remote_scene_prompt(
     text: &RuntimeText,
     scene_prompt: &str,
-    character: &SceneSubject,
-    background: Option<AssetId>,
-    persona: Option<&SceneSubject>,
-    persona_fallback_name: &str,
+    references: &SceneReferences,
+    persona_fallback_name: Option<&str>,
 ) -> (String, Vec<AssetId>) {
-    let mut character_refs = character.references.clone();
-    let mut persona_refs = persona
-        .map(|persona| persona.references.clone())
-        .unwrap_or_default();
-    let background_count = usize::from(background.is_some());
-    while character_refs.len() + background_count + persona_refs.len() > MAX_INPUT_IMAGES {
-        if persona_refs.pop().is_none() {
-            character_refs.pop();
-        }
-    }
+    let bounded = bounded_references(&references.subjects, references.background.is_some());
     let render = |key: &str, variables: Vec<(PromptVariable, String)>| {
         text.render_with(key, variables).unwrap_or_default()
     };
@@ -152,96 +254,112 @@ fn remote_scene_prompt(
             )
         }
     };
-    let persona_name = persona.map_or(persona_fallback_name, |persona| persona.name.as_str());
+    let ordered = references
+        .subjects
+        .iter()
+        .zip(&bounded)
+        .filter(|(subject, _)| !subject.persona)
+        .chain(
+            references
+                .subjects
+                .iter()
+                .zip(&bounded)
+                .filter(|(subject, _)| subject.persona),
+        )
+        .collect::<Vec<_>>();
     let mut sections = Vec::new();
-    if let Some(notes) = &character.design_notes {
-        sections.push(render(
-            "scene_image_character_design_notes",
-            vec![
-                (PromptVariable::SubjectName, character.name.clone()),
-                (PromptVariable::SubjectDescription, notes.clone()),
-            ],
-        ));
+    for (subject, _) in &ordered {
+        if let Some(notes) = &subject.design_notes {
+            sections.push(render(
+                if subject.persona {
+                    "scene_image_persona_design_notes"
+                } else {
+                    "scene_image_character_design_notes"
+                },
+                vec![
+                    (PromptVariable::SubjectName, subject.name.clone()),
+                    (PromptVariable::SubjectDescription, notes.clone()),
+                ],
+            ));
+        }
     }
-    if let Some((persona, notes)) =
-        persona.and_then(|persona| persona.design_notes.as_ref().map(|notes| (persona, notes)))
-    {
-        sections.push(render(
-            "scene_image_persona_design_notes",
-            vec![
-                (PromptVariable::SubjectName, persona.name.clone()),
-                (PromptVariable::SubjectDescription, notes.clone()),
-            ],
-        ));
-    }
-    let has_character = !character_refs.is_empty();
-    let has_persona = !persona_refs.is_empty();
-    if has_character || background.is_some() || has_persona {
+    let any_reference = bounded.iter().any(|refs| !refs.is_empty());
+    let mut inputs = Vec::new();
+    if any_reference || references.background.is_some() {
         let mut lines = Vec::new();
         let mut next = 1;
-        let subject_line = |start: usize,
-                            count: usize,
-                            source: Option<ReferenceSource>,
-                            design_key: &str,
-                            name: &str| {
-            render(
+        let mut background_placed = false;
+        for (subject, refs) in &ordered {
+            if subject.persona && !background_placed {
+                if let Some(background) = references.background {
+                    lines.push(render(
+                        "scene_image_background_reference",
+                        vec![(PromptVariable::ReferenceRange, range(next, 1))],
+                    ));
+                    inputs.push(background);
+                    next += 1;
+                }
+                background_placed = true;
+            }
+            if refs.is_empty() {
+                continue;
+            }
+            lines.push(render(
                 "scene_image_subject_reference",
                 vec![
-                    (PromptVariable::ReferenceRange, range(start, count)),
+                    (PromptVariable::ReferenceRange, range(next, refs.len())),
                     (
                         PromptVariable::ReferenceSource,
                         render(
-                            match source {
-                                Some(ReferenceSource::Avatar) => "scene_image_avatar_source",
-                                _ => design_key,
+                            match (subject.source, subject.persona) {
+                                (Some(ReferenceSource::Avatar), _) => "scene_image_avatar_source",
+                                (_, true) => "scene_image_persona_design_source",
+                                (_, false) => "scene_image_character_design_source",
                             },
                             Vec::new(),
                         ),
                     ),
-                    (PromptVariable::SubjectName, name.to_owned()),
+                    (PromptVariable::SubjectName, subject.name.clone()),
                 ],
-            )
-        };
-        if has_character {
-            lines.push(subject_line(
-                next,
-                character_refs.len(),
-                character.source,
-                "scene_image_character_design_source",
-                &character.name,
             ));
-            next += character_refs.len();
+            inputs.extend(refs.iter().copied());
+            next += refs.len();
         }
-        if background.is_some() {
+        if !background_placed && let Some(background) = references.background {
             lines.push(render(
                 "scene_image_background_reference",
                 vec![(PromptVariable::ReferenceRange, range(next, 1))],
             ));
-            next += 1;
-        }
-        if has_persona {
-            lines.push(subject_line(
-                next,
-                persona_refs.len(),
-                persona.and_then(|persona| persona.source),
-                "scene_image_persona_design_source",
-                persona_name,
-            ));
+            inputs.push(background);
         }
         lines.push(render("scene_image_no_swap", Vec::new()));
-        let only = |subject: &str, other: &str| {
-            render(
-                "scene_image_only_reference",
+        let with = ordered
+            .iter()
+            .filter(|(_, refs)| !refs.is_empty())
+            .map(|(subject, _)| subject.name.as_str())
+            .collect::<Vec<_>>();
+        let mut without = ordered
+            .iter()
+            .filter(|(_, refs)| refs.is_empty())
+            .map(|(subject, _)| subject.name.as_str())
+            .collect::<Vec<_>>();
+        if let Some(fallback) = persona_fallback_name
+            && references.persona().is_none()
+        {
+            without.push(fallback);
+        }
+        if !with.is_empty() && !without.is_empty() {
+            lines.push(render(
+                if with.len() == 1 {
+                    "scene_image_only_reference"
+                } else {
+                    "scene_image_only_references"
+                },
                 vec![
-                    (PromptVariable::SubjectName, subject.to_owned()),
-                    (PromptVariable::OtherSubjectName, other.to_owned()),
+                    (PromptVariable::SubjectName, subject_list(text, &with)),
+                    (PromptVariable::OtherSubjectName, subject_list(text, &without)),
                 ],
-            )
-        };
-        match (has_character, has_persona) {
-            (true, false) => lines.push(only(&character.name, persona_name)),
-            (false, true) => lines.push(only(persona_name, &character.name)),
-            _ => {}
+            ));
         }
         sections.push(
             lines
@@ -252,11 +370,6 @@ fn remote_scene_prompt(
         );
     }
     sections.push(scene_prompt.trim().to_owned());
-    let inputs = character_refs
-        .into_iter()
-        .chain(background)
-        .chain(persona_refs)
-        .collect();
     (
         sections
             .into_iter()
@@ -280,23 +393,13 @@ fn applies_to_prompt(lora: &StableDiffusionLora, prompt: &str) -> bool {
             .any(|keyword| prompt.contains(&keyword.to_lowercase()))
 }
 
-/// The persona's nickname, else its title.
-fn persona_scene_name(persona: &lettuce_characters::Persona) -> String {
-    persona
-        .nickname
-        .as_deref()
-        .filter(|nickname| !nickname.trim().is_empty())
-        .unwrap_or(&persona.title)
-        .to_owned()
-}
-
 pub(crate) fn derived_id(root: RequestId, label: &str) -> uuid::Uuid {
     uuid::Uuid::new_v5(&root.as_uuid(), label.as_bytes())
 }
 
-/// The image request that draws `request.scene_prompt` for a message of a
-/// one-to-one chat: the scene model's request built from the character,
-/// persona and background references (a local model gets its LoRAs instead).
+/// The image request that draws `request.scene_prompt` for a chat message:
+/// the scene model's request built from the cast's references and the chat
+/// background (a local model gets the cast's LoRAs instead).
 /// `request.request_id` is the id of the image request.
 pub fn scene_generation_request<R, D>(
     repository: &R,
@@ -305,9 +408,7 @@ pub fn scene_generation_request<R, D>(
     now: TimestampMillis,
 ) -> Result<ImageGenerationRequest, SceneImageError>
 where
-    R: ConversationReader
-        + CharacterRepository
-        + PersonaRepository
+    R: SceneCastSources
         + ModelCatalog
         + lettuce_settings::GlobalSettingsStore
         + lettuce_context::PromptRepository
@@ -321,37 +422,29 @@ where
     }
     let aggregate = ConversationReader::get(repository, request.conversation_id)
         .map_err(|_| SceneImageError::ConversationNotFound)?;
-    let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
-        return Err(SceneImageError::NotDirect);
-    };
-    find_message(repository, &aggregate.conversation, request.message_id)?;
+    let conversation = &aggregate.conversation;
     let settings = lettuce_settings::GlobalSettingsStore::load(repository)
         .map_err(|error| SceneImageError::Storage {
             reason: error.to_string(),
         })?
         .settings;
     let model = image_feature_model(repository, &settings, ImageFeature::Scene)?;
-    let character = CharacterRepository::get(repository, details.character.source_id)
-        .map_err(|error| SceneImageError::Storage {
-            reason: error.to_string(),
-        })?
-        .ok_or(SceneImageError::CharacterNotFound)?;
-    let persona = lettuce_conversations::effective_persona(&aggregate.conversation)
-        .map(|persona| PersonaRepository::get(repository, persona.source_id))
-        .transpose()
-        .map_err(|error| SceneImageError::Storage {
-            reason: error.to_string(),
-        })?
-        .flatten();
+    let cast = crate::image::scene_cast::scene_cast(
+        repository,
+        conversation,
+        request.message_id,
+        request.cast.as_ref(),
+    )?;
     let (prompt, input_images, loras) = if model.is_local_diffusion() {
-        let (character_lora, persona_lora) = crate::image::scene_loras::subject_loras(
-            repository,
-            details.character.source_id,
-            persona.as_ref().map(|persona| persona.id),
-        );
-        let loras = character_lora
-            .into_iter()
-            .chain(persona_lora.flatten())
+        let loras = cast
+            .subjects
+            .iter()
+            .filter_map(|subject| {
+                crate::image::scene_loras::recommendation_lora(
+                    repository,
+                    subject.recommendation.as_ref(),
+                )
+            })
             .filter(|lora| applies_to_prompt(lora, scene_prompt))
             .collect();
         (scene_prompt.to_owned(), Vec::new(), loras)
@@ -362,19 +455,15 @@ where
                     reason: error.to_string(),
                 }
             })?;
-        let references =
-            StoredSceneReferences::new(&aggregate.conversation, &character, persona.as_ref())
-                .resolve(Some(media));
+        let references = SceneReferences::resolve(&cast, Some(media));
         let fallback_name = text
             .render_with("scene_image_persona_fallback_name", [])
             .unwrap_or_default();
         let (prompt, inputs) = remote_scene_prompt(
             &text,
             scene_prompt,
-            &references.character,
-            references.background,
-            references.persona.as_ref(),
-            &fallback_name,
+            &references,
+            (!cast.group).then_some(fallback_name.as_str()),
         );
         (prompt, inputs, Vec::new())
     };
@@ -386,6 +475,12 @@ where
         .clone()
         .or_else(|| settings.image_generation.scene_default_size.clone())
         .or_else(|| Some(DEFAULT_SIZE.to_owned()));
+    let character_id = cast.speaker.or_else(|| {
+        cast.characters().find_map(|subject| match subject.kind {
+            crate::image::scene_cast::CastSubjectKind::Character(id) => Some(id),
+            crate::image::scene_cast::CastSubjectKind::Persona(_) => None,
+        })
+    });
     Ok(ImageGenerationRequest {
         id: request.request_id,
         model_profile_id: model.profile.id,
@@ -401,218 +496,11 @@ where
         source: ImageGenerationSource::Scene,
         attribution: ImageAttribution {
             conversation_id: Some(request.conversation_id),
-            character_id: Some(details.character.source_id),
+            character_id,
         },
         output_policy: ImageOutputPolicy::Retained,
         created_at: now,
     })
-}
-
-/// The references of a remote scene image: each subject's readable design
-/// references (else its readable avatar) and the readable chat background.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SceneReferences {
-    pub(crate) character: SceneSubject,
-    pub(crate) persona: Option<SceneSubject>,
-    pub(crate) background: Option<AssetId>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct StoredSubject {
-    name: String,
-    notes: Option<String>,
-    design: Vec<AssetId>,
-    avatars: Vec<AssetId>,
-}
-
-impl StoredSubject {
-    fn resolve<D: ImageMedia + ?Sized>(&self, media: Option<&D>) -> SceneSubject {
-        let stored = SceneSubject::new(
-            self.name.clone(),
-            self.notes.as_deref(),
-            self.design.clone(),
-            self.avatars.first().copied(),
-        );
-        let readable = |assets: &[AssetId]| {
-            media.map_or_else(Vec::new, |media| {
-                assets
-                    .iter()
-                    .copied()
-                    .filter(|asset| media.load_input(*asset).is_ok())
-                    .collect::<Vec<_>>()
-            })
-        };
-        SceneSubject {
-            stored_design_count: stored.stored_design_count,
-            stored_source: stored.stored_source,
-            ..SceneSubject::new(
-                self.name.clone(),
-                self.notes.as_deref(),
-                readable(&self.design),
-                readable(&self.avatars).first().copied(),
-            )
-        }
-    }
-}
-
-/// What a scene's subjects and chat background store, before any image is
-/// read.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StoredSceneReferences {
-    character: StoredSubject,
-    persona: Option<StoredSubject>,
-    background: Option<AssetId>,
-}
-
-impl StoredSceneReferences {
-    pub(crate) fn new(
-        conversation: &lettuce_conversations::Conversation,
-        character: &lettuce_characters::CharacterDetails,
-        persona: Option<&lettuce_characters::Persona>,
-    ) -> Self {
-        let media_of = |slot: CharacterMediaSlot| {
-            let mut links = character
-                .character
-                .media
-                .links
-                .iter()
-                .filter(|link| link.slot == slot)
-                .collect::<Vec<_>>();
-            links.sort_by_key(|link| link.ordinal);
-            links
-                .into_iter()
-                .map(|link| link.asset_id)
-                .collect::<Vec<_>>()
-        };
-        let notes = |notes: Option<&str>| notes.map(str::to_owned);
-        let persona = persona.map(|persona| {
-            let mut design = persona
-                .media
-                .links
-                .iter()
-                .filter(|link| link.slot == PersonaMediaSlot::DesignReference)
-                .collect::<Vec<_>>();
-            design.sort_by_key(|link| link.ordinal);
-            StoredSubject {
-                name: persona_scene_name(persona),
-                notes: notes(persona.design_description.as_deref()),
-                design: design.into_iter().map(|link| link.asset_id).collect(),
-                avatars: persona
-                    .media
-                    .links
-                    .iter()
-                    .filter(|link| link.slot == PersonaMediaSlot::Avatar)
-                    .map(|link| link.asset_id)
-                    .collect(),
-            }
-        });
-        Self {
-            character: StoredSubject {
-                name: character.character.profile.name.clone(),
-                notes: notes(character.character.profile.design_description.as_deref()),
-                design: media_of(CharacterMediaSlot::DesignReference),
-                avatars: media_of(CharacterMediaSlot::AvatarOriginal),
-            },
-            persona,
-            background: conversation_background(conversation, character, &media_of),
-        }
-    }
-
-    /// The references with only the images `media` can read; without media
-    /// (a local image model) no image is sent.
-    pub(crate) fn resolve<D: ImageMedia + ?Sized>(&self, media: Option<&D>) -> SceneReferences {
-        SceneReferences {
-            character: self.character.resolve(media),
-            persona: self.persona.as_ref().map(|persona| persona.resolve(media)),
-            background: media.and_then(|media| {
-                self.background
-                    .filter(|asset| media.load_input(*asset).is_ok())
-            }),
-        }
-    }
-}
-
-/// The effective background of a one-to-one chat with `character`.
-pub(crate) fn direct_background(
-    conversation: &lettuce_conversations::Conversation,
-    character: &lettuce_characters::CharacterDetails,
-) -> Option<AssetId> {
-    let media_of = |slot: CharacterMediaSlot| {
-        let mut links = character
-            .character
-            .media
-            .links
-            .iter()
-            .filter(|link| link.slot == slot)
-            .collect::<Vec<_>>();
-        links.sort_by_key(|link| link.ordinal);
-        links
-            .into_iter()
-            .map(|link| link.asset_id)
-            .collect::<Vec<_>>()
-    };
-    conversation_background(conversation, character, &media_of)
-}
-
-/// The effective chat background: the conversation's own (none when it hides
-/// it), else the selected or default scene's, else the character's.
-fn conversation_background(
-    conversation: &lettuce_conversations::Conversation,
-    character: &lettuce_characters::CharacterDetails,
-    media_of: &dyn Fn(CharacterMediaSlot) -> Vec<AssetId>,
-) -> Option<AssetId> {
-    match conversation
-        .current_settings
-        .as_ref()
-        .and_then(|settings| settings.background)
-    {
-        Some(ConversationBackground::Image { asset_id }) => return Some(asset_id),
-        Some(ConversationBackground::Hidden) => return None,
-        None => {}
-    }
-    let scene_id = lettuce_conversations::resolve_effective_settings(conversation, None)
-        .ok()
-        .and_then(|settings| settings.scene.map(|scene| scene.source_id))
-        .or(character.character.defaults.default_scene_id);
-    scene_id
-        .and_then(|scene_id| character.scenes.iter().find(|scene| scene.id == scene_id))
-        .and_then(|scene| {
-            scene
-                .assets
-                .iter()
-                .find(|link| link.slot == SceneAssetSlot::Background)
-                .map(|link| link.asset_id)
-        })
-        .or_else(|| media_of(CharacterMediaSlot::Background).first().copied())
-}
-
-pub(crate) fn find_message<R: ConversationReader + ?Sized>(
-    repository: &R,
-    conversation: &lettuce_conversations::Conversation,
-    message_id: MessageId,
-) -> Result<TimelineItem, SceneImageError> {
-    let mut page = PageRequest {
-        cursor: None,
-        limit: PageLimit::new(200),
-    };
-    loop {
-        let timeline = repository
-            .timeline_page(conversation.id, conversation.active_branch_id, &page)
-            .map_err(|error| SceneImageError::Storage {
-                reason: error.to_string(),
-            })?;
-        if let Some(item) = timeline
-            .items
-            .into_iter()
-            .find(|item| item.message.id == message_id)
-        {
-            return Ok(item);
-        }
-        match timeline.next_cursor {
-            Some(cursor) => page.cursor = Some(cursor),
-            None => return Err(SceneImageError::MessageNotFound),
-        }
-    }
 }
 
 /// Appends the image to the reply variant it was asked for, wherever the
@@ -715,7 +603,37 @@ mod tests {
         design: Vec<AssetId>,
         avatar: Option<AssetId>,
     ) -> SceneSubject {
-        SceneSubject::new(name.to_owned(), notes, design, avatar)
+        let (references, source) = references_of(design, avatar);
+        SceneSubject {
+            name: name.to_owned(),
+            persona: false,
+            design_notes: notes
+                .map(str::trim)
+                .filter(|notes| !notes.is_empty())
+                .map(str::to_owned),
+            stored_design_count: if source == Some(ReferenceSource::Design) {
+                references.len()
+            } else {
+                0
+            },
+            stored_source: source,
+            references,
+            source,
+        }
+    }
+
+    fn persona(subject: SceneSubject) -> SceneSubject {
+        SceneSubject {
+            persona: true,
+            ..subject
+        }
+    }
+
+    fn refs(subjects: Vec<SceneSubject>, background: Option<AssetId>) -> SceneReferences {
+        SceneReferences {
+            subjects,
+            background,
+        }
     }
 
     #[test]
@@ -723,14 +641,12 @@ mod tests {
         let text = RuntimeText::from_seed(BuiltInPromptId::ChatRuntime);
         let (first, second, background) = (AssetId::new(), AssetId::new(), AssetId::new());
         let mira = subject("Mira", Some(" red coat "), vec![first, second], None);
-        let sol = subject("Sol", None, Vec::new(), None);
+        let sol = persona(subject("Sol", None, Vec::new(), None));
         let (prompt, inputs) = remote_scene_prompt(
             &text,
             " A harbor at dusk ",
-            &mira,
-            Some(background),
-            Some(&sol),
-            "the persona",
+            &refs(vec![mira.clone(), sol], Some(background)),
+            Some("the persona"),
         );
         assert_eq!(
             prompt,
@@ -745,9 +661,13 @@ mod tests {
 
         let avatar = AssetId::new();
         let bare = subject("Mira", None, Vec::new(), None);
-        let sol = subject("Sol", Some("tall"), Vec::new(), Some(avatar));
-        let (prompt, inputs) =
-            remote_scene_prompt(&text, "Rain", &bare, None, Some(&sol), "the persona");
+        let sol = persona(subject("Sol", Some("tall"), Vec::new(), Some(avatar)));
+        let (prompt, inputs) = remote_scene_prompt(
+            &text,
+            "Rain",
+            &refs(vec![bare.clone(), sol], None),
+            Some("the persona"),
+        );
         assert_eq!(
             prompt,
             "Persona design notes for Sol:\ntall\n\n\
@@ -759,9 +679,11 @@ mod tests {
         assert_eq!(inputs, vec![avatar]);
 
         let lone = subject("Mira", None, vec![first], None);
-        let (prompt, _) = remote_scene_prompt(&text, "Rain", &lone, None, None, "the persona");
+        let (prompt, _) =
+            remote_scene_prompt(&text, "Rain", &refs(vec![lone], None), Some("the persona"));
         assert!(prompt.contains("Do not invent the persona from Mira's appearance."));
-        let (prompt, inputs) = remote_scene_prompt(&text, "Rain", &bare, None, None, "the persona");
+        let (prompt, inputs) =
+            remote_scene_prompt(&text, "Rain", &refs(vec![bare], None), Some("the persona"));
         assert_eq!((prompt.as_str(), inputs.len()), ("Rain", 0));
 
         let many = subject(
@@ -770,17 +692,54 @@ mod tests {
             (0..12).map(|_| AssetId::new()).collect(),
             None,
         );
-        let crowd = subject("Sol", None, (0..12).map(|_| AssetId::new()).collect(), None);
+        let crowd = persona(subject(
+            "Sol",
+            None,
+            (0..12).map(|_| AssetId::new()).collect(),
+            None,
+        ));
         let (prompt, inputs) = remote_scene_prompt(
             &text,
             "Rain",
-            &many,
-            Some(background),
-            Some(&crowd),
-            "the persona",
+            &refs(vec![many, crowd], Some(background)),
+            Some("the persona"),
         );
         assert_eq!(inputs.len(), MAX_INPUT_IMAGES);
         assert!(prompt.contains("attached images 14-16 is the saved persona design reference"));
+    }
+
+    #[test]
+    fn group_scene_prompts_number_every_subject_and_trim_from_the_end() {
+        let text = RuntimeText::from_seed(BuiltInPromptId::ChatRuntime);
+        let background = AssetId::new();
+        let mira = subject("Mira", None, (0..8).map(|_| AssetId::new()).collect(), None);
+        let tom = subject("Tom", None, (0..8).map(|_| AssetId::new()).collect(), None);
+        let ada = subject("Ada", None, Vec::new(), None);
+        let sol = persona(subject("Sol", None, vec![AssetId::new()], None));
+        let (prompt, inputs) = remote_scene_prompt(
+            &text,
+            "Dinner",
+            &refs(vec![mira.clone(), tom, ada, sol], Some(background)),
+            None,
+        );
+        assert_eq!(inputs.len(), MAX_INPUT_IMAGES);
+        assert_eq!(&inputs[..8], &mira.references[..]);
+        assert_eq!(inputs[15], background);
+        assert!(prompt.contains("attached images 1-8 is the saved character design reference for Mira"));
+        assert!(prompt.contains("attached images 9-15 is the saved character design reference for Tom"));
+        assert!(prompt.contains("attached image 16 is the chat background"));
+        assert!(prompt.contains(
+            "Only Mira and Tom have reference images attached. Do not invent Ada and Sol from their appearance."
+        ));
+    }
+
+    #[test]
+    fn subject_lists_read_naturally() {
+        let text = RuntimeText::from_seed(BuiltInPromptId::ChatRuntime);
+        assert_eq!(subject_list(&text, &[]), "");
+        assert_eq!(subject_list(&text, &["Mira"]), "Mira");
+        assert_eq!(subject_list(&text, &["Mira", "Tom"]), "Mira and Tom");
+        assert_eq!(subject_list(&text, &["Mira", "Tom", "Ada"]), "Mira, Tom and Ada");
     }
 
     #[test]

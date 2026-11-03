@@ -31,6 +31,7 @@ const DIRECT_CHAT: &[&str] = &[
     "{{author_note}}",
     "{{rules}}",
     "{{content_rules}}",
+    "{{scene_cast_lora}}",
 ];
 const GROUP_CHAT_CONVERSATIONAL: &[&str] = &[
     "{{char.name}}",
@@ -38,6 +39,7 @@ const GROUP_CHAT_CONVERSATIONAL: &[&str] = &[
     "{{persona.name}}",
     "{{persona.desc}}",
     "{{group_characters}}",
+    "{{scene_cast_lora}}",
 ];
 const GROUP_CHAT_ROLEPLAY: &[&str] = &[
     "{{scene}}",
@@ -49,6 +51,7 @@ const GROUP_CHAT_ROLEPLAY: &[&str] = &[
     "{{group_characters}}",
     "{{context_summary}}",
     "{{key_memories}}",
+    "{{scene_cast_lora}}",
 ];
 const MEMORY_SUMMARIZER: &[&str] = &["{{prev_summary}}", "{{character}}", "{{persona}}"];
 const MEMORY_MANAGER: &[&str] = &[
@@ -113,6 +116,9 @@ const AVATAR_EDIT_REQUEST: &[&str] = &[
     "{{edit_request}}",
 ];
 const SCENE_GENERATION: &[&str] = &[
+    "{{scene_cast}}",
+    "{{image[cast]}}",
+    "{{scene_cast_lora}}",
     "{{char.name}}",
     "{{char.desc}}",
     "{{persona.name}}",
@@ -300,9 +306,10 @@ fn image_slots(purpose: PromptPurpose) -> Vec<PromptEntryImageSlot> {
             Slot::ChatBackground,
             Slot::Avatar,
             Slot::References,
+            Slot::Cast,
         ],
         Purpose::SceneGeneration | Purpose::ScenePromptWriter => {
-            vec![Slot::Character, Slot::Persona, Slot::ChatBackground]
+            vec![Slot::Cast, Slot::Character, Slot::Persona, Slot::ChatBackground]
         }
         Purpose::DesignReferenceWriter => vec![Slot::Avatar, Slot::References],
         _ => Vec::new(),
@@ -337,6 +344,7 @@ const fn payload_placeholder(payload: &PromptEntryPayload) -> &'static str {
             PromptEntryImageSlot::ChatBackground => "{{image[chatBackground]}}",
             PromptEntryImageSlot::Avatar => "{{image[avatar]}}",
             PromptEntryImageSlot::References => "{{image[references]}}",
+            PromptEntryImageSlot::Cast => "{{image[cast]}}",
         },
     }
 }

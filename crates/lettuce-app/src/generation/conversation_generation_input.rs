@@ -619,16 +619,13 @@ where
                 ));
             }
         };
-        let reply_images = match aggregate.conversation.kind {
-            ConversationKind::Direct(_) => crate::image::reply_images::reply_image_facts(
-                self.repository,
-                &lettuce_settings::GlobalSettingsStore::load(self.repository)
-                    .map_err(ConversationGenerationInputError::Settings)?
-                    .settings,
-                &aggregate.conversation,
-            ),
-            ConversationKind::Group(_) => None,
-        };
+        let reply_images = crate::image::reply_images::reply_image_facts(
+            self.repository,
+            &lettuce_settings::GlobalSettingsStore::load(self.repository)
+                .map_err(ConversationGenerationInputError::Settings)?
+                .settings,
+            &aggregate.conversation,
+        );
         let speaker = self.generation_speaker(&aggregate.conversation, &turn)?;
         self.emit_selected_speaker(work.turn_id, &aggregate.conversation, speaker.as_ref());
         let mut request = record.request;
@@ -1027,13 +1024,13 @@ where
             }
         };
         let images = &global_settings.image_generation;
-        let scene_model_is_local = !group && {
+        let scene_model_is_local = {
             let mut resolving = global_settings.clone();
             resolving.image_generation.scene_enabled = true;
             crate::image_feature_model(self.repository, &resolving, crate::ImageFeature::Scene)
                 .is_ok_and(|model| model.is_local_diffusion())
         };
-        let scene_image_protocol = (!group && images.scene_enabled && images.scene_automatic_enabled)
+        let scene_image_protocol = (images.scene_enabled && images.scene_automatic_enabled)
             .then(|| {
                 crate::image_feature_model(
                     self.repository,
@@ -1827,13 +1824,13 @@ where
         let conversation_message_count =
             conversation_message_count(&timeline.items, turn.operation, source_message_id);
         let images = &global_settings.image_generation;
-        let scene_model_is_local = !group && {
+        let scene_model_is_local = {
             let mut resolving = global_settings.clone();
             resolving.image_generation.scene_enabled = true;
             crate::image_feature_model(self.repository, &resolving, crate::ImageFeature::Scene)
                 .is_ok_and(|model| model.is_local_diffusion())
         };
-        let scene_image_protocol = (!group && images.scene_enabled && images.scene_automatic_enabled)
+        let scene_image_protocol = (images.scene_enabled && images.scene_automatic_enabled)
             .then(|| {
                 crate::image_feature_model(
                     self.repository,
@@ -1894,6 +1891,29 @@ where
             ));
             prompt_values.persona_scene_lora =
                 persona_lora.map(|lora| crate::image::scene_loras::subject_binding(lora.as_ref()));
+        }
+        if scene_model_is_local {
+            prompt_values.scene_cast_lora = Some(
+                crate::image::scene_cast::chat_cast(self.repository, &aggregate.conversation)
+                    .map_err(|_| {
+                        ConversationGenerationInputError::Context(
+                            ContextAssemblyError::ConversationUnavailable,
+                        )
+                    })?
+                    .into_iter()
+                    .map(|subject| lettuce_conversations::SceneCastLora {
+                        binding: crate::image::scene_loras::subject_binding(
+                            crate::image::scene_loras::recommendation_lora(
+                                self.repository,
+                                subject.recommendation.as_ref(),
+                            )
+                            .as_ref(),
+                        ),
+                        persona: subject.is_persona(),
+                        name: subject.name,
+                    })
+                    .collect(),
+            );
         }
         prompt_values.content_rules = crate::generation::pure_mode_rules::content_rules(
             self.repository,

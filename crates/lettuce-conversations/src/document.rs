@@ -728,6 +728,7 @@ pub enum PromptEntryImageSlotV1 {
     ChatBackground,
     Avatar,
     References,
+    Cast,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

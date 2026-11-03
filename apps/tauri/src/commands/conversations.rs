@@ -18,7 +18,8 @@ use lettuce_contracts::{
     MessageHistoryRequest, MessagePage, MessagePinRequest, MessagePromptSnapshotRequest,
     MessageRevisionPage, MessageSceneImageApproveRequest, MessageSceneImageGenerateRequest,
     MessageScenePromptGenerateRequest, MessageSceneRequest, MessageSceneSelectRequest,
-    MessageWindow, MessagesDeleteResult, ParticipationStats, PromptSnapshot, SearchHitPage,
+    MessageWindow, MessagesDeleteResult, ParticipationStats, PromptSnapshot, SceneCastView,
+    SearchHitPage,
     SendAccepted, SpeakerSelectionPreview, SpeakerSelectionPreviewRequest,
 };
 use tauri::{State, ipc::Channel};
@@ -315,6 +316,16 @@ pub async fn message_scene_prompt_generate(
 ) -> Result<JobAccepted, ApiError> {
     let context = context.snapshot()?;
     api::message_scene_prompt_generate(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_scene_cast(
+    context: State<'_, ApiContextSlot>,
+    request: MessageSceneRequest,
+) -> Result<SceneCastView, ApiError> {
+    let context = context.snapshot()?;
+    api::message_scene_cast(&context, request).await
 }
 
 #[tauri::command]

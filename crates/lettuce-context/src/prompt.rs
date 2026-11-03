@@ -132,6 +132,7 @@ pub enum PromptEntryImageSlot {
     ChatBackground,
     Avatar,
     References,
+    Cast,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -944,6 +945,7 @@ pub enum PromptVariable {
     SceneRequest,
     SubjectName,
     SubjectDescription,
+    SubjectRole,
     CurrentDescription,
     CharacterDefinition,
     CharacterDescription,
@@ -978,6 +980,9 @@ pub enum PromptVariable {
     ReferenceImages,
     CharacterLoraKeywords,
     PersonaLoraKeywords,
+    SceneCast,
+    SceneCastLoraKeywords,
+    CastImage,
     ImageModelInstructions,
     RegenerateGuidance,
     SelectionParticipants,
@@ -1096,6 +1101,7 @@ impl PromptVariable {
             Self::SceneRequest => "{{scene_request}}",
             Self::SubjectName => "{{subject_name}}",
             Self::SubjectDescription => "{{subject_description}}",
+            Self::SubjectRole => "{{subject_role}}",
             Self::CurrentDescription => "{{current_description}}",
             Self::CharacterDefinition => "{{char.definition}}",
             Self::CharacterDescription => "{{char.description}}",
@@ -1130,6 +1136,9 @@ impl PromptVariable {
             Self::ReferenceImages => "{{image[references]}}",
             Self::CharacterLoraKeywords => "{{lora_keywords[character]}}",
             Self::PersonaLoraKeywords => "{{lora_keywords[persona]}}",
+            Self::SceneCast => "{{scene_cast}}",
+            Self::SceneCastLoraKeywords => "{{scene_cast_lora}}",
+            Self::CastImage => "{{image[cast]}}",
             Self::ImageModelInstructions => "{{image_model_instructions}}",
             Self::RegenerateGuidance => "{{regenerate_guidance}}",
             Self::SelectionParticipants => "{{selection_participants}}",
@@ -1247,6 +1256,7 @@ impl PromptVariable {
         Self::SceneRequest,
         Self::SubjectName,
         Self::SubjectDescription,
+        Self::SubjectRole,
         Self::CurrentDescription,
         Self::CharacterDefinition,
         Self::CharacterDescription,
@@ -1281,6 +1291,9 @@ impl PromptVariable {
         Self::ReferenceImages,
         Self::CharacterLoraKeywords,
         Self::PersonaLoraKeywords,
+        Self::SceneCast,
+        Self::SceneCastLoraKeywords,
+        Self::CastImage,
         Self::ImageModelInstructions,
         Self::RegenerateGuidance,
         Self::SelectionParticipants,
@@ -1386,10 +1399,13 @@ impl PromptVariable {
                         | Variable::ScheduledNotes
                         | Variable::CharacterLoraKeywords
                         | Variable::PersonaLoraKeywords
+                        | Variable::SceneCastLoraKeywords
                 )
             }
-            Purpose::GroupChatRoleplay => matches!(self, Variable::GroupCharacters),
-            Purpose::GroupChatConversational => matches!(self, Variable::GroupCharacters),
+            Purpose::GroupChatRoleplay | Purpose::GroupChatConversational => matches!(
+                self,
+                Variable::GroupCharacters | Variable::SceneCastLoraKeywords
+            ),
             Purpose::DynamicMemorySummarizer => {
                 matches!(self, Variable::PreviousSummary | Variable::Character)
             }
@@ -1469,6 +1485,9 @@ impl PromptVariable {
                     | Variable::SceneRequest
                     | Variable::CharacterLoraKeywords
                     | Variable::PersonaLoraKeywords
+                    | Variable::SceneCast
+                    | Variable::SceneCastLoraKeywords
+                    | Variable::CastImage
                     | Variable::ImageModelInstructions
             ),
             Purpose::DesignReferenceWriter => matches!(

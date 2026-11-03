@@ -86,6 +86,7 @@ const fn image_slot(slot: PromptEntryImageSlot) -> dto::PromptImageSlot {
         PromptEntryImageSlot::ChatBackground => dto::PromptImageSlot::ChatBackground,
         PromptEntryImageSlot::Avatar => dto::PromptImageSlot::Avatar,
         PromptEntryImageSlot::References => dto::PromptImageSlot::References,
+        PromptEntryImageSlot::Cast => dto::PromptImageSlot::Cast,
     }
 }
 
@@ -96,6 +97,7 @@ const fn slot_of(slot: dto::PromptImageSlot) -> PromptEntryImageSlot {
         dto::PromptImageSlot::ChatBackground => PromptEntryImageSlot::ChatBackground,
         dto::PromptImageSlot::Avatar => PromptEntryImageSlot::Avatar,
         dto::PromptImageSlot::References => PromptEntryImageSlot::References,
+        dto::PromptImageSlot::Cast => PromptEntryImageSlot::Cast,
     }
 }
 

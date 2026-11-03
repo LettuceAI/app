@@ -40,6 +40,8 @@ pub(crate) enum TextFeatureDetail {
         message_id: String,
         target: lettuce_conversations::SceneFollowUpTarget,
         recent_context: String,
+        #[serde(default)]
+        cast: Option<lettuce_conversations::SceneCastSelection>,
     },
     DesignReference {
         request_id: String,
@@ -252,17 +254,18 @@ pub async fn conversation_help_me_reply(
     })
 }
 
-/// Queues the scene prompt writer for a message of a one-to-one chat and
-/// returns its job; repeating the request under its key returns the same
-/// job. A disabled scene feature is `Unsupported`.
+/// Queues the scene prompt writer for a chat message and returns its job;
+/// repeating the request under its key returns the same job. A disabled
+/// scene feature is `Unsupported`.
 pub(crate) async fn admit_scene_prompt(
     context: &ApiContext,
     conversation_id: ConversationId,
     message_id: MessageId,
+    cast: Option<lettuce_conversations::SceneCastSelection>,
     key: String,
 ) -> Result<dto::JobAccepted, ApiError> {
     let key = operation_key("scene_prompt", &key)?;
-    let request_digest = digest(&(conversation_id.to_string(), message_id.to_string()))?;
+    let request_digest = digest(&(conversation_id.to_string(), message_id.to_string(), &cast))?;
     let job_id = context
         .blocking(move |context| {
             if let Some(job_id) = replay(context, &key, &request_digest)? {
@@ -308,6 +311,7 @@ pub(crate) async fn admit_scene_prompt(
                         message_id: message_id.to_string(),
                         target,
                         recent_context,
+                        cast,
                     })?,
                 )
                 .map_err(admission_error)?;
@@ -535,12 +539,14 @@ impl ClaimedText {
                 message_id,
                 target: _,
                 recent_context,
+                cast,
             } => {
                 let request = ScenePromptRequest {
                     conversation_id: parse_id(&conversation_id, "conversation_id")?,
                     message_id: parse_id(&message_id, "message_id")?,
                     recent_context: Some(recent_context.clone()),
                     request_id: parse_id(&request_id, "request_id")?,
+                    cast: cast.clone(),
                 };
                 let Some(media) = context.media() else {
                     return Err(api_error(

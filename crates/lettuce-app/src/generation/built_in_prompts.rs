@@ -571,10 +571,12 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
                     | "scheduled_notes"
                     | "lora_keywords[character]"
                     | "lora_keywords[persona]"
+                    | "scene_cast_lora"
             )
         }
-        PromptPurpose::GroupChatRoleplay => value == "group_characters",
-        PromptPurpose::GroupChatConversational => value == "group_characters",
+        PromptPurpose::GroupChatRoleplay | PromptPurpose::GroupChatConversational => {
+            matches!(value, "group_characters" | "scene_cast_lora")
+        }
         PromptPurpose::DynamicMemorySummarizer => {
             matches!(value, "prev_summary" | "character")
         }
@@ -644,6 +646,8 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
                 | "reference[persona]"
                 | "lora_keywords[character]"
                 | "lora_keywords[persona]"
+                | "scene_cast"
+                | "scene_cast_lora"
                 | "image_model_instructions"
         ),
         PromptPurpose::DesignReferenceWriter => matches!(
@@ -674,7 +678,10 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
 fn is_registered_legacy_variable(value: &str) -> bool {
     matches!(
         value,
-        "char.name"
+        "scene_cast"
+            | "scene_cast_lora"
+            | "subject_role"
+            | "char.name"
             | "char.desc"
             | "char.definition"
             | "char.description"

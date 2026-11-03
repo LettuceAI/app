@@ -4,7 +4,8 @@
 //! prompt survives a restart and a replayed turn finds it.
 
 use lettuce_types::{
-    ConversationId, MessageCandidateId, MessageId, MessageRevisionId, RequestId, TimestampMillis,
+    CharacterId, ConversationId, MessageCandidateId, MessageId, MessageRevisionId, RequestId,
+    TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,11 +33,23 @@ impl SceneFollowUpTarget {
     }
 }
 
+/// Who a scene image depicts when it is not the message's own cast: the
+/// conversation's characters it names and whether the persona is in it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneCastSelection {
+    pub character_ids: Vec<CharacterId>,
+    pub include_persona: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SceneFollowUpDraft {
     pub prompt: String,
     pub ask_first: bool,
+    /// The subjects the reply named in its scene tag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cast: Option<SceneCastSelection>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +106,9 @@ pub struct SceneFollowUp {
     pub request_id: Option<RequestId>,
     /// Why it failed, as a label the API turns into a reason.
     pub failure: Option<String>,
+    /// Who the image depicts; `None` is the message's own cast.
+    #[serde(default)]
+    pub cast: Option<SceneCastSelection>,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
 }
@@ -107,6 +123,7 @@ pub struct SceneFollowUpChange {
     pub attempt: Option<u32>,
     pub next_generation: bool,
     pub failure: Option<Option<String>>,
+    pub cast: Option<Option<SceneCastSelection>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -152,6 +169,7 @@ pub trait SceneFollowUpRepository: Send + Sync {
         target: SceneFollowUpTarget,
         prompt: &str,
         mode: SceneFollowUpMode,
+        cast: Option<&SceneCastSelection>,
         now: TimestampMillis,
     ) -> Result<SceneFollowUp, SceneFollowUpError>;
 

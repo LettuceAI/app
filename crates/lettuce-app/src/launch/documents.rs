@@ -335,6 +335,7 @@ pub(crate) fn prompt_body(document: &PromptDocument) -> PromptSnapshotBodyV1 {
                             }
                             PromptEntryImageSlot::Avatar => PromptEntryImageSlotV1::Avatar,
                             PromptEntryImageSlot::References => PromptEntryImageSlotV1::References,
+                            PromptEntryImageSlot::Cast => PromptEntryImageSlotV1::Cast,
                         },
                     },
                 }),

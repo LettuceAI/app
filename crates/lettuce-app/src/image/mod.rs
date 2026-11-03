@@ -11,6 +11,7 @@ pub(crate) mod local_diffusion_install;
 pub(crate) mod playground;
 pub(crate) mod provider_media;
 pub(crate) mod reply_images;
+pub(crate) mod scene_cast;
 pub(crate) mod scene_follow_up;
 pub(crate) mod scene_image;
 pub(crate) mod scene_loras;
@@ -28,7 +29,8 @@ pub use image_providers::AppImageProviders;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use local_diffusion_install::*;
 pub use provider_media::*;
-pub use reply_images::{ReplyImageFacts, SceneImageFollowUp};
+pub use reply_images::{CastName, ReplyImageFacts, SceneImageFollowUp};
+pub use scene_cast::{SceneCastSelection, SceneCastSources};
 pub use scene_follow_up::{
     MAX_ATTEMPTS as SCENE_IMAGE_MAX_ATTEMPTS, SceneFollowUpError as SceneImageFollowUpError,
     SceneFollowUpSources, SceneFollowUps, job_of_scene_image_request,

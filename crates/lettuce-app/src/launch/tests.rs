@@ -15006,6 +15006,7 @@ async fn starter_scene_image(edit_after_admission: bool) {
         target,
         "  A harbor at dusk ",
         lettuce_conversations::SceneFollowUpMode::Manual,
+        None,
         TimestampMillis::new(NOW.get() + 9),
     )
     .expect("follow-up");
@@ -15014,6 +15015,7 @@ async fn starter_scene_image(edit_after_admission: bool) {
             conversation.id,
             target,
             &[lettuce_conversations::SceneFollowUpState::Pending],
+            None,
             None,
             None,
             TimestampMillis::new(NOW.get() + 10),
@@ -15140,6 +15142,7 @@ async fn starter_scene_image(edit_after_admission: bool) {
             target,
             &[lettuce_conversations::SceneFollowUpState::Done],
             Some("Rain"),
+            None,
             None,
             TimestampMillis::new(NOW.get() + 20),
         )

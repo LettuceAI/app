@@ -1714,6 +1714,15 @@ pub enum SceneLoraBinding {
     NoLora,
 }
 
+/// One subject a reply's local scene image may show: its name, whether it is
+/// the persona, and its LoRA binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneCastLora {
+    pub name: String,
+    pub persona: bool,
+    pub binding: SceneLoraBinding,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PromptRuntimeValues {
     /// The character's and persona's local scene LoRA bindings; set only when
@@ -1721,6 +1730,9 @@ pub struct PromptRuntimeValues {
     /// when the chat has a persona.
     pub character_scene_lora: Option<SceneLoraBinding>,
     pub persona_scene_lora: Option<SceneLoraBinding>,
+    /// Every subject's binding for the local scene image protocol, the
+    /// characters first; set only when the chat asks for it.
+    pub scene_cast_lora: Option<Vec<SceneCastLora>>,
     pub content_rules: Option<String>,
     pub companion_state: Option<String>,
     pub scheduled_notes: Option<String>,
@@ -1775,6 +1787,22 @@ impl PromptRuntimeValues {
             if let Some(SceneLoraBinding::Keywords(keywords)) = binding {
                 crate::validation::validate_text(
                     field,
+                    keywords,
+                    crate::validation::MAX_AUTHORED_TEXT_BYTES,
+                    true,
+                )?;
+            }
+        }
+        for subject in self.scene_cast_lora.iter().flatten() {
+            crate::validation::validate_text(
+                "context_runtime_values.scene_cast_lora.name",
+                &subject.name,
+                crate::validation::MAX_AUTHORED_TEXT_BYTES,
+                true,
+            )?;
+            if let SceneLoraBinding::Keywords(keywords) = &subject.binding {
+                crate::validation::validate_text(
+                    "context_runtime_values.scene_cast_lora.keywords",
                     keywords,
                     crate::validation::MAX_AUTHORED_TEXT_BYTES,
                     true,

@@ -167,7 +167,7 @@ fn summary_background(
             }
             Ok(match characters.get(&id).and_then(Option::as_ref) {
                 Some(character) => {
-                    crate::image::scene_image::direct_background(conversation, character)
+                    crate::image::scene_cast::direct_background(conversation, character)
                 }
                 None => match conversation
                     .current_settings

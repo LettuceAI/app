@@ -4,7 +4,7 @@
 //! (retrying a missing image up to three times) and recovering what a
 //! restart interrupted.
 
-use lettuce_characters::{CharacterRepository, PersonaRepository};
+use lettuce_characters::{CharacterRepository, GroupRepository, PersonaRepository};
 use lettuce_conversations::{
     ConversationRepository, SceneFollowUp, SceneFollowUpChange, SceneFollowUpMode,
     SceneFollowUpRepository, SceneFollowUpState, SceneFollowUpTarget,
@@ -38,6 +38,7 @@ pub trait SceneFollowUpSources:
     + SceneFollowUpRepository
     + CharacterRepository
     + PersonaRepository
+    + GroupRepository
     + ModelCatalog
     + ModelProfileRepository
     + ProviderAccountRepository
@@ -56,6 +57,7 @@ impl<T> SceneFollowUpSources for T where
         + SceneFollowUpRepository
         + CharacterRepository
         + PersonaRepository
+        + GroupRepository
         + ModelCatalog
         + ModelProfileRepository
         + ProviderAccountRepository
@@ -144,8 +146,8 @@ where
     D: ImageMedia + ?Sized,
 {
     /// Starts the image of a follow-up in one of `from`: it becomes
-    /// approved with `prompt` (the reply's own when none) and its first
-    /// image job is queued. A follow-up in another state is `WrongState`;
+    /// approved with `prompt` (the reply's own when none) and `cast` (the
+    /// follow-up's own when none) and its first image job is queued. A follow-up in another state is `WrongState`;
     /// one whose job cannot be built or queued fails with the reason and the
     /// error is returned.
     pub fn start(
@@ -154,6 +156,7 @@ where
         target: SceneFollowUpTarget,
         from: &[SceneFollowUpState],
         prompt: Option<&str>,
+        cast: Option<&lettuce_conversations::SceneCastSelection>,
         mode: Option<SceneFollowUpMode>,
         now: TimestampMillis,
     ) -> Result<(SceneFollowUp, JobSnapshot), SceneFollowUpError> {
@@ -174,6 +177,7 @@ where
                 attempt: Some(1),
                 next_generation: true,
                 failure: Some(None),
+                cast: cast.map(|cast| Some(cast.clone())),
             },
             now,
         )?;
@@ -210,6 +214,7 @@ where
                 message_id: follow_up.message_id,
                 scene_prompt: follow_up.prompt.clone(),
                 request_id,
+                cast: follow_up.cast.clone(),
             },
             now,
         )
@@ -396,6 +401,7 @@ where
                         follow_up.conversation_id,
                         follow_up.target,
                         &[SceneFollowUpState::Pending],
+                        None,
                         None,
                         None,
                         now,

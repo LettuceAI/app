@@ -7,7 +7,13 @@ use rusqlite::{OptionalExtension, Row, params};
 
 use crate::Database;
 
-const COLUMNS: &str = "conversation_id, message_id, prompt, mode, state, generation, attempt, request_id, failure, created_at, updated_at, target_kind, target_id";
+const COLUMNS: &str = "conversation_id, message_id, prompt, mode, state, generation, attempt, request_id, failure, created_at, updated_at, target_kind, target_id, cast_json";
+
+pub(crate) fn cast_json(
+    cast: Option<&lettuce_conversations::SceneCastSelection>,
+) -> Result<Option<String>, SceneFollowUpError> {
+    cast.map(serde_json::to_string).transpose().map_err(storage)
+}
 
 fn storage<E>(_: E) -> SceneFollowUpError {
     SceneFollowUpError::Storage {
@@ -79,6 +85,7 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Result<SceneFollowUp, SceneFollowUpEr
     let failure: Option<String> = row.get(8)?;
     let target_kind: String = row.get(11)?;
     let target_id: String = row.get(12)?;
+    let cast: Option<String> = row.get(13)?;
     Ok((|| {
         Ok(SceneFollowUp {
             conversation_id: conversation_id.parse().map_err(storage)?,
@@ -104,6 +111,11 @@ fn read(row: &Row<'_>) -> rusqlite::Result<Result<SceneFollowUp, SceneFollowUpEr
                 .transpose()
                 .map_err(storage)?,
             failure,
+            cast: cast
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(storage)?,
             created_at: TimestampMillis::new(created_at),
             updated_at: TimestampMillis::new(updated_at),
         })
@@ -139,7 +151,8 @@ pub(crate) fn insert_restored_in(
     follow_up: &SceneFollowUp,
 ) -> Result<(), SceneFollowUpError> {
     let target = follow_up.target;
-    connection.execute("INSERT INTO scene_image_follow_ups (conversation_id, target_kind, target_id, candidate_id, starter_revision_id, message_id, prompt, mode, state, generation, attempt, request_id, failure, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)", params![follow_up.conversation_id.to_string(), target.kind(), target.id(), if let SceneFollowUpTarget::Candidate(id) = target { Some(id.to_string()) } else { None }, if let SceneFollowUpTarget::StarterRevision(id) = target { Some(id.to_string()) } else { None }, follow_up.message_id.to_string(), follow_up.prompt, mode_text(follow_up.mode), state_text(follow_up.state), follow_up.generation, follow_up.attempt, follow_up.request_id.map(|id| id.to_string()), follow_up.failure, follow_up.created_at.get(), follow_up.updated_at.get()]).map_err(storage)?;
+    let cast = cast_json(follow_up.cast.as_ref())?;
+    connection.execute("INSERT INTO scene_image_follow_ups (conversation_id, target_kind, target_id, candidate_id, starter_revision_id, message_id, prompt, mode, state, generation, attempt, request_id, failure, created_at, updated_at, cast_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)", params![follow_up.conversation_id.to_string(), target.kind(), target.id(), if let SceneFollowUpTarget::Candidate(id) = target { Some(id.to_string()) } else { None }, if let SceneFollowUpTarget::StarterRevision(id) = target { Some(id.to_string()) } else { None }, follow_up.message_id.to_string(), follow_up.prompt, mode_text(follow_up.mode), state_text(follow_up.state), follow_up.generation, follow_up.attempt, follow_up.request_id.map(|id| id.to_string()), follow_up.failure, follow_up.created_at.get(), follow_up.updated_at.get(), cast]).map_err(storage)?;
     Ok(())
 }
 
@@ -212,13 +225,15 @@ impl SceneFollowUpRepository for Database {
         target: SceneFollowUpTarget,
         prompt: &str,
         mode: SceneFollowUpMode,
+        cast: Option<&lettuce_conversations::SceneCastSelection>,
         now: TimestampMillis,
     ) -> Result<SceneFollowUp, SceneFollowUpError> {
+        let cast = cast_json(cast)?;
         let connection = self.connection().map_err(storage)?;
         connection
             .execute(
-                "INSERT INTO scene_image_follow_ups (conversation_id, target_kind, target_id, candidate_id, starter_revision_id, message_id, prompt, mode, state, generation, attempt, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', 0, 0, ?9, ?9) ON CONFLICT (conversation_id, target_kind, target_id) DO NOTHING",
-                params![conversation_id.to_string(), target.kind(), target.id().to_string(), if let SceneFollowUpTarget::Candidate(id) = target { Some(id.to_string()) } else { None }, if let SceneFollowUpTarget::StarterRevision(id) = target { Some(id.to_string()) } else { None }, message_id.to_string(), prompt, mode_text(mode), now.get()],
+                "INSERT INTO scene_image_follow_ups (conversation_id, target_kind, target_id, candidate_id, starter_revision_id, message_id, prompt, mode, state, generation, attempt, created_at, updated_at, cast_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', 0, 0, ?9, ?9, ?10) ON CONFLICT (conversation_id, target_kind, target_id) DO NOTHING",
+                params![conversation_id.to_string(), target.kind(), target.id().to_string(), if let SceneFollowUpTarget::Candidate(id) = target { Some(id.to_string()) } else { None }, if let SceneFollowUpTarget::StarterRevision(id) = target { Some(id.to_string()) } else { None }, message_id.to_string(), prompt, mode_text(mode), now.get(), cast],
             )
             .map_err(storage)?;
         one(&connection, conversation_id, target)?.ok_or(SceneFollowUpError::Storage {
@@ -254,10 +269,14 @@ impl SceneFollowUpRepository for Database {
             None => current.failure.clone(),
         };
         let generation = current.generation + u32::from(change.next_generation);
+        let cast = cast_json(match &change.cast {
+            Some(cast) => cast.as_ref(),
+            None => current.cast.as_ref(),
+        })?;
         transaction
             .execute(
-                "UPDATE scene_image_follow_ups SET prompt = ?4, mode = ?5, state = ?6, generation = ?7, attempt = ?8, request_id = ?9, failure = ?10, updated_at = ?11 WHERE conversation_id = ?1 AND target_kind = ?2 AND target_id = ?3",
-                params![conversation_id.to_string(), target.kind(), target.id().to_string(), change.prompt.as_deref().unwrap_or(&current.prompt), mode_text(change.mode.unwrap_or(current.mode)), state_text(state), generation, change.attempt.unwrap_or(current.attempt), request_id.map(|id| id.to_string()), failure, now.get().max(current.updated_at.get())],
+                "UPDATE scene_image_follow_ups SET prompt = ?4, mode = ?5, state = ?6, generation = ?7, attempt = ?8, request_id = ?9, failure = ?10, updated_at = ?11, cast_json = ?12 WHERE conversation_id = ?1 AND target_kind = ?2 AND target_id = ?3",
+                params![conversation_id.to_string(), target.kind(), target.id().to_string(), change.prompt.as_deref().unwrap_or(&current.prompt), mode_text(change.mode.unwrap_or(current.mode)), state_text(state), generation, change.attempt.unwrap_or(current.attempt), request_id.map(|id| id.to_string()), failure, now.get().max(current.updated_at.get()), cast],
             )
             .map_err(storage)?;
         let changed = one(&transaction, conversation_id, target)?;

@@ -270,6 +270,7 @@ fn approve(reply: &str, prompt: Option<&str>) -> dto::MessageSceneImageApproveRe
     dto::MessageSceneImageApproveRequest {
         message_id: reply.into(),
         prompt: prompt.map(str::to_owned),
+        cast: None,
     }
 }
 
@@ -523,6 +524,7 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
         dto::MessageScenePromptGenerateRequest {
             client_operation_id: uuid::Uuid::new_v4().to_string(),
             message_id: reply.clone(),
+            cast: None,
         },
     )
     .await
@@ -532,6 +534,7 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
         dto::MessageScenePromptGenerateRequest {
             client_operation_id: "manual-prompt-replay".into(),
             message_id: reply.clone(),
+            cast: None,
         },
     )
     .await
@@ -541,6 +544,7 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
         dto::MessageScenePromptGenerateRequest {
             client_operation_id: "manual-prompt-replay".into(),
             message_id: reply.clone(),
+            cast: None,
         },
     )
     .await
@@ -576,6 +580,7 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
             client_operation_id: uuid::Uuid::new_v4().to_string(),
             message_id: reply.clone(),
             prompt: "   ".into(),
+            cast: None,
         },
     )
     .await
@@ -586,6 +591,7 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
             client_operation_id: uuid::Uuid::new_v4().to_string(),
             message_id: reply.clone(),
             prompt: prompt.into(),
+            cast: None,
         };
         let image_job = message_scene_image_generate(context, request.clone())
             .await
@@ -610,6 +616,7 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
                 client_operation_id: uuid::Uuid::new_v4().to_string(),
                 message_id: reply.clone(),
                 prompt: "again".into(),
+                cast: None,
             },
         )
         .await
@@ -744,9 +751,36 @@ async fn a_follow_up_whose_job_a_restart_cancelled_fails_as_interrupted() {
     assert_eq!(scene.images.calls(), 0);
 }
 
+fn follow_up_cast(
+    context: &ApiContext,
+    chat: &str,
+    reply: &str,
+) -> Option<lettuce_conversations::SceneCastSelection> {
+    let database = context.backend().database();
+    let conversation_id = chat.parse::<ConversationId>().expect("chat");
+    database
+        .follow_ups_in(&[
+            SceneFollowUpState::Pending,
+            SceneFollowUpState::Approved,
+            SceneFollowUpState::Running,
+            SceneFollowUpState::Done,
+            SceneFollowUpState::Failed,
+        ])
+        .expect("follow-ups")
+        .into_iter()
+        .find(|follow_up| {
+            follow_up.conversation_id == conversation_id && follow_up.message_id.to_string() == reply
+        })
+        .and_then(|follow_up| follow_up.cast)
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn a_group_reply_asks_for_no_scene_image() {
-    let scene = scene_harness(Reply::Text(TAGGED), Vec::new(), SceneGenerationMode::Auto);
+async fn a_group_reply_names_its_cast_in_the_scene_tag() {
+    let scene = scene_harness(
+        Reply::Text("Hello Cleo. <img subjects=\"Cleo, Ada, Nobody\">a harbor</img>"),
+        vec![Outcome::Image, Outcome::Image],
+        SceneGenerationMode::Auto,
+    );
     let cast = super::turns_tests::group_cast(&scene.harness, "scene-group").await;
     send(
         &scene.harness,
@@ -758,24 +792,80 @@ async fn a_group_reply_asks_for_no_scene_image() {
     .await
     .expect("send");
     super::turns_tests::run_generation(&scene.harness).await;
+    run_jobs(&scene.harness.context).await;
     let view = open_chat(&scene.harness.context, &cast.chat).await;
-    assert!(
-        view.messages
-            .items
-            .iter()
-            .all(|message| message.scene_image.is_none())
+    let reply = view
+        .messages
+        .items
+        .iter()
+        .find(|message| message.role == dto::MessageRole::Assistant)
+        .expect("reply");
+    assert!(reply.parts.iter().all(|part| match part {
+        dto::MessagePartView::Text { text } => text == "Hello Cleo.",
+        _ => true,
+    }));
+    assert_eq!(media_count(reply), 1);
+    assert_eq!(
+        follow_up_cast(&scene.harness.context, &cast.chat, &reply.id),
+        Some(lettuce_conversations::SceneCastSelection {
+            character_ids: vec![cast.cleo_character, cast.ada_character],
+            include_persona: false,
+        })
     );
-    let refused = message_scene_image_generate(
+
+    let view = message_scene_cast(
         &scene.harness.context,
-        dto::MessageSceneImageGenerateRequest {
-            client_operation_id: uuid::Uuid::new_v4().to_string(),
-            message_id: view.messages.items.last().expect("reply").id.clone(),
-            prompt: "a harbor".into(),
+        dto::MessageSceneRequest {
+            message_id: reply.id.clone(),
         },
     )
     .await
-    .expect_err("a group chat");
-    assert_eq!(refused.code, ApiErrorCode::Unsupported);
+    .expect("cast view");
+    assert_eq!(
+        view.characters
+            .iter()
+            .map(|member| (member.name.as_str(), member.selected))
+            .collect::<Vec<_>>(),
+        [("Ada", true), ("Bea", false), ("Cleo", true)]
+    );
+
+    let foreign = message_scene_image_generate(
+        &scene.harness.context,
+        dto::MessageSceneImageGenerateRequest {
+            client_operation_id: uuid::Uuid::new_v4().to_string(),
+            message_id: reply.id.clone(),
+            prompt: "a harbor".into(),
+            cast: Some(dto::SceneCastSelection {
+                character_ids: vec![lettuce_types::CharacterId::new().to_string()],
+                include_persona: false,
+            }),
+        },
+    )
+    .await
+    .expect_err("a character outside the chat");
+    assert_eq!(foreign.code, ApiErrorCode::InvalidInput);
+
+    message_scene_image_generate(
+        &scene.harness.context,
+        dto::MessageSceneImageGenerateRequest {
+            client_operation_id: uuid::Uuid::new_v4().to_string(),
+            message_id: reply.id.clone(),
+            prompt: "Bea alone".into(),
+            cast: Some(dto::SceneCastSelection {
+                character_ids: vec![view.characters[1].character_id.clone()],
+                include_persona: false,
+            }),
+        },
+    )
+    .await
+    .expect("a picked cast");
+    run_jobs(&scene.harness.context).await;
+    assert_eq!(scene.images.calls(), 2);
+    assert_eq!(
+        follow_up_cast(&scene.harness.context, &cast.chat, &reply.id)
+            .map(|cast| cast.character_ids.len()),
+        Some(1)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

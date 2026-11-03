@@ -58,8 +58,8 @@ pub use conversations::messages::{
     messages_delete_after,
 };
 pub use conversations::scenes::{
-    message_scene_image_approve, message_scene_image_dismiss, message_scene_image_generate,
-    message_scene_prompt_generate,
+    message_scene_cast, message_scene_image_approve, message_scene_image_dismiss,
+    message_scene_image_generate, message_scene_prompt_generate,
 };
 pub use conversations::settings::{
     conversation_archive, conversation_participant_add, conversation_participant_update,

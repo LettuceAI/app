@@ -105,7 +105,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Scene images (2026-09-23) are legacy `chat_generate_scene_image`; unreadable references are skipped as legacy skipped files it could not load.
 - Scene prompts (2026-09-23) are legacy `chat_generate_scene_prompt`, with legacy's loaded window, placeholder values, condition facts and in-chat offsets.
 - Design references (2026-09-23) are legacy `chat_generate_design_reference_description` (legacy placed no entry by depth or message count, and took data URLs from the editor).
-- Scene tags (2026-09-23) replace legacy `sceneImageProtocol.ts`, which the old frontend ran; the stored text is trimmed as legacy persisted it. Group chats never had the tag.
+- Scene tags (2026-09-23) replace legacy `sceneImageProtocol.ts`, which the old frontend ran; the stored text is trimmed as legacy persisted it. Group chats never had the tag in legacy; they have it now (see the group scene images entry).
 - Local stable-diffusion.cpp sees discrete GPUs and accelerators as legacy's device list did; reading the installed list removes stale `sdcpp:` rows as legacy purged them on that read.
 - The avatar gradient is the old `generate_avatar_gradient` extraction; the round image falls back to the square avatar as the old command did when `avatar_round.webp` was missing.
 - Image bundle browsing and registration, and CivitAI token handling, follow legacy.
@@ -377,7 +377,7 @@ Everything the Tauri phase (phase (c)) still has to connect:
 New features to design with the user; legacy never had them.
 
 - Group companions and group growth scheduling.
-- Scene images in group chats: legacy generated scene images for direct chats only, and the backend rejects groups (`NotDirect`).
+- Scene images in group chats (user decision, 2026-11-03): legacy generated scene images for direct chats only. Group chats now get manual, automatic and ask-first scene images in both chat modes, with one scene writer prompt for both kinds: a direct chat is a cast of its character and persona. The cast rule, the `subjects` attribute of the scene tag and the user-picked cast are new. Direct scene writer prompts now describe subjects through `{{scene_cast}}` and label recent lines with names instead of User/Assistant.
 
 - The unused companion-emotion neutral-fallback loader is removed. The API requires the installed Thymos classifier and reports typed model failures instead of a neutral fallback (old-code/src-tauri/src/chat_manager/companion/mod.rs:1407-1435).
 

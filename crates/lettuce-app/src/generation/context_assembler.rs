@@ -440,6 +440,38 @@ where
                 };
                 values.purpose_values.insert(variable, value);
             }
+            if let Some(subjects) = &request.prompt_values.scene_cast_lora {
+                let mut lines = Vec::new();
+                for subject in subjects {
+                    let keywords = match &subject.binding {
+                        lettuce_conversations::SceneLoraBinding::Keywords(keywords) => {
+                            keywords.clone()
+                        }
+                        lettuce_conversations::SceneLoraBinding::NoLora => runtime
+                            .fragment(
+                                if subject.persona {
+                                    "scene_lora_secondary_subject"
+                                } else {
+                                    "scene_lora_primary_subject"
+                                },
+                                [],
+                            )?
+                            .unwrap_or_default(),
+                    };
+                    if let Some(line) = runtime.fragment(
+                        "scene_cast_lora_line",
+                        [
+                            (PromptVariable::SubjectName, subject.name.clone()),
+                            (PromptVariable::SubjectDescription, keywords),
+                        ],
+                    )? {
+                        lines.push(line);
+                    }
+                }
+                values
+                    .purpose_values
+                    .insert(PromptVariable::SceneCastLoraKeywords, lines.join("\n"));
+            }
             values.key_memories = match runtime.section("runtime_group_key_memories") {
                 Some(section) if group && !key_lines.is_empty() => section.text,
                 _ if group => String::new(),
@@ -2576,6 +2608,7 @@ fn prompt_payload(
                 PromptEntryImageSlotV1::ChatBackground => PromptEntryImageSlot::ChatBackground,
                 PromptEntryImageSlotV1::Avatar => PromptEntryImageSlot::Avatar,
                 PromptEntryImageSlotV1::References => PromptEntryImageSlot::References,
+                PromptEntryImageSlotV1::Cast => PromptEntryImageSlot::Cast,
             },
         },
     })

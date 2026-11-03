@@ -874,7 +874,7 @@ impl<
                         evidence,
                     });
                 }
-                let scene_image = input.reply_images.and_then(|facts| {
+                let scene_image = input.reply_images.as_ref().and_then(|facts| {
                     crate::image::reply_images::take_scene_image(&mut candidate.parts, facts)
                 });
                 let scene_image = scene_image.filter(|_| {
@@ -922,6 +922,7 @@ impl<
                                 lettuce_conversations::SceneFollowUpDraft {
                                     prompt: scene.prompt.clone(),
                                     ask_first: scene.ask_first,
+                                    cast: scene.cast.clone(),
                                 }
                             }),
                         },
