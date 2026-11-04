@@ -1084,6 +1084,7 @@ mod tests {
             roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
+            disable_character_notes: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2558,6 +2559,7 @@ mod tests {
             roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
+            disable_character_notes: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2617,6 +2619,7 @@ mod tests {
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
             chat_mode: None,
             disable_character_lorebooks: None,
+            disable_character_notes: None,
             roleplay_prompt: None,
             roleplay_prompt_provenance: Default::default(),
             members_overridden: false,
@@ -2669,6 +2672,7 @@ mod tests {
             roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
+            disable_character_notes: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2701,6 +2705,7 @@ mod tests {
             roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
+            disable_character_notes: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2745,6 +2750,7 @@ mod tests {
             roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
+            disable_character_notes: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2885,6 +2891,7 @@ mod tests {
             roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
+            disable_character_notes: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2906,6 +2913,9 @@ mod tests {
         })
         .0;
         assert!(current.validate_against_kind(&direct.kind).is_ok());
+        let mut direct_notes = current.clone();
+        direct_notes.disable_character_notes = Some(true);
+        assert!(direct_notes.validate_against_kind(&direct.kind).is_err());
         direct.kind = match direct.kind {
             ConversationKind::Direct(mut details) => {
                 details.prompt = SnapshotSelection::Explicit(prompt.clone());
@@ -3027,6 +3037,7 @@ mod tests {
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
             chat_mode: None,
             disable_character_lorebooks: None,
+            disable_character_notes: None,
             roleplay_prompt: None,
             roleplay_prompt_provenance: Default::default(),
             members_overridden: false,

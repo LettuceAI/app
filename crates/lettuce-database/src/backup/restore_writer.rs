@@ -660,6 +660,10 @@ impl ProviderBackupRestoreWriter for Database {
             crate::memory::scheduled_note_adapter::insert_restored_note_in(&transaction, note)
                 .map_err(invalid)?;
         }
+        for note in &companion.group_scheduled_notes {
+            crate::memory::group_note_adapter::insert_restored_note_in(&transaction, note)
+                .map_err(invalid)?;
+        }
         for pool in &graph.memory.pools {
             transaction
                 .execute(

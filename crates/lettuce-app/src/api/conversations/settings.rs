@@ -211,6 +211,7 @@ pub(crate) fn settings_view(
                 },
                 chat_mode: None,
                 disable_character_lorebooks: None,
+                disable_character_notes: None,
                 speaker_selection: None,
                 members: None,
                 model_settings,
@@ -318,6 +319,14 @@ pub(crate) fn settings_view(
                     value: live.disable_character_lorebooks,
                     source: own_or_group(
                         own.and_then(|settings| settings.disable_character_lorebooks)
+                            .is_some(),
+                        profile,
+                    ),
+                }),
+                disable_character_notes: Some(dto::SettingFlag {
+                    value: live.disable_character_notes,
+                    source: own_or_group(
+                        own.and_then(|settings| settings.disable_character_notes)
                             .is_some(),
                         profile,
                     ),
@@ -858,6 +867,12 @@ fn settings_change(
         }),
         disable_character_lorebooks: patch
             .disable_character_lorebooks
+            .map(|change| match change {
+                dto::FlagChange::Set { value } => Change::Set(value),
+                dto::FlagChange::Reset => Change::Reset,
+            }),
+        disable_character_notes: patch
+            .disable_character_notes
             .map(|change| match change {
                 dto::FlagChange::Set { value } => Change::Set(value),
                 dto::FlagChange::Reset => Change::Reset,

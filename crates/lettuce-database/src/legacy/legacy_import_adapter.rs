@@ -2626,6 +2626,8 @@ fn legacy_group_plan(
             speaker_selection: candidate.speaker_selection,
             memory_policy: candidate.memory_policy,
             disable_character_lorebooks: candidate.disable_character_lorebooks,
+            time_awareness: false,
+            disable_character_notes: false,
             group_conversation_prompt_id: prompt(&candidate.group_conversation_prompt_source_id),
             group_roleplay_prompt_id: prompt(&candidate.group_roleplay_prompt_source_id),
             presentation: candidate.chat_appearance.clone(),

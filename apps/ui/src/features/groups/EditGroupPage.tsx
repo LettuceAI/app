@@ -164,7 +164,7 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
         <div className="min-w-0 space-y-6"><BackgroundGroup {...props} /></div>
       </div> : section === "members" ? <EditMembersTab {...props} cast={allCast} phone={phone} /> : section === "scene" ? <SceneStep {...props} autoFocus={false} /> : section === "appearance" ? <GroupAppearanceEditor draft={form.draft} onChange={(draft) => setForm((current) => ({ ...current, draft }))} phone={phone} /> : <div className="space-y-6">
         <p className="text-base text-fg-2">{t("edit.chatFollow")}</p>
-        <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10"><div className="min-w-0 space-y-6"><SpeakerGroup {...props} /><MemoryGroup {...props} dynamicMemory={dynamicMemory} /></div><div className="min-w-0 space-y-6"><ExtrasStep {...props} libraryOnly /></div></div>
+        <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10"><div className="min-w-0 space-y-6"><SpeakerGroup {...props} /><MemoryGroup {...props} dynamicMemory={dynamicMemory} /></div><div className="min-w-0 space-y-6"><ExtrasStep {...props} libraryOnly saved={{ id: stored.id, memberIds: stored.form.draft.members.map((member) => member.character_id) }} /></div></div>
       </div>}
       </motion.div>
     </fieldset>

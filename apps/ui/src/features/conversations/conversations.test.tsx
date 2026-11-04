@@ -97,7 +97,7 @@ const settings: ConversationSettingsView = {
   scene: { id: null, source: "app_default" },
   memory: { mode: "manual", source: "app_default" },
   chat_mode: null,
-  disable_character_lorebooks: null,
+  disable_character_lorebooks: null, disable_character_notes: null,
   speaker_selection: null,
   members: null,
   model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never,

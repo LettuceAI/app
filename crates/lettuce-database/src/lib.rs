@@ -188,6 +188,11 @@ const MIGRATION_24: Migration = Migration {
     sql: include_str!("../migrations/0024_scene_cast.sql"),
 };
 
+const MIGRATION_25: Migration = Migration {
+    id: 25,
+    sql: include_str!("../migrations/0025_group_notes.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -213,6 +218,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_22,
     MIGRATION_23,
     MIGRATION_24,
+    MIGRATION_25,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -3695,7 +3701,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 24);
+        assert_eq!(count, 25);
 
         let changed = Migration {
             id: 1,
@@ -3989,7 +3995,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            24
+            25
         );
         for column in [
             "target_kind",
@@ -5670,7 +5676,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 24);
+        assert_eq!(migration_count, 25);
         for table in [
             "groups",
             "group_members",
@@ -5719,7 +5725,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 24);
+        assert_eq!(count, 25);
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -6112,6 +6118,7 @@ mod tests {
                 "group_presentation_asset_refs",
                 "group_scene_assets",
                 "group_scene_variants",
+                "group_scheduled_notes",
                 "group_starting_scenes",
                 "groups",
                 "hugging_face_job_refusals",

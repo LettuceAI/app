@@ -59,6 +59,7 @@ The initial migrations establish each domain's tables, triggers and indexes. Lat
 | 10 | Usage events, job inference usage, cost bases, legacy usage records |
 | 11 | Creation helper workflows, lorebook runs and staged projects, apply receipts |
 | 12 | Companion Soul, growth, consolidation and Soul-writer runs, scheduled notes |
+| 25 | Group time awareness and character-notes switches, a per-chat character-notes override, group scheduled notes |
 | 13 | Companion relationships, sessions, continuity, turn effects, suffix rewinds and the ones a delete-after still owes, memory pools |
 | 14 | Speech transcriptions |
 | 15 | Installed Whisper models |
@@ -225,6 +226,7 @@ The ask-first state stores the prompt baseline and pending or skipped state per 
 - Continuity: a fresh direct companion launch closes the prior open episode for the character and persona and links the next one; replay leaves the sequence unchanged.
 - Turn effects: drafts become processing effects at finalization and settle as ready or failed with typed memory ids, the source-message window and bounded summary data. Terminal effects are immutable.
 - Scheduled notes: character-scoped, companion owners only, listed in `available_at`, id order, idempotent delete.
+- Group scheduled notes (`group_scheduled_notes`): group-scoped with a JSON list of the character ids that see them, listed in `available_at`, id order, idempotent delete. A write needs the group and every listed character to be a current member. They cascade with the group, travel in backups and sync as the `group_note` kind.
 
 ## Creation helper and lorebook runs
 

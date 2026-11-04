@@ -1471,6 +1471,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::COMPANION_NOTE_SYNC_VERSION,
         )
         | (
+            lettuce_sync::GROUP_NOTE_SYNC_KIND,
+            lettuce_sync::GROUP_NOTE_SYNC_SCHEMA,
+            lettuce_sync::GROUP_NOTE_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_KIND,
             lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_SCHEMA,
             lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_VERSION,
@@ -2821,6 +2826,63 @@ const COMPANION_NOTE_CODEC: SnapshotCodec = SnapshotCodec {
     }),
 };
 
+fn decode_group_note(
+    id: &str,
+    bytes: &[u8],
+) -> Result<lettuce_companions::GroupScheduledNote, ApplyOneError> {
+    let note: lettuce_companions::GroupScheduledNote =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    if note.id.to_string() != id || note.validate().is_err() {
+        return Err(ApplyOneError::Corrupt);
+    }
+    Ok(note)
+}
+
+fn group_note_apply_error(error: lettuce_companions::GroupScheduledNoteError) -> ApplyOneError {
+    match error {
+        lettuce_companions::GroupScheduledNoteError::GroupNotFound => ApplyOneError::Pending,
+        lettuce_companions::GroupScheduledNoteError::Failure { .. } => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+const GROUP_NOTE_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::GROUP_NOTE_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| decode_group_note(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        let id = Uuid::parse_str(id).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::memory::group_note_adapter::load_in(tx, id)
+            .map_err(group_note_apply_error)?
+            .map(|note| {
+                json_payload(
+                    lettuce_sync::GROUP_NOTE_SYNC_SCHEMA,
+                    lettuce_sync::GROUP_NOTE_SYNC_VERSION,
+                    &note,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let note = decode_group_note(id, bytes)?;
+        crate::memory::group_note_adapter::sync_replace(tx, &note)
+            .map_err(group_note_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::memory::group_note_adapter::sync_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: Some(|tx, change, _| {
+        let id = Uuid::parse_str(change.entity().id()).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::memory::group_note_adapter::delete_in(tx, id)
+            .map_err(group_note_apply_error)?;
+        Ok(true)
+    }),
+};
+
 fn row_apply_error(error: crate::sync::row_sync_adapter::RowSyncError) -> ApplyOneError {
     match error {
         crate::sync::row_sync_adapter::RowSyncError::Pending => ApplyOneError::Pending,
@@ -3184,7 +3246,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 37] = [
+const SCANNED_CODECS: [&SnapshotCodec; 38] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -3197,6 +3259,7 @@ const SCANNED_CODECS: [&SnapshotCodec; 37] = [
     &CHARACTER_BINDINGS_CODEC,
     &PERSONA_BINDINGS_CODEC,
     &GROUP_BINDINGS_CODEC,
+    &GROUP_NOTE_CODEC,
     &CONVERSATION_CODEC,
     &CONVERSATION_BRANCH_CODEC,
     &CONVERSATION_MESSAGE_CODEC,
@@ -3674,7 +3737,9 @@ impl PurgeScope {
         let notes = tx
             .prepare(
                 "SELECT id FROM companion_scheduled_notes
-                 WHERE character_id IN (SELECT value FROM json_each(?1)) ORDER BY id",
+                 WHERE character_id IN (SELECT value FROM json_each(?1))
+                 UNION SELECT id FROM group_scheduled_notes
+                 WHERE group_id IN (SELECT value FROM json_each(?1)) ORDER BY id",
             )
             .and_then(|mut statement| {
                 statement
@@ -3696,7 +3761,8 @@ impl PurgeScope {
 
     fn owns(&self, kind: &str, id: &str) -> bool {
         owned_entity(&self.owners, id)
-            || (kind == lettuce_sync::COMPANION_NOTE_SYNC_KIND
+            || ((kind == lettuce_sync::COMPANION_NOTE_SYNC_KIND
+                || kind == lettuce_sync::GROUP_NOTE_SYNC_KIND)
                 && self.notes.iter().any(|note| note == id))
     }
 

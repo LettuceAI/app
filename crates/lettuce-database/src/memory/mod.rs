@@ -7,6 +7,7 @@ pub(crate) mod memory_change_adapter;
 pub(crate) mod memory_cycle_revert_adapter;
 pub(crate) mod memory_embedding_adapter;
 pub(crate) mod memory_manual_adapter;
+pub(crate) mod group_note_adapter;
 pub(crate) mod scheduled_note_adapter;
 
 pub(crate) mod memory_read_adapter;

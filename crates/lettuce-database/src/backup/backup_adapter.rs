@@ -1413,6 +1413,20 @@ fn read_companion_state(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
+    let group_scheduled_notes = transaction
+        .prepare(&format!(
+            "SELECT {} FROM group_scheduled_notes ORDER BY id",
+            crate::memory::group_note_adapter::NOTE_COLUMNS
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    crate::memory::group_note_adapter::from_row(row)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
     let growth_runs = read_ids::<lettuce_types::JobId>(
         transaction,
         "SELECT job_id FROM companion_growth_runs ORDER BY job_id",
@@ -1475,6 +1489,7 @@ fn read_companion_state(
         receipts,
         souls,
         scheduled_notes,
+        group_scheduled_notes,
         growth_runs,
         consolidation_runs,
         soul_writer_runs,

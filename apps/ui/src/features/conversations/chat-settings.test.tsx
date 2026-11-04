@@ -33,7 +33,7 @@ const settings: ConversationSettingsView = {
   persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null,
   lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" },
   scene: { id: null, source: "app_default" }, memory: { mode: "manual", source: "app_default" }, chat_mode: null,
-  disable_character_lorebooks: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
+  disable_character_lorebooks: null, disable_character_notes: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
 };
 
 interface Setup {
@@ -226,22 +226,53 @@ describe("chat settings panel", () => {
     expect(await screen.findByRole("button", { name: /^Chat clock/ })).toBeTruthy();
   });
 
-  it("offers the scheduled notes row in the Time group of a direct chat and not of a group chat", async () => {
+  it("offers the scheduled notes row in the Time group of every chat and the character notes switch only for a group chat", async () => {
     await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
     const timeGroup = (await screen.findByRole("heading", { name: "Time" })).closest("section")!;
     expect(within(timeGroup).getByRole("button", { name: /^Scheduled notes/ })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /^Scheduled notes/ })).toHaveLength(1);
+    expect(screen.queryByRole("switch", { name: "Use character notes" })).toBeNull();
     cleanup();
-    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, roleplay_prompt: { id: null, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
+    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, roleplay_prompt: { id: null, source: "group" }, disable_character_notes: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
+    const update = vi.fn<NonNullable<MockCallHandlers["conversationSettingsUpdate"]>>(() => ({ status: "ok", data: groupSettings }));
+    await open({ path: "/chat/c1?panel=settings", calls: {
+      ...panelCalls,
+      conversationOpen: () => ({ status: "ok", data: view([], { kind: "group", source: { type: "group", group_id: "g1" } }) }),
+      conversationSettingsGet: () => ({ status: "ok", data: groupSettings }),
+      conversationSettingsUpdate: update,
+      conversationParticipationStats: () => ({ status: "ok", data: { total_messages: 0, items: [] } }),
+    } });
+    const groupTime = (await screen.findByRole("heading", { name: "Time" })).closest("section")!;
+    expect(within(groupTime).getByRole("switch", { name: "Time awareness" })).toBeTruthy();
+    expect(within(groupTime).getByRole("button", { name: /^Scheduled notes/ })).toBeTruthy();
+    const notes = within(groupTime).getByRole("switch", { name: "Use character notes" });
+    expect(notes.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(notes);
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![0].patch).toMatchObject({ disable_character_notes: { type: "set", value: true } });
+  });
+
+  it("opens the group's notes from a group chat and saves a note aimed at one member", async () => {
+    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, roleplay_prompt: { id: null, source: "group" }, disable_character_notes: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
+    const upsert = vi.fn<NonNullable<MockCallHandlers["groupNotesUpsert"]>>((request) => ({ status: "ok", data: { id: "n1", group_id: request.group_id, visible_to: request.visible_to, label: request.label, content: request.content, available_at: request.available_at, expires_at: null, recurrence: "none", recurrence_window_ms: null, enabled: true, created_at: 1, updated_at: 1 } }));
     await open({ path: "/chat/c1?panel=settings", calls: {
       ...panelCalls,
       conversationOpen: () => ({ status: "ok", data: view([], { kind: "group", source: { type: "group", group_id: "g1" } }) }),
       conversationSettingsGet: () => ({ status: "ok", data: groupSettings }),
       conversationParticipationStats: () => ({ status: "ok", data: { total_messages: 0, items: [] } }),
+      groupNotesList: () => ({ status: "ok", data: [] }),
+      groupNotesUpsert: upsert,
+      groupGet: () => ({ status: "ok", data: { id: "g1", archived: false, assets: [], revision: 1, created_at: 1, updated_at: 1, draft: { members: [{ character_id: "ch1", ordinal: 0, muted: false, model_profile_override: null }] } } as never }),
+      characterGet: () => ({ status: "ok", data: { id: "ch1", draft: { profile: { name: "Cassian" } } } as never }),
     } });
-    const groupTime = (await screen.findByRole("heading", { name: "Time" })).closest("section")!;
-    expect(within(groupTime).getByRole("switch", { name: "Time awareness" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Scheduled notes/ })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: /^Scheduled notes/ }));
+    expect(await screen.findByText("No scheduled notes yet.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add a note" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Note" }), { target: { value: "The tide is rising." } });
+    fireEvent.click(await screen.findByRole("button", { name: "Cassian" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
+    expect(upsert.mock.calls[0]![0]).toMatchObject({ group_id: "g1", note_id: null, visible_to: ["ch1"], content: "The tide is rising." });
   });
 
   it("navigates branches to its own page and omits scene and prompt controls", async () => {

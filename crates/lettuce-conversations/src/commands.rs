@@ -1193,6 +1193,10 @@ pub struct CurrentConversationSettingsPatch {
     /// to the group's.
     #[serde(default)]
     pub disable_character_lorebooks: PatchValue<bool>,
+    /// Group conversations only; it cannot be cleared, only set or returned
+    /// to the group's.
+    #[serde(default)]
+    pub disable_character_notes: PatchValue<bool>,
     /// Group conversations only: the members and their muted flags follow
     /// the group again.
     #[serde(default)]
@@ -1227,6 +1231,11 @@ impl CurrentConversationSettingsPatch {
         if matches!(self.disable_character_lorebooks, PatchValue::Clear) {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.disable_character_lorebooks",
+            });
+        }
+        if matches!(self.disable_character_notes, PatchValue::Clear) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.disable_character_notes",
             });
         }
         if let PatchValue::Set(prompt) = &self.roleplay_prompt {
@@ -1437,6 +1446,11 @@ impl CurrentConversationSettingsPatch {
                 PatchValue::Set(disabled) => Some(disabled),
                 PatchValue::Clear | PatchValue::UseLaunchDefault => None,
             },
+            disable_character_notes: match self.disable_character_notes {
+                PatchValue::Keep => base.disable_character_notes,
+                PatchValue::Set(disabled) => Some(disabled),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
+            },
             roleplay_prompt,
             roleplay_prompt_provenance,
             members_overridden: base.members_overridden && !self.follow_group_members,
@@ -1639,12 +1653,17 @@ mod tests {
                 disable_character_lorebooks: PatchValue::Clear,
                 ..CurrentConversationSettingsPatch::default()
             },
+            CurrentConversationSettingsPatch {
+                disable_character_notes: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            },
         ] {
             assert!(patch.apply(None, None).is_err());
         }
         let set = CurrentConversationSettingsPatch {
             chat_mode: PatchValue::Set(crate::snapshot::GroupChatModeSnapshot::Roleplay),
             disable_character_lorebooks: PatchValue::Set(true),
+            disable_character_notes: PatchValue::Set(true),
             ..CurrentConversationSettingsPatch::default()
         }
         .apply(None, None)
@@ -1654,6 +1673,7 @@ mod tests {
             Some(crate::snapshot::GroupChatModeSnapshot::Roleplay)
         );
         assert_eq!(set.disable_character_lorebooks, Some(true));
+        assert_eq!(set.disable_character_notes, Some(true));
         let mut owned = set.clone();
         owned.members_overridden = true;
         owned.muted_overridden = true;
@@ -1661,6 +1681,7 @@ mod tests {
         let reset = CurrentConversationSettingsPatch {
             chat_mode: PatchValue::UseLaunchDefault,
             disable_character_lorebooks: PatchValue::UseLaunchDefault,
+            disable_character_notes: PatchValue::UseLaunchDefault,
             follow_group_members: true,
             ..CurrentConversationSettingsPatch::default()
         }
@@ -1668,6 +1689,7 @@ mod tests {
         .expect("reset");
         assert_eq!(reset.chat_mode, None);
         assert_eq!(reset.disable_character_lorebooks, None);
+        assert_eq!(reset.disable_character_notes, None);
         assert!(!reset.members_overridden && !reset.muted_overridden);
         assert!(reset.member_models_overridden);
         let models = CurrentConversationSettingsPatch {

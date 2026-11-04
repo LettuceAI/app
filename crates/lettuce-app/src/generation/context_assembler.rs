@@ -11,7 +11,8 @@ use async_trait::async_trait;
 use lettuce_characters::{CharacterRepository, GroupRepository, PersonaRepository};
 use lettuce_companions::{
     CompanionPromptStateInput, CompanionScheduledNoteError, CompanionScheduledNoteRepository,
-    CompanionStateRepository, SoulOwner, SoulRepository, active_scheduled_notes, prompt_state,
+    CompanionStateRepository, GroupScheduledNoteError, GroupScheduledNoteRepository, SoulOwner,
+    SoulRepository, active_group_scheduled_notes, active_scheduled_notes, prompt_state,
 };
 use lettuce_context::{
     CharacterLorebookBindingRepository, GroupLorebookBindingRepository, LorebookActivationSource,
@@ -111,6 +112,7 @@ where
         + SoulRepository
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
+        + GroupScheduledNoteRepository
         + PromptRepository
         + lettuce_settings::GlobalSettingsStore
         + GroupRepository
@@ -257,7 +259,12 @@ where
             ensure_source_in_timeline(&request)?;
         }
         let companion_state = self.companion_prompt_state(&aggregate, request.reference_time)?;
-        let scheduled_notes = self.scheduled_notes(&aggregate, request.reference_time)?;
+        let scheduled_notes = self.scheduled_notes(
+            &aggregate,
+            live_group.as_ref(),
+            speaker_character,
+            request.reference_time,
+        )?;
 
         let scan_depth = usize::from(
             lettuce_settings::GlobalSettingsStore::load(self.sources)
@@ -477,11 +484,10 @@ where
                 _ if group => String::new(),
                 _ => key_lines.clone(),
             };
-            if direct {
-                values
-                    .purpose_values
-                    .retain(|variable, _| variable.is_allowed_for(document.purpose));
-            } else {
+            values
+                .purpose_values
+                .retain(|variable, _| variable.is_allowed_for(document.purpose));
+            if !direct {
                 let list = group_characters(&snapshot.group_members, speaker_character, &runtime)?;
                 let list = values.resolve_names(&list);
                 values
@@ -846,6 +852,7 @@ where
         + SoulRepository
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
+        + GroupScheduledNoteRepository
         + PromptRepository
         + lettuce_settings::GlobalSettingsStore
         + GroupRepository
@@ -1408,22 +1415,49 @@ where
         .map_err(runtime_text_error)
     }
 
+    /// The notes a turn carries as one block: a direct chat's character
+    /// notes, or a group turn's group notes the speaker sees followed by the
+    /// speaker's own character notes unless the chat switched them off.
     fn scheduled_notes(
         &self,
         aggregate: &ConversationAggregate,
+        live_group: Option<&crate::generation::live_sources::LiveGroup>,
+        speaker: Option<CharacterId>,
         reference_time: TimestampMillis,
     ) -> Result<Option<String>, ContextAssemblyError> {
-        let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
-            return Ok(None);
+        let (character, group_notes) = match &aggregate.conversation.kind {
+            ConversationKind::Direct(details) => (Some(details.character.source_id), Vec::new()),
+            ConversationKind::Group(details) => {
+                let notes = match self.sources.list_group_notes(details.group.source_id) {
+                    Ok(notes) => notes,
+                    Err(GroupScheduledNoteError::GroupNotFound) => Vec::new(),
+                    Err(_) => return Err(ContextAssemblyError::ConversationUnavailable),
+                };
+                let own_notes_off =
+                    live_group.is_some_and(|group| group.disable_character_notes);
+                (speaker.filter(|_| !own_notes_off), notes)
+            }
         };
-        let notes = match self.sources.list_scheduled_notes(details.character.source_id) {
-            Ok(notes) => notes,
-            Err(CompanionScheduledNoteError::CharacterNotFound) => return Ok(None),
-            Err(_) => return Err(ContextAssemblyError::ConversationUnavailable),
+        let group_active =
+            active_group_scheduled_notes(group_notes, reference_time, speaker)
+                .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
+        let character_notes = match character {
+            Some(id) => match self.sources.list_scheduled_notes(id) {
+                Ok(notes) => notes,
+                Err(CompanionScheduledNoteError::CharacterNotFound) => Vec::new(),
+                Err(_) => return Err(ContextAssemblyError::ConversationUnavailable),
+            },
+            None => Vec::new(),
         };
-        let active = active_scheduled_notes(notes, reference_time)
-            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
-        if active.is_empty() {
+        let character_active =
+            active_scheduled_notes(character_notes, reference_time)
+                .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
+        let contents = group_active
+            .iter()
+            .map(|note| note.content.as_str())
+            .chain(character_active.iter().map(|note| note.content.as_str()))
+            .collect::<Vec<_>>();
+        if contents.is_empty() {
             return Ok(None);
         }
         let text = crate::generation::runtime_text::RuntimeText::load(
@@ -1433,7 +1467,7 @@ where
         .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable {
             reason: "chat runtime prompt text is unavailable",
         })?;
-        crate::companion::companion_prompt_text::render_scheduled_notes(&text, &active)
+        crate::companion::companion_prompt_text::render_scheduled_notes(&text, &contents)
             .map_err(runtime_text_error)
     }
 }

@@ -70,3 +70,10 @@ export function groupEditQuery(api: ApiClient, id: string) {
     gcTime: 0,
   });
 }
+
+export function groupNotesQuery(api: ApiClient, groupId: string) {
+  return queryOptions({
+    queryKey: queryKeys.groupNotes.list(groupId),
+    queryFn: () => api.call("groupNotesList", { group_id: groupId }),
+  });
+}

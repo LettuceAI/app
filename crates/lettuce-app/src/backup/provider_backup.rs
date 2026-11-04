@@ -757,6 +757,8 @@ mod tests {
         )
         .expect("group");
         group.speaker_selection = SpeakerSelection::Director;
+        group.time_awareness = true;
+        group.disable_character_notes = true;
         GroupRepository::create(
             backend.database(),
             CreateGroupPlan {
@@ -765,6 +767,24 @@ mod tests {
             },
         )
         .expect("store group");
+        lettuce_companions::GroupScheduledNoteRepository::upsert_group_note(
+            backend.database(),
+            lettuce_companions::GroupScheduledNote {
+                id: uuid::Uuid::new_v4(),
+                group_id,
+                visible_to: vec![character_ids[1]],
+                label: "Backup".into(),
+                content: "Kept across a restore.".into(),
+                available_at: TimestampMillis::new(5),
+                expires_at: None,
+                recurrence: lettuce_companions::ScheduledNoteRecurrence::None,
+                recurrence_window_ms: None,
+                enabled: true,
+                created_at: TimestampMillis::new(5),
+                updated_at: TimestampMillis::new(5),
+            },
+        )
+        .expect("store group note");
         let direct_conversation = backend
             .launch_direct_conversation(
                 &DirectConversationLaunchRequest {
@@ -2164,6 +2184,14 @@ mod tests {
         );
         assert_eq!(round_trip.user_voices, restore_plan.graph.user_voices);
         assert_eq!(round_trip.authored, restore_plan.graph.authored);
+        assert_eq!(round_trip.companion_state.group_scheduled_notes.len(), 1);
+        assert!(
+            round_trip
+                .authored
+                .groups
+                .iter()
+                .any(|details| details.group.time_awareness && details.group.disable_character_notes)
+        );
         assert_eq!(round_trip.asr_learning, restore_plan.graph.asr_learning);
         assert_eq!(
             round_trip.conversation_history,

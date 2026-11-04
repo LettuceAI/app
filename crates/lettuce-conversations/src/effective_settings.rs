@@ -655,6 +655,7 @@ mod tests {
                 roleplay_prompt: Default::default(),
                 chat_mode: Default::default(),
                 disable_character_lorebooks: Default::default(),
+                disable_character_notes: Default::default(),
                 follow_group_members: false,
                 follow_group_member_models: false,
             }

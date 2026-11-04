@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use lettuce_companions::{
-    CompanionPromptState, CompanionScheduledNote, ConsolidationPromptFacts, EmotionDimension,
+    CompanionPromptState, ConsolidationPromptFacts, EmotionDimension,
     EmotionReading, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipBand,
     SoulCategory, SoulFactLine, TensionBand, policy_name, scheduled_note_lines,
 };
@@ -133,7 +133,7 @@ pub(crate) fn render_companion_state(
 /// catalog block, or `None` when no line remains or the block is disabled.
 pub(crate) fn render_scheduled_notes(
     text: &RuntimeText,
-    notes: &[CompanionScheduledNote],
+    notes: &[&str],
 ) -> Result<Option<String>, RuntimeTextError> {
     let truncated = text.render_with("scheduled_note_truncated", [])?;
     let failure = Cell::new(None);
@@ -843,13 +843,13 @@ mod tests {
             updated_at: TimestampMillis::new(1),
         };
         assert_eq!(
-            render_scheduled_notes(&text, std::slice::from_ref(&note)).expect("render"),
+            render_scheduled_notes(&text, &[note.content.as_str()]).expect("render"),
             Some("[Background context you currently hold in mind]\n- remember this".into())
         );
         assert_eq!(render_scheduled_notes(&text, &[]).expect("empty"), None);
         text.disable_for_test("scheduled_note_line");
         assert_eq!(
-            render_scheduled_notes(&text, std::slice::from_ref(&note)).expect("disabled line"),
+            render_scheduled_notes(&text, &[note.content.as_str()]).expect("disabled line"),
             None
         );
     }

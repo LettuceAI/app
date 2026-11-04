@@ -22,7 +22,7 @@ fn corrupt(error: impl std::fmt::Debug) -> CompanionScheduledNoteError {
     }
 }
 
-fn recurrence_name(recurrence: ScheduledNoteRecurrence) -> &'static str {
+pub(crate) fn recurrence_name(recurrence: ScheduledNoteRecurrence) -> &'static str {
     match recurrence {
         ScheduledNoteRecurrence::None => "none",
         ScheduledNoteRecurrence::Daily => "daily",
@@ -32,7 +32,7 @@ fn recurrence_name(recurrence: ScheduledNoteRecurrence) -> &'static str {
     }
 }
 
-fn recurrence_from_name(
+pub(crate) fn recurrence_from_name(
     value: &str,
 ) -> Result<ScheduledNoteRecurrence, CompanionScheduledNoteError> {
     match value {

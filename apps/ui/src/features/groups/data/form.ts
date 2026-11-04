@@ -1,3 +1,4 @@
+import type { DraftNote } from "./notes";
 import type { AssetRef, GroupDraft_Serialize, LibraryChatAppearanceV1_Serialize, LibraryGroupStartingSceneDraft_Serialize } from "@/api/generated/bindings";
 
 export interface GroupForm {
@@ -6,17 +7,18 @@ export interface GroupForm {
   background: AssetRef | null;
   lorebookIds: string[];
   sceneSource: "none" | "custom" | "member";
+  notes?: DraftNote[];
 }
 
 export function newGroupForm(presentation: LibraryChatAppearanceV1_Serialize, dynamicMemory: boolean): GroupForm {
   return {
     draft: {
       name: "", chat_mode: "conversation", speaker_selection: "llm", memory_policy: dynamicMemory ? "dynamic" : "manual",
-      persona: { kind: "inherit" }, disable_character_lorebooks: false,
+      persona: { kind: "inherit" }, disable_character_lorebooks: false, time_awareness: false, disable_character_notes: false,
       group_conversation_prompt_id: null, group_roleplay_prompt_id: null,
       presentation, presentation_overrides: [], members: [], background_asset_id: null, starting_scene: null,
     },
-    background: null, lorebookIds: [], sceneSource: "none",
+    background: null, lorebookIds: [], sceneSource: "none", notes: [],
   };
 }
 

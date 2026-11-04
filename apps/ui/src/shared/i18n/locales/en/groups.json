@@ -162,6 +162,13 @@
     "memberLorebooks": "Members' own lorebooks",
     "memberLorebooksOn": "Each character's lorebooks are used too",
     "memberLorebooksOff": "Only the group's lorebooks are used",
+    "time": "Time",
+    "timeAwareness": "Time awareness",
+    "timeAwarenessOn": "New chats start with the chat clock on",
+    "timeAwarenessOff": "New chats start without a clock",
+    "characterNotes": "Use character notes",
+    "characterNotesOn": "Each character's scheduled notes are used too",
+    "characterNotesOff": "Only the group's notes are used",
     "models": "Models",
     "characterModel": "Character's model",
     "characterModelBody": "Whatever their own settings say"
@@ -235,5 +242,16 @@
     "addImage": "Add image",
     "image": "Scene image {{number}}",
     "removeImage": "Remove scene image {{number}}"
+  },
+  "notes": {
+    "title": "Scheduled notes",
+    "addBody": "Context the group picks up on a date",
+    "contentHint": "The exact text the characters it is shown to read once the date arrives.",
+    "contentPlaceholder": "The group has been traveling for a week. Supplies are running low.",
+    "deleteBody": "{{label}} will no longer reach the group.",
+    "whoSees": "Who sees it",
+    "whoSeesHint": "Only the characters you pick read this note.",
+    "everyone": "Every member reads this note. Pick characters to limit it.",
+    "everyoneShort": "Everyone"
   }
 }

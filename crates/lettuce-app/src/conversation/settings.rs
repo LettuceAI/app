@@ -67,6 +67,7 @@ pub struct ConversationSettingsChange {
     pub memory: Option<Change<MemoryModeSnapshot>>,
     pub chat_mode: Option<Change<GroupChatModeSnapshot>>,
     pub disable_character_lorebooks: Option<Change<bool>>,
+    pub disable_character_notes: Option<Change<bool>>,
     /// Replaces the conversation's own model settings; an empty layer
     /// clears them.
     pub model_settings: Option<lettuce_models::ModelSettingsLayer>,
@@ -222,6 +223,10 @@ impl Builder<'_> {
             "disable_character_lorebooks",
             change.disable_character_lorebooks.is_some(),
         )?;
+        group_only(
+            "disable_character_notes",
+            change.disable_character_notes.is_some(),
+        )?;
         group_only("members", change.follow_group_members)?;
         group_only("member_models", change.follow_group_member_models)?;
         if change.model_settings.is_some() && group {
@@ -339,6 +344,9 @@ impl Builder<'_> {
         }
         if let Some(change) = &change.disable_character_lorebooks {
             patch.disable_character_lorebooks = value_patch(change);
+        }
+        if let Some(change) = &change.disable_character_notes {
+            patch.disable_character_notes = value_patch(change);
         }
         if let Some(layer) = &change.model_settings {
             patch.model_settings = PatchValue::Set(layer.clone());

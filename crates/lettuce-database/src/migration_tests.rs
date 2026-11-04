@@ -68,3 +68,49 @@ fn migration_23_upgrades_a_file_without_rewriting_existing_groups_or_checksums()
     drop(reopened);
     std::fs::remove_file(path).expect("remove test database");
 }
+
+#[test]
+fn migration_25_upgrades_a_file_without_rewriting_existing_groups_or_checksums() {
+    let path = std::env::temp_dir().join(format!("lettuce-migration-25-{}.db", GroupId::new()));
+    let group_id = GroupId::new();
+    let history = {
+        let mut connection = Connection::open(&path).expect("old file");
+        configure(&connection, true).expect("configure old file");
+        let old: Vec<_> = MIGRATIONS.iter().copied().filter(|migration| migration.id <= 24).collect();
+        apply_migrations(&mut connection, &old).expect("schema through migration 24");
+        connection.execute(
+            "INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Existing group','existing group','roleplay','inherit','heuristic','manual',1,'{\"format_version\":1,\"value\":{}}',17,100,200)",
+            params![group_id.to_string()],
+        ).expect("existing group");
+        recorded_migrations(&connection)
+    };
+    let database = Database::open(&path).expect("automatically upgrade existing file");
+    {
+        let connection = database.connection().expect("connection");
+        let row: (i64, i64, i64, i64, i64, i64) = connection
+            .query_row(
+                "SELECT time_awareness, disable_character_notes, disable_character_lorebooks, revision, created_at, updated_at FROM groups WHERE id = ?1",
+                [group_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+            )
+            .expect("existing group row");
+        assert_eq!(row, (0, 0, 1, 17, 100, 200));
+        let notes: i64 = connection
+            .query_row("SELECT count(*) FROM group_scheduled_notes", [], |row| row.get(0))
+            .expect("notes table");
+        assert_eq!(notes, 0);
+        let override_column: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('conversation_settings') WHERE name = 'disable_character_notes'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("override column");
+        assert_eq!(override_column, 1);
+        let upgraded = recorded_migrations(&connection);
+        assert_eq!(&upgraded[..history.len()], history.as_slice());
+        assert_eq!(upgraded.iter().filter(|entry| entry.0 == 25).count(), 1);
+    }
+    drop(database);
+    std::fs::remove_file(path).expect("remove test database");
+}

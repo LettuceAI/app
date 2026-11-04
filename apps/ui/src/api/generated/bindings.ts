@@ -306,6 +306,9 @@ export const commands = {
 	characterNotesUpsert: (request: CharacterNoteUpsertRequest) => typedError<CharacterNoteView, ApiError_Serialize>(__TAURI_INVOKE("character_notes_upsert", { request })),
 	characterNotesDelete: (request: CharacterNoteDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("character_notes_delete", { request })),
 	characterNotesActivePreview: (request: CharacterNotesActivePreviewRequest) => typedError<CharacterNoteView[], ApiError_Serialize>(__TAURI_INVOKE("character_notes_active_preview", { request })),
+	groupNotesList: (request: GroupNotesRequest) => typedError<GroupNoteView[], ApiError_Serialize>(__TAURI_INVOKE("group_notes_list", { request })),
+	groupNotesUpsert: (request: GroupNoteUpsertRequest) => typedError<GroupNoteView, ApiError_Serialize>(__TAURI_INVOKE("group_notes_upsert", { request })),
+	groupNotesDelete: (request: GroupNoteDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("group_notes_delete", { request })),
 	embeddingInstall: (request: EmbeddingInstallRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("embedding_install", { request })),
 	companionEmotionInstall: () => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("companion_emotion_install")),
 	embeddingStatus: () => typedError<EmbeddingModelView[], ApiError_Serialize>(__TAURI_INVOKE("embedding_status")),
@@ -2013,6 +2016,7 @@ export type ConversationSettingsPatch_Deserialize = {
 	memory: MemoryModeChange | null,
 	chat_mode: ChatModeChange | null,
 	disable_character_lorebooks: FlagChange | null,
+	disable_character_notes: FlagChange | null,
 	/**  Replaces the chat's own layer; an empty layer clears it. */
 	model_settings?: SettingsModelSettingsLayer | null,
 	/**  The members and their muted flags follow the group again. */
@@ -2038,6 +2042,7 @@ export type ConversationSettingsPatch_Serialize = {
 	memory: MemoryModeChange | null,
 	chat_mode: ChatModeChange | null,
 	disable_character_lorebooks: FlagChange | null,
+	disable_character_notes: FlagChange | null,
 	/**  Replaces the chat's own layer; an empty layer clears it. */
 	model_settings: SettingsModelSettingsLayer | null,
 	/**  The members and their muted flags follow the group again. */
@@ -2104,6 +2109,7 @@ export type ConversationSettingsView_Deserialize = {
 	memory: SettingMemory,
 	chat_mode: SettingChatMode | null,
 	disable_character_lorebooks: SettingFlag | null,
+	disable_character_notes: SettingFlag | null,
 	speaker_selection: SettingSpeakerSelection | null,
 	members: GroupMembersSettings | null,
 	/**
@@ -2148,6 +2154,7 @@ export type ConversationSettingsView_Serialize = {
 	memory: SettingMemory,
 	chat_mode: SettingChatMode | null,
 	disable_character_lorebooks: SettingFlag | null,
+	disable_character_notes: SettingFlag | null,
 	speaker_selection: SettingSpeakerSelection | null,
 	members: GroupMembersSettings | null,
 	/**
@@ -2580,6 +2587,8 @@ export type GroupDraft_Deserialize = {
 	speaker_selection: SpeakerSelectionMethod,
 	memory_policy: LibraryMemoryPolicy,
 	disable_character_lorebooks: boolean,
+	time_awareness: boolean,
+	disable_character_notes: boolean,
 	group_conversation_prompt_id: string | null,
 	group_roleplay_prompt_id: string | null,
 	presentation: LibraryChatAppearanceV1_Deserialize,
@@ -2596,6 +2605,8 @@ export type GroupDraft_Serialize = {
 	speaker_selection: SpeakerSelectionMethod,
 	memory_policy: LibraryMemoryPolicy,
 	disable_character_lorebooks: boolean,
+	time_awareness: boolean,
+	disable_character_notes: boolean,
 	group_conversation_prompt_id: string | null,
 	group_roleplay_prompt_id: string | null,
 	presentation: LibraryChatAppearanceV1_Serialize,
@@ -2665,6 +2676,53 @@ export type GroupMembersSettings = {
 	muted_source: SettingSource,
 	models_source: SettingSource,
 	participants: ParticipantSettings[],
+};
+
+export type GroupNoteDeleteRequest = {
+	note_id: string,
+	client_operation_id: string,
+};
+
+/**
+ *  Creates a note, or updates the note `note_id` names. The API assigns the
+ *  id and the timestamps. Every id in `visible_to` must be a current member
+ *  of the group.
+ */
+export type GroupNoteUpsertRequest = {
+	group_id: string,
+	note_id: string | null,
+	visible_to: string[],
+	label: string,
+	content: string,
+	available_at: number,
+	expires_at: number | null,
+	recurrence: CharacterNoteRecurrence,
+	recurrence_window_ms: number | null,
+	enabled: boolean,
+	client_operation_id: string,
+};
+
+/**
+ *  A scheduled note of a group. `visible_to` lists the member character ids
+ *  that see it; empty means every member.
+ */
+export type GroupNoteView = {
+	id: string,
+	group_id: string,
+	visible_to: string[],
+	label: string,
+	content: string,
+	available_at: number,
+	expires_at: number | null,
+	recurrence: CharacterNoteRecurrence,
+	recurrence_window_ms: number | null,
+	enabled: boolean,
+	created_at: number,
+	updated_at: number,
+};
+
+export type GroupNotesRequest = {
+	group_id: string,
 };
 
 export type GroupPage = GroupPage_Serialize | GroupPage_Deserialize;

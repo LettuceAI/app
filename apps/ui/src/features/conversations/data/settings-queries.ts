@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import type { CharacterNoteView, ConversationSummary, SettingChoice } from "@/api/generated/bindings";
+import type { CharacterNoteView, ConversationSummary, GroupNoteView, SettingChoice } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 
 async function allPages<T>(fetchPage: (cursor: string | null) => Promise<{ items: T[]; next_cursor: string | null }>): Promise<T[]> {
@@ -66,6 +66,28 @@ export function notesQuery(api: ApiClient, characterId: string | null) {
     queryKey: queryKeys.characterNotes.list(characterId ?? ""),
     queryFn: (): Promise<CharacterNoteView[]> => api.call("characterNotesList", { character_id: characterId ?? "" }),
     enabled: characterId !== null,
+  });
+}
+
+export function groupNotesQuery(api: ApiClient, groupId: string | null) {
+  return queryOptions({
+    queryKey: queryKeys.groupNotes.list(groupId ?? ""),
+    queryFn: (): Promise<GroupNoteView[]> => api.call("groupNotesList", { group_id: groupId ?? "" }),
+    enabled: groupId !== null,
+  });
+}
+
+export function groupNoteMembersQuery(api: ApiClient, groupId: string | null) {
+  return queryOptions({
+    queryKey: [...queryKeys.groupNotes.all, "members", groupId ?? ""],
+    queryFn: async () => {
+      const group = await api.call("groupGet", { group_id: groupId ?? "" });
+      return Promise.all(group.draft.members.map(async (member) => {
+        const character = await api.call("characterGet", { character_id: member.character_id });
+        return { id: member.character_id, name: character.draft.profile.name };
+      }));
+    },
+    enabled: groupId !== null,
   });
 }
 

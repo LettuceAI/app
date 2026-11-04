@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createBrowserHistory, createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CharacterDraft_Serialize, CharacterSummary, ConversationSummary, GroupDraft_Serialize, GroupSaveRequest_Deserialize, GroupView_Serialize } from "@/api/generated/bindings";
+import type { CharacterDraft_Serialize, CharacterSummary, ConversationSummary, GroupDraft_Serialize, GroupNoteView, GroupSaveRequest_Deserialize, GroupView_Serialize } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -26,6 +26,7 @@ async function renderGroups(path = "/groups", calls: MockCallHandlers = {}, brow
     characterDraftDefault: () => ({ status: "ok", data: characterDraft }),
     groupGet: () => ({ status: "ok", data: savedGroup }),
     groupLorebooksList: () => ({ status: "ok", data: [] }),
+    groupNotesList: () => ({ status: "ok", data: [] }),
     characterGet: ({ character_id }) => ({ status: "ok", data: { id: character_id, draft: { ...characterDraft, profile: { ...characterDraft.profile, name: cast.find((item) => item.id === character_id)?.name ?? character_id } }, archived: false, assets: [], revision: 1, created_at: 1, updated_at: 1 } }),
     settingsGet: () => ({ status: "ok", data: { global: { dynamic_memory: { enabled: false } } } as never }),
     charactersList: () => ({ status: "ok", data: { items: cast, next_cursor: null } }),
@@ -306,5 +307,85 @@ describe("group editor", () => {
     expect(runtime.router.state.location.pathname).toBe("/groups/g1/edit");
     await act(async () => runtime.router.history.back());
     expect(await screen.findByRole("dialog", { name: "Discard your changes?" })).toBeTruthy();
+  });
+});
+
+const note = (patch: Partial<GroupNoteView> = {}): GroupNoteView => ({ id: "n1", group_id: "g1", visible_to: [], label: "Supplies", content: "Food is running low.", available_at: 1_700_000_000_000, expires_at: null, recurrence: "none", recurrence_window_ms: null, enabled: true, created_at: 1, updated_at: 1, ...patch });
+
+describe("group time awareness and notes", () => {
+  it("saves the time default and the character notes switch with the group", async () => {
+    let current = savedGroup;
+    const save = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => {
+      current = { ...current, draft: request.draft, revision: current.revision + 1 };
+      return { status: "ok", data: current };
+    });
+    await renderGroups("/groups/g1/edit?section=chat", { groupSave: save, groupGet: () => ({ status: "ok", data: current }) });
+    const awareness = await screen.findByRole("switch", { name: "Time awareness" });
+    expect(awareness.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("switch", { name: "Use character notes" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(awareness);
+    fireEvent.click(screen.getByRole("switch", { name: "Use character notes" }));
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![0].draft).toMatchObject({ time_awareness: true, disable_character_notes: true });
+  });
+
+  it("lists the group's notes with who sees them and toggles one at once", async () => {
+    const upsert = vi.fn<NonNullable<MockCallHandlers["groupNotesUpsert"]>>((request) => ({ status: "ok", data: note({ enabled: request.enabled }) }));
+    await renderGroups("/groups/g1/edit?section=chat", {
+      groupNotesList: () => ({ status: "ok", data: [note({ visible_to: ["a"] }), note({ id: "n2", label: "", content: "Open to all." })] }),
+      groupNotesUpsert: upsert,
+    });
+    expect(await screen.findByText("Supplies")).toBeTruthy();
+    expect(screen.getByText(/Aria/)).toBeTruthy();
+    expect(screen.getByText("Untitled note")).toBeTruthy();
+    fireEvent.click(screen.getByRole("switch", { name: "Supplies enabled" }));
+    await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
+    expect(upsert.mock.calls[0]![0]).toMatchObject({ group_id: "g1", note_id: "n1", visible_to: ["a"], enabled: false });
+  });
+
+  it("adds a note aimed at one member and deletes another", async () => {
+    const upsert = vi.fn<NonNullable<MockCallHandlers["groupNotesUpsert"]>>(() => ({ status: "ok", data: note() }));
+    const remove = vi.fn<NonNullable<MockCallHandlers["groupNotesDelete"]>>(() => ({ status: "ok", data: null }));
+    await renderGroups("/groups/g1/edit?section=chat", { groupNotesList: () => ({ status: "ok", data: [note({ id: "old", label: "Old note" })] }), groupNotesUpsert: upsert, groupNotesDelete: remove });
+    fireEvent.click(await screen.findByRole("button", { name: /Add a note/ }));
+    const dialog = await screen.findByRole("dialog", { name: "New scheduled note" });
+    expect(within(dialog).queryByRole("button", { name: "Cleo" })).toBeNull();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Content" }), { target: { value: "  Aria hears a rumor.  " } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Aria" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
+    expect(upsert.mock.calls[0]![0]).toMatchObject({ group_id: "g1", note_id: null, visible_to: ["a"], content: "Aria hears a rumor.", enabled: true });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New scheduled note" })).toBeNull());
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]!);
+    const editor = await screen.findByRole("dialog", { name: "Edit scheduled note" });
+    fireEvent.click(within(editor).getByRole("button", { name: "Delete note" }));
+    const confirmation = await screen.findAllByRole("dialog");
+    fireEvent.click(within(confirmation.at(-1)!).getByRole("button", { name: "Delete note" }));
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+    expect(remove.mock.calls[0]![0].note_id).toBe("old");
+  });
+
+  it("keeps draft notes in the creator and writes them right after the group is saved", async () => {
+    const save = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => ({ status: "ok", data: group(request.draft) }));
+    const upsert = vi.fn<NonNullable<MockCallHandlers["groupNotesUpsert"]>>(() => ({ status: "ok", data: note() }));
+    const { runtime } = await renderGroups("/groups/new", { groupSave: save, groupNotesUpsert: upsert });
+    await selectMembers();
+    fireEvent.click(screen.getByRole("button", { name: "Continue to extras" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Time awareness" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Add a note/ }));
+    const dialog = await screen.findByRole("dialog", { name: "New scheduled note" });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Content" }), { target: { value: "Bram knows the way." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bram" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New scheduled note" })).toBeNull());
+    expect(upsert).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Create group" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/groups"));
+    expect(save.mock.calls[0]![0].draft).toMatchObject({ time_awareness: true, disable_character_notes: false });
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert.mock.calls[0]![0]).toMatchObject({ group_id: "g1", note_id: null, visible_to: ["b"], content: "Bram knows the way." });
+    expect(save.mock.invocationCallOrder[0]!).toBeLessThan(upsert.mock.invocationCallOrder[0]!);
   });
 });

@@ -1579,6 +1579,8 @@ fn map_groups(
             speaker_selection,
             memory_policy,
             disable_character_lorebooks: row.disable_character_lorebooks,
+            time_awareness: false,
+            disable_character_notes: false,
             group_conversation_prompt_id: None,
             group_roleplay_prompt_id: None,
             presentation: lettuce_characters::ChatAppearanceV1::default(),

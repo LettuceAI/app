@@ -399,6 +399,10 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
             crate::COMPANION_NOTE_SYNC_VERSION,
         ),
         (
+            crate::GROUP_NOTE_SYNC_SCHEMA,
+            crate::GROUP_NOTE_SYNC_VERSION,
+        ),
+        (
             crate::COMPANION_RELATIONSHIP_SYNC_SCHEMA,
             crate::COMPANION_RELATIONSHIP_SYNC_VERSION,
         ),
@@ -544,12 +548,17 @@ mod tests {
         );
         assert_eq!(
             crate::CONVERSATION_SYNC_VERSION,
-            6,
-            "a group conversation may carry a clock"
+            7,
+            "a group conversation may override the character-notes switch"
+        );
+        assert_eq!(
+            crate::GROUP_SYNC_VERSION,
+            3,
+            "a group carries a time awareness default and a character-notes switch"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "bbf7602431702fa5248cdddae95f589d9fc6bbcfa7f2e72eb7c4ff9dc7463150"
+            "1f3935c5b5260454ab4c69ca186a76955c847f0fe335dd7dfe146cc9f92cdcfb"
         );
     }
 

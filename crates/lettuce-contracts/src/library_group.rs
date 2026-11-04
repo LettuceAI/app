@@ -44,6 +44,8 @@ pub struct GroupDraft {
     pub speaker_selection: crate::SpeakerSelectionMethod,
     pub memory_policy: crate::LibraryMemoryPolicy,
     pub disable_character_lorebooks: bool,
+    pub time_awareness: bool,
+    pub disable_character_notes: bool,
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub group_conversation_prompt_id: Option<String>,

@@ -79,6 +79,10 @@ export const queryKeys = {
     all: ["character-notes"] as const,
     list: (characterId: string) => ["character-notes", "list", characterId] as const,
   },
+  groupNotes: {
+    all: ["group-notes"] as const,
+    list: (groupId: string) => ["group-notes", "list", groupId] as const,
+  },
   localModels: { all: ["local-models"] as const },
   loras: { all: ["loras"] as const },
   localImages: { all: ["local-images"] as const },

@@ -23,6 +23,8 @@ pub struct CompanionStateBackup {
     #[serde(default)]
     pub scheduled_notes: Vec<lettuce_companions::CompanionScheduledNote>,
     #[serde(default)]
+    pub group_scheduled_notes: Vec<lettuce_companions::GroupScheduledNote>,
+    #[serde(default)]
     pub growth_runs: Vec<lettuce_companions::CompanionGrowthRun>,
     #[serde(default)]
     pub consolidation_runs: Vec<lettuce_companions::CompanionConsolidationRun>,
@@ -301,6 +303,23 @@ impl CompanionStateBackup {
             {
                 return Err(CompanionStateBackupError::InvalidData {
                     reason: "soul note references an unknown character or is invalid or duplicated",
+                });
+            }
+        }
+        self.group_scheduled_notes.sort_by_key(|note| note.id);
+        let group_ids = authored
+            .groups
+            .iter()
+            .map(|value| value.group.id)
+            .collect::<BTreeSet<_>>();
+        let mut group_note_ids = BTreeSet::new();
+        for note in &self.group_scheduled_notes {
+            if !group_ids.contains(&note.group_id)
+                || note.validate().is_err()
+                || !group_note_ids.insert(note.id)
+            {
+                return Err(CompanionStateBackupError::InvalidData {
+                    reason: "group note references an unknown group or is invalid or duplicated",
                 });
             }
         }

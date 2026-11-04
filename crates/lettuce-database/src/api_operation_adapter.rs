@@ -249,6 +249,29 @@ impl ApiOperationTransaction<'_, '_> {
         crate::memory::scheduled_note_adapter::delete_in(self.transaction, id)
     }
 
+    pub fn upsert_group_note(
+        &self,
+        note: lettuce_companions::GroupScheduledNote,
+    ) -> Result<
+        lettuce_companions::GroupScheduledNote,
+        lettuce_companions::GroupScheduledNoteError,
+    > {
+        if let Some(existing) =
+            crate::memory::group_note_adapter::load_in(self.transaction, note.id)?
+            && existing.group_id != note.group_id
+        {
+            return Err(lettuce_companions::GroupScheduledNoteError::GroupNotFound);
+        }
+        crate::memory::group_note_adapter::upsert_in(self.transaction, note)
+    }
+
+    pub fn delete_group_note(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<(), lettuce_companions::GroupScheduledNoteError> {
+        crate::memory::group_note_adapter::delete_in(self.transaction, id)
+    }
+
     pub fn skip_memory_approval(
         &self,
         conversation_id: lettuce_types::ConversationId,

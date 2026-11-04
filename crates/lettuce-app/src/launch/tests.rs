@@ -15,7 +15,7 @@ use lettuce_companions::{
     CompanionScheduledNoteRepository, CompanionSoulWriterRunRepository, CompanionStateOwner,
     CompanionStateReplacement, CompanionStateRepository, CompanionTurnEffectRepository,
     CompanionTurnEffectStatus, CompanionTurnInput, EmotionClassification, EmotionLabelScore,
-    PreparedCompanionSend, SoulRepository, apply_turn,
+    GroupScheduledNoteRepository, PreparedCompanionSend, SoulRepository, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -5187,6 +5187,224 @@ async fn a_group_prompt_lists_the_other_members_and_resolves_scene_mentions() {
     assert!(text.contains("Cast:\n- Bea: Trusts Ada and Traveller.\n- Cy\n- Dot: \n\nScene: "));
     assert!(!text.contains("- Ada"));
     assert!(text.contains("Bea waits for {{@\"Nobody\"}} at the dock."));
+}
+
+fn group_note(
+    group_id: GroupId,
+    visible_to: Vec<CharacterId>,
+    content: &str,
+) -> lettuce_companions::GroupScheduledNote {
+    lettuce_companions::GroupScheduledNote {
+        id: uuid::Uuid::new_v4(),
+        group_id,
+        visible_to,
+        label: String::new(),
+        content: content.into(),
+        available_at: TimestampMillis::new(0),
+        expires_at: None,
+        recurrence: lettuce_companions::ScheduledNoteRecurrence::None,
+        recurrence_window_ms: None,
+        enabled: true,
+        created_at: NOW,
+        updated_at: NOW,
+    }
+}
+
+fn character_note(character_id: CharacterId, content: &str) -> lettuce_companions::CompanionScheduledNote {
+    lettuce_companions::CompanionScheduledNote {
+        id: uuid::Uuid::new_v4(),
+        character_id,
+        label: String::new(),
+        content: content.into(),
+        available_at: TimestampMillis::new(0),
+        expires_at: None,
+        recurrence: lettuce_companions::ScheduledNoteRecurrence::None,
+        recurrence_window_ms: None,
+        enabled: true,
+        created_at: NOW,
+        updated_at: NOW,
+    }
+}
+
+async fn group_turn_text(
+    database: &Database,
+    conversation: &lettuce_conversations::Conversation,
+    source_message_id: lettuce_types::MessageId,
+    speaker: Option<CharacterId>,
+) -> String {
+    let mut request = context_request_for(database, conversation.id, source_message_id);
+    request.selected_speaker = speaker.map(|character| lettuce_conversations::SelectedSpeakerDecision {
+        participant_id: conversation
+            .participants
+            .iter()
+            .find(|participant| {
+                participant.source == lettuce_conversations::ParticipantSource::Character(character)
+            })
+            .expect("speaker")
+            .id,
+        method: lettuce_conversations::SpeakerDecisionMethod::Explicit,
+        fallback: lettuce_conversations::SpeakerFallback::None,
+        reference: None,
+        rationale_summary: None,
+        decision_model: None,
+        usage_event_id: None,
+    });
+    assembled_prompt_with_text(database, request).await.1
+}
+
+#[tokio::test]
+async fn group_notes_reach_the_members_they_are_visible_to_with_the_speakers_own_notes() {
+    let database = database_with_builtins();
+    let ada = seed_named_character(&database, "Ada");
+    let bea = seed_named_character(&database, "Bea");
+    let group_id = seed_group(&database, vec![member(ada, 0), member(bea, 1)], None, |_| {});
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, "group-notes-launch"), NOW)
+        .expect("launch group")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "group-notes-send", "Hello cast."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send group message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+
+    let baseline_ada = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
+    let baseline_bea = group_turn_text(&database, &conversation, source_message_id, Some(bea)).await;
+    assert!(!baseline_ada.contains("Background context you currently hold in mind"));
+
+    let mut future = group_note(group_id, Vec::new(), "A note from the future.");
+    future.available_at = TimestampMillis::new(NOW.get() * 10);
+    let mut disabled = group_note(group_id, Vec::new(), "A disabled note.");
+    disabled.enabled = false;
+    for note in [future, disabled] {
+        database.upsert_group_note(note).expect("inactive group note");
+    }
+    assert_eq!(
+        group_turn_text(&database, &conversation, source_message_id, Some(ada)).await,
+        baseline_ada,
+        "inactive notes leave the prompt unchanged"
+    );
+
+    database
+        .upsert_group_note(group_note(group_id, Vec::new(), "The harbor is closed."))
+        .expect("note for everyone");
+    database
+        .upsert_group_note(group_note(group_id, vec![ada], "Ada owes a debt."))
+        .expect("note for Ada");
+    database
+        .upsert_scheduled_note(character_note(ada, "Ada keeps a diary."))
+        .expect("Ada's own note");
+    database
+        .upsert_scheduled_note(character_note(bea, "Bea hides a key."))
+        .expect("Bea's own note");
+
+    let for_ada = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
+    assert!(for_ada.contains(
+        "[Background context you currently hold in mind]\n- The harbor is closed.\n- Ada owes a debt.\n- Ada keeps a diary."
+    ));
+    assert!(!for_ada.contains("Bea hides a key."));
+    assert!(!for_ada.contains("A note from the future.") && !for_ada.contains("A disabled note."));
+
+    let for_bea = group_turn_text(&database, &conversation, source_message_id, Some(bea)).await;
+    assert!(for_bea.contains(
+        "[Background context you currently hold in mind]\n- The harbor is closed.\n- Bea hides a key."
+    ));
+    assert!(!for_bea.contains("Ada owes a debt.") && !for_bea.contains("Ada keeps a diary."));
+
+    assert_ne!(for_bea, baseline_bea);
+}
+
+#[tokio::test]
+async fn the_character_notes_switch_follows_the_chat_override_before_the_group() {
+    let database = database_with_builtins();
+    let ada = seed_named_character(&database, "Ada");
+    let bea = seed_named_character(&database, "Bea");
+    let group_id = seed_group(&database, vec![member(ada, 0), member(bea, 1)], None, |group| {
+        group.disable_character_notes = true;
+    });
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, "group-notes-switch-launch"), NOW)
+        .expect("launch group")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "group-notes-switch-send", "Hello cast."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send group message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    database
+        .upsert_group_note(group_note(group_id, Vec::new(), "The harbor is closed."))
+        .expect("group note");
+    database
+        .upsert_scheduled_note(character_note(ada, "Ada keeps a diary."))
+        .expect("character note");
+
+    let off = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
+    assert!(off.contains("- The harbor is closed."));
+    assert!(!off.contains("Ada keeps a diary."), "the group switch removes character notes");
+
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id: conversation.id,
+                    expected_settings_revision: None,
+                    operation: OperationToken {
+                        key: key("notes-override-on"),
+                        request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        disable_character_notes: lettuce_conversations::PatchValue::Set(false),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared override"),
+            TimestampMillis::new(NOW.get() + 20),
+        )
+        .expect("override on");
+    let on = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
+    assert!(on.contains("- The harbor is closed.\n- Ada keeps a diary."), "the chat override wins over the group");
+
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id: conversation.id,
+                    expected_settings_revision: ConversationReader::get(&database, conversation.id)
+                        .expect("conversation")
+                        .conversation
+                        .current_settings
+                        .map(|settings| settings.revision),
+                    operation: OperationToken {
+                        key: key("notes-override-off"),
+                        request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        disable_character_notes: lettuce_conversations::PatchValue::UseLaunchDefault,
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared reset"),
+            TimestampMillis::new(NOW.get() + 30),
+        )
+        .expect("reset to the group");
+    let back = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
+    assert!(!back.contains("Ada keeps a diary."), "clearing the override follows the group again");
 }
 
 async fn assembled_messages_with_prompt(
@@ -14815,6 +15033,71 @@ fn companion_state_soul_and_notes_sync_with_the_conversation() {
             );
         }
     }
+}
+
+#[test]
+fn group_flags_and_notes_sync_with_the_group() {
+    let a = database_with_builtins();
+    let b = database_with_builtins();
+    let first = seed_named_character(&a, "Ada");
+    let second = seed_named_character(&a, "Bea");
+    let group_id = seed_group(&a, vec![member(first, 0), member(second, 1)], None, |group| {
+        group.time_awareness = true;
+        group.disable_character_notes = true;
+    });
+    let note = a
+        .upsert_group_note(group_note(group_id, vec![second], "Bea knows the way."))
+        .expect("group note");
+
+    sync_prompts(&a, &b, NOW.get() + 1_000);
+
+    let on_b = GroupRepository::get(&b, group_id).expect("b group").expect("b has the group");
+    assert!(on_b.group.time_awareness && on_b.group.disable_character_notes);
+    assert_eq!(b.list_group_notes(group_id).expect("b notes"), vec![note.clone()]);
+
+    b.delete_group_note(note.id).expect("delete on b");
+    sync_prompts(&b, &a, NOW.get() + 2_000);
+    assert!(a.list_group_notes(group_id).expect("a notes").is_empty());
+    {
+        use lettuce_sync::LocalChangeJournal;
+        for database in [&a, &b] {
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(NOW.get() + 3_000))
+                    .expect("rescan"),
+                0
+            );
+        }
+    }
+}
+
+#[test]
+fn a_time_aware_group_starts_its_chats_with_the_clock_on() {
+    let database = database_with_builtins();
+    let first = seed_named_character(&database, "Ada");
+    let second = seed_named_character(&database, "Bea");
+    let aware = seed_group(&database, vec![member(first, 0), member(second, 1)], None, |group| {
+        group.time_awareness = true;
+    });
+    let plain = seed_group(&database, vec![member(first, 0), member(second, 1)], None, |_| {});
+    let clock_of = |group_id, key: &str| {
+        let launched = ConversationLaunchPlanner::new(&database)
+            .launch_group(&group_request(group_id, key), NOW)
+            .expect("launch group");
+        ConversationReader::get(&database, launched.value.conversation.id)
+            .expect("conversation")
+            .conversation
+            .current_settings
+            .and_then(|settings| settings.companion_clock)
+    };
+    assert_eq!(
+        clock_of(aware, "aware-group-chat"),
+        Some(lettuce_conversations::ConversationClockSettings {
+            time_awareness_enabled: true,
+            time_override: lettuce_conversations::ConversationTimeOverride::Live,
+        })
+    );
+    assert_eq!(clock_of(plain, "plain-group-chat"), None);
 }
 
 fn note_id(database: &Database, character_id: CharacterId) -> uuid::Uuid {

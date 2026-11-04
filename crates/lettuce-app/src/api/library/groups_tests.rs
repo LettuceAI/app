@@ -3,7 +3,7 @@ use lettuce_contracts::{self as dto, ApiErrorCode};
 use crate::api::tests::{Reply, harness};
 use crate::api::*;
 
-async fn draft(context: &ApiContext, character_id: String) -> dto::GroupDraft {
+pub(crate) async fn draft(context: &ApiContext, character_id: String) -> dto::GroupDraft {
     let character = character_get(
         context,
         dto::CharacterGetRequest {
@@ -28,6 +28,8 @@ async fn draft(context: &ApiContext, character_id: String) -> dto::GroupDraft {
         speaker_selection: dto::SpeakerSelectionMethod::Heuristic,
         memory_policy: dto::LibraryMemoryPolicy::Manual,
         disable_character_lorebooks: false,
+        time_awareness: false,
+        disable_character_notes: false,
         group_conversation_prompt_id: None,
         group_roleplay_prompt_id: None,
         presentation: character.draft.presentation.chat_appearance,

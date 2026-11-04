@@ -89,6 +89,8 @@ The application renders each fact from the `prompt_app_companion_runtime` catalo
 
 ## Scheduled notes
 
+A `GroupScheduledNote` has the same schedule and is owned by a group. Its `visible_to` lists the member characters that see it and an empty list means every member; a listed character who later leaves the group simply never matches. `active_group_scheduled_notes` applies the schedule and the speaker's visibility, and `GroupScheduledNoteRepository` stores the notes (every listed character must be a current member when a note is written).
+
 A `CompanionScheduledNote` (`scheduled_note.rs`) belongs to a character and activates once, daily, weekly, monthly or yearly. `active_scheduled_notes` filters out disabled, not-yet-available and expired notes at the supplied time; end times and recurrence windows are exclusive. Active notes are ordered by `available_at` then id, each truncated to 1000 characters, and the block is capped at 4000 characters measured on the rendered line (`scheduled_note_lines`); the line format, truncation marker and heading are catalog text passed in. `CompanionScheduledNoteRepository` offers list, upsert and delete; scheduling and frontend commands are elsewhere.
 
 ## Turn effects

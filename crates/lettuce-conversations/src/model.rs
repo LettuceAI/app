@@ -163,6 +163,10 @@ pub struct CurrentConversationSettings {
     /// override of the group's; `None` follows the group.
     #[serde(default)]
     pub disable_character_lorebooks: Option<bool>,
+    /// A group conversation's own character-notes switch, a current
+    /// override of the group's; `None` follows the group.
+    #[serde(default)]
+    pub disable_character_notes: Option<bool>,
     /// A group conversation's own roleplay-mode prompt; `prompt` holds the
     /// conversation-mode one.
     #[serde(default)]
@@ -210,6 +214,7 @@ impl CurrentConversationSettings {
             speaker_selection_provenance: crate::commands::SettingProvenance::LaunchInherited,
             chat_mode: None,
             disable_character_lorebooks: None,
+            disable_character_notes: None,
             roleplay_prompt: None,
             roleplay_prompt_provenance: crate::commands::SettingProvenance::LaunchInherited,
             members_overridden: false,
@@ -399,7 +404,9 @@ impl CurrentConversationSettings {
             });
         }
         if matches!(kind, ConversationKind::Direct(_))
-            && (self.chat_mode.is_some() || self.disable_character_lorebooks.is_some())
+            && (self.chat_mode.is_some()
+                || self.disable_character_lorebooks.is_some()
+                || self.disable_character_notes.is_some())
         {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.group_overrides",

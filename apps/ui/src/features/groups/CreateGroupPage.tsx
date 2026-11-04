@@ -13,6 +13,7 @@ import { SetupStep } from "./components/SetupStep";
 import { SceneStep } from "./components/SceneStep";
 import { ExtrasStep } from "./components/ExtrasStep";
 import { draftToSave, newGroupForm, stepsFor, validStep, type GroupForm } from "./data/form";
+import { notesToCreate } from "./data/notes";
 import { castQuery } from "./data/queries";
 import { launchGroup, saveGroup, type SaveAttempt } from "./data/actions";
 import { ImportGroupSheet } from "./components/ImportGroupSheet";
@@ -68,14 +69,15 @@ function GroupFlow({ start, dynamicMemory }: { start: GroupForm; dynamicMemory: 
   const create = async (thenChat: boolean) => {
     if (savingRef.current || !steps.every((step) => validStep(step, form)) || !fallbackName) return;
     const draft = draftToSave(form, fallbackName);
-    const payload = JSON.stringify([draft, form.lorebookIds]);
+    const notes = notesToCreate(form.notes ?? [], draft.members.map((member) => member.character_id));
+    const payload = JSON.stringify([draft, form.lorebookIds, notes]);
     if (attempt.current?.payload !== payload) attempt.current = { payload, operationId: crypto.randomUUID() };
     const run = attempt.current;
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
     try {
-      const groupId = await saveGroup(api, queryClient, draft, form.lorebookIds, run);
+      const groupId = await saveGroup(api, queryClient, draft, form.lorebookIds, run, undefined, notes);
       if (thenChat) {
         const conversationId = run.conversationId ?? await launchGroup(api, queryClient, groupId, `${run.operationId}:chat`);
         run.conversationId = conversationId;

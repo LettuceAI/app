@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
 import { pickExportTarget } from "@/api/export-target";
-import type { CharacterNoteUpsertRequest } from "@/api/generated/bindings";
+import type { CharacterNoteUpsertRequest, GroupNoteUpsertRequest } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { watchJob } from "@/entities/job/watch";
 
@@ -82,6 +82,16 @@ export async function importChatLog(api: ApiClient, queryClient: QueryClient, ch
 export async function saveNote(api: ApiClient, queryClient: QueryClient, request: Omit<CharacterNoteUpsertRequest, "client_operation_id">): Promise<void> {
   await api.call("characterNotesUpsert", { ...request, client_operation_id: crypto.randomUUID() });
   await queryClient.invalidateQueries({ queryKey: queryKeys.characterNotes.list(request.character_id) });
+}
+
+export async function saveGroupNote(api: ApiClient, queryClient: QueryClient, request: Omit<GroupNoteUpsertRequest, "client_operation_id">): Promise<void> {
+  await api.call("groupNotesUpsert", { ...request, client_operation_id: crypto.randomUUID() });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.groupNotes.list(request.group_id) });
+}
+
+export async function deleteGroupNote(api: ApiClient, queryClient: QueryClient, groupId: string, noteId: string): Promise<void> {
+  await api.call("groupNotesDelete", { note_id: noteId, client_operation_id: crypto.randomUUID() });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.groupNotes.list(groupId) });
 }
 
 export async function deleteNote(api: ApiClient, queryClient: QueryClient, characterId: string, noteId: string): Promise<void> {

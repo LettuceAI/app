@@ -1377,8 +1377,21 @@ where
             initial_participant_policy,
         };
 
+        let mut current_settings = persona_turned_off(&request.persona)?;
+        if !historical && group.group.time_awareness {
+            current_settings
+                .get_or_insert_with(|| {
+                    lettuce_conversations::CurrentConversationSettings::inherited(
+                        lettuce_types::Revision::INITIAL,
+                    )
+                })
+                .companion_clock = Some(lettuce_conversations::ConversationClockSettings {
+                time_awareness_enabled: true,
+                ..Default::default()
+            });
+        }
         let plan = CreateConversationPlan {
-            current_settings: persona_turned_off(&request.persona)?,
+            current_settings,
             conversation_id,
             title,
             kind: ConversationKind::Group(details),

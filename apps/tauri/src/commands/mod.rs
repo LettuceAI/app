@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod character_notes;
+pub mod group_notes;
 pub mod characters;
 pub mod library;
 pub mod companion;

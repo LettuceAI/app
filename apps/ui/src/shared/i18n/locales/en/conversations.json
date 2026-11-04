@@ -594,7 +594,9 @@
     "notes": {
       "title": "Scheduled notes",
       "rowHint": "Reminders the character sees at set times",
+      "groupRowHint": "Reminders the group and its members see at set times",
       "hint": "Notes belong to the character and show up in every chat with them.",
+      "groupHint": "Notes belong to the group and show up in every chat of this group.",
       "empty": "No scheduled notes yet.",
       "add": "Add a note",
       "untitled": "Untitled note",
@@ -602,6 +604,7 @@
       "labelPlaceholder": "Label (optional)",
       "content": "Note",
       "contentPlaceholder": "What should the character know?",
+      "groupContentPlaceholder": "What should the group know?",
       "startsOn": "Starts on",
       "stopsOn": "Stops on (optional)",
       "repeats": "Repeats",
@@ -616,7 +619,11 @@
         "weekly": "Weekly",
         "monthly": "Monthly",
         "yearly": "Yearly"
-      }
+      },
+      "whoSees": "Who sees it",
+      "whoSeesHint": "Only the characters you pick read this note.",
+      "everyone": "Every member reads this note. Pick characters to limit it.",
+      "useCharacter": "Use character notes"
     },
     "history": {
       "filter": "Filter chats",

@@ -2,13 +2,15 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Badge, Button, confirm, icon, Input, ListGroup, ListRow, ListRowButton, LoadingState, Segmented, Switch, Textarea } from "@lettuceai/crisp";
-import type { CharacterNoteRecurrence, CharacterNoteView } from "@/api/generated/bindings";
+import { Badge, Button, Chip, confirm, icon, Input, ListGroup, ListRow, ListRowButton, LoadingState, Segmented, Switch, Textarea } from "@lettuceai/crisp";
+import type { CharacterNoteRecurrence, CharacterNoteView, GroupNoteView } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
-import { deleteNote, saveNote } from "../../data/chat-actions";
-import { notesQuery } from "../../data/settings-queries";
+import { deleteGroupNote, deleteNote, saveGroupNote, saveNote } from "../../data/chat-actions";
+import { groupNoteMembersQuery, groupNotesQuery, notesQuery } from "../../data/settings-queries";
 import type { PanelCtx } from "./context";
 import { ControlRow } from "./SettingRow";
+
+type AnyNote = CharacterNoteView | GroupNoteView;
 
 const recurrences: readonly CharacterNoteRecurrence[] = ["none", "daily", "weekly", "monthly", "yearly"];
 const hour = 3_600_000;
@@ -32,11 +34,13 @@ interface Draft {
   recurrence: CharacterNoteRecurrence;
   windowHours: string;
   enabled: boolean;
+  visibleTo: string[];
 }
 
-function draftOf(note: CharacterNoteView | null): Draft {
-  if (!note) return { id: null, label: "", content: "", availableAt: toLocalInput(Date.now()), expiresAt: "", recurrence: "none", windowHours: "", enabled: true };
+function draftOf(note: AnyNote | null): Draft {
+  if (!note) return { id: null, label: "", content: "", availableAt: toLocalInput(Date.now()), expiresAt: "", recurrence: "none", windowHours: "", enabled: true, visibleTo: [] };
   return {
+    visibleTo: "visible_to" in note ? note.visible_to : [],
     id: note.id,
     label: note.label,
     content: note.content,
@@ -48,9 +52,15 @@ function draftOf(note: CharacterNoteView | null): Draft {
   };
 }
 
-function NoteForm({ ctx, characterId, initial, onDone }: { ctx: PanelCtx; characterId: string; initial: CharacterNoteView | null; onDone: () => void }) {
+interface Owner {
+  characterId: string | null;
+  groupId: string | null;
+}
+
+function NoteForm({ ctx, owner, initial, onDone }: { ctx: PanelCtx; owner: Owner; initial: AnyNote | null; onDone: () => void }) {
   const { t } = useTranslation("conversations");
   const [draft, setDraft] = useState(() => draftOf(initial));
+  const members = useQuery(groupNoteMembersQuery(ctx.api, owner.groupId));
   const patch = (change: Partial<Draft>) => setDraft((current) => ({ ...current, ...change }));
   const available = fromLocalInput(draft.availableAt);
   const expires = draft.expiresAt ? fromLocalInput(draft.expiresAt) : null;
@@ -59,18 +69,21 @@ function NoteForm({ ctx, characterId, initial, onDone }: { ctx: PanelCtx; charac
 
   const save = async () => {
     if (available === null) return;
+    const body = {
+      note_id: draft.id,
+      label: draft.label.trim(),
+      content: draft.content.trim(),
+      available_at: available,
+      expires_at: expires,
+      recurrence: draft.recurrence,
+      recurrence_window_ms: draft.recurrence !== "none" && hours > 0 ? Math.round(hours * hour) : null,
+      enabled: draft.enabled,
+    };
     const done = await ctx.run(() =>
-      saveNote(ctx.api, ctx.queryClient, {
-        character_id: characterId,
-        note_id: draft.id,
-        label: draft.label.trim(),
-        content: draft.content.trim(),
-        available_at: available,
-        expires_at: expires,
-        recurrence: draft.recurrence,
-        recurrence_window_ms: draft.recurrence !== "none" && hours > 0 ? Math.round(hours * hour) : null,
-        enabled: draft.enabled,
-      }).then(() => true),
+      (owner.groupId
+        ? saveGroupNote(ctx.api, ctx.queryClient, { ...body, group_id: owner.groupId, visible_to: draft.visibleTo })
+        : saveNote(ctx.api, ctx.queryClient, { ...body, character_id: owner.characterId ?? "" })
+      ).then(() => true),
     );
     if (done) onDone();
   };
@@ -78,13 +91,24 @@ function NoteForm({ ctx, characterId, initial, onDone }: { ctx: PanelCtx; charac
     if (!draft.id) return;
     const sure = await confirm({ title: t("settings.notes.deleteTitle"), message: t("settings.notes.deleteBody"), confirmLabel: t("settings.delete.confirm"), cancelLabel: t("confirm.cancel"), destructive: true });
     if (!sure) return;
-    const done = await ctx.run(() => deleteNote(ctx.api, ctx.queryClient, characterId, draft.id ?? "").then(() => true));
+    const done = await ctx.run(() => (owner.groupId ? deleteGroupNote(ctx.api, ctx.queryClient, owner.groupId, draft.id ?? "") : deleteNote(ctx.api, ctx.queryClient, owner.characterId ?? "", draft.id ?? "")).then(() => true));
     if (done) onDone();
   };
   return (
     <div className="space-y-4 pb-1">
       <Input value={draft.label} onChange={(event) => patch({ label: event.target.value })} placeholder={t("settings.notes.labelPlaceholder")} aria-label={t("settings.notes.label")} />
-      <Textarea rows={5} value={draft.content} onChange={(event) => patch({ content: event.target.value })} placeholder={t("settings.notes.contentPlaceholder")} aria-label={t("settings.notes.content")} />
+      <Textarea rows={5} value={draft.content} onChange={(event) => patch({ content: event.target.value })} placeholder={t(owner.groupId ? "settings.notes.groupContentPlaceholder" : "settings.notes.contentPlaceholder")} aria-label={t("settings.notes.content")} />
+      {owner.groupId && (
+        <div className="space-y-1">
+          <span className="text-sm text-fg-2">{t("settings.notes.whoSees")}</span>
+          <div className="flex flex-wrap gap-2" role="group" aria-label={t("settings.notes.whoSees")}>
+            {members.data?.map((member) => (
+              <Chip key={member.id} selected={draft.visibleTo.includes(member.id)} onClick={() => patch({ visibleTo: draft.visibleTo.includes(member.id) ? draft.visibleTo.filter((id) => id !== member.id) : [...draft.visibleTo, member.id] })}>{member.name}</Chip>
+            ))}
+          </div>
+          <p className="text-xs text-fg-3">{t(draft.visibleTo.length === 0 ? "settings.notes.everyone" : "settings.notes.whoSeesHint")}</p>
+        </div>
+      )}
       <label className="block space-y-1">
         <span className="text-sm text-fg-2">{t("settings.notes.startsOn")}</span>
         <Input type="datetime-local" value={draft.availableAt} onChange={(event) => patch({ availableAt: event.target.value })} />
@@ -126,16 +150,31 @@ function NoteForm({ ctx, characterId, initial, onDone }: { ctx: PanelCtx; charac
 
 export function NotesView({ ctx }: { ctx: PanelCtx }) {
   const { t } = useTranslation("conversations");
-  const notes = useQuery(notesQuery(ctx.api, ctx.characterId));
-  const [editing, setEditing] = useState<CharacterNoteView | "new" | null>(null);
-  if (!ctx.characterId) return null;
+  const groupId = ctx.view.source.type === "group" ? ctx.view.source.group_id : null;
+  const characterNotes = useQuery(notesQuery(ctx.api, groupId ? null : ctx.characterId));
+  const groupNotes = useQuery(groupNotesQuery(ctx.api, groupId));
+  const notes = groupId ? groupNotes : characterNotes;
+  const [editing, setEditing] = useState<AnyNote | "new" | null>(null);
+  const owner: Owner = { characterId: ctx.characterId, groupId };
+  if (!groupId && !ctx.characterId) return null;
   if (notes.isPending) return <LoadingState />;
   if (notes.isError) return <FailureState error={notes.error} onRetry={() => void notes.refetch()} />;
-  if (editing) return <NoteForm ctx={ctx} characterId={ctx.characterId} initial={editing === "new" ? null : editing} onDone={() => setEditing(null)} />;
-  const characterId = ctx.characterId;
+  if (editing) return <NoteForm ctx={ctx} owner={owner} initial={editing === "new" ? null : editing} onDone={() => setEditing(null)} />;
+  const toggle = (note: AnyNote, enabled: boolean) =>
+    void ctx.run(() =>
+      "visible_to" in note
+        ? saveGroupNote(ctx.api, ctx.queryClient, {
+            group_id: note.group_id, note_id: note.id, visible_to: note.visible_to, label: note.label, content: note.content, available_at: note.available_at,
+            expires_at: note.expires_at, recurrence: note.recurrence, recurrence_window_ms: note.recurrence_window_ms, enabled,
+          })
+        : saveNote(ctx.api, ctx.queryClient, {
+            character_id: note.character_id, note_id: note.id, label: note.label, content: note.content, available_at: note.available_at,
+            expires_at: note.expires_at, recurrence: note.recurrence, recurrence_window_ms: note.recurrence_window_ms, enabled,
+          }),
+    );
   return (
     <div className="space-y-3 pb-1">
-      <p className="text-sm text-fg-muted">{t("settings.notes.hint")}</p>
+      <p className="text-sm text-fg-muted">{t(groupId ? "settings.notes.groupHint" : "settings.notes.hint")}</p>
       {notes.data.length === 0 ? (
         <p className="py-4 text-center text-sm text-fg-muted">{t("settings.notes.empty")}</p>
       ) : (
@@ -149,20 +188,7 @@ export function NotesView({ ctx }: { ctx: PanelCtx }) {
                 className="min-w-0 flex-1"
                 onClick={() => setEditing(note)}
               />
-              <Switch
-                className="mr-3 shrink-0"
-                checked={note.enabled}
-                disabled={ctx.busy}
-                aria-label={t("settings.notes.enabled")}
-                onChange={(enabled) =>
-                  void ctx.run(() =>
-                    saveNote(ctx.api, ctx.queryClient, {
-                      character_id: characterId, note_id: note.id, label: note.label, content: note.content, available_at: note.available_at,
-                      expires_at: note.expires_at, recurrence: note.recurrence, recurrence_window_ms: note.recurrence_window_ms, enabled,
-                    }),
-                  )
-                }
-              />
+              <Switch className="mr-3 shrink-0" checked={note.enabled} disabled={ctx.busy} aria-label={t("settings.notes.enabled")} onChange={(enabled) => toggle(note, enabled)} />
             </div>
           ))}
         </ListGroup>

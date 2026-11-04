@@ -6,6 +6,7 @@
 mod active_work;
 mod app;
 mod character_notes;
+mod group_notes;
 mod library;
 pub use app::content_filter::{content_filter_clear, content_filter_log};
 pub use app::settings::{settings_get, settings_sampler_defaults_update, settings_update};
@@ -40,6 +41,7 @@ pub use app::startup::{ApiWorkers, StartupStep, startup};
 pub use app::{
     app_status, app_ui_state_update, app_usage_days, purge_notice_dismiss, purge_notices_list,
 };
+pub use group_notes::{group_notes_delete, group_notes_list, group_notes_upsert};
 pub use character_notes::{
     character_notes_active_preview, character_notes_delete, character_notes_list,
     character_notes_upsert,

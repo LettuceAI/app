@@ -1162,6 +1162,7 @@ pub struct ConversationSettingsView {
     pub memory: SettingMemory,
     pub chat_mode: Option<SettingChatMode>,
     pub disable_character_lorebooks: Option<SettingFlag>,
+    pub disable_character_notes: Option<SettingFlag>,
     pub speaker_selection: Option<SettingSpeakerSelection>,
     pub members: Option<GroupMembersSettings>,
     /// The sampler and runtime settings a one-to-one chat overrides; empty
@@ -1299,6 +1300,7 @@ pub struct ConversationSettingsPatch {
     pub memory: Option<MemoryModeChange>,
     pub chat_mode: Option<ChatModeChange>,
     pub disable_character_lorebooks: Option<FlagChange>,
+    pub disable_character_notes: Option<FlagChange>,
     /// Replaces the chat's own layer; an empty layer clears it.
     #[serde(default)]
     pub model_settings: Option<crate::SettingsModelSettingsLayer>,

@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, Duration, Local, LocalResult, NaiveDate, TimeZone, Timelike};
-use lettuce_types::{CharacterId, TimestampMillis};
+use lettuce_types::{CharacterId, GroupId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -71,31 +71,37 @@ impl CompanionScheduledNote {
     }
 
     pub fn validate(&self) -> Result<(), CompanionScheduledNoteError> {
-        if self.content.is_empty() {
-            return Err(CompanionScheduledNoteError::Invalid {
-                reason: "note content is empty",
-            });
-        }
-        if self.created_at.get() < 0 {
-            return Err(CompanionScheduledNoteError::Invalid {
-                reason: "creation time is negative",
-            });
-        }
-        if self.updated_at.get() < 0 {
-            return Err(CompanionScheduledNoteError::Invalid {
-                reason: "update time is negative",
-            });
-        }
-        if self
-            .expires_at
-            .is_some_and(|expires| expires <= self.available_at)
-        {
-            return Err(CompanionScheduledNoteError::Invalid {
-                reason: "expiry is not after the available time",
-            });
-        }
-        Ok(())
+        validate_note_fields(
+            &self.content,
+            self.created_at,
+            self.updated_at,
+            self.available_at,
+            self.expires_at,
+        )
+        .map_err(|reason| CompanionScheduledNoteError::Invalid { reason })
     }
+}
+
+fn validate_note_fields(
+    content: &str,
+    created_at: TimestampMillis,
+    updated_at: TimestampMillis,
+    available_at: TimestampMillis,
+    expires_at: Option<TimestampMillis>,
+) -> Result<(), &'static str> {
+    if content.is_empty() {
+        return Err("note content is empty");
+    }
+    if created_at.get() < 0 {
+        return Err("creation time is negative");
+    }
+    if updated_at.get() < 0 {
+        return Err("update time is negative");
+    }
+    if expires_at.is_some_and(|expires| expires <= available_at) {
+        return Err("expiry is not after the available time");
+    }
+    Ok(())
 }
 
 pub fn active_scheduled_notes(
@@ -118,35 +124,167 @@ pub fn is_scheduled_note_active(
     now: TimestampMillis,
 ) -> Result<bool, CompanionScheduledNoteError> {
     note.validate()?;
-    if !note.enabled
-        || note.expires_at.is_some_and(|expires| now >= expires)
-        || now < note.available_at
-    {
+    schedule_is_active(
+        note.enabled,
+        note.available_at,
+        note.expires_at,
+        note.recurrence,
+        note.recurrence_window_ms,
+        now,
+    )
+}
+
+fn schedule_is_active(
+    enabled: bool,
+    available_at: TimestampMillis,
+    expires_at: Option<TimestampMillis>,
+    recurrence: ScheduledNoteRecurrence,
+    recurrence_window_ms: Option<u64>,
+    now: TimestampMillis,
+) -> Result<bool, CompanionScheduledNoteError> {
+    if !enabled || expires_at.is_some_and(|expires| now >= expires) || now < available_at {
         return Ok(false);
     }
-    if note.recurrence == ScheduledNoteRecurrence::None {
+    if recurrence == ScheduledNoteRecurrence::None {
         return Ok(true);
     }
-    let occurrence =
-        most_recent_scheduled_note_occurrence(note.available_at, note.recurrence, now)?;
-    if let Some(window_ms) = note.recurrence_window_ms {
+    let occurrence = most_recent_scheduled_note_occurrence(available_at, recurrence, now)?;
+    if let Some(window_ms) = recurrence_window_ms {
         return Ok(now.get() < occurrence.get().saturating_add_unsigned(window_ms));
     }
     Ok(true)
 }
 
-/// Note lines kept under the block's character budget. `line` renders one
-/// note and `truncated` ends a note cut at its content cap; the application
-/// supplies both from the prompt catalog.
+/// A scheduled note owned by a group. It has the schedule of a character's
+/// note; `visible_to` lists the members who see it, and empty means every
+/// member. A listed character that later leaves the group never matches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupScheduledNote {
+    pub id: Uuid,
+    pub group_id: GroupId,
+    pub visible_to: Vec<CharacterId>,
+    pub label: String,
+    pub content: String,
+    pub available_at: TimestampMillis,
+    pub expires_at: Option<TimestampMillis>,
+    pub recurrence: ScheduledNoteRecurrence,
+    pub recurrence_window_ms: Option<u64>,
+    pub enabled: bool,
+    pub created_at: TimestampMillis,
+    pub updated_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum GroupScheduledNoteError {
+    #[error("the group of the scheduled note was not found")]
+    GroupNotFound,
+    #[error("a character the note is visible to is not a member of the group")]
+    NotAMember,
+    #[error("group scheduled note is invalid: {reason}")]
+    Invalid { reason: &'static str },
+    #[error("group scheduled note storage failed: {reason}")]
+    Failure { reason: String },
+    #[error("group scheduled note storage is corrupt: {reason}")]
+    Corrupt { reason: String },
+}
+
+pub trait GroupScheduledNoteRepository: Send + Sync {
+    fn list_group_notes(
+        &self,
+        group_id: GroupId,
+    ) -> Result<Vec<GroupScheduledNote>, GroupScheduledNoteError>;
+
+    /// Stores the note. Every character in `visible_to` must be a current
+    /// member of the group.
+    fn upsert_group_note(
+        &self,
+        note: GroupScheduledNote,
+    ) -> Result<GroupScheduledNote, GroupScheduledNoteError>;
+
+    fn delete_group_note(&self, id: Uuid) -> Result<(), GroupScheduledNoteError>;
+}
+
+impl GroupScheduledNote {
+    pub fn normalize(mut self) -> Result<Self, GroupScheduledNoteError> {
+        self.label = self.label.trim().to_owned();
+        self.content = self.content.trim().to_owned();
+        self.visible_to.sort();
+        self.visible_to.dedup();
+        self.validate()?;
+        Ok(self)
+    }
+
+    pub fn validate(&self) -> Result<(), GroupScheduledNoteError> {
+        validate_note_fields(
+            &self.content,
+            self.created_at,
+            self.updated_at,
+            self.available_at,
+            self.expires_at,
+        )
+        .map_err(|reason| GroupScheduledNoteError::Invalid { reason })
+    }
+
+    /// Whether `speaker` sees the note. A turn without a speaker sees only
+    /// the notes every member sees.
+    #[must_use]
+    pub fn is_visible_to(&self, speaker: Option<CharacterId>) -> bool {
+        self.visible_to.is_empty()
+            || speaker.is_some_and(|speaker| self.visible_to.contains(&speaker))
+    }
+
+    pub fn is_active(&self, now: TimestampMillis) -> Result<bool, GroupScheduledNoteError> {
+        self.validate()?;
+        schedule_is_active(
+            self.enabled,
+            self.available_at,
+            self.expires_at,
+            self.recurrence,
+            self.recurrence_window_ms,
+            now,
+        )
+        .map_err(|error| match error {
+            CompanionScheduledNoteError::Invalid { reason } => {
+                GroupScheduledNoteError::Invalid { reason }
+            }
+            other => GroupScheduledNoteError::Failure {
+                reason: other.to_string(),
+            },
+        })
+    }
+}
+
+/// The group's notes `speaker` sees that are active at `now`, ordered by
+/// availability.
+pub fn active_group_scheduled_notes(
+    notes: Vec<GroupScheduledNote>,
+    now: TimestampMillis,
+    speaker: Option<CharacterId>,
+) -> Result<Vec<GroupScheduledNote>, GroupScheduledNoteError> {
+    let mut active = Vec::new();
+    for note in notes {
+        if note.is_visible_to(speaker) && note.is_active(now)? {
+            active.push(note);
+        }
+    }
+    active.sort_by_key(|note| (note.available_at, note.id));
+    Ok(active)
+}
+
+/// Note lines kept under the block's character budget. `contents` are the
+/// note texts in order, `line` renders one note and `truncated` ends a note
+/// cut at its content cap; the application supplies both from the prompt
+/// catalog.
 pub fn scheduled_note_lines(
-    notes: &[CompanionScheduledNote],
+    contents: &[&str],
     truncated: &str,
     line: &dyn Fn(&str) -> String,
 ) -> Vec<String> {
     let mut lines = Vec::new();
     let mut total_chars = 0usize;
-    for note in notes {
-        let trimmed = note.content.trim();
+    for content in contents {
+        let trimmed = content.trim();
         if trimmed.is_empty() {
             continue;
         }
@@ -385,25 +523,21 @@ mod tests {
         assert_eq!(normalized.content, "remember this");
         let line = |content: &str| format!("- {content}");
         assert_eq!(
-            scheduled_note_lines(std::slice::from_ref(&normalized), "...", &line),
+            scheduled_note_lines(&[normalized.content.as_str()], "...", &line),
             vec!["- remember this".to_owned()]
         );
-        let mut long = normalized.clone();
-        long.content = format!("{} tail", "a".repeat(999));
-        let mut blank = normalized.clone();
-        blank.content = "   ".into();
+        let long = format!("{} tail", "a".repeat(999));
         assert_eq!(
-            scheduled_note_lines(&[blank, long], "...", &line),
+            scheduled_note_lines(&["   ", long.as_str()], "...", &line),
             vec![format!("- {}...", "a".repeat(999))]
         );
-        let mut filler = normalized;
-        filler.content = "b".repeat(1000);
+        let filler = "b".repeat(1000);
         let lines = scheduled_note_lines(
             &[
-                filler.clone(),
-                filler.clone(),
-                filler.clone(),
-                filler.clone(),
+                filler.as_str(),
+                filler.as_str(),
+                filler.as_str(),
+                filler.as_str(),
             ],
             "...",
             &line,
@@ -679,5 +813,68 @@ mod tests {
         );
         assert_eq!(shift_month(1890, 1, -1), Ok((1889, 12)));
         assert_eq!(shift_month(1969, 12, 1), Ok((1970, 1)));
+    }
+
+    fn group_note(visible_to: Vec<CharacterId>, available_at: i64) -> GroupScheduledNote {
+        GroupScheduledNote {
+            id: Uuid::new_v4(),
+            group_id: GroupId::new(),
+            visible_to,
+            label: String::new(),
+            content: "shared".into(),
+            available_at: TimestampMillis::new(available_at),
+            expires_at: None,
+            recurrence: ScheduledNoteRecurrence::None,
+            recurrence_window_ms: None,
+            enabled: true,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        }
+    }
+
+    #[test]
+    fn group_notes_are_visible_to_listed_members_or_everyone() {
+        let a = CharacterId::new();
+        let b = CharacterId::new();
+        let everyone = group_note(Vec::new(), 10);
+        let only_a = group_note(vec![a], 20);
+        assert!(everyone.is_visible_to(Some(a)) && everyone.is_visible_to(Some(b)));
+        assert!(everyone.is_visible_to(None));
+        assert!(only_a.is_visible_to(Some(a)));
+        assert!(!only_a.is_visible_to(Some(b)));
+        assert!(!only_a.is_visible_to(None));
+    }
+
+    #[test]
+    fn active_group_notes_filter_by_speaker_and_time_and_order_by_availability() {
+        let a = CharacterId::new();
+        let b = CharacterId::new();
+        let later = group_note(Vec::new(), 30);
+        let only_a = group_note(vec![a], 20);
+        let future = group_note(Vec::new(), 1_000);
+        let mut disabled = group_note(Vec::new(), 5);
+        disabled.enabled = false;
+        let notes = vec![later.clone(), only_a.clone(), future, disabled];
+        let now = TimestampMillis::new(100);
+        let for_a = active_group_scheduled_notes(notes.clone(), now, Some(a)).expect("a");
+        assert_eq!(for_a, vec![only_a, later.clone()]);
+        let for_b = active_group_scheduled_notes(notes.clone(), now, Some(b)).expect("b");
+        assert_eq!(for_b, vec![later.clone()]);
+        let none = active_group_scheduled_notes(notes, now, None).expect("none");
+        assert_eq!(none, vec![later]);
+    }
+
+    #[test]
+    fn group_note_normalization_trims_and_dedups_viewers() {
+        let a = CharacterId::new();
+        let mut note = group_note(vec![a, a], 10);
+        note.label = " x ".into();
+        note.content = " y ".into();
+        let note = note.normalize().expect("normalize");
+        assert_eq!((note.label.as_str(), note.content.as_str()), ("x", "y"));
+        assert_eq!(note.visible_to, vec![a]);
+        let mut blank = group_note(Vec::new(), 10);
+        blank.content = "  ".into();
+        assert!(blank.normalize().is_err());
     }
 }

@@ -269,7 +269,26 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
           trailing={<Switch checked={settings.time.enabled} disabled={ctx.busy} aria-label={t("settings.time.awareness")} onChange={(on) => void ctx.save({ time_awareness: on })} />}
         />
         {settings.time.enabled && <ListRowButton icon={<Clock size={icon.lg} />} title={t("settings.time.title")} description={settings.time.mode === "live" ? t("settings.time.live") : t(settings.time.mode === "frozen" ? "settings.time.stoppedAt" : "settings.time.runningFrom", { when: new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(settings.time.mode === "frozen" ? settings.time.anchor_at ?? settings.time.effective_at : settings.time.effective_at) })} onClick={() => ctx.openSheet("time")} />}
-        {!groupId && <ListRowButton icon={<CalendarClock size={icon.lg} />} title={t("settings.notes.title")} description={t("settings.notes.rowHint")} onClick={() => ctx.open("notes")} />}
+        <ListRowButton icon={<CalendarClock size={icon.lg} />} title={t("settings.notes.title")} description={t(groupId ? "settings.notes.groupRowHint" : "settings.notes.rowHint")} onClick={() => ctx.open("notes")} />
+        {settings.disable_character_notes && (
+          <ListRow
+            title={t("settings.notes.useCharacter")}
+            description={t(`settings.source.${settings.disable_character_notes.source}`)}
+            trailing={
+              <span className="flex items-center gap-2">
+                {settings.disable_character_notes.source === "conversation" && (
+                  <Button variant="ghost" size="sm" disabled={ctx.busy} onClick={() => void ctx.save({ disable_character_notes: { type: "reset" } })}>{t("settings.reset")}</Button>
+                )}
+                <Switch
+                  checked={!settings.disable_character_notes.value}
+                  disabled={ctx.busy}
+                  aria-label={t("settings.notes.useCharacter")}
+                  onChange={(on) => void ctx.save({ disable_character_notes: { type: "set", value: !on } })}
+                />
+              </span>
+            }
+          />
+        )}
       </ListGroup>
 
       <ListGroup label={t("settings.sections.actions")}>

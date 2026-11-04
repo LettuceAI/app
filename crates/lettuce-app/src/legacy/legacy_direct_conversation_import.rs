@@ -1283,6 +1283,7 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
             speaker_selection: input.speaker_selection,
             chat_mode: input.chat_mode,
             disable_character_lorebooks: input.disable_character_lorebooks,
+            disable_character_notes: None,
             roleplay_prompt_provenance: provenance(roleplay_prompt.is_some()),
             roleplay_prompt,
             members_overridden: input.participant_overrides.members,

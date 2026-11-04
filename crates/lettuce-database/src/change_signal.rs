@@ -178,12 +178,14 @@ impl ChangeSignal {
                     | "group_starting_scenes"
                     | "group_scene_variants"
                     | "group_scene_assets"
-                    | "group_lorebook_bindings" => LibraryKind::Group,
+                    | "group_lorebook_bindings"
+                    | "group_scheduled_notes" => LibraryKind::Group,
                     _ => return,
                 };
                 let identity_column = if matches!(
                     table,
                     "companion_scheduled_notes"
+                        | "group_scheduled_notes"
                         | "companion_session_states"
                         | "companion_conversation_relationship_states"
                         | "companion_continuity_episodes"
@@ -521,6 +523,26 @@ mod sync_feed_tests {
         }
     }
 
+    #[test]
+    fn group_notes_refresh_their_group_once() {
+        let connection = rusqlite::Connection::open_in_memory().expect("connection");
+        connection
+            .execute_batch("CREATE TABLE group_scheduled_notes (id TEXT, group_id TEXT);")
+            .expect("schema");
+        let signal = ChangeSignal::install(&connection).expect("hooks");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let observed = events.clone();
+        signal.listen_library(Arc::new(move |kind, id| {
+            observed.lock().expect("events").push((kind, id.to_owned()));
+        }));
+        connection
+            .execute_batch("BEGIN; INSERT INTO group_scheduled_notes VALUES ('note', 'group'); UPDATE group_scheduled_notes SET id = id; COMMIT;")
+            .expect("commit");
+        assert_eq!(
+            *events.lock().expect("events"),
+            vec![(LibraryKind::Group, "group".into())]
+        );
+    }
 }
 
 #[cfg(test)]

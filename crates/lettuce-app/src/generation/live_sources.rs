@@ -21,6 +21,7 @@ pub(crate) struct LiveGroup {
     pub(crate) starting_scene: Option<GroupStartingScene>,
     pub(crate) chat_mode: GroupChatModeSnapshot,
     pub(crate) disable_character_lorebooks: bool,
+    pub(crate) disable_character_notes: bool,
     pub(crate) speaker_selection: GroupSpeakerSelectionSnapshot,
 }
 
@@ -53,6 +54,14 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
                 .map(|profile| profile.disable_character_lorebooks)
         })
         .unwrap_or(launch.disable_character_lorebook);
+    let disable_character_notes = own
+        .and_then(|settings| settings.disable_character_notes)
+        .or_else(|| {
+            profile
+                .as_ref()
+                .map(|profile| profile.disable_character_notes)
+        })
+        .unwrap_or(false);
     let speaker_selection = own
         .filter(|settings| {
             settings.speaker_selection_provenance == SettingProvenance::CurrentOverride
@@ -69,6 +78,7 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
         starting_scene,
         chat_mode,
         disable_character_lorebooks,
+        disable_character_notes,
         speaker_selection,
     }))
 }

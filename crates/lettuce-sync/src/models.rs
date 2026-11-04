@@ -105,7 +105,7 @@ pub fn canonical_prompt_payload(
 
 pub const GROUP_SYNC_KIND: &str = "group";
 pub const GROUP_SYNC_SCHEMA: &str = "group.snapshot";
-pub const GROUP_SYNC_VERSION: u32 = 2;
+pub const GROUP_SYNC_VERSION: u32 = 3;
 pub const GROUP_LOREBOOK_BINDINGS_SYNC_KIND: &str = "group_lorebook_bindings";
 
 /// The complete reusable group: profile, members and starting scene.
@@ -128,7 +128,7 @@ pub const CONVERSATION_SNAPSHOT_SYNC_VERSION: u32 = 2;
 
 pub const CONVERSATION_SYNC_KIND: &str = "conversation";
 pub const CONVERSATION_SYNC_SCHEMA: &str = "conversation.root";
-pub const CONVERSATION_SYNC_VERSION: u32 = 6;
+pub const CONVERSATION_SYNC_VERSION: u32 = 7;
 
 pub const CONVERSATION_MESSAGE_SYNC_KIND: &str = "conversation_message";
 pub const CONVERSATION_MESSAGE_SYNC_SCHEMA: &str = "conversation.message";
@@ -172,6 +172,10 @@ pub const COMPANION_SESSION_SYNC_VERSION: u32 = 2;
 pub const COMPANION_NOTE_SYNC_KIND: &str = "companion_note";
 pub const COMPANION_NOTE_SYNC_SCHEMA: &str = "companion.scheduled_note";
 pub const COMPANION_NOTE_SYNC_VERSION: u32 = 1;
+
+pub const GROUP_NOTE_SYNC_KIND: &str = "group_note";
+pub const GROUP_NOTE_SYNC_SCHEMA: &str = "group.scheduled_note";
+pub const GROUP_NOTE_SYNC_VERSION: u32 = 1;
 
 pub const USAGE_COST_SYNC_KIND: &str = "usage_cost";
 pub const USAGE_COST_SYNC_SCHEMA: &str = "usage.cost_basis";

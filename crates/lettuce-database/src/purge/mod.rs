@@ -480,6 +480,7 @@ impl<'c> Purge<'c> {
         }
         for table in [
             "group_lorebook_bindings",
+            "group_scheduled_notes",
             "group_scene_assets",
             "group_scene_variants",
             "group_starting_scenes",

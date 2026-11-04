@@ -209,7 +209,7 @@ fn group_row(
 ) -> Result<Option<GroupProfile>, rusqlite::Error> {
     connection
         .query_row(
-            "SELECT id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at,presentation_overrides_json FROM groups WHERE id=?1",
+            "SELECT id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at,presentation_overrides_json,time_awareness,disable_character_notes FROM groups WHERE id=?1",
             [group_id.to_string()],
             |row| {
                 let status_text: String = row.get(1)?;
@@ -227,6 +227,11 @@ fn group_row(
                 if !matches!(disable_character_lorebooks, 0 | 1) {
                     return Err(invalid());
                 }
+                let time_awareness: i64 = row.get(20)?;
+                let disable_character_notes: i64 = row.get(21)?;
+                if !matches!(time_awareness, 0 | 1) || !matches!(disable_character_notes, 0 | 1) {
+                    return Err(invalid());
+                }
                 Ok(GroupProfile {
                     id: id(row.get(0)?)?,
                     status: status(&status_text)?,
@@ -236,6 +241,8 @@ fn group_row(
                     speaker_selection: speaker(&row.get::<_, String>(7)?)?,
                     memory_policy: memory(&row.get::<_, String>(8)?)?,
                     disable_character_lorebooks: disable_character_lorebooks != 0,
+                    time_awareness: time_awareness != 0,
+                    disable_character_notes: disable_character_notes != 0,
                     group_conversation_prompt_id: row.get::<_, Option<String>>(10)?.map(id).transpose()?,
                     group_roleplay_prompt_id: row.get::<_, Option<String>>(11)?.map(id).transpose()?,
                     presentation,
@@ -766,7 +773,7 @@ pub(crate) fn insert_group_rows(
     if let Some(asset) = plan.group.background_asset_id {
         ensure_image_asset(tx, asset)?;
     }
-    tx.execute("INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'image',?15,?16,?17,?18)", params![plan.group.id.to_string(), status_name(plan.group.status), plan.group.name, canonical_name(&plan.group.name), chat_mode_name(plan.group.chat_mode), selection_kind(&plan.group.persona), match &plan.group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(plan.group.speaker_selection), memory_name(plan.group.memory_policy), plan.group.disable_character_lorebooks, plan.group.group_conversation_prompt_id.map(|id| id.to_string()), plan.group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&plan.group.presentation, PRESENTATION_VERSION)?, plan.group.background_asset_id.map(|id| id.to_string()), plan.group.starting_scene_id.map(|id| id.to_string()), sql_revision(plan.group.revision)?, plan.group.created_at.get(), plan.group.updated_at.get()]).map_err(db_error)?;
+    tx.execute("INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at,time_awareness,disable_character_notes) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'image',?15,?16,?17,?18,?19,?20)", params![plan.group.id.to_string(), status_name(plan.group.status), plan.group.name, canonical_name(&plan.group.name), chat_mode_name(plan.group.chat_mode), selection_kind(&plan.group.persona), match &plan.group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(plan.group.speaker_selection), memory_name(plan.group.memory_policy), plan.group.disable_character_lorebooks, plan.group.group_conversation_prompt_id.map(|id| id.to_string()), plan.group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&plan.group.presentation, PRESENTATION_VERSION)?, plan.group.background_asset_id.map(|id| id.to_string()), plan.group.starting_scene_id.map(|id| id.to_string()), sql_revision(plan.group.revision)?, plan.group.created_at.get(), plan.group.updated_at.get(), plan.group.time_awareness, plan.group.disable_character_notes]).map_err(db_error)?;
     write_members(tx, plan.group.id, &plan.group.members)?;
     write_presentation(tx, plan.group.id, &plan.group.presentation)?;
     write_presentation_overrides(tx, plan.group.id, plan.group.presentation_overrides.as_ref())?;
@@ -880,7 +887,7 @@ fn replace_group_graph(
         params![group.id.to_string(), details.starting_scene.as_ref().map(|scene| scene.scene.id.to_string())],
     )
     .map_err(db_error)?;
-    tx.execute("UPDATE groups SET status=?2,name=?3,normalized_name=?4,chat_mode=?5,persona_selection_kind=?6,persona_id=?7,speaker_selection=?8,memory_policy=?9,disable_character_lorebooks=?10,group_conversation_prompt_id=?11,group_roleplay_prompt_id=?12,presentation_json=?13,background_asset_id=?14,starting_scene_id=?15,revision=?16,created_at=?17,updated_at=?18 WHERE id=?1", params![group.id.to_string(), status_name(group.status), group.name, canonical_name(&group.name), chat_mode_name(group.chat_mode), selection_kind(&group.persona), match &group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(group.speaker_selection), memory_name(group.memory_policy), group.disable_character_lorebooks, group.group_conversation_prompt_id.map(|id| id.to_string()), group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&group.presentation, PRESENTATION_VERSION)?, group.background_asset_id.map(|id| id.to_string()), group.starting_scene_id.map(|id| id.to_string()), sql_revision(group.revision)?, group.created_at.get(), group.updated_at.get()]).map_err(db_error)?;
+    tx.execute("UPDATE groups SET status=?2,name=?3,normalized_name=?4,chat_mode=?5,persona_selection_kind=?6,persona_id=?7,speaker_selection=?8,memory_policy=?9,disable_character_lorebooks=?10,group_conversation_prompt_id=?11,group_roleplay_prompt_id=?12,presentation_json=?13,background_asset_id=?14,starting_scene_id=?15,revision=?16,created_at=?17,updated_at=?18,time_awareness=?19,disable_character_notes=?20 WHERE id=?1", params![group.id.to_string(), status_name(group.status), group.name, canonical_name(&group.name), chat_mode_name(group.chat_mode), selection_kind(&group.persona), match &group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(group.speaker_selection), memory_name(group.memory_policy), group.disable_character_lorebooks, group.group_conversation_prompt_id.map(|id| id.to_string()), group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&group.presentation, PRESENTATION_VERSION)?, group.background_asset_id.map(|id| id.to_string()), group.starting_scene_id.map(|id| id.to_string()), sql_revision(group.revision)?, group.created_at.get(), group.updated_at.get(), group.time_awareness, group.disable_character_notes]).map_err(db_error)?;
     write_members(tx, group.id, &group.members)?;
     write_presentation(tx, group.id, &group.presentation)?;
     write_presentation_overrides(tx, group.id, group.presentation_overrides.as_ref())?;
@@ -2014,6 +2021,111 @@ mod tests {
     }
 
     #[test]
+    fn group_notes_belong_to_members_and_go_with_the_group() {
+        use lettuce_companions::{
+            GroupScheduledNote, GroupScheduledNoteError, GroupScheduledNoteRepository,
+            ScheduledNoteRecurrence,
+        };
+
+        let database = Database::open_in_memory().expect("database");
+        let first = CharacterId::new();
+        let second = CharacterId::new();
+        let outsider = CharacterId::new();
+        for id in [first, second, outsider] {
+            character(&database, id);
+        }
+        let group_id = GroupId::new();
+        let member = |character_id, ordinal| GroupMember {
+            character_id,
+            ordinal,
+            muted: false,
+            model_profile_override: None,
+        };
+        let group = GroupProfile::new(
+            group_id,
+            "Cast".into(),
+            vec![member(first, 0), member(second, 1)],
+            TimestampMillis::new(1),
+        )
+        .expect("group");
+        GroupRepository::create(&database, CreateGroupPlan { group, starting_scene: None })
+            .expect("create");
+        let note = |group_id, visible_to: Vec<CharacterId>, content: &str| GroupScheduledNote {
+            id: uuid::Uuid::new_v4(),
+            group_id,
+            visible_to,
+            label: " Label ".into(),
+            content: content.into(),
+            available_at: TimestampMillis::new(10),
+            expires_at: None,
+            recurrence: ScheduledNoteRecurrence::Weekly,
+            recurrence_window_ms: Some(1_000),
+            enabled: true,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+
+        let everyone = database
+            .upsert_group_note(note(group_id, Vec::new(), " For all "))
+            .expect("note for everyone");
+        assert_eq!((everyone.label.as_str(), everyone.content.as_str()), ("Label", "For all"));
+        let mut only_first = note(group_id, vec![first, first], "For one");
+        only_first.available_at = TimestampMillis::new(20);
+        let only_first = database.upsert_group_note(only_first).expect("note for one member");
+        assert_eq!(only_first.visible_to, vec![first]);
+        assert_eq!(
+            database.list_group_notes(group_id).expect("list"),
+            vec![everyone.clone(), only_first.clone()]
+        );
+
+        let mut changed = only_first.clone();
+        changed.content = "Changed".into();
+        changed.visible_to = vec![second];
+        changed.updated_at = TimestampMillis::new(5);
+        let changed = database.upsert_group_note(changed).expect("update");
+        assert_eq!(changed.visible_to, vec![second]);
+        assert_eq!(changed.created_at, only_first.created_at);
+        assert_eq!(database.list_group_notes(group_id).expect("list").len(), 2);
+
+        assert_eq!(
+            database
+                .upsert_group_note(note(group_id, vec![outsider], "Nobody"))
+                .expect_err("non-member"),
+            GroupScheduledNoteError::NotAMember
+        );
+        assert_eq!(
+            database
+                .upsert_group_note(note(GroupId::new(), Vec::new(), "Lost"))
+                .expect_err("unknown group"),
+            GroupScheduledNoteError::GroupNotFound
+        );
+        assert_eq!(
+            database.list_group_notes(GroupId::new()).expect_err("unknown group"),
+            GroupScheduledNoteError::GroupNotFound
+        );
+        assert!(matches!(
+            database.upsert_group_note(note(group_id, Vec::new(), "  ")),
+            Err(GroupScheduledNoteError::Invalid { .. })
+        ));
+
+        database.delete_group_note(everyone.id).expect("delete");
+        database.delete_group_note(everyone.id).expect("delete again");
+        assert_eq!(database.list_group_notes(group_id).expect("list"), vec![changed]);
+
+        database
+            .connection()
+            .expect("connection")
+            .execute("DELETE FROM groups WHERE id = ?1", [group_id.to_string()])
+            .expect("delete group");
+        let remaining: i64 = database
+            .connection()
+            .expect("connection")
+            .query_row("SELECT count(*) FROM group_scheduled_notes", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
     fn group_round_trip_and_keyset_list() {
         let database = Database::open_in_memory().expect("database");
         let first = CharacterId::new();
@@ -2368,6 +2480,8 @@ mod tests {
         group.speaker_selection = SpeakerSelection::DirectorAction;
         group.memory_policy = MemoryPolicy::Dynamic;
         group.disable_character_lorebooks = true;
+        group.time_awareness = true;
+        group.disable_character_notes = true;
         group.group_conversation_prompt_id = Some(PromptDocumentId::new());
         group.group_roleplay_prompt_id = Some(PromptDocumentId::new());
         group.presentation = presentation.clone();

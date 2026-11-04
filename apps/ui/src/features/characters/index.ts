@@ -5,3 +5,5 @@ export { wordCount } from "./data/form";
 export { ModelChoiceSheet } from "./components/Pickers";
 export { promptsQuery } from "./data/queries";
 export { lorebookIds } from "./data/edit";
+export { NoteSheetShell } from "./edit/NoteSheet";
+export { attemptIds, draftToUpsert, newNoteDraft, noteToDraft, type NoteDraft } from "./data/notes";

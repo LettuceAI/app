@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
 import type { GroupDraft_Serialize, GroupView_Serialize } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { groupDraftToUpsert, type GroupNoteDraft } from "./notes";
 
 export async function refreshGroups(queryClient: QueryClient) {
   await Promise.all([
@@ -23,7 +24,7 @@ export interface SaveAttempt {
   conversationId?: string;
 }
 
-export async function saveGroup(api: ApiClient, queryClient: QueryClient, draft: GroupDraft_Serialize, lorebookIds: string[], attempt: SaveAttempt, existing?: { id: string; revision: number; lorebookIds: string[] }) {
+export async function saveGroup(api: ApiClient, queryClient: QueryClient, draft: GroupDraft_Serialize, lorebookIds: string[], attempt: SaveAttempt, existing?: { id: string; revision: number; lorebookIds: string[] }, notes: GroupNoteDraft[] = []) {
   const saved = attempt.saved ?? await api.call("groupSave", { group_id: existing?.id ?? null, expected_revision: existing?.revision ?? null, draft, client_operation_id: attempt.operationId });
   attempt.saved = saved;
   let revision = saved.revision;
@@ -37,6 +38,9 @@ export async function saveGroup(api: ApiClient, queryClient: QueryClient, draft:
     const added = !current.includes(id);
     const result = await api.call(added ? "groupLorebooksBind" : "groupLorebooksReorder", { group_id: saved.id, lorebook_id: id, expected_revision: revision, target_ordinal: index, client_operation_id: `${attempt.operationId}:book:${index}` });
     revision = result.owner_revision;
+  }
+  for (const [index, note] of notes.entries()) {
+    await api.call("groupNotesUpsert", groupDraftToUpsert(saved.id, null, note, `${attempt.operationId}:note:${index}`));
   }
   await refreshGroups(queryClient);
   return saved.id;

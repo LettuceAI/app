@@ -14,7 +14,7 @@ pub(super) mod duplicate;
 mod duplicate_tests;
 pub(super) mod groups;
 #[cfg(test)]
-mod groups_tests;
+pub(crate) mod groups_tests;
 #[cfg(test)]
 mod lists_tests;
 pub(super) mod media;
