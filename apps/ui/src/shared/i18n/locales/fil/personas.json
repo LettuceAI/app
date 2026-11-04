@@ -1,0 +1,75 @@
+{
+  "create": {
+    "title": "Bagong persona",
+    "back": "Bumalik",
+    "create": "Gumawa ng persona",
+    "created": "Nagawa ang {{name}}",
+    "imported": "Na-import ang persona",
+    "unattached_one": "Hindi na-attach ang {{count}} lorebook. I-attach ito mula sa settings ng persona.",
+    "unattached_other": "Hindi na-attach ang {{count}} lorebook. I-attach ang mga ito mula sa settings ng persona.",
+    "defaultFailed": "Nagawa ang {{name}} pero hindi na-set bilang default.",
+    "discardTitle": "Itapon ang persona na ito?",
+    "discardBody": "Mawawala ang mga nailagay mo hanggang ngayon.",
+    "discard": "Itapon",
+    "keepEditing": "Magpatuloy sa pag-edit",
+    "continueTo": "Magpatuloy sa {{step}}"
+  },
+  "edit": {
+    "title": "I-edit ang persona",
+    "back": "Bumalik",
+    "backToLibrary": "Bumalik sa library",
+    "more": "Iba pang aksyon",
+    "export": "I-export",
+    "delete": "Tanggalin ang persona",
+    "exported": "Na-export ang persona",
+    "exportWarnings_one": "Na-export na may {{count}} warning",
+    "exportWarnings_other": "Na-export na may {{count}} warning",
+    "deleteTitle": "Tanggalin ang {{name}}?",
+    "deleteBody": "Tatanggalin ang persona sa mga chat na gumagamit nito.",
+    "deleteConfirm": "Tanggalin",
+    "deleteCancel": "Kanselahin",
+    "deleted": "Tinanggal ang {{name}}",
+    "unsaved": "Hindi pa na-save na mga pagbabago",
+    "discard": "Itapon",
+    "save": "I-save",
+    "saved": "Na-save ang mga pagbabago",
+    "lorebooksFailed": "Na-save, pero hindi na-update ang mga lorebook. Subukang i-save muli.",
+    "leaveTitle": "Itapon ang mga pagbabago mo?",
+    "leaveBody": "Mawawala ang mga pagbabagong hindi na-save.",
+    "leaveDiscard": "Itapon",
+    "leaveKeep": "Magpatuloy sa pag-edit"
+  },
+  "steps": {
+    "identity": "Pagkakakilanlan",
+    "extras": "Extras"
+  },
+  "identity": {
+    "chooseAvatar": "Pumili ng larawan",
+    "removeAvatar": "Alisin",
+    "name": "Pangalan",
+    "namePlaceholder": "Propesyonal na manunulat",
+    "nameHint": "Kung sino ka sa mga chat",
+    "nickname": "Palayaw",
+    "nicknamePlaceholder": "Itinatawag sa iyo ng mga karakter",
+    "nicknameHint": "Opsyonal. Ginagamit sa mga chat kapalit ng pangalan.",
+    "default": "Gamitin bilang default",
+    "defaultBody": "Ganito ang persona sa mga bagong chat",
+    "import": "Mag-import mula sa file",
+    "importBody": "Mag-import ng persona na na-export mula sa LettuceAI.",
+    "chooseFile": "Pumili ng file"
+  },
+  "about": {
+    "description": "Deskripsyon",
+    "descriptionPlaceholder": "Paano ka dapat tawagin ng mga karakter, background mo, mga hilig at istilo",
+    "descriptionHint": "Gamitin ang {{user}} para sa persona na ito at {{char}} para sa karakter.",
+    "words_one": "{{count}} salita",
+    "words_other": "{{count}} salita"
+  },
+  "extras": {
+    "body": "Opsyonal ang lahat dito.",
+    "lorebooks": "Mga Lorebook",
+    "lorebooksNone": "Wala",
+    "lorebooksCount_one": "{{count}} lorebook",
+    "lorebooksCount_other": "{{count}} lorebook"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "create": {
+    "title": "Persona mới",
+    "back": "Quay lại",
+    "create": "Tạo persona",
+    "created": "Đã tạo {{name}}",
+    "imported": "Đã nhập persona",
+    "unattached_other": "Không thể đính kèm {{count}} sách lore. Đính kèm từ cài đặt của persona.",
+    "defaultFailed": "Đã tạo {{name}} nhưng không thể đặt làm mặc định.",
+    "discardTitle": "Bỏ persona này?",
+    "discardBody": "Những gì đã nhập sẽ mất.",
+    "discard": "Bỏ",
+    "keepEditing": "Tiếp tục sửa",
+    "continueTo": "Tiếp tục đến {{step}}"
+  },
+  "edit": {
+    "title": "Sửa persona",
+    "back": "Quay lại",
+    "backToLibrary": "Về thư viện",
+    "more": "Thao tác khác",
+    "export": "Xuất",
+    "delete": "Xóa persona",
+    "exported": "Đã xuất persona",
+    "exportWarnings_other": "Đã xuất kèm {{count}} cảnh báo",
+    "deleteTitle": "Xóa {{name}}?",
+    "deleteBody": "Persona sẽ bị gỡ khỏi các cuộc trò chuyện đang dùng.",
+    "deleteConfirm": "Xóa",
+    "deleteCancel": "Hủy",
+    "deleted": "Đã xóa {{name}}",
+    "unsaved": "Thay đổi chưa lưu",
+    "discard": "Bỏ",
+    "save": "Lưu",
+    "saved": "Đã lưu thay đổi",
+    "lorebooksFailed": "Đã lưu, nhưng không thể cập nhật sách lore. Thử lưu lại.",
+    "leaveTitle": "Bỏ các thay đổi?",
+    "leaveBody": "Thay đổi chưa lưu sẽ mất.",
+    "leaveDiscard": "Bỏ",
+    "leaveKeep": "Tiếp tục sửa"
+  },
+  "steps": {
+    "identity": "Danh tính",
+    "extras": "Thông tin thêm"
+  },
+  "identity": {
+    "chooseAvatar": "Chọn ảnh",
+    "removeAvatar": "Xóa",
+    "name": "Tên",
+    "namePlaceholder": "Nhà văn chuyên nghiệp",
+    "nameHint": "Bạn là ai trong trò chuyện",
+    "nickname": "Biệt danh",
+    "nicknamePlaceholder": "Cách nhân vật gọi bạn",
+    "nicknameHint": "Tùy chọn. Dùng trong trò chuyện thay cho tên.",
+    "default": "Đặt làm mặc định",
+    "defaultBody": "Cuộc trò chuyện mới sẽ bắt đầu với persona này",
+    "import": "Nhập từ tệp",
+    "importBody": "Nhập persona đã xuất từ LettuceAI.",
+    "chooseFile": "Chọn tệp"
+  },
+  "about": {
+    "description": "Mô tả",
+    "descriptionPlaceholder": "Cách nhân vật nên xưng hô với bạn, lai lịch, sở thích và phong cách",
+    "descriptionHint": "Dùng {{user}} cho persona này và {{char}} cho nhân vật.",
+    "words_other": "{{count}} từ"
+  },
+  "extras": {
+    "body": "Mọi thứ ở đây đều tùy chọn.",
+    "lorebooks": "Sách lore",
+    "lorebooksNone": "Không có",
+    "lorebooksCount_other": "{{count}} sách lore"
+  }
+}

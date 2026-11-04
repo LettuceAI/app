@@ -1,0 +1,103 @@
+{
+  "title": "Mga Chat",
+  "homeTitle": "Home",
+  "characters": "Mga Karakter",
+  "search": "Maghanap ng chat",
+  "searchCharacters": "Maghanap ng karakter",
+  "count": "{{shown}} sa {{total}}",
+  "noDescription": "Wala pang deskripsyon",
+  "lastChat": "Huling chat {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Ituloy ang chat",
+  "empty": {
+    "title": "Wala pang karakter",
+    "body": "Gumawa ng makakausap, o mag-import ng character card mula sa disk mo.",
+    "create": "Gumawa ng karakter"
+  },
+  "noMatch": {
+    "title": "Walang tugma sa “{{query}}”",
+    "body": "Subukan ang pangalan, o isang salita mula sa deskripsyon ng karakter.",
+    "clear": "Burahin ang paghahanap"
+  },
+  "view": {
+    "label": "View",
+    "current": "View: {{view}}",
+    "home": "Home",
+    "list": "Listahan",
+    "hero": "Hero"
+  },
+  "layout": {
+    "title": "Layout",
+    "body": "Paano ipinapakita ng Chats ang mga karakter mo.",
+    "current": "Layout: {{layout}}",
+    "list": {
+      "title": "Listahan",
+      "body": "Bawat karakter bilang card, gaya ng itsura nila ngayon"
+    },
+    "recent": {
+      "title": "Kamakailan",
+      "body": "Bawat chat, pinakabago muna, kasama ang huling linyang tinigilan"
+    }
+  },
+  "recent": {
+    "today": "Ngayong araw",
+    "week": "Ngayong linggo",
+    "earlier": "Mas maaga",
+    "empty": "Wala pang chat"
+  },
+  "menu": {
+    "history": "Kasaysayan ng chat",
+    "historyBody": "Mga naunang chat sa karakter na ito",
+    "edit": "I-edit ang karakter",
+    "cardStyle": "Estilo ng card",
+    "cardRow": "Row, lumipat sa banner",
+    "cardBanner": "Banner, lumipat sa row",
+    "export": "I-export",
+    "exportBody": "Bilang character card",
+    "hide": "Itago sa Chats",
+    "hideBody": "Mananatili sa library mo",
+    "delete": "Tanggalin ang karakter",
+    "deleteTitle": "Tanggalin si {{name}}?",
+    "deleteBody": "Tatanggalin ang karakter at ang mga one-to-one chat nito. Hindi na ito maibabalik.",
+    "noChats": "Wala pang chat"
+  },
+  "export": {
+    "title": "Format ng export",
+    "body": "Pumili ng format",
+    "done": "Na-save bilang {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Format na Unified Entity Card (.uec) (inirerekomenda)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (pinakabagong spec)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (Tavern spec)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "I-edit ang chat",
+    "editCharacter": "I-edit ang karakter",
+    "editGroup": "I-edit ang grupo",
+    "rename": "Palitan ang pangalan",
+    "renameTitle": "Palitan ang pangalan ng chat",
+    "save": "I-save",
+    "delete": "Tanggalin ang chat",
+    "deleteTitle": "Tanggalin ang {{title}}?",
+    "deleteBody": "Mananatili ang karakter; aalis ang kuwentong ito."
+  },
+  "sidebar": {
+    "label": "Mga kamakailang chat",
+    "empty": "Lalabas dito ang mga chat na sinimulan mo."
+  },
+  "discover": {
+    "title": "Tuklasin",
+    "soonTitle": "Paparating na ang Tuklasin",
+    "soonBody": "Lugar para maghanap at magbahagi ng mga karakter na gawa ng komunidad. Binubuo namin ito sa sarili naming server, may moderation mula pa sa unang araw.",
+    "create": "Gumawa ng karakter",
+    "discord": "I-follow kami sa Discord"
+  }
+}

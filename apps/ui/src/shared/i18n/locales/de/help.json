@@ -1,0 +1,103 @@
+{
+  "title": "Hilfe & FAQ",
+  "subtitle": "Die Grundlagen, API-Schlüssel, Datenschutz und häufige Fragen",
+  "sections": {
+    "gettingStarted": "Erste Schritte",
+    "privacySafety": "Datenschutz & Sicherheit",
+    "modelsProviders": "Modelle & Anbieter",
+    "charactersChats": "Charaktere & Chats"
+  },
+  "stillStuck": {
+    "title": "Kommst du nicht weiter?",
+    "docsTitle": "Vollständige Dokumentation",
+    "docsDescription": "Anleitungen und Referenz für LettuceAI",
+    "discordTitle": "Tritt dem Discord bei",
+    "discordDescription": "Frag die Community oder melde einen Fehler"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Was ist LettuceAI?",
+      "answer": "LettuceAI ist eine Chat-App für KI-Charaktere. Du wählst den Anbieter und das Modell, die die Antworten schreiben, und deine Chats und Charaktere bleiben auf deinem Gerät. Cloud-Anbieter nutzen dein eigenes Konto; unterstützte lokale Modelle laufen auf deinem Computer."
+    },
+    "whatIsApiKey": {
+      "question": "Was ist ein API-Schlüssel und warum brauche ich einen? (BYOK erklärt)",
+      "answer": "BYOK bedeutet Bring Your Own Key. Mit einem API-Schlüssel kann LettuceAI Anfragen über dein Konto an einen Anbieter senden. Erstelle einen Schlüssel beim Anbieter und füge ihn dann unter Einstellungen > Anbieter hinzu. Anfragen gehen von deinem Gerät an diesen Anbieter, der seine eigenen Abrechnungs- und Limits anwendet. Unterstützte lokale Modelle brauchen keinen Cloud-API-Schlüssel. Behandle einen Schlüssel wie ein Passwort und teile ihn nicht."
+    },
+    "cheapestStart": {
+      "question": "Was ist der günstigste oder einfachste Einstieg?",
+      "answer": "Nutze den Einrichtungsassistenten, um einen Anbieter zu verbinden und ein Modell zu wählen. Vergleiche die aktuellen Preise, kostenlosen Tarife und Anfragelimits des Anbieters, bevor du Guthaben hinzufügst. Starte mit einem kleinen Budget und prüfe beim Chatten Einstellungen > Nutzungsanalysen. Auf dem Desktop sind unterstützte lokale Modelle eine weitere Option, wenn dein Computer genug Arbeitsspeicher und Speicherplatz hat."
+    },
+    "alternative": {
+      "question": "Ist das eine Alternative zu anderen KI-Chat-Apps?",
+      "answer": "Ja. Mit LettuceAI wählst du Anbieter, Modell und Charakter-Setup selbst, statt jeden Chat an einen Dienst zu binden. Du verwaltest dein eigenes Anbieterkonto und behältst deine Daten auf deinem Gerät. Eine kurze Einrichtung verbindet das Modell, das du nutzen möchtest."
+    },
+    "cost": {
+      "question": "Was kostet es?",
+      "answer": "LettuceAI ist kostenlos. Ein Cloud-Anbieter kann dein Konto für Anfragen belasten oder einen kostenlosen Tarif anbieten. Seine Preise hängen vom Modell, der Menge des gesendeten und generierten Textes sowie genutzten Bild- oder Audiofunktionen ab. Prüfe die Preise des Anbieters, bevor du ein Modell wählst. Die Nutzungsanalysen zeigen gemeldete Token und bekannte Kosten; fehlende Preise bedeuten nicht, dass Anfragen kostenlos sind."
+    },
+    "apiKeySafe": {
+      "question": "Ist mein API-Schlüssel sicher?",
+      "answer": "Anbieter-Zugangsdaten werden lokal gespeichert und nur verwendet, um dich mit dem von dir konfigurierten Anbieter zu verbinden. LettuceAI leitet deine Anfragen nicht über einen eigenen Chat-Server weiter. Gib Schlüssel nur für Dienste ein, denen du vertraust, prüfe URLs benutzerdefinierter Anbieter sorgfältig und schütze dein Gerät und deine Sicherungsdateien."
+    },
+    "chatsStored": {
+      "question": "Wo werden meine Chats gespeichert? Kann sie jemand lesen?",
+      "answer": "Chats werden in der lokalen Datenbank der App gespeichert. Wenn ein Cloud-Modell antwortet, werden der Prompt und der relevante Gesprächskontext an den von dir gewählten Anbieter gesendet. Dieser Anbieter verarbeitet die Anfrage nach seiner eigenen Datenschutzrichtlinie. Wer Zugriff auf dein Gerät oder exportierte Sicherungen hat, kann deine Daten ebenfalls lesen."
+    },
+    "chatsDeleted": {
+      "question": "Können meine Chats von selbst gelöscht werden?",
+      "answer": "LettuceAI führt keine Serverkopie, aus der deine Chats wiederhergestellt werden könnten. Das Löschen eines Chats, Zurücksetzen der App, Deinstallieren, Leeren des App-Speichers oder der Verlust des Geräts kann lokale Daten entfernen. Erstelle Sicherungen von allem, was du behalten möchtest."
+    },
+    "editRemotely": {
+      "question": "Kann jemand meine Daten aus der Ferne bearbeiten?",
+      "answer": "LettuceAI hat keinen Dienst zur Fernverwaltung deiner lokalen Chats und Charaktere. Dein gewählter Anbieter erzeugt Antworten, verwaltet aber nicht die Datenbank der App. Halte dein Gerät und alle Dateien, die du importierst oder teilst, sicher."
+    },
+    "shutdown": {
+      "question": "Was passiert mit meinen Daten, wenn LettuceAI eingestellt wird?",
+      "answer": "Deine gespeicherten Chats und Charaktere bleiben auf deinem Gerät und können ohne LettuceAI-Konto gelesen werden. Cloud-Antworten hängen weiterhin davon ab, dass dein Anbieter verfügbar ist und dein Konto funktioniert. Bewahre eine Kopie deiner Daten über Einstellungen > Sicherung & Wiederherstellung auf."
+    },
+    "training": {
+      "question": "Werden Anbieter mit meinen Gesprächen trainieren?",
+      "answer": "Das hängt vom Anbieter, deinem Kontotyp und seiner aktuellen Datenrichtlinie ab. LettuceAI kann diese Bedingungen nicht ändern. Lies die Datenschutz- und Aufbewahrungseinstellungen des Anbieters, bevor du sensible Informationen sendest. Unterstützte lokale Modelle verarbeiten ihre Prompts auf deinem Computer."
+    },
+    "whatIsModel": {
+      "question": "Was ist ein „Modell“? Welches sollte ich wählen?",
+      "answer": "Ein Modell ist die KI, die die Antworten schreibt. Modelle unterscheiden sich in Schreibstil, Geschwindigkeit, Kontextlänge, Hardware-Anforderungen und Preis. Füge unter Einstellungen > Anbieter einen Anbieter hinzu und konfiguriere dann unter Einstellungen > Modelle ein Modell. Du kannst einen App-Standard festlegen oder für einen einzelnen Charakter bzw. Chat ein Modell wählen."
+    },
+    "freeProviders": {
+      "question": "Gibt es kostenlose Anbieter?",
+      "answer": "Einige Anbieter bieten kostenlose Modelle oder kostenlose Nutzungstarife mit eigenen Kontovoraussetzungen und Ratenlimits. Die Verfügbarkeit kann sich ändern, prüfe daher die aktuellen Bedingungen des Anbieters. Ein kostenloser Tarif kann trotzdem einen API-Schlüssel erfordern. Unterstützte lokale Modelle berechnen nichts pro Anfrage, nutzen aber Hardware, Speicherplatz und Strom deines Computers."
+    },
+    "freeVsPaid": {
+      "question": "Was ist der Unterschied zwischen kostenlosen und kostenpflichtigen Anbietern?",
+      "answer": "Kostenlose und kostenpflichtige Tarife können sich in verfügbaren Modellen, Anfragelimits, Antwortgeschwindigkeit, Datenschutzbedingungen und Support unterscheiden. Die Details gehören zum jeweiligen Anbieter; ein kostenpflichtiger Tarif bedeutet nicht automatisch eine bestimmte Datenschutzrichtlinie. Du kannst mehr als einen Anbieter verbinden und für jeden Chat ein passendes Modell wählen."
+    },
+    "whatIsToken": {
+      "question": "Was ist ein Token?",
+      "answer": "Ein Token ist ein kleines Textstück, etwa ein Wort oder ein Wortteil. Die genaue Aufteilung hängt vom Modell und der Sprache ab. Eine Anfrage enthält Eingabe-Token aus dem Prompt und dem Gesprächskontext sowie Ausgabe-Token aus der Antwort. Anbieter können diese unterschiedlich bepreisen. Lange Verläufe und lange Antworten können die Nutzung erhöhen."
+    },
+    "noDefaultModel": {
+      "question": "Es steht „kein Standardmodell konfiguriert“ da",
+      "answer": "Öffne Einstellungen > Modelle und füge ein Modell von einem konfigurierten Anbieter hinzu. Lege dann einen App-Standard fest oder wähle ein Modell in den Einstellungen des Charakters. Ein Charakter oder Chat kann den Standard überschreiben; prüfe daher seine Modellauswahl, wenn Antworten weiterhin nicht starten."
+    },
+    "cloudVsLocal": {
+      "question": "Was ist der Unterschied zwischen Cloud- und lokalen Modellen?",
+      "answer": "Cloud-Modelle laufen auf der Hardware des Anbieters und brauchen eine Verbindung zu diesem Dienst. Unterstützte lokale Modelle laufen auf deinem Desktop-Computer und brauchen genug Arbeitsspeicher und Speicherplatz. Installation und Laufzeitsteuerung lokaler Modelle sind auf dem Desktop verfügbar; nutze auf dem Handy einen verbundenen Anbieter."
+    },
+    "whatIsCharacter": {
+      "question": "Was ist ein Charakter? Kann ich einen eigenen erstellen?",
+      "answer": "Ein Charakter hat einen Namen, ein Bild und eine Beschreibung, die prägen, wie er spricht. Erstelle mit der Schaltfläche „Erstellen“ einen oder importiere eine Charakterkarte in der Bibliothek. Bearbeite Beschreibung und Modelleinstellungen, um zu ändern, wie künftige Antworten erzeugt werden."
+    },
+    "whatIsPersona": {
+      "question": "Was ist eine Persona?",
+      "answer": "Eine Persona beschreibt deine Seite des Gesprächs: deinen Namen und Details, die der Charakter über dich wissen sollte. Erstelle oder importiere Personas in der Bibliothek und wähle dann die, die du für einen Chat verwenden möchtest."
+    },
+    "charactersPrivate": {
+      "question": "Sind die Charaktere, die ich erstelle, privat?",
+      "answer": "Charaktere, die du erstellst, werden auf deinem Gerät gespeichert. Wenn du eine Charakterkarte exportierst und teilst, können andere sie lesen. Wenn du mit einem Cloud-Modell chattest, werden die im Prompt verwendeten Charakterdetails auch an den von dir gewählten Anbieter gesendet."
+    },
+    "backupMove": {
+      "question": "Wie sichere ich meine Daten oder wechsle das Gerät?",
+      "answer": "Öffne Einstellungen > Sicherung & Wiederherstellung, um eine Sicherungsdatei zu erstellen. Bewahre sie an einem sicheren Ort auf. Um das Gerät zu wechseln, installiere LettuceAI auf dem anderen Gerät und stelle die Datei dort wieder her. Beachte die Warnungen auf dem Wiederherstellungsbildschirm, bevor du vorhandene Daten ersetzt."
+    }
+  }
+}

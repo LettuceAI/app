@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Selamat datang kembali.",
+    "bodyBefore": "Ini adalah ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Dibangun ulang dari awal, dengan semua yang Anda buat ikut terbawa.",
+    "migrate": "Migrasikan data",
+    "notNow": "Nanti saja"
+  },
+  "migrate": {
+    "title": "Memindahkan data Anda",
+    "body": "Obrolan, karakter, dan media Anda akan dipindahkan.",
+    "note": "Biarkan aplikasi tetap terbuka hingga selesai.",
+    "stages": {
+      "read": "Membaca data Anda",
+      "write": "Memindahkan obrolan, karakter, dan media",
+      "verify": "Memeriksa semuanya",
+      "switch": "Menyelesaikan"
+    },
+    "failed": "Pemindahan tidak selesai.",
+    "retry": "Coba lagi"
+  },
+  "models": {
+    "titlePending": "Mengembalikan fitur Anda",
+    "titleReady": "Fitur Anda sudah kembali",
+    "checking": "Memeriksa fitur yang digunakan obrolan Anda",
+    "bodyPending_memory": "Beberapa obrolan Anda menggunakan memori dinamis. Modelnya diunduh sekali, lalu berjalan offline.",
+    "bodyPending_emotion": "Beberapa obrolan Anda menggunakan emosi companion. Modelnya diunduh sekali, lalu berjalan offline.",
+    "bodyPending_both": "Beberapa obrolan Anda menggunakan memori dinamis dan emosi companion. Modelnya diunduh sekali, lalu berjalan offline.",
+    "bodyReady_memory": "Memori dinamis siap dan berjalan offline.",
+    "bodyReady_emotion": "Emosi companion siap dan berjalan offline.",
+    "bodyReady_both": "Memori dinamis dan emosi companion siap dan berjalan offline.",
+    "names": {
+      "embedding": "Model memori Lettuce Eidos",
+      "emotion": "Model emosi Thymos"
+    },
+    "why": {
+      "embedding": "Untuk memori dinamis",
+      "emotion": "Untuk emosi companion"
+    },
+    "ready": "Siap",
+    "waiting": "Menunggu",
+    "checkingFiles": "Memeriksa file",
+    "progress": "{{done}} dari {{total}}",
+    "failed": "Unduhan tidak selesai",
+    "download": "Unduh",
+    "notNow": "Nanti saja",
+    "continue": "Lanjutkan",
+    "retry": "Coba lagi",
+    "notNowNote": "Obrolan yang memerlukan model ini akan memintanya. Anda dapat mengunduhnya nanti di Pengaturan.",
+    "keepOpen": "Biarkan aplikasi tetap terbuka hingga selesai."
+  },
+  "done": {
+    "title": "Semua sudah siap.",
+    "body": "Semuanya ada di tempat semula.",
+    "open": "Buka LettuceAI"
+  },
+  "upgrade": {
+    "title": "Satu langkah dulu",
+    "body": "Data Anda berasal dari LettuceAI versi lama. Buka sekali dengan versi {{version}} agar dapat diperbarui, lalu kembali ke sini.",
+    "copy": "Salin tautan unduhan",
+    "copied": "Tautan disalin",
+    "fresh": "Mulai dari awal saja"
+  }
+}

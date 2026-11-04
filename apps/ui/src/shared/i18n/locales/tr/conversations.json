@@ -1,0 +1,1185 @@
+{
+  "sceneImage": {
+    "title": "Sahne görseli oluştur",
+    "regenerate": "Sahne görselini yeniden oluştur",
+    "hint": "Bu anı sohbetten çiz",
+    "write": "Prompt yaz",
+    "writeHint": "Resmi kendiniz tanımlayın",
+    "askAi": "Yapay zekâdan prompt yazmasını iste",
+    "askAiHint": "Sohbeti ve tasarım referanslarını kullan",
+    "rewrite": "Yapay zekâyla yeniden yaz",
+    "prompt": "Sahne promptu",
+    "promptHint": "Resmi oluşturmadan önce promptu inceleyin veya düzenleyin.",
+    "cast": "Resimde",
+    "castHint": "Sahnede kimin görüneceğini seçin.",
+    "castPersona": "Personanız",
+    "castEmpty": "Sahne için en az bir kişi seçin.",
+    "placeholder": "Karakterleri, ortamı ve anı tanımlayın…",
+    "generate": "Görsel oluştur",
+    "review": "Sahne görselini incele",
+    "requested": "Bir sahne görseli incelemeye hazır",
+    "requestedHint": "Resmi oluşturmadan önce promptu kontrol edin.",
+    "retry": "Tekrar deneyin",
+    "dismiss": "Yoksay",
+    "disabled": "Sahne oluşturma kapalı",
+    "noModel": "Uyumlu sahne görseli modeli yok",
+    "noWriter": "Görsel ayarlarından uyumlu bir prompt yazarı seçin",
+    "setupHint": "Ayarlardan sahne oluşturmayı etkinleştirin ve bir görsel modeli seçin.",
+    "settings": "Görsel ayarlarını aç",
+    "writing": "Sahne promptu yazılıyor",
+    "thinking": "Sahne düşünülüyor",
+    "generating": "Sahne görseli oluşturuluyor",
+    "attaching": "Sahne görseli mesaja ekleniyor",
+    "progress": "{{current}} / {{total}}",
+    "queuePosition": "Sıra konumu {{position}}",
+    "phase": {
+      "starting": "Görsel motoru başlatılıyor",
+      "loading": "Görsel modeli yükleniyor",
+      "sampling": "Sahne görseli oluşturuluyor",
+      "queued": "Sahne görselinin oluşturulması bekleniyor",
+      "generating": "Sahne görseli oluşturuluyor",
+      "retrying": "Sahne oluşturma yeniden deneniyor",
+      "cancelled": "Sahne oluşturma iptal ediliyor"
+    },
+    "failed": "Sahne görseli oluşturulamadı",
+    "promptFailed": "Sahne promptu yazılamadı",
+    "writerError": {
+      "scene_prompt_disabled": "Görsel ayarlarında sahne oluşturma kapalı.",
+      "scene_prompt_no_model": "Görsel ayarlarından uyumlu bir sahne promptu yazarı seçin.",
+      "scene_prompt_no_reply": "Prompt yazarı metin döndürmedi. Tekrar deneyin veya kendi promptunuzu yazın.",
+      "cancelled": "Prompt yazma iptal edildi.",
+      "failed": "Tekrar deneyin veya kendi promptunuzu yazın."
+    },
+    "error": {
+      "media_unavailable": "Görsel depolama kullanılamıyor.",
+      "disabled": "Görsel ayarlarında sahne oluşturma kapalı.",
+      "no_model": "Görsel ayarlarından uyumlu bir sahne görseli modeli seçin.",
+      "no_image": "Model hiç görsel döndürmedi.",
+      "message_unavailable": "Yanıt, görseli eklenemeden önce değişti.",
+      "interrupted": "Oluşturma kesildi. Tekrar deneyebilirsiniz.",
+      "failed": "Promptu inceleyip tekrar deneyin."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "Grup sohbetine dallandır",
+    "characterTitle": "Başka bir karaktere dallandır",
+    "history": "Bu sohbeti seçili mesaja kadar, anıları dahil kopyalar.",
+    "sourceLocked": "Mevcut karakter grupta kalır. En az bir tane daha seçin.",
+    "characters": "Karakterler",
+    "defaultName": "{{name}} Dalı",
+    "search": "Karakter ara",
+    "empty": "Karakter bulunamadı",
+    "create": "Dal oluştur",
+    "memberCount_one": "{{count}} karakter seçildi",
+    "memberCount_other": "{{count}} karakter seçildi",
+    "changed": "Bu sohbet değişti. Dallanma noktasını tekrar seçin.",
+    "chooseAgain": "Tekrar seç"
+  },
+  "historyPage": {
+    "archivedCharacter": "Yeni bir sohbet başlatmak için bu karakteri kütüphanenizde geri yükleyin."
+  },
+  "header": {
+    "back": "Geri",
+    "memories": "Anılar, {{count}}",
+    "memoriesBusy": "Anılar, son yanıt okunuyor",
+    "search": "Mesajlarda ara",
+    "options": "Sohbet seçenekleri",
+    "onDevice": "Cihazda",
+    "untitled": "Sohbet"
+  },
+  "search": {
+    "placeholder": "Bu sohbette ara",
+    "done": "Tamam",
+    "previous": "Önceki eşleşme",
+    "next": "Sonraki eşleşme",
+    "position": "{{index}} / {{total}}",
+    "none": "Eşleşme yok"
+  },
+  "timeline": {
+    "today": "Bugün",
+    "yesterday": "Dün",
+    "loadingOlder": "Daha eski mesajlar yükleniyor",
+    "empty": "Henüz mesaj yok",
+    "jumpToLatest": "En yeniye git",
+    "selectingSpeaker": "Karakter seçiliyor…"
+  },
+  "composer": {
+    "placeholder": "{{name}} kişisine mesaj gönder…",
+    "systemSend": {
+      "title": "Sistem mesajı olarak gönderilsin mi?",
+      "description": "Yazma alanındaki içeriği görünür bir sistem mesajı olarak gönderir. Oluşturmayı tetiklemez.",
+      "send": "Gönder"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "Karakter ekle",
+      "title": "Bir karakter ekle",
+      "body": "Şu andan itibaren bu sohbete katılırlar.",
+      "search": "Karakter ara",
+      "empty": "Her karakter zaten bu sohbette",
+      "noMatch": "Eşleşen karakter yok"
+    },
+    "remove": {
+      "label": "{{name}} öğesini kaldır",
+      "title": "{{name}} kaldırılsın mı?",
+      "body": "Bu sohbette yanıt vermeyi bırakırlar. Önceki mesajları kalır.",
+      "confirm": "Kaldır"
+    },
+    "followGroup": "Grup üyelerini takip et",
+    "followGroupHint": "Üyeleri ve sessize alınan karakterleri grup ayarlarına sıfırla",
+    "models": "Bu sohbetteki karakter modelleri",
+    "followModels": "Grup modellerini takip et",
+    "followModelsHint": "Bu sohbetteki tüm karakter modeli geçersiz kılmalarını kaldır",
+    "characterModel": "Karakterin modeli",
+    "characterModelHint": "Karakterin kendi model ayarını kullan"
+  },
+  "mention": {
+    "title": "Bir karakterden bahset",
+    "select": "seçmek için",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "{{name}} kişisinden bahset",
+    "unmention": "{{name}} bahsini kaldır",
+    "muted": "{{name}} sessizde. Sesi açmak için uzun basın veya sağ tıklayın",
+    "speak": "{{name}} yanıt versin"
+  },
+  "director": {
+    "hint": "Kimin yanıt vereceğini seçmek için bir karaktere dokunun",
+    "selectedHint": "Gönderdiğinizde {{name}} yanıt verecek",
+    "actionHint": "Gönder mesajınızı ekler. Yanıt vermeleri için bir karaktere dokunun",
+    "respondingHint": "{{name}} yanıt veriyor",
+    "addMessage": "Yanıtsız mesaj ekle",
+    "noAttachments": "Yönetmen modundaki mesajlar ek taşıyamaz"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Sırada kim konuşacak",
+      "body": "Yanıtlaması için bir üye seçin veya grubun karar vermesine izin verin."
+    },
+    "branch": {
+      "title": "Bire bir devam et",
+      "body": "Bir üyeyle ve bu mesaja kadarki hikâyeyle yeni bir sohbet açar."
+    },
+    "regenerate": {
+      "title": "Karakter seç",
+      "body": "Yalnızca bu yanıt için. Sessize alınan üyeler de seçilebilir.",
+      "same": "Aynı karakter",
+      "search": "Karakter ara",
+      "noMatches": "Aramanızla eşleşen karakter yok"
+    },
+    "auto": "Grubun karar vermesine izin ver",
+    "autoBody": "Bu sohbetin konuşmacı seçimini kullanır",
+    "muted": "Adlandırılmadıkça atlanır"
+  },
+  "message": {
+    "image": "Ekli görsel",
+    "imagePrompt": "Görsel promptu",
+    "copyImagePrompt": "Promptu kopyala",
+    "titleAssistant": "{{name}} kişisinin mesajı",
+    "titleUser": "Mesajınız",
+    "titleScene": "Sahne",
+    "titleSystem": "Sistem mesajı",
+    "audio": "Ses klibi",
+    "video": "Video dosyası",
+    "document": "Belge"
+  },
+  "menu": {
+    "selection": {
+      "title": "Bu karakter neden yanıt verdi",
+      "fallback": "LLM seçimi kullanılamıyordu. Katılım ve son yanıtlara göre seçildi."
+    },
+    "copy": "Metni kopyala",
+    "edit": "Düzenle",
+    "regenerate": "Yeniden oluştur",
+    "regenerateHint": "Bu sürümü tutar, karşılaştırmak için kaydırın",
+    "regenerateBusy": "Mevcut yanıtın bitmesini bekleyin",
+    "pin": "Sabitle",
+    "pinHint": "Karakter bunu her zaman aklında tutar",
+    "unpin": "Sabitlemeyi kaldır",
+    "rewind": "Buraya geri sar",
+    "rewindHint_one": "Sonrasındaki {{count}} mesajı kaldırır",
+    "rewindHint_other": "Sonrasındaki {{count}} mesajı kaldırır",
+    "delete": "Mesajı sil",
+    "deleteHint": "Önce sabitlemeyi kaldırın",
+    "branch": "Buradan dallandır",
+    "branchHint": "Hikâyeyle buraya kadar yeni bir sohbet açar",
+    "branchGroup": "Bire bir devam et",
+    "branchGroupHint": "Bir üyeyle ve hikâyeyle buraya kadar bir sohbet açar",
+    "details": {
+      "title": "Prompt ayrıntıları",
+      "hint": "Bu yanıt için ne gönderildiği",
+      "unavailable": "Kaydedilen prompt bu yanıt için mevcut değil",
+      "noBreakdown": "Bu yanıt, döküm var olmadan önce kaydedildi",
+      "tokens": "{{count}} token",
+      "character": "Karakter ve persona",
+      "lorebook": "Lore kitabı",
+      "memories": "Anılar",
+      "history": "Sohbet geçmişi",
+      "other": "Diğer",
+      "entries": "Lore kitabı girdileri",
+      "untitled": "Başlıksız girdi",
+      "partsLabel": "Promptun kaynağa göre payı"
+    },
+    "stats": {
+      "prompt": "Prompt tokenları",
+      "reply": "Yanıt tokenları",
+      "total": "toplam",
+      "firstToken": "İlk token süresi",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "Yanıt hızı",
+      "speedValue": "{{value}} tok/sn",
+      "mtp": "Çoklu token tahmini: tur başına token ve taslak kabulü",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Kullanılan lore kitabı girdileri",
+      "memories": "Kullanılan anılar",
+      "memory": "Anı",
+      "match": "Eşleşme {{score}}",
+      "noLorebooks": "Bu yanıt için hiçbir lore kitabı girdisi kullanılmadı.",
+      "noMemories": "Bu yanıt için hiçbir anı öğesi kullanılmadı.",
+      "notRecorded": "Bu ayrıntılar bu yanıt için kaydedilmedi.",
+      "searchEntries": "Kullanılan girdilerde ara",
+      "searchMemories": "Kullanılan anılarda ara",
+      "noMatches": "Aramanızla eşleşen bir şey yok.",
+      "showing": "{{shown}} / {{total}}",
+      "more": "Daha fazla göster"
+    }
+  },
+  "regeneration": {
+    "title": "Yeniden oluşturma seçenekleri",
+    "hint": "Yönlendirme ve model",
+    "groupHint": "Yönlendirme, model ve karakter",
+    "oneReply": "Yalnızca bu yanıt için",
+    "direction": "Yönlendirme",
+    "directionHint": "İsteğe bağlı. Yeni yanıtta neyin değişeceğini tanımlayın.",
+    "placeholder": "Daha kısa tut, tonu değiştir veya başka bir yaklaşım dene",
+    "model": "Yanıt modeli",
+    "usualModel": "Her zamanki modeli kullan",
+    "modelUnavailable": "Bu model artık kullanılamıyor. Başka bir tane seçin.",
+    "character": "Karakter",
+    "sameCharacter": "Aynı karakter: {{name}}",
+    "characterUnavailable": "Bu karakter artık üye değil. Başka bir tane seçin."
+  },
+  "edit": {
+    "title": "Mesajı düzenle",
+    "assistantHint": "{{name}} kişisinin sözleri, hikâyenin hatırlayacağı şekilde",
+    "field": "Mesaj metni",
+    "save": "Kaydet"
+  },
+  "confirm": {
+    "cancel": "İptal",
+    "rewindTitle": "Bu mesaja geri sarılsın mı?",
+    "rewindBody_one": "Sonrasındaki {{count}} mesaj kaldırılır ve hikâye buradan devam eder.",
+    "rewindBody_other": "Sonrasındaki {{count}} mesaj kaldırılır ve hikâye buradan devam eder.",
+    "rewind": "Geri sar",
+    "deleteTitle": "Bu mesaj silinsin mi?",
+    "deleteBodyVersions": "Tüm {{count}} sürümü sohbetten kaldırılır.",
+    "deleteBody": "Sohbetten ve karakterin hatırladıklarından kaldırılır.",
+    "delete": "Sil"
+  },
+  "banner": {
+    "modelRequired": "Bu sohbet yüklü olmayan bir model gerektiriyor.",
+    "modelNamed": "Bu sohbet yüklü olmayan {{model}} modelini gerektiriyor.",
+    "modelsMissing": "Bu sohbet yüklü olmayan bir model gerektiriyor: {{models}}.",
+    "openModels": "Modelleri aç",
+    "memoryBlocked": "Önceki bir geri sarma tamamlanamadığı için hafıza duraklatıldı.",
+    "memoryRetry": "Tekrar deneyin",
+    "memoryRetryStill": "Yine de tamamlanamadı.",
+    "memoryRetried": "Hafıza yeniden yolunda",
+    "swapActive": "Yer değiştirme açık",
+    "endSwap": "Yer değiştirmeyi bitir"
+  },
+  "requiredModel": {
+    "embedding": "embedding",
+    "emotion": "duygu"
+  },
+  "failure": {
+    "title": "Yanıt tamamlanmadı",
+    "retry": "Tekrar deneyin",
+    "code": {
+      "invalid_conversation": "Bu konuşmaya şu anda yazılamıyor.",
+      "missing_model": "Bu sohbet için model ayarlanmamış. Sohbet seçeneklerinden bir tane seçin veya Modeller'den ekleyin.",
+      "context_unavailable": "Konuşma model için hazırlanamadı.",
+      "speaker_unavailable": "Yanıt verecek kimse yok.",
+      "provider_unavailable": "Modele ulaşılamadı. Bağlantıyı ve sağlayıcıyı kontrol edin.",
+      "provider_rejected": "Sağlayıcı isteği reddetti. Başka bir model deneyin veya hesabınızı kontrol edin.",
+      "empty_output": "Model hiçbir şey döndürmedi.",
+      "timed_out": "Model yanıt vermek için çok uzun süre bekledi.",
+      "recovery_unavailable": "Yanıt kesildi ve kurtarılamıyor.",
+      "embedding_unavailable": "Hafıza için gereken embedding modeli kullanılamıyor.",
+      "internal": "Uygulama bir iç hatayla karşılaştı.",
+      "database_write_fenced": "Uygulama veri kaydetmekle meşgul. Birazdan tekrar deneyin."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "Model yükleniyor",
+      "retrying": "Model yükleme yeniden deneniyor"
+    },
+    "loading": "{{model}} yükleniyor, %{{percent}}",
+    "retrying": "{{model}} yüklemek için başka bir yol deneniyor, %{{percent}}",
+    "loaded": "{{model}} hazır",
+    "failed": "{{model}} yüklenemedi"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "Sohbette görseller varken daha hızlı kod çözme kapalı.",
+    "kv_cache_moved_to_ram": "Bağlam önbelleği video belleğine sığmadı ve sistem belleğine taşındı."
+  },
+  "toast": {
+    "copied": "Kopyalandı",
+    "copyFailed": "Panoya ulaşılamadı",
+    "pinned": "Sabitlendi. Karakterin hafızasında kalır",
+    "unpinned": "Sabitleme kaldırıldı",
+    "edited": "Mesaj güncellendi",
+    "deleted": "Mesaj silindi",
+    "branched": "Buradan yeni bir sohbet açıldı",
+    "rewound_one": "{{count}} mesaj geri sarıldı",
+    "rewound_other": "{{count}} mesaj geri sarıldı",
+    "launchFailed": "Sohbet başlatılamadı",
+    "mediaImageUnsupported": "Bu sohbetin modeli görselleri okuyamıyor. Onları kaldırın veya başka bir model seçin.",
+    "mediaAudioUnsupported": "Bu sohbetin modeli sesi dinleyemiyor. Kaldırın veya başka bir model seçin."
+  },
+  "crisp": {
+    "composerPlaceholder": "Mesaj…",
+    "composerMessage": "Mesaj",
+    "composerStop": "Oluşturmayı durdur",
+    "composerSend": "Mesaj gönder",
+    "composerSendAsSystem": "Sistem olarak göndermek için uzun basın veya sağ tıklayın",
+    "composerSending": "Gönderiliyor",
+    "composerContinue": "Karakterin devam etmesini sağla",
+    "messageScene": "Sahne",
+    "messageSystem": "Sistem",
+    "messagePinned": "Sabitlendi",
+    "messageMenuTitle": "Mesaj",
+    "messageReasoning": "Düşünce süreci",
+    "messageTyping": "Yazıyor",
+    "sheetClose": "Kapat",
+    "bannerDismiss": "Yoksay",
+    "alertDismiss": "Yoksay",
+    "composerAddAttachment": "İçerik ekle",
+    "composerCancelRecording": "Kaydı iptal et",
+    "composerRecordVoice": "Ses kaydet",
+    "composerStopAndTranscribe": "Durdur ve yazıya dök",
+    "composerTranscribing": "Yazıya dökülüyor",
+    "composerRecording": "Kaydediliyor {{elapsed}}",
+    "composerAttachment": "Ek",
+    "composerFile": "Dosya",
+    "composerAttachmentRemove": "{{name}} öğesini kaldır"
+  },
+  "streaming": {
+    "imagePrompt": "Görsel promptu yazılıyor"
+  },
+  "tools": {
+    "title": "İçerik ekle",
+    "helpMeReply": "Yanıt yardımı",
+    "helpMeReplyHint": "Modelin ne söyleyeceğini önermesine izin verin",
+    "persona": "Persona",
+    "background": "Sohbet arka planı",
+    "backgroundHidden": "Gizli",
+    "backgroundOwn": "Bu sohbet için ayarlandı",
+    "backgroundDefault": "Varsayılan kullanılıyor",
+    "backgroundNone": "Arka plan yok",
+    "note": "Yazar notu",
+    "noteActive": "Bu sohbet için etkin",
+    "noteInactive": "Yanıtlar için özel yönlendirme",
+    "dice": "Zar",
+    "diceHint": "Zar atın ve sonucu mesajınıza ekleyin",
+    "swap": "Yer değiştir",
+    "swapHint": "Karakter olarak sohbet edin ve modelin personanız olarak yanıt vermesine izin verin",
+    "swapOn": "Yer değiştir (açık)",
+    "swapOnHint": "Karakter olarak sohbet ediyorsunuz. Kapatmak için dokunun",
+    "uploadImage": "Görsel yükle",
+    "uploadImageHint": "Mesajınıza bir görsel ekleyin",
+    "uploadAudio": "Ses yükle",
+    "uploadAudioHint": "Mesajınıza bir ses klibi ekleyin"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "Persona yok",
+    "default": "Varsayılan",
+    "search": "Persona ara",
+    "noMatch": "Eşleşen persona yok",
+    "emptyTitle": "Henüz persona yok",
+    "emptyBody": "Belirli biri olarak konuşmak için kütüphanede bir tane oluşturun.",
+    "loading": "Personalar yükleniyor",
+    "loadFailed": "Personalar yüklenemedi",
+    "retry": "Tekrar deneyin"
+  },
+  "background": {
+    "title": "Sohbet arka planı",
+    "current": "Mevcut arka plan",
+    "currentOwn": "Bu sohbet için ayarlandı",
+    "currentDefault": "Varsayılan arka plan",
+    "choose": "Bir görsel seçin",
+    "replace": "Görseli değiştir",
+    "chooseHint": "Yalnızca bu sohbet için",
+    "useDefault": "Varsayılanı kullan",
+    "useDefaultHint": "Sahne veya karakter arka planına geri dön"
+  },
+  "note": {
+    "title": "Yazar notu",
+    "inlineTitle": "Satır içi düzenleyici",
+    "inlineHint": "Hızlı düzenlemeler için yazar notunu mesaj kutusunun üstünde göster",
+    "inlineToggle": "Satır içi yazar notu düzenleyicisini göster",
+    "inlineField": "Satır içi yazar notu",
+    "inlineEdit": "Satır içi yazar notunu düzenle",
+    "inlinePlaceholder": "Bir yazar notu ekleyin",
+    "saving": "Kaydediliyor...",
+    "hint": "Modelin bu sohbette izlediği özel bir yönlendirme",
+    "placeholder": "Modeli yönlendiren bir yazar notu yazın",
+    "save": "Kaydet",
+    "clear": "Kaldır",
+    "count_one": "{{count}} karakter",
+    "count_other": "{{count}} karakter",
+    "willRemove": "Not kaydederken kaldırılacak",
+    "none": "Kayıtlı not yok"
+  },
+  "dice": {
+    "title": "Zar",
+    "hint": "Zar atın ve sonucu mesajınıza ekleyin",
+    "notation": "Zar gösterimi",
+    "roll": "At",
+    "invalid": "1d20 veya 2d6+3 gibi bir gösterim kullanın",
+    "tapToRoll": "Sonucu görmek için atın",
+    "insert": "Mesaja ekle",
+    "recent": "Son",
+    "clear": "Temizle"
+  },
+  "help": {
+    "title": "Yanıt yardımı",
+    "draftPrompt": "Taslak bir mesajınız var. Nasıl devam etmek istersiniz?",
+    "useMyText": "Metnimi temel al",
+    "useMyTextHint": "Taslağınızı genişletip iyileştir",
+    "writeNew": "Yeni bir şey yaz",
+    "writeNewHint": "Yeni bir yanıt oluştur",
+    "resultTitle": "Önerilen yanıt",
+    "regenerate": "Tekrar deneyin",
+    "use": "Bunu kullan",
+    "writing": "Yanıtınız yazılıyor...",
+    "thinking": "Yazmadan önce düşünülüyor...",
+    "callError": {
+      "model_required": "Ayarlardan yanıt yardımı için bir model seçin.",
+      "model_unavailable": "Yanıt yardımı modeli yüklenemedi.",
+      "busy": "Uygulama meşgul. Birazdan tekrar deneyin.",
+      "unavailable": "Şu anda kullanılamıyor."
+    },
+    "error": {
+      "failed": "Yanıt yardımı başarısız oldu.",
+      "help_me_reply_disabled": "Yanıt yardımı ayarlarda kapalı.",
+      "help_me_reply_no_history": "Henüz yanıtlanacak bir şey yok.",
+      "help_me_reply_no_model": "Ayarlardan yanıt yardımı için bir model seçin.",
+      "help_me_reply_no_reply": "Model bir yanıt yazmadı."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "Düzeltme öğrenilsin mi?",
+      "pair": "<wrong>{{wrong}}</wrong> yerine <correct>{{correct}}</correct>",
+      "save": "Öğren",
+      "ignore": "Yoksay"
+    },
+    "error": {
+      "noModel": "Dikte etmek için bir konuşma tanıma modeli yükleyin.",
+      "permission": "Kayıt için mikrofon erişimine izin verin.",
+      "noMicrophone": "Mikrofon bulunamadı.",
+      "noAudio": "Hiçbir şey kaydedilmedi.",
+      "busy": "Başka bir kayıt sürüyor.",
+      "unsupported": "Bu cihaz mikrofondan kayıt yapamıyor.",
+      "failed": "Kayıt yazıya dökülemedi."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Sohbet ayarları",
+      "persona": "Persona",
+      "model": "Model",
+      "lorebooks": "Lore kitapları",
+      "background": "Sohbet arka planı",
+      "note": "Yazar notu",
+      "history": "Sohbet geçmişi",
+      "notes": "Planlanmış notlar",
+      "starters": "Yeni sohbet",
+      "advanced": "Model ayarları",
+      "appearance": "Görünüm"
+    },
+    "back": "Geri",
+    "reset": "Sıfırla",
+    "loading": "Yükleniyor",
+    "loadFailed": "Yüklenemedi",
+    "source": {
+      "conversation": "Yalnızca bu sohbet",
+      "group": "Gruptan",
+      "character": "Karakterden",
+      "launch": "Sohbetin başlama şeklinden",
+      "app_default": "Uygulama varsayılanı"
+    },
+    "meta": {
+      "messages_one": "{{count}} mesaj",
+      "messages_other": "{{count}} mesaj",
+      "active": "Etkin {{date}}"
+    },
+    "sections": {
+      "chat": "Bu sohbet",
+      "memory": "Hafıza",
+      "time": "Zaman",
+      "actions": "Sohbet",
+      "generation": "Oluşturma",
+      "lorebooks": "Lore kitapları",
+      "members": "Üyeler",
+      "speaker": "Konuşmacı seçimi"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Kimin konuşacağını seçmek için varsayılan modelinizi kullanır (token harcar)",
+      "heuristic": "Sezgisel",
+      "heuristicHint": "Katılım dengesini ve bağlam ipuçlarını kullanır (ücretsiz)",
+      "round_robin": "Sırayla",
+      "round_robinHint": "Karakterler sırayla konuşur (ücretsiz)",
+      "director": "Yönetmen",
+      "directorHint": "Her mesaja hangi karakterin yanıt vereceğini siz seçersiniz",
+      "style": "Yönetmen tarzı",
+      "cue": "İpucu",
+      "action": "Eylem",
+      "cueHint": "Kimin yanıt vereceğini seçmek için bir karaktere dokunun. Gönder, mesajınızı iletir ve onların yanıtını tetikler.",
+      "actionHint": "Gönder yalnızca mesajınızı ekler. Anında yanıt vermeleri için bir karakterin avatarına dokunun.",
+      "own": "Bu sohbetin kendi seçimi var"
+    },
+    "members": {
+      "replies_one": "{{count}} yanıt, {{percent}}",
+      "replies_other": "{{count}} yanıt, {{percent}}",
+      "muted": "Adlandırılmadıkça atlanır",
+      "last": "En az bir üye yanıtlamalı",
+      "answers": "Bu sohbette {{name}} yanıtlar"
+    },
+    "model": {
+      "title": "Model",
+      "none": "Model ayarlanmadı",
+      "search": "Model ara",
+      "useDefault": "Karakter varsayılanını kullan",
+      "useDefaultHint": "Karakteri, ardından uygulama varsayılanını takip et",
+      "remoteTitle": "Uzak bir model kullanılsın mı?",
+      "remoteBody": "Bu sohbet her yanıt için {{provider}} sağlayıcısına gönderilecek.",
+      "use": "Bu modeli kullan",
+      "unknown": "Bilinmeyen model"
+    },
+    "lorebooks": {
+      "title": "Lore kitapları",
+      "count_one": "{{count}} lore kitabı",
+      "count_other": "{{count}} lore kitabı",
+      "useDefault": "Varsayılan lore kitaplarını kullan",
+      "useDefaultHint": "Karakterin lore kitaplarını takip et",
+      "useCharacter": "Karakterin lore kitaplarını kullan"
+    },
+    "background": {
+      "set": "Görsel ayarlandı"
+    },
+    "memory": {
+      "mode": "Hafıza modu",
+      "modes": {
+        "manual": "Manuel",
+        "dynamic": "Dinamik",
+        "disabled": "Kapalı"
+      },
+      "open": "Anıları aç",
+      "items_one": "{{count}} anı",
+      "items_other": "{{count}} anı",
+      "summaryTokens_one": "{{count}} özet tokenı",
+      "summaryTokens_other": "{{count}} özet tokenı",
+      "off": "Bu sohbette hafıza kapalı"
+    },
+    "notes": {
+      "title": "Planlanmış notlar",
+      "rowHint": "Karakterin belirli zamanlarda gördüğü hatırlatıcılar",
+      "groupRowHint": "Grubun ve üyelerinin belirli zamanlarda gördüğü hatırlatıcılar",
+      "hint": "Notlar karaktere aittir ve onunla olan her sohbette görünür.",
+      "groupHint": "Notlar gruba aittir ve bu grubun her sohbetinde görünür.",
+      "empty": "Henüz planlanmış not yok.",
+      "add": "Not ekle",
+      "untitled": "Başlıksız not",
+      "label": "Etiket",
+      "labelPlaceholder": "Etiket (isteğe bağlı)",
+      "content": "Not",
+      "contentPlaceholder": "Karakter ne bilmeli?",
+      "groupContentPlaceholder": "Grup ne bilmeli?",
+      "startsOn": "Başlangıç",
+      "stopsOn": "Bitiş (isteğe bağlı)",
+      "repeats": "Tekrarlar",
+      "windowHours": "Görünür kalma süresi (saat)",
+      "enabled": "Etkin",
+      "enabledHint": "Notu silmeden kapatın",
+      "deleteTitle": "Bu not silinsin mi?",
+      "deleteBody": "Bu geri alınamaz.",
+      "recurrence": {
+        "none": "Bir kez",
+        "daily": "Günlük",
+        "weekly": "Haftalık",
+        "monthly": "Aylık",
+        "yearly": "Yıllık"
+      },
+      "whoSees": "Kimler görür",
+      "whoSeesHint": "Bu notu yalnızca seçtiğiniz karakterler okur.",
+      "everyone": "Bu notu her üye okur. Sınırlamak için karakter seçin.",
+      "useCharacter": "Karakter notlarını kullan"
+    },
+    "history": {
+      "filter": "Sohbetleri filtrele",
+      "filters": {
+        "all": "Tümü",
+        "active": "Etkin",
+        "archived": "Arşivlenmiş"
+      },
+      "sort": "Sohbetleri sırala",
+      "sorts": {
+        "recent": "Son kullanılan",
+        "oldest": "En eski önce"
+      },
+      "results_one": "{{formattedCount}} sohbet",
+      "results_other": "{{formattedCount}} sohbet",
+      "untitled": "Başlıksız sohbet",
+      "search": "Sohbetlerde ara",
+      "noMatch": "Eşleşen sohbet yok",
+      "empty": "Henüz sohbet yok",
+      "meta_one": "{{count}} mesaj · {{date}}",
+      "meta_other": "{{count}} mesaj · {{date}}",
+      "current": "Mevcut",
+      "archived": "Arşivlenmiş",
+      "actions": "{{title}} için işlemler",
+      "rename": "Yeniden adlandır",
+      "export": "Dışa aktar",
+      "archive": "Arşivle",
+      "restore": "Geri yükle",
+      "delete": "Sil"
+    },
+    "starters": {
+      "hint": "Karakterin sohbet şablonlarından biriyle başlayın.",
+      "none": "Şablonsuz başla"
+    },
+    "rename": {
+      "field": "Sohbet başlığı",
+      "save": "Başlığı kaydet",
+      "open": "Sohbeti yeniden adlandır"
+    },
+    "delete": {
+      "title": "Bu sohbet silinsin mi?",
+      "body": "{{title}} ve tüm mesajları kaldırılacak. Bu geri alınamaz.",
+      "confirm": "Sil"
+    },
+    "export": {
+      "done": "Sohbet dışa aktarıldı"
+    },
+    "duplicate": {
+      "done": "Sohbet çoğaltıldı"
+    },
+    "actions": {
+      "newChat": "Yeni sohbet",
+      "newChatHint": "Bu karakterle başka bir konuşma başlat",
+      "newGroupChatHint": "Bu grupla başka bir konuşma başlat",
+      "history": "Sohbet geçmişi",
+      "historyHint": "Önceki sohbetleri açın, yeniden adlandırın veya silin",
+      "branches": "Dallar",
+      "branchesHint": "Bu sohbetin aldığı yönler arasında geçiş yapın",
+      "duplicate": "Sohbeti çoğalt",
+      "duplicateHint": "Tüm mesajlarıyla bir kopya oluştur",
+      "export": "Sohbeti dışa aktar",
+      "exportHint": "Konuşmayı dosya olarak kaydet",
+      "import": "Sohbet günlüğü içe aktar",
+      "importHint": "Bir dosyadan konuşma getir",
+      "importGroupHint": "Grup sohbetleri için henüz kullanılamıyor",
+      "archive": "Sohbeti arşivle",
+      "archiveHint": "Listeden gizle, her şeyi sakla",
+      "restore": "Sohbeti geri yükle",
+      "restoreHint": "Listeye geri getir",
+      "delete": "Sohbeti sil",
+      "deleteHint": "Onu ve mesajlarını kalıcı olarak kaldır"
+    },
+    "generation": {
+      "title": "Model ayarları",
+      "scope": "Yalnızca bu sohbet için",
+      "hint": "Ayarlanmamış değerler modeli, ardından uygulama varsayılanlarını takip eder.",
+      "noModel": "Bu sohbetin modeli yok, bu yüzden yalnızca uygulama varsayılanları geçerli.",
+      "resetAll": "Tümünü sıfırla",
+      "discard": "Vazgeç",
+      "inherited": "Model ve uygulama ayarları takip ediliyor",
+      "count_one": "Bu sohbet için {{count}} değer değiştirildi",
+      "count_other": "Bu sohbet için {{count}} değer değiştirildi"
+    },
+    "time": {
+      "title": "Sohbet saati",
+      "awareness": "Zaman farkındalığı",
+      "awarenessHint": "Modele tarih ve saati ver ve her mesajı bununla damgala",
+      "live": "Gerçek zaman",
+      "frozen": "Durduruldu",
+      "ticking": "Çalışıyor",
+      "stoppedAt": "{{when}} tarihinde durduruldu",
+      "runningFrom": "{{when}} tarihinden itibaren çalışıyor",
+      "mode": "Saat",
+      "anchor": "Tarih ve saat",
+      "apply": "Uygula",
+      "reset": "Sıfırla",
+      "cancel": "İptal",
+      "chooseAnchor": "Bir tarih ve saat seçin",
+      "previousMonth": "Önceki ay",
+      "nextMonth": "Sonraki ay",
+      "chooseMonth": "Ay ve yılı seçin",
+      "previousYear": "Önceki yıl",
+      "nextYear": "Sonraki yıl",
+      "year": "Yıl",
+      "time": "Saat"
+    },
+    "groupAppearanceHint": "Bu gruptaki tüm sohbetlerin görünümü",
+    "characterAppearanceHint": "Bu karakterle olan tüm sohbetlerin görünümü"
+  },
+  "appearance": {
+    "forGroup": "Bu gruptaki her sohbet için",
+    "forCharacter": "{{name}} için",
+    "moveLeft": "Sola taşı",
+    "moveRight": "Sağa taşı",
+    "close": "Görünümü kapat",
+    "unsaved": "Kaydedilmemiş değişiklikler",
+    "saved": "Değişiklik yok",
+    "discard": "Vazgeç",
+    "save": "Kaydet",
+    "discardTitle": "Değişikliklerinizden vazgeçilsin mi?",
+    "discardBody": "Yaptığınız görünüm değişiklikleri kaydedilmedi.",
+    "discardConfirm": "Değişikliklerden vazgeç",
+    "keepEditing": "Düzenlemeye devam et"
+  },
+  "memory": {
+    "title": "Hafıza",
+    "back": "Sohbet",
+    "tabs": {
+      "memories": "Anılar",
+      "activity": "Etkinlik",
+      "pinned": "Sabitlenenler"
+    },
+    "loading": "Hafıza yükleniyor",
+    "off": {
+      "title": "Bu sohbette hafıza kapalı",
+      "description": "Bu sohbette hiçbir şey hatırlanmaz veya yanıtlarla gönderilmez.",
+      "action": "Sohbet ayarlarını aç"
+    },
+    "search": "Anılarda ara",
+    "add": "Ekle",
+    "all": "Tümü",
+    "categories": {
+      "character_trait": "Karakter özelliği",
+      "relationship": "İlişki",
+      "plot_event": "Olay örgüsü",
+      "world_detail": "Dünya ayrıntısı",
+      "preference": "Tercih",
+      "other": "Diğer",
+      "milestone": "Kilometre taşı",
+      "boundary": "Sınır",
+      "profile": "Profil",
+      "routine": "Rutin",
+      "episodic": "Bölüm",
+      "emotional_snapshot": "Duygusal anlık görüntü"
+    },
+    "origins": {
+      "model": "Model",
+      "user": "Siz",
+      "import": "İçe aktarıldı"
+    },
+    "temperature": {
+      "hot": "Sıcak",
+      "cold": "Soğuk"
+    },
+    "tokens_one": "{{count}} token",
+    "tokens_other": "{{count}} token",
+    "window": "Mesajlar {{from}} – {{to}}",
+    "pinnedMark": "Sabitlendi",
+    "list": {
+      "found_one": "{{count}} bulundu",
+      "found_other": "{{count}} bulundu",
+      "total_one": "{{count}} anı",
+      "total_other": "{{count}} anı",
+      "byModel": "{{count}} model tarafından",
+      "byUser": "{{count}} sizin tarafınızdan",
+      "imported": "{{count}} içe aktarıldı",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "Henüz anı yok",
+      "dynamic": "Sohbet büyüdükçe anılar burada görünür. Kendi anılarınızı da ekleyebilirsiniz.",
+      "manual": "Karakterin her zaman hatırlaması gerekenleri ekleyin.",
+      "action": "Anı ekle",
+      "noMatch": "\"{{query}}\" ile eşleşen bir şey yok",
+      "noMatchBody": "Anının kendisinden bir kelime deneyin.",
+      "noCategory": "Bu kategoride bir şey yok"
+    },
+    "sheet": {
+      "addTitle": "Anı ekle",
+      "editTitle": "Anı",
+      "byModel": "Model tarafından yazıldı",
+      "byModelIn": "Model tarafından {{window}} içinde yazıldı",
+      "byUser": "Sizin tarafınızdan yazıldı",
+      "imported": "İçe aktarıldı",
+      "text": "Anı",
+      "textPlaceholder": "Karakter neyi hatırlamalı?",
+      "category": "Kategori",
+      "noCategory": "Kategori yok",
+      "when": "Ne zaman olduğu",
+      "whenHint": "İsteğe bağlı. Karakterin bunu zamana yerleştirmesini sağlar.",
+      "whenPlaceholder": "Ayarlanmadı",
+      "whenClear": "Temizle",
+      "temperature": "Sıcaklık",
+      "hotBody": "Sıcak anılar elinizin altında kalır",
+      "coldBody": "Soğuk anılar yalnızca yakından eşleştiklerinde hatırlanır",
+      "pin": "Sabitle",
+      "pinBody": "Model sabitlenmiş bir anıyı asla silmez veya arşivlemez",
+      "delete": "Sil",
+      "cancel": "İptal",
+      "add": "Ekle",
+      "save": "Kaydet",
+      "deleteTitle": "Bu anı silinsin mi?",
+      "deleteBody": "Artık bu sohbette hatırlanmayacak.",
+      "keep": "Tut",
+      "added": "Anı eklendi",
+      "saved": "Anı kaydedildi",
+      "deleted": "Anı silindi"
+    },
+    "summary": {
+      "title": "Bağlam özeti",
+      "empty": "Karakterin hikâyenin akışını koruması için kısa bir özet ekleyin.",
+      "description": "Her yanıtla birlikte giden kısa bir özet",
+      "field": "Özet",
+      "dynamicHint": "Model bunu her güncellemede yeniden yazar. Düzenlemeleriniz o zamana kadar korunur.",
+      "clear": "Temizle",
+      "cancel": "İptal",
+      "save": "Kaydet",
+      "saved": "Özet kaydedildi",
+      "cleared": "Özet temizlendi"
+    },
+    "status": {
+      "approvalTitle": "Hafıza güncellensin mi?",
+      "approvalBody_one": "{{count}} yeni mesaj hafızaya özetlenmeye hazır.",
+      "approvalBody_other": "{{count}} yeni mesaj hafızaya özetlenmeye hazır.",
+      "update": "Güncelle",
+      "notNow": "Şimdi değil",
+      "skipped_one": "Atlandı. Sonraki {{count}} mesajdan sonra tekrar sorar",
+      "skipped_other": "Atlandı. Sonraki {{count}} mesajdan sonra tekrar sorar",
+      "runningTitle": "Hafıza güncelleniyor",
+      "runningBody": "Son mesajlar okunuyor",
+      "stop": "Durdur",
+      "failedTitle": "Hafıza güncellemesi başarısız oldu",
+      "tryAgain": "Tekrar deneyin",
+      "otherModel": "Başka bir model kullan",
+      "pausedTitle": "Son hafıza güncellemesi kesildi",
+      "pausedBody": "Bitmeden önce başka bir işlem devraldı.",
+      "nextIn_one": "Sonraki güncelleme {{count}} mesaj sonra",
+      "nextIn_other": "Sonraki güncelleme {{count}} mesaj sonra",
+      "since_one": "Son güncellemeden bu yana {{count}} mesaj",
+      "since_other": "Son güncellemeden bu yana {{count}} mesaj",
+      "modes": {
+        "auto": "Otomatik",
+        "ask_first": "Önce sor",
+        "manual": "Manuel"
+      },
+      "every_one": "{{mode}} · her {{count}} mesajda",
+      "every_other": "{{mode}} · her {{count}} mesajda",
+      "manualOnly": "{{mode}} · güncellemeler yalnızca burada başlattığınızda çalışır",
+      "progress": "{{current}} / {{total}}",
+      "updateNow": "Şimdi güncelle"
+    },
+    "failure": {
+      "embedding_unavailable": "Embedding modeli kullanılamıyor.",
+      "model_missing": "Hafıza modeli yüklü değil.",
+      "model_invalid": "Hafıza modeli kullanılamıyor.",
+      "prompt_missing": "Hafıza promptu eksik.",
+      "settings_invalid": "Hafıza ayarları geçerli değil.",
+      "provider_unavailable": "Sağlayıcı yanıt vermedi.",
+      "provider_rejected": "Sağlayıcı isteği reddetti.",
+      "invalid_response": "Modelin hafıza yanıtı işlenemedi. Döngüyü tekrar deneyin.",
+      "empty_response": "Model boş bir yanıt döndürdü.",
+      "timed_out": "Model yanıt vermek için çok uzun süre bekledi.",
+      "round_limit": "Model çok fazla adım kullandı.",
+      "tool_failed": "Hafıza değişikliklerinden biri başarısız oldu.",
+      "storage_failure": "Hafıza kaydedilemedi.",
+      "lease_lost": "Başka bir güncelleme devraldı.",
+      "internal": "Uygulama bir iç hatayla karşılaştı."
+    },
+    "gate": {
+      "not_dynamic": "Bu sohbet dinamik hafıza kullanmıyor.",
+      "disabled": "Dinamik hafıza ayarlarda kapalı.",
+      "nothing_to_summarise": "Henüz özetlenecek bir şey yok.",
+      "cycle_running": "Zaten bir güncelleme çalışıyor."
+    },
+    "activity": {
+      "empty": "Henüz güncelleme yok",
+      "emptyBody": "Modelin çalıştırdığı her hafıza güncellemesi burada listelenir.",
+      "badgeUndone": "Geri alındı",
+      "badgeFailed": "Başarısız",
+      "badgeStopped": "Durduruldu",
+      "badgeInterrupted": "Kesildi",
+      "badgeRunning": "Çalışıyor",
+      "noDetails": "Hiçbir ayrıntı kaydedilmedi.",
+      "stopped": "Bu güncelleme bitmeden durduruldu.",
+      "running": "Bu güncelleme hâlâ çalışıyor.",
+      "actions": {
+        "created": "Eklendi",
+        "duplicate_skipped": "Zaten biliniyor",
+        "deleted": "Silindi",
+        "soft_deleted": "Soğuğa taşındı",
+        "pinned": "Sabitlendi",
+        "unpinned": "Sabitleme kaldırıldı",
+        "target_not_found": "Bulunamadı",
+        "done": "Tamam",
+        "rejected": "Reddedildi",
+        "skipped": "Atlandı",
+        "stopped_after_done": "Tamamlandıktan sonra durduruldu"
+      },
+      "undo": "Bu güncellemeyi geri al",
+      "blocked": "Geri alınamaz: sonraki bir güncelleme bunun üzerine kurulu.",
+      "blockedBy": "Geri alınamaz: {{window}} güncellemesi bunun üzerine kurulu.",
+      "dependent": "Sonraki bir güncelleme bunun üzerine kurulu, bu yüzden geri alınamaz.",
+      "userEdited": "Yazdığı bir anıyı düzenlediniz, bu yüzden geri alınamaz.",
+      "undoTitle": "{{window}} güncellemesi geri alınsın mı?",
+      "undoBody": "Eklediği anılar kaldırılır ve değiştirdikleri geri döner. Kendi düzenlemeleriniz korunur.",
+      "undoConfirm": "Güncellemeyi geri al",
+      "keep": "Tut",
+      "undone": "Güncelleme geri alındı",
+      "loadMore": "Daha eski güncellemeleri göster"
+    },
+    "pinnedTab": {
+      "empty": "Sabitlenmiş mesaj yok",
+      "emptyBody": "Sohbetten bir mesajı sabitleyin, sonraki yanıtla her zaman gönderilir.",
+      "label": "Yanıtla her zaman gönderilir",
+      "unpin": "Sabitlemeyi kaldır",
+      "unpinned": "Sabitleme kaldırıldı",
+      "noText": "Ek",
+      "loadMore": "Daha fazla göster",
+      "you": "Siz"
+    }
+  },
+  "branches": {
+    "title": "Dallar",
+    "meta_one": "{{count}} mesaj · {{date}}",
+    "meta_other": "{{count}} mesaj · {{date}}",
+    "current": "Mevcut",
+    "actions": "{{title}} için işlemler",
+    "rename": "Yeniden adlandır",
+    "renameField": "Dal adı",
+    "delete": "Sil",
+    "deleteRoot": "Orijinal dal silinemez",
+    "deleteActive": "Önce başka bir dala geçin",
+    "deleteTitle": "Bu dal silinsin mi?",
+    "deleteBody": "{{name}} ve mesajları kaldırılır. Diğer dallar kalır.",
+    "deleted": "Dal silindi",
+    "untitled": "Başlıksız dal",
+    "thisChat": "Bu sohbet",
+    "renameSave": "Adı kaydet",
+    "original": "Orijinal",
+    "untitledChat": "Başlıksız sohbet"
+  },
+  "companion": {
+    "title": "Yoldaş",
+    "back": "Sohbet",
+    "tabs": {
+      "relationship": "İlişki",
+      "bond": "Bağ",
+      "memories": "Anılar",
+      "soul": "Soul",
+      "activity": "Etkinlik"
+    },
+    "bond": "Bağ",
+    "lastTalked": "Son konuşma {{when}}",
+    "updated": "Güncellendi {{when}}",
+    "messages": "Mesajlar",
+    "togetherSince": "{{date}} tarihinden beri birlikte",
+    "engine": "Duygusal motor",
+    "nothingTitle": "Henüz gösterilecek bir şey yok",
+    "nothingBody": "{{name}} kişisinin bağı ve duyguları birkaç mesajdan sonra hareket etmeye başlar. Yoldaş ayarlarındaki varsayılanlardan başlarlar.",
+    "missingTitle": "Duygular takip edilmiyor",
+    "missingBody": "Her yanıtın hislerini hareket ettirebilmesi için duygu modelini yükleyin.",
+    "install": "Yükle",
+    "nothingNow": "Şu anda bir şey yok",
+    "drivers": "Etkin etkenler",
+    "timeline": "Son zaman çizelgesi",
+    "events_one": "{{count}} olay",
+    "events_other": "{{count}} olay",
+    "currentState": "Mevcut durum",
+    "defaultMark": "Karakter varsayılanı",
+    "aboveDefault_one": "Karakter varsayılanının {{count}} puan üzerinde",
+    "aboveDefault_other": "Karakter varsayılanının {{count}} puan üzerinde",
+    "belowDefault_one": "Karakter varsayılanının {{count}} puan altında",
+    "belowDefault_other": "Karakter varsayılanının {{count}} puan altında",
+    "axes": {
+      "closeness": {
+        "label": "Yakınlık",
+        "low": "İçine kapanık",
+        "mid": "Tanıdık",
+        "high": "Samimi"
+      },
+      "trust": {
+        "label": "Güven",
+        "low": "Güvensiz",
+        "mid": "Nötr",
+        "high": "Güvenen"
+      },
+      "affection": {
+        "label": "Şefkat",
+        "low": "Düşmanca",
+        "mid": "Nötr",
+        "high": "Şefkatli"
+      },
+      "tension": {
+        "label": "Gerilim",
+        "low": "Rahat",
+        "mid": "",
+        "high": "Yüklü"
+      },
+      "stability": {
+        "label": "Denge",
+        "low": "Değişken",
+        "mid": "",
+        "high": "Dengeli"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Hissettiği",
+        "hint": "İçinde hissettikleri"
+      },
+      "expressed": {
+        "title": "Gösterdiği",
+        "hint": "Yanıtlarında dışa vuran"
+      },
+      "blocked": {
+        "title": "Tuttuğu",
+        "hint": "Kişiliğinin içinde tuttuğu"
+      },
+      "momentum": {
+        "title": "Biriken",
+        "hint": "Son birkaç turun gittiği yön"
+      }
+    },
+    "emotions": {
+      "warmth": "Sıcaklık",
+      "trust": "Güven",
+      "calm": "Sakinlik",
+      "vulnerability": "Kırılganlık",
+      "longing": "Özlem",
+      "hurt": "İncinme",
+      "tension": "Gerilim",
+      "irritation": "Sinirlilik",
+      "affection_intensity": "Şefkat",
+      "reassurance_need": "Güvence ihtiyacı"
+    },
+    "memories": {
+      "total_one": "{{count}} anı",
+      "total_other": "{{count}} anı",
+      "found_one": "{{count}} bulundu",
+      "found_other": "{{count}} bulundu",
+      "kind": "Tür",
+      "field": "Anı",
+      "placeholder": "{{name}} neyi hatırlamalı?",
+      "emptyTitle": "Burada anı yok",
+      "emptyBody": "Konuştukça anılar görünür. Kendi anılarınızı da ekleyebilirsiniz.",
+      "noMatch": "\"{{query}}\" ile eşleşen bir şey yok",
+      "noMatchBody": "Anının kendisinden bir kelime deneyin."
+    },
+    "soul": {
+      "title": "Soul",
+      "edit": "Düzenle",
+      "core": "Kimlik çekirdeği. Gelişim onu asla değiştirmez",
+      "notWritten": "Henüz yazılmadı",
+      "growth": "Soul gelişimi",
+      "clear": "Gelişimi temizle",
+      "intro": "Değişebilir özelliklerinin anılarınızdan nasıl geliştiği. Öz, özellikler ve geçmiş burada asla değişmez.",
+      "empty": "Henüz gelişim yok. Anılar oluştukça sizinle değişen özellikler burada görünür.",
+      "zero": "0 değişiklik",
+      "added": "Eklendi",
+      "adjusted": "Ayarlanmış",
+      "confidence": "Güven",
+      "locked": "Kilitli",
+      "lock": "Kilitle",
+      "unlock": "Kilidi aç",
+      "lockHint": "Bu gerçeği kilitle",
+      "unlockHint": "Bu gerçeğin kilidini aç",
+      "historicalHint": "Tarihsel gerçekler her zaman korunur",
+      "remove": "Bu gelişimi kaldır",
+      "sources_one": "{{count}} anıdan",
+      "sources_other": "{{count}} anıdan",
+      "retired_one": "{{count}} önceki sürüm emekliye ayrıldı.",
+      "retired_other": "{{count}} önceki sürüm emekliye ayrıldı.",
+      "categories": {
+        "essence": "Öz",
+        "traits": "Özellikler",
+        "backstory": "Geçmiş",
+        "appearance": "Görünüş",
+        "goals": "Hedefler",
+        "likes": "Sevdikleri",
+        "voice": "Ses",
+        "relational_style": "İlişki tarzı",
+        "vulnerabilities": "Kırılganlıklar",
+        "fears": "Korkular",
+        "habits": "Alışkanlıklar",
+        "boundaries": "Sınırlar"
+      },
+      "policy": {
+        "current": {
+          "label": "Mevcut",
+          "hint": "Önceki olanın yerini alır"
+        },
+        "adaptive": {
+          "label": "Uyarlanabilir",
+          "hint": "Konuştukça değişmeye devam edebilir"
+        },
+        "historical": {
+          "label": "Tarihsel",
+          "hint": "Gerçekleşmiş bir şey. Her zaman korunur"
+        }
+      },
+      "removeTitle": "Bu kaldırılsın mı?",
+      "removeBody": "Öğrendiklerinden çıkar. Yazılı Soul'ları aynı kalır.",
+      "clearTitle": "Öğrendikleri her şey temizlensin mi?",
+      "clearBody": "Yerine geçen geçmiş dahil tüm gelişim gider. Yazılı Soul'ları aynı kalır.",
+      "keep": "Tut",
+      "removeConfirm": "Kaldır",
+      "clearConfirm": "Tümünü temizle",
+      "removed": "Kaldırıldı",
+      "cleared": "Gelişim temizlendi",
+      "sourcesTitle": "Bunun kaynağı",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "Kaynak anılar artık mevcut değil.",
+      "sourcesMissing_one": "{{count}} kaynak anı artık mevcut değil.",
+      "sourcesMissing_other": "{{count}} kaynak anı artık mevcut değil."
+    },
+    "effect": {
+      "title": "Bu yanıtın değiştirdiği",
+      "feels": "Hissettikleri",
+      "pickedUp": "Kaptığı",
+      "letGo": "Bıraktığı",
+      "remembered": "Hatırladığı",
+      "processing": "Neyin değiştiğine bakılıyor",
+      "failed": "Yanıt değişiklikleri analiz edilemedi.",
+      "invalidated": "Bu değişiklikler artık bu yanıt için geçerli değil.",
+      "memoryCount_one": "{{count}} anı",
+      "memoryCount_other": "{{count}} anı",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "Gösterilecek değişiklik yok",
+      "quote": "“{{text}}”"
+    },
+    "activity": {
+      "undo": "Bu güncellemeyi geri al",
+      "undoTitle": "{{window}} geri alınsın mı?",
+      "undoBody": "Eklediği anılar kaldırılır ve değiştirdikleri geri döner. Kendi düzenlemeleriniz korunur.",
+      "undoConfirm": "Güncellemeyi geri al",
+      "blockedBy": "Geri alınamaz: {{window}} bunun üzerine kurulu.",
+      "blocked": "Geri alınamaz: sonraki bir güncelleme bunun üzerine kurulu."
+    },
+    "unavailable": "Bu sohbetin yoldaşı yok",
+    "unavailableBody": "Bağını, anılarını ve Soul'unu görmek için bir yoldaş sohbeti açın.",
+    "crisp": {
+      "close": "Kapat",
+      "clearSearch": "Aramayı temizle"
+    },
+    "lastReply": "Son yanıt",
+    "replyHint": "Sohbetteki her mesaj bunu menüsünden açar"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "generate": "Avatar generieren",
+  "title": "Avatar generieren",
+  "bannerCrop": {
+    "title": "Banner positionieren",
+    "description": "Richte das Titelbild ein. Ziehen zum Verschieben, Pinch oder Scrollen zum Zoomen.",
+    "saveFailed": "Das Banner konnte nicht gespeichert werden"
+  },
+  "crop": {
+    "title": "Avatar positionieren",
+    "description": "Ziehen zum Verschieben. Pinch oder Scrollen zum Zoomen.",
+    "zoom": "Zoom",
+    "zoomIn": "Vergrößern",
+    "zoomOut": "Verkleinern",
+    "center": "Zentrieren",
+    "area": "Bildausschnitt",
+    "keyboard": "Pfeiltasten verschieben das Bild. Plus und Minus zoomen, C zentriert, 0 setzt zurück.",
+    "reset": "Zurücksetzen",
+    "apply": "Diese Position verwenden",
+    "loadFailed": "Das Bild konnte nicht geladen werden",
+    "saveFailed": "Der Avatar konnte nicht gespeichert werden"
+  },
+  "preview": {
+    "empty": "Noch kein Bild",
+    "emptyBody": "Beschreib unten einen Avatar oder starte mit deinem eigenen Bild.",
+    "alt": "Avatar-Vorschau",
+    "unchanged": "Der Avatar, der bereits im Formular steht",
+    "editedFrom": "Aus {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Versionen",
+    "count_one": "{{count}} Version",
+    "count_other": "{{count}} Versionen",
+    "current": "Aktueller Avatar",
+    "upload": "Hochgeladenes Bild {{number}}",
+    "generation": "Generiertes Bild {{number}}",
+    "edit": "Bearbeitetes Bild {{number}}",
+    "short": {
+      "current": "Aktuell",
+      "upload": "Upload {{number}}",
+      "generation": "Bild {{number}}",
+      "edit": "Bearbeitung {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Bild hochladen"
+  },
+  "mode": {
+    "label": "Was tun",
+    "generate": "Neues Bild",
+    "edit": "Auswahl bearbeiten",
+    "generateHint": "Beginnt nur mit der Beschreibung von vorn",
+    "editHint": "Ändert eine Kopie von {{version}}"
+  },
+  "prompt": {
+    "label": "Beschreib den Avatar",
+    "placeholder": "Ein lächelnder Fuchs mit gestricktem Schal, weiches Licht"
+  },
+  "instruction": {
+    "label": "Was ändern",
+    "placeholder": "Mach den Schal blau"
+  },
+  "actions": {
+    "generate": "Generieren",
+    "edit": "Änderung anwenden",
+    "cancel": "Abbrechen",
+    "use": "Diesen Avatar verwenden",
+    "retry": "Erneut versuchen"
+  },
+  "busy": {
+    "uploading": "Bild wird hinzugefügt",
+    "generating": "Bild wird generiert",
+    "editing": "Bild wird bearbeitet",
+    "cancelling": "Wird abgebrochen"
+  },
+  "job": {
+    "progress": "{{current}} von {{total}}",
+    "rejected_one": "{{count}} Ergebnis wurde beiseitegelegt",
+    "rejected_other": "{{count}} Ergebnisse wurden beiseitegelegt",
+    "cancelled": "Generierung abgebrochen"
+  },
+  "settings": {
+    "open": "Bildeinstellungen öffnen"
+  },
+  "notice": {
+    "options": {
+      "title": "Das Avatar-Modell konnte nicht geprüft werden",
+      "body": "Hochladen funktioniert weiterhin."
+    },
+    "disabled": {
+      "title": "Avatar-Generierung ist aus",
+      "body": "Aktiviere sie in den Bildeinstellungen, um zu generieren. Hochladen funktioniert weiterhin."
+    },
+    "noModel": {
+      "title": "Kein Avatar-Modell gewählt",
+      "body": "Wähle ein Modell, das Bilder annimmt und zurückgibt. Hochladen funktioniert weiterhin."
+    },
+    "incompatible": {
+      "title": "Dieses Modell kann keine Avatare erstellen",
+      "body": "Avatare brauchen ein Modell, das Bilder annimmt und zurückgibt. Hochladen funktioniert weiterhin."
+    },
+    "upload": {
+      "title": "Das Bild konnte nicht hinzugefügt werden"
+    },
+    "generation": {
+      "title": "Das Bild konnte nicht erstellt werden"
+    },
+    "cancellation": {
+      "title": "Abbrechen fehlgeschlagen",
+      "body": "Die Anfrage läuft möglicherweise noch. Versuch erneut abzubrechen."
+    },
+    "uncertain": {
+      "title": "Warten auf das Ergebnis",
+      "body": "Die Verbindung wurde getrennt, bevor das Ergebnis ankam. Versuch erneut, dich zu verbinden, oder brich die Anfrage ab."
+    }
+  },
+  "failure": {
+    "cancelled": "Die Generierung wurde abgebrochen.",
+    "setup": "Das Bildmodell ist nicht richtig eingerichtet. Prüfe es in den Bildeinstellungen.",
+    "invalidRequest": "Die Anfrage wurde nicht angenommen. Ändere die Beschreibung und versuch es erneut.",
+    "engine": "Die Bild-Engine wurde beendet, bevor sie fertig war.",
+    "timedOut": "Die Erstellung des Bildes hat zu lange gedauert.",
+    "memory": "Dem Bildmodell ging der Speicher aus.",
+    "storage": "Das Bild konnte nicht gespeichert werden.",
+    "provider": "Der Anbieter konnte das Bild nicht erstellen.",
+    "empty": "Es kam kein Bild zurück.",
+    "rejected": "Das Ergebnis wurde beiseitegelegt und nichts zurückgegeben.",
+    "refused": "Das Modell hat dieses Bild abgelehnt. Ändere die Beschreibung und versuch es erneut.",
+    "authentication": "Der Anbieter hat die Zugangsdaten abgelehnt. Prüfe den Anbieter in den Einstellungen.",
+    "unavailable": "Das Bildmodell ist gerade nicht verfügbar.",
+    "unknown": "Beim Erstellen des Bildes ist etwas schiefgelaufen."
+  }
+}

@@ -1,0 +1,1154 @@
+{
+  "sceneImage": {
+    "title": "生成場景圖片",
+    "regenerate": "重新生成場景圖片",
+    "hint": "從對話描繪這一刻",
+    "write": "撰寫提示",
+    "writeHint": "自行描述圖片",
+    "askAi": "請 AI 撰寫提示",
+    "askAiHint": "使用對話和設計參考",
+    "rewrite": "用 AI 重寫",
+    "prompt": "場景提示",
+    "promptHint": "生成圖片前檢視或編輯提示。",
+    "cast": "圖片中的人物",
+    "castHint": "選擇誰出現在場景中。",
+    "castPersona": "你的人設",
+    "castEmpty": "請至少為場景選擇一個人。",
+    "placeholder": "描述角色、場景和這一刻…",
+    "generate": "生成圖片",
+    "review": "檢視場景圖片",
+    "requested": "場景圖片已可檢視",
+    "requestedHint": "製作圖片前先檢查提示。",
+    "retry": "再試一次",
+    "dismiss": "關閉",
+    "disabled": "場景生成已關閉",
+    "noModel": "沒有相容的場景圖片模型",
+    "noWriter": "在圖片設定中選擇相容的提示撰寫器",
+    "setupHint": "在設定中啟用場景生成並選擇圖片模型。",
+    "settings": "開啟圖片設定",
+    "writing": "正在撰寫場景提示",
+    "thinking": "正在思考場景",
+    "generating": "正在生成場景圖片",
+    "attaching": "正在將場景圖片加入訊息",
+    "progress": "{{current}} / {{total}}",
+    "queuePosition": "佇列位置 {{position}}",
+    "phase": {
+      "starting": "正在啟動圖片引擎",
+      "loading": "正在載入圖片模型",
+      "sampling": "正在生成場景圖片",
+      "queued": "正在等待生成場景圖片",
+      "generating": "正在生成場景圖片",
+      "retrying": "正在重試場景生成",
+      "cancelled": "正在取消場景生成"
+    },
+    "failed": "無法生成場景圖片",
+    "promptFailed": "無法撰寫場景提示",
+    "writerError": {
+      "scene_prompt_disabled": "圖片設定中的場景生成已關閉。",
+      "scene_prompt_no_model": "在圖片設定中選擇相容的場景提示撰寫器。",
+      "scene_prompt_no_reply": "提示撰寫器未傳回文字。請再試一次或自行撰寫提示。",
+      "cancelled": "已取消提示撰寫。",
+      "failed": "請再試一次或自行撰寫提示。"
+    },
+    "error": {
+      "media_unavailable": "圖片儲存空間無法使用。",
+      "disabled": "圖片設定中的場景生成已關閉。",
+      "no_model": "在圖片設定中選擇相容的場景圖片模型。",
+      "no_image": "模型未傳回圖片。",
+      "message_unavailable": "回覆在加入圖片前已變更。",
+      "interrupted": "生成已中斷。你可以再試一次。",
+      "failed": "請檢視提示後再試一次。"
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "分支為群組對話",
+    "characterTitle": "分支為其他角色",
+    "history": "將此對話複製到所選訊息為止，包括其記憶。",
+    "sourceLocked": "目前角色會留在群組中。請至少再選擇一位。",
+    "characters": "角色",
+    "defaultName": "{{name}} 分支",
+    "search": "搜尋角色",
+    "empty": "找不到角色",
+    "create": "建立分支",
+    "memberCount_other": "已選擇 {{count}} 個角色",
+    "changed": "此對話已變更。請重新選擇分支點。",
+    "chooseAgain": "重新選擇"
+  },
+  "historyPage": {
+    "archivedCharacter": "在資源庫中還原此角色，即可開始新對話。"
+  },
+  "header": {
+    "back": "返回",
+    "memories": "記憶，{{count}}",
+    "memoriesBusy": "記憶，正在讀取最新回覆",
+    "search": "搜尋訊息",
+    "options": "對話選項",
+    "onDevice": "裝置上",
+    "untitled": "對話"
+  },
+  "search": {
+    "placeholder": "搜尋此對話",
+    "done": "完成",
+    "previous": "上一個符合",
+    "next": "下一個符合",
+    "position": "{{index}} / {{total}}",
+    "none": "沒有符合"
+  },
+  "timeline": {
+    "today": "今天",
+    "yesterday": "昨天",
+    "loadingOlder": "正在載入較早的訊息",
+    "empty": "尚無訊息",
+    "jumpToLatest": "跳至最新",
+    "selectingSpeaker": "正在選擇角色…"
+  },
+  "composer": {
+    "placeholder": "傳訊息給 {{name}}…",
+    "systemSend": {
+      "title": "要以系統訊息傳送嗎？",
+      "description": "將輸入框內容作為可見的系統訊息傳送。不會觸發生成。",
+      "send": "傳送"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "新增角色",
+      "title": "新增角色",
+      "body": "他們從現在起加入此對話。",
+      "search": "搜尋角色",
+      "empty": "所有角色都已在此對話中",
+      "noMatch": "沒有符合的角色"
+    },
+    "remove": {
+      "label": "移除 {{name}}",
+      "title": "要移除 {{name}} 嗎？",
+      "body": "他們會停止在此對話中回答。先前的訊息會保留。",
+      "confirm": "移除"
+    },
+    "followGroup": "跟隨群組成員",
+    "followGroupHint": "將成員和靜音角色重設為群組設定",
+    "models": "此對話中的角色模型",
+    "followModels": "跟隨群組模型",
+    "followModelsHint": "移除此對話中所有角色模型覆寫",
+    "characterModel": "角色的模型",
+    "characterModelHint": "使用角色自己的模型設定"
+  },
+  "mention": {
+    "title": "提及角色",
+    "select": "以選取",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "提及 {{name}}",
+    "unmention": "移除對 {{name}} 的提及",
+    "muted": "{{name}} 已靜音。長按或按右鍵以取消靜音",
+    "speak": "讓 {{name}} 回覆"
+  },
+  "director": {
+    "hint": "點按角色以選擇由誰回覆",
+    "selectedHint": "你傳送時 {{name}} 會回覆",
+    "actionHint": "傳送會加入你的訊息。點按角色即可讓他們回覆",
+    "respondingHint": "{{name}} 正在回覆",
+    "addMessage": "加入訊息但不回覆",
+    "noAttachments": "導演模式中的訊息無法附加附件"
+  },
+  "speaker": {
+    "speak": {
+      "title": "下一個發言者",
+      "body": "選擇一位成員回答，或讓群組決定。"
+    },
+    "branch": {
+      "title": "繼續一對一",
+      "body": "開啟與一位成員的新對話，並包含到此訊息為止的故事。"
+    },
+    "regenerate": {
+      "title": "選擇角色",
+      "body": "僅限此回覆。已靜音成員也可以選擇。",
+      "same": "相同角色",
+      "search": "搜尋角色",
+      "noMatches": "沒有符合搜尋的角色"
+    },
+    "auto": "讓群組決定",
+    "autoBody": "使用此對話的發言者選擇",
+    "muted": "除非被指名，否則略過"
+  },
+  "message": {
+    "image": "附加圖片",
+    "imagePrompt": "圖片提示",
+    "copyImagePrompt": "複製提示",
+    "titleAssistant": "{{name}} 的訊息",
+    "titleUser": "你的訊息",
+    "titleScene": "場景",
+    "titleSystem": "系統訊息",
+    "audio": "音訊片段",
+    "video": "影片檔案",
+    "document": "文件"
+  },
+  "menu": {
+    "selection": {
+      "title": "為什麼是這個角色回覆",
+      "fallback": "LLM 選擇無法使用。已依參與度和近期回覆選擇。"
+    },
+    "copy": "複製文字",
+    "edit": "編輯",
+    "regenerate": "重新生成",
+    "regenerateHint": "保留此版本，滑動以比較",
+    "regenerateBusy": "請等待目前回覆完成",
+    "pin": "標記",
+    "pinHint": "角色會永遠記住它",
+    "unpin": "取消標記",
+    "rewind": "倒轉到此處",
+    "rewindHint_other": "會移除其後的 {{count}} 則訊息",
+    "delete": "刪除訊息",
+    "deleteHint": "請先取消標記",
+    "branch": "從此處分支",
+    "branchHint": "開啟包含到此處故事的新對話",
+    "branchGroup": "繼續一對一",
+    "branchGroupHint": "開啟與一位成員的對話，並包含到此處的故事",
+    "details": {
+      "title": "提示詳細資料",
+      "hint": "此回覆傳送的內容",
+      "unavailable": "此回覆的提示記錄無法取得",
+      "noBreakdown": "此回覆在明細功能存在前就已記錄",
+      "tokens": "{{count}} tokens",
+      "character": "角色與人設",
+      "lorebook": "設定集",
+      "memories": "記憶",
+      "history": "對話記錄",
+      "other": "其他",
+      "entries": "設定集條目",
+      "untitled": "未命名條目",
+      "partsLabel": "提示來源佔比"
+    },
+    "stats": {
+      "prompt": "提示 token",
+      "reply": "回覆 token",
+      "total": "總計",
+      "firstToken": "首個 token 時間",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "回覆速度",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "多 token 預測：每輪 token 數和草稿接受率",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "使用的設定集條目",
+      "memories": "使用的記憶",
+      "memory": "記憶",
+      "match": "符合 {{score}}",
+      "noLorebooks": "此回覆未使用任何設定集條目。",
+      "noMemories": "此回覆未使用任何記憶項目。",
+      "notRecorded": "此回覆未記錄這些詳細資料。",
+      "searchEntries": "搜尋使用的條目",
+      "searchMemories": "搜尋使用的記憶",
+      "noMatches": "沒有符合搜尋的項目。",
+      "showing": "{{shown}} / {{total}}",
+      "more": "顯示更多"
+    }
+  },
+  "regeneration": {
+    "title": "重新生成選項",
+    "hint": "指示與模型",
+    "groupHint": "指示、模型與角色",
+    "oneReply": "僅限此回覆",
+    "direction": "指示",
+    "directionHint": "選填。描述新回覆要變更什麼。",
+    "placeholder": "讓它更短、改變語氣，或換個方式",
+    "model": "回覆模型",
+    "usualModel": "使用平常的模型",
+    "modelUnavailable": "此模型已無法使用。請選擇其他模型。",
+    "character": "角色",
+    "sameCharacter": "相同角色：{{name}}",
+    "characterUnavailable": "此角色已不再是成員。請選擇其他角色。"
+  },
+  "edit": {
+    "title": "編輯訊息",
+    "assistantHint": "{{name}} 的話語，也就是故事會記住的內容",
+    "field": "訊息文字",
+    "save": "儲存"
+  },
+  "confirm": {
+    "cancel": "取消",
+    "rewindTitle": "要倒轉到此訊息嗎？",
+    "rewindBody_other": "其後的 {{count}} 則訊息會被移除，故事會從這裡繼續。",
+    "rewind": "倒轉",
+    "deleteTitle": "要刪除此訊息嗎？",
+    "deleteBodyVersions": "其所有 {{count}} 個版本都會從對話中移除。",
+    "deleteBody": "它會從對話和角色記得的內容中移除。",
+    "delete": "刪除"
+  },
+  "banner": {
+    "modelRequired": "此對話需要的模型尚未安裝。",
+    "modelNamed": "此對話需要 {{model}} 模型，但尚未安裝。",
+    "modelsMissing": "此對話需要的模型尚未安裝：{{models}}。",
+    "openModels": "開啟模型",
+    "memoryBlocked": "記憶已暫停，因為先前的倒轉未能完成。",
+    "memoryRetry": "再試一次",
+    "memoryRetryStill": "仍無法完成。",
+    "memoryRetried": "記憶已恢復正常",
+    "swapActive": "交換位置已開啟",
+    "endSwap": "結束交換"
+  },
+  "requiredModel": {
+    "embedding": "嵌入",
+    "emotion": "情緒"
+  },
+  "failure": {
+    "title": "回覆未完成",
+    "retry": "再試一次",
+    "code": {
+      "invalid_conversation": "目前無法寫入此對話。",
+      "missing_model": "此對話未設定模型。請在對話選項中選擇，或在「模型」中新增。",
+      "context_unavailable": "無法為模型準備此對話。",
+      "speaker_unavailable": "沒有可回覆的人。",
+      "provider_unavailable": "無法連線至模型。請檢查連線和供應商。",
+      "provider_rejected": "供應商拒絕了請求。請嘗試其他模型或檢查你的帳號。",
+      "empty_output": "模型未傳回任何內容。",
+      "timed_out": "模型回答逾時。",
+      "recovery_unavailable": "回覆已中斷，且無法復原。",
+      "embedding_unavailable": "記憶所需的嵌入模型無法使用。",
+      "internal": "應用程式發生內部錯誤。",
+      "database_write_fenced": "應用程式正忙於儲存資料。請稍後再試。"
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "正在載入模型",
+      "retrying": "正在重試載入模型"
+    },
+    "loading": "正在載入 {{model}}，{{percent}}%",
+    "retrying": "正在嘗試其他方式載入 {{model}}，{{percent}}%",
+    "loaded": "{{model}} 已就緒",
+    "failed": "無法載入 {{model}}"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "對話中有圖片時會關閉較快的解碼。",
+    "kv_cache_moved_to_ram": "上下文快取無法放入顯示記憶體，已移至系統記憶體。"
+  },
+  "toast": {
+    "copied": "已複製",
+    "copyFailed": "無法存取剪貼簿",
+    "pinned": "已標記。它會留在角色的記憶中",
+    "unpinned": "已取消標記",
+    "edited": "已更新訊息",
+    "deleted": "已刪除訊息",
+    "branched": "已從此處開啟新對話",
+    "rewound_other": "已倒轉 {{count}} 則訊息",
+    "launchFailed": "無法開始對話",
+    "mediaImageUnsupported": "此對話的模型無法讀取圖片。請移除圖片或選擇其他模型。",
+    "mediaAudioUnsupported": "此對話的模型無法聆聽音訊。請移除音訊或選擇其他模型。"
+  },
+  "crisp": {
+    "composerPlaceholder": "訊息…",
+    "composerMessage": "訊息",
+    "composerStop": "停止生成",
+    "composerSend": "傳送訊息",
+    "composerSendAsSystem": "長按或按右鍵以系統訊息傳送",
+    "composerSending": "傳送中",
+    "composerContinue": "讓角色繼續",
+    "messageScene": "場景",
+    "messageSystem": "系統",
+    "messagePinned": "已標記",
+    "messageMenuTitle": "訊息",
+    "messageReasoning": "思考過程",
+    "messageTyping": "輸入中",
+    "sheetClose": "關閉",
+    "bannerDismiss": "關閉",
+    "alertDismiss": "關閉",
+    "composerAddAttachment": "新增內容",
+    "composerCancelRecording": "取消錄音",
+    "composerRecordVoice": "錄製語音",
+    "composerStopAndTranscribe": "停止並轉錄",
+    "composerTranscribing": "轉錄中",
+    "composerRecording": "錄音中 {{elapsed}}",
+    "composerAttachment": "附件",
+    "composerFile": "檔案",
+    "composerAttachmentRemove": "移除 {{name}}"
+  },
+  "streaming": {
+    "imagePrompt": "正在撰寫圖片提示"
+  },
+  "tools": {
+    "title": "新增內容",
+    "helpMeReply": "幫我回覆",
+    "helpMeReplyHint": "讓模型建議要說什麼",
+    "persona": "人設",
+    "background": "對話背景",
+    "backgroundHidden": "隱藏",
+    "backgroundOwn": "為此對話設定",
+    "backgroundDefault": "使用預設",
+    "backgroundNone": "沒有背景",
+    "note": "作者備註",
+    "noteActive": "對此對話啟用",
+    "noteInactive": "給回覆的私人指示",
+    "dice": "骰子",
+    "diceHint": "擲骰並將結果加入訊息",
+    "swap": "交換位置",
+    "swapHint": "以角色身分對話，讓模型以你的人設回覆",
+    "swapOn": "交換位置（開啟）",
+    "swapOnHint": "你正以角色身分對話。點按以關閉",
+    "uploadImage": "上傳圖片",
+    "uploadImageHint": "將圖片附加到你的訊息",
+    "uploadAudio": "上傳音訊",
+    "uploadAudioHint": "將音訊片段附加到你的訊息"
+  },
+  "persona": {
+    "title": "人設",
+    "none": "沒有人設",
+    "default": "預設",
+    "search": "搜尋人設",
+    "noMatch": "沒有人設符合",
+    "emptyTitle": "尚無人設",
+    "emptyBody": "在資源庫建立一個，以特定身分發言。",
+    "loading": "正在載入人設",
+    "loadFailed": "無法載入人設",
+    "retry": "再試一次"
+  },
+  "background": {
+    "title": "對話背景",
+    "current": "目前背景",
+    "currentOwn": "為此對話設定",
+    "currentDefault": "預設背景",
+    "choose": "選擇圖片",
+    "replace": "取代圖片",
+    "chooseHint": "僅限此對話",
+    "useDefault": "使用預設",
+    "useDefaultHint": "回到場景或角色背景"
+  },
+  "note": {
+    "title": "作者備註",
+    "inlineTitle": "行內編輯器",
+    "inlineHint": "在訊息框上方顯示作者備註以便快速編輯",
+    "inlineToggle": "顯示行內作者備註編輯器",
+    "inlineField": "行內作者備註",
+    "inlineEdit": "編輯行內作者備註",
+    "inlinePlaceholder": "新增作者備註",
+    "saving": "儲存中…",
+    "hint": "模型在此對話中遵循的私人指示",
+    "placeholder": "撰寫引導模型的作者備註",
+    "save": "儲存",
+    "clear": "移除",
+    "count_other": "{{count}} 個字元",
+    "willRemove": "儲存時將會移除此備註",
+    "none": "未儲存備註"
+  },
+  "dice": {
+    "title": "骰子",
+    "hint": "擲骰並將結果加入訊息",
+    "notation": "骰子記法",
+    "roll": "擲骰",
+    "invalid": "使用如 1d20 或 2d6+3 的記法",
+    "tapToRoll": "擲骰以查看結果",
+    "insert": "插入訊息",
+    "recent": "最近",
+    "clear": "清除"
+  },
+  "help": {
+    "title": "幫我回覆",
+    "draftPrompt": "你有一則草稿訊息。你想如何繼續？",
+    "useMyText": "以我的文字為基礎",
+    "useMyTextHint": "擴充並改善你的草稿",
+    "writeNew": "撰寫新內容",
+    "writeNewHint": "生成全新的回覆",
+    "resultTitle": "建議的回覆",
+    "regenerate": "再試一次",
+    "use": "使用此內容",
+    "writing": "正在撰寫你的回覆…",
+    "thinking": "正在思考如何撰寫…",
+    "callError": {
+      "model_required": "請在設定中為「幫我回覆」選擇模型。",
+      "model_unavailable": "無法載入「幫我回覆」的模型。",
+      "busy": "應用程式忙碌中。請稍後再試。",
+      "unavailable": "目前無法使用。"
+    },
+    "error": {
+      "failed": "幫我回覆失敗。",
+      "help_me_reply_disabled": "設定中的「幫我回覆」已關閉。",
+      "help_me_reply_no_history": "尚無可回覆的內容。",
+      "help_me_reply_no_model": "請在設定中為「幫我回覆」選擇模型。",
+      "help_me_reply_no_reply": "模型未撰寫回覆。"
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "要學習此修正嗎？",
+      "pair": "<wrong>{{wrong}}</wrong>→<correct>{{correct}}</correct>",
+      "save": "學習",
+      "ignore": "忽略"
+    },
+    "error": {
+      "noModel": "安裝語音辨識模型以進行聽寫。",
+      "permission": "請允許麥克風存取以錄音。",
+      "noMicrophone": "找不到麥克風。",
+      "noAudio": "沒有錄到任何內容。",
+      "busy": "另一個錄音正在進行中。",
+      "unsupported": "此裝置無法從麥克風錄音。",
+      "failed": "無法轉錄錄音。"
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "對話設定",
+      "persona": "人設",
+      "model": "模型",
+      "lorebooks": "設定集",
+      "background": "對話背景",
+      "note": "作者備註",
+      "history": "對話記錄",
+      "notes": "排程筆記",
+      "starters": "新對話",
+      "advanced": "模型設定",
+      "appearance": "外觀"
+    },
+    "back": "返回",
+    "reset": "重設",
+    "loading": "載入中",
+    "loadFailed": "無法載入",
+    "source": {
+      "conversation": "僅此對話",
+      "group": "來自群組",
+      "character": "來自角色",
+      "launch": "來自對話開始方式",
+      "app_default": "應用程式預設"
+    },
+    "meta": {
+      "messages_other": "{{count}} 則訊息",
+      "active": "使用中 {{date}}"
+    },
+    "sections": {
+      "chat": "此對話",
+      "memory": "記憶",
+      "time": "時間",
+      "actions": "對話",
+      "generation": "生成",
+      "lorebooks": "設定集",
+      "members": "成員",
+      "speaker": "發言者選擇"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "使用你的預設模型選擇誰發言（會消耗 token）",
+      "heuristic": "啟發式",
+      "heuristicHint": "使用參與平衡和上下文線索（免費）",
+      "round_robin": "輪流",
+      "round_robinHint": "角色依序輪流發言（免費）",
+      "director": "導演",
+      "directorHint": "由你選擇每個訊息由哪個角色回覆",
+      "style": "導演風格",
+      "cue": "提示",
+      "action": "動作",
+      "cueHint": "點按角色以選擇由誰回覆。傳送會送出你的訊息並觸發他們的回覆。",
+      "actionHint": "傳送只會加入你的訊息。點按角色的大頭貼即可讓他們立即回覆。",
+      "own": "此對話有自己的選擇"
+    },
+    "members": {
+      "replies_other": "{{count}} 則回覆，{{percent}}",
+      "muted": "除非被指名，否則略過",
+      "last": "至少要有一位成員回答",
+      "answers": "{{name}} 在此對話中回答"
+    },
+    "model": {
+      "title": "模型",
+      "none": "未設定模型",
+      "search": "搜尋模型",
+      "useDefault": "使用角色預設",
+      "useDefaultHint": "先跟隨角色，再跟隨應用程式預設",
+      "remoteTitle": "要使用遠端模型嗎？",
+      "remoteBody": "此對話的每次回覆都會傳送給 {{provider}}。",
+      "use": "使用此模型",
+      "unknown": "未知模型"
+    },
+    "lorebooks": {
+      "title": "設定集",
+      "count_other": "{{count}} 個設定集",
+      "useDefault": "使用預設設定集",
+      "useDefaultHint": "跟隨角色的設定集",
+      "useCharacter": "使用角色的設定集"
+    },
+    "background": {
+      "set": "已設定圖片"
+    },
+    "memory": {
+      "mode": "記憶模式",
+      "modes": {
+        "manual": "手動",
+        "dynamic": "動態",
+        "disabled": "關閉"
+      },
+      "open": "開啟記憶",
+      "items_other": "{{count}} 則記憶",
+      "summaryTokens_other": "{{count}} 個摘要 token",
+      "off": "此對話的記憶已關閉"
+    },
+    "notes": {
+      "title": "排程筆記",
+      "rowHint": "角色會在指定時間看到的提醒",
+      "groupRowHint": "群組及其成員會在指定時間看到的提醒",
+      "hint": "筆記屬於角色，並會出現在與角色的每段對話中。",
+      "groupHint": "筆記屬於群組，並會出現在此群組的每段對話中。",
+      "empty": "尚無排程筆記。",
+      "add": "新增筆記",
+      "untitled": "未命名筆記",
+      "label": "標籤",
+      "labelPlaceholder": "標籤（選填）",
+      "content": "筆記",
+      "contentPlaceholder": "角色應該知道什麼？",
+      "groupContentPlaceholder": "群組應該知道什麼？",
+      "startsOn": "開始於",
+      "stopsOn": "結束於（選填）",
+      "repeats": "重複",
+      "windowHours": "顯示時長（小時）",
+      "enabled": "啟用",
+      "enabledHint": "關閉筆記而不刪除",
+      "deleteTitle": "要刪除這則筆記嗎？",
+      "deleteBody": "此動作無法復原。",
+      "recurrence": {
+        "none": "一次",
+        "daily": "每天",
+        "weekly": "每週",
+        "monthly": "每月",
+        "yearly": "每年"
+      },
+      "whoSees": "誰能看到",
+      "whoSeesHint": "只有你挑選的角色會讀到這則筆記。",
+      "everyone": "每位成員都會讀到這則筆記。挑選角色即可限制。",
+      "useCharacter": "使用角色筆記"
+    },
+    "history": {
+      "filter": "篩選對話",
+      "filters": {
+        "all": "全部",
+        "active": "使用中",
+        "archived": "已封存"
+      },
+      "sort": "排序對話",
+      "sorts": {
+        "recent": "上次使用",
+        "oldest": "最舊優先"
+      },
+      "results_other": "{{formattedCount}} 段對話",
+      "untitled": "未命名對話",
+      "search": "搜尋對話",
+      "noMatch": "沒有符合的對話",
+      "empty": "尚無對話",
+      "meta_other": "{{count}} 則訊息 · {{date}}",
+      "current": "目前",
+      "archived": "已封存",
+      "actions": "{{title}} 的動作",
+      "rename": "重新命名",
+      "export": "匯出",
+      "archive": "封存",
+      "restore": "還原",
+      "delete": "刪除"
+    },
+    "starters": {
+      "hint": "從角色的對話模板之一開始。",
+      "none": "不使用模板開始。"
+    },
+    "rename": {
+      "field": "對話標題",
+      "save": "儲存標題",
+      "open": "重新命名對話"
+    },
+    "delete": {
+      "title": "要刪除此對話嗎？",
+      "body": "{{title}} 及其所有訊息將被移除。此動作無法復原。",
+      "confirm": "刪除"
+    },
+    "export": {
+      "done": "已匯出對話"
+    },
+    "duplicate": {
+      "done": "已建立對話副本"
+    },
+    "actions": {
+      "newChat": "新對話",
+      "newChatHint": "與此角色開始另一段對話",
+      "newGroupChatHint": "與此群組開始另一段對話",
+      "history": "對話記錄",
+      "historyHint": "開啟、重新命名或刪除較早的對話",
+      "branches": "分支",
+      "branchesHint": "在此對話發展出的不同方向間切換",
+      "duplicate": "建立對話副本",
+      "duplicateHint": "建立包含所有訊息的副本",
+      "export": "匯出對話",
+      "exportHint": "將對話儲存為檔案",
+      "import": "匯入對話記錄",
+      "importHint": "從檔案匯入對話",
+      "importGroupHint": "群組對話尚不支援",
+      "archive": "封存對話",
+      "archiveHint": "從清單隱藏，保留所有內容",
+      "restore": "還原對話",
+      "restoreHint": "放回清單",
+      "delete": "刪除對話",
+      "deleteHint": "永久移除對話及其訊息"
+    },
+    "generation": {
+      "title": "模型設定",
+      "scope": "僅限此對話",
+      "hint": "未設定的值會跟隨模型，再跟隨應用程式預設值。",
+      "noModel": "此對話沒有模型，因此只會套用應用程式預設值。",
+      "resetAll": "全部重設",
+      "discard": "捨棄",
+      "inherited": "跟隨模型和應用程式設定",
+      "count_other": "此對話已變更 {{count}} 個值"
+    },
+    "time": {
+      "title": "對話時鐘",
+      "awareness": "時間感知",
+      "awarenessHint": "提供模型日期和時間，並在每則訊息加上時間戳記",
+      "live": "即時",
+      "frozen": "停止",
+      "ticking": "運行中",
+      "stoppedAt": "停止於 {{when}}",
+      "runningFrom": "從 {{when}} 開始運行",
+      "mode": "時鐘",
+      "anchor": "日期與時間",
+      "apply": "套用",
+      "reset": "重設",
+      "cancel": "取消",
+      "chooseAnchor": "選擇日期和時間",
+      "previousMonth": "上個月",
+      "nextMonth": "下個月",
+      "chooseMonth": "選擇月份和年份",
+      "previousYear": "上一年",
+      "nextYear": "下一年",
+      "year": "年",
+      "time": "時間"
+    },
+    "groupAppearanceHint": "此群組所有對話的外觀",
+    "characterAppearanceHint": "與此角色所有對話的外觀"
+  },
+  "appearance": {
+    "forGroup": "此群組的每段對話",
+    "forCharacter": "給 {{name}}",
+    "moveLeft": "往左移",
+    "moveRight": "往右移",
+    "close": "關閉外觀",
+    "unsaved": "未儲存的變更",
+    "saved": "沒有變更",
+    "discard": "捨棄",
+    "save": "儲存",
+    "discardTitle": "要捨棄你的變更嗎？",
+    "discardBody": "你做的外觀變更尚未儲存。",
+    "discardConfirm": "捨棄變更",
+    "keepEditing": "繼續編輯"
+  },
+  "memory": {
+    "title": "記憶",
+    "back": "對話",
+    "tabs": {
+      "memories": "記憶",
+      "activity": "活動",
+      "pinned": "已標記"
+    },
+    "loading": "正在載入記憶",
+    "off": {
+      "title": "此對話的記憶已關閉",
+      "description": "此對話不會記住任何內容，也不會在回覆中傳送任何記憶。",
+      "action": "開啟對話設定"
+    },
+    "search": "搜尋記憶",
+    "add": "新增",
+    "all": "全部",
+    "categories": {
+      "character_trait": "角色特質",
+      "relationship": "關係",
+      "plot_event": "劇情事件",
+      "world_detail": "世界細節",
+      "preference": "偏好",
+      "other": "其他",
+      "milestone": "里程碑",
+      "boundary": "界線",
+      "profile": "個人檔案",
+      "routine": "日常",
+      "episodic": "插曲",
+      "emotional_snapshot": "情緒快照"
+    },
+    "origins": {
+      "model": "模型",
+      "user": "你",
+      "import": "匯入"
+    },
+    "temperature": {
+      "hot": "熱",
+      "cold": "冷"
+    },
+    "tokens_other": "{{count}} tokens",
+    "window": "訊息 {{from}} 至 {{to}}",
+    "pinnedMark": "已標記",
+    "list": {
+      "found_other": "找到 {{count}} 則",
+      "total_other": "{{count}} 則記憶",
+      "byModel": "{{count}} 則由模型",
+      "byUser": "{{count}} 則由你",
+      "imported": "{{count}} 則已匯入",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "尚無記憶",
+      "dynamic": "對話增長時記憶會出現在這裡。你也可以自行新增。",
+      "manual": "新增角色應該永遠記住的內容。",
+      "action": "新增記憶",
+      "noMatch": "沒有符合「{{query}}」的項目",
+      "noMatchBody": "試試記憶本身中的某個詞。",
+      "noCategory": "此分類中沒有內容"
+    },
+    "sheet": {
+      "addTitle": "新增記憶",
+      "editTitle": "記憶",
+      "byModel": "由模型撰寫",
+      "byModelIn": "由模型撰寫於 {{window}}",
+      "byUser": "由你撰寫",
+      "imported": "已匯入",
+      "text": "記憶",
+      "textPlaceholder": "角色應該記住什麼？",
+      "category": "分類",
+      "noCategory": "沒有分類",
+      "when": "發生時間",
+      "whenHint": "選填。讓角色能將其定位在時間軸上。",
+      "whenPlaceholder": "未設定",
+      "whenClear": "清除",
+      "temperature": "溫度",
+      "hotBody": "熱記憶會保持在附近",
+      "coldBody": "冷記憶只有在高度符合時才會被回想",
+      "pin": "標記",
+      "pinBody": "模型永遠不會刪除或封存已標記的記憶",
+      "delete": "刪除",
+      "cancel": "取消",
+      "add": "新增",
+      "save": "儲存",
+      "deleteTitle": "要刪除此記憶嗎？",
+      "deleteBody": "它將不再於此對話中被回想。",
+      "keep": "保留",
+      "added": "已新增記憶",
+      "saved": "已儲存記憶",
+      "deleted": "已刪除記憶"
+    },
+    "summary": {
+      "title": "上下文摘要",
+      "empty": "新增簡短摘要，讓角色能掌握故事脈絡。",
+      "description": "每則回覆都會附帶的簡短回顧",
+      "field": "摘要",
+      "dynamicHint": "模型會在每次更新時重寫此摘要。在那之前你的編輯會保留。",
+      "clear": "清除",
+      "cancel": "取消",
+      "save": "儲存",
+      "saved": "已儲存摘要",
+      "cleared": "已清除摘要"
+    },
+    "status": {
+      "approvalTitle": "要更新記憶嗎？",
+      "approvalBody_other": "有 {{count}} 則新訊息可以摘要到記憶中。",
+      "update": "更新",
+      "notNow": "暫時不要",
+      "skipped_other": "已略過。會在接下來 {{count}} 則訊息後再次詢問",
+      "runningTitle": "正在更新記憶",
+      "runningBody": "正在讀取最新訊息",
+      "stop": "停止",
+      "failedTitle": "記憶更新失敗",
+      "tryAgain": "再試一次",
+      "otherModel": "使用其他模型",
+      "pausedTitle": "上次記憶更新已中斷",
+      "pausedBody": "另一個程序在完成前接手了。",
+      "nextIn_other": "再 {{count}} 則訊息後更新",
+      "since_other": "自上次更新以來有 {{count}} 則訊息",
+      "modes": {
+        "auto": "自動",
+        "ask_first": "先詢問",
+        "manual": "手動"
+      },
+      "every_other": "{{mode}} · 每 {{count}} 則訊息",
+      "manualOnly": "{{mode}} · 只有你在這裡啟動時才會更新",
+      "progress": "{{current}} / {{total}}",
+      "updateNow": "立即更新"
+    },
+    "failure": {
+      "embedding_unavailable": "嵌入模型無法使用。",
+      "model_missing": "記憶模型尚未安裝。",
+      "model_invalid": "無法使用記憶模型。",
+      "prompt_missing": "缺少記憶提示。",
+      "settings_invalid": "記憶設定無效。",
+      "provider_unavailable": "供應商未回應。",
+      "provider_rejected": "供應商拒絕了請求。",
+      "invalid_response": "無法處理模型的記憶回應。請再試一次此循環。",
+      "empty_response": "模型傳回空白回覆。",
+      "timed_out": "模型回答逾時。",
+      "round_limit": "模型使用太多步驟。",
+      "tool_failed": "其中一項記憶變更失敗。",
+      "storage_failure": "無法儲存記憶。",
+      "lease_lost": "另一個更新接手了。",
+      "internal": "應用程式發生內部錯誤。"
+    },
+    "gate": {
+      "not_dynamic": "此對話不使用動態記憶。",
+      "disabled": "設定中的動態記憶已關閉。",
+      "nothing_to_summarise": "尚無可摘要的內容。",
+      "cycle_running": "已有更新正在執行。"
+    },
+    "activity": {
+      "empty": "尚無更新",
+      "emptyBody": "模型執行的每次記憶更新都會列在這裡。",
+      "badgeUndone": "已復原",
+      "badgeFailed": "失敗",
+      "badgeStopped": "已停止",
+      "badgeInterrupted": "已中斷",
+      "badgeRunning": "執行中",
+      "noDetails": "未記錄任何詳細資料。",
+      "stopped": "此更新在完成前已停止。",
+      "running": "此更新仍在執行。",
+      "actions": {
+        "created": "已新增",
+        "duplicate_skipped": "已知",
+        "deleted": "已刪除",
+        "soft_deleted": "移至冷儲存",
+        "pinned": "已標記",
+        "unpinned": "已取消標記",
+        "target_not_found": "找不到",
+        "done": "完成",
+        "rejected": "已拒絕",
+        "skipped": "已略過",
+        "stopped_after_done": "完成後停止"
+      },
+      "undo": "復原此更新",
+      "blocked": "無法復原：後續更新以它為基礎。",
+      "blockedBy": "無法復原：{{window}} 的更新以它為基礎。",
+      "dependent": "後續更新以它為基礎，因此無法復原。",
+      "userEdited": "你編輯過它撰寫的記憶，因此無法復原。",
+      "undoTitle": "要復原 {{window}} 的更新嗎？",
+      "undoBody": "它新增的記憶會被移除，它變更的記憶會還原。你自己的編輯會保留。",
+      "undoConfirm": "復原更新",
+      "keep": "保留",
+      "undone": "已復原更新",
+      "loadMore": "顯示較舊的更新"
+    },
+    "pinnedTab": {
+      "empty": "沒有已標記的訊息",
+      "emptyBody": "從對話標記訊息，它就會永遠附在下一則回覆中。",
+      "label": "一律隨回覆傳送",
+      "unpin": "取消標記",
+      "unpinned": "已取消標記",
+      "noText": "附件",
+      "loadMore": "顯示更多",
+      "you": "你"
+    }
+  },
+  "branches": {
+    "title": "分支",
+    "meta_other": "{{count}} 則訊息 · {{date}}",
+    "current": "目前",
+    "actions": "{{title}} 的動作",
+    "rename": "重新命名",
+    "renameField": "分支名稱",
+    "delete": "刪除",
+    "deleteRoot": "無法刪除原始分支",
+    "deleteActive": "請先切換到其他分支",
+    "deleteTitle": "要刪除此分支嗎？",
+    "deleteBody": "{{name}} 及其訊息將被移除。其他分支會保留。",
+    "deleted": "已刪除分支",
+    "untitled": "未命名分支",
+    "thisChat": "此對話",
+    "renameSave": "儲存名稱",
+    "original": "原始",
+    "untitledChat": "未命名對話"
+  },
+  "companion": {
+    "title": "夥伴",
+    "back": "對話",
+    "tabs": {
+      "relationship": "關係",
+      "bond": "羈絆",
+      "memories": "記憶",
+      "soul": "靈魂",
+      "activity": "活動"
+    },
+    "bond": "羈絆",
+    "lastTalked": "上次交談 {{when}}",
+    "updated": "更新於 {{when}}",
+    "messages": "訊息",
+    "togetherSince": "自從 {{date}} 在一起",
+    "engine": "情緒引擎",
+    "nothingTitle": "尚無可顯示內容",
+    "nothingBody": "{{name}} 的羈絆和感受會在幾則訊息後開始變化。它們會從夥伴設定中的預設值開始。",
+    "missingTitle": "未追蹤感受",
+    "missingBody": "安裝情緒模型，讓每則回覆能影響他們的感受。",
+    "install": "安裝",
+    "nothingNow": "目前沒有內容",
+    "drivers": "主要驅動因素",
+    "timeline": "最近時間軸",
+    "events_other": "{{count}} 個事件",
+    "currentState": "目前狀態",
+    "defaultMark": "角色預設",
+    "aboveDefault_other": "比角色預設高 {{count}} 點",
+    "belowDefault_other": "比角色預設低 {{count}} 點",
+    "axes": {
+      "closeness": {
+        "label": "親近度",
+        "low": "疏離",
+        "mid": "熟識",
+        "high": "親密"
+      },
+      "trust": {
+        "label": "信任",
+        "low": "不信任",
+        "mid": "中性",
+        "high": "信任"
+      },
+      "affection": {
+        "label": "好感",
+        "low": "敵意",
+        "mid": "中性",
+        "high": "親切"
+      },
+      "tension": {
+        "label": "緊張",
+        "low": "輕鬆",
+        "mid": "",
+        "high": "緊繃"
+      },
+      "stability": {
+        "label": "穩定",
+        "low": "起伏",
+        "mid": "",
+        "high": "穩定"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "感受",
+        "hint": "他們內心的感受"
+      },
+      "expressed": {
+        "title": "表現",
+        "hint": "在回覆中流露的部分"
+      },
+      "blocked": {
+        "title": "壓抑",
+        "hint": "被個性壓下的部分"
+      },
+      "momentum": {
+        "title": "累積",
+        "hint": "最近幾輪的發展方向"
+      }
+    },
+    "emotions": {
+      "warmth": "溫暖",
+      "trust": "信任",
+      "calm": "平靜",
+      "vulnerability": "脆弱",
+      "longing": "渴望",
+      "hurt": "受傷",
+      "tension": "緊張",
+      "irritation": "煩躁",
+      "affection_intensity": "好感",
+      "reassurance_need": "需要安心"
+    },
+    "memories": {
+      "total_other": "{{count}} 則記憶",
+      "found_other": "找到 {{count}} 則",
+      "kind": "類型",
+      "field": "記憶",
+      "placeholder": "{{name}} 應該記住什麼？",
+      "emptyTitle": "這裡沒有記憶",
+      "emptyBody": "隨著對話，記憶會出現。你也可以自行新增。",
+      "noMatch": "沒有符合「{{query}}」的項目",
+      "noMatchBody": "試試記憶本身中的某個詞。"
+    },
+    "soul": {
+      "title": "靈魂",
+      "edit": "編輯",
+      "core": "身分核心。成長永遠不會改變它",
+      "notWritten": "尚未撰寫",
+      "growth": "靈魂成長",
+      "clear": "清除成長",
+      "intro": "可變特質如何從你的記憶中成長。本質、特質和背景故事在此永遠不會改變。",
+      "empty": "尚無成長。隨著記憶形成，與你一同改變的特質會出現在這裡。",
+      "zero": "0 項變更",
+      "added": "已新增",
+      "adjusted": "已調整",
+      "confidence": "信心",
+      "locked": "已鎖定",
+      "lock": "鎖定",
+      "unlock": "解鎖",
+      "lockHint": "鎖定此事實",
+      "unlockHint": "解鎖此事實",
+      "historicalHint": "歷史事實一律保留",
+      "remove": "移除此成長",
+      "sources_other": "來自 {{count}} 則記憶",
+      "retired_other": "已淘汰 {{count}} 個較早版本。",
+      "categories": {
+        "essence": "本質",
+        "traits": "特質",
+        "backstory": "背景故事",
+        "appearance": "外觀",
+        "goals": "目標",
+        "likes": "喜好",
+        "voice": "聲音",
+        "relational_style": "關係風格",
+        "vulnerabilities": "脆弱之處",
+        "fears": "恐懼",
+        "habits": "習慣",
+        "boundaries": "界線"
+      },
+      "policy": {
+        "current": {
+          "label": "目前",
+          "hint": "取代先前的內容"
+        },
+        "adaptive": {
+          "label": "適應性",
+          "hint": "會隨著對話持續變化"
+        },
+        "historical": {
+          "label": "歷史",
+          "hint": "發生過的事。一律保留"
+        }
+      },
+      "removeTitle": "要移除此內容嗎？",
+      "removeBody": "它會從他們學到的內容中移除。他們撰寫的靈魂會保持不變。",
+      "clearTitle": "要清除他們學到的所有內容嗎？",
+      "clearBody": "所有成長都會消失，包括被取代的歷史。他們撰寫的靈魂會保持不變。",
+      "keep": "保留",
+      "removeConfirm": "移除",
+      "clearConfirm": "全部清除",
+      "removed": "已移除",
+      "cleared": "已清除成長",
+      "sourcesTitle": "此內容的來源",
+      "sourceDescription": "{{category}}：{{text}}",
+      "sourcesEmpty": "來源記憶已無法取得。",
+      "sourcesMissing_other": "有 {{count}} 則來源記憶已無法取得。"
+    },
+    "effect": {
+      "title": "此回覆改變了什麼",
+      "feels": "他們的感受",
+      "pickedUp": "接收到",
+      "letGo": "放下",
+      "remembered": "記住",
+      "processing": "正在查看變更",
+      "failed": "無法分析回覆變更。",
+      "invalidated": "這些變更已不再適用於此回覆。",
+      "memoryCount_other": "{{count}} 則記憶",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "沒有可顯示的變更",
+      "quote": "「{{text}}」"
+    },
+    "activity": {
+      "undo": "復原此更新",
+      "undoTitle": "要復原 {{window}} 嗎？",
+      "undoBody": "它新增的記憶會被移除，它變更的記憶會還原。你自己的編輯會保留。",
+      "undoConfirm": "復原更新",
+      "blockedBy": "無法復原：{{window}} 以它為基礎。",
+      "blocked": "無法復原：後續更新以它為基礎。"
+    },
+    "unavailable": "此對話沒有夥伴",
+    "unavailableBody": "開啟夥伴對話以查看其羈絆、記憶和靈魂。",
+    "crisp": {
+      "close": "關閉",
+      "clearSearch": "清除搜尋"
+    },
+    "lastReply": "上次回覆",
+    "replyHint": "對話中的每則訊息都會從其選單開啟此內容"
+  }
+}

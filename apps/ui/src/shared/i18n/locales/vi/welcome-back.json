@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Chào mừng trở lại.",
+    "bodyBefore": "Đây là ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Được xây dựng lại từ đầu, mang theo mọi thứ bạn đã tạo.",
+    "migrate": "Chuyển dữ liệu",
+    "notNow": "Để sau"
+  },
+  "migrate": {
+    "title": "Đang chuyển dữ liệu",
+    "body": "Các cuộc trò chuyện, nhân vật và nội dung đa phương tiện đang được chuyển sang.",
+    "note": "Giữ ứng dụng mở cho đến khi hoàn tất.",
+    "stages": {
+      "read": "Đang đọc dữ liệu",
+      "write": "Đang chuyển trò chuyện, nhân vật và nội dung đa phương tiện",
+      "verify": "Đang kiểm tra mọi thứ",
+      "switch": "Đang hoàn tất"
+    },
+    "failed": "Quá trình chuyển chưa hoàn tất.",
+    "retry": "Thử lại"
+  },
+  "models": {
+    "titlePending": "Đang khôi phục các tính năng",
+    "titleReady": "Các tính năng đã trở lại",
+    "checking": "Đang kiểm tra tính năng nào được dùng trong trò chuyện",
+    "bodyPending_memory": "Một số cuộc trò chuyện dùng bộ nhớ động. Mô hình của tính năng này tải một lần rồi chạy ngoại tuyến.",
+    "bodyPending_emotion": "Một số cuộc trò chuyện dùng cảm xúc bạn đồng hành. Mô hình của tính năng này tải một lần rồi chạy ngoại tuyến.",
+    "bodyPending_both": "Một số cuộc trò chuyện dùng bộ nhớ động và cảm xúc bạn đồng hành. Các mô hình tải một lần rồi chạy ngoại tuyến.",
+    "bodyReady_memory": "Bộ nhớ động đã sẵn sàng và chạy ngoại tuyến.",
+    "bodyReady_emotion": "Cảm xúc bạn đồng hành đã sẵn sàng và chạy ngoại tuyến.",
+    "bodyReady_both": "Bộ nhớ động và cảm xúc bạn đồng hành đã sẵn sàng và chạy ngoại tuyến.",
+    "names": {
+      "embedding": "Mô hình bộ nhớ Lettuce Eidos",
+      "emotion": "Mô hình cảm xúc Thymos"
+    },
+    "why": {
+      "embedding": "Cho bộ nhớ động",
+      "emotion": "Cho cảm xúc bạn đồng hành"
+    },
+    "ready": "Sẵn sàng",
+    "waiting": "Đang chờ",
+    "checkingFiles": "Đang kiểm tra tệp",
+    "progress": "{{done}} trên {{total}}",
+    "failed": "Quá trình tải xuống chưa hoàn tất",
+    "download": "Tải xuống",
+    "notNow": "Để sau",
+    "continue": "Tiếp tục",
+    "retry": "Thử lại",
+    "notNowNote": "Các cuộc trò chuyện cần những mô hình này sẽ hỏi khi cần. Có thể tải chúng sau trong Cài đặt.",
+    "keepOpen": "Giữ ứng dụng mở cho đến khi hoàn tất."
+  },
+  "done": {
+    "title": "Mọi thứ đã xong.",
+    "body": "Mọi thứ vẫn ở nơi bạn để lại.",
+    "open": "Mở LettuceAI"
+  },
+  "upgrade": {
+    "title": "Cần một bước trước",
+    "body": "Dữ liệu của bạn đến từ phiên bản LettuceAI cũ. Hãy mở nó một lần bằng phiên bản {{version}} để cập nhật, rồi quay lại đây.",
+    "copy": "Sao chép liên kết tải xuống",
+    "copied": "Đã sao chép liên kết",
+    "fresh": "Bắt đầu mới thay thế"
+  }
+}

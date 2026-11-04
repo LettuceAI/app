@@ -1,0 +1,121 @@
+{
+  "triggerPreview": "触发预览",
+  "title": "资源库",
+  "loadMore": "加载更多",
+  "search": "搜索资源库",
+  "show": "显示",
+  "filters": {
+    "all": "全部",
+    "characters": "角色",
+    "personas": "人设",
+    "lorebooks": "知识库",
+    "images": "图片",
+    "audio": "音频"
+  },
+  "kinds": {
+    "character": "角色",
+    "persona": "人设",
+    "lorebook": "知识库"
+  },
+  "you": "你",
+  "entries_other": "{{count}} 个条目",
+  "defaultPersona": "人设 · 你的默认",
+  "menu": {
+    "start": "开始聊天",
+    "edit_character": "编辑角色",
+    "edit_persona": "编辑人设",
+    "edit_lorebook": "编辑知识库",
+    "default": "设为默认人设",
+    "defaultHint": "用于未选择其他人设的聊天",
+    "export": "导出",
+    "export_character": "导出为角色卡",
+    "export_persona": "导出为 UEC 文件",
+    "export_lorebook": "导出为 UEC 或 JSON 文件",
+    "delete_character": "删除角色",
+    "delete_persona": "删除人设",
+    "delete_lorebook": "删除知识库",
+    "save": "保存到设备",
+    "deleteImage": "删除图片",
+    "deleteAudio": "删除录音",
+    "avatar": "用作 {{name}} 的头像",
+    "more": "{{name}} 的更多操作",
+    "background": "背景",
+    "generated": "生成的",
+    "uploaded": "上传的"
+  },
+  "create": {
+    "title": "创建",
+    "description": "向资源库添加内容。",
+    "character": "聊天对象",
+    "persona": "你在聊天中的身份",
+    "lorebook": "角色可以参考的世界设定",
+    "import": "导入文件",
+    "importHint": "角色卡、人设或知识库",
+    "new_character": "新建角色",
+    "new_lorebook": "新建知识库",
+    "button_character": "创建角色",
+    "button_persona": "创建人设",
+    "button_lorebook": "创建知识库"
+  },
+  "edit": {
+    "name": "名称",
+    "hint_character": "显示在卡片和聊天标题中。",
+    "placeholder_character": "例如：Cassian",
+    "placeholder_lorebook": "例如：北门",
+    "create": "创建",
+    "cancel": "取消"
+  },
+  "delete": {
+    "title": "删除 {{name}}？",
+    "confirm": "删除",
+    "character": "它的聊天和记忆也会一并删除。",
+    "persona": "使用此人设的聊天将不再使用它。",
+    "lorebook": "使用它的角色和聊天将无法再访问其条目。",
+    "image": "图片会从本设备移除。仍在使用的图片无法删除。",
+    "audio": "录音会从本设备移除。仍在使用的录音无法删除。"
+  },
+  "empty": {
+    "all": {
+      "title": "你的资源库是空的",
+      "description": "你创建或导入的角色、人设和知识库都会保存在这里。"
+    },
+    "characters": {
+      "title": "还没有角色",
+      "description": "角色就是与你对话的人：一个名字、一段过往、一种说话方式。"
+    },
+    "personas": {
+      "title": "还没有人设",
+      "description": "人设就是你在聊天中的身份。角色会看到它的名称和描述。"
+    },
+    "lorebooks": {
+      "title": "还没有知识库",
+      "description": "角色在对话中需要时可以引用的世界设定。"
+    },
+    "images": {
+      "title": "还没有图片",
+      "description": "你在聊天中生成的图片会保存在这里。"
+    },
+    "audio": {
+      "title": "还没有音频",
+      "description": "你生成或录制的语音会保存在这里。"
+    },
+    "matches": "没有匹配“{{query}}”的内容",
+    "searchAll": "试试别的名字，或描述中的一部分。",
+    "searchSection": "这个分类里没有。资源库的其他部分可能有。",
+    "clear": "清除搜索",
+    "everything": "搜索全部",
+    "import": "导入"
+  },
+  "toast": {
+    "created": "已添加 {{name}}",
+    "deleted": "已删除 {{name}}",
+    "default": "{{name}} 已成为你的默认人设",
+    "exported": "文件已导出",
+    "imported": "文件已导入",
+    "warnings_other": "文件已传输，有 {{count}} 条警告",
+    "mediaSaved": "已保存到设备",
+    "avatar": "头像已更新"
+  },
+  "draft": "草稿",
+  "untitledDraft": "未命名知识库草稿"
+}

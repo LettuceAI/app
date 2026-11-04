@@ -1,0 +1,71 @@
+{
+  "create": {
+    "title": "새 페르소나",
+    "back": "뒤로",
+    "create": "페르소나 만들기",
+    "created": "{{name}} 생성됨",
+    "imported": "페르소나를 가져왔어요",
+    "unattached_other": "{{count}}개의 로어북을 연결하지 못했어요. 페르소나 설정에서 연결하세요.",
+    "defaultFailed": "{{name}} 페르소나를 만들었지만 기본으로 설정하지 못했어요.",
+    "discardTitle": "이 페르소나를 버릴까요?",
+    "discardBody": "지금까지 입력한 내용이 사라져요.",
+    "discard": "버리기",
+    "keepEditing": "계속 편집",
+    "continueTo": "{{step}} 단계로 계속"
+  },
+  "edit": {
+    "title": "페르소나 편집",
+    "back": "뒤로",
+    "backToLibrary": "라이브러리로 돌아가기",
+    "more": "작업 더 보기",
+    "export": "내보내기",
+    "delete": "페르소나 삭제",
+    "exported": "페르소나를 내보냈어요",
+    "exportWarnings_other": "{{count}}건의 경고와 함께 내보냈어요",
+    "deleteTitle": "{{name}} 삭제할까요?",
+    "deleteBody": "이 페르소나를 쓰는 채팅에서 제거돼요.",
+    "deleteConfirm": "삭제",
+    "deleteCancel": "취소",
+    "deleted": "{{name}} 삭제됨",
+    "unsaved": "저장되지 않은 변경사항",
+    "discard": "버리기",
+    "save": "저장",
+    "saved": "변경사항을 저장했어요",
+    "lorebooksFailed": "저장했지만 로어북을 업데이트하지 못했어요. 다시 저장해 보세요.",
+    "leaveTitle": "변경사항을 버릴까요?",
+    "leaveBody": "저장하지 않은 변경사항은 사라져요.",
+    "leaveDiscard": "버리기",
+    "leaveKeep": "계속 편집"
+  },
+  "steps": {
+    "identity": "기본 정보",
+    "extras": "추가 정보"
+  },
+  "identity": {
+    "chooseAvatar": "이미지 선택",
+    "removeAvatar": "제거",
+    "name": "이름",
+    "namePlaceholder": "전문 작가",
+    "nameHint": "채팅 속 나의 모습",
+    "nickname": "닉네임",
+    "nicknamePlaceholder": "캐릭터가 나를 부르는 이름",
+    "nicknameHint": "선택 사항이에요. 채팅에서 이름 대신 사용돼요.",
+    "default": "기본으로 사용",
+    "defaultBody": "새 채팅이 이 페르소나로 시작해요",
+    "import": "파일에서 가져오기",
+    "importBody": "LettuceAI에서 내보낸 페르소나를 가져와요.",
+    "chooseFile": "파일 선택"
+  },
+  "about": {
+    "description": "설명",
+    "descriptionPlaceholder": "캐릭터가 나를 어떻게 대해야 하는지, 배경, 선호도, 말투",
+    "descriptionHint": "이 페르소나는 {{user}}, 캐릭터는 {{char}} 표시로 작성하세요.",
+    "words_other": "{{count}}개 단어"
+  },
+  "extras": {
+    "body": "여기의 항목은 모두 선택 사항이에요.",
+    "lorebooks": "로어북",
+    "lorebooksNone": "없음",
+    "lorebooksCount_other": "{{count}}개 로어북"
+  }
+}

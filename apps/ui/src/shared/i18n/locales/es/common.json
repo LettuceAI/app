@@ -1,0 +1,176 @@
+{
+  "onnxModelsUnloaded": "Se liberaron los modelos inactivos para ahorrar memoria: {{models}}. Se cargarán de nuevo cuando haga falta.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Conectando con la app…"
+  },
+  "navigation": {
+    "primary": "Navegación principal",
+    "chats": "Chats",
+    "groups": "Grupos",
+    "discover": "Descubrir",
+    "library": "Biblioteca",
+    "settings": "Ajustes",
+    "home": "Inicio",
+    "create": "Crear",
+    "collapse": "Contraer",
+    "collapseSidebar": "Contraer barra lateral",
+    "expandSidebar": "Expandir barra lateral",
+    "backToApp": "Volver a la app"
+  },
+  "downloads": {
+    "loading": "Cargando descargas",
+    "title": "Descargas",
+    "titleActive_one": "Descargas, una activa",
+    "titleActive_many": "Descargas, {{count}} activas",
+    "titleActive_other": "Descargas, {{count}} activas",
+    "empty": "No hay descargas en curso.",
+    "emptyBody": "Las instalaciones y actualizaciones aparecen aquí.",
+    "generic": "Descarga",
+    "done": "{{name}} está listo",
+    "failed": "No se pudo descargar {{name}}"
+  },
+  "window": {
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "close": "Cerrar ventana",
+    "failed": "No se pudo completar la acción de la ventana. Inténtalo de nuevo."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Otro"
+  },
+  "actions": {
+    "retry": "Reintentar",
+    "cancel": "Cancelar",
+    "reload": "Recargar"
+  },
+  "errors": {
+    "fatalTitle": "Algo salió mal",
+    "fatalDescription": "La app encontró un problema inesperado. Recargar suele solucionarlo.",
+    "loadTitle": "No se pudo cargar esto",
+    "notFoundTitle": "Aquí no hay nada",
+    "notFoundDescription": "Esta página no existe en la app.",
+    "code": {
+      "not_found": "Ya no existe.",
+      "in_use": "Todavía está en uso. Elimina sus referencias e inténtalo de nuevo.",
+      "malformed": "El proveedor devolvió una respuesta ilegible.",
+      "conflict": "Se modificó en otro lugar. Recarga e inténtalo de nuevo.",
+      "invalid_input": "Algo de la solicitud no es válido.",
+      "unsupported": "Esto no es compatible aquí.",
+      "unavailable": "No está disponible ahora mismo.",
+      "cancelled": "Se canceló.",
+      "busy": "La app está ocupada. Inténtalo de nuevo en un momento.",
+      "internal": "La app encontró un error interno.",
+      "model_required": "Falta instalar un modelo necesario.",
+      "model_unavailable": "No se pudo cargar un modelo necesario.",
+      "transport": "No se pudo conectar con el backend de la app."
+    }
+  },
+  "create": {
+    "group": "Crear un grupo",
+    "groupBody": "Junta personajes en un mismo chat",
+    "title": "Crear",
+    "description": "Alguien con quien hablar, o un mundo donde hacerlo.",
+    "character": "Crear un personaje",
+    "characterBody": "Nombre, aspecto, personalidad y escenas iniciales",
+    "persona": "Crear una persona",
+    "personaBody": "Quién eres tú en los chats",
+    "lorebook": "Crear un libro de lore",
+    "lorebookBody": "Datos del mundo, escritos por ti, desde un archivo o con IA",
+    "import": "Importar una tarjeta",
+    "importBody": "Tarjeta de personaje PNG o JSON",
+    "imported": "Personaje importado",
+    "discover": "Explorar Descubrir",
+    "discoverBody": "Personajes que otras personas han compartido"
+  },
+  "providerSelect": {
+    "placeholder": "Elige un proveedor",
+    "title": "Proveedor",
+    "empty": "No hay proveedores disponibles.",
+    "groups": {
+      "cloud": "Nube",
+      "local": "Local",
+      "custom": "Personalizado"
+    }
+  },
+  "designReferences": {
+    "note": "Nota de diseño",
+    "notePlaceholder": "Pelo corto, gafas redondas, un abrigo gris largo",
+    "noteHint": "Aspecto en pocas palabras. Se usa para generar imágenes de escenas.",
+    "images": "Imágenes de referencia",
+    "imagesHint": "Unas cuantas imágenes que muestren el aspecto.",
+    "add": "Añadir imagen",
+    "remove": "Quitar imagen"
+  },
+  "memoryDownload": {
+    "title": "Descarga el modelo de memoria",
+    "titleDone": "La memoria está lista",
+    "body": "La memoria automática necesita un modelo pequeño en este dispositivo. Se descarga una vez y luego funciona sin conexión.",
+    "bodyDone": "Tus personajes ahora recordarán lo importante, incluso en chats largos. Puedes desactivarlo en cada chat.",
+    "modelName": "Modelo de memoria Lettuce Eidos",
+    "keepOpen": "Mantén la app abierta hasta que termine.",
+    "download": "Descargar y terminar",
+    "downloading": "Descargando",
+    "checking": "Comprobando el modelo",
+    "useManual": "Usar memoria manual en su lugar",
+    "doneDetail": "Instalado y probado · funciona sin conexión",
+    "failedOffline": "Se perdió la conexión. Reinténtalo para continuar.",
+    "failedOther": "La descarga no terminó. Reinténtalo para continuar.",
+    "downloadOnly": "Descargar",
+    "bodyInstall": "La memoria dinámica necesita un modelo pequeño en este dispositivo. Se descarga una vez y luego funciona sin conexión.",
+    "failureCode": {
+      "integrity_failure": "La descarga se dañó. Reinténtalo para continuar.",
+      "resource_unavailable": "El servidor del modelo no está disponible ahora mismo. Reinténtalo para continuar.",
+      "storage_failure": "No se pudo guardar el modelo en este dispositivo. Comprueba el espacio libre e inténtalo de nuevo.",
+      "timed_out": "La descarga tardó demasiado. Reinténtalo para continuar."
+    }
+  },
+  "emotionDownload": {
+    "title": "Descarga el modelo de emociones",
+    "titleDone": "Los sentimientos están listos",
+    "body": "El modo compañero lee el sentimiento detrás de cada mensaje con un modelo pequeño en este dispositivo. Se descarga una vez y luego funciona sin conexión.",
+    "bodyDone": "Ahora cada respuesta puede cambiar cómo se sienten tus compañeros y lo cerca que estáis.",
+    "download": "Descargar",
+    "close": "Ahora no",
+    "finish": "Listo"
+  },
+  "structuredFallback": {
+    "title": "Cuando el modelo no puede usar herramientas",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Compacto. Funciona con la mayoría de los modelos."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Para modelos que escriben XML con más fiabilidad que JSON."
+      }
+    },
+    "hint": "Primero se intentan las llamadas a herramientas. Este formato solo se usa cuando el modelo no las admite."
+  },
+  "promptPicker": {
+    "builtIn": "Integrado",
+    "builtInBody": "El prompt propio de la app",
+    "builtInMissing": "El prompt integrado no está disponible",
+    "search": "Buscar prompts",
+    "clearSearch": "Limpiar búsqueda",
+    "noMatches": "No hay prompts que coincidan",
+    "manage": "Prompts de sistema",
+    "manageBody": "Crea o edita un prompt",
+    "close": "Cerrar"
+  },
+  "lorebookPicker": {
+    "title": "Libros de lore",
+    "done": "Listo",
+    "empty": "Aún no hay libros de lore",
+    "emptyBody": "Los libros de lore que crees o importes aparecerán aquí.",
+    "edit": "Editar {{name}}"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "title": "Chats",
+  "homeTitle": "Inicio",
+  "characters": "Personajes",
+  "search": "Buscar chats",
+  "searchCharacters": "Buscar personajes",
+  "count": "{{shown}} de {{total}}",
+  "noDescription": "Aún no hay descripción",
+  "lastChat": "Último chat {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Continuar chat",
+  "empty": {
+    "title": "Aún no hay personajes",
+    "body": "Crea a alguien con quien hablar o importa una tarjeta de personaje desde tu disco.",
+    "create": "Crear un personaje"
+  },
+  "noMatch": {
+    "title": "Nada coincide con «{{query}}»",
+    "body": "Prueba con un nombre o con una palabra de la descripción del personaje.",
+    "clear": "Limpiar búsqueda"
+  },
+  "view": {
+    "label": "Vista",
+    "current": "Vista: {{view}}",
+    "home": "Inicio",
+    "list": "Lista",
+    "hero": "Destacado"
+  },
+  "layout": {
+    "title": "Diseño",
+    "body": "Cómo muestra Chats a tus personajes.",
+    "current": "Diseño: {{layout}}",
+    "list": {
+      "title": "Lista",
+      "body": "Cada personaje como una tarjeta, como se ven ahora"
+    },
+    "recent": {
+      "title": "Recientes",
+      "body": "Cada chat, del más nuevo al más antiguo, con la línea en la que se quedó"
+    }
+  },
+  "recent": {
+    "today": "Hoy",
+    "week": "Esta semana",
+    "earlier": "Antes",
+    "empty": "Aún no hay chats"
+  },
+  "menu": {
+    "history": "Historial de chats",
+    "historyBody": "Chats anteriores con este personaje",
+    "edit": "Editar personaje",
+    "cardStyle": "Estilo de tarjeta",
+    "cardRow": "Fila, cambiar a banner",
+    "cardBanner": "Banner, cambiar a fila",
+    "export": "Exportar",
+    "exportBody": "Como tarjeta de personaje",
+    "hide": "Ocultar de Chats",
+    "hideBody": "Se queda en tu biblioteca",
+    "delete": "Eliminar personaje",
+    "deleteTitle": "¿Eliminar a {{name}}?",
+    "deleteBody": "Se eliminarán el personaje y sus chats individuales. Esto no se puede deshacer.",
+    "noChats": "Aún no hay chats"
+  },
+  "export": {
+    "title": "Formato de exportación",
+    "body": "Elige un formato",
+    "done": "Guardado como {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Formato Unified Entity Card (.uec) (recomendado)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (última especificación)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (especificación Tavern)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Editar chat",
+    "editCharacter": "Editar personaje",
+    "editGroup": "Editar grupo",
+    "rename": "Renombrar",
+    "renameTitle": "Renombrar chat",
+    "save": "Guardar",
+    "delete": "Eliminar chat",
+    "deleteTitle": "¿Eliminar {{title}}?",
+    "deleteBody": "El personaje se queda; esta historia se va."
+  },
+  "sidebar": {
+    "label": "Chats recientes",
+    "empty": "Los chats que inicies aparecerán aquí."
+  },
+  "discover": {
+    "title": "Descubrir",
+    "soonTitle": "Descubrir está en camino",
+    "soonBody": "Un lugar para encontrar y compartir personajes creados por la comunidad. Lo estamos construyendo en nuestros propios servidores, con moderación desde el primer día.",
+    "create": "Crear un personaje",
+    "discord": "Sigue las novedades en Discord"
+  }
+}

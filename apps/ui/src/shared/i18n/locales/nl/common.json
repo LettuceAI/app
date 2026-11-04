@@ -1,0 +1,175 @@
+{
+  "onnxModelsUnloaded": "Inactieve modellen vrijgegeven om geheugen vrij te maken: {{models}}. Ze worden weer geladen wanneer nodig.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Verbinden met de app…"
+  },
+  "navigation": {
+    "primary": "Hoofdnavigatie",
+    "chats": "Chats",
+    "groups": "Groepen",
+    "discover": "Ontdekken",
+    "library": "Bibliotheek",
+    "settings": "Instellingen",
+    "home": "Start",
+    "create": "Aanmaken",
+    "collapse": "Inklappen",
+    "collapseSidebar": "Zijbalk inklappen",
+    "expandSidebar": "Zijbalk uitklappen",
+    "backToApp": "Terug naar de app"
+  },
+  "downloads": {
+    "loading": "Downloads laden",
+    "title": "Downloads",
+    "titleActive_one": "Downloads, één actief",
+    "titleActive_other": "Downloads, {{count}} actief",
+    "empty": "Niets wordt gedownload.",
+    "emptyBody": "Installaties en updates verschijnen hier.",
+    "generic": "Download",
+    "done": "{{name}} is klaar",
+    "failed": "{{name}} kon niet worden gedownload"
+  },
+  "window": {
+    "minimize": "Minimaliseren",
+    "maximize": "Maximaliseren",
+    "close": "Venster sluiten",
+    "failed": "De vensteractie is niet gelukt. Probeer het opnieuw."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Overig"
+  },
+  "actions": {
+    "retry": "Opnieuw proberen",
+    "cancel": "Annuleren",
+    "reload": "Herladen"
+  },
+  "errors": {
+    "fatalTitle": "Er is iets misgegaan",
+    "fatalDescription": "De app is een onverwacht probleem tegengekomen. Herladen lost het meestal op.",
+    "loadTitle": "Dit kon niet worden geladen",
+    "notFoundTitle": "Hier is niets",
+    "notFoundDescription": "Deze pagina bestaat niet in de app.",
+    "code": {
+      "not_found": "Het bestaat niet meer.",
+      "in_use": "Het is nog in gebruik. Verwijder de verwijzingen en probeer het opnieuw.",
+      "malformed": "De provider gaf een onleesbaar antwoord terug.",
+      "conflict": "Het is elders gewijzigd. Herlaad en probeer het opnieuw.",
+      "invalid_input": "Iets in het verzoek is ongeldig.",
+      "unsupported": "Dit wordt hier niet ondersteund.",
+      "unavailable": "Het is nu niet beschikbaar.",
+      "cancelled": "Het is geannuleerd.",
+      "busy": "De app is bezig. Probeer het zo opnieuw.",
+      "internal": "De app kreeg een interne fout.",
+      "model_required": "Een vereist model is niet geïnstalleerd.",
+      "model_unavailable": "Een vereist model kon niet worden geladen.",
+      "transport": "De backend van de app was niet bereikbaar."
+    }
+  },
+  "create": {
+    "group": "Een groep maken",
+    "groupBody": "Zet karakters samen in een chat",
+    "title": "Aanmaken",
+    "description": "Iemand om mee te praten, of een wereld voor hen.",
+    "character": "Een karakter maken",
+    "characterBody": "Naam, uiterlijk, persoonlijkheid en openingsscènes",
+    "persona": "Een persona maken",
+    "personaBody": "Wie jij bent in chats",
+    "lorebook": "Een lorebook maken",
+    "lorebookBody": "Wereldfeiten, zelf geschreven, uit een bestand of met AI",
+    "import": "Een kaart importeren",
+    "importBody": "PNG- of JSON-karakterkaart",
+    "imported": "Karakter geïmporteerd",
+    "discover": "Ontdekken verkennen",
+    "discoverBody": "Karakters die anderen hebben gedeeld"
+  },
+  "providerSelect": {
+    "placeholder": "Kies een provider",
+    "title": "Provider",
+    "empty": "Geen providers beschikbaar.",
+    "groups": {
+      "cloud": "Cloud",
+      "local": "Lokaal",
+      "custom": "Aangepast"
+    }
+  },
+  "designReferences": {
+    "note": "Ontwerpnotitie",
+    "notePlaceholder": "Kort haar, ronde bril, een lange grijze jas",
+    "noteHint": "Uiterlijk in een paar woorden. Gebruikt voor gegenereerde scèneafbeeldingen.",
+    "images": "Referentieafbeeldingen",
+    "imagesHint": "Een paar afbeeldingen die de look laten zien.",
+    "add": "Afbeelding toevoegen",
+    "remove": "Afbeelding verwijderen"
+  },
+  "memoryDownload": {
+    "title": "Het geheugenmodel downloaden",
+    "titleDone": "Geheugen is klaar",
+    "body": "Automatisch geheugen heeft een klein model op dit apparaat nodig. Het wordt één keer gedownload en werkt daarna offline.",
+    "bodyDone": "Je karakters houden nu bij wat belangrijk is, zelfs in lange chats. Je kunt dit per chat uitzetten.",
+    "modelName": "Lettuce Eidos-geheugenmodel",
+    "keepOpen": "Houd de app open totdat het klaar is.",
+    "download": "Downloaden en afronden",
+    "downloading": "Downloaden",
+    "checking": "Het model controleren",
+    "useManual": "Handmatig geheugen gebruiken",
+    "doneDetail": "Geïnstalleerd en getest · werkt offline",
+    "failedOffline": "Verbinding verbroken. Probeer het opnieuw om door te gaan.",
+    "failedOther": "De download is niet afgerond. Probeer het opnieuw om door te gaan.",
+    "downloadOnly": "Downloaden",
+    "bodyInstall": "Dynamisch geheugen heeft een klein model op dit apparaat nodig. Het wordt één keer gedownload en werkt daarna offline.",
+    "failureCode": {
+      "integrity_failure": "De download is beschadigd. Probeer het opnieuw om door te gaan.",
+      "resource_unavailable": "De modelserver is nu niet beschikbaar. Probeer het opnieuw om door te gaan.",
+      "storage_failure": "Het model kon niet op dit apparaat worden opgeslagen. Controleer de vrije ruimte en probeer het opnieuw.",
+      "timed_out": "De download duurde te lang. Probeer het opnieuw om door te gaan."
+    }
+  },
+  "emotionDownload": {
+    "title": "Het emotiemodel downloaden",
+    "titleDone": "Gevoelens zijn klaar",
+    "body": "De metgezelmodus leest het gevoel achter elk bericht met een klein model op dit apparaat. Het wordt één keer gedownload en werkt daarna offline.",
+    "bodyDone": "Elk antwoord kan nu beïnvloeden hoe je metgezellen zich voelen en hoe hecht jullie zijn.",
+    "download": "Downloaden",
+    "close": "Niet nu",
+    "finish": "Klaar"
+  },
+  "structuredFallback": {
+    "title": "Als het model geen tools kan gebruiken",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Compact. Werkt met de meeste modellen."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Voor modellen die XML betrouwbaarder schrijven dan JSON."
+      }
+    },
+    "hint": "Tool-aanroepen worden eerst geprobeerd. Dit formaat wordt alleen gebruikt als het model ze niet ondersteunt."
+  },
+  "promptPicker": {
+    "builtIn": "Ingebouwd",
+    "builtInBody": "De ingebouwde prompt van de app",
+    "builtInMissing": "Ingebouwde prompt is niet beschikbaar",
+    "search": "Prompts zoeken",
+    "clearSearch": "Zoekopdracht wissen",
+    "noMatches": "Geen overeenkomende prompts",
+    "manage": "Systeemprompts",
+    "manageBody": "Maak of bewerk een prompt",
+    "close": "Sluiten"
+  },
+  "lorebookPicker": {
+    "title": "Lorebooks",
+    "done": "Klaar",
+    "empty": "Nog geen lorebooks",
+    "emptyBody": "Lorebooks die je maakt of importeert, verschijnen hier.",
+    "edit": "{{name}} bewerken"
+  }
+}

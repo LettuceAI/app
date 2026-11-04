@@ -1,0 +1,355 @@
+{
+  "header": {
+    "back": "Kembali",
+    "learn": "Penyiapan terpandu · Dasar-dasar, {{current}} dari {{total}}",
+    "path": "Penyiapan terpandu · Gratis atau berbayar",
+    "guided": "Penyiapan terpandu · {{name}}, {{current}} dari {{total}}",
+    "connect": "Penyiapan · 1 dari 3",
+    "model": "Penyiapan · 2 dari 3",
+    "memory": "Penyiapan · 3 dari 3"
+  },
+  "welcome": {
+    "line1": "<brand>Cerita</brand> Anda,",
+    "line2": "<brand>Karakter</brand> Anda.",
+    "pitch": "Obrolan dan karakter tetap di perangkat Anda. Anda memilih AI mana yang menulis balasan.",
+    "start": "Mulai",
+    "other": "Opsi lain"
+  },
+  "actions": {
+    "exitSetup": "Kembali ke pengaturan",
+    "next": "Berikutnya",
+    "gotIt": "Mengerti",
+    "haveKey": "Saya punya kunci",
+    "connect": "Hubungkan",
+    "checking": "Memeriksa kunci Anda",
+    "useModel": "Gunakan model ini",
+    "saving": "Menyimpan model Anda",
+    "finish": "Selesaikan penyiapan",
+    "finishing": "Menyelesaikan penyiapan",
+    "openApp": "Buka LettuceAI"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Selamat datang",
+      "title": "Selamat datang di LettuceAI",
+      "body": "Anda akan menyiapkan roleplay AI pertama Anda. Beberapa langkah berikut menjelaskan dasarnya dengan bahasa sederhana, lalu kami membantu Anda menghubungkan semuanya. Hanya butuh beberapa menit."
+    },
+    "car": {
+      "tag": "Cara kerjanya",
+      "title": "Aplikasi ini mobilnya, bukan mesinnya",
+      "body": "Bayangkan aplikasi ini sebagai mobil tanpa mesin. Ada dasbornya, kursinya, dan karakter Anda, tetapi tidak bisa berjalan sendiri. Anda menambahkan mesin, dan beberapa langkah ini menunjukkan caranya.",
+      "plain": "Aplikasi ini adalah layar dan karakternya. AI yang benar-benar menulis balasan berjalan online, dan Anda menghubungkan aplikasi ke sana."
+    },
+    "provider": {
+      "tag": "Langkah 1 dari 3",
+      "title": "Pilih dari mana mesinnya berasal",
+      "body": "Penyedia adalah perusahaan yang memasok dan menjalankan mesin, seperti Google atau OpenRouter. Anda membuka akun gratis atau berbayar di salah satunya, dan aplikasi meminjam mesin mereka untuk menjalankan obrolan Anda.",
+      "plain": "Penyedia adalah perusahaan yang menjalankan model AI. Anda membuat akun di sana, dan aplikasi mengirim pesan Anda ke mereka untuk mendapatkan balasan."
+    },
+    "key": {
+      "tag": "Langkah 2 dari 3",
+      "title": "Kunci Anda menyalakan mesin",
+      "body": "Kunci API bekerja seperti kunci mobil. Penyedia memberikannya kepada Anda, Anda memasukkannya ke aplikasi, dan aplikasi menyalakan mesin. Simpan untuk diri sendiri. Kunci tetap di perangkat Anda, seperti kunci di saku.",
+      "plain": "Kunci API adalah kode rahasia dari penyedia Anda yang memungkinkan aplikasi menggunakan akun Anda. Anda menempelkannya sekali, dan hanya disimpan di perangkat Anda."
+    },
+    "engine": {
+      "tag": "Langkah 3 dari 3",
+      "title": "Pilih mesin Anda",
+      "body": "Model adalah mesinnya sendiri. Penyedia menawarkan mesin kecil yang efisien dan mesin besar yang kuat. Mesin lebih besar melaju lebih baik tetapi menghabiskan lebih banyak bahan bakar, jadi lebih mahal. Anda dapat menukar mesin kapan saja.",
+      "plain": "Model adalah AI spesifik yang menulis balasan. Model lebih besar lebih pintar tetapi lebih mahal, dan Anda dapat berganti di antara mereka kapan pun."
+    },
+    "cost": {
+      "tag": "Biayanya",
+      "title": "Gratis atau berbayar, pilihan Anda",
+      "body": "Beberapa model sepenuhnya gratis digunakan, dengan batas harian seberapa banyak Anda mengobrol. Model berbayar menagih sedikit untuk setiap pesan, sering kali kurang dari satu sen.",
+      "plain": "Anda hanya membayar penyedia, tidak pernah ke aplikasi ini. Anda dapat mulai gratis dan beralih ke berbayar nanti jika ingin."
+    },
+    "inOtherWords": "Dengan kata lain"
+  },
+  "path": {
+    "gemini": {
+      "title": "Gratis",
+      "subtitle": "Google Gemini",
+      "cta": "Mulai gratis",
+      "pro1": "Tanpa biaya dan tidak pernah meminta kartu",
+      "pro2": "Kuota harian yang lega untuk obrolan sehari-hari",
+      "pro3": "Kualitas bagus untuk roleplay dan percakapan",
+      "con1": "Hanya model milik Google",
+      "con2": "Konten dewasa atau eksplisit diblokir"
+    },
+    "openrouter": {
+      "title": "Bayar sesuai pemakaian",
+      "subtitle": "OpenRouter",
+      "cta": "Gunakan OpenRouter",
+      "pro1": "Hampir semua model AI, termasuk yang terkuat",
+      "pro2": "Tanpa batas harian, Anda hanya membayar yang Anda gunakan",
+      "pro3": "Beralih ke model lebih murah kapan saja",
+      "con1": "Biaya bergantung pada model dan seberapa banyak Anda mengobrol",
+      "con2": "Memerlukan kartu atau saldo prabayar"
+    },
+    "title": "Gratis atau berbayar?",
+    "lead": "Keduanya menghubungkan aplikasi ke AI. Bedanya apakah Anda membayar, dan berapa banyak model yang dapat Anda pilih.",
+    "footer": "Belum yakin? Mulai gratis. Anda dapat menambahkan layanan berbayar nanti tanpa kehilangan apa pun."
+  },
+  "connect": {
+    "title": "Hubungkan AI",
+    "lead": "LettuceAI adalah aplikasinya; layanan AI menulis balasannya. Hubungkan yang kuncinya Anda miliki.",
+    "guidedLink": "Baru dengan aplikasi AI? Ikuti penyiapan terpandu",
+    "search": "Cari {{count}} layanan",
+    "chooseAnother": "Pilih layanan lain",
+    "pickTitle": "Pilih layanan dari daftar",
+    "pickBody": "Anda memerlukan akun dan kunci API darinya.",
+    "groups": {
+      "cloud": "Layanan cloud",
+      "local": "Di komputer atau jaringan Anda",
+      "custom": "Layanan lain apa pun"
+    },
+    "subtitle": {
+      "custom": "Endpoint Anda sendiri",
+      "local": "Berjalan di komputer Anda"
+    },
+    "form": {
+      "address": "Alamat",
+      "addressHintLocal": "Tempat server berjalan",
+      "addressHintCustom": "URL dasar API",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "Kunci API",
+      "apiKeyOptional": "Kunci API (opsional)",
+      "apiKeyHint": "Disimpan terenkripsi di perangkat ini",
+      "apiKeyPlaceholder": "Tempel kunci Anda",
+      "name": "Nama",
+      "nameHint": "Bagaimana tampilnya di menu Anda",
+      "namePlaceholder": "{{name}} saya"
+    },
+    "error": {
+      "rejected": "Kunci ini tidak diterima",
+      "unreachable": "Tidak dapat menjangkau {{name}}. Periksa koneksi Anda."
+    }
+  },
+  "guide": {
+    "previousPicture": "Gambar sebelumnya",
+    "nextPicture": "Gambar berikutnya",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Tangkapan layar",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Tempel kunci Anda",
+      "geminiBody": "Tempel kunci yang baru Anda salin dari Google AI Studio. Kami memeriksanya dengan Google, lalu menunjukkan model yang terbuka.",
+      "openrouterBody": "Tempel kunci yang Anda salin dari OpenRouter. Kunci dimulai dengan sk-or. Kami memeriksanya, lalu menunjukkan model yang dapat Anda gunakan.",
+      "geminiPlaceholder": "Tempel kunci API Anda",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Disimpan terenkripsi di perangkat ini. Hanya dikirim ke {{name}} saat Anda mengobrol."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Buka Google AI Studio",
+        "body": "Google AI Studio adalah situs resmi Google tempat kunci Gemini gratis Anda dibuat. Buka di peramban dengan tombol di bawah. Saat halaman dimuat, masuk dengan akun Google biasa Anda dengan mengklik Get started di pojok kanan atas. Jika Anda sudah masuk, Anda akan langsung dibawa masuk.",
+        "open": "Buka Google AI Studio",
+        "slide1": "Klik Get started di pojok kanan atas."
+      },
+      "find": {
+        "title": "Temukan kunci API",
+        "body": "Anda sekarang seharusnya melihat ruang kerja utama Google AI Studio. Kunci API tidak ada di layar utama, melainkan di bilah sisi di sisi kiri halaman. Lihat dekat bagian bawah bilah sisi untuk ikon kunci kecil dan klik untuk membuka halaman tempat kunci dikelola.",
+        "slide1": "Klik ikon kunci di kiri bawah bilah sisi."
+      },
+      "create": {
+        "title": "Buat kunci Anda",
+        "body": "Membuat kunci membutuhkan beberapa klik berurutan, dan gambar-gambar memandu setiap langkah sesuai urutan. Pertama buka dialog kunci baru dari kanan atas, lalu buat proyek tempat kunci akan berada, beri proyek itu nama apa pun yang Anda suka, dan terakhir buat kuncinya. Gunakan panah di kanan untuk berpindah layar.",
+        "slide1": "Klik Create API key di kanan atas.",
+        "slide2": "Buka dropdown lalu klik Create project.",
+        "slide3": "Beri nama apa pun, lalu klik Create project.",
+        "slide4": "Dengan proyek Anda dipilih, klik Create key."
+      },
+      "copy": {
+        "title": "Salin kunci Anda",
+        "body": "Kunci Anda telah dibuat dan sekarang ditampilkan lengkap. Klik ikon salin di sebelahnya untuk menyalin seluruh kunci ke papan klip. Ini satu-satunya kali Google menampilkan kunci lengkap, jadi salin sekarang sebelum menutup dialog, lalu kembali ke sini untuk menempelkannya.",
+        "slide1": "Klik ikon salin untuk menyalin kunci API Anda."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Buka Google AI Studio",
+        "body": "Google AI Studio adalah situs resmi Google tempat kunci Gemini gratis Anda dibuat. Buka di peramban dengan tombol di bawah, dan kami akan memandu mendapatkan kunci bersama. Dua gambar menunjukkan tepat di mana harus mengetuk setelah halaman dimuat, jadi geser di antaranya jika Anda tidak yakin harus melihat ke mana.",
+        "open": "Buka Google AI Studio",
+        "slide1": "Ketuk menu di pojok kanan atas.",
+        "slide2": "Lalu ketuk Get started di bagian bawah."
+      },
+      "find": {
+        "title": "Temukan kunci API",
+        "body": "Anda sekarang seharusnya sudah masuk dan melihat halaman utama Google AI Studio. Bagian yang Anda butuhkan tersembunyi di dalam menu samping, bukan di layar utama. Buka menu itu, lalu lihat tepat di bagian bawah untuk ikon kunci kecil. Mengetuknya langsung membawa Anda ke halaman tempat kunci dibuat.",
+        "slide1": "Buka menu di pojok kiri atas.",
+        "slide2": "Ketuk ikon kunci di bagian bawah menu."
+      },
+      "start": {
+        "title": "Mulai kunci baru",
+        "body": "Ini halaman API Keys Anda, dan saat ini kosong karena Anda belum membuatnya. Itu sepenuhnya normal. Tombol yang memulai proses ada di pojok kanan atas layar, jadi ketuk untuk mulai membuat kunci pertama Anda.",
+        "slide1": "Ketuk Create API key di pojok kanan atas."
+      },
+      "project": {
+        "title": "Buat proyek dulu",
+        "body": "Sebelum Google memberi kunci, Google menanyakan proyek mana tempat kunci itu berada. Proyek hanyalah folder yang digunakan Google untuk menjaga keteraturan, dan Anda belum memilikinya. Buat proyek baru dan beri nama apa pun yang Anda suka, seperti LettuceAI. Nama tidak memengaruhi apa pun, jadi pilih yang paling mudah.",
+        "slide1": "Buka dropdown lalu ketuk Create project.",
+        "slide2": "Beri nama apa pun, lalu ketuk Create project."
+      },
+      "create": {
+        "title": "Buat dan salin kunci Anda",
+        "body": "Dengan proyek baru Anda dipilih, buat kuncinya. Setelah muncul, segera salin menggunakan ikon salin. Ini satu-satunya kali Google menunjukkan kunci lengkap, jadi penting untuk menyalinnya sekarang sebelum menutup jendela. Anda akan menempelkannya ke aplikasi di langkah berikutnya.",
+        "slide1": "Dengan proyek Anda dipilih, ketuk Create key.",
+        "slide2": "Ketuk ikon salin untuk menyalin kunci Anda."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Buat akun Anda",
+        "body": "OpenRouter adalah satu layanan yang menghubungkan Anda ke ratusan model AI dari banyak perusahaan berbeda, semuanya melalui satu akun dan satu kunci. Buka di peramban dengan tombol di bawah dan buat akun gratis. Tombol Sign Up ada di pojok kanan atas halaman.",
+        "open": "Buka OpenRouter",
+        "slide1": "Klik Sign Up di pojok kanan atas."
+      },
+      "key": {
+        "title": "Dapatkan kunci API Anda",
+        "body": "Setelah mendaftar, OpenRouter menanyakan bagaimana Anda berencana menggunakannya. Pilih Individual, opsi yang tepat untuk penggunaan pribadi. Begitu Anda memilihnya, OpenRouter membuat kunci API pertama Anda dan menampilkannya di layar. Salin kunci itu sekarang. Kunci dimulai dengan sk-or, dan Anda akan menempelkannya ke aplikasi sebentar lagi.",
+        "slide1": "Pilih Individual saat ditanya.",
+        "slide2": "Salin kunci API baru Anda (dimulai dengan sk-or)."
+      },
+      "payment": {
+        "title": "Tambahkan metode pembayaran",
+        "body": "Model berbayar menagih jumlah yang sangat kecil untuk setiap pesan, jadi OpenRouter memerlukan kartu tersimpan sebelum menjalankannya. Tambahkan detail penagihan Anda sekarang untuk membuka model. Tidak ada yang ditagih pada langkah ini, ini hanya mengonfirmasi siapa Anda dan memungkinkan Anda menggunakan saldo nanti.",
+        "slide1": "Isi detail penagihan Anda.",
+        "slide2": "Semua siap setelah ditambahkan."
+      },
+      "credits": {
+        "title": "Tambahkan saldo",
+        "body": "Saldo adalah dana yang benar-benar membayar pesan Anda saat mengobrol. Buka halaman Credits dari bilah sisi dan isi sedikit untuk memulai. Bahkan beberapa dolar bertahan lama dengan sebagian besar model, dan Anda selalu dapat menambah nanti saat menipis.",
+        "slide1": "Buka Credits dari bilah sisi.",
+        "slide2": "Klik Add Credits dan pilih jumlah."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Buat akun Anda",
+        "body": "OpenRouter adalah satu layanan yang menghubungkan Anda ke ratusan model AI dari banyak perusahaan berbeda, semuanya melalui satu akun dan satu kunci. Buka di peramban dengan tombol di bawah dan buat akun gratis. Tombol Sign Up ada di pojok kanan atas halaman.",
+        "open": "Buka OpenRouter",
+        "slide1": "Ketuk Sign Up di pojok kanan atas."
+      },
+      "key": {
+        "title": "Dapatkan kunci API Anda",
+        "body": "Setelah mendaftar, OpenRouter menanyakan bagaimana Anda berencana menggunakannya. Pilih Individual, opsi yang tepat untuk penggunaan pribadi. Begitu Anda memilihnya, OpenRouter membuat kunci API pertama Anda dan menampilkannya di layar. Salin kunci itu sekarang. Kunci dimulai dengan sk-or, dan Anda akan menempelkannya ke aplikasi sebentar lagi.",
+        "slide1": "Pilih Individual saat ditanya.",
+        "slide2": "Salin kunci API baru Anda (dimulai dengan sk-or)."
+      },
+      "payment": {
+        "title": "Tambahkan metode pembayaran",
+        "body": "Model berbayar menagih jumlah yang sangat kecil untuk setiap pesan, jadi OpenRouter memerlukan kartu tersimpan sebelum menjalankannya. Tambahkan detail penagihan Anda sekarang untuk membuka model. Tidak ada yang ditagih pada langkah ini, ini hanya mengonfirmasi siapa Anda dan memungkinkan Anda menggunakan saldo nanti.",
+        "slide1": "Isi detail penagihan Anda.",
+        "slide2": "Semua siap setelah ditambahkan."
+      },
+      "credits": {
+        "title": "Tambahkan saldo",
+        "body": "Saldo adalah dana yang benar-benar membayar pesan Anda saat mengobrol. Buka menu, masuk ke halaman Credits, dan isi sedikit untuk memulai. Bahkan beberapa dolar bertahan lama dengan sebagian besar model, dan Anda selalu dapat menambah nanti saat menipis.",
+        "slide1": "Buka menu dan masuk ke Credits.",
+        "slide2": "Ketuk Add Credits dan pilih jumlah."
+      }
+    }
+  },
+  "model": {
+    "title": "Pilih model",
+    "lead": "Pilih model {{name}} yang menulis balasan. Anda dapat mengubahnya atau menambah lagi kapan saja.",
+    "model": "Model",
+    "modelId": "ID model",
+    "modelIdHint": "ID persis yang diharapkan layanan",
+    "modelIdPlaceholder": "nama-model",
+    "choose": "Pilih dari {{count}} model",
+    "customId": "ID kustom",
+    "displayName": "Nama tampilan",
+    "displayNameHint": "Yang Anda lihat di dalam aplikasi",
+    "displayNamePlaceholder": "Model saya",
+    "connected": "Terhubung",
+    "context": "Konteks",
+    "contextTokens": "{{value}} token",
+    "contextSuffix": "konteks {{value}}",
+    "images": "Memahami gambar",
+    "yes": "Ya",
+    "no": "Tidak",
+    "inputPerMillion": "Masukan, per juta",
+    "outputPerMillion": "Keluaran, per juta",
+    "emptyTitle": "Belum ada model dipilih",
+    "emptyBody": "Ukuran konteks dan harganya tampil di sini.",
+    "free": "Gratis",
+    "priceIn": "masuk",
+    "priceOut": "keluar",
+    "picker": {
+      "title": "Model {{name}}",
+      "search": "Cari {{count}} model",
+      "filter": "Filter model",
+      "layout": "Tata letak",
+      "list": "Daftar",
+      "twoPerRow": "Dua per baris",
+      "onlyFree": "Hanya model gratis",
+      "none": "Tidak ada model yang cocok dengan filter ini.",
+      "useId": "Gunakan <mono>{{id}}</mono>",
+      "useIdBody": "Tidak ada di daftar: gunakan ID persis ini",
+      "priceNote": "Harga per juta token, dari {{name}}.",
+      "loading": "Memuat model"
+    },
+    "filters": {
+      "title": "Filter model",
+      "madeBy": "Dibuat oleh",
+      "capabilities": "Kemampuan",
+      "imagesTitle": "Memahami gambar",
+      "imagesBody": "Dapat membaca gambar yang Anda kirim dalam obrolan",
+      "sortBy": "Urutkan berdasarkan",
+      "sortName": "Nama",
+      "sortPrice": "Termurah",
+      "sortContext": "Konteks terpanjang",
+      "clear": "Bersihkan",
+      "show_other": "Tampilkan {{count}} model"
+    }
+  },
+  "memory": {
+    "title": "Bagaimana karakter harus mengingat?",
+    "lead": "Karakter lupa hal di luar pesan terbaru. Pilih bagaimana bagian penting muncul kembali. Anda dapat mengubahnya per obrolan nanti.",
+    "group": "Memori",
+    "recommended": "Disarankan",
+    "classic": "Klasik",
+    "detailTitle": "Memori {{title}}",
+    "automatic": {
+      "title": "Otomatis",
+      "point1": "Model kecil di perangkat Anda memilih apa yang penting dan memunculkannya kembali saat dibutuhkan",
+      "point2": "Obrolan panjang tetap konsisten",
+      "point3": "Lebih sedikit token terkirim, jadi balasan lebih murah",
+      "note": "Perlu unduhan sekali. Setelah itu berjalan offline."
+    },
+    "manual": {
+      "title": "Manual",
+      "point1": "Anda menyematkan pesan dan menulis faktanya sendiri",
+      "point2": "Kendali penuh atas apa yang diingat",
+      "point3": "Tidak ada yang berjalan di latar belakang",
+      "note": "Tidak ada yang perlu diunduh."
+    }
+  },
+  "other": {
+    "title": "Opsi lain",
+    "language": "Bahasa",
+    "skip": "Lewati penyiapan",
+    "skipBody": "Lihat-lihat dulu. Obrolan memerlukan AI sebelum bisa membalas.",
+    "restore": "Pulihkan cadangan",
+    "restoreBody": "Kembalikan obrolan, karakter, dan pengaturan dari file .lettuce",
+    "languageTitle": "Bahasa",
+    "warning": {
+      "title": "Obrolan memerlukan AI sebelum bisa membalas",
+      "body": "Tanpa AI yang terhubung, karakter tidak dapat menjawab. Anda dapat menghubungkannya nanti di pengaturan.",
+      "connect": "Hubungkan AI",
+      "skipAnyway": "Tetap lewati"
+    }
+  },
+  "failure": {
+    "finish": "Tidak dapat menyelesaikan penyiapan.",
+    "models": "Tidak dapat memuat model.",
+    "save": "Tidak dapat menyimpan."
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "create": {
+    "title": "Nova persona",
+    "back": "Voltar",
+    "create": "Criar persona",
+    "created": "{{name}} criada",
+    "imported": "Persona importada",
+    "unattached_one": "{{count}} livro de lore não pôde ser anexado. Anexe-o nas configurações da persona.",
+    "unattached_many": "{{count}} livros de lore não puderam ser anexados. Anexe-os nas configurações da persona.",
+    "unattached_other": "{{count}} livros de lore não puderam ser anexados. Anexe-os nas configurações da persona.",
+    "defaultFailed": "{{name}} foi criada, mas não pôde ser definida como padrão.",
+    "discardTitle": "Descartar esta persona?",
+    "discardBody": "O que você inseriu até agora será perdido.",
+    "discard": "Descartar",
+    "keepEditing": "Continuar editando",
+    "continueTo": "Continuar para {{step}}"
+  },
+  "edit": {
+    "title": "Editar persona",
+    "back": "Voltar",
+    "backToLibrary": "Voltar à biblioteca",
+    "more": "Mais ações",
+    "export": "Exportar",
+    "delete": "Excluir persona",
+    "exported": "Persona exportada",
+    "exportWarnings_one": "Exportada com {{count}} aviso",
+    "exportWarnings_many": "Exportada com {{count}} avisos",
+    "exportWarnings_other": "Exportada com {{count}} avisos",
+    "deleteTitle": "Excluir {{name}}?",
+    "deleteBody": "A persona é removida das conversas que a usam.",
+    "deleteConfirm": "Excluir",
+    "deleteCancel": "Cancelar",
+    "deleted": "{{name}} excluída",
+    "unsaved": "Alterações não salvas",
+    "discard": "Descartar",
+    "save": "Salvar",
+    "saved": "Alterações salvas",
+    "lorebooksFailed": "Salvo, mas não foi possível atualizar os livros de lore. Tente salvar de novo.",
+    "leaveTitle": "Descartar suas alterações?",
+    "leaveBody": "Alterações não salvas serão perdidas.",
+    "leaveDiscard": "Descartar",
+    "leaveKeep": "Continuar editando"
+  },
+  "steps": {
+    "identity": "Identidade",
+    "extras": "Extras"
+  },
+  "identity": {
+    "chooseAvatar": "Escolher imagem",
+    "removeAvatar": "Remover",
+    "name": "Nome",
+    "namePlaceholder": "Escritor profissional",
+    "nameHint": "Quem você é nas conversas",
+    "nickname": "Apelido",
+    "nicknamePlaceholder": "Como os personagens te chamam",
+    "nicknameHint": "Opcional. Usado nas conversas em vez do nome.",
+    "default": "Usar como padrão",
+    "defaultBody": "Novas conversas começam com esta persona",
+    "import": "Importar de um arquivo",
+    "importBody": "Importe uma persona exportada do LettuceAI.",
+    "chooseFile": "Escolher arquivo"
+  },
+  "about": {
+    "description": "Descrição",
+    "descriptionPlaceholder": "Como os personagens devem se dirigir a você, seu histórico, preferências e estilo",
+    "descriptionHint": "Use {{user}} para esta persona e {{char}} para o personagem.",
+    "words_one": "{{count}} palavra",
+    "words_many": "{{count}} palavras",
+    "words_other": "{{count}} palavras"
+  },
+  "extras": {
+    "body": "Tudo aqui é opcional.",
+    "lorebooks": "Livros de lore",
+    "lorebooksNone": "Nenhum",
+    "lorebooksCount_one": "{{count}} livro de lore",
+    "lorebooksCount_many": "{{count}} livros de lore",
+    "lorebooksCount_other": "{{count}} livros de lore"
+  }
+}

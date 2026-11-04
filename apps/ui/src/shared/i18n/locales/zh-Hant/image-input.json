@@ -1,0 +1,131 @@
+{
+  "generate": "生成大頭貼",
+  "title": "生成大頭貼",
+  "bannerCrop": {
+    "title": "調整橫幅位置",
+    "description": "調整封面取景。拖曳可移動，雙指捏合或滾動可縮放。",
+    "saveFailed": "無法儲存橫幅"
+  },
+  "crop": {
+    "title": "調整大頭貼位置",
+    "description": "拖曳可移動。雙指捏合或滾動可縮放。",
+    "zoom": "縮放",
+    "zoomIn": "放大",
+    "zoomOut": "縮小",
+    "center": "置中",
+    "area": "取景區域",
+    "keyboard": "方向鍵可移動圖片，加號和減號可縮放，C 可置中，0 可重設。",
+    "reset": "重設",
+    "apply": "使用此位置",
+    "loadFailed": "無法載入圖片",
+    "saveFailed": "無法儲存大頭貼"
+  },
+  "preview": {
+    "empty": "尚無圖片",
+    "emptyBody": "在下方描述大頭貼，或從你自己的圖片開始。",
+    "alt": "大頭貼預覽",
+    "unchanged": "表單上現有的大頭貼",
+    "editedFrom": "來自 {{version}}：{{request}}"
+  },
+  "versions": {
+    "label": "版本",
+    "count_other": "{{count}} 個版本",
+    "current": "目前大頭貼",
+    "upload": "已上傳圖片 {{number}}",
+    "generation": "已生成圖片 {{number}}",
+    "edit": "已編輯圖片 {{number}}",
+    "short": {
+      "current": "目前",
+      "upload": "上傳 {{number}}",
+      "generation": "圖片 {{number}}",
+      "edit": "編輯 {{number}}"
+    }
+  },
+  "upload": {
+    "action": "上傳圖片"
+  },
+  "mode": {
+    "label": "要做什麼",
+    "generate": "新圖片",
+    "edit": "編輯所選",
+    "generateHint": "只依描述重新開始",
+    "editHint": "變更 {{version}} 的副本"
+  },
+  "prompt": {
+    "label": "描述大頭貼",
+    "placeholder": "一隻圍著針織圍巾的微笑狐狸，柔和光線"
+  },
+  "instruction": {
+    "label": "要變更什麼",
+    "placeholder": "把圍巾改成藍色"
+  },
+  "actions": {
+    "generate": "生成",
+    "edit": "套用編輯",
+    "cancel": "取消",
+    "use": "使用此大頭貼",
+    "retry": "再試一次"
+  },
+  "busy": {
+    "uploading": "正在加入圖片",
+    "generating": "正在生成圖片",
+    "editing": "正在編輯圖片",
+    "cancelling": "正在取消"
+  },
+  "job": {
+    "progress": "{{current}} / {{total}}",
+    "rejected_other": "已排除 {{count}} 個結果",
+    "cancelled": "已取消生成"
+  },
+  "settings": {
+    "open": "開啟圖片設定"
+  },
+  "notice": {
+    "options": {
+      "title": "無法檢查大頭貼模型",
+      "body": "仍可上傳。"
+    },
+    "disabled": {
+      "title": "大頭貼生成已關閉",
+      "body": "在圖片設定中開啟即可生成。仍可上傳。"
+    },
+    "noModel": {
+      "title": "尚未選擇大頭貼模型",
+      "body": "請選擇可接收並傳回圖片的模型。仍可上傳。"
+    },
+    "incompatible": {
+      "title": "此模型無法製作大頭貼",
+      "body": "大頭貼需要可接收並傳回圖片的模型。仍可上傳。"
+    },
+    "upload": {
+      "title": "無法加入圖片"
+    },
+    "generation": {
+      "title": "無法製作圖片"
+    },
+    "cancellation": {
+      "title": "無法取消",
+      "body": "請求可能仍在執行。請再試一次取消。"
+    },
+    "uncertain": {
+      "title": "正在等待結果",
+      "body": "結果送達前連線中斷。請再試一次以重新連線，或取消請求。"
+    }
+  },
+  "failure": {
+    "cancelled": "已取消生成。",
+    "setup": "圖片模型設定不正確。請在圖片設定中檢查。",
+    "invalidRequest": "請求未被接受。請變更描述後再試一次。",
+    "engine": "圖片引擎在完成前停止了。",
+    "timedOut": "製作圖片逾時。",
+    "memory": "圖片模型記憶體不足。",
+    "storage": "無法儲存圖片。",
+    "provider": "供應商無法製作圖片。",
+    "empty": "沒有傳回圖片。",
+    "rejected": "結果已被排除，未傳回任何內容。",
+    "refused": "模型拒絕製作此圖片。請變更描述後再試一次。",
+    "authentication": "供應商拒絕了憑證。請在設定中檢查供應商。",
+    "unavailable": "圖片模型目前無法使用。",
+    "unknown": "製作圖片時發生錯誤。"
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "generate": "生成头像",
+  "title": "生成头像",
+  "bannerCrop": {
+    "title": "调整横幅位置",
+    "description": "调整封面取景。拖动移动，双指缩放或滚动缩放。",
+    "saveFailed": "无法保存横幅"
+  },
+  "crop": {
+    "title": "调整头像位置",
+    "description": "拖动移动。双指缩放或滚动缩放。",
+    "zoom": "缩放",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "center": "居中",
+    "area": "取景区域",
+    "keyboard": "方向键移动图片。加号和减号缩放，C 居中，0 重置。",
+    "reset": "重置",
+    "apply": "使用此位置",
+    "loadFailed": "无法加载图片",
+    "saveFailed": "无法保存头像"
+  },
+  "preview": {
+    "empty": "还没有图片",
+    "emptyBody": "在下方描述头像，或从你自己的图片开始。",
+    "alt": "头像预览",
+    "unchanged": "表单上现有的头像",
+    "editedFrom": "来自 {{version}}：{{request}}"
+  },
+  "versions": {
+    "label": "版本",
+    "count_other": "{{count}} 个版本",
+    "current": "当前头像",
+    "upload": "上传的图片 {{number}}",
+    "generation": "生成的图片 {{number}}",
+    "edit": "编辑过的图片 {{number}}",
+    "short": {
+      "current": "当前",
+      "upload": "上传 {{number}}",
+      "generation": "图片 {{number}}",
+      "edit": "编辑 {{number}}"
+    }
+  },
+  "upload": {
+    "action": "上传图片"
+  },
+  "mode": {
+    "label": "要做什么",
+    "generate": "新图片",
+    "edit": "编辑所选",
+    "generateHint": "仅根据描述重新生成",
+    "editHint": "修改 {{version}} 的副本"
+  },
+  "prompt": {
+    "label": "描述头像",
+    "placeholder": "系着针织围巾的微笑狐狸，柔和光线"
+  },
+  "instruction": {
+    "label": "要更改什么",
+    "placeholder": "把围巾改成蓝色"
+  },
+  "actions": {
+    "generate": "生成",
+    "edit": "应用编辑",
+    "cancel": "取消",
+    "use": "使用此头像",
+    "retry": "重试"
+  },
+  "busy": {
+    "uploading": "正在添加图片",
+    "generating": "正在生成图片",
+    "editing": "正在编辑图片",
+    "cancelling": "正在取消"
+  },
+  "job": {
+    "progress": "{{current}} / {{total}}",
+    "rejected_other": "{{count}} 个结果已被搁置",
+    "cancelled": "生成已取消"
+  },
+  "settings": {
+    "open": "打开图片设置"
+  },
+  "notice": {
+    "options": {
+      "title": "无法检查头像模型",
+      "body": "上传功能仍然可用。"
+    },
+    "disabled": {
+      "title": "头像生成已关闭",
+      "body": "请在图片设置中开启后才能生成。上传功能仍然可用。"
+    },
+    "noModel": {
+      "title": "未选择头像模型",
+      "body": "请选择一个能接收并返回图片的模型。上传功能仍然可用。"
+    },
+    "incompatible": {
+      "title": "此模型无法生成头像",
+      "body": "头像需要能接收并返回图片的模型。上传功能仍然可用。"
+    },
+    "upload": {
+      "title": "无法添加图片"
+    },
+    "generation": {
+      "title": "无法生成图片"
+    },
+    "cancellation": {
+      "title": "无法取消",
+      "body": "请求可能仍在运行，请再次尝试取消。"
+    },
+    "uncertain": {
+      "title": "正在等待结果",
+      "body": "结果返回前连接已断开。重试可重新连接，或取消请求。"
+    }
+  },
+  "failure": {
+    "cancelled": "生成已取消。",
+    "setup": "图片模型配置不正确。请在图片设置中检查。",
+    "invalidRequest": "请求未被接受。请更改描述后重试。",
+    "engine": "图片引擎在完成前停止了。",
+    "timedOut": "图片生成耗时过长。",
+    "memory": "图片模型内存不足。",
+    "storage": "无法保存图片。",
+    "provider": "服务商无法生成图片。",
+    "empty": "没有返回图片。",
+    "rejected": "结果已被搁置，没有返回任何内容。",
+    "refused": "模型拒绝生成此图片。请更改描述后重试。",
+    "authentication": "服务商拒绝了凭据。请在设置中检查服务商。",
+    "unavailable": "图片模型目前不可用。",
+    "unknown": "生成图片时出错了。"
+  }
+}

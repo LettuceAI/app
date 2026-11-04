@@ -1,0 +1,83 @@
+{
+  "create": {
+    "title": "Nowa persona",
+    "back": "Wstecz",
+    "create": "Utwórz personę",
+    "created": "Utworzono {{name}}",
+    "imported": "Zaimportowano personę",
+    "unattached_one": "Nie udało się dołączyć {{count}} lorebooka. Dołącz go w ustawieniach persony.",
+    "unattached_few": "Nie udało się dołączyć {{count}} lorebooki. Dołącz je w ustawieniach persony.",
+    "unattached_many": "Nie udało się dołączyć {{count}} lorebooków. Dołącz je w ustawieniach persony.",
+    "unattached_other": "Nie udało się dołączyć {{count}} lorebooka. Dołącz je w ustawieniach persony.",
+    "defaultFailed": "Utworzono {{name}}, ale nie udało się ustawić jej jako domyślnej.",
+    "discardTitle": "Odrzucić tę personę?",
+    "discardBody": "To, co dotąd wpisałeś, zostanie utracone.",
+    "discard": "Odrzuć",
+    "keepEditing": "Kontynuuj edycję",
+    "continueTo": "Kontynuuj do: {{step}}"
+  },
+  "edit": {
+    "title": "Edytuj personę",
+    "back": "Wstecz",
+    "backToLibrary": "Wróć do biblioteki",
+    "more": "Więcej akcji",
+    "export": "Eksportuj",
+    "delete": "Usuń personę",
+    "exported": "Wyeksportowano personę",
+    "exportWarnings_one": "Wyeksportowano z {{count}} ostrzeżeniem",
+    "exportWarnings_few": "Wyeksportowano z {{count}} ostrzeżeniami",
+    "exportWarnings_many": "Wyeksportowano z {{count}} ostrzeżeniami",
+    "exportWarnings_other": "Wyeksportowano z {{count}} ostrzeżenia",
+    "deleteTitle": "Usunąć {{name}}?",
+    "deleteBody": "Persona zostanie usunięta z czatów, które jej używają.",
+    "deleteConfirm": "Usuń",
+    "deleteCancel": "Anuluj",
+    "deleted": "Usunięto {{name}}",
+    "unsaved": "Niezapisane zmiany",
+    "discard": "Odrzuć",
+    "save": "Zapisz",
+    "saved": "Zapisano zmiany",
+    "lorebooksFailed": "Zapisano, ale nie udało się zaktualizować lorebooków. Spróbuj zapisać ponownie.",
+    "leaveTitle": "Odrzucić zmiany?",
+    "leaveBody": "Niezapisane zmiany zostaną utracone.",
+    "leaveDiscard": "Odrzuć",
+    "leaveKeep": "Kontynuuj edycję"
+  },
+  "steps": {
+    "identity": "Tożsamość",
+    "extras": "Dodatki"
+  },
+  "identity": {
+    "chooseAvatar": "Wybierz obraz",
+    "removeAvatar": "Usuń",
+    "name": "Imię",
+    "namePlaceholder": "Zawodowy pisarz",
+    "nameHint": "Kim jesteś w czatach",
+    "nickname": "Przydomek",
+    "nicknamePlaceholder": "Jak zwracają się do ciebie postacie",
+    "nicknameHint": "Opcjonalnie. Używany w czatach zamiast imienia.",
+    "default": "Używaj jako domyślnej",
+    "defaultBody": "Nowe czaty zaczynają się z tą personą",
+    "import": "Importuj z pliku",
+    "importBody": "Importuj personę wyeksportowaną z LettuceAI.",
+    "chooseFile": "Wybierz plik"
+  },
+  "about": {
+    "description": "Opis",
+    "descriptionPlaceholder": "Jak postacie powinny się do ciebie zwracać, twoje tło, preferencje i styl",
+    "descriptionHint": "Użyj {{user}} dla tej persony i {{char}} dla postaci.",
+    "words_one": "{{count}} słowo",
+    "words_few": "{{count}} słowa",
+    "words_many": "{{count}} słów",
+    "words_other": "{{count}} słowa"
+  },
+  "extras": {
+    "body": "Wszystko tutaj jest opcjonalne.",
+    "lorebooks": "Lorebooki",
+    "lorebooksNone": "Brak",
+    "lorebooksCount_one": "{{count}} lorebook",
+    "lorebooksCount_few": "{{count}} lorebooki",
+    "lorebooksCount_many": "{{count}} lorebooków",
+    "lorebooksCount_other": "{{count}} lorebooka"
+  }
+}

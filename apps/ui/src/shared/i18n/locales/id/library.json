@@ -1,0 +1,121 @@
+{
+  "triggerPreview": "Pratinjau pemicu",
+  "title": "Perpustakaan",
+  "loadMore": "Muat lebih banyak",
+  "search": "Cari perpustakaan",
+  "show": "Tampilkan",
+  "filters": {
+    "all": "Semua",
+    "characters": "Karakter",
+    "personas": "Persona",
+    "lorebooks": "Lorebook",
+    "images": "Gambar",
+    "audio": "Audio"
+  },
+  "kinds": {
+    "character": "Karakter",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "Anda",
+  "entries_other": "{{count}} entri",
+  "defaultPersona": "Persona · default Anda",
+  "menu": {
+    "start": "Mulai obrolan",
+    "edit_character": "Edit karakter",
+    "edit_persona": "Edit persona",
+    "edit_lorebook": "Edit lorebook",
+    "default": "Jadikan persona default",
+    "defaultHint": "Untuk obrolan yang tidak memilih persona lain",
+    "export": "Ekspor",
+    "export_character": "Sebagai kartu karakter",
+    "export_persona": "Sebagai file UEC",
+    "export_lorebook": "Sebagai file UEC atau JSON",
+    "delete_character": "Hapus karakter",
+    "delete_persona": "Hapus persona",
+    "delete_lorebook": "Hapus lorebook",
+    "save": "Simpan ke perangkat",
+    "deleteImage": "Hapus gambar",
+    "deleteAudio": "Hapus rekaman",
+    "avatar": "Jadikan avatar {{name}}",
+    "more": "Lainnya untuk {{name}}",
+    "background": "Latar belakang",
+    "generated": "Dihasilkan",
+    "uploaded": "Diunggah"
+  },
+  "create": {
+    "title": "Buat",
+    "description": "Tambahkan sesuatu ke perpustakaan Anda.",
+    "character": "Seseorang untuk diajak bicara",
+    "persona": "Siapa Anda dalam obrolan",
+    "lorebook": "Fakta dunia yang dapat dirujuk karakter",
+    "import": "Impor file",
+    "importHint": "Kartu karakter, persona, atau lorebook",
+    "new_character": "Karakter baru",
+    "new_lorebook": "Lorebook baru",
+    "button_character": "Buat karakter",
+    "button_persona": "Buat persona",
+    "button_lorebook": "Buat lorebook"
+  },
+  "edit": {
+    "name": "Nama",
+    "hint_character": "Ditampilkan di kartu dan header obrolan.",
+    "placeholder_character": "mis. Cassian",
+    "placeholder_lorebook": "mis. Gerbang utara",
+    "create": "Buat",
+    "cancel": "Batal"
+  },
+  "delete": {
+    "title": "Hapus {{name}}?",
+    "confirm": "Hapus",
+    "character": "Obrolan dan memorinya ikut dihapus.",
+    "persona": "Persona akan dihapus dari obrolan yang menggunakannya.",
+    "lorebook": "Karakter dan obrolan yang menggunakannya kehilangan akses ke entrinya.",
+    "image": "Gambar dihapus dari perangkat ini. Gambar yang masih digunakan tidak dapat dihapus.",
+    "audio": "Rekaman dihapus dari perangkat ini. Rekaman yang masih digunakan tidak dapat dihapus."
+  },
+  "empty": {
+    "all": {
+      "title": "Perpustakaan Anda kosong",
+      "description": "Karakter, persona, dan lorebook yang Anda buat atau impor disimpan di sini."
+    },
+    "characters": {
+      "title": "Belum ada karakter",
+      "description": "Karakter adalah siapa yang Anda ajak bicara: nama, riwayat, cara bicara."
+    },
+    "personas": {
+      "title": "Belum ada persona",
+      "description": "Persona adalah siapa Anda dalam obrolan. Karakter melihat nama dan deskripsinya."
+    },
+    "lorebooks": {
+      "title": "Belum ada lorebook",
+      "description": "Fakta dunia yang dapat dirujuk karakter saat muncul dalam percakapan."
+    },
+    "images": {
+      "title": "Belum ada gambar",
+      "description": "Gambar yang Anda hasilkan dalam obrolan disimpan di sini."
+    },
+    "audio": {
+      "title": "Belum ada audio",
+      "description": "Baris suara yang Anda hasilkan atau rekam disimpan di sini."
+    },
+    "matches": "Tidak ada yang cocok dengan “{{query}}”",
+    "searchAll": "Coba nama lain, atau bagian dari deskripsi.",
+    "searchSection": "Tidak ada di bagian ini. Mungkin ada di bagian lain perpustakaan Anda.",
+    "clear": "Hapus pencarian",
+    "everything": "Cari di semua",
+    "import": "Impor"
+  },
+  "toast": {
+    "created": "{{name}} ditambahkan",
+    "deleted": "{{name}} dihapus",
+    "default": "{{name}} adalah persona default Anda",
+    "exported": "File diekspor",
+    "imported": "File diimpor",
+    "warnings_other": "File ditransfer dengan {{count}} peringatan",
+    "mediaSaved": "Disimpan ke perangkat",
+    "avatar": "Avatar diperbarui"
+  },
+  "draft": "Draf",
+  "untitledDraft": "Draf lorebook tanpa judul"
+}

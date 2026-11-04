@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Tekrar hoş geldiniz.",
+    "bodyBefore": "Bu, ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Sıfırdan yeniden inşa edildi; oluşturduğunuz her şey sizinle birlikte geliyor.",
+    "migrate": "Verileri taşı",
+    "notNow": "Şimdi değil"
+  },
+  "migrate": {
+    "title": "Verileriniz taşınıyor",
+    "body": "Sohbetleriniz, karakterleriniz ve medyanız aktarılıyor.",
+    "note": "İşlem bitene kadar uygulamayı açık tutun.",
+    "stages": {
+      "read": "Verileriniz okunuyor",
+      "write": "Sohbetler, karakterler ve medya taşınıyor",
+      "verify": "Her şey kontrol ediliyor",
+      "switch": "Tamamlanıyor"
+    },
+    "failed": "Taşıma tamamlanmadı.",
+    "retry": "Tekrar deneyin"
+  },
+  "models": {
+    "titlePending": "Özellikleriniz geri getiriliyor",
+    "titleReady": "Özellikleriniz geri döndü",
+    "checking": "Sohbetlerinizin hangi özellikleri kullandığı kontrol ediliyor",
+    "bodyPending_memory": "Bazı sohbetleriniz dinamik hafıza kullanıyor. Modeli bir kez indirilir, ardından çevrimdışı çalışır.",
+    "bodyPending_emotion": "Bazı sohbetleriniz yoldaş duygularını kullanıyor. Modeli bir kez indirilir, ardından çevrimdışı çalışır.",
+    "bodyPending_both": "Bazı sohbetleriniz dinamik hafıza ve yoldaş duygularını kullanıyor. Modelleri bir kez indirilir, ardından çevrimdışı çalışır.",
+    "bodyReady_memory": "Dinamik hafıza hazır ve çevrimdışı çalışır.",
+    "bodyReady_emotion": "Yoldaş duyguları hazır ve çevrimdışı çalışır.",
+    "bodyReady_both": "Dinamik hafıza ve yoldaş duyguları hazır ve çevrimdışı çalışır.",
+    "names": {
+      "embedding": "Lettuce Eidos hafıza modeli",
+      "emotion": "Thymos duygu modeli"
+    },
+    "why": {
+      "embedding": "Dinamik hafıza için",
+      "emotion": "Yoldaş duyguları için"
+    },
+    "ready": "Hazır",
+    "waiting": "Bekliyor",
+    "checkingFiles": "Dosyalar kontrol ediliyor",
+    "progress": "{{done}} / {{total}}",
+    "failed": "İndirme tamamlanmadı",
+    "download": "İndir",
+    "notNow": "Şimdi değil",
+    "continue": "Devam",
+    "retry": "Tekrar deneyin",
+    "notNowNote": "Bu modellere ihtiyaç duyan sohbetler onları isteyecek. Daha sonra Ayarlar'dan indirebilirsiniz.",
+    "keepOpen": "İşlem bitene kadar uygulamayı açık tutun."
+  },
+  "done": {
+    "title": "Her şey hazır.",
+    "body": "Her şey bıraktığınız yerde.",
+    "open": "LettuceAI'ı aç"
+  },
+  "upgrade": {
+    "title": "Önce bir adım",
+    "body": "Verileriniz eski bir LettuceAI sürümünden. Güncellenebilmesi için bir kez {{version}} sürümüyle açın, sonra buraya dönün.",
+    "copy": "İndirme bağlantısını kopyala",
+    "copied": "Bağlantı kopyalandı",
+    "fresh": "Bunun yerine sıfırdan başla"
+  }
+}

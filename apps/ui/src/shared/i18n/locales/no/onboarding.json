@@ -1,0 +1,356 @@
+{
+  "header": {
+    "back": "Tilbake",
+    "learn": "Veiledet oppsett · Det grunnleggende, {{current}} av {{total}}",
+    "path": "Veiledet oppsett · Gratis eller betalt",
+    "guided": "Veiledet oppsett · {{name}}, {{current}} av {{total}}",
+    "connect": "Oppsett · 1 av 3",
+    "model": "Oppsett · 2 av 3",
+    "memory": "Oppsett · 3 av 3"
+  },
+  "welcome": {
+    "line1": "Dine <brand>historier</brand>,",
+    "line2": "dine <brand>karakterer</brand>.",
+    "pitch": "Samtaler og karakterer blir på enheten din. Du velger hvilken AI som skriver svarene.",
+    "start": "Kom i gang",
+    "other": "Andre alternativer"
+  },
+  "actions": {
+    "exitSetup": "Tilbake til innstillingene",
+    "next": "Neste",
+    "gotIt": "Skjønner",
+    "haveKey": "Jeg har nøkkelen min",
+    "connect": "Koble til",
+    "checking": "Sjekker nøkkelen din",
+    "useModel": "Bruk denne modellen",
+    "saving": "Lagrer modellen din",
+    "finish": "Fullfør oppsettet",
+    "finishing": "Fullfører oppsettet",
+    "openApp": "Åpne LettuceAI"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Velkommen",
+      "title": "Velkommen til LettuceAI",
+      "body": "Du skal nå sette opp ditt første AI-rollespill. De neste stegene forklarer det grunnleggende på en enkel måte, og deretter hjelper vi deg med å koble alt sammen. Det tar bare et par minutter."
+    },
+    "car": {
+      "tag": "Slik fungerer det",
+      "title": "Appen er bilen, ikke motoren",
+      "body": "Tenk på denne appen som en bil uten motor ennå. Den har dashbordet, setene og karakterene dine, men kan ikke kjøre av seg selv. Du legger til en motor, og disse få stegene viser deg hvordan.",
+      "plain": "Denne appen er skjermen og karakterene. AI-en som faktisk skriver svarene, kjører på nettet, og du kobler appen til den."
+    },
+    "provider": {
+      "tag": "Steg 1 av 3",
+      "title": "Velg hvor motoren kommer fra",
+      "body": "En leverandør er selskapet som leverer og kjører motoren, som Google eller OpenRouter. Du oppretter en gratis eller betalt konto hos en av dem, og appen låner motoren deres til å drive samtalene dine.",
+      "plain": "En leverandør er et selskap som kjører AI-modeller. Du oppretter en konto hos en, og appen sender meldingene dine til dem for å få svar."
+    },
+    "key": {
+      "tag": "Steg 2 av 3",
+      "title": "Nøkkelen din starter motoren",
+      "body": "En API-nøkkel fungerer akkurat som en bilnøkkel. Leverandøren gir deg en, du setter den inn i appen, og den slår på motoren. Hold den for deg selv. Den blir på enheten din, som en nøkkel i lommen.",
+      "plain": "En API-nøkkel er en hemmelig kode fra leverandøren din som lar appen bruke kontoen din. Du limer den inn én gang, og den lagres bare på enheten din."
+    },
+    "engine": {
+      "tag": "Steg 3 av 3",
+      "title": "Velg motoren din",
+      "body": "En modell er selve motoren. Leverandører tilbyr små, effektive motorer og store, kraftige. Større motorer kjører bedre, men bruker mer drivstoff, så de koster mer. Du kan bytte motor når som helst.",
+      "plain": "En modell er den konkrete AI-en som skriver svarene. Større modeller er smartere, men koster mer, og du kan bytte mellom dem når du vil."
+    },
+    "cost": {
+      "tag": "Kostnaden",
+      "title": "Gratis eller betalt, du velger",
+      "body": "Noen modeller er helt gratis å bruke, med en daglig grense for hvor mye du kan samtale. Betalte modeller tar en liten sum per melding, ofte mindre enn en cent.",
+      "plain": "Du betaler bare leverandøren, aldri denne appen. Du kan starte gratis og bytte til betalt senere hvis du vil."
+    },
+    "inOtherWords": "Med andre ord"
+  },
+  "path": {
+    "gemini": {
+      "title": "Gratis",
+      "subtitle": "Google Gemini",
+      "cta": "Start gratis",
+      "pro1": "Koster ingenting og ber aldri om kort",
+      "pro2": "En romslig daglig kvote for vanlig samtale",
+      "pro3": "God kvalitet for rollespill og samtale",
+      "con1": "Bare Googles egne modeller",
+      "con2": "Modent eller eksplisitt innhold blokkeres"
+    },
+    "openrouter": {
+      "title": "Betal etter bruk",
+      "subtitle": "OpenRouter",
+      "cta": "Bruk OpenRouter",
+      "pro1": "Nesten alle AI-modeller, også de sterkeste",
+      "pro2": "Ingen daglige tak, du betaler bare for det du bruker",
+      "pro3": "Bytt til billigere modeller når som helst",
+      "con1": "Kostnaden avhenger av modellen og hvor mye du samtaler",
+      "con2": "Trenger et kort eller forhåndsbetalt kreditt"
+    },
+    "title": "Gratis eller betalt?",
+    "lead": "Begge kobler appen til en AI. Forskjellen er om du betaler, og hvor mange modeller du kan velge mellom.",
+    "footer": "Usikker? Start gratis. Du kan legge til en betalt tjeneste senere uten å miste noe."
+  },
+  "connect": {
+    "title": "Koble til en AI",
+    "lead": "LettuceAI er appen; en AI-tjeneste skriver svarene. Koble til den du har en nøkkel for.",
+    "guidedLink": "Ny med AI-apper? Ta det veiledede oppsettet",
+    "search": "Søk i {{count}} tjenester",
+    "chooseAnother": "Velg en annen tjeneste",
+    "pickTitle": "Velg en tjeneste fra listen",
+    "pickBody": "Du trenger en konto og en API-nøkkel fra den.",
+    "groups": {
+      "cloud": "Skytjenester",
+      "local": "På datamaskinen eller nettverket ditt",
+      "custom": "En hvilken som helst annen tjeneste"
+    },
+    "subtitle": {
+      "custom": "Ditt eget endepunkt",
+      "local": "Kjører på datamaskinen din"
+    },
+    "form": {
+      "address": "Adresse",
+      "addressHintLocal": "Hvor serveren kjører",
+      "addressHintCustom": "Basis-URL-en til API-et",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API-nøkkel",
+      "apiKeyOptional": "API-nøkkel (valgfritt)",
+      "apiKeyHint": "Lagres kryptert på denne enheten",
+      "apiKeyPlaceholder": "Lim inn nøkkelen din",
+      "name": "Navn",
+      "nameHint": "Hvordan det vises i menyene dine",
+      "namePlaceholder": "Min {{name}}"
+    },
+    "error": {
+      "rejected": "Denne nøkkelen ble ikke godtatt",
+      "unreachable": "Kunne ikke nå {{name}}. Sjekk tilkoblingen."
+    }
+  },
+  "guide": {
+    "previousPicture": "Forrige bilde",
+    "nextPicture": "Neste bilde",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Skjermbilde",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Lim inn nøkkelen din",
+      "geminiBody": "Lim inn nøkkelen du nettopp kopierte fra Google AI Studio. Vi sjekker den med Google og viser deg deretter modellene den låser opp.",
+      "openrouterBody": "Lim inn nøkkelen du kopierte fra OpenRouter. Den begynner med sk-or. Vi sjekker den og viser deg deretter modellene du kan bruke.",
+      "geminiPlaceholder": "Lim inn API-nøkkelen din",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Lagres kryptert på denne enheten. Sendes bare til {{name}} når du samtaler."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Åpne Google AI Studio",
+        "body": "Google AI Studio er Googles offisielle nettsted der din gratis Gemini-nøkkel opprettes. Åpne det i nettleseren med knappen nedenfor. Når siden lastes, logger du inn med din vanlige Google-konto ved å klikke på Kom i gang øverst til høyre. Hvis du allerede er innlogget, tar den deg rett gjennom.",
+        "open": "Åpne Google AI Studio",
+        "slide1": "Klikk på Kom i gang øverst til høyre."
+      },
+      "find": {
+        "title": "Finn API-nøklene",
+        "body": "Du ser nå hovedarbeidsområdet i Google AI Studio. API-nøklene er ikke på hovedskjermen; de ligger i sidepanelet som går nedover venstre side av siden. Se nær bunnen av sidepanelet etter et lite nøkkelikon, og klikk på det for å åpne siden der nøkler administreres.",
+        "slide1": "Klikk på nøkkelikonet nederst til venstre i sidepanelet."
+      },
+      "create": {
+        "title": "Opprett nøkkelen din",
+        "body": "Det krever noen få klikk å opprette en nøkkel, og bildene viser hvert steg i rekkefølge. Åpne først dialogen for ny nøkkel øverst til høyre, opprett deretter et prosjekt som nøkkelen skal ligge i, gi prosjektet et navn du liker, og opprett til slutt selve nøkkelen. Bruk pilene til høyre for å gå gjennom hver skjerm.",
+        "slide1": "Klikk på Opprett API-nøkkel øverst til høyre.",
+        "slide2": "Åpne nedtrekksmenyen og klikk på Opprett prosjekt.",
+        "slide3": "Gi det et navn du liker, og klikk på Opprett prosjekt.",
+        "slide4": "Med prosjektet ditt valgt, klikk på Opprett nøkkel."
+      },
+      "copy": {
+        "title": "Kopier nøkkelen din",
+        "body": "Nøkkelen din er opprettet og vises nå i sin helhet. Klikk på kopieringsikonet ved siden av for å kopiere hele nøkkelen til utklippstavlen. Dette er eneste gang Google viser hele nøkkelen, så kopier den nå før du lukker dialogen, og kom deretter tilbake hit for å lime den inn.",
+        "slide1": "Klikk på kopieringsikonet for å kopiere API-nøkkelen din."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Åpne Google AI Studio",
+        "body": "Google AI Studio er Googles offisielle nettsted der din gratis Gemini-nøkkel opprettes. Åpne det i nettleseren med knappen nedenfor, så går vi gjennom å skaffe en nøkkel sammen. De to bildene viser nøyaktig hvor du skal trykke når siden lastes, så sveip mellom dem hvis du er usikker på hvor du skal se.",
+        "open": "Åpne Google AI Studio",
+        "slide1": "Trykk på menyen øverst til høyre.",
+        "slide2": "Trykk deretter på Kom i gang nederst."
+      },
+      "find": {
+        "title": "Finn API-nøklene",
+        "body": "Du er nå innlogget og ser hovedsiden til Google AI Studio. Det du trenger, ligger gjemt i sidemenyen i stedet for på hovedskjermen. Åpne menyen, og se helt nederst etter et lite nøkkelikon. Trykker du på det, kommer du rett til siden der nøkler opprettes.",
+        "slide1": "Åpne menyen øverst til venstre.",
+        "slide2": "Trykk på nøkkelikonet nederst i menyen."
+      },
+      "start": {
+        "title": "Start en ny nøkkel",
+        "body": "Dette er API-nøkkelsiden din, og den er tom akkurat nå fordi du ikke har laget noen ennå. Det er helt normalt. Knappen som starter prosessen, sitter øverst til høyre på skjermen, så trykk på den for å begynne å lage din første nøkkel.",
+        "slide1": "Trykk på Opprett API-nøkkel øverst til høyre."
+      },
+      "project": {
+        "title": "Lag et prosjekt først",
+        "body": "Før Google gir deg en nøkkel, spør det hvilket prosjekt nøkkelen skal tilhøre. Et prosjekt er bare en mappe Google bruker for å holde ting organisert, og du har ingen ennå. Opprett et nytt prosjekt og gi det et navn du liker, for eksempel LettuceAI. Navnet påvirker ingenting, så velg det som er enklest.",
+        "slide1": "Åpne nedtrekksmenyen og trykk på Opprett prosjekt.",
+        "slide2": "Gi det et navn du liker, og trykk på Opprett prosjekt."
+      },
+      "create": {
+        "title": "Opprett og kopier nøkkelen din",
+        "body": "Med det nye prosjektet valgt, opprett selve nøkkelen. Når den vises, kopier den med en gang med kopieringsikonet. Dette er eneste gang Google viser deg hele nøkkelen, så det er viktig å kopiere den nå før du lukker vinduet. Du limer den inn i appen i neste steg.",
+        "slide1": "Med prosjektet valgt, trykk på Opprett nøkkel.",
+        "slide2": "Trykk på kopieringsikonet for å kopiere nøkkelen din."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Opprett kontoen din",
+        "body": "OpenRouter er en enkelt tjeneste som kobler deg til hundrevis av AI-modeller fra mange forskjellige selskaper, alt gjennom én konto og én nøkkel. Åpne det i nettleseren med knappen nedenfor og opprett en gratis konto. Knappen Registrer deg sitter øverst til høyre på siden.",
+        "open": "Åpne OpenRouter",
+        "slide1": "Klikk på Registrer deg øverst til høyre."
+      },
+      "key": {
+        "title": "Få API-nøkkelen din",
+        "body": "Etter at du har registrert deg, spør OpenRouter hvordan du planlegger å bruke det. Velg Individual, som er riktig alternativ for personlig bruk. Så snart du gjør det, oppretter det din aller første API-nøkkel og viser den på skjermen. Kopier nøkkelen nå. Den begynner med sk-or, og du limer den inn i appen om et øyeblikk.",
+        "slide1": "Velg Individual når du blir spurt.",
+        "slide2": "Kopier din nye API-nøkkel (begynner med sk-or)."
+      },
+      "payment": {
+        "title": "Legg til en betalingsmetode",
+        "body": "Betalte modeller tar en svært liten sum per melding, så OpenRouter trenger et kort registrert før det vil kjøre dem. Legg til faktureringsdetaljene dine nå for å låse opp modellene. Ingenting belastes i dette steget; det bekrefter bare hvem du er og lar deg bruke kreditt senere.",
+        "slide1": "Fyll inn faktureringsdetaljene dine.",
+        "slide2": "Alt er klart når det er lagt til."
+      },
+      "credits": {
+        "title": "Legg til litt kreditt",
+        "body": "Kreditt er saldoen som faktisk betaler for meldingene dine mens du samtaler. Åpne kredittsiden fra sidepanelet og fyll på et lite beløp for å komme i gang. Selv noen få dollar varer lenge med de fleste modeller, og du kan alltid legge til mer senere når du begynner å gå tom.",
+        "slide1": "Åpne Kreditt fra sidepanelet.",
+        "slide2": "Klikk på Legg til kreditt og velg et beløp."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Opprett kontoen din",
+        "body": "OpenRouter er en enkelt tjeneste som kobler deg til hundrevis av AI-modeller fra mange forskjellige selskaper, alt gjennom én konto og én nøkkel. Åpne det i nettleseren med knappen nedenfor og opprett en gratis konto. Knappen Registrer deg sitter øverst til høyre på siden.",
+        "open": "Åpne OpenRouter",
+        "slide1": "Trykk på Registrer deg øverst til høyre."
+      },
+      "key": {
+        "title": "Få API-nøkkelen din",
+        "body": "Etter at du har registrert deg, spør OpenRouter hvordan du planlegger å bruke det. Velg Individual, som er riktig alternativ for personlig bruk. Så snart du gjør det, oppretter det din aller første API-nøkkel og viser den på skjermen. Kopier nøkkelen nå. Den begynner med sk-or, og du limer den inn i appen om et øyeblikk.",
+        "slide1": "Velg Individual når du blir spurt.",
+        "slide2": "Kopier din nye API-nøkkel (begynner med sk-or)."
+      },
+      "payment": {
+        "title": "Legg til en betalingsmetode",
+        "body": "Betalte modeller tar en svært liten sum per melding, så OpenRouter trenger et kort registrert før det vil kjøre dem. Legg til faktureringsdetaljene dine nå for å låse opp modellene. Ingenting belastes i dette steget; det bekrefter bare hvem du er og lar deg bruke kreditt senere.",
+        "slide1": "Fyll inn faktureringsdetaljene dine.",
+        "slide2": "Alt er klart når det er lagt til."
+      },
+      "credits": {
+        "title": "Legg til litt kreditt",
+        "body": "Kreditt er saldoen som faktisk betaler for meldingene dine mens du samtaler. Åpne menyen, gå til kredittsiden og fyll på et lite beløp for å komme i gang. Selv noen få dollar varer lenge med de fleste modeller, og du kan alltid legge til mer senere når du begynner å gå tom.",
+        "slide1": "Åpne menyen og gå til Kreditt.",
+        "slide2": "Trykk på Legg til kreditt og velg et beløp."
+      }
+    }
+  },
+  "model": {
+    "title": "Velg en modell",
+    "lead": "Velg {{name}}-modellen som skriver svarene. Du kan endre den eller legge til flere når som helst.",
+    "model": "Modell",
+    "modelId": "Modell-id",
+    "modelIdHint": "Den nøyaktige id-en tjenesten forventer",
+    "modelIdPlaceholder": "model-name",
+    "choose": "Velg blant {{count}} modeller",
+    "customId": "Egendefinert id",
+    "displayName": "Visningsnavn",
+    "displayNameHint": "Det du ser inne i appen",
+    "displayNamePlaceholder": "Min modell",
+    "connected": "Tilkoblet",
+    "context": "Kontekst",
+    "contextTokens": "{{value}} tokens",
+    "contextSuffix": "{{value}} kontekst",
+    "images": "Forstår bilder",
+    "yes": "Ja",
+    "no": "Nei",
+    "inputPerMillion": "Inndata, per million",
+    "outputPerMillion": "Utdata, per million",
+    "emptyTitle": "Ingen modell valgt ennå",
+    "emptyBody": "Kontekststørrelsen og prisene vises her.",
+    "free": "Gratis",
+    "priceIn": "inn",
+    "priceOut": "ut",
+    "picker": {
+      "title": "{{name}}-modeller",
+      "search": "Søk i {{count}} modeller",
+      "filter": "Filtrer modeller",
+      "layout": "Oppsett",
+      "list": "Liste",
+      "twoPerRow": "To per rad",
+      "onlyFree": "Bare gratis modeller",
+      "none": "Ingen modeller samsvarer med disse filtrene.",
+      "useId": "Bruk <mono>{{id}}</mono>",
+      "useIdBody": "Ikke i listen: bruk denne nøyaktige id-en",
+      "priceNote": "Priser per million tokens, fra {{name}}.",
+      "loading": "Laster modeller"
+    },
+    "filters": {
+      "title": "Filtrer modeller",
+      "madeBy": "Laget av",
+      "capabilities": "Egenskaper",
+      "imagesTitle": "Forstår bilder",
+      "imagesBody": "Kan lese bilder du sender i en samtale",
+      "sortBy": "Sorter etter",
+      "sortName": "Navn",
+      "sortPrice": "Billigst",
+      "sortContext": "Lengste kontekst",
+      "clear": "Tøm",
+      "show_one": "Vis {{count}} modell",
+      "show_other": "Vis {{count}} modeller"
+    }
+  },
+  "memory": {
+    "title": "Hvordan skal karakterene huske?",
+    "lead": "Karakterer glemmer det som faller utenfor de siste meldingene. Velg hvordan de viktige delene kommer tilbake. Du kan endre dette per samtale senere.",
+    "group": "Minne",
+    "recommended": "Anbefalt",
+    "classic": "Klassisk",
+    "detailTitle": "{{title}}-minne",
+    "automatic": {
+      "title": "Automatisk",
+      "point1": "En liten modell på enheten din plukker ut det som betyr noe og henter det tilbake ved behov",
+      "point2": "Lange samtaler holder seg konsistente",
+      "point3": "Færre tokens sendes, så svarene koster mindre",
+      "note": "Trenger en engangsnedlasting. Kjører frakoblet etter det."
+    },
+    "manual": {
+      "title": "Manuell",
+      "point1": "Du fester meldinger og skriver faktaene selv",
+      "point2": "Full kontroll over det som huskes",
+      "point3": "Ingenting kjører i bakgrunnen",
+      "note": "Ingenting å laste ned."
+    }
+  },
+  "other": {
+    "title": "Andre alternativer",
+    "language": "Språk",
+    "skip": "Hopp over oppsettet",
+    "skipBody": "Se deg rundt først. Samtaler trenger en AI før de kan svare.",
+    "restore": "Gjenopprett en sikkerhetskopi",
+    "restoreBody": "Hent tilbake samtaler, karakterer og innstillinger fra en .lettuce-fil",
+    "languageTitle": "Språk",
+    "warning": {
+      "title": "Samtaler trenger en AI før de kan svare",
+      "body": "Uten en tilkoblet AI kan ikke karakterene svare. Du kan koble til en senere i innstillingene.",
+      "connect": "Koble til en AI",
+      "skipAnyway": "Hopp over likevel"
+    }
+  },
+  "failure": {
+    "finish": "Kunne ikke fullføre oppsettet.",
+    "models": "Kunne ikke laste modellene.",
+    "save": "Kunne ikke lagre."
+  }
+}

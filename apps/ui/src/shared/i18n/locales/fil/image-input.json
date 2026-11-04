@@ -1,0 +1,133 @@
+{
+  "generate": "Gumawa ng avatar",
+  "title": "Gumawa ng avatar",
+  "bannerCrop": {
+    "title": "Iposisyon ang banner",
+    "description": "I-frame ang cover. I-drag para ilipat, i-pinch o mag-scroll para mag-zoom.",
+    "saveFailed": "Hindi ma-save ang banner"
+  },
+  "crop": {
+    "title": "Iposisyon ang avatar",
+    "description": "I-drag para ilipat. I-pinch o mag-scroll para mag-zoom.",
+    "zoom": "Zoom",
+    "zoomIn": "Mag-zoom in",
+    "zoomOut": "Mag-zoom out",
+    "center": "Gitna",
+    "area": "Lugar ng pag-frame",
+    "keyboard": "Ginagalaw ng arrow keys ang larawan. Nag-zoom ang plus at minus, nagce-center ang C, nagre-reset ang 0.",
+    "reset": "I-reset",
+    "apply": "Gamitin ang posisyong ito",
+    "loadFailed": "Hindi ma-load ang larawan",
+    "saveFailed": "Hindi ma-save ang avatar"
+  },
+  "preview": {
+    "empty": "Wala pang larawan",
+    "emptyBody": "Ilarawan ang avatar sa ibaba, o magsimula sa sarili mong larawan.",
+    "alt": "Preview ng avatar",
+    "unchanged": "Ang avatar na nasa form na",
+    "editedFrom": "Mula sa {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Mga Version",
+    "count_one": "{{count}} version",
+    "count_other": "{{count}} version",
+    "current": "Kasalukuyang avatar",
+    "upload": "In-upload na larawan {{number}}",
+    "generation": "Ginawang larawan {{number}}",
+    "edit": "In-edit na larawan {{number}}",
+    "short": {
+      "current": "Kasalukuyan",
+      "upload": "I-upload {{number}}",
+      "generation": "Larawan {{number}}",
+      "edit": "I-edit {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Mag-upload ng larawan"
+  },
+  "mode": {
+    "label": "Ano ang gagawin",
+    "generate": "Bagong larawan",
+    "edit": "I-edit ang napili",
+    "generateHint": "Nagsisimula mula sa deskripsyon lang",
+    "editHint": "Binabago ang kopya ng {{version}}"
+  },
+  "prompt": {
+    "label": "Ilarawan ang avatar",
+    "placeholder": "Isang nakangiting soro na may knitted na scarf, malambot na ilaw"
+  },
+  "instruction": {
+    "label": "Ano ang babaguhin",
+    "placeholder": "Gawing asul ang scarf"
+  },
+  "actions": {
+    "generate": "Gumawa",
+    "edit": "I-apply ang edit",
+    "cancel": "Kanselahin",
+    "use": "Gamitin ang avatar na ito",
+    "retry": "Subukan muli"
+  },
+  "busy": {
+    "uploading": "Idinadagdag ang larawan",
+    "generating": "Ginagawa ang larawan",
+    "editing": "Ini-edit ang larawan",
+    "cancelling": "Kinakansela"
+  },
+  "job": {
+    "progress": "{{current}} sa {{total}}",
+    "rejected_one": "{{count}} resulta ang itinabi",
+    "rejected_other": "{{count}} resulta ang itinabi",
+    "cancelled": "Kinansela ang paggawa"
+  },
+  "settings": {
+    "open": "Buksan ang image settings"
+  },
+  "notice": {
+    "options": {
+      "title": "Hindi ma-check ang avatar model",
+      "body": "Gumagana pa rin ang pag-upload."
+    },
+    "disabled": {
+      "title": "Naka-off ang paggawa ng avatar",
+      "body": "I-on ito sa image settings para makagawa. Gumagana pa rin ang pag-upload."
+    },
+    "noModel": {
+      "title": "Walang napiling avatar model",
+      "body": "Pumili ng model na tumatanggap at nagbabalik ng larawan. Gumagana pa rin ang pag-upload."
+    },
+    "incompatible": {
+      "title": "Hindi makagawa ng avatar ang model na ito",
+      "body": "Kailangan ng avatar ng model na tumatanggap at nagbabalik ng larawan. Gumagana pa rin ang pag-upload."
+    },
+    "upload": {
+      "title": "Hindi maidagdag ang larawan"
+    },
+    "generation": {
+      "title": "Hindi magawa ang larawan"
+    },
+    "cancellation": {
+      "title": "Hindi makansela",
+      "body": "Puwedeng tumatakbo pa ang request. Subukang kanselahin muli."
+    },
+    "uncertain": {
+      "title": "Naghihintay ng resulta",
+      "body": "Nawala ang koneksyon bago dumating ang resulta. Subukan muli para makakonekta, o kanselahin ang request."
+    }
+  },
+  "failure": {
+    "cancelled": "Kinansela ang paggawa.",
+    "setup": "Hindi maayos ang setup ng image model. Tingnan ito sa image settings.",
+    "invalidRequest": "Hindi tinanggap ang request. Palitan ang deskripsyon at subukan muli.",
+    "engine": "Huminto ang image engine bago matapos.",
+    "timedOut": "Masyadong natagalan ang paggawa ng larawan.",
+    "memory": "Naubusan ng memory ang image model.",
+    "storage": "Hindi ma-save ang larawan.",
+    "provider": "Hindi magawa ng provider ang larawan.",
+    "empty": "Walang larawang bumalik.",
+    "rejected": "Itinabi ang resulta at walang ibinalik.",
+    "refused": "Tinanggihan ng modelo na gawin ang larawang ito. Palitan ang deskripsyon at subukan muli.",
+    "authentication": "Tinanggihan ng provider ang mga credential. Tingnan ang provider sa settings.",
+    "unavailable": "Hindi available ang image model ngayon.",
+    "unknown": "May nangyaring mali habang ginagawa ang larawan."
+  }
+}

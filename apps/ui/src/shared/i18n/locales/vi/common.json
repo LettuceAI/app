@@ -1,0 +1,174 @@
+{
+  "onnxModelsUnloaded": "Đã giải phóng các mô hình đang rảnh để tiết kiệm bộ nhớ: {{models}}. Chúng sẽ tải lại khi cần.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Đang kết nối với ứng dụng…"
+  },
+  "navigation": {
+    "primary": "Điều hướng chính",
+    "chats": "Trò chuyện",
+    "groups": "Nhóm",
+    "discover": "Khám phá",
+    "library": "Thư viện",
+    "settings": "Cài đặt",
+    "home": "Trang chủ",
+    "create": "Tạo",
+    "collapse": "Thu gọn",
+    "collapseSidebar": "Thu gọn thanh bên",
+    "expandSidebar": "Mở rộng thanh bên",
+    "backToApp": "Về ứng dụng"
+  },
+  "downloads": {
+    "loading": "Đang tải danh sách tải xuống",
+    "title": "Tải xuống",
+    "titleActive_other": "Tải xuống, {{count}} đang hoạt động",
+    "empty": "Không có mục nào đang tải.",
+    "emptyBody": "Các bản cài đặt và cập nhật sẽ hiện ở đây.",
+    "generic": "Tải xuống",
+    "done": "{{name}} đã sẵn sàng",
+    "failed": "Không thể tải {{name}}"
+  },
+  "window": {
+    "minimize": "Thu nhỏ",
+    "maximize": "Phóng to",
+    "close": "Đóng cửa sổ",
+    "failed": "Không thể thực hiện thao tác cửa sổ. Thử lại."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Khác"
+  },
+  "actions": {
+    "retry": "Thử lại",
+    "cancel": "Hủy",
+    "reload": "Tải lại"
+  },
+  "errors": {
+    "fatalTitle": "Đã xảy ra lỗi",
+    "fatalDescription": "Ứng dụng gặp sự cố bất ngờ. Tải lại thường sẽ khắc phục được.",
+    "loadTitle": "Không thể tải nội dung này",
+    "notFoundTitle": "Không có gì ở đây",
+    "notFoundDescription": "Trang này không tồn tại trong ứng dụng.",
+    "code": {
+      "not_found": "Mục này không còn tồn tại.",
+      "in_use": "Mục này vẫn đang được dùng. Xóa các tham chiếu đến nó rồi thử lại.",
+      "malformed": "Nhà cung cấp trả về phản hồi không đọc được.",
+      "conflict": "Mục này đã bị thay đổi ở nơi khác. Tải lại rồi thử lại.",
+      "invalid_input": "Có nội dung trong yêu cầu không hợp lệ.",
+      "unsupported": "Tính năng này không được hỗ trợ ở đây.",
+      "unavailable": "Mục này hiện không khả dụng.",
+      "cancelled": "Thao tác đã bị hủy.",
+      "busy": "Ứng dụng đang bận. Thử lại sau giây lát.",
+      "internal": "Ứng dụng gặp lỗi nội bộ.",
+      "model_required": "Chưa cài đặt mô hình bắt buộc.",
+      "model_unavailable": "Không thể tải mô hình bắt buộc.",
+      "transport": "Không thể kết nối đến phần máy chủ của ứng dụng."
+    }
+  },
+  "create": {
+    "group": "Tạo nhóm",
+    "groupBody": "Ghép các nhân vật vào cùng một cuộc trò chuyện",
+    "title": "Tạo",
+    "description": "Một người để trò chuyện, hoặc cả một thế giới cho họ.",
+    "character": "Tạo nhân vật",
+    "characterBody": "Tên, ngoại hình, tính cách và các cảnh mở đầu",
+    "persona": "Tạo persona",
+    "personaBody": "Bạn là ai trong các cuộc trò chuyện",
+    "lorebook": "Tạo sách lore",
+    "lorebookBody": "Thông tin thế giới, tự viết, từ tệp hoặc bằng AI",
+    "import": "Nhập thẻ",
+    "importBody": "Thẻ nhân vật PNG hoặc JSON",
+    "imported": "Đã nhập nhân vật",
+    "discover": "Xem Khám phá",
+    "discoverBody": "Nhân vật do người khác chia sẻ"
+  },
+  "providerSelect": {
+    "placeholder": "Chọn nhà cung cấp",
+    "title": "Nhà cung cấp",
+    "empty": "Không có nhà cung cấp nào.",
+    "groups": {
+      "cloud": "Đám mây",
+      "local": "Cục bộ",
+      "custom": "Tùy chỉnh"
+    }
+  },
+  "designReferences": {
+    "note": "Ghi chú thiết kế",
+    "notePlaceholder": "Tóc ngắn, kính tròn, áo khoác xám dài",
+    "noteHint": "Ngoại hình trong vài từ. Dùng cho ảnh cảnh được tạo.",
+    "images": "Ảnh tham chiếu",
+    "imagesHint": "Vài ảnh thể hiện ngoại hình.",
+    "add": "Thêm ảnh",
+    "remove": "Xóa ảnh"
+  },
+  "memoryDownload": {
+    "title": "Tải mô hình bộ nhớ",
+    "titleDone": "Bộ nhớ đã sẵn sàng",
+    "body": "Bộ nhớ tự động cần một mô hình nhỏ trên thiết bị này. Mô hình tải một lần rồi chạy ngoại tuyến.",
+    "bodyDone": "Nhân vật của bạn giờ sẽ ghi nhớ những điều quan trọng, kể cả trong cuộc trò chuyện dài. Có thể tắt tính năng này cho từng cuộc trò chuyện.",
+    "modelName": "Mô hình bộ nhớ Lettuce Eidos",
+    "keepOpen": "Giữ ứng dụng mở cho đến khi hoàn tất.",
+    "download": "Tải xuống và hoàn tất",
+    "downloading": "Đang tải xuống",
+    "checking": "Đang kiểm tra mô hình",
+    "useManual": "Dùng bộ nhớ thủ công thay thế",
+    "doneDetail": "Đã cài đặt và kiểm tra · chạy ngoại tuyến",
+    "failedOffline": "Mất kết nối. Thử lại để tiếp tục.",
+    "failedOther": "Quá trình tải xuống chưa hoàn tất. Thử lại để tiếp tục.",
+    "downloadOnly": "Tải xuống",
+    "bodyInstall": "Bộ nhớ động cần một mô hình nhỏ trên thiết bị này. Mô hình tải một lần rồi chạy ngoại tuyến.",
+    "failureCode": {
+      "integrity_failure": "Bản tải xuống bị hỏng. Thử lại để tiếp tục.",
+      "resource_unavailable": "Máy chủ mô hình hiện không khả dụng. Thử lại để tiếp tục.",
+      "storage_failure": "Không thể lưu mô hình trên thiết bị này. Kiểm tra dung lượng trống rồi thử lại.",
+      "timed_out": "Quá trình tải xuống mất quá lâu. Thử lại để tiếp tục."
+    }
+  },
+  "emotionDownload": {
+    "title": "Tải mô hình cảm xúc",
+    "titleDone": "Cảm xúc đã sẵn sàng",
+    "body": "Chế độ đồng hành đọc cảm xúc đằng sau mỗi tin nhắn bằng một mô hình nhỏ trên thiết bị này. Mô hình tải một lần rồi chạy ngoại tuyến.",
+    "bodyDone": "Mỗi câu trả lời giờ có thể tác động đến cảm xúc của bạn đồng hành và mức độ thân thiết giữa hai người.",
+    "download": "Tải xuống",
+    "close": "Để sau",
+    "finish": "Xong"
+  },
+  "structuredFallback": {
+    "title": "Khi mô hình không dùng được công cụ",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Gọn nhẹ. Hoạt động với hầu hết mô hình."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Dành cho các mô hình viết XML ổn định hơn JSON."
+      }
+    },
+    "hint": "Ứng dụng sẽ thử gọi công cụ trước. Định dạng này chỉ được dùng khi mô hình không hỗ trợ."
+  },
+  "promptPicker": {
+    "builtIn": "Có sẵn",
+    "builtInBody": "Lời nhắc của chính ứng dụng",
+    "builtInMissing": "Lời nhắc có sẵn không khả dụng",
+    "search": "Tìm lời nhắc",
+    "clearSearch": "Xóa tìm kiếm",
+    "noMatches": "Không có lời nhắc phù hợp",
+    "manage": "Lời nhắc hệ thống",
+    "manageBody": "Tạo hoặc sửa lời nhắc",
+    "close": "Đóng"
+  },
+  "lorebookPicker": {
+    "title": "Sách lore",
+    "done": "Xong",
+    "empty": "Chưa có sách lore",
+    "emptyBody": "Sách lore bạn tạo hoặc nhập sẽ hiện ở đây.",
+    "edit": "Sửa {{name}}"
+  }
+}

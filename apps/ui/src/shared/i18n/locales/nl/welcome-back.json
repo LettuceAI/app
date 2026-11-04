@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Welkom terug.",
+    "bodyBefore": "Dit is ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Van de grond af opnieuw opgebouwd, met alles wat je hebt gemaakt mee.",
+    "migrate": "Gegevens migreren",
+    "notNow": "Niet nu"
+  },
+  "migrate": {
+    "title": "Je gegevens verplaatsen",
+    "body": "Je chats, karakters en media worden overgezet.",
+    "note": "Houd de app open totdat het klaar is.",
+    "stages": {
+      "read": "Je gegevens lezen",
+      "write": "Chats, karakters en media verplaatsen",
+      "verify": "Alles controleren",
+      "switch": "Afronden"
+    },
+    "failed": "De verhuizing is niet afgerond.",
+    "retry": "Opnieuw proberen"
+  },
+  "models": {
+    "titlePending": "Je functies terugzetten",
+    "titleReady": "Je functies zijn terug",
+    "checking": "Controleren welke functies je chats gebruiken",
+    "bodyPending_memory": "Sommige van je chats gebruiken dynamisch geheugen. Het model wordt één keer gedownload en werkt daarna offline.",
+    "bodyPending_emotion": "Sommige van je chats gebruiken metgezelgevoelens. Het model wordt één keer gedownload en werkt daarna offline.",
+    "bodyPending_both": "Sommige van je chats gebruiken dynamisch geheugen en metgezelgevoelens. De modellen worden één keer gedownload en werken daarna offline.",
+    "bodyReady_memory": "Dynamisch geheugen is klaar en werkt offline.",
+    "bodyReady_emotion": "Metgezelgevoelens zijn klaar en werken offline.",
+    "bodyReady_both": "Dynamisch geheugen en metgezelgevoelens zijn klaar en werken offline.",
+    "names": {
+      "embedding": "Lettuce Eidos-geheugenmodel",
+      "emotion": "Thymos-emotiemodel"
+    },
+    "why": {
+      "embedding": "Voor dynamisch geheugen",
+      "emotion": "Voor metgezelgevoelens"
+    },
+    "ready": "Klaar",
+    "waiting": "Wachten",
+    "checkingFiles": "De bestanden controleren",
+    "progress": "{{done}} van {{total}}",
+    "failed": "De download is niet afgerond",
+    "download": "Downloaden",
+    "notNow": "Niet nu",
+    "continue": "Doorgaan",
+    "retry": "Opnieuw proberen",
+    "notNowNote": "Chats die deze modellen nodig hebben, vragen erom. Je kunt ze later downloaden in Instellingen.",
+    "keepOpen": "Houd de app open totdat het klaar is."
+  },
+  "done": {
+    "title": "Alles staat klaar.",
+    "body": "Alles staat waar je het hebt achtergelaten.",
+    "open": "LettuceAI openen"
+  },
+  "upgrade": {
+    "title": "Eerst één stap",
+    "body": "Je gegevens komen uit een oudere LettuceAI. Open ze één keer met versie {{version}} zodat ze kunnen worden bijgewerkt, en kom dan hier terug.",
+    "copy": "Downloadlink kopiëren",
+    "copied": "Link gekopieerd",
+    "fresh": "Liever opnieuw beginnen"
+  }
+}

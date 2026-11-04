@@ -1,0 +1,125 @@
+{
+  "triggerPreview": "Anteprima attivazione",
+  "title": "Libreria",
+  "loadMore": "Carica altro",
+  "search": "Cerca nella libreria",
+  "show": "Mostra",
+  "filters": {
+    "all": "Tutto",
+    "characters": "Personaggi",
+    "personas": "Persone",
+    "lorebooks": "Lorebook",
+    "images": "Immagini",
+    "audio": "Audio"
+  },
+  "kinds": {
+    "character": "Personaggio",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "Tu",
+  "entries_one": "{{count}} voce",
+  "entries_many": "{{count}} voci",
+  "entries_other": "{{count}} voci",
+  "defaultPersona": "Persona · la tua predefinita",
+  "menu": {
+    "start": "Inizia chat",
+    "edit_character": "Modifica personaggio",
+    "edit_persona": "Modifica persona",
+    "edit_lorebook": "Modifica lorebook",
+    "default": "Usa come persona predefinita",
+    "defaultHint": "Per le chat che non ne scelgono un'altra",
+    "export": "Esporta",
+    "export_character": "Come scheda personaggio",
+    "export_persona": "Come file UEC",
+    "export_lorebook": "Come file UEC o JSON",
+    "delete_character": "Elimina personaggio",
+    "delete_persona": "Elimina persona",
+    "delete_lorebook": "Elimina lorebook",
+    "save": "Salva sul dispositivo",
+    "deleteImage": "Elimina immagine",
+    "deleteAudio": "Elimina registrazione",
+    "avatar": "Usa come avatar di {{name}}",
+    "more": "Altro per {{name}}",
+    "background": "Sfondo",
+    "generated": "Generata",
+    "uploaded": "Caricata"
+  },
+  "create": {
+    "title": "Crea",
+    "description": "Aggiungi qualcosa alla tua libreria.",
+    "character": "Qualcuno con cui parlare",
+    "persona": "Chi sei tu in una chat",
+    "lorebook": "Fatti del mondo da cui un personaggio può attingere",
+    "import": "Importa un file",
+    "importHint": "Scheda personaggio, persona o lorebook",
+    "new_character": "Nuovo personaggio",
+    "new_lorebook": "Nuovo lorebook",
+    "button_character": "Crea personaggio",
+    "button_persona": "Crea persona",
+    "button_lorebook": "Crea lorebook"
+  },
+  "edit": {
+    "name": "Nome",
+    "hint_character": "Mostrato sulla scheda e nell'intestazione della chat.",
+    "placeholder_character": "es. Cassian",
+    "placeholder_lorebook": "es. La porta nord",
+    "create": "Crea",
+    "cancel": "Annulla"
+  },
+  "delete": {
+    "title": "Eliminare {{name}}?",
+    "confirm": "Elimina",
+    "character": "Le sue chat e i suoi ricordi vengono eliminati con lui.",
+    "persona": "La persona viene rimossa dalle chat che la usano.",
+    "lorebook": "I personaggi e le chat che lo usano perdono l'accesso alle sue voci.",
+    "image": "L'immagine viene rimossa da questo dispositivo. Le immagini ancora in uso non possono essere eliminate.",
+    "audio": "La registrazione viene rimossa da questo dispositivo. Le registrazioni ancora in uso non possono essere eliminate."
+  },
+  "empty": {
+    "all": {
+      "title": "La tua libreria è vuota",
+      "description": "Personaggi, persone e lorebook che crei o importi vengono conservati qui."
+    },
+    "characters": {
+      "title": "Nessun personaggio ancora",
+      "description": "Un personaggio è chi hai davanti: un nome, una storia, un modo di parlare."
+    },
+    "personas": {
+      "title": "Nessuna persona ancora",
+      "description": "Una persona è chi sei tu in una chat. I personaggi ne vedono nome e descrizione."
+    },
+    "lorebooks": {
+      "title": "Nessun lorebook ancora",
+      "description": "Fatti del mondo da cui un personaggio può attingere quando emergono nella conversazione."
+    },
+    "images": {
+      "title": "Nessuna immagine ancora",
+      "description": "Le immagini che generi in una chat vengono conservate qui."
+    },
+    "audio": {
+      "title": "Nessun audio ancora",
+      "description": "Le battute vocali che generi o registri vengono conservate qui."
+    },
+    "matches": "Nessun risultato per “{{query}}”",
+    "searchAll": "Prova con un altro nome, o con una parte di una descrizione.",
+    "searchSection": "In questa sezione niente corrisponde. Potrebbe esserci qualcosa nel resto della libreria.",
+    "clear": "Cancella ricerca",
+    "everything": "Cerca in tutto",
+    "import": "Importa"
+  },
+  "toast": {
+    "created": "Aggiunto {{name}}",
+    "deleted": "Eliminato {{name}}",
+    "default": "{{name}} è la tua persona predefinita",
+    "exported": "File esportato",
+    "imported": "File importato",
+    "warnings_one": "File trasferito con {{count}} avviso",
+    "warnings_many": "File trasferito con {{count}} avvisi",
+    "warnings_other": "File trasferito con {{count}} avvisi",
+    "mediaSaved": "Salvato sul dispositivo",
+    "avatar": "Avatar aggiornato"
+  },
+  "draft": "Bozza",
+  "untitledDraft": "Bozza lorebook senza titolo"
+}

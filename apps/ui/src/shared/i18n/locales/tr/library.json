@@ -1,0 +1,123 @@
+{
+  "triggerPreview": "Tetikleme önizlemesi",
+  "title": "Kütüphane",
+  "loadMore": "Daha fazla yükle",
+  "search": "Kütüphanede ara",
+  "show": "Göster",
+  "filters": {
+    "all": "Tümü",
+    "characters": "Karakterler",
+    "personas": "Personalar",
+    "lorebooks": "Lore kitapları",
+    "images": "Görseller",
+    "audio": "Ses"
+  },
+  "kinds": {
+    "character": "Karakter",
+    "persona": "Persona",
+    "lorebook": "Lore kitabı"
+  },
+  "you": "Siz",
+  "entries_one": "{{count}} girdi",
+  "entries_other": "{{count}} girdi",
+  "defaultPersona": "Persona · varsayılanınız",
+  "menu": {
+    "start": "Sohbet başlat",
+    "edit_character": "Karakteri düzenle",
+    "edit_persona": "Personayı düzenle",
+    "edit_lorebook": "Lore kitabını düzenle",
+    "default": "Varsayılan persona olarak kullan",
+    "defaultHint": "Başka bir tane seçmeyen sohbetler için",
+    "export": "Dışa aktar",
+    "export_character": "Karakter kartı olarak",
+    "export_persona": "UEC dosyası olarak",
+    "export_lorebook": "UEC veya JSON dosyası olarak",
+    "delete_character": "Karakteri sil",
+    "delete_persona": "Personayı sil",
+    "delete_lorebook": "Lore kitabını sil",
+    "save": "Cihaza kaydet",
+    "deleteImage": "Görseli sil",
+    "deleteAudio": "Kaydı sil",
+    "avatar": "{{name}} için avatar olarak kullan",
+    "more": "{{name}} için daha fazla",
+    "background": "Arka plan",
+    "generated": "Oluşturuldu",
+    "uploaded": "Yüklendi"
+  },
+  "create": {
+    "title": "Oluştur",
+    "description": "Kütüphanenize bir şey ekleyin.",
+    "character": "Sohbet edecek biri",
+    "persona": "Bir sohbette kim olduğunuz",
+    "lorebook": "Karakterin başvurabileceği dünya bilgileri",
+    "import": "Dosya içe aktar",
+    "importHint": "Karakter kartı, persona veya lore kitabı",
+    "new_character": "Yeni karakter",
+    "new_lorebook": "Yeni lore kitabı",
+    "button_character": "Karakter oluştur",
+    "button_persona": "Persona oluştur",
+    "button_lorebook": "Lore kitabı oluştur"
+  },
+  "edit": {
+    "name": "İsim",
+    "hint_character": "Kartta ve sohbet başlığında gösterilir.",
+    "placeholder_character": "ör. Cassian",
+    "placeholder_lorebook": "ör. Kuzey kapısı",
+    "create": "Oluştur",
+    "cancel": "İptal"
+  },
+  "delete": {
+    "title": "{{name}} silinsin mi?",
+    "confirm": "Sil",
+    "character": "Sohbetleri ve anıları da onunla birlikte silinir.",
+    "persona": "Persona, onu kullanan sohbetlerden kaldırılır.",
+    "lorebook": "Onu kullanan karakterler ve sohbetler girdilerine erişimi kaybeder.",
+    "image": "Görsel bu cihazdan kaldırılır. Hâlâ kullanımda olan görseller silinemez.",
+    "audio": "Kayıt bu cihazdan kaldırılır. Hâlâ kullanımda olan kayıtlar silinemez."
+  },
+  "empty": {
+    "all": {
+      "title": "Kütüphaneniz boş",
+      "description": "Oluşturduğunuz veya içe aktardığınız karakterler, personalar ve lore kitapları burada tutulur."
+    },
+    "characters": {
+      "title": "Henüz karakter yok",
+      "description": "Karakter, konuştuğunuz kişidir: bir isim, bir geçmiş, bir konuşma biçimi."
+    },
+    "personas": {
+      "title": "Henüz persona yok",
+      "description": "Persona, bir sohbette kim olduğunuzdur. Karakterler onun adını ve açıklamasını görür."
+    },
+    "lorebooks": {
+      "title": "Henüz lore kitabı yok",
+      "description": "Konuşmada geçtiğinde karakterin başvurabileceği dünya bilgileri."
+    },
+    "images": {
+      "title": "Henüz görsel yok",
+      "description": "Bir sohbette oluşturduğunuz görseller burada tutulur."
+    },
+    "audio": {
+      "title": "Henüz ses yok",
+      "description": "Oluşturduğunuz veya kaydettiğiniz ses satırları burada tutulur."
+    },
+    "matches": "“{{query}}” ile eşleşen bir şey yok",
+    "searchAll": "Başka bir isim veya bir açıklamanın bir kısmını deneyin.",
+    "searchSection": "Bu bölümde eşleşen yok. Kütüphanenizin geri kalanında olabilir.",
+    "clear": "Aramayı temizle",
+    "everything": "Her yerde ara",
+    "import": "İçe aktar"
+  },
+  "toast": {
+    "created": "{{name}} eklendi",
+    "deleted": "{{name}} silindi",
+    "default": "{{name}} artık varsayılan personanız",
+    "exported": "Dosya dışa aktarıldı",
+    "imported": "Dosya içe aktarıldı",
+    "warnings_one": "Dosya {{count}} uyarıyla aktarıldı",
+    "warnings_other": "Dosya {{count}} uyarıyla aktarıldı",
+    "mediaSaved": "Cihaza kaydedildi",
+    "avatar": "Avatar güncellendi"
+  },
+  "draft": "Taslak",
+  "untitledDraft": "Başlıksız lore kitabı taslağı"
+}

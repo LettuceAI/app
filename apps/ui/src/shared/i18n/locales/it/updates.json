@@ -1,0 +1,28 @@
+{
+  "title": "Novità",
+  "installed": "Versione installata: {{version}}",
+  "releaseMismatch": "Queste note sono per {{version}}. Stai usando {{installed}}.",
+  "fullChangelog": "Registro modifiche completo",
+  "continue": "Continua",
+  "markFailed": "Impossibile salvare la versione visualizzata",
+  "types": {
+    "feature": "Aggiunto",
+    "improvement": "Migliorato",
+    "bugfix": "Corretto",
+    "breaking": "Modifiche incompatibili"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: dettaglio dell'uso del contesto e memoria dinamica più snella",
+    "description": "Ora ogni messaggio dell'assistente mostra quanto spazio del contesto ha usato il suo prompt e cosa lo ha riempito, sia nelle chat uno a uno sia in quelle di gruppo. La memoria dinamica nelle chat uno a uno non invia più l'intera banca di memoria a ogni turno, e gli embedding ripartono su macOS.",
+    "changes": {
+      "contextUsage": "Un pannello Uso del contesto nelle azioni dei messaggi delle risposte dell'assistente mostra la finestra di contesto divisa in occupato, riservato alla risposta e libero, più un dettaglio di ciò che riempie il prompt: sistema, personaggio, persona, ricordi, lorebook, nota dell'autore, stato del companion e cronologia della chat. Le quote sono stimate con tiktoken e rapportate ai token del prompt effettivamente dichiarati dal provider.",
+      "groupContextUsage": "Anche i messaggi delle chat di gruppo ricevono lo stesso pannello, ricostruito dal messaggio salvato senza rieseguire il recupero, con una categoria Cast del gruppo che conta i profili degli altri partecipanti.",
+      "responseBudget": "Su llama.cpp e Ollama, il budget riservato alla risposta (risposta più ragionamento) viene letto dalla richiesta reale, e appare un avviso quando prompt e riserva insieme superano la finestra di contesto, così puoi ridurre i token massimi o tagliare il contesto prima che il prompt venga troncato o la risposta interrotta.",
+      "developerBreakdown": "La pagina di debug dei messaggi dello sviluppatore include lo stesso dettaglio dei token per categoria, con totali e uso della finestra di contesto.",
+      "memoryRetrieval": "La memoria dinamica nelle chat uno a uno non riempie più {{key_memories}} con l'intera banca di memoria attiva a ogni prompt, oltre ai ricordi recuperati. Vengono inviati solo i ricordi recuperati per quel turno, sia per i personaggi roleplay sia per i companion, in nuove risposte, rigenerazioni e continuazioni.",
+      "macEmbeddings": "Gli embedding non falliscono più all'avvio su macOS con un errore \"different Team IDs\". L'ONNX Runtime scaricato a runtime è firmato da Microsoft, che macOS rifiutava di caricare nell'app, e ora viene firmato di nuovo localmente prima di essere caricato."
+    }
+  }
+}

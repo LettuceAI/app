@@ -1,0 +1,175 @@
+{
+  "onnxModelsUnloaded": "Pinalaya ang mga idle na modelo para makapagbakante ng memorya: {{models}}. Maglo-load muli ang mga ito kapag kailangan.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Kumokonekta sa app…"
+  },
+  "navigation": {
+    "primary": "Pangunahing nabigasyon",
+    "chats": "Mga Chat",
+    "groups": "Mga Grupo",
+    "discover": "Tuklasin",
+    "library": "Library",
+    "settings": "Mga Setting",
+    "home": "Home",
+    "create": "Gumawa",
+    "collapse": "I-collapse",
+    "collapseSidebar": "I-collapse ang sidebar",
+    "expandSidebar": "Palawakin ang sidebar",
+    "backToApp": "Bumalik sa app"
+  },
+  "downloads": {
+    "loading": "Naglo-load ng mga download",
+    "title": "Mga Download",
+    "titleActive_one": "Mga Download, isang aktibo",
+    "titleActive_other": "Mga Download, {{count}} aktibo",
+    "empty": "Walang dina-download.",
+    "emptyBody": "Lalabas dito ang mga install at update.",
+    "generic": "Download",
+    "done": "Handa na ang {{name}}",
+    "failed": "Hindi na-download ang {{name}}"
+  },
+  "window": {
+    "minimize": "I-minimize",
+    "maximize": "I-maximize",
+    "close": "Isara ang window",
+    "failed": "Hindi natapos ang aksyon sa window. Subukan muli."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Iba pa"
+  },
+  "actions": {
+    "retry": "Subukan muli",
+    "cancel": "Kanselahin",
+    "reload": "I-reload"
+  },
+  "errors": {
+    "fatalTitle": "May nangyaring mali",
+    "fatalDescription": "Nakaranas ang app ng hindi inaasahang problema. Kadalasan, naaayos ito sa pag-reload.",
+    "loadTitle": "Hindi ma-load ito",
+    "notFoundTitle": "Walang makita dito",
+    "notFoundDescription": "Wala ang page na ito sa app.",
+    "code": {
+      "not_found": "Wala na ito.",
+      "in_use": "Ginagamit pa ito. Alisin ang mga reference dito at subukan muli.",
+      "malformed": "Nagbalik ang provider ng tugon na hindi mabasa.",
+      "conflict": "Nagbago ito sa ibang lugar. I-reload at subukan muli.",
+      "invalid_input": "May hindi valid sa request.",
+      "unsupported": "Hindi ito sinusuportahan dito.",
+      "unavailable": "Hindi ito available ngayon.",
+      "cancelled": "Kinansela ito.",
+      "busy": "Abala ang app. Subukan muli mamaya.",
+      "internal": "Nagkaroon ng internal na error ang app.",
+      "model_required": "Hindi naka-install ang kailangang modelo.",
+      "model_unavailable": "Hindi ma-load ang kailangang modelo.",
+      "transport": "Hindi maabot ang backend ng app."
+    }
+  },
+  "create": {
+    "group": "Gumawa ng grupo",
+    "groupBody": "Pagsamahin ang mga karakter sa isang chat",
+    "title": "Gumawa",
+    "description": "May makakausap, o mundo para sa kanila.",
+    "character": "Gumawa ng karakter",
+    "characterBody": "Pangalan, itsura, personalidad at mga panimulang eksena",
+    "persona": "Gumawa ng persona",
+    "personaBody": "Kung sino ka sa mga chat",
+    "lorebook": "Gumawa ng lorebook",
+    "lorebookBody": "Mga katotohanan ng mundo, ikaw ang magsusulat, mula sa file o gamit ang AI",
+    "import": "Mag-import ng card",
+    "importBody": "PNG o JSON na character card",
+    "imported": "Na-import ang karakter",
+    "discover": "Mag-browse sa Tuklasin",
+    "discoverBody": "Mga karakter na ibinahagi ng ibang tao"
+  },
+  "providerSelect": {
+    "placeholder": "Pumili ng provider",
+    "title": "Provider",
+    "empty": "Walang available na provider.",
+    "groups": {
+      "cloud": "Cloud",
+      "local": "Lokal",
+      "custom": "Custom"
+    }
+  },
+  "designReferences": {
+    "note": "Tala sa disenyo",
+    "notePlaceholder": "Maikling buhok, bilog na salamin, mahabang kulay-abong coat",
+    "noteHint": "Itsura sa maikling salita. Ginagamit para sa mga gawang larawan ng eksena.",
+    "images": "Mga reference na larawan",
+    "imagesHint": "Ilang larawan na nagpapakita ng itsura.",
+    "add": "Magdagdag ng larawan",
+    "remove": "Alisin ang larawan"
+  },
+  "memoryDownload": {
+    "title": "I-download ang memory model",
+    "titleDone": "Handa na ang memory",
+    "body": "Kailangan ng automatic memory ang maliit na modelo sa device na ito. Isang beses lang itong dina-download, tapos tumatakbo nang offline.",
+    "bodyDone": "Masusubaybayan na ng iyong mga karakter ang mahahalagang bagay, kahit sa mahabang chat. Puwede mong i-off ito sa bawat chat.",
+    "modelName": "Lettuce Eidos memory model",
+    "keepOpen": "Panatilihing bukas ang app hanggang matapos.",
+    "download": "I-download at tapusin",
+    "downloading": "Dina-download",
+    "checking": "Sinusuri ang modelo",
+    "useManual": "Gamitin na lang ang manual memory",
+    "doneDetail": "Naka-install at na-test · tumatakbo offline",
+    "failedOffline": "Nawala ang koneksyon. Subukan muli para magpatuloy.",
+    "failedOther": "Hindi natapos ang download. Subukan muli para magpatuloy.",
+    "downloadOnly": "I-download",
+    "bodyInstall": "Kailangan ng dynamic memory ang maliit na modelo sa device na ito. Isang beses lang itong dina-download, tapos tumatakbo nang offline.",
+    "failureCode": {
+      "integrity_failure": "Nasira ang download. Subukan muli para magpatuloy.",
+      "resource_unavailable": "Hindi available ang model server ngayon. Subukan muli para magpatuloy.",
+      "storage_failure": "Hindi ma-save ang modelo sa device na ito. Tingnan ang libreng espasyo at subukan muli.",
+      "timed_out": "Masyadong natagalan ang download. Subukan muli para magpatuloy."
+    }
+  },
+  "emotionDownload": {
+    "title": "I-download ang emotion model",
+    "titleDone": "Handa na ang mga damdamin",
+    "body": "Binabasa ng companion mode ang damdamin sa likod ng bawat mensahe gamit ang maliit na modelo sa device na ito. Isang beses lang itong dina-download, tapos tumatakbo nang offline.",
+    "bodyDone": "Puwede nang mabago ng bawat tugon ang damdamin ng iyong mga companion at kung gaano kayo kalapit.",
+    "download": "I-download",
+    "close": "Mamaya na",
+    "finish": "Tapos na"
+  },
+  "structuredFallback": {
+    "title": "Kapag hindi makagamit ng tool ang modelo",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Compact. Gumagana sa karamihan ng modelo."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Para sa mga modelong mas maaasahan magsulat ng XML kaysa JSON."
+      }
+    },
+    "hint": "Una munang sinusubukan ang mga tool call. Ginagamit lang ang format na ito kapag hindi sinusuportahan ng modelo."
+  },
+  "promptPicker": {
+    "builtIn": "Built-in",
+    "builtInBody": "Sariling prompt ng app",
+    "builtInMissing": "Hindi available ang built-in na prompt",
+    "search": "Maghanap ng prompt",
+    "clearSearch": "Burahin ang paghahanap",
+    "noMatches": "Walang tugmang prompt",
+    "manage": "Mga system prompt",
+    "manageBody": "Gumawa o mag-edit ng prompt",
+    "close": "Isara"
+  },
+  "lorebookPicker": {
+    "title": "Mga Lorebook",
+    "done": "Tapos na",
+    "empty": "Wala pang lorebook",
+    "emptyBody": "Lalabas dito ang mga lorebook na ginawa o ini-import mo.",
+    "edit": "I-edit ang {{name}}"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "title": "Co nowego",
+  "installed": "Zainstalowana wersja: {{version}}",
+  "releaseMismatch": "Te informacje dotyczą wersji {{version}}. Uruchomiona jest {{installed}}.",
+  "fullChangelog": "Pełna lista zmian",
+  "continue": "Kontynuuj",
+  "markFailed": "Nie udało się zapisać obejrzanej wersji",
+  "types": {
+    "feature": "Dodano",
+    "improvement": "Ulepszono",
+    "bugfix": "Naprawiono",
+    "breaking": "Zmiany krytyczne"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Podział zużycia kontekstu i lżejsza pamięć dynamiczna",
+    "description": "Każda wiadomość asystenta pokazuje teraz, jaką część okna kontekstu zużył jej prompt i co go wypełniło, zarówno w czatach 1:1, jak i grupowych. Pamięć dynamiczna w czatach 1:1 przestaje wysyłać cały bank pamięci przy każdej turze, a embeddingi znów startują na macOS.",
+    "changes": {
+      "contextUsage": "Panel Zużycie kontekstu w akcjach wiadomości odpowiedzi asystenta pokazuje podział okna kontekstu na zajęte, zarezerwowane na odpowiedź i wolne, oraz rozbicie tego, co wypełnia prompt: system, postać, personę, wspomnienia, lorebook, notatkę autora, stan towarzysza i historię czatu. Udziały są szacowane za pomocą tiktoken i skalowane do tokenów promptu, które faktycznie zgłosił dostawca.",
+      "groupContextUsage": "Wiadomości w czacie grupowym dostają ten sam panel, odtworzony z zapisanej wiadomości bez ponownego uruchamiania wyszukiwania, z kategorią Obsada grupy, która liczy profile pozostałych uczestników.",
+      "responseBudget": "W llama.cpp i Ollama zarezerwowany budżet odpowiedzi (odpowiedź plus rozumowanie) jest odczytywany z rzeczywistego żądania, a ostrzeżenie pojawia się, gdy prompt i ta rezerwa razem przekraczają okno kontekstu — możesz wtedy zmniejszyć maks. tokenów lub przyciąć kontekst, zanim prompt zostanie obcięty albo odpowiedź skrócona.",
+      "developerBreakdown": "Strona debugowania wiadomości dewelopera zawiera to samo rozbicie tokenów według kategorii, z sumami i zużyciem okna kontekstu.",
+      "memoryRetrieval": "Pamięć dynamiczna w czatach 1:1 nie wypełnia już {{key_memories}} całym gorącym bankiem pamięci przy każdym prompcie, oprócz wyszukanych wspomnień. Wysyłane są tylko wspomnienia wyszukane na daną turę, zarówno dla postaci do odgrywania, jak i towarzyszy, we wszystkich nowych odpowiedziach, regeneracjach i kontynuacjach.",
+      "macEmbeddings": "Embeddingi nie przestają już startować na macOS z błędem „różne identyfikatory zespołu”. ONNX Runtime pobierany w czasie działania jest podpisany przez Microsoft, a macOS odmawiał załadowania go do aplikacji; teraz jest lokalnie podpisywany ponownie przed załadowaniem."
+    }
+  }
+}

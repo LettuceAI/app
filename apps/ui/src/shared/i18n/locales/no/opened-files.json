@@ -1,0 +1,76 @@
+{
+  "cancel": "Avbryt",
+  "retry": "Prøv igjen",
+  "notRecognized": "Denne filen er ikke et LettuceAI-kort eller en sikkerhetskopi.",
+  "import": {
+    "title": {
+      "character": "Importer karakter",
+      "persona": "Importer persona",
+      "lorebook": "Importer lorebok"
+    },
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "lorebook": "Lorebok"
+    },
+    "entries_one": "{{count}} oppføring",
+    "entries_other": "{{count}} oppføringer",
+    "confirm": "Importer",
+    "open": "Åpne",
+    "done": "{{name}} importert",
+    "started": "Importen er startet",
+    "warnings_one": "Importert med {{count}} advarsel",
+    "warnings_other": "Importert med {{count}} advarsler"
+  },
+  "restore": {
+    "title": "Gjenopprett sikkerhetskopi",
+    "created": "Opprettet",
+    "version": "Appversjon",
+    "password": "Passord",
+    "warning": "Gjenoppretting erstatter alle samtaler, karakterer og innstillinger på denne enheten med sikkerhetskopien. De nåværende dataene dine beholdes som en egen fil.",
+    "action": "Gjenopprett",
+    "stop": "Stopp",
+    "running": "Gjenoppretter",
+    "starting": "Starter gjenopprettingen",
+    "waiting": "Venter på at gjenopprettingen skal starte",
+    "step": "Trinn {{step}} av {{total}}",
+    "keepOpen": "Store sikkerhetskopier kan ta flere minutter. Hold appen åpen til det er ferdig.",
+    "stages": {
+      "decode": "Åpner sikkerhetskopien",
+      "stage": "Forbereder filer",
+      "write": "Skriver dataene dine",
+      "verify": "Sjekker de gjenopprettede dataene",
+      "switch": "Bytter til de gjenopprettede dataene"
+    },
+    "failed": "Gjenopprettingen stoppet",
+    "failedAt": "Gjenopprettingen stoppet ved trinn {{step}} av {{total}}: {{stage}}",
+    "confirmTitle": "Erstatte alt på denne enheten?",
+    "confirmBody": "Alle samtaler, karakterer og innstillinger erstattes med denne sikkerhetskopien. De nåværende dataene dine beholdes som en egen fil.",
+    "confirm": "Gjenopprett",
+    "done": "Sikkerhetskopien er gjenopprettet",
+    "notBackup": "Den filen er ikke en LettuceAI-sikkerhetskopi.",
+    "models": {
+      "title": "Last ned modellene dataene dine trenger",
+      "required": "Disse funksjonene slutter å virke uten dem, så de må lastes ned før du fortsetter."
+    },
+    "warnings_one": "Sikkerhetskopien ble gjenopprettet med {{count}} advarsel",
+    "warnings_other": "Sikkerhetskopien ble gjenopprettet med {{count}} advarsler",
+    "failure": {
+      "unknown": "Sikkerhetskopien kunne ikke gjenopprettes.",
+      "backup_authentication": "Passordet er feil, eller sikkerhetskopien er skadet.",
+      "backup_invalid_envelope": "Denne filen er ikke en gyldig sikkerhetskopi.",
+      "backup_limit_exceeded": "Denne sikkerhetskopien er større enn appen kan gjenopprette.",
+      "backup_unavailable": "Sikkerhetskopier er ikke tilgjengelige akkurat nå.",
+      "backup_file_not_found": "Sikkerhetskopifilen ble ikke funnet.",
+      "backup_permission_denied": "Appen har ikke tillatelse til å lese denne filen.",
+      "backup_file_busy": "Filen brukes av en annen app.",
+      "backup_file_unavailable": "Sikkerhetskopifilen kunne ikke leses.",
+      "backup_file_unsupported": "Denne sikkerhetskopien ble laget av en versjon appen ikke kan lese.",
+      "backup_source_is_target": "Sikkerhetskopien er filen appen bruker.",
+      "backup_cancelled": "Gjenopprettingen ble avbrutt.",
+      "backup_retry_required": "Gjenopprettingen ble ikke fullført. Prøv igjen.",
+      "backup_recovery_required": "Gjenopprettingen krever at appen åpnes på nytt.",
+      "backup_verification_failed": "Sikkerhetskopien besto ikke verifiseringen."
+    }
+  }
+}

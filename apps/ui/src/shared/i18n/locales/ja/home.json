@@ -1,0 +1,103 @@
+{
+  "title": "チャット",
+  "homeTitle": "ホーム",
+  "characters": "キャラクター",
+  "search": "チャットを検索",
+  "searchCharacters": "キャラクターを検索",
+  "count": "{{total}}件中{{shown}}件",
+  "noDescription": "説明はまだありません",
+  "lastChat": "最後のチャット {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "チャットを続ける",
+  "empty": {
+    "title": "キャラクターはまだありません",
+    "body": "話し相手を作るか、ディスクからキャラクターカードをインポートしてください。",
+    "create": "キャラクターを作成"
+  },
+  "noMatch": {
+    "title": "「{{query}}」に一致するものはありません",
+    "body": "名前か、キャラクターの説明の言葉を試してください。",
+    "clear": "検索をクリア"
+  },
+  "view": {
+    "label": "表示",
+    "current": "表示：{{view}}",
+    "home": "ホーム",
+    "list": "リスト",
+    "hero": "ヒーロー"
+  },
+  "layout": {
+    "title": "レイアウト",
+    "body": "チャット画面でのキャラクターの表示方法。",
+    "current": "レイアウト：{{layout}}",
+    "list": {
+      "title": "リスト",
+      "body": "すべてのキャラクターを現在の見た目のカードで"
+    },
+    "recent": {
+      "title": "最近",
+      "body": "すべてのチャットを新しい順に、止まった行とともに"
+    }
+  },
+  "recent": {
+    "today": "今日",
+    "week": "今週",
+    "earlier": "それ以前",
+    "empty": "チャットはまだありません"
+  },
+  "menu": {
+    "history": "チャット履歴",
+    "historyBody": "このキャラクターとの過去のチャット",
+    "edit": "キャラクターを編集",
+    "cardStyle": "カードスタイル",
+    "cardRow": "行表示、バナーに切り替え",
+    "cardBanner": "バナー表示、行に切り替え",
+    "export": "エクスポート",
+    "exportBody": "キャラクターカードとして",
+    "hide": "チャットから隠す",
+    "hideBody": "ライブラリには残ります",
+    "delete": "キャラクターを削除",
+    "deleteTitle": "{{name}}を削除しますか？",
+    "deleteBody": "キャラクターとその1対1のチャットが削除されます。元に戻せません。",
+    "noChats": "チャットはまだありません"
+  },
+  "export": {
+    "title": "エクスポート形式",
+    "body": "形式を選択",
+    "done": "{{name}}として保存しました",
+    "uec": {
+      "title": "UEC",
+      "body": "Unified Entity Card（.uec）形式（推奨）。"
+    },
+    "v3": {
+      "title": "キャラクターカード V3",
+      "body": "キャラクターカードV3 JSON（最新仕様）。"
+    },
+    "v2": {
+      "title": "キャラクターカード V2",
+      "body": "キャラクターカードV2 JSON（Tavern仕様）。"
+    }
+  },
+  "chatMenu": {
+    "editChat": "チャットを編集",
+    "editCharacter": "キャラクターを編集",
+    "editGroup": "グループを編集",
+    "rename": "名前を変更",
+    "renameTitle": "チャット名を変更",
+    "save": "保存",
+    "delete": "チャットを削除",
+    "deleteTitle": "{{title}}を削除しますか？",
+    "deleteBody": "キャラクターは残りますが、このストーリーは削除されます。"
+  },
+  "sidebar": {
+    "label": "最近のチャット",
+    "empty": "開始したチャットがここに表示されます。"
+  },
+  "discover": {
+    "title": "探索",
+    "soonTitle": "探索はまもなく登場",
+    "soonBody": "コミュニティ製のキャラクターを見つけて共有する場所です。初日からモデレーション付きで、独自のサーバー上に構築しています。",
+    "create": "キャラクターを作成",
+    "discord": "Discordで最新情報をフォロー"
+  }
+}

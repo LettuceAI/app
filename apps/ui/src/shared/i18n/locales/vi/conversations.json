@@ -1,0 +1,1154 @@
+{
+  "sceneImage": {
+    "title": "Tạo ảnh cảnh",
+    "regenerate": "Tạo lại ảnh cảnh",
+    "hint": "Vẽ khoảnh khắc này từ cuộc trò chuyện",
+    "write": "Tự viết lời nhắc",
+    "writeHint": "Tự mô tả hình ảnh",
+    "askAi": "Nhờ AI viết lời nhắc",
+    "askAiHint": "Dùng cuộc trò chuyện và ảnh tham chiếu",
+    "rewrite": "Viết lại bằng AI",
+    "prompt": "Lời nhắc cảnh",
+    "promptHint": "Xem lại hoặc sửa lời nhắc trước khi tạo ảnh.",
+    "cast": "Trong hình",
+    "castHint": "Chọn ai xuất hiện trong cảnh.",
+    "castPersona": "Persona của bạn",
+    "castEmpty": "Chọn ít nhất một người cho cảnh.",
+    "placeholder": "Mô tả nhân vật, bối cảnh và khoảnh khắc…",
+    "generate": "Tạo ảnh",
+    "review": "Xem lại ảnh cảnh",
+    "requested": "Ảnh cảnh đã sẵn sàng để xem lại",
+    "requestedHint": "Kiểm tra lời nhắc trước khi tạo ảnh.",
+    "retry": "Thử lại",
+    "dismiss": "Bỏ qua",
+    "disabled": "Tính năng tạo cảnh đang tắt",
+    "noModel": "Không có mô hình ảnh cảnh tương thích",
+    "noWriter": "Chọn trình viết lời nhắc tương thích trong cài đặt hình ảnh",
+    "setupHint": "Bật tạo cảnh và chọn mô hình hình ảnh trong cài đặt.",
+    "settings": "Mở cài đặt hình ảnh",
+    "writing": "Đang viết lời nhắc cảnh",
+    "thinking": "Đang nghĩ về cảnh",
+    "generating": "Đang tạo ảnh cảnh",
+    "attaching": "Đang thêm ảnh cảnh vào tin nhắn",
+    "progress": "{{current}} trên {{total}}",
+    "queuePosition": "Vị trí hàng đợi {{position}}",
+    "phase": {
+      "starting": "Đang khởi động bộ máy tạo ảnh",
+      "loading": "Đang tải mô hình hình ảnh",
+      "sampling": "Đang tạo ảnh cảnh",
+      "queued": "Đang chờ tạo ảnh cảnh",
+      "generating": "Đang tạo ảnh cảnh",
+      "retrying": "Đang thử lại tạo cảnh",
+      "cancelled": "Đang hủy tạo cảnh"
+    },
+    "failed": "Không thể tạo ảnh cảnh",
+    "promptFailed": "Không thể viết lời nhắc cảnh",
+    "writerError": {
+      "scene_prompt_disabled": "Tính năng tạo cảnh đang tắt trong cài đặt hình ảnh.",
+      "scene_prompt_no_model": "Chọn trình viết lời nhắc cảnh tương thích trong cài đặt hình ảnh.",
+      "scene_prompt_no_reply": "Trình viết lời nhắc không trả về văn bản. Thử lại hoặc tự viết lời nhắc.",
+      "cancelled": "Việc viết lời nhắc đã bị hủy.",
+      "failed": "Thử lại hoặc tự viết lời nhắc."
+    },
+    "error": {
+      "media_unavailable": "Kho lưu hình ảnh không khả dụng.",
+      "disabled": "Tính năng tạo cảnh đang tắt trong cài đặt hình ảnh.",
+      "no_model": "Chọn mô hình ảnh cảnh tương thích trong cài đặt hình ảnh.",
+      "no_image": "Mô hình không trả về hình ảnh.",
+      "message_unavailable": "Câu trả lời đã thay đổi trước khi thêm được ảnh.",
+      "interrupted": "Quá trình tạo bị gián đoạn. Có thể thử lại.",
+      "failed": "Xem lại lời nhắc rồi thử lại."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "Tạo nhánh sang trò chuyện nhóm",
+    "characterTitle": "Tạo nhánh sang nhân vật khác",
+    "history": "Sao chép cuộc trò chuyện này đến tin nhắn đã chọn, kể cả ký ức.",
+    "sourceLocked": "Nhân vật hiện tại vẫn ở trong nhóm. Chọn thêm ít nhất một người.",
+    "characters": "Nhân vật",
+    "defaultName": "Nhánh {{name}}",
+    "search": "Tìm nhân vật",
+    "empty": "Không tìm thấy nhân vật",
+    "create": "Tạo nhánh",
+    "memberCount_other": "Đã chọn {{count}} nhân vật",
+    "changed": "Cuộc trò chuyện này đã thay đổi. Chọn lại điểm rẽ nhánh.",
+    "chooseAgain": "Chọn lại"
+  },
+  "historyPage": {
+    "archivedCharacter": "Khôi phục nhân vật này trong thư viện để bắt đầu cuộc trò chuyện mới."
+  },
+  "header": {
+    "back": "Quay lại",
+    "memories": "Ký ức, {{count}}",
+    "memoriesBusy": "Ký ức, đang đọc câu trả lời mới nhất",
+    "search": "Tìm tin nhắn",
+    "options": "Tùy chọn trò chuyện",
+    "onDevice": "Trên thiết bị",
+    "untitled": "Trò chuyện"
+  },
+  "search": {
+    "placeholder": "Tìm trong cuộc trò chuyện này",
+    "done": "Xong",
+    "previous": "Kết quả trước",
+    "next": "Kết quả tiếp theo",
+    "position": "{{index}} trên {{total}}",
+    "none": "Không có kết quả"
+  },
+  "timeline": {
+    "today": "Hôm nay",
+    "yesterday": "Hôm qua",
+    "loadingOlder": "Đang tải tin nhắn cũ hơn",
+    "empty": "Chưa có tin nhắn",
+    "jumpToLatest": "Đến tin mới nhất",
+    "selectingSpeaker": "Đang chọn nhân vật…"
+  },
+  "composer": {
+    "placeholder": "Nhắn cho {{name}}…",
+    "systemSend": {
+      "title": "Gửi dưới dạng tin nhắn hệ thống?",
+      "description": "Gửi nội dung trong ô nhập thành tin nhắn hệ thống hiển thị. Thao tác này không kích hoạt tạo câu trả lời.",
+      "send": "Gửi"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "Thêm nhân vật",
+      "title": "Thêm một nhân vật",
+      "body": "Họ sẽ tham gia cuộc trò chuyện này từ bây giờ.",
+      "search": "Tìm nhân vật",
+      "empty": "Mọi nhân vật đều đã ở trong cuộc trò chuyện này",
+      "noMatch": "Không có nhân vật phù hợp"
+    },
+    "remove": {
+      "label": "Gỡ {{name}}",
+      "title": "Gỡ {{name}}?",
+      "body": "Họ sẽ ngừng trả lời trong cuộc trò chuyện này. Các tin nhắn trước đó vẫn được giữ.",
+      "confirm": "Gỡ"
+    },
+    "followGroup": "Theo thành viên nhóm",
+    "followGroupHint": "Đặt lại thành viên và nhân vật bị tắt tiếng theo cài đặt nhóm",
+    "models": "Mô hình nhân vật trong cuộc trò chuyện này",
+    "followModels": "Theo mô hình của nhóm",
+    "followModelsHint": "Gỡ mọi ghi đè mô hình nhân vật trong cuộc trò chuyện này",
+    "characterModel": "Mô hình của nhân vật",
+    "characterModelHint": "Dùng cài đặt mô hình riêng của nhân vật"
+  },
+  "mention": {
+    "title": "Nhắc đến một nhân vật",
+    "select": "để chọn",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "Nhắc đến {{name}}",
+    "unmention": "Bỏ nhắc đến {{name}}",
+    "muted": "{{name}} đang bị tắt tiếng. Nhấn giữ hoặc nhấp chuột phải để bật lại",
+    "speak": "Để {{name}} trả lời"
+  },
+  "director": {
+    "hint": "Chạm vào nhân vật để chọn ai trả lời",
+    "selectedHint": "{{name}} sẽ trả lời khi bạn gửi",
+    "actionHint": "Gửi chỉ thêm tin nhắn của bạn. Chạm vào nhân vật để họ trả lời",
+    "respondingHint": "{{name}} đang trả lời",
+    "addMessage": "Thêm tin nhắn không có câu trả lời",
+    "noAttachments": "Tin nhắn ở chế độ chỉ đạo không thể đính kèm tệp"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Ai nói tiếp",
+      "body": "Chọn một thành viên để trả lời, hoặc để nhóm quyết định."
+    },
+    "branch": {
+      "title": "Tiếp tục trò chuyện riêng",
+      "body": "Mở cuộc trò chuyện mới với một thành viên và câu chuyện đến tin nhắn này."
+    },
+    "regenerate": {
+      "title": "Chọn nhân vật",
+      "body": "Chỉ cho câu trả lời này. Có thể chọn cả thành viên bị tắt tiếng.",
+      "same": "Cùng nhân vật",
+      "search": "Tìm nhân vật",
+      "noMatches": "Không có nhân vật phù hợp tìm kiếm"
+    },
+    "auto": "Để nhóm quyết định",
+    "autoBody": "Dùng cách chọn người nói của cuộc trò chuyện này",
+    "muted": "Bị bỏ qua trừ khi được gọi tên"
+  },
+  "message": {
+    "image": "Hình đính kèm",
+    "imagePrompt": "Lời nhắc hình ảnh",
+    "copyImagePrompt": "Sao chép lời nhắc",
+    "titleAssistant": "Tin nhắn của {{name}}",
+    "titleUser": "Tin nhắn của bạn",
+    "titleScene": "Cảnh",
+    "titleSystem": "Tin nhắn hệ thống",
+    "audio": "Đoạn âm thanh",
+    "video": "Tệp video",
+    "document": "Tài liệu"
+  },
+  "menu": {
+    "selection": {
+      "title": "Vì sao nhân vật này trả lời",
+      "fallback": "Không dùng được cách chọn bằng LLM. Đã chọn dựa trên mức tham gia và các câu trả lời gần đây."
+    },
+    "copy": "Sao chép văn bản",
+    "edit": "Sửa",
+    "regenerate": "Tạo lại",
+    "regenerateHint": "Giữ phiên bản này, vuốt để so sánh",
+    "regenerateBusy": "Chờ câu trả lời hiện tại hoàn tất",
+    "pin": "Ghim",
+    "pinHint": "Nhân vật luôn ghi nhớ điều này",
+    "unpin": "Bỏ ghim",
+    "rewind": "Tua lại đến đây",
+    "rewindHint_other": "Xóa {{count}} tin nhắn phía sau",
+    "delete": "Xóa tin nhắn",
+    "deleteHint": "Bỏ ghim trước",
+    "branch": "Tạo nhánh từ đây",
+    "branchHint": "Mở cuộc trò chuyện mới với câu chuyện đến đây",
+    "branchGroup": "Tiếp tục trò chuyện riêng",
+    "branchGroupHint": "Mở cuộc trò chuyện với một thành viên và câu chuyện đến đây",
+    "details": {
+      "title": "Chi tiết lời nhắc",
+      "hint": "Những gì đã gửi cho câu trả lời này",
+      "unavailable": "Lời nhắc đã ghi không khả dụng cho câu trả lời này",
+      "noBreakdown": "Câu trả lời này được ghi trước khi có phân tích chi tiết",
+      "tokens": "{{count}} token",
+      "character": "Nhân vật và persona",
+      "lorebook": "Sách lore",
+      "memories": "Ký ức",
+      "history": "Lịch sử trò chuyện",
+      "other": "Khác",
+      "entries": "Các mục sách lore",
+      "untitled": "Mục chưa đặt tên",
+      "partsLabel": "Tỷ lệ lời nhắc theo nguồn"
+    },
+    "stats": {
+      "prompt": "Token lời nhắc",
+      "reply": "Token trả lời",
+      "total": "tổng",
+      "firstToken": "Thời gian đến token đầu",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "Tốc độ trả lời",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "Dự đoán đa token: token mỗi lượt và tỷ lệ chấp nhận bản nháp",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Các mục sách lore đã dùng",
+      "memories": "Ký ức đã dùng",
+      "memory": "Bộ nhớ",
+      "match": "Khớp {{score}}",
+      "noLorebooks": "Không có mục sách lore nào được dùng cho câu trả lời này.",
+      "noMemories": "Không có mục ký ức nào được dùng cho câu trả lời này.",
+      "notRecorded": "Các chi tiết này không được ghi cho câu trả lời này.",
+      "searchEntries": "Tìm các mục đã dùng",
+      "searchMemories": "Tìm ký ức đã dùng",
+      "noMatches": "Không có kết quả phù hợp tìm kiếm.",
+      "showing": "{{shown}} trên {{total}}",
+      "more": "Hiện thêm"
+    }
+  },
+  "regeneration": {
+    "title": "Tùy chọn tạo lại",
+    "hint": "Hướng và mô hình",
+    "groupHint": "Hướng, mô hình và nhân vật",
+    "oneReply": "Chỉ cho câu trả lời này",
+    "direction": "Hướng",
+    "directionHint": "Tùy chọn. Mô tả điều cần thay đổi trong câu trả lời mới.",
+    "placeholder": "Ngắn hơn, đổi giọng điệu, hoặc đi theo hướng khác",
+    "model": "Mô hình trả lời",
+    "usualModel": "Dùng mô hình thường lệ",
+    "modelUnavailable": "Mô hình này không còn khả dụng. Chọn mô hình khác.",
+    "character": "Nhân vật",
+    "sameCharacter": "Cùng nhân vật: {{name}}",
+    "characterUnavailable": "Nhân vật này không còn là thành viên. Chọn nhân vật khác."
+  },
+  "edit": {
+    "title": "Sửa tin nhắn",
+    "assistantHint": "Lời của {{name}}, như câu chuyện sẽ ghi nhớ",
+    "field": "Văn bản tin nhắn",
+    "save": "Lưu"
+  },
+  "confirm": {
+    "cancel": "Hủy",
+    "rewindTitle": "Tua lại đến tin nhắn này?",
+    "rewindBody_other": "{{count}} tin nhắn phía sau sẽ bị xóa, và câu chuyện tiếp tục từ đây.",
+    "rewind": "Tua lại",
+    "deleteTitle": "Xóa tin nhắn này?",
+    "deleteBodyVersions": "Toàn bộ {{count}} phiên bản của tin nhắn sẽ bị xóa khỏi cuộc trò chuyện.",
+    "deleteBody": "Tin nhắn sẽ bị xóa khỏi cuộc trò chuyện và khỏi những gì nhân vật ghi nhớ.",
+    "delete": "Xóa"
+  },
+  "banner": {
+    "modelRequired": "Cuộc trò chuyện này cần một mô hình chưa được cài đặt.",
+    "modelNamed": "Cuộc trò chuyện này cần mô hình {{model}}, nhưng mô hình chưa được cài đặt.",
+    "modelsMissing": "Cuộc trò chuyện này cần một mô hình chưa được cài đặt: {{models}}.",
+    "openModels": "Mở mô hình",
+    "memoryBlocked": "Bộ nhớ tạm dừng vì lần tua lại trước chưa hoàn tất.",
+    "memoryRetry": "Thử lại",
+    "memoryRetryStill": "Vẫn chưa thể hoàn tất.",
+    "memoryRetried": "Bộ nhớ đã hoạt động trở lại",
+    "swapActive": "Đổi vai đang bật",
+    "endSwap": "Kết thúc đổi vai"
+  },
+  "requiredModel": {
+    "embedding": "embedding",
+    "emotion": "cảm xúc"
+  },
+  "failure": {
+    "title": "Câu trả lời chưa hoàn tất",
+    "retry": "Thử lại",
+    "code": {
+      "invalid_conversation": "Hiện không thể ghi vào cuộc trò chuyện này.",
+      "missing_model": "Chưa đặt mô hình cho cuộc trò chuyện này. Chọn trong tùy chọn trò chuyện hoặc thêm trong Mô hình.",
+      "context_unavailable": "Không thể chuẩn bị cuộc trò chuyện cho mô hình.",
+      "speaker_unavailable": "Không có ai sẵn sàng trả lời.",
+      "provider_unavailable": "Không thể kết nối đến mô hình. Kiểm tra kết nối và nhà cung cấp.",
+      "provider_rejected": "Nhà cung cấp từ chối yêu cầu. Thử mô hình khác hoặc kiểm tra tài khoản.",
+      "empty_output": "Mô hình không trả về nội dung nào.",
+      "timed_out": "Mô hình mất quá lâu để trả lời.",
+      "recovery_unavailable": "Câu trả lời bị gián đoạn và không thể khôi phục.",
+      "embedding_unavailable": "Mô hình embedding cần cho bộ nhớ không khả dụng.",
+      "internal": "Ứng dụng gặp lỗi nội bộ.",
+      "database_write_fenced": "Ứng dụng đang bận lưu dữ liệu. Thử lại sau giây lát."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "Đang tải mô hình",
+      "retrying": "Đang thử tải lại mô hình"
+    },
+    "loading": "Đang tải {{model}}, {{percent}}%",
+    "retrying": "Đang thử cách khác để tải {{model}}, {{percent}}%",
+    "loaded": "{{model}} đã sẵn sàng",
+    "failed": "Không thể tải {{model}}"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "Giải mã nhanh bị tắt khi có hình ảnh trong cuộc trò chuyện.",
+    "kv_cache_moved_to_ram": "Bộ nhớ đệm ngữ cảnh không vừa bộ nhớ đồ họa nên đã chuyển sang bộ nhớ hệ thống."
+  },
+  "toast": {
+    "copied": "Đã sao chép",
+    "copyFailed": "Không thể truy cập bộ nhớ tạm",
+    "pinned": "Đã ghim. Nội dung sẽ ở trong ký ức của nhân vật",
+    "unpinned": "Đã bỏ ghim",
+    "edited": "Đã cập nhật tin nhắn",
+    "deleted": "Đã xóa tin nhắn",
+    "branched": "Đã mở cuộc trò chuyện mới từ đây",
+    "rewound_other": "Đã tua lại {{count}} tin nhắn",
+    "launchFailed": "Không thể bắt đầu cuộc trò chuyện",
+    "mediaImageUnsupported": "Mô hình của cuộc trò chuyện này không đọc được hình ảnh. Gỡ ảnh hoặc chọn mô hình khác.",
+    "mediaAudioUnsupported": "Mô hình của cuộc trò chuyện này không nghe được âm thanh. Gỡ âm thanh hoặc chọn mô hình khác."
+  },
+  "crisp": {
+    "composerPlaceholder": "Nhắn…",
+    "composerMessage": "Tin nhắn",
+    "composerStop": "Dừng tạo",
+    "composerSend": "Gửi tin nhắn",
+    "composerSendAsSystem": "Nhấn giữ hoặc nhấp chuột phải để gửi dưới dạng hệ thống",
+    "composerSending": "Đang gửi",
+    "composerContinue": "Để nhân vật tiếp tục",
+    "messageScene": "Cảnh",
+    "messageSystem": "Hệ thống",
+    "messagePinned": "Đã ghim",
+    "messageMenuTitle": "Tin nhắn",
+    "messageReasoning": "Quá trình suy nghĩ",
+    "messageTyping": "Đang nhập",
+    "sheetClose": "Đóng",
+    "bannerDismiss": "Bỏ qua",
+    "alertDismiss": "Bỏ qua",
+    "composerAddAttachment": "Thêm nội dung",
+    "composerCancelRecording": "Hủy ghi âm",
+    "composerRecordVoice": "Ghi âm giọng nói",
+    "composerStopAndTranscribe": "Dừng và chuyển thành văn bản",
+    "composerTranscribing": "Đang chuyển thành văn bản",
+    "composerRecording": "Đang ghi âm {{elapsed}}",
+    "composerAttachment": "Tệp đính kèm",
+    "composerFile": "Tệp",
+    "composerAttachmentRemove": "Gỡ {{name}}"
+  },
+  "streaming": {
+    "imagePrompt": "Đang viết lời nhắc hình ảnh"
+  },
+  "tools": {
+    "title": "Thêm nội dung",
+    "helpMeReply": "Giúp tôi trả lời",
+    "helpMeReplyHint": "Để mô hình gợi ý điều nên nói",
+    "persona": "Persona",
+    "background": "Nền trò chuyện",
+    "backgroundHidden": "Đã ẩn",
+    "backgroundOwn": "Đặt riêng cho cuộc trò chuyện này",
+    "backgroundDefault": "Đang dùng mặc định",
+    "backgroundNone": "Không có nền",
+    "note": "Ghi chú tác giả",
+    "noteActive": "Đang áp dụng cho cuộc trò chuyện này",
+    "noteInactive": "Định hướng riêng cho câu trả lời",
+    "dice": "Xúc xắc",
+    "diceHint": "Gieo xúc xắc và thêm kết quả vào tin nhắn",
+    "swap": "Đổi vai",
+    "swapHint": "Trò chuyện với tư cách nhân vật và để mô hình trả lời với tư cách persona của bạn",
+    "swapOn": "Đổi vai (bật)",
+    "swapOnHint": "Bạn đang trò chuyện với tư cách nhân vật. Chạm để tắt",
+    "uploadImage": "Tải ảnh lên",
+    "uploadImageHint": "Đính kèm hình ảnh vào tin nhắn",
+    "uploadAudio": "Tải âm thanh lên",
+    "uploadAudioHint": "Đính kèm đoạn âm thanh vào tin nhắn"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "Không có persona",
+    "default": "Mặc định",
+    "search": "Tìm persona",
+    "noMatch": "Không có persona phù hợp",
+    "emptyTitle": "Chưa có persona",
+    "emptyBody": "Tạo một persona trong thư viện để nói với tư cách một người cụ thể.",
+    "loading": "Đang tải persona",
+    "loadFailed": "Không thể tải persona",
+    "retry": "Thử lại"
+  },
+  "background": {
+    "title": "Nền trò chuyện",
+    "current": "Nền hiện tại",
+    "currentOwn": "Đặt riêng cho cuộc trò chuyện này",
+    "currentDefault": "Nền mặc định",
+    "choose": "Chọn ảnh",
+    "replace": "Thay ảnh",
+    "chooseHint": "Chỉ cho cuộc trò chuyện này",
+    "useDefault": "Dùng mặc định",
+    "useDefaultHint": "Quay lại nền của cảnh hoặc nhân vật"
+  },
+  "note": {
+    "title": "Ghi chú tác giả",
+    "inlineTitle": "Trình sửa nội dòng",
+    "inlineHint": "Hiện ghi chú tác giả phía trên ô tin nhắn để sửa nhanh",
+    "inlineToggle": "Hiện trình sửa ghi chú tác giả nội dòng",
+    "inlineField": "Ghi chú tác giả nội dòng",
+    "inlineEdit": "Sửa ghi chú tác giả nội dòng",
+    "inlinePlaceholder": "Thêm ghi chú tác giả",
+    "saving": "Đang lưu...",
+    "hint": "Định hướng riêng mà mô hình tuân theo trong cuộc trò chuyện này",
+    "placeholder": "Viết ghi chú tác giả để dẫn dắt mô hình",
+    "save": "Lưu",
+    "clear": "Gỡ",
+    "count_other": "{{count}} ký tự",
+    "willRemove": "Ghi chú sẽ bị gỡ khi lưu",
+    "none": "Chưa lưu ghi chú"
+  },
+  "dice": {
+    "title": "Xúc xắc",
+    "hint": "Gieo xúc xắc và thêm kết quả vào tin nhắn",
+    "notation": "Ký hiệu xúc xắc",
+    "roll": "Gieo",
+    "invalid": "Dùng ký hiệu như 1d20 hoặc 2d6+3",
+    "tapToRoll": "Gieo để xem kết quả",
+    "insert": "Chèn vào tin nhắn",
+    "recent": "Gần đây",
+    "clear": "Xóa"
+  },
+  "help": {
+    "title": "Giúp tôi trả lời",
+    "draftPrompt": "Bạn đã có bản nháp tin nhắn. Muốn tiếp tục thế nào?",
+    "useMyText": "Dùng văn bản của tôi làm nền",
+    "useMyTextHint": "Mở rộng và cải thiện bản nháp",
+    "writeNew": "Viết nội dung mới",
+    "writeNewHint": "Tạo câu trả lời hoàn toàn mới",
+    "resultTitle": "Câu trả lời gợi ý",
+    "regenerate": "Thử lại",
+    "use": "Dùng câu này",
+    "writing": "Đang viết câu trả lời...",
+    "thinking": "Đang nghĩ trước khi viết...",
+    "callError": {
+      "model_required": "Chọn mô hình cho Giúp tôi trả lời trong cài đặt.",
+      "model_unavailable": "Không thể tải mô hình Giúp tôi trả lời.",
+      "busy": "Ứng dụng đang bận. Thử lại sau giây lát.",
+      "unavailable": "Tính năng này hiện không khả dụng."
+    },
+    "error": {
+      "failed": "Giúp tôi trả lời thất bại.",
+      "help_me_reply_disabled": "Giúp tôi trả lời đang tắt trong cài đặt.",
+      "help_me_reply_no_history": "Chưa có gì để trả lời.",
+      "help_me_reply_no_model": "Chọn mô hình cho Giúp tôi trả lời trong cài đặt.",
+      "help_me_reply_no_reply": "Mô hình không viết câu trả lời."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "Học cách sửa?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "Học",
+      "ignore": "Bỏ qua"
+    },
+    "error": {
+      "noModel": "Cài mô hình nhận dạng giọng nói để đọc chính tả.",
+      "permission": "Cho phép truy cập micrô để ghi âm.",
+      "noMicrophone": "Không tìm thấy micrô.",
+      "noAudio": "Không có gì được ghi âm.",
+      "busy": "Đang có bản ghi âm khác.",
+      "unsupported": "Thiết bị này không ghi âm được từ micrô.",
+      "failed": "Không thể chuyển bản ghi âm thành văn bản."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Cài đặt trò chuyện",
+      "persona": "Persona",
+      "model": "Mô hình",
+      "lorebooks": "Sách lore",
+      "background": "Nền trò chuyện",
+      "note": "Ghi chú tác giả",
+      "history": "Lịch sử trò chuyện",
+      "notes": "Ghi chú theo lịch",
+      "starters": "Cuộc trò chuyện mới",
+      "advanced": "Cài đặt mô hình",
+      "appearance": "Giao diện"
+    },
+    "back": "Quay lại",
+    "reset": "Đặt lại",
+    "loading": "Đang tải",
+    "loadFailed": "Không thể tải",
+    "source": {
+      "conversation": "Chỉ cuộc trò chuyện này",
+      "group": "Từ nhóm",
+      "character": "Từ nhân vật",
+      "launch": "Từ cách cuộc trò chuyện bắt đầu",
+      "app_default": "Mặc định của ứng dụng"
+    },
+    "meta": {
+      "messages_other": "{{count}} tin nhắn",
+      "active": "Hoạt động {{date}}"
+    },
+    "sections": {
+      "chat": "Cuộc trò chuyện này",
+      "memory": "Bộ nhớ",
+      "time": "Thời gian",
+      "actions": "Trò chuyện",
+      "generation": "Tạo câu trả lời",
+      "lorebooks": "Sách lore",
+      "members": "Thành viên",
+      "speaker": "Chọn người nói"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Dùng mô hình mặc định để chọn ai nói (tốn token)",
+      "heuristic": "Suy luận",
+      "heuristicHint": "Dùng mức tham gia cân bằng và manh mối ngữ cảnh (miễn phí)",
+      "round_robin": "Luân phiên",
+      "round_robinHint": "Các nhân vật thay phiên theo thứ tự (miễn phí)",
+      "director": "Chỉ đạo",
+      "directorHint": "Bạn chọn nhân vật nào trả lời mỗi tin nhắn",
+      "style": "Kiểu chỉ đạo",
+      "cue": "Gợi ý",
+      "action": "Hành động",
+      "cueHint": "Chạm vào nhân vật để chọn ai trả lời. Gửi sẽ gửi tin nhắn của bạn và kích hoạt câu trả lời của họ.",
+      "actionHint": "Gửi chỉ thêm tin nhắn của bạn. Chạm vào ảnh đại diện của nhân vật để họ trả lời ngay.",
+      "own": "Cuộc trò chuyện này có lựa chọn riêng"
+    },
+    "members": {
+      "replies_other": "{{count}} câu trả lời, {{percent}}",
+      "muted": "Bị bỏ qua trừ khi được gọi tên",
+      "last": "Phải có ít nhất một thành viên trả lời",
+      "answers": "{{name}} trả lời trong cuộc trò chuyện này"
+    },
+    "model": {
+      "title": "Mô hình",
+      "none": "Chưa đặt mô hình",
+      "search": "Tìm mô hình",
+      "useDefault": "Dùng mặc định của nhân vật",
+      "useDefaultHint": "Theo nhân vật, rồi đến mặc định của ứng dụng",
+      "remoteTitle": "Dùng mô hình từ xa?",
+      "remoteBody": "Cuộc trò chuyện này sẽ được gửi đến {{provider}} cho mỗi câu trả lời.",
+      "use": "Dùng mô hình này",
+      "unknown": "Mô hình không xác định"
+    },
+    "lorebooks": {
+      "title": "Sách lore",
+      "count_other": "{{count}} sách lore",
+      "useDefault": "Dùng sách lore mặc định",
+      "useDefaultHint": "Theo sách lore của nhân vật",
+      "useCharacter": "Dùng sách lore của nhân vật"
+    },
+    "background": {
+      "set": "Đã đặt ảnh"
+    },
+    "memory": {
+      "mode": "Chế độ bộ nhớ",
+      "modes": {
+        "manual": "Thủ công",
+        "dynamic": "Động",
+        "disabled": "Tắt"
+      },
+      "open": "Mở ký ức",
+      "items_other": "{{count}} ký ức",
+      "summaryTokens_other": "{{count}} token tóm tắt",
+      "off": "Bộ nhớ đang tắt cho cuộc trò chuyện này"
+    },
+    "notes": {
+      "title": "Ghi chú theo lịch",
+      "rowHint": "Lời nhắc nhân vật thấy vào thời điểm đã đặt",
+      "groupRowHint": "Lời nhắc nhóm và các thành viên thấy vào thời điểm đã đặt",
+      "hint": "Ghi chú thuộc về nhân vật và hiện trong mọi cuộc trò chuyện với họ.",
+      "groupHint": "Ghi chú thuộc về nhóm và hiện trong mọi cuộc trò chuyện của nhóm này.",
+      "empty": "Chưa có ghi chú theo lịch.",
+      "add": "Thêm ghi chú",
+      "untitled": "Ghi chú chưa đặt tên",
+      "label": "Nhãn",
+      "labelPlaceholder": "Nhãn (tùy chọn)",
+      "content": "Ghi chú",
+      "contentPlaceholder": "Nhân vật nên biết điều gì?",
+      "groupContentPlaceholder": "Nhóm nên biết điều gì?",
+      "startsOn": "Bắt đầu từ",
+      "stopsOn": "Kết thúc vào (tùy chọn)",
+      "repeats": "Lặp lại",
+      "windowHours": "Hiển thị trong (giờ)",
+      "enabled": "Đã bật",
+      "enabledHint": "Tắt ghi chú mà không xóa",
+      "deleteTitle": "Xóa ghi chú này?",
+      "deleteBody": "Không thể hoàn tác.",
+      "recurrence": {
+        "none": "Một lần",
+        "daily": "Hàng ngày",
+        "weekly": "Hàng tuần",
+        "monthly": "Hàng tháng",
+        "yearly": "Hàng năm"
+      },
+      "whoSees": "Ai thấy",
+      "whoSeesHint": "Chỉ những nhân vật bạn chọn mới đọc ghi chú này.",
+      "everyone": "Mọi thành viên đều đọc ghi chú này. Chọn nhân vật để giới hạn.",
+      "useCharacter": "Dùng ghi chú của nhân vật"
+    },
+    "history": {
+      "filter": "Lọc trò chuyện",
+      "filters": {
+        "all": "Tất cả",
+        "active": "Đang hoạt động",
+        "archived": "Đã lưu trữ"
+      },
+      "sort": "Sắp xếp trò chuyện",
+      "sorts": {
+        "recent": "Dùng gần nhất",
+        "oldest": "Cũ nhất trước"
+      },
+      "results_other": "{{formattedCount}} cuộc trò chuyện",
+      "untitled": "Cuộc trò chuyện chưa đặt tên",
+      "search": "Tìm cuộc trò chuyện",
+      "noMatch": "Không có cuộc trò chuyện phù hợp",
+      "empty": "Chưa có cuộc trò chuyện",
+      "meta_other": "{{count}} tin nhắn · {{date}}",
+      "current": "Hiện tại",
+      "archived": "Đã lưu trữ",
+      "actions": "Thao tác cho {{title}}",
+      "rename": "Đổi tên",
+      "export": "Xuất",
+      "archive": "Lưu trữ",
+      "restore": "Khôi phục",
+      "delete": "Xóa"
+    },
+    "starters": {
+      "hint": "Bắt đầu từ một mẫu trò chuyện của nhân vật.",
+      "none": "Bắt đầu không dùng mẫu"
+    },
+    "rename": {
+      "field": "Tiêu đề cuộc trò chuyện",
+      "save": "Lưu tiêu đề",
+      "open": "Đổi tên cuộc trò chuyện"
+    },
+    "delete": {
+      "title": "Xóa cuộc trò chuyện này?",
+      "body": "{{title}} và toàn bộ tin nhắn sẽ bị xóa. Không thể hoàn tác.",
+      "confirm": "Xóa"
+    },
+    "export": {
+      "done": "Đã xuất cuộc trò chuyện"
+    },
+    "duplicate": {
+      "done": "Đã nhân bản cuộc trò chuyện"
+    },
+    "actions": {
+      "newChat": "Cuộc trò chuyện mới",
+      "newChatHint": "Bắt đầu cuộc trò chuyện khác với nhân vật này",
+      "newGroupChatHint": "Bắt đầu cuộc trò chuyện khác với nhóm này",
+      "history": "Lịch sử trò chuyện",
+      "historyHint": "Mở, đổi tên hoặc xóa các cuộc trò chuyện trước",
+      "branches": "Nhánh",
+      "branchesHint": "Chuyển giữa các hướng câu chuyện của cuộc trò chuyện này",
+      "duplicate": "Nhân bản cuộc trò chuyện",
+      "duplicateHint": "Tạo bản sao kèm toàn bộ tin nhắn",
+      "export": "Xuất cuộc trò chuyện",
+      "exportHint": "Lưu cuộc trò chuyện thành tệp",
+      "import": "Nhập nhật ký trò chuyện",
+      "importHint": "Mang một cuộc trò chuyện vào từ tệp",
+      "importGroupHint": "Chưa hỗ trợ cho trò chuyện nhóm",
+      "archive": "Lưu trữ cuộc trò chuyện",
+      "archiveHint": "Ẩn khỏi danh sách, giữ lại mọi thứ",
+      "restore": "Khôi phục cuộc trò chuyện",
+      "restoreHint": "Đưa trở lại danh sách",
+      "delete": "Xóa cuộc trò chuyện",
+      "deleteHint": "Xóa vĩnh viễn cuộc trò chuyện và tin nhắn"
+    },
+    "generation": {
+      "title": "Cài đặt mô hình",
+      "scope": "Chỉ cho cuộc trò chuyện này",
+      "hint": "Giá trị chưa đặt sẽ theo mô hình, rồi đến mặc định của ứng dụng.",
+      "noModel": "Cuộc trò chuyện này chưa có mô hình nên chỉ áp dụng mặc định của ứng dụng.",
+      "resetAll": "Đặt lại tất cả",
+      "discard": "Bỏ",
+      "inherited": "Theo mô hình và cài đặt ứng dụng",
+      "count_other": "Đã thay đổi {{count}} giá trị cho cuộc trò chuyện này"
+    },
+    "time": {
+      "title": "Đồng hồ trò chuyện",
+      "awareness": "Nhận biết thời gian",
+      "awarenessHint": "Cung cấp ngày giờ cho mô hình và gắn dấu thời gian vào mọi tin nhắn",
+      "live": "Thời gian thực",
+      "frozen": "Đã dừng",
+      "ticking": "Đang chạy",
+      "stoppedAt": "Dừng tại {{when}}",
+      "runningFrom": "Chạy từ {{when}}",
+      "mode": "Đồng hồ",
+      "anchor": "Ngày và giờ",
+      "apply": "Áp dụng",
+      "reset": "Đặt lại",
+      "cancel": "Hủy",
+      "chooseAnchor": "Chọn ngày và giờ",
+      "previousMonth": "Tháng trước",
+      "nextMonth": "Tháng sau",
+      "chooseMonth": "Chọn tháng và năm",
+      "previousYear": "Năm trước",
+      "nextYear": "Năm sau",
+      "year": "Năm",
+      "time": "Giờ"
+    },
+    "groupAppearanceHint": "Giao diện cho mọi cuộc trò chuyện trong nhóm này",
+    "characterAppearanceHint": "Giao diện cho mọi cuộc trò chuyện với nhân vật này"
+  },
+  "appearance": {
+    "forGroup": "Cho mọi cuộc trò chuyện trong nhóm này",
+    "forCharacter": "Cho {{name}}",
+    "moveLeft": "Chuyển sang trái",
+    "moveRight": "Chuyển sang phải",
+    "close": "Đóng giao diện",
+    "unsaved": "Thay đổi chưa lưu",
+    "saved": "Không có thay đổi",
+    "discard": "Bỏ",
+    "save": "Lưu",
+    "discardTitle": "Bỏ các thay đổi?",
+    "discardBody": "Các thay đổi giao diện chưa được lưu.",
+    "discardConfirm": "Bỏ thay đổi",
+    "keepEditing": "Tiếp tục sửa"
+  },
+  "memory": {
+    "title": "Bộ nhớ",
+    "back": "Trò chuyện",
+    "tabs": {
+      "memories": "Ký ức",
+      "activity": "Hoạt động",
+      "pinned": "Đã ghim"
+    },
+    "loading": "Đang tải bộ nhớ",
+    "off": {
+      "title": "Bộ nhớ đang tắt cho cuộc trò chuyện này",
+      "description": "Không có gì được ghi nhớ hoặc gửi kèm câu trả lời trong cuộc trò chuyện này.",
+      "action": "Mở cài đặt trò chuyện"
+    },
+    "search": "Tìm ký ức",
+    "add": "Thêm",
+    "all": "Tất cả",
+    "categories": {
+      "character_trait": "Đặc điểm nhân vật",
+      "relationship": "Mối quan hệ",
+      "plot_event": "Sự kiện cốt truyện",
+      "world_detail": "Chi tiết thế giới",
+      "preference": "Sở thích",
+      "other": "Khác",
+      "milestone": "Cột mốc",
+      "boundary": "Ranh giới",
+      "profile": "Hồ sơ",
+      "routine": "Thói quen",
+      "episodic": "Tình huống",
+      "emotional_snapshot": "Khoảnh khắc cảm xúc"
+    },
+    "origins": {
+      "model": "Mô hình",
+      "user": "Bạn",
+      "import": "Đã nhập"
+    },
+    "temperature": {
+      "hot": "Nóng",
+      "cold": "Nguội"
+    },
+    "tokens_other": "{{count}} token",
+    "window": "Tin nhắn {{from}} đến {{to}}",
+    "pinnedMark": "Đã ghim",
+    "list": {
+      "found_other": "Tìm thấy {{count}}",
+      "total_other": "{{count}} ký ức",
+      "byModel": "{{count}} do mô hình tạo",
+      "byUser": "{{count}} do bạn tạo",
+      "imported": "{{count}} đã nhập",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "Chưa có ký ức",
+      "dynamic": "Ký ức sẽ hiện ở đây khi cuộc trò chuyện dài thêm. Bạn cũng có thể tự thêm.",
+      "manual": "Thêm những gì nhân vật phải luôn ghi nhớ.",
+      "action": "Thêm ký ức",
+      "noMatch": "Không có kết quả cho \"{{query}}\"",
+      "noMatchBody": "Thử một từ trong chính ký ức.",
+      "noCategory": "Không có gì trong mục này"
+    },
+    "sheet": {
+      "addTitle": "Thêm ký ức",
+      "editTitle": "Ký ức",
+      "byModel": "Do mô hình viết",
+      "byModelIn": "Do mô hình viết trong {{window}}",
+      "byUser": "Do bạn viết",
+      "imported": "Đã nhập",
+      "text": "Ký ức",
+      "textPlaceholder": "Nhân vật nên nhớ điều gì?",
+      "category": "Danh mục",
+      "noCategory": "Không có danh mục",
+      "when": "Thời điểm xảy ra",
+      "whenHint": "Tùy chọn. Giúp nhân vật đặt sự việc vào đúng thời điểm.",
+      "whenPlaceholder": "Chưa đặt",
+      "whenClear": "Xóa",
+      "temperature": "Nhiệt độ",
+      "hotBody": "Ký ức nóng luôn ở gần",
+      "coldBody": "Ký ức nguội chỉ được gợi lại khi khớp chặt",
+      "pin": "Đã ghim",
+      "pinBody": "Mô hình không bao giờ xóa hoặc lưu trữ ký ức đã ghim",
+      "delete": "Xóa",
+      "cancel": "Hủy",
+      "add": "Thêm",
+      "save": "Lưu",
+      "deleteTitle": "Xóa ký ức này?",
+      "deleteBody": "Ký ức sẽ không còn được gợi lại trong cuộc trò chuyện này.",
+      "keep": "Giữ",
+      "added": "Đã thêm ký ức",
+      "saved": "Đã lưu ký ức",
+      "deleted": "Đã xóa ký ức"
+    },
+    "summary": {
+      "title": "Tóm tắt ngữ cảnh",
+      "empty": "Thêm bản tóm tắt ngắn để nhân vật giữ được mạch câu chuyện.",
+      "description": "Bản tóm tắt ngắn đi kèm mỗi câu trả lời",
+      "field": "Tóm tắt",
+      "dynamicHint": "Mô hình viết lại phần này ở mỗi lần cập nhật. Chỉnh sửa của bạn được giữ cho đến lúc đó.",
+      "clear": "Xóa",
+      "cancel": "Hủy",
+      "save": "Lưu",
+      "saved": "Đã lưu bản tóm tắt",
+      "cleared": "Đã xóa bản tóm tắt"
+    },
+    "status": {
+      "approvalTitle": "Cập nhật bộ nhớ?",
+      "approvalBody_other": "{{count}} tin nhắn mới sẵn sàng được tóm tắt vào bộ nhớ.",
+      "update": "Cập nhật",
+      "notNow": "Để sau",
+      "skipped_other": "Đã bỏ qua. Sẽ hỏi lại sau {{count}} tin nhắn tiếp theo",
+      "runningTitle": "Đang cập nhật bộ nhớ",
+      "runningBody": "Đang đọc các tin nhắn mới nhất",
+      "stop": "Dừng",
+      "failedTitle": "Cập nhật bộ nhớ thất bại",
+      "tryAgain": "Thử lại",
+      "otherModel": "Dùng mô hình khác",
+      "pausedTitle": "Lần cập nhật bộ nhớ trước bị gián đoạn",
+      "pausedBody": "Một tiến trình khác đã tiếp quản trước khi hoàn tất.",
+      "nextIn_other": "Cập nhật tiếp theo sau {{count}} tin nhắn",
+      "since_other": "{{count}} tin nhắn kể từ lần cập nhật trước",
+      "modes": {
+        "auto": "Tự động",
+        "ask_first": "Hỏi trước",
+        "manual": "Thủ công"
+      },
+      "every_other": "{{mode}} · mỗi {{count}} tin nhắn",
+      "manualOnly": "{{mode}} · chỉ cập nhật khi bạn bắt đầu tại đây",
+      "progress": "{{current}} trên {{total}}",
+      "updateNow": "Cập nhật ngay"
+    },
+    "failure": {
+      "embedding_unavailable": "Mô hình embedding không khả dụng.",
+      "model_missing": "Chưa cài mô hình bộ nhớ.",
+      "model_invalid": "Không thể dùng mô hình bộ nhớ.",
+      "prompt_missing": "Thiếu lời nhắc bộ nhớ.",
+      "settings_invalid": "Cài đặt bộ nhớ không hợp lệ.",
+      "provider_unavailable": "Nhà cung cấp không phản hồi.",
+      "provider_rejected": "Nhà cung cấp từ chối yêu cầu.",
+      "invalid_response": "Không thể xử lý phản hồi bộ nhớ của mô hình. Thử lại chu kỳ.",
+      "empty_response": "Mô hình trả về câu trả lời trống.",
+      "timed_out": "Mô hình mất quá lâu để trả lời.",
+      "round_limit": "Mô hình dùng quá nhiều bước.",
+      "tool_failed": "Một thay đổi bộ nhớ đã thất bại.",
+      "storage_failure": "Không thể lưu bộ nhớ.",
+      "lease_lost": "Một lần cập nhật khác đã tiếp quản.",
+      "internal": "Ứng dụng gặp lỗi nội bộ."
+    },
+    "gate": {
+      "not_dynamic": "Cuộc trò chuyện này không dùng bộ nhớ động.",
+      "disabled": "Bộ nhớ động đang tắt trong cài đặt.",
+      "nothing_to_summarise": "Chưa có gì để tóm tắt.",
+      "cycle_running": "Đang có một lần cập nhật chạy."
+    },
+    "activity": {
+      "empty": "Chưa có cập nhật",
+      "emptyBody": "Mỗi lần cập nhật bộ nhớ của mô hình được liệt kê ở đây.",
+      "badgeUndone": "Đã hoàn tác",
+      "badgeFailed": "Thất bại",
+      "badgeStopped": "Đã dừng",
+      "badgeInterrupted": "Bị gián đoạn",
+      "badgeRunning": "Đang chạy",
+      "noDetails": "Không có chi tiết nào được ghi.",
+      "stopped": "Lần cập nhật này đã dừng trước khi hoàn tất.",
+      "running": "Lần cập nhật này vẫn đang chạy.",
+      "actions": {
+        "created": "Đã thêm",
+        "duplicate_skipped": "Đã biết",
+        "deleted": "Đã xóa",
+        "soft_deleted": "Chuyển sang nguội",
+        "pinned": "Đã ghim",
+        "unpinned": "Đã bỏ ghim",
+        "target_not_found": "Không tìm thấy",
+        "done": "Xong",
+        "rejected": "Bị từ chối",
+        "skipped": "Bị bỏ qua",
+        "stopped_after_done": "Dừng sau khi xong"
+      },
+      "undo": "Hoàn tác lần cập nhật này",
+      "blocked": "Không thể hoàn tác: một lần cập nhật sau dựa trên đó.",
+      "blockedBy": "Không thể hoàn tác: lần cập nhật cho {{window}} dựa trên đó.",
+      "dependent": "Một lần cập nhật sau dựa trên đó nên không thể hoàn tác.",
+      "userEdited": "Bạn đã sửa một ký ức do lần này viết nên không thể hoàn tác.",
+      "undoTitle": "Hoàn tác lần cập nhật cho {{window}}?",
+      "undoBody": "Các ký ức được thêm sẽ bị xóa và những ký ức bị thay đổi sẽ trở lại. Chỉnh sửa của bạn được giữ.",
+      "undoConfirm": "Hoàn tác cập nhật",
+      "keep": "Giữ",
+      "undone": "Đã hoàn tác cập nhật",
+      "loadMore": "Hiện cập nhật cũ hơn"
+    },
+    "pinnedTab": {
+      "empty": "Không có tin nhắn đã ghim",
+      "emptyBody": "Ghim một tin nhắn từ cuộc trò chuyện và nó sẽ luôn đi cùng câu trả lời tiếp theo.",
+      "label": "Luôn gửi kèm câu trả lời",
+      "unpin": "Bỏ ghim",
+      "unpinned": "Đã bỏ ghim",
+      "noText": "Tệp đính kèm",
+      "loadMore": "Hiện thêm",
+      "you": "Bạn"
+    }
+  },
+  "branches": {
+    "title": "Nhánh",
+    "meta_other": "{{count}} tin nhắn · {{date}}",
+    "current": "Hiện tại",
+    "actions": "Thao tác cho {{title}}",
+    "rename": "Đổi tên",
+    "renameField": "Tên nhánh",
+    "delete": "Xóa",
+    "deleteRoot": "Không thể xóa nhánh gốc",
+    "deleteActive": "Chuyển sang nhánh khác trước",
+    "deleteTitle": "Xóa nhánh này?",
+    "deleteBody": "{{name}} và tin nhắn của nó sẽ bị xóa. Các nhánh khác vẫn được giữ.",
+    "deleted": "Đã xóa nhánh",
+    "untitled": "Nhánh chưa đặt tên",
+    "thisChat": "Cuộc trò chuyện này",
+    "renameSave": "Lưu tên",
+    "original": "Gốc",
+    "untitledChat": "Cuộc trò chuyện chưa đặt tên"
+  },
+  "companion": {
+    "title": "Bạn đồng hành",
+    "back": "Trò chuyện",
+    "tabs": {
+      "relationship": "Mối quan hệ",
+      "bond": "Gắn kết",
+      "memories": "Ký ức",
+      "soul": "Soul",
+      "activity": "Hoạt động"
+    },
+    "bond": "Gắn kết",
+    "lastTalked": "Trò chuyện gần nhất {{when}}",
+    "updated": "Cập nhật {{when}}",
+    "messages": "Tin nhắn",
+    "togetherSince": "Bên nhau từ {{date}}",
+    "engine": "Bộ máy cảm xúc",
+    "nothingTitle": "Chưa có gì để hiện",
+    "nothingBody": "Sự gắn kết và cảm xúc của {{name}} bắt đầu thay đổi sau vài tin nhắn. Chúng khởi đầu từ mặc định trong cài đặt bạn đồng hành.",
+    "missingTitle": "Cảm xúc không được theo dõi",
+    "missingBody": "Cài mô hình cảm xúc để mỗi câu trả lời có thể thay đổi cảm xúc của họ.",
+    "install": "Cài đặt",
+    "nothingNow": "Hiện không có gì",
+    "drivers": "Yếu tố tác động",
+    "timeline": "Dòng thời gian gần đây",
+    "events_other": "{{count}} sự kiện",
+    "currentState": "Trạng thái hiện tại",
+    "defaultMark": "Mặc định của nhân vật",
+    "aboveDefault_other": "Cao hơn mặc định của nhân vật {{count}} điểm",
+    "belowDefault_other": "Thấp hơn mặc định của nhân vật {{count}} điểm",
+    "axes": {
+      "closeness": {
+        "label": "Gần gũi",
+        "low": "Khép kín",
+        "mid": "Quen biết",
+        "high": "Thân thiết"
+      },
+      "trust": {
+        "label": "Tin tưởng",
+        "low": "Đề phòng",
+        "mid": "Trung tính",
+        "high": "Tin cậy"
+      },
+      "affection": {
+        "label": "Trìu mến",
+        "low": "Thù địch",
+        "mid": "Trung tính",
+        "high": "Âu yếm"
+      },
+      "tension": {
+        "label": "Căng thẳng",
+        "low": "Thoải mái",
+        "mid": "",
+        "high": "Căng"
+      },
+      "stability": {
+        "label": "Ổn định",
+        "low": "Dễ dao động",
+        "mid": "",
+        "high": "Ổn định"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Cảm thấy",
+        "hint": "Điều họ cảm nhận bên trong"
+      },
+      "expressed": {
+        "title": "Thể hiện",
+        "hint": "Điều lộ ra trong câu trả lời"
+      },
+      "blocked": {
+        "title": "Kìm lại",
+        "hint": "Điều tính cách của họ giữ trong lòng"
+      },
+      "momentum": {
+        "title": "Đang dồn lại",
+        "hint": "Hướng của vài lượt gần đây"
+      }
+    },
+    "emotions": {
+      "warmth": "Ấm áp",
+      "trust": "Tin tưởng",
+      "calm": "Bình tĩnh",
+      "vulnerability": "Dễ tổn thương",
+      "longing": "Khao khát",
+      "hurt": "Tổn thương",
+      "tension": "Căng thẳng",
+      "irritation": "Bực bội",
+      "affection_intensity": "Trìu mến",
+      "reassurance_need": "Cần được trấn an"
+    },
+    "memories": {
+      "total_other": "{{count}} ký ức",
+      "found_other": "Tìm thấy {{count}}",
+      "kind": "Loại",
+      "field": "Ký ức",
+      "placeholder": "{{name}} nên nhớ điều gì?",
+      "emptyTitle": "Không có ký ức ở đây",
+      "emptyBody": "Ký ức xuất hiện khi bạn trò chuyện. Bạn cũng có thể tự thêm.",
+      "noMatch": "Không có kết quả cho \"{{query}}\"",
+      "noMatchBody": "Thử một từ trong chính ký ức."
+    },
+    "soul": {
+      "title": "Soul",
+      "edit": "Sửa",
+      "core": "Lõi danh tính. Sự phát triển không bao giờ thay đổi nó",
+      "notWritten": "Chưa được viết",
+      "growth": "Sự phát triển của Soul",
+      "clear": "Xóa phát triển",
+      "intro": "Các đặc điểm có thể thay đổi của họ đã phát triển thế nào từ ký ức của bạn. Bản chất, đặc điểm và quá khứ không bao giờ thay đổi ở đây.",
+      "empty": "Chưa có phát triển. Khi ký ức hình thành, những đặc điểm thay đổi cùng bạn sẽ hiện ở đây.",
+      "zero": "0 thay đổi",
+      "added": "Đã thêm",
+      "adjusted": "Đã điều chỉnh",
+      "confidence": "Độ tin cậy",
+      "locked": "Đã khóa",
+      "lock": "Khóa",
+      "unlock": "Mở khóa",
+      "lockHint": "Khóa thông tin này",
+      "unlockHint": "Mở khóa thông tin này",
+      "historicalHint": "Thông tin lịch sử luôn được giữ",
+      "remove": "Gỡ phần phát triển này",
+      "sources_other": "từ {{count}} ký ức",
+      "retired_other": "Đã thay thế {{count}} phiên bản trước.",
+      "categories": {
+        "essence": "Bản chất",
+        "traits": "Đặc điểm",
+        "backstory": "Quá khứ",
+        "appearance": "Ngoại hình",
+        "goals": "Mục tiêu",
+        "likes": "Sở thích",
+        "voice": "Giọng nói",
+        "relational_style": "Phong cách quan hệ",
+        "vulnerabilities": "Điểm yếu",
+        "fears": "Nỗi sợ",
+        "habits": "Thói quen",
+        "boundaries": "Ranh giới"
+      },
+      "policy": {
+        "current": {
+          "label": "Hiện tại",
+          "hint": "Thay thế nội dung trước đó"
+        },
+        "adaptive": {
+          "label": "Thích ứng",
+          "hint": "Có thể tiếp tục thay đổi khi bạn trò chuyện"
+        },
+        "historical": {
+          "label": "Lịch sử",
+          "hint": "Điều đã xảy ra. Luôn được giữ"
+        }
+      },
+      "removeTitle": "Gỡ mục này?",
+      "removeBody": "Nội dung sẽ bị gỡ khỏi những gì họ đã học. Soul đã viết vẫn giữ nguyên.",
+      "clearTitle": "Xóa mọi thứ họ đã học?",
+      "clearBody": "Toàn bộ phát triển sẽ mất, kể cả lịch sử bị thay thế. Soul đã viết vẫn giữ nguyên.",
+      "keep": "Giữ",
+      "removeConfirm": "Gỡ",
+      "clearConfirm": "Xóa tất cả",
+      "removed": "Đã gỡ",
+      "cleared": "Đã xóa phát triển",
+      "sourcesTitle": "Nguồn gốc",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "Các ký ức nguồn không còn khả dụng.",
+      "sourcesMissing_other": "{{count}} ký ức nguồn không còn khả dụng."
+    },
+    "effect": {
+      "title": "Câu trả lời này đã thay đổi gì",
+      "feels": "Điều họ cảm thấy",
+      "pickedUp": "Đã tiếp nhận",
+      "letGo": "Đã buông bỏ",
+      "remembered": "Đã ghi nhớ",
+      "processing": "Đang xem điều gì đã thay đổi",
+      "failed": "Không thể phân tích các thay đổi của câu trả lời.",
+      "invalidated": "Các thay đổi này không còn áp dụng cho câu trả lời này.",
+      "memoryCount_other": "{{count}} ký ức",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "Không có thay đổi để hiện",
+      "quote": "“{{text}}”"
+    },
+    "activity": {
+      "undo": "Hoàn tác lần cập nhật này",
+      "undoTitle": "Hoàn tác {{window}}?",
+      "undoBody": "Các ký ức được thêm sẽ bị xóa và những ký ức bị thay đổi sẽ trở lại. Chỉnh sửa của bạn được giữ.",
+      "undoConfirm": "Hoàn tác cập nhật",
+      "blockedBy": "Không thể hoàn tác: {{window}} dựa trên đó.",
+      "blocked": "Không thể hoàn tác: một lần cập nhật sau dựa trên đó."
+    },
+    "unavailable": "Cuộc trò chuyện này không có bạn đồng hành",
+    "unavailableBody": "Mở trò chuyện bạn đồng hành để xem sự gắn kết, ký ức và Soul.",
+    "crisp": {
+      "close": "Đóng",
+      "clearSearch": "Xóa tìm kiếm"
+    },
+    "lastReply": "Câu trả lời trước",
+    "replyHint": "Mỗi tin nhắn trong cuộc trò chuyện mở mục này từ menu của nó"
+  }
+}

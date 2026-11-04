@@ -1,0 +1,103 @@
+{
+  "title": "Samtaler",
+  "homeTitle": "Hjem",
+  "characters": "Karakterer",
+  "search": "Søk i samtaler",
+  "searchCharacters": "Søk i karakterer",
+  "count": "{{shown}} av {{total}}",
+  "noDescription": "Ingen beskrivelse ennå",
+  "lastChat": "Siste samtale {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Fortsett samtalen",
+  "empty": {
+    "title": "Ingen karakterer ennå",
+    "body": "Lag noen å snakke med, eller importer et karakterkort fra disken.",
+    "create": "Opprett en karakter"
+  },
+  "noMatch": {
+    "title": "Ingenting samsvarer med «{{query}}»",
+    "body": "Prøv et navn, eller et ord fra en karakters beskrivelse.",
+    "clear": "Tøm søket"
+  },
+  "view": {
+    "label": "Visning",
+    "current": "Visning: {{view}}",
+    "home": "Hjem",
+    "list": "Liste",
+    "hero": "Hero"
+  },
+  "layout": {
+    "title": "Oppsett",
+    "body": "Hvordan Samtaler viser karakterene dine.",
+    "current": "Oppsett: {{layout}}",
+    "list": {
+      "title": "Liste",
+      "body": "Hver karakter som et kort, slik de ser ut i dag"
+    },
+    "recent": {
+      "title": "Nylige",
+      "body": "Hver samtale, nyeste først, med linjen den stoppet på"
+    }
+  },
+  "recent": {
+    "today": "I dag",
+    "week": "Denne uken",
+    "earlier": "Tidligere",
+    "empty": "Ingen samtaler ennå"
+  },
+  "menu": {
+    "history": "Samtalehistorikk",
+    "historyBody": "Tidligere samtaler med denne karakteren",
+    "edit": "Rediger karakter",
+    "cardStyle": "Kortstil",
+    "cardRow": "Rad, bytt til banner",
+    "cardBanner": "Banner, bytt til rad",
+    "export": "Eksporter",
+    "exportBody": "Som karakterkort",
+    "hide": "Skjul fra Samtaler",
+    "hideBody": "Blir værende i biblioteket",
+    "delete": "Slett karakter",
+    "deleteTitle": "Slette {{name}}?",
+    "deleteBody": "Karakteren og en-til-en-samtalene slettes. Dette kan ikke angres.",
+    "noChats": "Ingen samtaler ennå"
+  },
+  "export": {
+    "title": "Eksportformat",
+    "body": "Velg et format",
+    "done": "Lagret som {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Formatet Unified Entity Card (.uec) (anbefalt)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (nyeste spesifikasjon)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (Tavern-spesifikasjon)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Rediger samtale",
+    "editCharacter": "Rediger karakter",
+    "editGroup": "Rediger gruppe",
+    "rename": "Gi nytt navn",
+    "renameTitle": "Gi samtalen nytt navn",
+    "save": "Lagre",
+    "delete": "Slett samtale",
+    "deleteTitle": "Slette {{title}}?",
+    "deleteBody": "Karakteren blir igjen; denne historien forsvinner."
+  },
+  "sidebar": {
+    "label": "Nylige samtaler",
+    "empty": "Samtaler du starter, vises her."
+  },
+  "discover": {
+    "title": "Oppdag",
+    "soonTitle": "Oppdag er på vei",
+    "soonBody": "Et sted å finne og dele karakterer laget av fellesskapet. Vi bygger det på våre egne servere, med moderering fra første dag.",
+    "create": "Opprett en karakter",
+    "discord": "Følg med på Discord"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "create": {
+    "title": "Nueva persona",
+    "back": "Atrás",
+    "create": "Crear persona",
+    "created": "{{name}} creada",
+    "imported": "Persona importada",
+    "unattached_one": "{{count}} libro de lore no se pudo adjuntar. Adjúntalo desde los ajustes de la persona.",
+    "unattached_many": "{{count}} libros de lore no se pudieron adjuntar. Adjúntalos desde los ajustes de la persona.",
+    "unattached_other": "{{count}} libros de lore no se pudieron adjuntar. Adjúntalos desde los ajustes de la persona.",
+    "defaultFailed": "{{name}} se creó, pero no se pudo establecer como predeterminada.",
+    "discardTitle": "¿Descartar esta persona?",
+    "discardBody": "Se perderá lo que has introducido hasta ahora.",
+    "discard": "Descartar",
+    "keepEditing": "Seguir editando",
+    "continueTo": "Continuar a {{step}}"
+  },
+  "edit": {
+    "title": "Editar persona",
+    "back": "Atrás",
+    "backToLibrary": "Volver a la biblioteca",
+    "more": "Más acciones",
+    "export": "Exportar",
+    "delete": "Eliminar persona",
+    "exported": "Persona exportada",
+    "exportWarnings_one": "Exportada con {{count}} advertencia",
+    "exportWarnings_many": "Exportada con {{count}} advertencias",
+    "exportWarnings_other": "Exportada con {{count}} advertencias",
+    "deleteTitle": "¿Eliminar a {{name}}?",
+    "deleteBody": "La persona se quitará de los chats que la usen.",
+    "deleteConfirm": "Eliminar",
+    "deleteCancel": "Cancelar",
+    "deleted": "{{name}} eliminada",
+    "unsaved": "Cambios sin guardar",
+    "discard": "Descartar",
+    "save": "Guardar",
+    "saved": "Cambios guardados",
+    "lorebooksFailed": "Guardado, pero no se pudieron actualizar los libros de lore. Intenta guardar de nuevo.",
+    "leaveTitle": "¿Descartar tus cambios?",
+    "leaveBody": "Los cambios sin guardar se pierden.",
+    "leaveDiscard": "Descartar",
+    "leaveKeep": "Seguir editando"
+  },
+  "steps": {
+    "identity": "Identidad",
+    "extras": "Extras"
+  },
+  "identity": {
+    "chooseAvatar": "Elegir imagen",
+    "removeAvatar": "Quitar",
+    "name": "Nombre",
+    "namePlaceholder": "Guionista",
+    "nameHint": "Quién eres tú en los chats",
+    "nickname": "Apodo",
+    "nicknamePlaceholder": "Cómo te llaman los personajes",
+    "nicknameHint": "Opcional. Se usa en los chats en lugar del nombre.",
+    "default": "Usar como predeterminada",
+    "defaultBody": "Los chats nuevos empiezan con esta persona",
+    "import": "Importar desde un archivo",
+    "importBody": "Importa una persona exportada desde LettuceAI.",
+    "chooseFile": "Elegir archivo"
+  },
+  "about": {
+    "description": "Descripción",
+    "descriptionPlaceholder": "Cómo deberían dirigirse a ti los personajes, tu trasfondo, preferencias y estilo",
+    "descriptionHint": "Usa {{user}} para esta persona y {{char}} para el personaje.",
+    "words_one": "{{count}} palabra",
+    "words_many": "{{count}} palabras",
+    "words_other": "{{count}} palabras"
+  },
+  "extras": {
+    "body": "Todo esto es opcional.",
+    "lorebooks": "Libros de lore",
+    "lorebooksNone": "Ninguno",
+    "lorebooksCount_one": "{{count}} libro de lore",
+    "lorebooksCount_many": "{{count}} libros de lore",
+    "lorebooksCount_other": "{{count}} libros de lore"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "title": "新功能",
+  "installed": "已安裝版本：{{version}}",
+  "releaseMismatch": "這些說明適用於 {{version}}。你正在執行 {{installed}}。",
+  "fullChangelog": "完整更新日誌",
+  "continue": "繼續",
+  "markFailed": "無法儲存已檢視的版本",
+  "types": {
+    "feature": "新增",
+    "improvement": "改進",
+    "bugfix": "修正",
+    "breaking": "重大變更"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5：上下文用量分析與更精簡的動態記憶",
+    "description": "現在每則助理訊息都會顯示其提示用掉多少上下文視窗，以及內容由什麼組成，一對一和群組對話皆然。一對一對話中的動態記憶不再每回合傳送整個記憶庫，macOS 上的嵌入也會重新啟動。",
+    "changes": {
+      "contextUsage": "助理回覆的訊息動作中新增「上下文用量」面板，顯示上下文視窗分為已佔用、保留給回覆和可用，並細分提示內容：系統、角色、人設、記憶、設定集、作者備註、夥伴狀態和對話記錄。佔比以 tiktoken 估算，並依供應商實際回報的提示 token 換算。",
+      "groupContextUsage": "群組對話訊息也有相同面板，從儲存的訊息重建，不會重新執行檢索，並包含「群組成員」類別，計算其他參與者的個人檔案。",
+      "responseBudget": "在 llama.cpp 和 Ollama 上，保留的回覆額度（回覆加推理）會從實際請求讀取；當提示和該保留額度合計超過上下文視窗時會顯示警告，讓你能在提示被截斷或回覆中斷前降低最大 token 數或精簡上下文。",
+      "developerBreakdown": "開發者訊息除錯頁面也包含相同的分類 token 明細，以及總計和上下文視窗用量。",
+      "memoryRetrieval": "一對一對話中的動態記憶不再在每次提示時，於檢索到的記憶之外，用整個熱記憶庫填滿 {{key_memories}}。現在只會傳送該回合檢索到的記憶，角色扮演角色和夥伴皆然，涵蓋新回覆、重新生成和續寫。",
+      "macEmbeddings": "macOS 上的嵌入不再因「不同的 Team ID」錯誤而無法啟動。執行時下載的 ONNX Runtime 由 Microsoft 簽署，macOS 原本拒絕將其載入應用程式；現在會在載入前於本機重新簽署。"
+    }
+  }
+}

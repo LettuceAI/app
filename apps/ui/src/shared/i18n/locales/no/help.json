@@ -1,0 +1,103 @@
+{
+  "title": "Hjelp og vanlige spørsmål",
+  "subtitle": "Det grunnleggende, API-nøkler, personvern og vanlige spørsmål",
+  "sections": {
+    "gettingStarted": "Kom i gang",
+    "privacySafety": "Personvern og sikkerhet",
+    "modelsProviders": "Modeller og leverandører",
+    "charactersChats": "Karakterer og samtaler"
+  },
+  "stillStuck": {
+    "title": "Trenger du mer hjelp?",
+    "docsTitle": "Full dokumentasjon",
+    "docsDescription": "Veiledninger og referanse for LettuceAI",
+    "discordTitle": "Bli med på Discord",
+    "discordDescription": "Spør fellesskapet eller rapporter en feil"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Hva er LettuceAI?",
+      "answer": "LettuceAI er en samtaleapp for AI-karakterer. Du velger leverandøren og modellen som skriver svarene, og samtalene og karakterene dine blir på enheten din. Skybaserte leverandører bruker din egen konto; støttede lokale modeller kjører på datamaskinen din."
+    },
+    "whatIsApiKey": {
+      "question": "Hva er en API-nøkkel, og hvorfor trenger jeg en? (BYOK forklart)",
+      "answer": "BYOK betyr Bring Your Own Key. En API-nøkkel lar LettuceAI sende forespørsler til en leverandør med din konto. Lag en nøkkel hos leverandøren og legg den til i Innstillinger > Leverandører. Forespørsler går fra enheten din til leverandøren, som bruker sin egen fakturering og sine egne grenser. Støttede lokale modeller trenger ingen skybasert API-nøkkel. Behandle nøkkelen som et passord og ikke del den."
+    },
+    "cheapestStart": {
+      "question": "Hva er den billigste eller enkleste måten å komme i gang på?",
+      "answer": "Bruk oppsettveiledningen til å koble til en leverandør og velge en modell. Sammenlign leverandørens gjeldende priser, gratisnivåer og forespørselsgrenser før du legger til kreditt. Start med et lite budsjett og sjekk Innstillinger > Bruksanalyse mens du samtaler. På skrivebordet er støttede lokale modeller et annet alternativ hvis datamaskinen har nok minne og lagringsplass."
+    },
+    "alternative": {
+      "question": "Er dette et alternativ til andre AI-samtaleapper?",
+      "answer": "Ja. LettuceAI lar deg velge leverandør, modell og karakteroppsett i stedet for å binde hver samtale til én tjeneste. Du administrerer din egen leverandørkonto og beholder dataene på enheten din. Et kort oppsett kobler til modellen du vil bruke."
+    },
+    "cost": {
+      "question": "Hvor mye koster det?",
+      "answer": "LettuceAI er gratis. En skybasert leverandør kan belaste kontoen din for forespørsler eller tilby et gratisnivå. Prisene avhenger av modellen, mengden tekst som sendes og genereres, og eventuelle bilde- eller lydfunksjoner du bruker. Sjekk leverandørens priser før du velger modell. Bruksanalyse viser rapporterte tokens og kjente kostnader; manglende priser betyr ikke det samme som gratis forespørsler."
+    },
+    "apiKeySafe": {
+      "question": "Er API-nøkkelen min trygg?",
+      "answer": "Leverandørens påloggingsdata lagres lokalt og brukes til å koble til leverandøren du har konfigurert. LettuceAI sender ikke forespørslene dine via sin egen samtaletjener. Oppgi bare nøkler for tjenester du stoler på, sjekk egendefinerte leverandør-URL-er nøye, og beskytt enheten og sikkerhetskopifilene dine."
+    },
+    "chatsStored": {
+      "question": "Hvor lagres samtalene mine? Kan noen lese dem?",
+      "answer": "Samtaler lagres i appens lokale database. Når en skybasert modell svarer, sendes prompten og relevant samtalekontekst til leverandøren du har valgt. Leverandøren behandler forespørselen etter sin egen personvernpolicy. Alle med tilgang til enheten din eller eksporterte sikkerhetskopier kan også kunne lese dataene dine."
+    },
+    "chatsDeleted": {
+      "question": "Kan samtalene mine bli slettet av seg selv?",
+      "answer": "LettuceAI har ingen serverkopi som kan gjenopprette samtalene dine. Hvis du sletter en samtale, tilbakestiller appen, avinstallerer den, tømmer applageret eller mister enheten, kan lokale data forsvinne. Ta sikkerhetskopier av alt du vil beholde."
+    },
+    "editRemotely": {
+      "question": "Kan noen redigere dataene mine eksternt?",
+      "answer": "LettuceAI har ingen ekstern administrasjonstjeneste for dine lokale samtaler og karakterer. Leverandøren du velger genererer svar, men administrerer ikke appens database. Hold enheten og alle filer du importerer eller deler, sikre."
+    },
+    "shutdown": {
+      "question": "Hva skjer med dataene mine hvis LettuceAI legges ned?",
+      "answer": "Lagrede samtaler og karakterer blir værende på enheten din og kan leses uten en LettuceAI-konto. Skysvar avhenger fortsatt av at leverandøren er tilgjengelig og kontoen din fungerer. Ta en kopi av dataene dine med Innstillinger > Sikkerhetskopi og gjenoppretting."
+    },
+    "training": {
+      "question": "Trener leverandørene på samtalene mine?",
+      "answer": "Det avhenger av leverandøren, kontotypen din og deres gjeldende datapolicy. LettuceAI kan ikke endre disse vilkårene. Les leverandørens personvern- og lagringsinnstillinger før du sender sensitive opplysninger. Støttede lokale modeller behandler promptene sine på datamaskinen din."
+    },
+    "whatIsModel": {
+      "question": "Hva er en «modell»? Hvilken bør jeg velge?",
+      "answer": "En modell er AI-en som skriver svarene. Modeller varierer i skrivestil, hastighet, kontekstlengde, maskinvarekrav og pris. Legg til en leverandør i Innstillinger > Leverandører, og konfigurer deretter en modell i Innstillinger > Modeller. Du kan angi en standard for appen eller velge en modell for en enkelt karakter eller samtale."
+    },
+    "freeProviders": {
+      "question": "Finnes det gratis leverandører?",
+      "answer": "Noen leverandører tilbyr gratis modeller eller gratis bruksnivåer, med egne kontokrav og hastighetsgrenser. Tilgjengeligheten kan endres, så sjekk leverandørens gjeldende vilkår. Et gratisnivå kan fortsatt kreve en API-nøkkel. Støttede lokale modeller koster ingenting per forespørsel, men bruker datamaskinens maskinvare, lagring og strøm."
+    },
+    "freeVsPaid": {
+      "question": "Hva er forskjellen på gratis og betalte leverandører?",
+      "answer": "Gratis og betalte planer kan variere i tilgjengelige modeller, forespørselsgrenser, svartid, personvernvilkår og support. Detaljene tilhører den enkelte leverandøren; en betalt plan betyr ikke automatisk en bestemt personvernpolicy. Du kan koble til flere leverandører og velge en modell som passer til hver samtale."
+    },
+    "whatIsToken": {
+      "question": "Hva er en token?",
+      "answer": "En token er et lite stykke tekst, for eksempel et ord eller en del av et ord. Den nøyaktige inndelingen avhenger av modellen og språket. En forespørsel inneholder inndata-tokens fra prompten og samtalekonteksten, pluss utdata-tokens fra svaret. Leverandører kan prise disse ulikt. Lange historikker og lange svar kan øke bruken."
+    },
+    "noDefaultModel": {
+      "question": "Jeg ser «ingen standardmodell konfigurert»",
+      "answer": "Åpne Innstillinger > Modeller og legg til en modell fra en konfigurert leverandør. Angi deretter en standard for appen, eller velg en modell i karakterens innstillinger. En karakter eller samtale kan overstyre standarden, så sjekk modellvalget der hvis svarene fortsatt ikke starter."
+    },
+    "cloudVsLocal": {
+      "question": "Hva er forskjellen på skybaserte og lokale modeller?",
+      "answer": "Skybaserte modeller kjører på leverandørens maskinvare og trenger en tilkobling til tjenesten. Støttede lokale modeller kjører på skrivebordsdatamaskinen din og trenger nok minne og lagringsplass. Installasjon og kjøring av lokale modeller er tilgjengelig på skrivebordet; bruk en tilkoblet leverandør på mobil."
+    },
+    "whatIsCharacter": {
+      "question": "Hva er en karakter? Kan jeg lage min egen?",
+      "answer": "En karakter har et navn, et bilde og en beskrivelse som former hvordan den snakker. Bruk opprett-knappen til å lage en, eller importer et karakterkort i Bibliotek. Rediger beskrivelsen og modellinnstillingene for å endre hvordan fremtidige svar genereres."
+    },
+    "whatIsPersona": {
+      "question": "Hva er en persona?",
+      "answer": "En persona beskriver din side av samtalen: navnet ditt og detaljer karakteren bør vite om deg. Opprett eller importer personaer i Bibliotek, og velg deretter den du vil bruke i en samtale."
+    },
+    "charactersPrivate": {
+      "question": "Er karakterene jeg lager private?",
+      "answer": "Karakterene du lager, lagres på enheten din. Hvis du eksporterer og deler et karakterkort, kan andre lese det. Når du samtaler med en skybasert modell, sendes også karakterdetaljene som brukes i prompten, til leverandøren du har valgt."
+    },
+    "backupMove": {
+      "question": "Hvordan sikkerhetskopierer jeg eller flytter jeg til en annen enhet?",
+      "answer": "Åpne Innstillinger > Sikkerhetskopi og gjenoppretting for å lage en sikkerhetskopifil. Oppbevar den på et trygt sted. For å bytte enhet installerer du LettuceAI på den andre enheten og gjenoppretter filen der. Følg advarslene på gjenopprettingsskjermen før du erstatter eksisterende data."
+    }
+  }
+}

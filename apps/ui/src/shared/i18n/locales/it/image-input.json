@@ -1,0 +1,135 @@
+{
+  "generate": "Genera avatar",
+  "title": "Genera avatar",
+  "bannerCrop": {
+    "title": "Posiziona banner",
+    "description": "Inquadra la copertina. Trascina per spostare, pizzica o scorri per ingrandire.",
+    "saveFailed": "Impossibile salvare il banner"
+  },
+  "crop": {
+    "title": "Posiziona avatar",
+    "description": "Trascina per spostare. Pizzica o scorri per ingrandire.",
+    "zoom": "Zoom",
+    "zoomIn": "Ingrandisci",
+    "zoomOut": "Riduci",
+    "center": "Centra",
+    "area": "Area di inquadratura",
+    "keyboard": "I tasti freccia spostano l'immagine. Più e meno ingrandiscono, C centra, 0 reimposta.",
+    "reset": "Reimposta",
+    "apply": "Usa questa posizione",
+    "loadFailed": "Impossibile caricare l'immagine",
+    "saveFailed": "Impossibile salvare l'avatar"
+  },
+  "preview": {
+    "empty": "Nessuna immagine ancora",
+    "emptyBody": "Descrivi un avatar qui sotto, oppure parti da una tua immagine.",
+    "alt": "Anteprima avatar",
+    "unchanged": "L'avatar già presente nel modulo",
+    "editedFrom": "Da {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Versioni",
+    "count_one": "{{count}} versione",
+    "count_many": "{{count}} versioni",
+    "count_other": "{{count}} versioni",
+    "current": "Avatar attuale",
+    "upload": "Immagine caricata {{number}}",
+    "generation": "Immagine generata {{number}}",
+    "edit": "Immagine modificata {{number}}",
+    "short": {
+      "current": "Attuale",
+      "upload": "Carica {{number}}",
+      "generation": "Immagine {{number}}",
+      "edit": "Modifica {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Carica immagine"
+  },
+  "mode": {
+    "label": "Cosa fare",
+    "generate": "Nuova immagine",
+    "edit": "Modifica selezionata",
+    "generateHint": "Riparte solo dalla descrizione",
+    "editHint": "Modifica una copia di {{version}}"
+  },
+  "prompt": {
+    "label": "Descrivi l'avatar",
+    "placeholder": "Una volpe sorridente con una sciarpa di lana, luce morbida"
+  },
+  "instruction": {
+    "label": "Cosa cambiare",
+    "placeholder": "Rendi blu la sciarpa"
+  },
+  "actions": {
+    "generate": "Genera",
+    "edit": "Applica modifica",
+    "cancel": "Annulla",
+    "use": "Usa questo avatar",
+    "retry": "Riprova"
+  },
+  "busy": {
+    "uploading": "Aggiunta dell'immagine",
+    "generating": "Generazione dell'immagine",
+    "editing": "Modifica dell'immagine",
+    "cancelling": "Annullamento"
+  },
+  "job": {
+    "progress": "{{current}} di {{total}}",
+    "rejected_one": "{{count}} risultato è stato scartato",
+    "rejected_many": "{{count}} risultati sono stati scartati",
+    "rejected_other": "{{count}} risultati sono stati scartati",
+    "cancelled": "Generazione annullata"
+  },
+  "settings": {
+    "open": "Apri impostazioni immagini"
+  },
+  "notice": {
+    "options": {
+      "title": "Impossibile controllare il modello per gli avatar",
+      "body": "Il caricamento funziona comunque."
+    },
+    "disabled": {
+      "title": "La generazione degli avatar è disattivata",
+      "body": "Attivala nelle impostazioni immagini per generare. Il caricamento funziona comunque."
+    },
+    "noModel": {
+      "title": "Nessun modello per gli avatar scelto",
+      "body": "Scegli un modello che accetta e restituisce immagini. Il caricamento funziona comunque."
+    },
+    "incompatible": {
+      "title": "Questo modello non può creare avatar",
+      "body": "Gli avatar richiedono un modello che accetta e restituisce immagini. Il caricamento funziona comunque."
+    },
+    "upload": {
+      "title": "Impossibile aggiungere l'immagine"
+    },
+    "generation": {
+      "title": "Impossibile creare l'immagine"
+    },
+    "cancellation": {
+      "title": "Impossibile annullare",
+      "body": "La richiesta potrebbe essere ancora in corso. Prova ad annullare di nuovo."
+    },
+    "uncertain": {
+      "title": "In attesa del risultato",
+      "body": "La connessione è caduta prima che arrivasse il risultato. Riprova per riconnetterti, oppure annulla la richiesta."
+    }
+  },
+  "failure": {
+    "cancelled": "La generazione è stata annullata.",
+    "setup": "Il modello per le immagini non è configurato correttamente. Controllalo nelle impostazioni immagini.",
+    "invalidRequest": "La richiesta non è stata accettata. Cambia la descrizione e riprova.",
+    "engine": "Il motore delle immagini si è fermato prima di terminare.",
+    "timedOut": "La creazione dell'immagine ha impiegato troppo tempo.",
+    "memory": "Il modello per le immagini ha esaurito la memoria.",
+    "storage": "Impossibile salvare l'immagine.",
+    "provider": "Il provider non è riuscito a creare l'immagine.",
+    "empty": "Non è tornata nessuna immagine.",
+    "rejected": "Il risultato è stato scartato e non è tornato nulla.",
+    "refused": "Il modello ha rifiutato di creare questa immagine. Cambia la descrizione e riprova.",
+    "authentication": "Il provider ha rifiutato le credenziali. Controlla il provider nelle impostazioni.",
+    "unavailable": "Il modello per le immagini non è disponibile al momento.",
+    "unknown": "Qualcosa è andato storto durante la creazione dell'immagine."
+  }
+}

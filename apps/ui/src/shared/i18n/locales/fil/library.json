@@ -1,0 +1,123 @@
+{
+  "triggerPreview": "Preview ng trigger",
+  "title": "Library",
+  "loadMore": "Mag-load pa",
+  "search": "Maghanap sa library",
+  "show": "Ipakita",
+  "filters": {
+    "all": "Lahat",
+    "characters": "Mga Karakter",
+    "personas": "Mga Persona",
+    "lorebooks": "Mga Lorebook",
+    "images": "Mga Larawan",
+    "audio": "Audio"
+  },
+  "kinds": {
+    "character": "Karakter",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "Ikaw",
+  "entries_one": "{{count}} entry",
+  "entries_other": "{{count}} entry",
+  "defaultPersona": "Persona · default mo",
+  "menu": {
+    "start": "Simulan ang chat",
+    "edit_character": "I-edit ang karakter",
+    "edit_persona": "I-edit ang persona",
+    "edit_lorebook": "I-edit ang lorebook",
+    "default": "Gamitin bilang default na persona",
+    "defaultHint": "Para sa mga chat na hindi pumipili ng iba",
+    "export": "I-export",
+    "export_character": "Bilang character card",
+    "export_persona": "Bilang UEC na file",
+    "export_lorebook": "Bilang UEC o JSON na file",
+    "delete_character": "Tanggalin ang karakter",
+    "delete_persona": "Tanggalin ang persona",
+    "delete_lorebook": "Tanggalin ang lorebook",
+    "save": "I-save sa device",
+    "deleteImage": "Tanggalin ang larawan",
+    "deleteAudio": "Tanggalin ang recording",
+    "avatar": "Gamitin bilang avatar ni {{name}}",
+    "more": "Higit pa para kay {{name}}",
+    "background": "Background",
+    "generated": "Ginawa",
+    "uploaded": "In-upload"
+  },
+  "create": {
+    "title": "Gumawa",
+    "description": "Magdagdag ng isang bagay sa library mo.",
+    "character": "Makikipag-usap",
+    "persona": "Kung sino ka sa isang chat",
+    "lorebook": "Mga katotohanan ng mundo na maaaring gamitin ng karakter",
+    "import": "Mag-import ng file",
+    "importHint": "Character card, persona o lorebook",
+    "new_character": "Bagong karakter",
+    "new_lorebook": "Bagong lorebook",
+    "button_character": "Gumawa ng karakter",
+    "button_persona": "Gumawa ng persona",
+    "button_lorebook": "Gumawa ng lorebook"
+  },
+  "edit": {
+    "name": "Pangalan",
+    "hint_character": "Ipinapakita sa card at sa header ng chat.",
+    "placeholder_character": "hal. Cassian",
+    "placeholder_lorebook": "hal. Ang hilagang gate",
+    "create": "Gumawa",
+    "cancel": "Kanselahin"
+  },
+  "delete": {
+    "title": "Tanggalin ang {{name}}?",
+    "confirm": "Tanggalin",
+    "character": "Tatanggalin din ang mga chat at memory nito.",
+    "persona": "Tatanggalin ang persona sa mga chat na gumagamit nito.",
+    "lorebook": "Mawawalan ng access ang mga karakter at chat na gumagamit nito sa mga entry nito.",
+    "image": "Tatanggalin ang larawan sa device na ito. Hindi matatanggal ang mga larawang ginagamit pa.",
+    "audio": "Tatanggalin ang recording sa device na ito. Hindi matatanggal ang mga recording na ginagamit pa."
+  },
+  "empty": {
+    "all": {
+      "title": "Walang laman ang library mo",
+      "description": "Dito nakaimbak ang mga karakter, persona at lorebook na ginawa o ini-import mo."
+    },
+    "characters": {
+      "title": "Wala pang karakter",
+      "description": "Ang karakter ang kausap mo: pangalan, kasaysayan, paraan ng pagsasalita."
+    },
+    "personas": {
+      "title": "Wala pang persona",
+      "description": "Ang persona ay kung sino ka sa isang chat. Nakikita ng mga karakter ang pangalan at deskripsyon nito."
+    },
+    "lorebooks": {
+      "title": "Wala pang lorebook",
+      "description": "Mga katotohanan ng mundo na maaaring gamitin ng karakter kapag lumabas sa usapan."
+    },
+    "images": {
+      "title": "Wala pang larawan",
+      "description": "Dito nakaimbak ang mga larawang ginawa mo sa chat."
+    },
+    "audio": {
+      "title": "Wala pang audio",
+      "description": "Dito nakaimbak ang mga voice line na ginawa o ni-record mo."
+    },
+    "matches": "Walang tugma sa “{{query}}”",
+    "searchAll": "Subukan ang ibang pangalan, o bahagi ng deskripsyon.",
+    "searchSection": "Walang tugma sa seksyong ito. Baka mayroon sa iba pang bahagi ng library mo.",
+    "clear": "Burahin ang paghahanap",
+    "everything": "Hanapin sa lahat",
+    "import": "I-import"
+  },
+  "toast": {
+    "created": "Naidagdag ang {{name}}",
+    "deleted": "Tinanggal ang {{name}}",
+    "default": "Ang {{name}} ang default mong persona",
+    "exported": "Na-export ang file",
+    "imported": "Na-import ang file",
+    "warnings_one": "Na-transfer ang file na may {{count}} warning",
+    "warnings_other": "Na-transfer ang file na may {{count}} warning",
+    "mediaSaved": "Na-save sa device",
+    "avatar": "Na-update ang avatar"
+  },
+  "draft": "Draft",
+  "untitledDraft": "Draft ng lorebook na walang pamagat"
+}

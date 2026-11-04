@@ -1,0 +1,103 @@
+{
+  "title": "Sohbetler",
+  "homeTitle": "Ana sayfa",
+  "characters": "Karakterler",
+  "search": "Sohbetlerde ara",
+  "searchCharacters": "Karakter ara",
+  "count": "{{shown}} / {{total}}",
+  "noDescription": "Henüz açıklama yok",
+  "lastChat": "Son sohbet {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Sohbete devam et",
+  "empty": {
+    "title": "Henüz karakter yok",
+    "body": "Sohbet edecek birini oluşturun veya diskten bir karakter kartı içe aktarın.",
+    "create": "Karakter oluştur"
+  },
+  "noMatch": {
+    "title": "“{{query}}” ile eşleşen bir şey yok",
+    "body": "Bir isim veya karakter açıklamasından bir kelime deneyin.",
+    "clear": "Aramayı temizle"
+  },
+  "view": {
+    "label": "Görünüm",
+    "current": "Görünüm: {{view}}",
+    "home": "Ana sayfa",
+    "list": "Liste",
+    "hero": "Öne çıkan"
+  },
+  "layout": {
+    "title": "Düzen",
+    "body": "Sohbetler sayfasının karakterlerinizi nasıl gösterdiği.",
+    "current": "Düzen: {{layout}}",
+    "list": {
+      "title": "Liste",
+      "body": "Her karakter, bugünkü görünümüyle bir kart olarak"
+    },
+    "recent": {
+      "title": "Son",
+      "body": "Her sohbet, en yeniden eskiye, kaldığı satırla"
+    }
+  },
+  "recent": {
+    "today": "Bugün",
+    "week": "Bu hafta",
+    "earlier": "Daha önce",
+    "empty": "Henüz sohbet yok"
+  },
+  "menu": {
+    "history": "Sohbet geçmişi",
+    "historyBody": "Bu karakterle daha önceki sohbetler",
+    "edit": "Karakteri düzenle",
+    "cardStyle": "Kart stili",
+    "cardRow": "Satır, banner görünümüne geç",
+    "cardBanner": "Banner, satıra geç",
+    "export": "Dışa aktar",
+    "exportBody": "Karakter kartı olarak",
+    "hide": "Sohbetlerden gizle",
+    "hideBody": "Kütüphanenizde kalır",
+    "delete": "Karakteri sil",
+    "deleteTitle": "{{name}} silinsin mi?",
+    "deleteBody": "Karakter ve bire bir sohbetleri silinir. Bu geri alınamaz.",
+    "noChats": "Henüz sohbet yok"
+  },
+  "export": {
+    "title": "Dışa aktarma biçimi",
+    "body": "Bir biçim seçin",
+    "done": "{{name}} olarak kaydedildi",
+    "uec": {
+      "title": "UEC",
+      "body": "Unified Entity Card (.uec) biçimi (önerilir)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (en yeni şartname)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (Tavern şartnamesi)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Sohbeti düzenle",
+    "editCharacter": "Karakteri düzenle",
+    "editGroup": "Grubu düzenle",
+    "rename": "Yeniden adlandır",
+    "renameTitle": "Sohbeti yeniden adlandır",
+    "save": "Kaydet",
+    "delete": "Sohbeti sil",
+    "deleteTitle": "{{title}} silinsin mi?",
+    "deleteBody": "Karakter kalır; bu hikâye gider."
+  },
+  "sidebar": {
+    "label": "Son sohbetler",
+    "empty": "Başlattığınız sohbetler burada görünür."
+  },
+  "discover": {
+    "title": "Keşfet",
+    "soonTitle": "Keşfet yolda",
+    "soonBody": "Topluluğun oluşturduğu karakterleri bulup paylaşabileceğiniz bir yer. İlk günden moderasyonla birlikte kendi sunucularımızda geliştiriyoruz.",
+    "create": "Karakter oluştur",
+    "discord": "Discord'da takip edin"
+  }
+}

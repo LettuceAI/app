@@ -1,0 +1,28 @@
+{
+  "title": "新内容",
+  "installed": "已安装版本：{{version}}",
+  "releaseMismatch": "这些说明适用于 {{version}}。你当前运行的是 {{installed}}。",
+  "fullChangelog": "完整更新日志",
+  "continue": "继续",
+  "markFailed": "无法保存已查看的版本",
+  "types": {
+    "feature": "新增",
+    "improvement": "改进",
+    "bugfix": "修复",
+    "breaking": "重大变更"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5：上下文用量明细与更精简的动态记忆",
+    "description": "现在每条助手消息都会显示其提示词占用了多少上下文窗口，以及具体被什么占用，单聊和群聊都是如此。单聊中的动态记忆不再每轮发送整个记忆库，macOS 上的嵌入也能重新启动了。",
+    "changes": {
+      "contextUsage": "助手回复的消息操作中新增了“上下文用量”面板，显示上下文窗口被占用的部分、为回复预留的部分和空闲部分，并拆分提示词中各项内容的占比：系统、角色、人设、记忆、知识库、作者注释、伙伴状态和聊天记录。占比由 tiktoken 估算，并按服务商实际报告的提示词 token 数等比缩放。",
+      "groupContextUsage": "群聊消息也有同样的面板，直接从存储的消息重建，不会重新执行检索；其中“群组角色”类别统计其他参与者的资料。",
+      "responseBudget": "在 llama.cpp 和 Ollama 上，预留的回复预算（回复加推理）会从实际请求中读取；当提示词与预留合计超出上下文窗口时会出现警告，方便你在提示词被截断或回复被腰斩之前调低最大 token 数或精简上下文。",
+      "developerBreakdown": "开发者消息调试页也包含同样的分类 token 明细，以及总计和上下文窗口用量。",
+      "memoryRetrieval": "单聊中的动态记忆不再在每次提示时把整个热记忆库连同检索到的记忆一起填进 {{key_memories}}。现在只发送当轮检索到的记忆，角色扮演角色和伙伴都适用，新回复、重新生成和续写也不例外。",
+      "macEmbeddings": "macOS 上的嵌入不再因“不同的 Team ID”错误而无法启动。运行时下载的 ONNX Runtime 由 Microsoft 签名，macOS 拒绝将其加载到应用中，现在会在加载前先在本地重新签名。"
+    }
+  }
+}

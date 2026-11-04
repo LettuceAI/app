@@ -1,0 +1,131 @@
+{
+  "generate": "Hasilkan avatar",
+  "title": "Hasilkan avatar",
+  "bannerCrop": {
+    "title": "Atur posisi banner",
+    "description": "Bingkai sampul. Seret untuk memindahkan, cubit atau gulir untuk memperbesar.",
+    "saveFailed": "Tidak dapat menyimpan banner"
+  },
+  "crop": {
+    "title": "Atur posisi avatar",
+    "description": "Seret untuk memindahkan. Cubit atau gulir untuk memperbesar.",
+    "zoom": "Perbesaran",
+    "zoomIn": "Perbesar",
+    "zoomOut": "Perkecil",
+    "center": "Tengahkan",
+    "area": "Area pembingkaian",
+    "keyboard": "Tombol panah memindahkan gambar. Plus dan minus memperbesar, C menengahkan, 0 mengatur ulang.",
+    "reset": "Atur ulang",
+    "apply": "Gunakan posisi ini",
+    "loadFailed": "Tidak dapat memuat gambar",
+    "saveFailed": "Tidak dapat menyimpan avatar"
+  },
+  "preview": {
+    "empty": "Belum ada gambar",
+    "emptyBody": "Jelaskan avatar di bawah, atau mulai dari gambar Anda sendiri.",
+    "alt": "Pratinjau avatar",
+    "unchanged": "Avatar yang sudah ada di formulir",
+    "editedFrom": "Dari {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Versi",
+    "count_other": "{{count}} versi",
+    "current": "Avatar saat ini",
+    "upload": "Gambar yang diunggah {{number}}",
+    "generation": "Gambar yang dihasilkan {{number}}",
+    "edit": "Gambar yang diedit {{number}}",
+    "short": {
+      "current": "Saat ini",
+      "upload": "Unggah {{number}}",
+      "generation": "Gambar {{number}}",
+      "edit": "Edit {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Unggah gambar"
+  },
+  "mode": {
+    "label": "Yang dilakukan",
+    "generate": "Gambar baru",
+    "edit": "Edit yang dipilih",
+    "generateHint": "Mulai dari deskripsi saja",
+    "editHint": "Mengubah salinan {{version}}"
+  },
+  "prompt": {
+    "label": "Jelaskan avatar",
+    "placeholder": "Rubah tersenyum dengan syal rajutan, pencahayaan lembut"
+  },
+  "instruction": {
+    "label": "Yang diubah",
+    "placeholder": "Ubah syal menjadi biru"
+  },
+  "actions": {
+    "generate": "Hasilkan",
+    "edit": "Terapkan edit",
+    "cancel": "Batal",
+    "use": "Gunakan avatar ini",
+    "retry": "Coba lagi"
+  },
+  "busy": {
+    "uploading": "Menambahkan gambar",
+    "generating": "Menghasilkan gambar",
+    "editing": "Mengedit gambar",
+    "cancelling": "Membatalkan"
+  },
+  "job": {
+    "progress": "{{current}} dari {{total}}",
+    "rejected_other": "{{count}} hasil disisihkan",
+    "cancelled": "Pembuatan dibatalkan"
+  },
+  "settings": {
+    "open": "Buka pengaturan gambar"
+  },
+  "notice": {
+    "options": {
+      "title": "Tidak dapat memeriksa model avatar",
+      "body": "Mengunggah tetap berfungsi."
+    },
+    "disabled": {
+      "title": "Pembuatan avatar nonaktif",
+      "body": "Aktifkan di pengaturan gambar untuk menghasilkan. Mengunggah tetap berfungsi."
+    },
+    "noModel": {
+      "title": "Belum ada model avatar yang dipilih",
+      "body": "Pilih model yang menerima dan mengembalikan gambar. Mengunggah tetap berfungsi."
+    },
+    "incompatible": {
+      "title": "Model ini tidak dapat membuat avatar",
+      "body": "Avatar memerlukan model yang menerima dan mengembalikan gambar. Mengunggah tetap berfungsi."
+    },
+    "upload": {
+      "title": "Tidak dapat menambahkan gambar"
+    },
+    "generation": {
+      "title": "Tidak dapat membuat gambar"
+    },
+    "cancellation": {
+      "title": "Tidak dapat membatalkan",
+      "body": "Permintaan mungkin masih berjalan. Coba batalkan lagi."
+    },
+    "uncertain": {
+      "title": "Menunggu hasil",
+      "body": "Koneksi terputus sebelum hasil tiba. Coba lagi untuk menyambung ulang, atau batalkan permintaan."
+    }
+  },
+  "failure": {
+    "cancelled": "Pembuatan dibatalkan.",
+    "setup": "Model gambar tidak disiapkan dengan benar. Periksa di pengaturan gambar.",
+    "invalidRequest": "Permintaan tidak diterima. Ubah deskripsi lalu coba lagi.",
+    "engine": "Mesin gambar berhenti sebelum selesai.",
+    "timedOut": "Gambar memakan waktu terlalu lama untuk dibuat.",
+    "memory": "Model gambar kehabisan memori.",
+    "storage": "Gambar tidak dapat disimpan.",
+    "provider": "Penyedia tidak dapat membuat gambar.",
+    "empty": "Tidak ada gambar yang kembali.",
+    "rejected": "Hasil disisihkan dan tidak ada yang dikembalikan.",
+    "refused": "Model menolak membuat gambar ini. Ubah deskripsi lalu coba lagi.",
+    "authentication": "Penyedia menolak kredensial. Periksa penyedia di pengaturan.",
+    "unavailable": "Model gambar tidak tersedia saat ini.",
+    "unknown": "Terjadi kesalahan saat membuat gambar."
+  }
+}

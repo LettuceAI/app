@@ -1,0 +1,75 @@
+{
+  "create": {
+    "title": "Neue Persona",
+    "back": "Zurück",
+    "create": "Persona erstellen",
+    "created": "{{name}} erstellt",
+    "imported": "Persona importiert",
+    "unattached_one": "{{count}} Lorebook konnte nicht angehängt werden. Hänge es in den Einstellungen der Persona an.",
+    "unattached_other": "{{count}} Lorebooks konnten nicht angehängt werden. Hänge sie in den Einstellungen der Persona an.",
+    "defaultFailed": "{{name}} wurde erstellt, konnte aber nicht zur Standard-Persona gemacht werden.",
+    "discardTitle": "Diese Persona verwerfen?",
+    "discardBody": "Was du bisher eingegeben hast, geht verloren.",
+    "discard": "Verwerfen",
+    "keepEditing": "Weiter bearbeiten",
+    "continueTo": "Weiter zu {{step}}"
+  },
+  "edit": {
+    "title": "Persona bearbeiten",
+    "back": "Zurück",
+    "backToLibrary": "Zurück zur Bibliothek",
+    "more": "Weitere Aktionen",
+    "export": "Exportieren",
+    "delete": "Persona löschen",
+    "exported": "Persona exportiert",
+    "exportWarnings_one": "Mit {{count}} Warnung exportiert",
+    "exportWarnings_other": "Mit {{count}} Warnungen exportiert",
+    "deleteTitle": "{{name}} löschen?",
+    "deleteBody": "Die Persona wird aus Chats entfernt, die sie verwenden.",
+    "deleteConfirm": "Löschen",
+    "deleteCancel": "Abbrechen",
+    "deleted": "{{name}} gelöscht",
+    "unsaved": "Ungespeicherte Änderungen",
+    "discard": "Verwerfen",
+    "save": "Speichern",
+    "saved": "Änderungen gespeichert",
+    "lorebooksFailed": "Gespeichert, aber die Lorebooks konnten nicht aktualisiert werden. Versuch erneut zu speichern.",
+    "leaveTitle": "Deine Änderungen verwerfen?",
+    "leaveBody": "Nicht gespeicherte Änderungen gehen verloren.",
+    "leaveDiscard": "Verwerfen",
+    "leaveKeep": "Weiter bearbeiten"
+  },
+  "steps": {
+    "identity": "Identität",
+    "extras": "Extras"
+  },
+  "identity": {
+    "chooseAvatar": "Bild wählen",
+    "removeAvatar": "Entfernen",
+    "name": "Name",
+    "namePlaceholder": "Professioneller Autor",
+    "nameHint": "Wer du in Chats bist",
+    "nickname": "Spitzname",
+    "nicknamePlaceholder": "Wie Charaktere dich nennen",
+    "nicknameHint": "Optional. Wird in Chats statt des Namens verwendet.",
+    "default": "Als Standard verwenden",
+    "defaultBody": "Neue Chats starten mit dieser Persona",
+    "import": "Aus einer Datei importieren",
+    "importBody": "Importiere eine aus LettuceAI exportierte Persona.",
+    "chooseFile": "Datei wählen"
+  },
+  "about": {
+    "description": "Beschreibung",
+    "descriptionPlaceholder": "Wie Charaktere dich ansprechen sollen, dein Hintergrund, deine Vorlieben und dein Stil",
+    "descriptionHint": "Verwende {{user}} für diese Persona und {{char}} für den Charakter.",
+    "words_one": "{{count}} Wort",
+    "words_other": "{{count}} Wörter"
+  },
+  "extras": {
+    "body": "Alles hier ist optional.",
+    "lorebooks": "Lorebooks",
+    "lorebooksNone": "Keine",
+    "lorebooksCount_one": "{{count}} Lorebook",
+    "lorebooksCount_other": "{{count}} Lorebooks"
+  }
+}

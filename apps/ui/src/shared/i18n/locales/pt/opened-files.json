@@ -1,0 +1,79 @@
+{
+  "cancel": "Cancelar",
+  "retry": "Tentar novamente",
+  "notRecognized": "Este arquivo não é um card ou backup do LettuceAI.",
+  "import": {
+    "title": {
+      "character": "Importar personagem",
+      "persona": "Importar persona",
+      "lorebook": "Importar livro de lore"
+    },
+    "kind": {
+      "character": "Personagem",
+      "persona": "Persona",
+      "lorebook": "Livro de lore"
+    },
+    "entries_one": "{{count}} entrada",
+    "entries_many": "{{count}} entradas",
+    "entries_other": "{{count}} entradas",
+    "confirm": "Importar",
+    "open": "Abrir",
+    "done": "{{name}} importado",
+    "started": "Importação iniciada",
+    "warnings_one": "Importado com {{count}} aviso",
+    "warnings_many": "Importado com {{count}} avisos",
+    "warnings_other": "Importado com {{count}} avisos"
+  },
+  "restore": {
+    "title": "Restaurar backup",
+    "created": "Criado em",
+    "version": "Versão do app",
+    "password": "Senha",
+    "warning": "Restaurar substitui todas as conversas, personagens e configurações deste dispositivo pelo backup. Seus dados atuais são mantidos como um arquivo separado.",
+    "action": "Restaurar",
+    "stop": "Parar",
+    "running": "Restaurando",
+    "starting": "Iniciando a restauração",
+    "waiting": "Aguardando a restauração começar",
+    "step": "Etapa {{step}} de {{total}}",
+    "keepOpen": "Backups grandes podem levar vários minutos. Mantenha o app aberto até terminar.",
+    "stages": {
+      "decode": "Abrindo o backup",
+      "stage": "Preparando arquivos",
+      "write": "Gravando seus dados",
+      "verify": "Verificando os dados restaurados",
+      "switch": "Trocando para os dados restaurados"
+    },
+    "failed": "A restauração parou",
+    "failedAt": "A restauração parou na etapa {{step}} de {{total}}: {{stage}}",
+    "confirmTitle": "Substituir tudo neste dispositivo?",
+    "confirmBody": "Todas as conversas, personagens e configurações são substituídos por este backup. Seus dados atuais são mantidos como um arquivo separado.",
+    "confirm": "Restaurar",
+    "done": "Backup restaurado",
+    "notBackup": "Esse arquivo não é um backup do LettuceAI.",
+    "models": {
+      "title": "Baixe os modelos que seus dados precisam",
+      "required": "Esses recursos param de funcionar sem eles, então precisam ser baixados antes de continuar."
+    },
+    "warnings_one": "Backup restaurado com {{count}} aviso",
+    "warnings_many": "Backup restaurado com {{count}} avisos",
+    "warnings_other": "Backup restaurado com {{count}} avisos",
+    "failure": {
+      "unknown": "Não foi possível restaurar o backup.",
+      "backup_authentication": "A senha está errada ou o backup está danificado.",
+      "backup_invalid_envelope": "Este arquivo não é um backup válido.",
+      "backup_limit_exceeded": "Este backup é maior do que o app consegue restaurar.",
+      "backup_unavailable": "Backups não estão disponíveis no momento.",
+      "backup_file_not_found": "Não foi possível encontrar o arquivo de backup.",
+      "backup_permission_denied": "O app não tem permissão para ler este arquivo.",
+      "backup_file_busy": "O arquivo está em uso por outro app.",
+      "backup_file_unavailable": "Não foi possível ler o arquivo de backup.",
+      "backup_file_unsupported": "Este backup foi feito por uma versão que o app não consegue ler.",
+      "backup_source_is_target": "O backup é o próprio arquivo que o app está usando.",
+      "backup_cancelled": "A restauração foi cancelada.",
+      "backup_retry_required": "A restauração não terminou. Tente novamente.",
+      "backup_recovery_required": "A restauração precisa que o app seja reaberto.",
+      "backup_verification_failed": "O backup não passou na verificação."
+    }
+  }
+}

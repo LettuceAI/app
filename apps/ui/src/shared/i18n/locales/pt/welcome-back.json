@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Que bom ter você de volta.",
+    "bodyBefore": "Este é o ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Reconstruído do zero, com tudo o que você criou vindo junto.",
+    "migrate": "Migrar dados",
+    "notNow": "Agora não"
+  },
+  "migrate": {
+    "title": "Movendo seus dados",
+    "body": "Suas conversas, personagens e mídia estão vindo.",
+    "note": "Mantenha o app aberto até terminar.",
+    "stages": {
+      "read": "Lendo seus dados",
+      "write": "Movendo conversas, personagens e mídia",
+      "verify": "Verificando tudo",
+      "switch": "Finalizando"
+    },
+    "failed": "A migração não terminou.",
+    "retry": "Tentar novamente"
+  },
+  "models": {
+    "titlePending": "Trazendo seus recursos de volta",
+    "titleReady": "Seus recursos voltaram",
+    "checking": "Verificando quais recursos suas conversas usam",
+    "bodyPending_memory": "Algumas das suas conversas usam memória dinâmica. O modelo dela baixa uma vez e depois funciona offline.",
+    "bodyPending_emotion": "Algumas das suas conversas usam emoções do companion. O modelo delas baixa uma vez e depois funciona offline.",
+    "bodyPending_both": "Algumas das suas conversas usam memória dinâmica e emoções do companion. Os modelos delas baixam uma vez e depois funcionam offline.",
+    "bodyReady_memory": "A memória dinâmica está pronta e funciona offline.",
+    "bodyReady_emotion": "As emoções do companion estão prontas e funcionam offline.",
+    "bodyReady_both": "A memória dinâmica e as emoções do companion estão prontas e funcionam offline.",
+    "names": {
+      "embedding": "Modelo de memória Lettuce Eidos",
+      "emotion": "Modelo de emoção Thymos"
+    },
+    "why": {
+      "embedding": "Para memória dinâmica",
+      "emotion": "Para emoções do companion"
+    },
+    "ready": "Pronto",
+    "waiting": "Aguardando",
+    "checkingFiles": "Verificando os arquivos",
+    "progress": "{{done}} de {{total}}",
+    "failed": "O download não terminou",
+    "download": "Baixar",
+    "notNow": "Agora não",
+    "continue": "Continuar",
+    "retry": "Tentar novamente",
+    "notNowNote": "Conversas que precisam desses modelos vão pedir por eles. Você pode baixá-los depois em Configurações.",
+    "keepOpen": "Mantenha o app aberto até terminar."
+  },
+  "done": {
+    "title": "Tudo pronto.",
+    "body": "Tudo está onde você deixou.",
+    "open": "Abrir o LettuceAI"
+  },
+  "upgrade": {
+    "title": "Só um passo antes",
+    "body": "Seus dados são de uma versão mais antiga do LettuceAI. Abra-a uma vez com a versão {{version}} para que possa ser atualizada, depois volte aqui.",
+    "copy": "Copiar link de download",
+    "copied": "Link copiado",
+    "fresh": "Começar do zero"
+  }
+}

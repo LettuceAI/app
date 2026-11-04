@@ -1,0 +1,175 @@
+{
+  "onnxModelsUnloaded": "Frigjorde ledige modeller for å spare minne: {{models}}. De lastes inn igjen ved behov.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Kobler til appen…"
+  },
+  "navigation": {
+    "primary": "Hovednavigasjon",
+    "chats": "Samtaler",
+    "groups": "Grupper",
+    "discover": "Oppdag",
+    "library": "Bibliotek",
+    "settings": "Innstillinger",
+    "home": "Hjem",
+    "create": "Opprett",
+    "collapse": "Skjul",
+    "collapseSidebar": "Skjul sidepanelet",
+    "expandSidebar": "Vis sidepanelet",
+    "backToApp": "Tilbake til appen"
+  },
+  "downloads": {
+    "loading": "Laster nedlastinger",
+    "title": "Nedlastinger",
+    "titleActive_one": "Nedlastinger, én aktiv",
+    "titleActive_other": "Nedlastinger, {{count}} aktive",
+    "empty": "Ingenting lastes ned.",
+    "emptyBody": "Installasjoner og oppdateringer vises her.",
+    "generic": "Nedlasting",
+    "done": "{{name}} er klar",
+    "failed": "{{name}} kunne ikke lastes ned"
+  },
+  "window": {
+    "minimize": "Minimer",
+    "maximize": "Maksimer",
+    "close": "Lukk vinduet",
+    "failed": "Vindushandlingen kunne ikke fullføres. Prøv igjen."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Annet"
+  },
+  "actions": {
+    "retry": "Prøv igjen",
+    "cancel": "Avbryt",
+    "reload": "Last inn på nytt"
+  },
+  "errors": {
+    "fatalTitle": "Noe gikk galt",
+    "fatalDescription": "Appen støtte på et uventet problem. Det løser seg vanligvis med en ny innlasting.",
+    "loadTitle": "Kunne ikke laste dette",
+    "notFoundTitle": "Ingenting her",
+    "notFoundDescription": "Denne siden finnes ikke i appen.",
+    "code": {
+      "not_found": "Den finnes ikke lenger.",
+      "in_use": "Den er fortsatt i bruk. Fjern referansene og prøv igjen.",
+      "malformed": "Leverandøren returnerte et svar som ikke kan leses.",
+      "conflict": "Den ble endret et annet sted. Last inn på nytt og prøv igjen.",
+      "invalid_input": "Noe i forespørselen er ugyldig.",
+      "unsupported": "Dette støttes ikke her.",
+      "unavailable": "Det er ikke tilgjengelig akkurat nå.",
+      "cancelled": "Det ble avbrutt.",
+      "busy": "Appen er opptatt. Prøv igjen om et øyeblikk.",
+      "internal": "Appen fikk en intern feil.",
+      "model_required": "En nødvendig modell er ikke installert.",
+      "model_unavailable": "En nødvendig modell kunne ikke lastes inn.",
+      "transport": "Appens serverdel kunne ikke nås."
+    }
+  },
+  "create": {
+    "group": "Opprett en gruppe",
+    "groupBody": "Sett karakterer sammen i en samtale",
+    "title": "Opprett",
+    "description": "Noen å snakke med, eller en verden for dem.",
+    "character": "Opprett en karakter",
+    "characterBody": "Navn, utseende, personlighet og åpningsscener",
+    "persona": "Opprett en persona",
+    "personaBody": "Hvem du er i samtaler",
+    "lorebook": "Opprett en lorebok",
+    "lorebookBody": "Verdensfakta, skrevet selv, fra en fil eller med AI",
+    "import": "Importer et kort",
+    "importBody": "Karakterkort i PNG eller JSON",
+    "imported": "Karakteren er importert",
+    "discover": "Bla i Oppdag",
+    "discoverBody": "Karakterer andre har delt"
+  },
+  "providerSelect": {
+    "placeholder": "Velg en leverandør",
+    "title": "Leverandør",
+    "empty": "Ingen leverandører tilgjengelig.",
+    "groups": {
+      "cloud": "Sky",
+      "local": "Lokal",
+      "custom": "Egendefinert"
+    }
+  },
+  "designReferences": {
+    "note": "Designnotat",
+    "notePlaceholder": "Kort hår, runde briller, en lang grå frakk",
+    "noteHint": "Utseende i noen få ord. Brukes til genererte scenebilder.",
+    "images": "Referansebilder",
+    "imagesHint": "Noen bilder som viser utseendet.",
+    "add": "Legg til bilde",
+    "remove": "Fjern bilde"
+  },
+  "memoryDownload": {
+    "title": "Last ned minnemodellen",
+    "titleDone": "Minnet er klart",
+    "body": "Automatisk minne trenger en liten modell på denne enheten. Den lastes ned én gang og kjører deretter frakoblet.",
+    "bodyDone": "Karakterene dine holder nå oversikt over det som betyr noe, selv i lange samtaler. Du kan slå dette av per samtale.",
+    "modelName": "Minnemodellen Lettuce Eidos",
+    "keepOpen": "Hold appen åpen til det er ferdig.",
+    "download": "Last ned og fullfør",
+    "downloading": "Laster ned",
+    "checking": "Sjekker modellen",
+    "useManual": "Bruk manuelt minne i stedet",
+    "doneDetail": "Installert og testet · kjører frakoblet",
+    "failedOffline": "Tilkoblingen ble brutt. Prøv igjen for å fortsette.",
+    "failedOther": "Nedlastingen ble ikke fullført. Prøv igjen for å fortsette.",
+    "downloadOnly": "Last ned",
+    "bodyInstall": "Dynamisk minne trenger en liten modell på denne enheten. Den lastes ned én gang og kjører deretter frakoblet.",
+    "failureCode": {
+      "integrity_failure": "Nedlastingen ble skadet. Prøv igjen for å fortsette.",
+      "resource_unavailable": "Modellserveren er ikke tilgjengelig akkurat nå. Prøv igjen for å fortsette.",
+      "storage_failure": "Modellen kunne ikke lagres på denne enheten. Sjekk ledig plass og prøv igjen.",
+      "timed_out": "Nedlastingen tok for lang tid. Prøv igjen for å fortsette."
+    }
+  },
+  "emotionDownload": {
+    "title": "Last ned følelsemodellen",
+    "titleDone": "Følelsene er klare",
+    "body": "Kompanjongmodus leser følelsen bak hver melding med en liten modell på denne enheten. Den lastes ned én gang og kjører deretter frakoblet.",
+    "bodyDone": "Hvert svar kan nå endre hvordan kompanjongene dine føler seg, og hvor nære dere er.",
+    "download": "Last ned",
+    "close": "Ikke nå",
+    "finish": "Ferdig"
+  },
+  "structuredFallback": {
+    "title": "Når modellen ikke kan bruke verktøy",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Kompakt. Fungerer med de fleste modeller."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "For modeller som skriver XML mer pålitelig enn JSON."
+      }
+    },
+    "hint": "Verktøykall prøves først. Dette formatet brukes bare når modellen ikke støtter dem."
+  },
+  "promptPicker": {
+    "builtIn": "Innebygd",
+    "builtInBody": "Appens egen prompt",
+    "builtInMissing": "Innebygd prompt er utilgjengelig",
+    "search": "Søk i prompter",
+    "clearSearch": "Tøm søket",
+    "noMatches": "Ingen treff på prompter",
+    "manage": "Systemprompter",
+    "manageBody": "Opprett eller rediger en prompt",
+    "close": "Lukk"
+  },
+  "lorebookPicker": {
+    "title": "Lorebøker",
+    "done": "Ferdig",
+    "empty": "Ingen lorebøker ennå",
+    "emptyBody": "Lorebøker du oppretter eller importerer, vises her.",
+    "edit": "Rediger {{name}}"
+  }
+}

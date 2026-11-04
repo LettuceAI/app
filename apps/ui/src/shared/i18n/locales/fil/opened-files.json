@@ -1,0 +1,76 @@
+{
+  "cancel": "Kanselahin",
+  "retry": "Subukan muli",
+  "notRecognized": "Hindi LettuceAI card o backup ang file na ito.",
+  "import": {
+    "title": {
+      "character": "Mag-import ng karakter",
+      "persona": "Mag-import ng persona",
+      "lorebook": "Mag-import ng lorebook"
+    },
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_one": "{{count}} entry",
+    "entries_other": "{{count}} entry",
+    "confirm": "I-import",
+    "open": "Buksan",
+    "done": "Na-import ang {{name}}",
+    "started": "Nagsimula ang import",
+    "warnings_one": "Na-import na may {{count}} warning",
+    "warnings_other": "Na-import na may {{count}} warning"
+  },
+  "restore": {
+    "title": "I-restore ang backup",
+    "created": "Nagawa",
+    "version": "Version ng app",
+    "password": "Password",
+    "warning": "Pinapalitan ng pag-restore ang lahat ng chat, karakter at setting sa device na ito ng backup. Naitatabi ang kasalukuyang data mo bilang hiwalay na file.",
+    "action": "I-restore",
+    "stop": "Itigil",
+    "running": "Nire-restore",
+    "starting": "Sinisimulan ang restore",
+    "waiting": "Naghihintay magsimula ang restore",
+    "step": "Hakbang {{step}} sa {{total}}",
+    "keepOpen": "Puwedeng tumagal nang ilang minuto ang malalaking backup. Panatilihing bukas ang app hanggang matapos.",
+    "stages": {
+      "decode": "Binubuksan ang backup",
+      "stage": "Inihahanda ang mga file",
+      "write": "Isinusulat ang data mo",
+      "verify": "Sinusuri ang na-restore na data",
+      "switch": "Lumilipat sa na-restore na data"
+    },
+    "failed": "Huminto ang restore",
+    "failedAt": "Huminto ang restore sa hakbang {{step}} sa {{total}}: {{stage}}",
+    "confirmTitle": "Palitan ang lahat sa device na ito?",
+    "confirmBody": "Pinapalitan ng backup na ito ang lahat ng chat, karakter at setting. Naitatabi ang kasalukuyang data mo bilang hiwalay na file.",
+    "confirm": "I-restore",
+    "done": "Na-restore ang backup",
+    "notBackup": "Hindi LettuceAI backup ang file na iyon.",
+    "models": {
+      "title": "I-download ang mga modelong kailangan ng data mo",
+      "required": "Hindi gagana ang mga feature na ito kung wala ang mga ito, kaya kailangan muna silang i-download bago ka magpatuloy."
+    },
+    "warnings_one": "Na-restore ang backup na may {{count}} warning",
+    "warnings_other": "Na-restore ang backup na may {{count}} warning",
+    "failure": {
+      "unknown": "Hindi na-restore ang backup.",
+      "backup_authentication": "Mali ang password o sira ang backup.",
+      "backup_invalid_envelope": "Hindi valid na backup ang file na ito.",
+      "backup_limit_exceeded": "Mas malaki ang backup na ito kaysa kayang i-restore ng app.",
+      "backup_unavailable": "Hindi available ang backups ngayon.",
+      "backup_file_not_found": "Hindi mahanap ang backup file.",
+      "backup_permission_denied": "Walang permiso ang app na basahin ang file na ito.",
+      "backup_file_busy": "Ginagamit ng ibang app ang file.",
+      "backup_file_unavailable": "Hindi mabasa ang backup file.",
+      "backup_file_unsupported": "Gawa ang backup na ito ng version na hindi kayang basahin ng app.",
+      "backup_source_is_target": "Ang backup ay ang file na ginagamit ng app.",
+      "backup_cancelled": "Kinansela ang restore.",
+      "backup_retry_required": "Hindi natapos ang restore. Subukan muli.",
+      "backup_recovery_required": "Kailangan buksan muli ang app para sa restore.",
+      "backup_verification_failed": "Hindi pumasa sa verification ang backup."
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Maligayang pagbabalik.",
+    "bodyBefore": "Ito ang ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Mula sa pinakaugat na binuo muli, kasama ang lahat ng ginawa mo.",
+    "migrate": "I-migrate ang data",
+    "notNow": "Mamaya na"
+  },
+  "migrate": {
+    "title": "Inililipat ang data mo",
+    "body": "Dumarating na ang mga chat, karakter at media mo.",
+    "note": "Panatilihing bukas ang app hanggang matapos.",
+    "stages": {
+      "read": "Binabasa ang data mo",
+      "write": "Inililipat ang mga chat, karakter at media",
+      "verify": "Sinusuri ang lahat",
+      "switch": "Tinatapos"
+    },
+    "failed": "Hindi natapos ang paglipat.",
+    "retry": "Subukan muli"
+  },
+  "models": {
+    "titlePending": "Ibinabalik ang mga feature mo",
+    "titleReady": "Bumalik na ang mga feature mo",
+    "checking": "Sinusuri kung anong feature ang ginagamit ng mga chat mo",
+    "bodyPending_memory": "May mga chat kang gumagamit ng dynamic memory. Isang beses lang dina-download ang modelo nito, tapos tumatakbo nang offline.",
+    "bodyPending_emotion": "May mga chat kang gumagamit ng companion emotions. Isang beses lang dina-download ang modelo nito, tapos tumatakbo nang offline.",
+    "bodyPending_both": "May mga chat kang gumagamit ng dynamic memory at companion emotions. Isang beses lang dina-download ang mga modelo nito, tapos tumatakbo nang offline.",
+    "bodyReady_memory": "Handa na ang dynamic memory at tumatakbo nang offline.",
+    "bodyReady_emotion": "Handa na ang companion emotions at tumatakbo nang offline.",
+    "bodyReady_both": "Handa na ang dynamic memory at companion emotions, at tumatakbo na ang mga ito nang offline.",
+    "names": {
+      "embedding": "Lettuce Eidos memory model",
+      "emotion": "Thymos emotion model"
+    },
+    "why": {
+      "embedding": "Para sa dynamic memory",
+      "emotion": "Para sa companion emotions"
+    },
+    "ready": "Handa",
+    "waiting": "Naghihintay",
+    "checkingFiles": "Sinusuri ang mga file",
+    "progress": "{{done}} sa {{total}}",
+    "failed": "Hindi natapos ang download",
+    "download": "I-download",
+    "notNow": "Mamaya na",
+    "continue": "Magpatuloy",
+    "retry": "Subukan muli",
+    "notNowNote": "Hihingin ng mga chat na kailangan ang mga modelong ito. Puwede mong i-download ang mga ito mamaya sa Settings.",
+    "keepOpen": "Panatilihing bukas ang app hanggang matapos."
+  },
+  "done": {
+    "title": "Ayos na lahat.",
+    "body": "Nasa dati nitong lugar pa rin ang lahat.",
+    "open": "Buksan ang LettuceAI"
+  },
+  "upgrade": {
+    "title": "Isang hakbang muna",
+    "body": "Galing sa lumang LettuceAI ang data mo. Buksan ito nang isang beses gamit ang version {{version}} para ma-update, pagkatapos ay bumalik dito.",
+    "copy": "Kopyahin ang download link",
+    "copied": "Nakopya ang link",
+    "fresh": "Simulan na lang mula sa simula"
+  }
+}

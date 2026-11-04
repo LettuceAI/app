@@ -1,0 +1,75 @@
+{
+  "create": {
+    "title": "Nieuwe persona",
+    "back": "Terug",
+    "create": "Persona maken",
+    "created": "{{name}} aangemaakt",
+    "imported": "Persona geïmporteerd",
+    "unattached_one": "{{count}} lorebook kon niet worden gekoppeld. Koppel het via de instellingen van de persona.",
+    "unattached_other": "{{count}} lorebooks konden niet worden gekoppeld. Koppel ze via de instellingen van de persona.",
+    "defaultFailed": "{{name}} is aangemaakt, maar kon niet standaard worden gemaakt.",
+    "discardTitle": "Deze persona verwerpen?",
+    "discardBody": "Wat je tot nu toe hebt ingevuld, gaat verloren.",
+    "discard": "Verwerpen",
+    "keepEditing": "Blijven bewerken",
+    "continueTo": "Doorgaan naar {{step}}"
+  },
+  "edit": {
+    "title": "Persona bewerken",
+    "back": "Terug",
+    "backToLibrary": "Terug naar bibliotheek",
+    "more": "Meer acties",
+    "export": "Exporteren",
+    "delete": "Persona verwijderen",
+    "exported": "Persona geëxporteerd",
+    "exportWarnings_one": "Geëxporteerd met {{count}} waarschuwing",
+    "exportWarnings_other": "Geëxporteerd met {{count}} waarschuwingen",
+    "deleteTitle": "{{name}} verwijderen?",
+    "deleteBody": "De persona wordt verwijderd uit chats die hem gebruiken.",
+    "deleteConfirm": "Verwijderen",
+    "deleteCancel": "Annuleren",
+    "deleted": "{{name}} verwijderd",
+    "unsaved": "Onopgeslagen wijzigingen",
+    "discard": "Verwerpen",
+    "save": "Opslaan",
+    "saved": "Wijzigingen opgeslagen",
+    "lorebooksFailed": "Opgeslagen, maar de lorebooks konden niet worden bijgewerkt. Probeer opnieuw op te slaan.",
+    "leaveTitle": "Je wijzigingen verwerpen?",
+    "leaveBody": "Wijzigingen die niet zijn opgeslagen, gaan verloren.",
+    "leaveDiscard": "Verwerpen",
+    "leaveKeep": "Blijven bewerken"
+  },
+  "steps": {
+    "identity": "Identiteit",
+    "extras": "Extra's"
+  },
+  "identity": {
+    "chooseAvatar": "Afbeelding kiezen",
+    "removeAvatar": "Verwijderen",
+    "name": "Naam",
+    "namePlaceholder": "Professionele schrijver",
+    "nameHint": "Wie je bent in chats",
+    "nickname": "Bijnaam",
+    "nicknamePlaceholder": "Hoe karakters je noemen",
+    "nicknameHint": "Optioneel. Wordt in chats gebruikt in plaats van de naam.",
+    "default": "Als standaard gebruiken",
+    "defaultBody": "Nieuwe chats starten met deze persona",
+    "import": "Importeren uit een bestand",
+    "importBody": "Importeer een persona die uit LettuceAI is geëxporteerd.",
+    "chooseFile": "Bestand kiezen"
+  },
+  "about": {
+    "description": "Beschrijving",
+    "descriptionPlaceholder": "Hoe karakters je moeten aanspreken, je achtergrond, voorkeuren en stijl",
+    "descriptionHint": "Gebruik {{user}} voor deze persona en {{char}} voor het karakter.",
+    "words_one": "{{count}} woord",
+    "words_other": "{{count}} woorden"
+  },
+  "extras": {
+    "body": "Alles hier is optioneel.",
+    "lorebooks": "Lorebooks",
+    "lorebooksNone": "Geen",
+    "lorebooksCount_one": "{{count}} lorebook",
+    "lorebooksCount_other": "{{count}} lorebooks"
+  }
+}

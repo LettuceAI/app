@@ -1,0 +1,1185 @@
+{
+  "sceneImage": {
+    "title": "Generer scenebilde",
+    "regenerate": "Generer scenebilde på nytt",
+    "hint": "Tegn dette øyeblikket fra samtalen",
+    "write": "Skriv en prompt",
+    "writeHint": "Beskriv bildet selv",
+    "askAi": "Be AI skrive en prompt",
+    "askAiHint": "Bruk samtalen og designreferansene",
+    "rewrite": "Skriv om med AI",
+    "prompt": "Sceneprompt",
+    "promptHint": "Se gjennom eller rediger prompten før bildet genereres.",
+    "cast": "I bildet",
+    "castHint": "Velg hvem som vises i scenen.",
+    "castPersona": "Personaen din",
+    "castEmpty": "Velg minst én person for scenen.",
+    "placeholder": "Beskriv karakterene, omgivelsene og øyeblikket…",
+    "generate": "Generer bilde",
+    "review": "Se gjennom scenebilde",
+    "requested": "Et scenebilde er klart for gjennomgang",
+    "requestedHint": "Sjekk prompten før bildet lages.",
+    "retry": "Prøv igjen",
+    "dismiss": "Avvis",
+    "disabled": "Scenegenerering er av",
+    "noModel": "Ingen kompatibel scenebildemodell",
+    "noWriter": "Velg en kompatibel promptskriver i bildeinnstillingene",
+    "setupHint": "Slå på scenegenerering og velg en bildemodell i innstillingene.",
+    "settings": "Åpne bildeinnstillinger",
+    "writing": "Skriver sceneprompten",
+    "thinking": "Tenker på scenen",
+    "generating": "Genererer scenebildet",
+    "attaching": "Legger scenebildet til meldingen",
+    "progress": "{{current}} av {{total}}",
+    "queuePosition": "Plass i køen {{position}}",
+    "phase": {
+      "starting": "Starter bildemotoren",
+      "loading": "Laster bildemodellen",
+      "sampling": "Genererer scenebildet",
+      "queued": "Venter på å generere scenebildet",
+      "generating": "Genererer scenebildet",
+      "retrying": "Prøver scenegenereringen på nytt",
+      "cancelled": "Avbryter scenegenereringen"
+    },
+    "failed": "Kunne ikke generere scenebildet",
+    "promptFailed": "Kunne ikke skrive sceneprompten",
+    "writerError": {
+      "scene_prompt_disabled": "Scenegenerering er av i bildeinnstillingene.",
+      "scene_prompt_no_model": "Velg en kompatibel scenepromptskriver i bildeinnstillingene.",
+      "scene_prompt_no_reply": "Promptskriveren returnerte ingen tekst. Prøv igjen, eller skriv din egen prompt.",
+      "cancelled": "Promptskrivingen ble avbrutt.",
+      "failed": "Prøv igjen, eller skriv din egen prompt."
+    },
+    "error": {
+      "media_unavailable": "Bildelagring er utilgjengelig.",
+      "disabled": "Scenegenerering er av i bildeinnstillingene.",
+      "no_model": "Velg en kompatibel scenebildemodell i bildeinnstillingene.",
+      "no_image": "Modellen returnerte ikke noe bilde.",
+      "message_unavailable": "Svaret ble endret før bildet kunne legges til.",
+      "interrupted": "Genereringen ble avbrutt. Du kan prøve igjen.",
+      "failed": "Se gjennom prompten og prøv igjen."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "Forgren til gruppesamtale",
+    "characterTitle": "Forgren til en annen karakter",
+    "history": "Kopierer denne samtalen frem til den valgte meldingen, inkludert minnene.",
+    "sourceLocked": "Den gjeldende karakteren blir i gruppen. Velg minst én til.",
+    "characters": "Karakterer",
+    "defaultName": "{{name}} – forgrening",
+    "search": "Søk i karakterer",
+    "empty": "Ingen karakterer funnet",
+    "create": "Opprett forgrening",
+    "memberCount_one": "{{count}} karakter valgt",
+    "memberCount_other": "{{count}} karakterer valgt",
+    "changed": "Denne samtalen ble endret. Velg forgreningspunktet på nytt.",
+    "chooseAgain": "Velg på nytt"
+  },
+  "historyPage": {
+    "archivedCharacter": "Gjenopprett denne karakteren i biblioteket for å starte en ny samtale."
+  },
+  "header": {
+    "back": "Tilbake",
+    "memories": "Minner, {{count}}",
+    "memoriesBusy": "Minner, leser det siste svaret",
+    "search": "Søk i meldinger",
+    "options": "Samtalevalg",
+    "onDevice": "På enheten",
+    "untitled": "Samtale"
+  },
+  "search": {
+    "placeholder": "Søk i denne samtalen",
+    "done": "Ferdig",
+    "previous": "Forrige treff",
+    "next": "Neste treff",
+    "position": "{{index}} av {{total}}",
+    "none": "Ingen treff"
+  },
+  "timeline": {
+    "today": "I dag",
+    "yesterday": "I går",
+    "loadingOlder": "Laster eldre meldinger",
+    "empty": "Ingen meldinger ennå",
+    "jumpToLatest": "Hopp til nyeste",
+    "selectingSpeaker": "Velger karakter…"
+  },
+  "composer": {
+    "placeholder": "Melding til {{name}}…",
+    "systemSend": {
+      "title": "Sende som systemmelding?",
+      "description": "Sender innholdet i skrivefeltet som en synlig systemmelding. Det utløser ikke generering.",
+      "send": "Send"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "Legg til karakter",
+      "title": "Legg til en karakter",
+      "body": "De blir med i denne samtalen fra nå av.",
+      "search": "Søk i karakterer",
+      "empty": "Alle karakterer er allerede i denne samtalen",
+      "noMatch": "Ingen karakter samsvarer"
+    },
+    "remove": {
+      "label": "Fjern {{name}}",
+      "title": "Fjerne {{name}}?",
+      "body": "De slutter å svare i denne samtalen. Tidligere meldinger deres blir værende.",
+      "confirm": "Fjern"
+    },
+    "followGroup": "Følg gruppemedlemmer",
+    "followGroupHint": "Tilbakestill medlemmer og dempede karakterer til gruppeinnstillingene",
+    "models": "Karakternes modeller i denne samtalen",
+    "followModels": "Følg gruppemodeller",
+    "followModelsHint": "Fjern alle overstyringer av karaktersmodeller i denne samtalen",
+    "characterModel": "Karakternes modell",
+    "characterModelHint": "Bruk karakterens egen modellinnstilling"
+  },
+  "mention": {
+    "title": "Nevn en karakter",
+    "select": "for å velge",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "Nevn {{name}}",
+    "unmention": "Fjern omtalen av {{name}}",
+    "muted": "{{name}} er dempet. Langtrykk eller høyreklikk for å oppheve dempingen",
+    "speak": "La {{name}} svare"
+  },
+  "director": {
+    "hint": "Trykk på en karakter for å velge hvem som svarer",
+    "selectedHint": "{{name}} svarer når du sender",
+    "actionHint": "Send legger til meldingen din. Trykk på en karakter for å få dem til å svare",
+    "respondingHint": "{{name}} svarer",
+    "addMessage": "Legg til melding uten et svar",
+    "noAttachments": "Meldinger i regissørmodus kan ikke ha vedlegg"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Hvem snakker neste gang",
+      "body": "Velg et medlem som skal svare, eller la gruppen bestemme."
+    },
+    "branch": {
+      "title": "Fortsett en-til-en",
+      "body": "Åpner en ny samtale med ett medlem og historien frem til denne meldingen."
+    },
+    "regenerate": {
+      "title": "Velg karakter",
+      "body": "Bare for dette svaret. Dempede medlemmer kan også velges.",
+      "same": "Samme karakter",
+      "search": "Søk i karakterer",
+      "noMatches": "Ingen karakterer samsvarer med søket"
+    },
+    "auto": "La gruppen bestemme",
+    "autoBody": "Bruker talervalget for denne samtalen",
+    "muted": "Hoppes over med mindre de nevnes"
+  },
+  "message": {
+    "image": "Vedlagt bilde",
+    "imagePrompt": "Bildeprompt",
+    "copyImagePrompt": "Kopier prompt",
+    "titleAssistant": "{{name}}s melding",
+    "titleUser": "Din melding",
+    "titleScene": "Scene",
+    "titleSystem": "Systemmelding",
+    "audio": "Lydklipp",
+    "video": "Videofil",
+    "document": "Dokument"
+  },
+  "menu": {
+    "selection": {
+      "title": "Hvorfor denne karakteren svarte",
+      "fallback": "LLM-valg var utilgjengelig. Valgt ut fra deltakelse og nylige svar."
+    },
+    "copy": "Kopier tekst",
+    "edit": "Rediger",
+    "regenerate": "Generer på nytt",
+    "regenerateHint": "Beholder denne versjonen, sveip for å sammenligne",
+    "regenerateBusy": "Vent til det gjeldende svaret er ferdig",
+    "pin": "Fest",
+    "pinHint": "Karakteren husker det alltid",
+    "unpin": "Løsne",
+    "rewind": "Spol tilbake hit",
+    "rewindHint_one": "Fjerner {{count}} melding etter den",
+    "rewindHint_other": "Fjerner {{count}} meldinger etter den",
+    "delete": "Slett melding",
+    "deleteHint": "Løsne den først",
+    "branch": "Forgren herfra",
+    "branchHint": "Åpner en ny samtale med historien frem til hit",
+    "branchGroup": "Fortsett en-til-en",
+    "branchGroupHint": "Åpner en samtale med ett medlem og historien frem til hit",
+    "details": {
+      "title": "Promptdetaljer",
+      "hint": "Det som ble sendt for dette svaret",
+      "unavailable": "Den lagrede prompten er ikke tilgjengelig for dette svaret",
+      "noBreakdown": "Dette svaret ble lagret før oppdelingen fantes",
+      "tokens": "{{count}} tokens",
+      "character": "Karakter og persona",
+      "lorebook": "Lorebok",
+      "memories": "Minner",
+      "history": "Samtalehistorikk",
+      "other": "Annet",
+      "entries": "Lorebokoppføringer",
+      "untitled": "Oppføring uten tittel",
+      "partsLabel": "Andel av prompten etter kilde"
+    },
+    "stats": {
+      "prompt": "Prompt-tokens",
+      "reply": "Svartokens",
+      "total": "totalt",
+      "firstToken": "Tid til første token",
+      "firstTokenValue": "TTFT {{value}} ms",
+      "speed": "Svarhastighet",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "Fler-token-prediksjon: tokens per runde og utkastgodkjenning",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Lorebokoppføringer som ble brukt",
+      "memories": "Minner som ble brukt",
+      "memory": "Minne",
+      "match": "Treff {{score}}",
+      "noLorebooks": "Ingen lorebokoppføringer ble brukt for dette svaret.",
+      "noMemories": "Ingen minneelementer ble brukt for dette svaret.",
+      "notRecorded": "Disse detaljene ble ikke lagret for dette svaret.",
+      "searchEntries": "Søk i brukte oppføringer",
+      "searchMemories": "Søk i brukte minner",
+      "noMatches": "Ingenting samsvarer med søket.",
+      "showing": "{{shown}} av {{total}}",
+      "more": "Vis mer"
+    }
+  },
+  "regeneration": {
+    "title": "Alternativer for regenerering",
+    "hint": "Retning og modell",
+    "groupHint": "Retning, modell og karakter",
+    "oneReply": "Bare for dette svaret",
+    "direction": "Retning",
+    "directionHint": "Valgfritt. Beskriv hva som skal endres i det nye svaret.",
+    "placeholder": "Gjør det kortere, endre tonen, eller ta en annen tilnærming",
+    "model": "Svarmodell",
+    "usualModel": "Bruk den vanlige modellen",
+    "modelUnavailable": "Denne modellen er ikke lenger tilgjengelig. Velg en annen.",
+    "character": "Karakter",
+    "sameCharacter": "Samme karakter: {{name}}",
+    "characterUnavailable": "Denne karakteren er ikke lenger medlem. Velg en annen."
+  },
+  "edit": {
+    "title": "Rediger melding",
+    "assistantHint": "{{name}}s ord, slik historien vil huske dem",
+    "field": "Meldingstekst",
+    "save": "Lagre"
+  },
+  "confirm": {
+    "cancel": "Avbryt",
+    "rewindTitle": "Spole tilbake til denne meldingen?",
+    "rewindBody_one": "{{count}} melding etter den fjernes, og historien fortsetter herfra.",
+    "rewindBody_other": "{{count}} meldinger etter den fjernes, og historien fortsetter herfra.",
+    "rewind": "Spol tilbake",
+    "deleteTitle": "Slette denne meldingen?",
+    "deleteBodyVersions": "Alle {{count}} versjoner av den fjernes fra samtalen.",
+    "deleteBody": "Den fjernes fra samtalen og fra det karakteren husker.",
+    "delete": "Slett"
+  },
+  "banner": {
+    "modelRequired": "Denne samtalen trenger en modell som ikke er installert.",
+    "modelNamed": "Denne samtalen trenger modellen {{model}}, som ikke er installert.",
+    "modelsMissing": "Denne samtalen trenger en modell som ikke er installert: {{models}}.",
+    "openModels": "Åpne modeller",
+    "memoryBlocked": "Minnet er satt på pause fordi en tidligere tilbakespoling ikke kunne fullføres.",
+    "memoryRetry": "Prøv igjen",
+    "memoryRetryStill": "Det kunne fortsatt ikke fullføres.",
+    "memoryRetried": "Minnet er tilbake på sporet",
+    "swapActive": "Bytte plasser er på",
+    "endSwap": "Avslutt byttet"
+  },
+  "requiredModel": {
+    "embedding": "embedding",
+    "emotion": "følelse"
+  },
+  "failure": {
+    "title": "Svaret ble ikke ferdig",
+    "retry": "Prøv igjen",
+    "code": {
+      "invalid_conversation": "Denne samtalen kan ikke skrives til akkurat nå.",
+      "missing_model": "Ingen modell er angitt for denne samtalen. Velg en i samtalevalgene eller legg til en i Modeller.",
+      "context_unavailable": "Samtalen kunne ikke forberedes for modellen.",
+      "speaker_unavailable": "Ingen er tilgjengelig for å svare.",
+      "provider_unavailable": "Modellen kunne ikke nås. Sjekk tilkoblingen og leverandøren.",
+      "provider_rejected": "Leverandøren avviste forespørselen. Prøv en annen modell eller sjekk kontoen din.",
+      "empty_output": "Modellen sendte ingenting tilbake.",
+      "timed_out": "Modellen brukte for lang tid på å svare.",
+      "recovery_unavailable": "Svaret ble avbrutt og kan ikke gjenopprettes.",
+      "embedding_unavailable": "Embedding-modellen som trengs for minnet, er utilgjengelig.",
+      "internal": "Appen fikk en intern feil.",
+      "database_write_fenced": "Appen er opptatt med å lagre data. Prøv igjen om et øyeblikk."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "Laster modell",
+      "retrying": "Prøver å laste modellen på nytt"
+    },
+    "loading": "Laster {{model}}, {{percent}} %",
+    "retrying": "Prøver en annen måte å laste {{model}}, {{percent}} %",
+    "loaded": "{{model}} er klar",
+    "failed": "Kunne ikke laste {{model}}"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "Raskere dekoding er av mens det er bilder i samtalen.",
+    "kv_cache_moved_to_ram": "Kontekstbufferen fikk ikke plass i videominne og flyttet til systemminne."
+  },
+  "toast": {
+    "copied": "Kopiert",
+    "copyFailed": "Kunne ikke nå utklippstavlen",
+    "pinned": "Festet. Det blir i karakterens minne",
+    "unpinned": "Løsnet",
+    "edited": "Meldingen er oppdatert",
+    "deleted": "Meldingen er slettet",
+    "branched": "Åpnet en ny samtale herfra",
+    "rewound_one": "Spolte tilbake {{count}} melding",
+    "rewound_other": "Spolte tilbake {{count}} meldinger",
+    "launchFailed": "Kunne ikke starte samtalen",
+    "mediaImageUnsupported": "Modellen i denne samtalen kan ikke lese bilder. Fjern dem eller velg en annen modell.",
+    "mediaAudioUnsupported": "Modellen i denne samtalen kan ikke lytte til lyd. Fjern den eller velg en annen modell."
+  },
+  "crisp": {
+    "composerPlaceholder": "Melding…",
+    "composerMessage": "Melding",
+    "composerStop": "Stopp genereringen",
+    "composerSend": "Send melding",
+    "composerSendAsSystem": "Langtrykk eller høyreklikk for å sende som system",
+    "composerSending": "Sender",
+    "composerContinue": "La karakteren fortsette",
+    "messageScene": "Scene",
+    "messageSystem": "System",
+    "messagePinned": "Festet",
+    "messageMenuTitle": "Melding",
+    "messageReasoning": "Tankeprosess",
+    "messageTyping": "Skriver",
+    "sheetClose": "Lukk",
+    "bannerDismiss": "Avvis",
+    "alertDismiss": "Avvis",
+    "composerAddAttachment": "Legg til innhold",
+    "composerCancelRecording": "Avbryt opptaket",
+    "composerRecordVoice": "Ta opp stemme",
+    "composerStopAndTranscribe": "Stopp og transkriber",
+    "composerTranscribing": "Transkriberer",
+    "composerRecording": "Tar opp {{elapsed}}",
+    "composerAttachment": "Vedlegg",
+    "composerFile": "Fil",
+    "composerAttachmentRemove": "Fjern {{name}}"
+  },
+  "streaming": {
+    "imagePrompt": "Skriver bildeprompten"
+  },
+  "tools": {
+    "title": "Legg til innhold",
+    "helpMeReply": "Hjelp meg å svare",
+    "helpMeReplyHint": "La modellen foreslå hva du kan si",
+    "persona": "Persona",
+    "background": "Samtalebakgrunn",
+    "backgroundHidden": "Skjult",
+    "backgroundOwn": "Angitt for denne samtalen",
+    "backgroundDefault": "Bruker standarden",
+    "backgroundNone": "Ingen bakgrunn",
+    "note": "Forfatternotat",
+    "noteActive": "Aktivt for denne samtalen",
+    "noteInactive": "Privat retning for svarene",
+    "dice": "Terning",
+    "diceHint": "Kast terning og legg resultatet til meldingen",
+    "swap": "Bytt plasser",
+    "swapHint": "Samtal som karakteren og la modellen svare som personaen din",
+    "swapOn": "Bytt plasser (på)",
+    "swapOnHint": "Du samtaler som karakteren. Trykk for å slå av",
+    "uploadImage": "Last opp bilde",
+    "uploadImageHint": "Vedlegg et bilde til meldingen",
+    "uploadAudio": "Last opp lyd",
+    "uploadAudioHint": "Vedlegg et lydklipp til meldingen"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "Ingen persona",
+    "default": "Standard",
+    "search": "Søk i personaer",
+    "noMatch": "Ingen personaer samsvarer",
+    "emptyTitle": "Ingen personaer ennå",
+    "emptyBody": "Lag en i biblioteket for å snakke som noen bestemt.",
+    "loading": "Laster personaer",
+    "loadFailed": "Kunne ikke laste personaer",
+    "retry": "Prøv igjen"
+  },
+  "background": {
+    "title": "Samtalebakgrunn",
+    "current": "Gjeldende bakgrunn",
+    "currentOwn": "Angitt for denne samtalen",
+    "currentDefault": "Standardbakgrunnen",
+    "choose": "Velg et bilde",
+    "replace": "Erstatt bildet",
+    "chooseHint": "Bare for denne samtalen",
+    "useDefault": "Bruk standarden",
+    "useDefaultHint": "Gå tilbake til scene- eller karakterbakgrunnen"
+  },
+  "note": {
+    "title": "Forfatternotat",
+    "inlineTitle": "Innebygd redigering",
+    "inlineHint": "Vis forfatternotatet over meldingsboksen for raske endringer",
+    "inlineToggle": "Vis innebygd redigering av forfatternotat",
+    "inlineField": "Innebygd forfatternotat",
+    "inlineEdit": "Rediger innebygd forfatternotat",
+    "inlinePlaceholder": "Legg til et forfatternotat",
+    "saving": "Lagrer...",
+    "hint": "En privat retning modellen følger i denne samtalen",
+    "placeholder": "Skriv et forfatternotat som styrer modellen",
+    "save": "Lagre",
+    "clear": "Fjern",
+    "count_one": "{{count}} tegn",
+    "count_other": "{{count}} tegn",
+    "willRemove": "Notatet fjernes ved lagring",
+    "none": "Ingen notat lagret"
+  },
+  "dice": {
+    "title": "Terning",
+    "hint": "Kast terning og legg resultatet til meldingen",
+    "notation": "Terningnotasjon",
+    "roll": "Kast",
+    "invalid": "Bruk en notasjon som 1d20 eller 2d6+3",
+    "tapToRoll": "Kast for å se et resultat",
+    "insert": "Sett inn i meldingen",
+    "recent": "Nylige",
+    "clear": "Tøm"
+  },
+  "help": {
+    "title": "Hjelp meg å svare",
+    "draftPrompt": "Du har et utkast til melding. Hvordan vil du gå videre?",
+    "useMyText": "Bruk teksten min som grunnlag",
+    "useMyTextHint": "Utvid og forbedre utkastet ditt",
+    "writeNew": "Skriv noe nytt",
+    "writeNewHint": "Generer et nytt svar",
+    "resultTitle": "Foreslått svar",
+    "regenerate": "Prøv igjen",
+    "use": "Bruk dette",
+    "writing": "Skriver svaret ditt...",
+    "thinking": "Tenker før det skriver...",
+    "callError": {
+      "model_required": "Velg en modell for Hjelp meg å svare i innstillingene.",
+      "model_unavailable": "Modellen for Hjelp meg å svare kunne ikke lastes.",
+      "busy": "Appen er opptatt. Prøv igjen om et øyeblikk.",
+      "unavailable": "Det er ikke tilgjengelig akkurat nå."
+    },
+    "error": {
+      "failed": "Hjelp meg å svare mislyktes.",
+      "help_me_reply_disabled": "Hjelp meg å svare er slått av i innstillingene.",
+      "help_me_reply_no_history": "Det er ingenting å svare på ennå.",
+      "help_me_reply_no_model": "Velg en modell for Hjelp meg å svare i innstillingene.",
+      "help_me_reply_no_reply": "Modellen skrev ikke noe svar."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "Lære rettelsen?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "Lær",
+      "ignore": "Ignorer"
+    },
+    "error": {
+      "noModel": "Installer en talegjenkjenningsmodell for å diktere.",
+      "permission": "Gi mikrofontilgang for å ta opp.",
+      "noMicrophone": "Ingen mikrofon ble funnet.",
+      "noAudio": "Ingenting ble tatt opp.",
+      "busy": "Et annet opptak pågår.",
+      "unsupported": "Denne enheten kan ikke ta opp fra mikrofon.",
+      "failed": "Opptaket kunne ikke transkriberes."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Samtaleinnstillinger",
+      "persona": "Persona",
+      "model": "Modell",
+      "lorebooks": "Lorebøker",
+      "background": "Samtalebakgrunn",
+      "note": "Forfatternotat",
+      "history": "Samtalehistorikk",
+      "notes": "Planlagte notater",
+      "starters": "Ny samtale",
+      "advanced": "Modellinnstillinger",
+      "appearance": "Utseende"
+    },
+    "back": "Tilbake",
+    "reset": "Tilbakestill",
+    "loading": "Laster",
+    "loadFailed": "Kunne ikke laste",
+    "source": {
+      "conversation": "Bare denne samtalen",
+      "group": "Fra gruppen",
+      "character": "Fra karakteren",
+      "launch": "Fra måten samtalen startet på",
+      "app_default": "Appens standard"
+    },
+    "meta": {
+      "messages_one": "{{count}} melding",
+      "messages_other": "{{count}} meldinger",
+      "active": "Aktiv {{date}}"
+    },
+    "sections": {
+      "chat": "Denne samtalen",
+      "memory": "Minne",
+      "time": "Tid",
+      "actions": "Samtale",
+      "generation": "Generering",
+      "lorebooks": "Lorebøker",
+      "members": "Medlemmer",
+      "speaker": "Talervalg"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Bruker standardmodellen din til å velge hvem som snakker (koster tokens)",
+      "heuristic": "Heuristikk",
+      "heuristicHint": "Bruker deltakerbalanse og kontekstledetråder (gratis)",
+      "round_robin": "Rundgang",
+      "round_robinHint": "Karakterene bytter tur i rekkefølge (gratis)",
+      "director": "Regissør",
+      "directorHint": "Du velger hvilken karakter som svarer på hver melding",
+      "style": "Regissørstil",
+      "cue": "Stikkord",
+      "action": "Handling",
+      "cueHint": "Trykk på en karakter for å velge hvem som svarer. Send leverer meldingen din og utløser svaret deres.",
+      "actionHint": "Send legger bare til meldingen din. Trykk på en karakters avatar for å få dem til å svare umiddelbart.",
+      "own": "Denne samtalen har sitt eget valg"
+    },
+    "members": {
+      "replies_one": "{{count}} svar, {{percent}}",
+      "replies_other": "{{count}} svar, {{percent}}",
+      "muted": "Hoppes over med mindre de nevnes",
+      "last": "Minst ett medlem må svare",
+      "answers": "{{name}} svarer i denne samtalen"
+    },
+    "model": {
+      "title": "Modell",
+      "none": "Ingen modell angitt",
+      "search": "Søk i modeller",
+      "useDefault": "Bruk karakterens standard",
+      "useDefaultHint": "Følg karakteren, deretter appens standard",
+      "remoteTitle": "Bruke en ekstern modell?",
+      "remoteBody": "Denne samtalen sendes til {{provider}} for hvert svar.",
+      "use": "Bruk denne modellen",
+      "unknown": "Ukjent modell"
+    },
+    "lorebooks": {
+      "title": "Lorebøker",
+      "count_one": "{{count}} lorebok",
+      "count_other": "{{count}} lorebøker",
+      "useDefault": "Bruk standardlorebøkene",
+      "useDefaultHint": "Følg karakterens lorebøker",
+      "useCharacter": "Bruk karakterens lorebøker"
+    },
+    "background": {
+      "set": "Bilde angitt"
+    },
+    "memory": {
+      "mode": "Minnemodus",
+      "modes": {
+        "manual": "Manuell",
+        "dynamic": "Dynamisk",
+        "disabled": "Av"
+      },
+      "open": "Åpne minner",
+      "items_one": "{{count}} minne",
+      "items_other": "{{count}} minner",
+      "summaryTokens_one": "{{count}} sammendragstoken",
+      "summaryTokens_other": "{{count}} sammendragstokens",
+      "off": "Minnet er av for denne samtalen"
+    },
+    "notes": {
+      "title": "Planlagte notater",
+      "rowHint": "Påminnelser karakteren ser til angitte tider",
+      "groupRowHint": "Påminnelser gruppen og medlemmene ser til angitte tider",
+      "hint": "Notater tilhører karakteren og vises i hver samtale med dem.",
+      "groupHint": "Notater tilhører gruppen og vises i hver samtale i denne gruppen.",
+      "empty": "Ingen planlagte notater ennå.",
+      "add": "Legg til et notat",
+      "untitled": "Notat uten tittel",
+      "label": "Etikett",
+      "labelPlaceholder": "Etikett (valgfritt)",
+      "content": "Notat",
+      "contentPlaceholder": "Hva bør karakteren vite?",
+      "groupContentPlaceholder": "Hva bør gruppen vite?",
+      "startsOn": "Starter",
+      "stopsOn": "Stopper (valgfritt)",
+      "repeats": "Gjentas",
+      "windowHours": "Synlig i (timer)",
+      "enabled": "Aktivert",
+      "enabledHint": "Slå av et notat uten å slette det",
+      "deleteTitle": "Slette dette notatet?",
+      "deleteBody": "Det kan ikke angres.",
+      "recurrence": {
+        "none": "Én gang",
+        "daily": "Daglig",
+        "weekly": "Ukentlig",
+        "monthly": "Månedlig",
+        "yearly": "Årlig"
+      },
+      "whoSees": "Hvem ser det",
+      "whoSeesHint": "Bare karakterene du velger, leser dette notatet.",
+      "everyone": "Hvert medlem leser dette notatet. Velg karakterer for å begrense det.",
+      "useCharacter": "Bruk karakternotater"
+    },
+    "history": {
+      "filter": "Filtrer samtaler",
+      "filters": {
+        "all": "Alle",
+        "active": "Aktive",
+        "archived": "Arkiverte"
+      },
+      "sort": "Sorter samtaler",
+      "sorts": {
+        "recent": "Sist brukt",
+        "oldest": "Eldste først"
+      },
+      "results_one": "{{formattedCount}} samtale",
+      "results_other": "{{formattedCount}} samtaler",
+      "untitled": "Samtale uten tittel",
+      "search": "Søk i samtaler",
+      "noMatch": "Ingen samtaler samsvarer",
+      "empty": "Ingen samtaler ennå",
+      "meta_one": "{{count}} melding · {{date}}",
+      "meta_other": "{{count}} meldinger · {{date}}",
+      "current": "Gjeldende",
+      "archived": "Arkivert",
+      "actions": "Handlinger for {{title}}",
+      "rename": "Gi nytt navn",
+      "export": "Eksporter",
+      "archive": "Arkiver",
+      "restore": "Gjenopprett",
+      "delete": "Slett"
+    },
+    "starters": {
+      "hint": "Start fra en av karakterens samtalemaler.",
+      "none": "Start uten en mal"
+    },
+    "rename": {
+      "field": "Samtaletittel",
+      "save": "Lagre tittel",
+      "open": "Gi samtalen nytt navn"
+    },
+    "delete": {
+      "title": "Slette denne samtalen?",
+      "body": "{{title}} og alle meldingene blir fjernet. Dette kan ikke angres.",
+      "confirm": "Slett"
+    },
+    "export": {
+      "done": "Samtalen er eksportert"
+    },
+    "duplicate": {
+      "done": "Samtalen er duplisert"
+    },
+    "actions": {
+      "newChat": "Ny samtale",
+      "newChatHint": "Start en ny samtale med denne karakteren",
+      "newGroupChatHint": "Start en ny samtale med denne gruppen",
+      "history": "Samtalehistorikk",
+      "historyHint": "Åpne, gi nytt navn til eller slett tidligere samtaler",
+      "branches": "Forgreninger",
+      "branchesHint": "Bytt mellom retningene denne samtalen tok",
+      "duplicate": "Dupliser samtale",
+      "duplicateHint": "Lag en kopi med alle meldingene",
+      "export": "Eksporter samtale",
+      "exportHint": "Lagre samtalen som en fil",
+      "import": "Importer en samtalelogg",
+      "importHint": "Hent inn en samtale fra en fil",
+      "importGroupHint": "Ikke tilgjengelig for gruppesamtaler ennå",
+      "archive": "Arkiver samtale",
+      "archiveHint": "Skjul den fra listen, behold alt",
+      "restore": "Gjenopprett samtale",
+      "restoreHint": "Få den tilbake i listen",
+      "delete": "Slett samtale",
+      "deleteHint": "Fjern den og meldingene for godt"
+    },
+    "generation": {
+      "title": "Modellinnstillinger",
+      "scope": "Bare for denne samtalen",
+      "hint": "Verdier som ikke er angitt, følger modellen og deretter appens standard.",
+      "noModel": "Denne samtalen har ingen modell, så bare appens standard gjelder.",
+      "resetAll": "Tilbakestill alle",
+      "discard": "Forkast",
+      "inherited": "Følger modell- og appinnstillingene",
+      "count_one": "{{count}} verdi endret for denne samtalen",
+      "count_other": "{{count}} verdier endret for denne samtalen"
+    },
+    "time": {
+      "title": "Samtaleklokke",
+      "awareness": "Tidsbevissthet",
+      "awarenessHint": "Gi modellen dato og tid, og stempel hver melding med det",
+      "live": "Sanntid",
+      "frozen": "Stoppet",
+      "ticking": "Går",
+      "stoppedAt": "Stoppet {{when}}",
+      "runningFrom": "Går fra {{when}}",
+      "mode": "Klokke",
+      "anchor": "Dato og tid",
+      "apply": "Bruk",
+      "reset": "Tilbakestill",
+      "cancel": "Avbryt",
+      "chooseAnchor": "Velg en dato og et klokkeslett",
+      "previousMonth": "Forrige måned",
+      "nextMonth": "Neste måned",
+      "chooseMonth": "Velg måned og år",
+      "previousYear": "Forrige år",
+      "nextYear": "Neste år",
+      "year": "År",
+      "time": "Tid"
+    },
+    "groupAppearanceHint": "Utseende for alle samtaler i denne gruppen",
+    "characterAppearanceHint": "Utseende for alle samtaler med denne karakteren"
+  },
+  "appearance": {
+    "forGroup": "For hver samtale i denne gruppen",
+    "forCharacter": "For {{name}}",
+    "moveLeft": "Flytt til venstre",
+    "moveRight": "Flytt til høyre",
+    "close": "Lukk utseendet",
+    "unsaved": "Ulagrede endringer",
+    "saved": "Ingen endringer",
+    "discard": "Forkast",
+    "save": "Lagre",
+    "discardTitle": "Forkaste endringene dine?",
+    "discardBody": "Utseendeendringene du gjorde, er ikke lagret.",
+    "discardConfirm": "Forkast endringene",
+    "keepEditing": "Fortsett å redigere"
+  },
+  "memory": {
+    "title": "Minne",
+    "back": "Samtale",
+    "tabs": {
+      "memories": "Minner",
+      "activity": "Aktivitet",
+      "pinned": "Festede"
+    },
+    "loading": "Laster minne",
+    "off": {
+      "title": "Minnet er av for denne samtalen",
+      "description": "Ingenting huskes eller sendes med svarene i denne samtalen.",
+      "action": "Åpne samtaleinnstillingene"
+    },
+    "search": "Søk i minner",
+    "add": "Legg til",
+    "all": "Alle",
+    "categories": {
+      "character_trait": "Karaktertrekk",
+      "relationship": "Forhold",
+      "plot_event": "Plothendelse",
+      "world_detail": "Verdensdetalj",
+      "preference": "Preferanse",
+      "other": "Annet",
+      "milestone": "Milepæl",
+      "boundary": "Grense",
+      "profile": "Profil",
+      "routine": "Rutine",
+      "episodic": "Episode",
+      "emotional_snapshot": "Følelsesøyeblikk"
+    },
+    "origins": {
+      "model": "Modell",
+      "user": "Du",
+      "import": "Importert"
+    },
+    "temperature": {
+      "hot": "Varm",
+      "cold": "Kald"
+    },
+    "tokens_one": "{{count}} token",
+    "tokens_other": "{{count}} tokens",
+    "window": "Meldinger {{from}} til {{to}}",
+    "pinnedMark": "Festet",
+    "list": {
+      "found_one": "{{count}} funnet",
+      "found_other": "{{count}} funnet",
+      "total_one": "{{count}} minne",
+      "total_other": "{{count}} minner",
+      "byModel": "{{count}} av modellen",
+      "byUser": "{{count}} av deg",
+      "imported": "{{count}} importert",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "Ingen minner ennå",
+      "dynamic": "Minner vises her etter hvert som samtalen vokser. Du kan også legge til dine egne.",
+      "manual": "Legg til det karakteren alltid skal huske.",
+      "action": "Legg til minne",
+      "noMatch": "Ingenting samsvarer med «{{query}}»",
+      "noMatchBody": "Prøv et ord fra selve minnet.",
+      "noCategory": "Ingenting i denne kategorien"
+    },
+    "sheet": {
+      "addTitle": "Legg til minne",
+      "editTitle": "Minne",
+      "byModel": "Skrevet av modellen",
+      "byModelIn": "Skrevet av modellen i {{window}}",
+      "byUser": "Skrevet av deg",
+      "imported": "Importert",
+      "text": "Minne",
+      "textPlaceholder": "Hva skal karakteren huske?",
+      "category": "Kategori",
+      "noCategory": "Ingen kategori",
+      "when": "Når det skjedde",
+      "whenHint": "Valgfritt. Lar karakteren plassere det i tid.",
+      "whenPlaceholder": "Ikke angitt",
+      "whenClear": "Tøm",
+      "temperature": "Temperatur",
+      "hotBody": "Varme minner holdes lett tilgjengelig",
+      "coldBody": "Kalde minner hentes bare når de samsvarer tett",
+      "pin": "Festet",
+      "pinBody": "Modellen sletter eller arkiverer aldri et festet minne",
+      "delete": "Slett",
+      "cancel": "Avbryt",
+      "add": "Legg til",
+      "save": "Lagre",
+      "deleteTitle": "Slette dette minnet?",
+      "deleteBody": "Det vil ikke lenger hentes i denne samtalen.",
+      "keep": "Behold",
+      "added": "Minnet er lagt til",
+      "saved": "Minnet er lagret",
+      "deleted": "Minnet er slettet"
+    },
+    "summary": {
+      "title": "Kontekstsammendrag",
+      "empty": "Legg til et kort sammendrag slik at karakteren beholder tråden i historien.",
+      "description": "En kort oppsummering som følger hvert svar",
+      "field": "Sammendrag",
+      "dynamicHint": "Modellen skriver dette på nytt ved hver oppdatering. Endringene dine beholdes til da.",
+      "clear": "Tøm",
+      "cancel": "Avbryt",
+      "save": "Lagre",
+      "saved": "Sammendraget er lagret",
+      "cleared": "Sammendraget er tømt"
+    },
+    "status": {
+      "approvalTitle": "Oppdatere minnet?",
+      "approvalBody_one": "{{count}} ny melding er klar til å oppsummeres i minnet.",
+      "approvalBody_other": "{{count}} nye meldinger er klare til å oppsummeres i minnet.",
+      "update": "Oppdater",
+      "notNow": "Ikke nå",
+      "skipped_one": "Hoppet over. Den spør igjen etter neste {{count}} melding",
+      "skipped_other": "Hoppet over. Den spør igjen etter de neste {{count}} meldingene",
+      "runningTitle": "Oppdaterer minnet",
+      "runningBody": "Leser de nyeste meldingene",
+      "stop": "Stopp",
+      "failedTitle": "Minneoppdateringen mislyktes",
+      "tryAgain": "Prøv igjen",
+      "otherModel": "Bruk en annen modell",
+      "pausedTitle": "Den siste minneoppdateringen ble avbrutt",
+      "pausedBody": "En annen prosess tok over før den ble ferdig.",
+      "nextIn_one": "Neste oppdatering om {{count}} melding",
+      "nextIn_other": "Neste oppdatering om {{count}} meldinger",
+      "since_one": "{{count}} melding siden forrige oppdatering",
+      "since_other": "{{count}} meldinger siden forrige oppdatering",
+      "modes": {
+        "auto": "Automatisk",
+        "ask_first": "Spør først",
+        "manual": "Manuell"
+      },
+      "every_one": "{{mode}} · hver {{count}}. melding",
+      "every_other": "{{mode}} · hver {{count}}. melding",
+      "manualOnly": "{{mode}} · oppdateringer kjører bare når du starter dem her",
+      "progress": "{{current}} av {{total}}",
+      "updateNow": "Oppdater nå"
+    },
+    "failure": {
+      "embedding_unavailable": "Embedding-modellen er utilgjengelig.",
+      "model_missing": "Minnemodellen er ikke installert.",
+      "model_invalid": "Minnemodellen kan ikke brukes.",
+      "prompt_missing": "Minne-prompten mangler.",
+      "settings_invalid": "Minneinnstillingene er ugyldige.",
+      "provider_unavailable": "Leverandøren svarte ikke.",
+      "provider_rejected": "Leverandøren avviste forespørselen.",
+      "invalid_response": "Modellens minnesvar kunne ikke behandles. Prøv syklusen igjen.",
+      "empty_response": "Modellen returnerte et tomt svar.",
+      "timed_out": "Modellen brukte for lang tid på å svare.",
+      "round_limit": "Modellen brukte for mange steg.",
+      "tool_failed": "Én av minneendringene mislyktes.",
+      "storage_failure": "Minnet kunne ikke lagres.",
+      "lease_lost": "En annen oppdatering tok over.",
+      "internal": "Appen fikk en intern feil."
+    },
+    "gate": {
+      "not_dynamic": "Denne samtalen bruker ikke dynamisk minne.",
+      "disabled": "Dynamisk minne er slått av i innstillingene.",
+      "nothing_to_summarise": "Det er ingenting å oppsummere ennå.",
+      "cycle_running": "En oppdatering kjører allerede."
+    },
+    "activity": {
+      "empty": "Ingen oppdateringer ennå",
+      "emptyBody": "Hver minneoppdatering modellen kjører, listes her.",
+      "badgeUndone": "Angret",
+      "badgeFailed": "Mislyktes",
+      "badgeStopped": "Stoppet",
+      "badgeInterrupted": "Avbrutt",
+      "badgeRunning": "Kjører",
+      "noDetails": "Ingen detaljer ble lagret.",
+      "stopped": "Denne oppdateringen ble stoppet før den ble ferdig.",
+      "running": "Denne oppdateringen kjører fortsatt.",
+      "actions": {
+        "created": "Lagt til",
+        "duplicate_skipped": "Allerede kjent",
+        "deleted": "Slettet",
+        "soft_deleted": "Flyttet til kald",
+        "pinned": "Festet",
+        "unpinned": "Løsnet",
+        "target_not_found": "Ikke funnet",
+        "done": "Ferdig",
+        "rejected": "Avvist",
+        "skipped": "Hoppet over",
+        "stopped_after_done": "Stoppet etter ferdig"
+      },
+      "undo": "Angre denne oppdateringen",
+      "blocked": "Kan ikke angres: en senere oppdatering bygger på den.",
+      "blockedBy": "Kan ikke angres: oppdateringen for {{window}} bygger på den.",
+      "dependent": "En senere oppdatering bygger på den, så den kan ikke angres.",
+      "userEdited": "Du redigerte et minne den skrev, så den kan ikke angres.",
+      "undoTitle": "Angre oppdateringen for {{window}}?",
+      "undoBody": "Minner den la til, fjernes, og de den endret, kommer tilbake. Dine egne endringer beholdes.",
+      "undoConfirm": "Angre oppdatering",
+      "keep": "Behold",
+      "undone": "Oppdateringen er angret",
+      "loadMore": "Vis eldre oppdateringer"
+    },
+    "pinnedTab": {
+      "empty": "Ingen festede meldinger",
+      "emptyBody": "Fest en melding fra samtalen, og den følger alltid med i neste svar.",
+      "label": "Sendes alltid med svaret",
+      "unpin": "Løsne",
+      "unpinned": "Løsnet",
+      "noText": "Vedlegg",
+      "loadMore": "Vis mer",
+      "you": "Du"
+    }
+  },
+  "branches": {
+    "title": "Forgreninger",
+    "meta_one": "{{count}} melding · {{date}}",
+    "meta_other": "{{count}} meldinger · {{date}}",
+    "current": "Gjeldende",
+    "actions": "Handlinger for {{title}}",
+    "rename": "Gi nytt navn",
+    "renameField": "Forgreningsnavn",
+    "delete": "Slett",
+    "deleteRoot": "Den opprinnelige forgreningen kan ikke slettes",
+    "deleteActive": "Bytt til en annen forgrening først",
+    "deleteTitle": "Slette denne forgreningen?",
+    "deleteBody": "{{name}} og meldingene dens fjernes. De andre forgreningene blir værende.",
+    "deleted": "Forgreningen er slettet",
+    "untitled": "Forgrening uten tittel",
+    "thisChat": "Denne samtalen",
+    "renameSave": "Lagre navn",
+    "original": "Opprinnelig",
+    "untitledChat": "Samtale uten tittel"
+  },
+  "companion": {
+    "title": "Kompanjong",
+    "back": "Samtale",
+    "tabs": {
+      "relationship": "Forhold",
+      "bond": "Bånd",
+      "memories": "Minner",
+      "soul": "Sjel",
+      "activity": "Aktivitet"
+    },
+    "bond": "Bånd",
+    "lastTalked": "Sist snakket {{when}}",
+    "updated": "Oppdatert {{when}}",
+    "messages": "Meldinger",
+    "togetherSince": "Sammen siden {{date}}",
+    "engine": "Følelsesmotor",
+    "nothingTitle": "Ingenting å vise ennå",
+    "nothingBody": "Båndet og følelsene til {{name}} begynner å bevege seg etter noen meldinger. De starter fra standardverdiene i kompanjonginnstillingene.",
+    "missingTitle": "Følelser spores ikke",
+    "missingBody": "Installer følelsemodellen slik at hvert svar kan påvirke hvordan de føler seg.",
+    "install": "Installer",
+    "nothingNow": "Ingenting akkurat nå",
+    "drivers": "Aktive drivkrefter",
+    "timeline": "Nylig tidslinje",
+    "events_one": "{{count}} hendelse",
+    "events_other": "{{count}} hendelser",
+    "currentState": "Gjeldende tilstand",
+    "defaultMark": "Karakterens standard",
+    "aboveDefault_one": "{{count}} poeng over karakterens standard",
+    "aboveDefault_other": "{{count}} poeng over karakterens standard",
+    "belowDefault_one": "{{count}} poeng under karakterens standard",
+    "belowDefault_other": "{{count}} poeng under karakterens standard",
+    "axes": {
+      "closeness": {
+        "label": "Nærhet",
+        "low": "Tilbaketrukket",
+        "mid": "Kjent",
+        "high": "Nær"
+      },
+      "trust": {
+        "label": "Tillit",
+        "low": "Misttroisk",
+        "mid": "Nøytral",
+        "high": "Tillitsfull"
+      },
+      "affection": {
+        "label": "Hengivenhet",
+        "low": "Fiendtlig",
+        "mid": "Nøytral",
+        "high": "Kjærlig"
+      },
+      "tension": {
+        "label": "Spenning",
+        "low": "Avslappet",
+        "mid": "",
+        "high": "Ladet"
+      },
+      "stability": {
+        "label": "Stabilitet",
+        "low": "Ustabil",
+        "mid": "",
+        "high": "Stabil"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Føler",
+        "hint": "Det de føler inni seg"
+      },
+      "expressed": {
+        "title": "Viser",
+        "hint": "Det som kommer frem i svarene deres"
+      },
+      "blocked": {
+        "title": "Holder tilbake",
+        "hint": "Det personligheten holder inne"
+      },
+      "momentum": {
+        "title": "Bygger seg opp",
+        "hint": "Hvor de siste turene er på vei"
+      }
+    },
+    "emotions": {
+      "warmth": "Varme",
+      "trust": "Tillit",
+      "calm": "Ro",
+      "vulnerability": "Sårbarhet",
+      "longing": "Lengsel",
+      "hurt": "Sårhet",
+      "tension": "Spenning",
+      "irritation": "Irritasjon",
+      "affection_intensity": "Hengivenhet",
+      "reassurance_need": "Trenger bekreftelse"
+    },
+    "memories": {
+      "total_one": "{{count}} minne",
+      "total_other": "{{count}} minner",
+      "found_one": "{{count}} funnet",
+      "found_other": "{{count}} funnet",
+      "kind": "Type",
+      "field": "Minne",
+      "placeholder": "Hva skal {{name}} huske?",
+      "emptyTitle": "Ingen minner her",
+      "emptyBody": "Minner vises etter hvert som dere snakker. Du kan også legge til dine egne.",
+      "noMatch": "Ingenting samsvarer med «{{query}}»",
+      "noMatchBody": "Prøv et ord fra selve minnet."
+    },
+    "soul": {
+      "title": "Sjel",
+      "edit": "Rediger",
+      "core": "Identitetskjerne. Utvikling endrer den aldri",
+      "notWritten": "Ikke skrevet ennå",
+      "growth": "Sjeleutvikling",
+      "clear": "Tøm utviklingen",
+      "intro": "Hvordan de foranderlige egenskapene har utviklet seg fra minnene dine. Essens, egenskaper og bakgrunnshistorie endres aldri her.",
+      "empty": "Ingen utvikling ennå. Etter hvert som minner dannes, vises egenskapene som endrer seg med deg her.",
+      "zero": "0 endringer",
+      "added": "Lagt til",
+      "adjusted": "Justert",
+      "confidence": "Sikkerhet",
+      "locked": "Låst",
+      "lock": "Lås",
+      "unlock": "Lås opp",
+      "lockHint": "Lås dette faktumet",
+      "unlockHint": "Lås opp dette faktumet",
+      "historicalHint": "Historiske fakta beholdes alltid",
+      "remove": "Fjern denne utviklingen",
+      "sources_one": "fra {{count}} minne",
+      "sources_other": "fra {{count}} minner",
+      "retired_one": "{{count}} tidligere versjon utgått.",
+      "retired_other": "{{count}} tidligere versjoner utgått.",
+      "categories": {
+        "essence": "Essens",
+        "traits": "Egenskaper",
+        "backstory": "Bakgrunnshistorie",
+        "appearance": "Utseende",
+        "goals": "Mål",
+        "likes": "Liker",
+        "voice": "Stemme",
+        "relational_style": "Relasjonsstil",
+        "vulnerabilities": "Sårbarheter",
+        "fears": "Frykter",
+        "habits": "Vaner",
+        "boundaries": "Grenser"
+      },
+      "policy": {
+        "current": {
+          "label": "Gjeldende",
+          "hint": "Erstatter det som var der før"
+        },
+        "adaptive": {
+          "label": "Tilpasningsdyktig",
+          "hint": "Kan fortsette å endre seg mens dere snakker"
+        },
+        "historical": {
+          "label": "Historisk",
+          "hint": "Noe som skjedde. Beholdes alltid"
+        }
+      },
+      "removeTitle": "Fjerne dette?",
+      "removeBody": "Det fjernes fra det de har lært. Den skrevne sjelen deres forblir den samme.",
+      "clearTitle": "Tømme alt de har lært?",
+      "clearBody": "All utvikling forsvinner, inkludert den erstattede historikken. Den skrevne sjelen deres forblir den samme.",
+      "keep": "Behold",
+      "removeConfirm": "Fjern",
+      "clearConfirm": "Tøm alt",
+      "removed": "Fjernet",
+      "cleared": "Utviklingen er tømt",
+      "sourcesTitle": "Hvor dette kom fra",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "Kildeminnene er ikke lenger tilgjengelige.",
+      "sourcesMissing_one": "{{count}} kildeminne er ikke lenger tilgjengelig.",
+      "sourcesMissing_other": "{{count}} kildeminner er ikke lenger tilgjengelige."
+    },
+    "effect": {
+      "title": "Hva dette svaret endret",
+      "feels": "Hva de føler",
+      "pickedUp": "Tok opp",
+      "letGo": "Slapp taket i",
+      "remembered": "Husket",
+      "processing": "Ser på hva som endret seg",
+      "failed": "Endringene i svaret kunne ikke analyseres.",
+      "invalidated": "Disse endringene gjelder ikke lenger for dette svaret.",
+      "memoryCount_one": "{{count}} minne",
+      "memoryCount_other": "{{count}} minner",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "Ingen endringer å vise",
+      "quote": "«{{text}}»"
+    },
+    "activity": {
+      "undo": "Angre denne oppdateringen",
+      "undoTitle": "Angre {{window}}?",
+      "undoBody": "Minner den la til, fjernes, og de den endret, kommer tilbake. Dine egne endringer beholdes.",
+      "undoConfirm": "Angre oppdatering",
+      "blockedBy": "Kan ikke angres: {{window}} bygger på den.",
+      "blocked": "Kan ikke angres: en senere oppdatering bygger på den."
+    },
+    "unavailable": "Denne samtalen har ingen kompanjong",
+    "unavailableBody": "Åpne en kompanjongsamtale for å se båndet, minnene og sjelen.",
+    "crisp": {
+      "close": "Lukk",
+      "clearSearch": "Tøm søket"
+    },
+    "lastReply": "Siste svar",
+    "replyHint": "Hver melding i samtalen åpner dette fra menyen"
+  }
+}

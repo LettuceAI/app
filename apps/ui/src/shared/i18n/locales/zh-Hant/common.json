@@ -1,0 +1,174 @@
+{
+  "onnxModelsUnloaded": "已釋放閒置模型以節省記憶體：{{models}}。需要時會再次載入。",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "正在連線至應用程式…"
+  },
+  "navigation": {
+    "primary": "主要導覽",
+    "chats": "對話",
+    "groups": "群組",
+    "discover": "探索",
+    "library": "資源庫",
+    "settings": "設定",
+    "home": "首頁",
+    "create": "建立",
+    "collapse": "收合",
+    "collapseSidebar": "收合側邊欄",
+    "expandSidebar": "展開側邊欄",
+    "backToApp": "返回應用程式"
+  },
+  "downloads": {
+    "loading": "正在載入下載項目",
+    "title": "下載項目",
+    "titleActive_other": "下載項目，{{count}} 項進行中",
+    "empty": "目前沒有下載項目。",
+    "emptyBody": "安裝與更新會顯示在這裡。",
+    "generic": "下載",
+    "done": "{{name}} 已就緒",
+    "failed": "無法下載 {{name}}"
+  },
+  "window": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "close": "關閉視窗",
+    "failed": "無法完成視窗操作，請再試一次。"
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "其他"
+  },
+  "actions": {
+    "retry": "再試一次",
+    "cancel": "取消",
+    "reload": "重新載入"
+  },
+  "errors": {
+    "fatalTitle": "發生錯誤",
+    "fatalDescription": "應用程式遇到未預期的問題，重新載入通常就能解決。",
+    "loadTitle": "無法載入此內容",
+    "notFoundTitle": "這裡什麼都沒有",
+    "notFoundDescription": "應用程式中沒有這個頁面。",
+    "code": {
+      "not_found": "它已不存在。",
+      "in_use": "它仍在使用中。請移除相關參照後再試一次。",
+      "malformed": "供應商傳回無法讀取的回應。",
+      "conflict": "它已在其他地方變更。請重新載入後再試一次。",
+      "invalid_input": "請求中有項目無效。",
+      "unsupported": "這裡不支援此功能。",
+      "unavailable": "目前無法使用。",
+      "cancelled": "已取消。",
+      "busy": "應用程式忙碌中，請稍後再試。",
+      "internal": "應用程式發生內部錯誤。",
+      "model_required": "尚未安裝必要的模型。",
+      "model_unavailable": "無法載入必要的模型。",
+      "transport": "無法連線至應用程式的後端。"
+    }
+  },
+  "create": {
+    "group": "建立群組",
+    "groupBody": "將角色放在同一個對話中",
+    "title": "建立",
+    "description": "找個人聊聊，或創造一個世界。",
+    "character": "建立角色",
+    "characterBody": "名稱、外觀、個性與開場場景",
+    "persona": "建立人設",
+    "personaBody": "你在對話中的身分",
+    "lorebook": "建立設定集",
+    "lorebookBody": "世界觀設定，可自行撰寫、從檔案匯入或用 AI 產生",
+    "import": "匯入角色卡",
+    "importBody": "PNG 或 JSON 角色卡",
+    "imported": "已匯入角色",
+    "discover": "瀏覽探索",
+    "discoverBody": "其他人分享的角色"
+  },
+  "providerSelect": {
+    "placeholder": "選擇供應商",
+    "title": "供應商",
+    "empty": "沒有可用的供應商。",
+    "groups": {
+      "cloud": "雲端",
+      "local": "本機",
+      "custom": "自訂"
+    }
+  },
+  "designReferences": {
+    "note": "設計備註",
+    "notePlaceholder": "短髮、圓框眼鏡、灰色長大衣",
+    "noteHint": "用幾個字描述外觀，用於生成場景圖片。",
+    "images": "參考圖片",
+    "imagesHint": "幾張能呈現外觀的圖片。",
+    "add": "新增圖片",
+    "remove": "移除圖片"
+  },
+  "memoryDownload": {
+    "title": "下載記憶模型",
+    "titleDone": "記憶已就緒",
+    "body": "自動記憶需要在此裝置上使用小型模型。下載一次後即可離線執行。",
+    "bodyDone": "你的角色現在會記住重要的事，即使在長對話中也是。你可以針對每個對話關閉此功能。",
+    "modelName": "Lettuce Eidos 記憶模型",
+    "keepOpen": "請保持應用程式開啟，直到完成。",
+    "download": "下載並完成",
+    "downloading": "下載中",
+    "checking": "正在檢查模型",
+    "useManual": "改用人工記憶",
+    "doneDetail": "已安裝並測試 · 可離線執行",
+    "failedOffline": "連線中斷，請再試一次以繼續。",
+    "failedOther": "下載未完成，請再試一次以繼續。",
+    "downloadOnly": "下載",
+    "bodyInstall": "動態記憶需要在此裝置上使用小型模型。下載一次後即可離線執行。",
+    "failureCode": {
+      "integrity_failure": "下載檔案已損毀，請再試一次以繼續。",
+      "resource_unavailable": "模型伺服器目前無法使用，請再試一次以繼續。",
+      "storage_failure": "無法將模型儲存在此裝置上，請檢查可用空間後再試一次。",
+      "timed_out": "下載逾時，請再試一次以繼續。"
+    }
+  },
+  "emotionDownload": {
+    "title": "下載情緒模型",
+    "titleDone": "情緒已就緒",
+    "body": "夥伴模式會在此裝置上使用小型模型，讀取每則訊息背後的情緒。下載一次後即可離線執行。",
+    "bodyDone": "現在每則回覆都能影響夥伴的感受，以及你們之間的親近程度。",
+    "download": "下載",
+    "close": "暫時不要",
+    "finish": "完成"
+  },
+  "structuredFallback": {
+    "title": "當模型無法使用工具時",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "精簡，適用於大多數模型。"
+      },
+      "xml": {
+        "title": "XML",
+        "body": "適合能更可靠地輸出 XML 而非 JSON 的模型。"
+      }
+    },
+    "hint": "會先嘗試工具呼叫，只有在模型不支援時才會使用此格式。"
+  },
+  "promptPicker": {
+    "builtIn": "內建",
+    "builtInBody": "應用程式內建的提示",
+    "builtInMissing": "內建提示無法使用",
+    "search": "搜尋提示",
+    "clearSearch": "清除搜尋",
+    "noMatches": "沒有符合的提示",
+    "manage": "系統提示",
+    "manageBody": "建立或編輯提示",
+    "close": "關閉"
+  },
+  "lorebookPicker": {
+    "title": "設定集",
+    "done": "完成",
+    "empty": "尚無設定集",
+    "emptyBody": "你建立或匯入的設定集會顯示在這裡。",
+    "edit": "編輯 {{name}}"
+  }
+}

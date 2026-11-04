@@ -1,0 +1,133 @@
+{
+  "generate": "Avatar genereren",
+  "title": "Avatar genereren",
+  "bannerCrop": {
+    "title": "Banner positioneren",
+    "description": "Kader de omslag. Sleep om te verplaatsen, knijp of scroll om te zoomen.",
+    "saveFailed": "Kon de banner niet opslaan"
+  },
+  "crop": {
+    "title": "Avatar positioneren",
+    "description": "Sleep om te verplaatsen. Knijp of scroll om te zoomen.",
+    "zoom": "Zoomen",
+    "zoomIn": "Inzoomen",
+    "zoomOut": "Uitzoomen",
+    "center": "Midden",
+    "area": "Kadergebied",
+    "keyboard": "Met de pijltjestoetsen verplaats je de afbeelding. Plus en min zoomen, C centreert, 0 reset.",
+    "reset": "Resetten",
+    "apply": "Deze positie gebruiken",
+    "loadFailed": "Kon de afbeelding niet laden",
+    "saveFailed": "Kon de avatar niet opslaan"
+  },
+  "preview": {
+    "empty": "Nog geen afbeelding",
+    "emptyBody": "Beschrijf hieronder een avatar, of begin met je eigen afbeelding.",
+    "alt": "Avatarvoorbeeld",
+    "unchanged": "De avatar die al in het formulier staat",
+    "editedFrom": "Van {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Versies",
+    "count_one": "{{count}} versie",
+    "count_other": "{{count}} versies",
+    "current": "Huidige avatar",
+    "upload": "Geüploade afbeelding {{number}}",
+    "generation": "Gegenereerde afbeelding {{number}}",
+    "edit": "Bewerkte afbeelding {{number}}",
+    "short": {
+      "current": "Huidig",
+      "upload": "Upload {{number}}",
+      "generation": "Afbeelding {{number}}",
+      "edit": "Bewerking {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Afbeelding uploaden"
+  },
+  "mode": {
+    "label": "Wat wil je doen",
+    "generate": "Nieuwe afbeelding",
+    "edit": "Selectie bewerken",
+    "generateHint": "Begint opnieuw, alleen vanuit de beschrijving",
+    "editHint": "Wijzigt een kopie van {{version}}"
+  },
+  "prompt": {
+    "label": "Beschrijf de avatar",
+    "placeholder": "Een lachende vos in een gebreide sjaal, zacht licht"
+  },
+  "instruction": {
+    "label": "Wat moet er veranderen",
+    "placeholder": "Maak de sjaal blauw"
+  },
+  "actions": {
+    "generate": "Genereren",
+    "edit": "Bewerking toepassen",
+    "cancel": "Annuleren",
+    "use": "Deze avatar gebruiken",
+    "retry": "Opnieuw proberen"
+  },
+  "busy": {
+    "uploading": "De afbeelding toevoegen",
+    "generating": "De afbeelding genereren",
+    "editing": "De afbeelding bewerken",
+    "cancelling": "Annuleren"
+  },
+  "job": {
+    "progress": "{{current}} van {{total}}",
+    "rejected_one": "{{count}} resultaat is opzijgezet",
+    "rejected_other": "{{count}} resultaten zijn opzijgezet",
+    "cancelled": "Generatie geannuleerd"
+  },
+  "settings": {
+    "open": "Afbeeldingsinstellingen openen"
+  },
+  "notice": {
+    "options": {
+      "title": "Kon het avatarmodel niet controleren",
+      "body": "Uploaden werkt nog steeds."
+    },
+    "disabled": {
+      "title": "Avatargeneratie staat uit",
+      "body": "Schakel het in bij de afbeeldingsinstellingen om te genereren. Uploaden werkt nog steeds."
+    },
+    "noModel": {
+      "title": "Geen avatarmodel gekozen",
+      "body": "Kies een model dat afbeeldingen accepteert en teruggeeft. Uploaden werkt nog steeds."
+    },
+    "incompatible": {
+      "title": "Dit model kan geen avatars maken",
+      "body": "Avatars hebben een model nodig dat afbeeldingen accepteert en teruggeeft. Uploaden werkt nog steeds."
+    },
+    "upload": {
+      "title": "Kon de afbeelding niet toevoegen"
+    },
+    "generation": {
+      "title": "Kon de afbeelding niet maken"
+    },
+    "cancellation": {
+      "title": "Kon niet annuleren",
+      "body": "Het verzoek loopt mogelijk nog. Probeer opnieuw te annuleren."
+    },
+    "uncertain": {
+      "title": "Wachten op het resultaat",
+      "body": "De verbinding is weggevallen voordat het resultaat binnenkwam. Probeer opnieuw om te verbinden, of annuleer het verzoek."
+    }
+  },
+  "failure": {
+    "cancelled": "De generatie is geannuleerd.",
+    "setup": "Het afbeeldingsmodel is niet goed ingesteld. Controleer het bij de afbeeldingsinstellingen.",
+    "invalidRequest": "Het verzoek is niet geaccepteerd. Wijzig de beschrijving en probeer het opnieuw.",
+    "engine": "De afbeeldingsengine stopte voordat hij klaar was.",
+    "timedOut": "Het maken van de afbeelding duurde te lang.",
+    "memory": "Het afbeeldingsmodel had te weinig geheugen.",
+    "storage": "De afbeelding kon niet worden opgeslagen.",
+    "provider": "De provider kon de afbeelding niet maken.",
+    "empty": "Er kwam geen afbeelding terug.",
+    "rejected": "Het resultaat is opzijgezet en er is niets teruggegeven.",
+    "refused": "Het model weigerde deze afbeelding te maken. Wijzig de beschrijving en probeer het opnieuw.",
+    "authentication": "De provider wees de inloggegevens af. Controleer de provider in de instellingen.",
+    "unavailable": "Het afbeeldingsmodel is nu niet beschikbaar.",
+    "unknown": "Er ging iets mis bij het maken van de afbeelding."
+  }
+}

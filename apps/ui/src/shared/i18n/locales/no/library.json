@@ -1,0 +1,123 @@
+{
+  "triggerPreview": "Utløserforhåndsvisning",
+  "title": "Bibliotek",
+  "loadMore": "Last inn flere",
+  "search": "Søk i biblioteket",
+  "show": "Vis",
+  "filters": {
+    "all": "Alle",
+    "characters": "Karakterer",
+    "personas": "Personaer",
+    "lorebooks": "Lorebøker",
+    "images": "Bilder",
+    "audio": "Lyd"
+  },
+  "kinds": {
+    "character": "Karakter",
+    "persona": "Persona",
+    "lorebook": "Lorebok"
+  },
+  "you": "Du",
+  "entries_one": "{{count}} oppføring",
+  "entries_other": "{{count}} oppføringer",
+  "defaultPersona": "Persona · din standard",
+  "menu": {
+    "start": "Start samtale",
+    "edit_character": "Rediger karakter",
+    "edit_persona": "Rediger persona",
+    "edit_lorebook": "Rediger lorebok",
+    "default": "Bruk som standardpersona",
+    "defaultHint": "For samtaler som ikke velger en annen",
+    "export": "Eksporter",
+    "export_character": "Som karakterkort",
+    "export_persona": "Som UEC-fil",
+    "export_lorebook": "Som UEC- eller JSON-fil",
+    "delete_character": "Slett karakter",
+    "delete_persona": "Slett persona",
+    "delete_lorebook": "Slett lorebok",
+    "save": "Lagre på enheten",
+    "deleteImage": "Slett bilde",
+    "deleteAudio": "Slett opptak",
+    "avatar": "Bruk som avataren til {{name}}",
+    "more": "Mer for {{name}}",
+    "background": "Bakgrunn",
+    "generated": "Generert",
+    "uploaded": "Lastet opp"
+  },
+  "create": {
+    "title": "Opprett",
+    "description": "Legg noe til i biblioteket.",
+    "character": "Noen å snakke med",
+    "persona": "Hvem du er i en samtale",
+    "lorebook": "Verdensfakta en karakter kan bruke",
+    "import": "Importer en fil",
+    "importHint": "Karakterkort, persona eller lorebok",
+    "new_character": "Ny karakter",
+    "new_lorebook": "Ny lorebok",
+    "button_character": "Opprett karakter",
+    "button_persona": "Opprett persona",
+    "button_lorebook": "Opprett lorebok"
+  },
+  "edit": {
+    "name": "Navn",
+    "hint_character": "Vises på kortet og i samtalehodet.",
+    "placeholder_character": "f.eks. Cassian",
+    "placeholder_lorebook": "f.eks. Den nordlige porten",
+    "create": "Opprett",
+    "cancel": "Avbryt"
+  },
+  "delete": {
+    "title": "Slette {{name}}?",
+    "confirm": "Slett",
+    "character": "Samtalene og minnene slettes sammen med den.",
+    "persona": "Personaen fjernes fra samtalene som bruker den.",
+    "lorebook": "Karakterer og samtaler som bruker den, mister tilgang til oppføringene.",
+    "image": "Bildet fjernes fra denne enheten. Bilder som fortsatt er i bruk, kan ikke slettes.",
+    "audio": "Opptaket fjernes fra denne enheten. Opptak som fortsatt er i bruk, kan ikke slettes."
+  },
+  "empty": {
+    "all": {
+      "title": "Biblioteket ditt er tomt",
+      "description": "Karakterer, personaer og lorebøker du lager eller importerer, oppbevares her."
+    },
+    "characters": {
+      "title": "Ingen karakterer ennå",
+      "description": "En karakter er den du snakker med: et navn, en historie, en måte å snakke på."
+    },
+    "personas": {
+      "title": "Ingen personaer ennå",
+      "description": "En persona er hvem du er i en samtale. Karakterene ser navnet og beskrivelsen."
+    },
+    "lorebooks": {
+      "title": "Ingen lorebøker ennå",
+      "description": "Verdensfakta en karakter kan bruke når de dukker opp i samtalen."
+    },
+    "images": {
+      "title": "Ingen bilder ennå",
+      "description": "Bilder du genererer i en samtale, oppbevares her."
+    },
+    "audio": {
+      "title": "Ingen lyd ennå",
+      "description": "Stemmelinjer du genererer eller tar opp, oppbevares her."
+    },
+    "matches": "Ingenting samsvarer med «{{query}}»",
+    "searchAll": "Prøv et annet navn, eller en del av en beskrivelse.",
+    "searchSection": "Ingenting i denne delen samsvarer. Resten av biblioteket kan kanskje hjelpe.",
+    "clear": "Tøm søket",
+    "everything": "Søk i alt",
+    "import": "Importer"
+  },
+  "toast": {
+    "created": "La til {{name}}",
+    "deleted": "Slettet {{name}}",
+    "default": "{{name}} er standardpersonaen din",
+    "exported": "Filen er eksportert",
+    "imported": "Filen er importert",
+    "warnings_one": "Filen ble overført med {{count}} advarsel",
+    "warnings_other": "Filen ble overført med {{count}} advarsler",
+    "mediaSaved": "Lagret på enheten",
+    "avatar": "Avataren er oppdatert"
+  },
+  "draft": "Utkast",
+  "untitledDraft": "Lorebokutkast uten tittel"
+}

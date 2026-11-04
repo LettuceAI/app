@@ -1,0 +1,356 @@
+{
+  "header": {
+    "back": "Terug",
+    "learn": "Begeleide installatie · De basis, {{current}} van {{total}}",
+    "path": "Begeleide installatie · Gratis of betaald",
+    "guided": "Begeleide installatie · {{name}}, {{current}} van {{total}}",
+    "connect": "Installatie · 1 van 3",
+    "model": "Installatie · 2 van 3",
+    "memory": "Installatie · 3 van 3"
+  },
+  "welcome": {
+    "line1": "Je <brand>verhalen</brand>,",
+    "line2": "je <brand>karakters</brand>.",
+    "pitch": "Chats en karakters blijven op je apparaat. Jij kiest welke AI de antwoorden schrijft.",
+    "start": "Aan de slag",
+    "other": "Andere opties"
+  },
+  "actions": {
+    "exitSetup": "Terug naar instellingen",
+    "next": "Volgende",
+    "gotIt": "Begrepen",
+    "haveKey": "Ik heb mijn sleutel",
+    "connect": "Verbinden",
+    "checking": "Je sleutel controleren",
+    "useModel": "Dit model gebruiken",
+    "saving": "Je model opslaan",
+    "finish": "Installatie afronden",
+    "finishing": "Installatie afronden",
+    "openApp": "LettuceAI openen"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Welkom",
+      "title": "Welkom bij LettuceAI",
+      "body": "Je staat op het punt je eerste AI-roleplay in te stellen. De volgende stappen leggen de basis in gewone taal uit, daarna helpen we je alles te verbinden. Het duurt maar een paar minuten."
+    },
+    "car": {
+      "tag": "Hoe het werkt",
+      "title": "De app is de auto, niet de motor",
+      "body": "Zie deze app als een auto zonder motor. Hij heeft het dashboard, de stoelen en je karakters, maar kan niet zelf rijden. Jij voegt een motor toe, en deze paar stappen laten zien hoe.",
+      "plain": "Deze app is het scherm en de karakters. De AI die de antwoorden echt schrijft draait online, en jij verbindt de app daarmee."
+    },
+    "provider": {
+      "tag": "Stap 1 van 3",
+      "title": "Kies waar de motor vandaan komt",
+      "body": "Een provider is het bedrijf dat de motor levert en draait, zoals Google of OpenRouter. Je opent een gratis of betaald account bij een van hen, en de app leent hun motor om je chats aan te drijven.",
+      "plain": "Een provider is een bedrijf dat AI-modellen draait. Je maakt er een account aan, en de app stuurt je berichten ernaar toe om antwoorden te krijgen."
+    },
+    "key": {
+      "tag": "Stap 2 van 3",
+      "title": "Je sleutel start de motor",
+      "body": "Een API-sleutel werkt net als een autosleutel. De provider geeft je er een, jij steekt hem in de app en hij zet de motor aan. Houd hem voor jezelf. Hij blijft op je apparaat, als een sleutel in je zak.",
+      "plain": "Een API-sleutel is een geheime code van je provider waarmee de app jouw account kan gebruiken. Je plakt hem één keer in, en hij wordt alleen op je apparaat opgeslagen."
+    },
+    "engine": {
+      "tag": "Stap 3 van 3",
+      "title": "Kies je motor",
+      "body": "Een model is de motor zelf. Providers bieden kleine, zuinige motoren en grote, krachtige. Grotere motoren rijden beter maar verbruiken meer brandstof, dus ze kosten meer. Je kunt op elk moment van motor wisselen.",
+      "plain": "Een model is de specifieke AI die de antwoorden schrijft. Grotere modellen zijn slimmer maar kosten meer, en je kunt ze wisselen wanneer je maar wilt."
+    },
+    "cost": {
+      "tag": "De kosten",
+      "title": "Gratis of betaald, jij kiest",
+      "body": "Sommige modellen zijn helemaal gratis te gebruiken, met een daglimiet voor hoeveel je chat. Betaalde modellen rekenen een klein bedrag per bericht, vaak minder dan een cent.",
+      "plain": "Je betaalt alleen ooit de provider, nooit deze app. Je kunt gratis beginnen en later overstappen naar betaald als je dat wilt."
+    },
+    "inOtherWords": "Anders gezegd"
+  },
+  "path": {
+    "gemini": {
+      "title": "Gratis",
+      "subtitle": "Google Gemini",
+      "cta": "Gratis starten",
+      "pro1": "Kost niets en vraagt nooit om een kaart",
+      "pro2": "Een ruim dagtegoed voor dagelijks chatten",
+      "pro3": "Goede kwaliteit voor roleplay en gesprekken",
+      "con1": "Alleen de eigen modellen van Google",
+      "con2": "Volwassen of expliciete inhoud wordt geblokkeerd"
+    },
+    "openrouter": {
+      "title": "Betaal naar gebruik",
+      "subtitle": "OpenRouter",
+      "cta": "OpenRouter gebruiken",
+      "pro1": "Bijna elk AI-model, ook de sterkste",
+      "pro2": "Geen daglimieten, je betaalt alleen wat je gebruikt",
+      "pro3": "Wissel op elk moment naar goedkopere modellen",
+      "con1": "De kosten hangen af van het model en hoeveel je chat",
+      "con2": "Vereist een kaart of prepaidtegoed"
+    },
+    "title": "Gratis of betaald?",
+    "lead": "Beide verbinden de app met een AI. Het verschil is of je betaalt, en uit hoeveel modellen je kunt kiezen.",
+    "footer": "Twijfel je? Begin gratis. Je kunt later een betaalde dienst toevoegen zonder iets kwijt te raken."
+  },
+  "connect": {
+    "title": "Verbind een AI",
+    "lead": "LettuceAI is de app; een AI-dienst schrijft de antwoorden. Verbind degene waarvoor je een sleutel hebt.",
+    "guidedLink": "Nieuw met AI-apps? Volg de begeleide installatie",
+    "search": "{{count}} diensten zoeken",
+    "chooseAnother": "Een andere dienst kiezen",
+    "pickTitle": "Kies een dienst uit de lijst",
+    "pickBody": "Je hebt er een account en een API-sleutel van nodig.",
+    "groups": {
+      "cloud": "Clouddiensten",
+      "local": "Op je computer of netwerk",
+      "custom": "Elke andere dienst"
+    },
+    "subtitle": {
+      "custom": "Je eigen endpoint",
+      "local": "Draait op je computer"
+    },
+    "form": {
+      "address": "Adres",
+      "addressHintLocal": "Waar de server draait",
+      "addressHintCustom": "De basis-URL van de API",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API-sleutel",
+      "apiKeyOptional": "API-sleutel (optioneel)",
+      "apiKeyHint": "Versleuteld opgeslagen op dit apparaat",
+      "apiKeyPlaceholder": "Plak je sleutel",
+      "name": "Naam",
+      "nameHint": "Hoe het in je menu's verschijnt",
+      "namePlaceholder": "Mijn {{name}}"
+    },
+    "error": {
+      "rejected": "Deze sleutel is niet geaccepteerd",
+      "unreachable": "Kon {{name}} niet bereiken. Controleer je verbinding."
+    }
+  },
+  "guide": {
+    "previousPicture": "Vorige afbeelding",
+    "nextPicture": "Volgende afbeelding",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Schermafbeelding",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Plak je sleutel",
+      "geminiBody": "Plak de sleutel die je net uit Google AI Studio hebt gekopieerd. We controleren hem bij Google en tonen daarna de modellen die hij ontsluit.",
+      "openrouterBody": "Plak de sleutel die je uit OpenRouter hebt gekopieerd. Hij begint met sk-or. We controleren hem en tonen daarna de modellen die je kunt gebruiken.",
+      "geminiPlaceholder": "Plak je API-sleutel",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Versleuteld opgeslagen op dit apparaat. Alleen naar {{name}} gestuurd wanneer je chat."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Open Google AI Studio",
+        "body": "Google AI Studio is de officiële Google-site waar je gratis Gemini-sleutel wordt gemaakt. Open hem in je browser met de knop hieronder. Wanneer de pagina laadt, log je in met je normale Google-account door rechtsboven op Aan de slag te klikken. Ben je al ingelogd, dan ga je er direct doorheen.",
+        "open": "Google AI Studio openen",
+        "slide1": "Klik rechtsboven op Aan de slag."
+      },
+      "find": {
+        "title": "Zoek de API-sleutels",
+        "body": "Je zou nu het hoofdwerkgebied van Google AI Studio moeten zien. De API-sleutels staan niet op het hoofdscherm, maar in de zijbalk aan de linkerkant van de pagina. Zoek onderaan die zijbalk naar een klein sleutelicoon en klik erop om de pagina te openen waar sleutels worden beheerd.",
+        "slide1": "Klik op het sleutelicoon linksonder in de zijbalk."
+      },
+      "create": {
+        "title": "Maak je sleutel",
+        "body": "Een sleutel maken kost een korte reeks klikken, en de afbeeldingen lopen ze in volgorde door. Open eerst het dialoogvenster voor een nieuwe sleutel rechtsboven, maak dan een project aan waarin de sleutel komt te wonen, geef dat project een naam die je wilt en maak ten slotte de sleutel zelf aan. Gebruik de pijlen rechts om door elk scherm te stappen.",
+        "slide1": "Klik rechtsboven op API-sleutel maken.",
+        "slide2": "Open het dropdownmenu en klik op Project maken.",
+        "slide3": "Geef het een naam en klik op Project maken.",
+        "slide4": "Met je project geselecteerd klik je op Sleutel maken."
+      },
+      "copy": {
+        "title": "Kopieer je sleutel",
+        "body": "Je sleutel is aangemaakt en wordt nu volledig getoond. Klik op het kopieericoon ernaast om de hele sleutel naar je klembord te kopiëren. Dit is de enige keer dat Google de volledige sleutel toont, dus kopieer hem nu voordat je het venster sluit en kom daarna hier terug om hem te plakken.",
+        "slide1": "Klik op het kopieericoon om je API-sleutel te kopiëren."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Open Google AI Studio",
+        "body": "Google AI Studio is de officiële Google-site waar je gratis Gemini-sleutel wordt gemaakt. Open hem in je browser met de knop hieronder, dan lopen we samen door het aanvragen van een sleutel. De twee afbeeldingen laten precies zien waar je moet tikken zodra de pagina laadt, dus veeg ertussen als je niet zeker weet waar je moet kijken.",
+        "open": "Google AI Studio openen",
+        "slide1": "Tik rechtsboven op het menu.",
+        "slide2": "Tik daarna onderaan op Aan de slag."
+      },
+      "find": {
+        "title": "Zoek de API-sleutels",
+        "body": "Je bent nu ingelogd en ziet de hoofdpagina van Google AI Studio. Het onderdeel dat je nodig hebt zit verstopt in het zijmenu, niet op het hoofdscherm. Open dat menu en kijk helemaal onderaan naar een klein sleutelicoon. Als je erop tikt, ga je direct naar de pagina waar sleutels worden gemaakt.",
+        "slide1": "Open het menu linksboven.",
+        "slide2": "Tik op het sleutelicoon onderaan het menu."
+      },
+      "start": {
+        "title": "Begin een nieuwe sleutel",
+        "body": "Dit is je pagina API-sleutels, en die is nu leeg omdat je er nog geen hebt gemaakt. Dat is heel normaal. De knop die het proces start staat rechtsboven in het scherm, dus tik erop om je eerste sleutel te maken.",
+        "slide1": "Tik rechtsboven op API-sleutel maken."
+      },
+      "project": {
+        "title": "Maak eerst een project",
+        "body": "Voordat Google je een sleutel geeft, vraagt het bij welk project de sleutel hoort. Een project is gewoon een map die Google gebruikt om dingen overzichtelijk te houden, en je hebt er nog geen. Maak een nieuw project aan en geef het een naam die je wilt, zoals LettuceAI. De naam verandert niets, dus kies wat het makkelijkst is.",
+        "slide1": "Open het dropdownmenu en tik op Project maken.",
+        "slide2": "Geef het een naam en tik op Project maken."
+      },
+      "create": {
+        "title": "Maak en kopieer je sleutel",
+        "body": "Met je nieuwe project geselecteerd maak je de sleutel zelf aan. Zodra hij verschijnt, kopieer je hem meteen met het kopieericoon. Dit is de enige keer dat Google je de volledige sleutel toont, dus het is belangrijk hem nu te kopiëren voordat je het venster sluit. Je plakt hem in de volgende stap in de app.",
+        "slide1": "Met je project geselecteerd tik je op Sleutel maken.",
+        "slide2": "Tik op het kopieericoon om je sleutel te kopiëren."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Maak je account",
+        "body": "OpenRouter is één dienst die je verbindt met honderden AI-modellen van veel verschillende bedrijven, allemaal via één account en één sleutel. Open hem in je browser met de knop hieronder en maak een gratis account aan. De knop Registreren staat rechtsboven op de pagina.",
+        "open": "OpenRouter openen",
+        "slide1": "Klik rechtsboven op Registreren."
+      },
+      "key": {
+        "title": "Haal je API-sleutel op",
+        "body": "Na het registreren vraagt OpenRouter hoe je het wilt gebruiken. Kies Individueel, de juiste optie voor persoonlijk gebruik. Zodra je dat doet, maakt het je allereerste API-sleutel aan en toont die op het scherm. Kopieer die sleutel nu. Hij begint met sk-or, en je plakt hem zo in de app.",
+        "slide1": "Kies Individueel wanneer erom wordt gevraagd.",
+        "slide2": "Kopieer je nieuwe API-sleutel (begint met sk-or)."
+      },
+      "payment": {
+        "title": "Voeg een betaalmethode toe",
+        "body": "Betaalde modellen rekenen een heel klein bedrag per bericht, dus OpenRouter heeft een kaart nodig voordat het ze kan draaien. Voeg nu je factuurgegevens toe om de modellen te ontgrendelen. In deze stap wordt niets afgeschreven, het bevestigt alleen wie je bent en laat je later tegoed gebruiken.",
+        "slide1": "Vul je factuurgegevens in.",
+        "slide2": "Je bent helemaal klaar zodra het is toegevoegd."
+      },
+      "credits": {
+        "title": "Voeg wat tegoed toe",
+        "body": "Tegoed is het saldo dat je berichten daadwerkelijk betaalt terwijl je chat. Open de pagina Tegoed via de zijbalk en vul een klein bedrag aan om te beginnen. Zelfs een paar euro gaat lang mee bij de meeste modellen, en je kunt later altijd meer toevoegen als het op raakt.",
+        "slide1": "Open Tegoed via de zijbalk.",
+        "slide2": "Klik op Tegoed toevoegen en kies een bedrag."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Maak je account",
+        "body": "OpenRouter is één dienst die je verbindt met honderden AI-modellen van veel verschillende bedrijven, allemaal via één account en één sleutel. Open hem in je browser met de knop hieronder en maak een gratis account aan. De knop Registreren staat rechtsboven op de pagina.",
+        "open": "OpenRouter openen",
+        "slide1": "Tik rechtsboven op Registreren."
+      },
+      "key": {
+        "title": "Haal je API-sleutel op",
+        "body": "Na het registreren vraagt OpenRouter hoe je het wilt gebruiken. Kies Individueel, de juiste optie voor persoonlijk gebruik. Zodra je dat doet, maakt het je allereerste API-sleutel aan en toont die op het scherm. Kopieer die sleutel nu. Hij begint met sk-or, en je plakt hem zo in de app.",
+        "slide1": "Kies Individueel wanneer erom wordt gevraagd.",
+        "slide2": "Kopieer je nieuwe API-sleutel (begint met sk-or)."
+      },
+      "payment": {
+        "title": "Voeg een betaalmethode toe",
+        "body": "Betaalde modellen rekenen een heel klein bedrag per bericht, dus OpenRouter heeft een kaart nodig voordat het ze kan draaien. Voeg nu je factuurgegevens toe om de modellen te ontgrendelen. In deze stap wordt niets afgeschreven, het bevestigt alleen wie je bent en laat je later tegoed gebruiken.",
+        "slide1": "Vul je factuurgegevens in.",
+        "slide2": "Je bent helemaal klaar zodra het is toegevoegd."
+      },
+      "credits": {
+        "title": "Voeg wat tegoed toe",
+        "body": "Tegoed is het saldo dat je berichten daadwerkelijk betaalt terwijl je chat. Open het menu, ga naar de pagina Tegoed en vul een klein bedrag aan om te beginnen. Zelfs een paar euro gaat lang mee bij de meeste modellen, en je kunt later altijd meer toevoegen als het op raakt.",
+        "slide1": "Open het menu en ga naar Tegoed.",
+        "slide2": "Tik op Tegoed toevoegen en kies een bedrag."
+      }
+    }
+  },
+  "model": {
+    "title": "Kies een model",
+    "lead": "Kies het {{name}}-model dat de antwoorden schrijft. Je kunt het op elk moment wijzigen of meer toevoegen.",
+    "model": "Model",
+    "modelId": "Model-id",
+    "modelIdHint": "De exacte id die de dienst verwacht",
+    "modelIdPlaceholder": "modelnaam",
+    "choose": "Kies uit {{count}} modellen",
+    "customId": "Aangepaste id",
+    "displayName": "Weergavenaam",
+    "displayNameHint": "Wat je in de app ziet",
+    "displayNamePlaceholder": "Mijn model",
+    "connected": "Verbonden",
+    "context": "Context",
+    "contextTokens": "{{value}} tokens",
+    "contextSuffix": "{{value}} context",
+    "images": "Begrijpt afbeeldingen",
+    "yes": "Ja",
+    "no": "Nee",
+    "inputPerMillion": "Invoer, per miljoen",
+    "outputPerMillion": "Uitvoer, per miljoen",
+    "emptyTitle": "Nog geen model gekozen",
+    "emptyBody": "De contextgrootte en prijzen verschijnen hier.",
+    "free": "Gratis",
+    "priceIn": "in",
+    "priceOut": "uit",
+    "picker": {
+      "title": "{{name}}-modellen",
+      "search": "{{count}} modellen zoeken",
+      "filter": "Modellen filteren",
+      "layout": "Indeling",
+      "list": "Lijst",
+      "twoPerRow": "Twee per rij",
+      "onlyFree": "Alleen gratis modellen",
+      "none": "Geen modellen voldoen aan deze filters.",
+      "useId": "Gebruik <mono>{{id}}</mono>",
+      "useIdBody": "Niet in de lijst: gebruik deze exacte id",
+      "priceNote": "Prijzen per miljoen tokens, van {{name}}.",
+      "loading": "Modellen laden"
+    },
+    "filters": {
+      "title": "Modellen filteren",
+      "madeBy": "Gemaakt door",
+      "capabilities": "Mogelijkheden",
+      "imagesTitle": "Begrijpt afbeeldingen",
+      "imagesBody": "Kan afbeeldingen lezen die je in een chat stuurt",
+      "sortBy": "Sorteren op",
+      "sortName": "Naam",
+      "sortPrice": "Goedkoopst",
+      "sortContext": "Langste context",
+      "clear": "Wissen",
+      "show_one": "{{count}} model tonen",
+      "show_other": "{{count}} modellen tonen"
+    }
+  },
+  "memory": {
+    "title": "Hoe moeten karakters onthouden?",
+    "lead": "Karakters vergeten wat buiten de recente berichten valt. Kies hoe de belangrijke delen terugkomen. Je kunt dit later per chat wijzigen.",
+    "group": "Geheugen",
+    "recommended": "Aanbevolen",
+    "classic": "Klassiek",
+    "detailTitle": "{{title}}-geheugen",
+    "automatic": {
+      "title": "Automatisch",
+      "point1": "Een klein model op je apparaat haalt eruit wat belangrijk is en brengt het terug wanneer nodig",
+      "point2": "Lange chats blijven consistent",
+      "point3": "Minder tokens verzonden, dus antwoorden kosten minder",
+      "note": "Vereist een eenmalige download. Draait daarna offline."
+    },
+    "manual": {
+      "title": "Handmatig",
+      "point1": "Je zet berichten vast en schrijft de feiten zelf",
+      "point2": "Volledige controle over wat er wordt onthouden",
+      "point3": "Er draait niets op de achtergrond",
+      "note": "Niets te downloaden."
+    }
+  },
+  "other": {
+    "title": "Andere opties",
+    "language": "Taal",
+    "skip": "Installatie overslaan",
+    "skipBody": "Kijk eerst wat rond. Chats hebben een AI nodig voordat ze kunnen antwoorden.",
+    "restore": "Een back-up herstellen",
+    "restoreBody": "Haal chats, karakters en instellingen terug uit een .lettuce-bestand",
+    "languageTitle": "Taal",
+    "warning": {
+      "title": "Chats hebben een AI nodig voordat ze kunnen antwoorden",
+      "body": "Zonder verbonden AI kunnen karakters niet antwoorden. Je kunt er later een verbinden in de instellingen.",
+      "connect": "Een AI verbinden",
+      "skipAnyway": "Toch overslaan"
+    }
+  },
+  "failure": {
+    "finish": "Kon de installatie niet afronden.",
+    "models": "Kon de modellen niet laden.",
+    "save": "Kon niet opslaan."
+  }
+}

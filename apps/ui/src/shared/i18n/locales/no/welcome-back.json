@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Velkommen tilbake.",
+    "bodyBefore": "Dette er ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Bygget opp fra grunnen av, med alt du har laget med deg.",
+    "migrate": "Flytt data",
+    "notNow": "Ikke nå"
+  },
+  "migrate": {
+    "title": "Flytter dataene dine",
+    "body": "Samtalene, karakterene og mediene dine blir med over.",
+    "note": "Hold appen åpen til det er ferdig.",
+    "stages": {
+      "read": "Leser dataene dine",
+      "write": "Flytter samtaler, karakterer og media",
+      "verify": "Sjekker alt",
+      "switch": "Fullfører"
+    },
+    "failed": "Flyttingen ble ikke fullført.",
+    "retry": "Prøv igjen"
+  },
+  "models": {
+    "titlePending": "Henter tilbake funksjonene dine",
+    "titleReady": "Funksjonene dine er tilbake",
+    "checking": "Sjekker hvilke funksjoner samtalene dine bruker",
+    "bodyPending_memory": "Noen av samtalene dine bruker dynamisk minne. Modellen lastes ned én gang og kjører deretter frakoblet.",
+    "bodyPending_emotion": "Noen av samtalene dine bruker kompanjongfølelser. Modellen lastes ned én gang og kjører deretter frakoblet.",
+    "bodyPending_both": "Noen av samtalene dine bruker dynamisk minne og kompanjongfølelser. Modellene lastes ned én gang og kjører deretter frakoblet.",
+    "bodyReady_memory": "Dynamisk minne er klart og kjører frakoblet.",
+    "bodyReady_emotion": "Kompanjongfølelsene er klare og kjører frakoblet.",
+    "bodyReady_both": "Dynamisk minne og kompanjongfølelser er klare og kjører frakoblet.",
+    "names": {
+      "embedding": "Minnemodellen Lettuce Eidos",
+      "emotion": "Følelsemodellen Thymos"
+    },
+    "why": {
+      "embedding": "For dynamisk minne",
+      "emotion": "For kompanjongfølelser"
+    },
+    "ready": "Klar",
+    "waiting": "Venter",
+    "checkingFiles": "Sjekker filene",
+    "progress": "{{done}} av {{total}}",
+    "failed": "Nedlastingen ble ikke fullført",
+    "download": "Last ned",
+    "notNow": "Ikke nå",
+    "continue": "Fortsett",
+    "retry": "Prøv igjen",
+    "notNowNote": "Samtaler som trenger disse modellene, ber om dem. Du kan laste dem ned senere i Innstillinger.",
+    "keepOpen": "Hold appen åpen til det er ferdig."
+  },
+  "done": {
+    "title": "Alt er klart.",
+    "body": "Alt er der du forlot det.",
+    "open": "Åpne LettuceAI"
+  },
+  "upgrade": {
+    "title": "Ett steg først",
+    "body": "Dataene dine er fra en eldre LettuceAI. Åpne dem én gang med versjon {{version}} slik at de kan oppdateres, og kom så tilbake hit.",
+    "copy": "Kopier nedlastingslenken",
+    "copied": "Lenken er kopiert",
+    "fresh": "Start på nytt i stedet"
+  }
+}

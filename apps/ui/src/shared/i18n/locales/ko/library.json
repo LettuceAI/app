@@ -1,0 +1,121 @@
+{
+  "triggerPreview": "트리거 미리보기",
+  "title": "라이브러리",
+  "loadMore": "더 보기",
+  "search": "라이브러리 검색",
+  "show": "표시",
+  "filters": {
+    "all": "전체",
+    "characters": "캐릭터",
+    "personas": "페르소나",
+    "lorebooks": "로어북",
+    "images": "이미지",
+    "audio": "오디오"
+  },
+  "kinds": {
+    "character": "캐릭터",
+    "persona": "페르소나",
+    "lorebook": "로어북"
+  },
+  "you": "나",
+  "entries_other": "{{count}}개 항목",
+  "defaultPersona": "페르소나 · 기본",
+  "menu": {
+    "start": "채팅 시작",
+    "edit_character": "캐릭터 편집",
+    "edit_persona": "페르소나 편집",
+    "edit_lorebook": "로어북 편집",
+    "default": "기본 페르소나로 사용",
+    "defaultHint": "다른 페르소나를 고르지 않은 채팅에 사용돼요",
+    "export": "내보내기",
+    "export_character": "캐릭터 카드로",
+    "export_persona": "UEC 파일로",
+    "export_lorebook": "UEC 또는 JSON 파일로",
+    "delete_character": "캐릭터 삭제",
+    "delete_persona": "페르소나 삭제",
+    "delete_lorebook": "로어북 삭제",
+    "save": "기기에 저장",
+    "deleteImage": "이미지 삭제",
+    "deleteAudio": "녹음 삭제",
+    "avatar": "{{name}}의 아바타로 사용",
+    "more": "{{name}} 관련 작업 더 보기",
+    "background": "배경",
+    "generated": "생성됨",
+    "uploaded": "업로드됨"
+  },
+  "create": {
+    "title": "만들기",
+    "description": "라이브러리에 항목을 추가해요.",
+    "character": "대화할 상대",
+    "persona": "채팅 속 나",
+    "lorebook": "캐릭터가 참고할 세계 설정",
+    "import": "파일 가져오기",
+    "importHint": "캐릭터 카드, 페르소나 또는 로어북",
+    "new_character": "새 캐릭터",
+    "new_lorebook": "새 로어북",
+    "button_character": "캐릭터 만들기",
+    "button_persona": "페르소나 만들기",
+    "button_lorebook": "로어북 만들기"
+  },
+  "edit": {
+    "name": "이름",
+    "hint_character": "카드와 채팅 헤더에 표시돼요.",
+    "placeholder_character": "예: Cassian",
+    "placeholder_lorebook": "예: 북쪽 성문",
+    "create": "만들기",
+    "cancel": "취소"
+  },
+  "delete": {
+    "title": "{{name}} 삭제할까요?",
+    "confirm": "삭제",
+    "character": "채팅과 기억도 함께 삭제돼요.",
+    "persona": "이 페르소나를 쓰는 채팅에서 제거돼요.",
+    "lorebook": "이 로어북을 쓰는 캐릭터와 채팅이 항목에 접근할 수 없게 돼요.",
+    "image": "이 기기에서 이미지가 삭제돼요. 사용 중인 이미지는 삭제할 수 없어요.",
+    "audio": "이 기기에서 녹음이 삭제돼요. 사용 중인 녹음은 삭제할 수 없어요."
+  },
+  "empty": {
+    "all": {
+      "title": "라이브러리가 비어 있어요",
+      "description": "만들거나 가져온 캐릭터, 페르소나, 로어북이 여기에 보관돼요."
+    },
+    "characters": {
+      "title": "아직 캐릭터가 없어요",
+      "description": "캐릭터는 대화하는 상대예요. 이름, 이야기, 말투를 가져요."
+    },
+    "personas": {
+      "title": "아직 페르소나가 없어요",
+      "description": "페르소나는 채팅 속의 내 모습이에요. 캐릭터가 그 이름과 설명을 봐요."
+    },
+    "lorebooks": {
+      "title": "아직 로어북이 없어요",
+      "description": "대화에 나오면 캐릭터가 참고할 수 있는 세계 설정이에요."
+    },
+    "images": {
+      "title": "아직 이미지가 없어요",
+      "description": "채팅에서 생성한 이미지가 여기에 보관돼요."
+    },
+    "audio": {
+      "title": "아직 오디오가 없어요",
+      "description": "생성하거나 녹음한 음성이 여기에 보관돼요."
+    },
+    "matches": "“{{query}}”와 일치하는 항목이 없어요",
+    "searchAll": "다른 이름이나 설명의 일부를 입력해 보세요.",
+    "searchSection": "이 섹션에는 없지만 라이브러리의 다른 곳에는 있을 수 있어요.",
+    "clear": "검색 지우기",
+    "everything": "전체 검색",
+    "import": "가져오기"
+  },
+  "toast": {
+    "created": "{{name}} 추가됨",
+    "deleted": "{{name}} 삭제됨",
+    "default": "{{name}} 페르소나를 기본으로 설정했어요",
+    "exported": "파일을 내보냈어요",
+    "imported": "파일을 가져왔어요",
+    "warnings_other": "{{count}}건의 경고와 함께 파일을 전송했어요",
+    "mediaSaved": "기기에 저장했어요",
+    "avatar": "아바타를 업데이트했어요"
+  },
+  "draft": "임시 저장",
+  "untitledDraft": "제목 없는 로어북 임시본"
+}

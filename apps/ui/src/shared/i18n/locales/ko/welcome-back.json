@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "다시 오신 것을 환영해요.",
+    "bodyBefore": "여기는 ",
+    "product": "LettuceAI Next",
+    "bodyAfter": "예요. 처음부터 다시 만들었고, 그동안 만든 모든 것이 함께 왔어요.",
+    "migrate": "데이터 옮기기",
+    "notNow": "나중에"
+  },
+  "migrate": {
+    "title": "데이터 옮기는 중",
+    "body": "채팅, 캐릭터, 미디어를 가져오고 있어요.",
+    "note": "완료될 때까지 앱을 열어 두세요.",
+    "stages": {
+      "read": "데이터 읽는 중",
+      "write": "채팅, 캐릭터, 미디어 옮기는 중",
+      "verify": "모두 확인 중",
+      "switch": "마무리 중"
+    },
+    "failed": "이전이 끝나지 않았어요.",
+    "retry": "다시 시도"
+  },
+  "models": {
+    "titlePending": "기능을 되살리는 중",
+    "titleReady": "기능이 돌아왔어요",
+    "checking": "채팅에서 사용하는 기능 확인 중",
+    "bodyPending_memory": "일부 채팅에서 동적 메모리를 사용해요. 모델은 한 번만 다운로드하면 오프라인으로 실행돼요.",
+    "bodyPending_emotion": "일부 채팅에서 동반자 감정을 사용해요. 모델은 한 번만 다운로드하면 오프라인으로 실행돼요.",
+    "bodyPending_both": "일부 채팅에서 동적 메모리와 동반자 감정을 사용해요. 모델은 한 번만 다운로드하면 오프라인으로 실행돼요.",
+    "bodyReady_memory": "동적 메모리가 준비됐고 오프라인으로 실행돼요.",
+    "bodyReady_emotion": "동반자 감정이 준비됐고 오프라인으로 실행돼요.",
+    "bodyReady_both": "동적 메모리와 동반자 감정이 준비됐고 오프라인으로 실행돼요.",
+    "names": {
+      "embedding": "Lettuce Eidos 메모리 모델",
+      "emotion": "Thymos 감정 모델"
+    },
+    "why": {
+      "embedding": "동적 메모리용",
+      "emotion": "동반자 감정용"
+    },
+    "ready": "준비됨",
+    "waiting": "대기 중",
+    "checkingFiles": "파일 확인 중",
+    "progress": "{{total}}개 중 {{done}}개",
+    "failed": "다운로드가 끝나지 않았어요",
+    "download": "다운로드",
+    "notNow": "나중에",
+    "continue": "계속",
+    "retry": "다시 시도",
+    "notNowNote": "이 모델이 필요한 채팅에서 나중에 요청해요. 설정에서 언제든 다운로드할 수 있어요.",
+    "keepOpen": "완료될 때까지 앱을 열어 두세요."
+  },
+  "done": {
+    "title": "모두 준비됐어요.",
+    "body": "모든 것이 떠난 그대로 있어요.",
+    "open": "LettuceAI 열기"
+  },
+  "upgrade": {
+    "title": "먼저 한 단계만",
+    "body": "데이터가 이전 LettuceAI 버전의 것이에요. {{version}} 버전으로 한 번 열어 업데이트한 뒤 다시 여기로 오세요.",
+    "copy": "다운로드 링크 복사",
+    "copied": "링크를 복사했어요",
+    "fresh": "대신 새로 시작하기"
+  }
+}

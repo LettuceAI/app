@@ -1,0 +1,75 @@
+{
+  "create": {
+    "title": "नया पर्सोना",
+    "back": "वापस",
+    "create": "पर्सोना बनाएँ",
+    "created": "{{name}} बन गया",
+    "imported": "पर्सोना आयात हो गया",
+    "unattached_one": "{{count}} लोरबुक जोड़ना संभव नहीं था। इसे पर्सोना की सेटिंग्स से जोड़ें।",
+    "unattached_other": "{{count}} लोरबुक्स जोड़ना संभव नहीं था। इन्हें पर्सोना की सेटिंग्स से जोड़ें।",
+    "defaultFailed": "{{name}} बन गया, लेकिन उसे डिफ़ॉल्ट नहीं बनाया जा सका।",
+    "discardTitle": "इस पर्सोना को त्यागें?",
+    "discardBody": "अब तक भरा गया सब कुछ खो जाएगा।",
+    "discard": "त्यागें",
+    "keepEditing": "संपादन जारी रखें",
+    "continueTo": "{{step}} पर जारी रखें"
+  },
+  "edit": {
+    "title": "पर्सोना संपादित करें",
+    "back": "वापस",
+    "backToLibrary": "लाइब्रेरी पर वापस",
+    "more": "और विकल्प",
+    "export": "निर्यात करें",
+    "delete": "पर्सोना हटाएँ",
+    "exported": "पर्सोना निर्यात हो गया",
+    "exportWarnings_one": "{{count}} चेतावनी के साथ निर्यात किया गया",
+    "exportWarnings_other": "{{count}} चेतावनियों के साथ निर्यात किया गया",
+    "deleteTitle": "{{name}} हटाएँ?",
+    "deleteBody": "इस पर्सोना को उपयोग करने वाली चैट्स से इसे हटा दिया जाएगा।",
+    "deleteConfirm": "हटाएँ",
+    "deleteCancel": "रद्द करें",
+    "deleted": "{{name}} हटा दिया गया",
+    "unsaved": "बिना सेव किए बदलाव",
+    "discard": "त्यागें",
+    "save": "सेव करें",
+    "saved": "बदलाव सेव हो गए",
+    "lorebooksFailed": "सेव हो गया, लेकिन लोरबुक्स अपडेट नहीं हो सके। फिर से सेव करके देखें।",
+    "leaveTitle": "अपने बदलाव त्यागें?",
+    "leaveBody": "जो बदलाव सेव नहीं हुए, वे खो जाएँगे।",
+    "leaveDiscard": "त्यागें",
+    "leaveKeep": "संपादन जारी रखें"
+  },
+  "steps": {
+    "identity": "पहचान",
+    "extras": "अतिरिक्त"
+  },
+  "identity": {
+    "chooseAvatar": "छवि चुनें",
+    "removeAvatar": "हटाएँ",
+    "name": "नाम",
+    "namePlaceholder": "पेशेवर लेखक",
+    "nameHint": "चैट में आप कौन हैं",
+    "nickname": "उपनाम",
+    "nicknamePlaceholder": "कैरेक्टर आपको क्या कहते हैं",
+    "nicknameHint": "वैकल्पिक। चैट में नाम की जगह उपयोग होता है।",
+    "default": "डिफ़ॉल्ट के रूप में उपयोग करें",
+    "defaultBody": "नई चैट्स इस पर्सोना के साथ शुरू होती हैं",
+    "import": "फ़ाइल से आयात करें",
+    "importBody": "LettuceAI से निर्यात किया पर्सोना आयात करें।",
+    "chooseFile": "फ़ाइल चुनें"
+  },
+  "about": {
+    "description": "विवरण",
+    "descriptionPlaceholder": "कैरेक्टर आपको कैसे संबोधित करें, आपकी पृष्ठभूमि, पसंद और शैली",
+    "descriptionHint": "इस पर्सोना के लिए {{user}} और कैरेक्टर के लिए {{char}} उपयोग करें।",
+    "words_one": "{{count}} शब्द",
+    "words_other": "{{count}} शब्द"
+  },
+  "extras": {
+    "body": "यहाँ सब कुछ वैकल्पिक है।",
+    "lorebooks": "लोरबुक्स",
+    "lorebooksNone": "कोई नहीं",
+    "lorebooksCount_one": "{{count}} लोरबुक",
+    "lorebooksCount_other": "{{count}} लोरबुक्स"
+  }
+}

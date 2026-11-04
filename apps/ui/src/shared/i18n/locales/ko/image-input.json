@@ -1,0 +1,131 @@
+{
+  "generate": "아바타 생성",
+  "title": "아바타 생성",
+  "bannerCrop": {
+    "title": "배너 위치 조정",
+    "description": "표지를 맞춰 보세요. 끌어서 이동하고, 두 손가락으로 벌리거나 스크롤해서 확대하세요.",
+    "saveFailed": "배너를 저장하지 못했어요"
+  },
+  "crop": {
+    "title": "아바타 위치 조정",
+    "description": "끌어서 이동하세요. 두 손가락으로 벌리거나 스크롤해서 확대하세요.",
+    "zoom": "확대/축소",
+    "zoomIn": "확대",
+    "zoomOut": "축소",
+    "center": "가운데",
+    "area": "프레이밍 영역",
+    "keyboard": "방향키로 사진을 움직여요. 더하기/빼기로 확대·축소, C는 가운데, 0은 초기화예요.",
+    "reset": "초기화",
+    "apply": "이 위치 사용",
+    "loadFailed": "이미지를 불러오지 못했어요",
+    "saveFailed": "아바타를 저장하지 못했어요"
+  },
+  "preview": {
+    "empty": "아직 이미지가 없어요",
+    "emptyBody": "아래에 아바타를 설명하거나, 내 이미지에서 시작하세요.",
+    "alt": "아바타 미리보기",
+    "unchanged": "폼에 이미 있는 아바타",
+    "editedFrom": "{{version}}에서: {{request}}"
+  },
+  "versions": {
+    "label": "버전",
+    "count_other": "{{count}}개 버전",
+    "current": "현재 아바타",
+    "upload": "업로드한 이미지 {{number}}",
+    "generation": "생성한 이미지 {{number}}",
+    "edit": "편집한 이미지 {{number}}",
+    "short": {
+      "current": "현재",
+      "upload": "업로드 {{number}}",
+      "generation": "이미지 {{number}}",
+      "edit": "편집 {{number}}"
+    }
+  },
+  "upload": {
+    "action": "이미지 업로드"
+  },
+  "mode": {
+    "label": "할 작업",
+    "generate": "새 이미지",
+    "edit": "선택 항목 편집",
+    "generateHint": "설명만으로 새로 시작해요",
+    "editHint": "{{version}}의 복사본을 변경해요"
+  },
+  "prompt": {
+    "label": "아바타 설명",
+    "placeholder": "니트 목도리를 두른 웃는 여우, 부드러운 조명"
+  },
+  "instruction": {
+    "label": "변경할 내용",
+    "placeholder": "목도리를 파란색으로"
+  },
+  "actions": {
+    "generate": "생성",
+    "edit": "편집 적용",
+    "cancel": "취소",
+    "use": "이 아바타 사용",
+    "retry": "다시 시도"
+  },
+  "busy": {
+    "uploading": "이미지 추가 중",
+    "generating": "이미지 생성 중",
+    "editing": "이미지 편집 중",
+    "cancelling": "취소 중"
+  },
+  "job": {
+    "progress": "{{total}}개 중 {{current}}개",
+    "rejected_other": "{{count}}개 결과를 제외했어요",
+    "cancelled": "생성을 취소했어요"
+  },
+  "settings": {
+    "open": "이미지 설정 열기"
+  },
+  "notice": {
+    "options": {
+      "title": "아바타 모델을 확인하지 못했어요",
+      "body": "업로드는 계속 사용할 수 있어요."
+    },
+    "disabled": {
+      "title": "아바타 생성이 꺼져 있어요",
+      "body": "이미지 설정에서 켜면 생성할 수 있어요. 업로드는 계속 사용할 수 있어요."
+    },
+    "noModel": {
+      "title": "선택한 아바타 모델이 없어요",
+      "body": "이미지를 입력받고 출력하는 모델을 선택하세요. 업로드는 계속 사용할 수 있어요."
+    },
+    "incompatible": {
+      "title": "이 모델은 아바타를 만들 수 없어요",
+      "body": "아바타에는 이미지를 입력받고 출력하는 모델이 필요해요. 업로드는 계속 사용할 수 있어요."
+    },
+    "upload": {
+      "title": "이미지를 추가하지 못했어요"
+    },
+    "generation": {
+      "title": "이미지를 생성하지 못했어요"
+    },
+    "cancellation": {
+      "title": "취소하지 못했어요",
+      "body": "요청이 아직 실행 중일 수 있어요. 다시 취소해 보세요."
+    },
+    "uncertain": {
+      "title": "결과를 기다리는 중",
+      "body": "결과가 도착하기 전에 연결이 끊겼어요. 다시 시도해 연결하거나 요청을 취소하세요."
+    }
+  },
+  "failure": {
+    "cancelled": "생성이 취소됐어요.",
+    "setup": "이미지 모델이 올바르게 설정되지 않았어요. 이미지 설정에서 확인하세요.",
+    "invalidRequest": "요청이 거부됐어요. 설명을 바꾸고 다시 시도하세요.",
+    "engine": "이미지 엔진이 완료되기 전에 멈췄어요.",
+    "timedOut": "이미지 생성에 시간이 너무 오래 걸렸어요.",
+    "memory": "이미지 모델의 메모리가 부족해요.",
+    "storage": "이미지를 저장하지 못했어요.",
+    "provider": "제공자가 이미지를 만들지 못했어요.",
+    "empty": "이미지가 돌아오지 않았어요.",
+    "rejected": "결과가 제외되어 아무것도 반환되지 않았어요.",
+    "refused": "모델이 이 이미지 생성을 거부했어요. 설명을 바꾸고 다시 시도하세요.",
+    "authentication": "제공자가 인증 정보를 거부했어요. 설정에서 제공자를 확인하세요.",
+    "unavailable": "지금은 이미지 모델을 사용할 수 없어요.",
+    "unknown": "이미지를 만드는 중 문제가 발생했어요."
+  }
+}

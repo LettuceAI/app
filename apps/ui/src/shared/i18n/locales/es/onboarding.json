@@ -1,0 +1,357 @@
+{
+  "header": {
+    "back": "Atrás",
+    "learn": "Configuración guiada · Lo básico, {{current}} de {{total}}",
+    "path": "Configuración guiada · Gratis o de pago",
+    "guided": "Configuración guiada · {{name}}, {{current}} de {{total}}",
+    "connect": "Configuración · 1 de 3",
+    "model": "Configuración · 2 de 3",
+    "memory": "Configuración · 3 de 3"
+  },
+  "welcome": {
+    "line1": "Tus <brand>historias</brand>,",
+    "line2": "tus <brand>personajes</brand>.",
+    "pitch": "Los chats y los personajes se quedan en tu dispositivo. Tú eliges qué IA escribe las respuestas.",
+    "start": "Empezar",
+    "other": "Otras opciones"
+  },
+  "actions": {
+    "exitSetup": "Volver a los ajustes",
+    "next": "Siguiente",
+    "gotIt": "Entendido",
+    "haveKey": "Ya tengo mi clave",
+    "connect": "Conectar",
+    "checking": "Comprobando tu clave",
+    "useModel": "Usar este modelo",
+    "saving": "Guardando tu modelo",
+    "finish": "Terminar la configuración",
+    "finishing": "Terminando la configuración",
+    "openApp": "Abrir LettuceAI"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Bienvenida",
+      "title": "Te damos la bienvenida a LettuceAI",
+      "body": "Estás a punto de configurar tu primer roleplay con IA. Los siguientes pasos explican lo básico en lenguaje sencillo y luego te ayudamos a conectarlo todo. Solo tardarás un par de minutos."
+    },
+    "car": {
+      "tag": "Cómo funciona",
+      "title": "La app es el coche, no el motor",
+      "body": "Piensa en esta app como un coche sin motor todavía. Tiene el salpicadero, los asientos y tus personajes, pero no puede circular sola. Tú le pones un motor, y estos pasos te enseñan cómo.",
+      "plain": "Esta app es la pantalla y los personajes. La IA que escribe las respuestas se ejecuta en línea y tú conectas la app a ella."
+    },
+    "provider": {
+      "tag": "Paso 1 de 3",
+      "title": "Elige de dónde viene el motor",
+      "body": "Un proveedor es la empresa que suministra y ejecuta el motor, como Google u OpenRouter. Abres una cuenta gratuita o de pago con uno y la app toma prestado su motor para tus chats.",
+      "plain": "Un proveedor es una empresa que ejecuta modelos de IA. Creas una cuenta con uno y la app les envía tus mensajes para recibir respuestas."
+    },
+    "key": {
+      "tag": "Paso 2 de 3",
+      "title": "Tu clave arranca el motor",
+      "body": "Una clave de API funciona igual que la llave de un coche. El proveedor te da una, tú la metes en la app y esta enciende el motor. Guárdala para ti. Se queda en tu dispositivo, como una llave en el bolsillo.",
+      "plain": "Una clave de API es un código secreto de tu proveedor que permite a la app usar tu cuenta. Lo pegas una vez y solo se guarda en tu dispositivo."
+    },
+    "engine": {
+      "tag": "Paso 3 de 3",
+      "title": "Elige tu motor",
+      "body": "Un modelo es el motor en sí. Los proveedores ofrecen motores pequeños y eficientes, y otros grandes y potentes. Los motores más grandes responden mejor pero gastan más combustible, así que cuestan más. Puedes cambiar de motor cuando quieras.",
+      "plain": "Un modelo es la IA concreta que escribe las respuestas. Los modelos más grandes son más listos pero cuestan más, y puedes cambiar entre ellos cuando quieras."
+    },
+    "cost": {
+      "tag": "El coste",
+      "title": "Gratis o de pago, tú eliges",
+      "body": "Algunos modelos son totalmente gratis, con un límite diario de cuánto puedes chatear. Los modelos de pago cobran una cantidad pequeña por cada mensaje, a menudo menos de un céntimo.",
+      "plain": "Solo pagas al proveedor, nunca a esta app. Puedes empezar gratis y pasarte a de pago más adelante si quieres."
+    },
+    "inOtherWords": "En otras palabras"
+  },
+  "path": {
+    "gemini": {
+      "title": "Gratis",
+      "subtitle": "Google Gemini",
+      "cta": "Empezar gratis",
+      "pro1": "No cuesta nada y nunca pide tarjeta",
+      "pro2": "Una asignación diaria generosa para chatear a diario",
+      "pro3": "Buena calidad para roleplay y conversación",
+      "con1": "Solo los modelos propios de Google",
+      "con2": "El contenido adulto o explícito está bloqueado"
+    },
+    "openrouter": {
+      "title": "Pago por uso",
+      "subtitle": "OpenRouter",
+      "cta": "Usar OpenRouter",
+      "pro1": "Casi todos los modelos de IA, incluidos los más potentes",
+      "pro2": "Sin límites diarios; solo pagas lo que usas",
+      "pro3": "Cambia a modelos más baratos cuando quieras",
+      "con1": "El coste depende del modelo y de cuánto chatees",
+      "con2": "Necesita tarjeta o saldo de prepago"
+    },
+    "title": "¿Gratis o de pago?",
+    "lead": "Ambos conectan la app a una IA. La diferencia es si pagas y de cuántos modelos puedes elegir.",
+    "footer": "¿No lo tienes claro? Empieza gratis. Puedes añadir un servicio de pago más adelante sin perder nada."
+  },
+  "connect": {
+    "title": "Conecta una IA",
+    "lead": "LettuceAI es la app; un servicio de IA escribe las respuestas. Conecta el que tenga tu clave.",
+    "guidedLink": "¿Es tu primera app de IA? Haz la configuración guiada",
+    "search": "Buscar entre {{count}} servicios",
+    "chooseAnother": "Elegir otro servicio",
+    "pickTitle": "Elige un servicio de la lista",
+    "pickBody": "Necesitas una cuenta y una clave de API del servicio.",
+    "groups": {
+      "cloud": "Servicios en la nube",
+      "local": "En tu computadora o red",
+      "custom": "Cualquier otro servicio"
+    },
+    "subtitle": {
+      "custom": "Tu propio endpoint",
+      "local": "Se ejecuta en tu computadora"
+    },
+    "form": {
+      "address": "Dirección",
+      "addressHintLocal": "Dónde se ejecuta el servidor",
+      "addressHintCustom": "La URL base de la API",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "Clave de API",
+      "apiKeyOptional": "Clave de API (opcional)",
+      "apiKeyHint": "Se guarda cifrada en este dispositivo",
+      "apiKeyPlaceholder": "Pega tu clave",
+      "name": "Nombre",
+      "nameHint": "Cómo aparece en tus menús",
+      "namePlaceholder": "Mi {{name}}"
+    },
+    "error": {
+      "rejected": "No se aceptó esta clave",
+      "unreachable": "No se pudo contactar con {{name}}. Comprueba tu conexión."
+    }
+  },
+  "guide": {
+    "previousPicture": "Imagen anterior",
+    "nextPicture": "Imagen siguiente",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Captura de pantalla",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Pega tu clave",
+      "geminiBody": "Pega la clave que acabas de copiar de Google AI Studio. La comprobamos con Google y luego te mostramos los modelos que desbloquea.",
+      "openrouterBody": "Pega la clave que copiaste de OpenRouter. Empieza por sk-or. La comprobamos y luego te mostramos los modelos que puedes usar.",
+      "geminiPlaceholder": "Pega tu clave de API",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Se guarda cifrada en este dispositivo. Solo se envía a {{name}} cuando chateas."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Abre Google AI Studio",
+        "body": "Google AI Studio es el sitio oficial de Google donde se crea tu clave gratuita de Gemini. Ábrelo en tu navegador con el botón de abajo. Cuando cargue la página, inicia sesión con tu cuenta normal de Google haciendo clic en Empezar en la esquina superior derecha. Si ya has iniciado sesión, pasarás directamente.",
+        "open": "Abrir Google AI Studio",
+        "slide1": "Haz clic en Empezar en la esquina superior derecha."
+      },
+      "find": {
+        "title": "Encuentra las claves de API",
+        "body": "Ahora deberías estar en el espacio de trabajo principal de Google AI Studio. Las claves de API no están en la pantalla principal, sino en la barra lateral que recorre el lado izquierdo de la página. Busca cerca de la parte inferior de esa barra un pequeño icono de llave y haz clic en él para abrir la página donde se gestionan las claves.",
+        "slide1": "Haz clic en el icono de llave en la parte inferior izquierda de la barra lateral."
+      },
+      "create": {
+        "title": "Crea tu clave",
+        "body": "Crear una clave requiere una breve secuencia de clics, y las imágenes muestran cada uno en orden. Primero abre el diálogo de nueva clave desde la esquina superior derecha, luego crea un proyecto en el que vivir la clave, ponle al proyecto el nombre que quieras y, por último, crea la clave en sí. Usa las flechas de la derecha para recorrer cada pantalla.",
+        "slide1": "Haz clic en Crear clave de API en la esquina superior derecha.",
+        "slide2": "Abre el desplegable y haz clic en Crear proyecto.",
+        "slide3": "Ponle el nombre que quieras y haz clic en Crear proyecto.",
+        "slide4": "Con tu proyecto seleccionado, haz clic en Crear clave."
+      },
+      "copy": {
+        "title": "Copia tu clave",
+        "body": "Tu clave se ha creado y ahora se muestra completa. Haz clic en el icono de copiar de al lado para copiar toda la clave al portapapeles. Es la única vez que Google muestra la clave completa, así que cópiala ahora antes de cerrar el diálogo y luego vuelve aquí para pegarla.",
+        "slide1": "Haz clic en el icono de copiar para copiar tu clave de API."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Abre Google AI Studio",
+        "body": "Google AI Studio es el sitio oficial de Google donde se crea tu clave gratuita de Gemini. Ábrelo en tu navegador con el botón de abajo y te acompañaremos para conseguir una clave. Las dos imágenes muestran exactamente dónde tocar cuando cargue la página, así que desliza entre ellas si no tienes claro dónde mirar.",
+        "open": "Abrir Google AI Studio",
+        "slide1": "Toca el menú en la esquina superior derecha.",
+        "slide2": "Luego toca Empezar abajo."
+      },
+      "find": {
+        "title": "Encuentra las claves de API",
+        "body": "Ahora deberías haber iniciado sesión y estar en la página principal de Google AI Studio. La parte que necesitas está escondida dentro del menú lateral, no en la pantalla principal. Abre ese menú y mira justo abajo del todo para encontrar un pequeño icono de llave. Al tocarlo irás directamente a la página donde se crean las claves.",
+        "slide1": "Abre el menú en la esquina superior izquierda.",
+        "slide2": "Toca el icono de llave en la parte inferior del menú."
+      },
+      "start": {
+        "title": "Empieza una clave nueva",
+        "body": "Esta es tu página de claves de API y está vacía ahora mismo porque aún no has creado ninguna. Es completamente normal. El botón que inicia el proceso está en la esquina superior derecha de la pantalla, así que tócalo para empezar a crear tu primera clave.",
+        "slide1": "Toca Crear clave de API en la esquina superior derecha."
+      },
+      "project": {
+        "title": "Crea primero un proyecto",
+        "body": "Antes de darte una clave, Google pregunta a qué proyecto debe pertenecer. Un proyecto es solo una carpeta que Google usa para organizarlo todo, y aún no tienes ninguno. Crea un proyecto nuevo y ponle el nombre que quieras, como LettuceAI. El nombre no afecta a nada, así que elige el que te resulte más fácil.",
+        "slide1": "Abre el desplegable y toca Crear proyecto.",
+        "slide2": "Ponle el nombre que quieras y toca Crear proyecto."
+      },
+      "create": {
+        "title": "Crea y copia tu clave",
+        "body": "Con tu nuevo proyecto seleccionado, crea la clave en sí. Cuando aparezca, cópiala enseguida con el icono de copiar. Es la única vez que Google te muestra la clave completa, así que es importante copiarla ahora antes de cerrar la ventana. La pegarás en la app en el siguiente paso.",
+        "slide1": "Con tu proyecto seleccionado, toca Crear clave.",
+        "slide2": "Toca el icono de copiar para copiar tu clave."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Crea tu cuenta",
+        "body": "OpenRouter es un único servicio que te conecta con cientos de modelos de IA de muchas empresas distintas, todo con una sola cuenta y una sola clave. Ábrelo en tu navegador con el botón de abajo y crea una cuenta gratuita. El botón Registrarse está en la esquina superior derecha de la página.",
+        "open": "Abrir OpenRouter",
+        "slide1": "Haz clic en Registrarse en la esquina superior derecha."
+      },
+      "key": {
+        "title": "Obtén tu clave de API",
+        "body": "Después de registrarte, OpenRouter pregunta cómo piensas usarlo. Elige Individual, la opción correcta para uso personal. En cuanto lo hagas, creará tu primera clave de API y la mostrará en pantalla. Copia esa clave ahora. Empieza por sk-or y la pegarás en la app en un momento.",
+        "slide1": "Elige Individual cuando te lo pregunte.",
+        "slide2": "Copia tu nueva clave de API (empieza por sk-or)."
+      },
+      "payment": {
+        "title": "Añade un método de pago",
+        "body": "Los modelos de pago cobran una cantidad muy pequeña por cada mensaje, así que OpenRouter necesita una tarjeta registrada antes de ejecutarlos. Añade ahora tus datos de facturación para desbloquear los modelos. En este paso no se cobra nada; solo confirma quién eres y te permite gastar saldo más adelante.",
+        "slide1": "Rellena tus datos de facturación.",
+        "slide2": "Todo listo cuando se añada."
+      },
+      "credits": {
+        "title": "Añade saldo",
+        "body": "El saldo es el importe que paga tus mensajes mientras chateas. Abre la página Créditos desde la barra lateral y recarga una cantidad pequeña para empezar. Incluso unos pocos dólares duran mucho con la mayoría de los modelos, y siempre puedes añadir más cuando te quedes corto.",
+        "slide1": "Abre Créditos desde la barra lateral.",
+        "slide2": "Haz clic en Añadir créditos y elige una cantidad."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Crea tu cuenta",
+        "body": "OpenRouter es un único servicio que te conecta con cientos de modelos de IA de muchas empresas distintas, todo con una sola cuenta y una sola clave. Ábrelo en tu navegador con el botón de abajo y crea una cuenta gratuita. El botón Registrarse está en la esquina superior derecha de la página.",
+        "open": "Abrir OpenRouter",
+        "slide1": "Toca Registrarse en la esquina superior derecha."
+      },
+      "key": {
+        "title": "Obtén tu clave de API",
+        "body": "Después de registrarte, OpenRouter pregunta cómo piensas usarlo. Elige Individual, la opción correcta para uso personal. En cuanto lo hagas, creará tu primera clave de API y la mostrará en pantalla. Copia esa clave ahora. Empieza por sk-or y la pegarás en la app en un momento.",
+        "slide1": "Elige Individual cuando te lo pregunte.",
+        "slide2": "Copia tu nueva clave de API (empieza por sk-or)."
+      },
+      "payment": {
+        "title": "Añade un método de pago",
+        "body": "Los modelos de pago cobran una cantidad muy pequeña por cada mensaje, así que OpenRouter necesita una tarjeta registrada antes de ejecutarlos. Añade ahora tus datos de facturación para desbloquear los modelos. En este paso no se cobra nada; solo confirma quién eres y te permite gastar saldo más adelante.",
+        "slide1": "Rellena tus datos de facturación.",
+        "slide2": "Todo listo cuando se añada."
+      },
+      "credits": {
+        "title": "Añade saldo",
+        "body": "El saldo es el importe que paga tus mensajes mientras chateas. Abre el menú, ve a la página Créditos y recarga una cantidad pequeña para empezar. Incluso unos pocos dólares duran mucho con la mayoría de los modelos, y siempre puedes añadir más cuando te quedes corto.",
+        "slide1": "Abre el menú y ve a Créditos.",
+        "slide2": "Toca Añadir créditos y elige una cantidad."
+      }
+    }
+  },
+  "model": {
+    "title": "Elige un modelo",
+    "lead": "Elige el modelo de {{name}} que escribe las respuestas. Puedes cambiarlo o añadir más cuando quieras.",
+    "model": "Modelo",
+    "modelId": "Id del modelo",
+    "modelIdHint": "El id exacto que espera el servicio",
+    "modelIdPlaceholder": "nombre-del-modelo",
+    "choose": "Elegir entre {{count}} modelos",
+    "customId": "Id personalizado",
+    "displayName": "Nombre visible",
+    "displayNameHint": "Lo que ves dentro de la app",
+    "displayNamePlaceholder": "Mi modelo",
+    "connected": "Conectado",
+    "context": "Contexto",
+    "contextTokens": "{{value}} tokens",
+    "contextSuffix": "{{value}} de contexto",
+    "images": "Entiende imágenes",
+    "yes": "Sí",
+    "no": "No",
+    "inputPerMillion": "Entrada, por millón",
+    "outputPerMillion": "Salida, por millón",
+    "emptyTitle": "Aún no has elegido un modelo",
+    "emptyBody": "Aquí se muestran su tamaño de contexto y sus precios.",
+    "free": "Gratis",
+    "priceIn": "entrada",
+    "priceOut": "salida",
+    "picker": {
+      "title": "Modelos de {{name}}",
+      "search": "Buscar entre {{count}} modelos",
+      "filter": "Filtrar modelos",
+      "layout": "Diseño",
+      "list": "Lista",
+      "twoPerRow": "Dos por fila",
+      "onlyFree": "Solo modelos gratuitos",
+      "none": "Ningún modelo coincide con estos filtros.",
+      "useId": "Usar <mono>{{id}}</mono>",
+      "useIdBody": "No está en la lista: usa este id exacto",
+      "priceNote": "Precios por millón de tokens, de {{name}}.",
+      "loading": "Cargando modelos"
+    },
+    "filters": {
+      "title": "Filtrar modelos",
+      "madeBy": "Creado por",
+      "capabilities": "Capacidades",
+      "imagesTitle": "Entiende imágenes",
+      "imagesBody": "Puede leer las imágenes que envías en un chat",
+      "sortBy": "Ordenar por",
+      "sortName": "Nombre",
+      "sortPrice": "Más barato",
+      "sortContext": "Contexto más largo",
+      "clear": "Borrar",
+      "show_one": "Mostrar {{count}} modelo",
+      "show_many": "Mostrar {{count}} modelos",
+      "show_other": "Mostrar {{count}} modelos"
+    }
+  },
+  "memory": {
+    "title": "¿Cómo deberían recordar los personajes?",
+    "lead": "Los personajes olvidan lo que queda fuera de los mensajes recientes. Elige cómo vuelven las partes importantes. Puedes cambiarlo en cada chat más adelante.",
+    "group": "Memoria",
+    "recommended": "Recomendado",
+    "classic": "Clásica",
+    "detailTitle": "Memoria {{title}}",
+    "automatic": {
+      "title": "Automática",
+      "point1": "Un modelo pequeño en tu dispositivo elige lo importante y lo recupera cuando hace falta",
+      "point2": "Los chats largos se mantienen coherentes",
+      "point3": "Se envían menos tokens, así que las respuestas cuestan menos",
+      "note": "Requiere una descarga única. Después funciona sin conexión."
+    },
+    "manual": {
+      "title": "Manual",
+      "point1": "Tú fijas mensajes y escribes los datos",
+      "point2": "Control total sobre lo que se recuerda",
+      "point3": "No se ejecuta nada en segundo plano",
+      "note": "No hay nada que descargar."
+    }
+  },
+  "other": {
+    "title": "Otras opciones",
+    "language": "Idioma",
+    "skip": "Omitir la configuración",
+    "skipBody": "Primero echa un vistazo. Los chats necesitan una IA para poder responder.",
+    "restore": "Restaurar una copia de seguridad",
+    "restoreBody": "Recupera chats, personajes y ajustes de un archivo .lettuce",
+    "languageTitle": "Idioma",
+    "warning": {
+      "title": "Los chats necesitan una IA para poder responder",
+      "body": "Sin una IA conectada, los personajes no pueden responder. Puedes conectar una más tarde en los ajustes.",
+      "connect": "Conectar una IA",
+      "skipAnyway": "Omitir igualmente"
+    }
+  },
+  "failure": {
+    "finish": "No se pudo terminar la configuración.",
+    "models": "No se pudieron cargar los modelos.",
+    "save": "No se pudo guardar."
+  }
+}

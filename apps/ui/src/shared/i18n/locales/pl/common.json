@@ -1,0 +1,177 @@
+{
+  "onnxModelsUnloaded": "Zwolniono bezczynne modele, aby zwolnić pamięć: {{models}}. Zostaną ponownie załadowane, gdy będą potrzebne.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Łączenie z aplikacją…"
+  },
+  "navigation": {
+    "primary": "Nawigacja główna",
+    "chats": "Czaty",
+    "groups": "Grupy",
+    "discover": "Odkrywaj",
+    "library": "Biblioteka",
+    "settings": "Ustawienia",
+    "home": "Główna",
+    "create": "Utwórz",
+    "collapse": "Zwiń",
+    "collapseSidebar": "Zwiń pasek boczny",
+    "expandSidebar": "Rozwiń pasek boczny",
+    "backToApp": "Wróć do aplikacji"
+  },
+  "downloads": {
+    "loading": "Ładowanie pobrań",
+    "title": "Pobrania",
+    "titleActive_one": "Pobrania: jedno aktywne",
+    "titleActive_few": "Pobrania: {{count}} aktywne",
+    "titleActive_many": "Pobrania: {{count}} aktywnych",
+    "titleActive_other": "Pobrania: {{count}} aktywnego",
+    "empty": "Nic się nie pobiera.",
+    "emptyBody": "Instalacje i aktualizacje pojawią się tutaj.",
+    "generic": "Pobierz",
+    "done": "{{name}} jest gotowe",
+    "failed": "Nie udało się pobrać {{name}}"
+  },
+  "window": {
+    "minimize": "Minimalizuj",
+    "maximize": "Maksymalizuj",
+    "close": "Zamknij okno",
+    "failed": "Nie udało się wykonać akcji okna. Spróbuj ponownie."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Inne"
+  },
+  "actions": {
+    "retry": "Spróbuj ponownie",
+    "cancel": "Anuluj",
+    "reload": "Przeładuj"
+  },
+  "errors": {
+    "fatalTitle": "Coś poszło nie tak",
+    "fatalDescription": "Aplikacja napotkała nieoczekiwany problem. Przeładowanie zwykle go rozwiązuje.",
+    "loadTitle": "Nie udało się tego załadować",
+    "notFoundTitle": "Nic tu nie ma",
+    "notFoundDescription": "Ta strona nie istnieje w aplikacji.",
+    "code": {
+      "not_found": "Już nie istnieje.",
+      "in_use": "Jest nadal w użyciu. Usuń odwołania i spróbuj ponownie.",
+      "malformed": "Dostawca zwrócił nieczytelną odpowiedź.",
+      "conflict": "Zmieniło się gdzie indziej. Odśwież i spróbuj ponownie.",
+      "invalid_input": "Coś w żądaniu jest nieprawidłowe.",
+      "unsupported": "To nie jest tu obsługiwane.",
+      "unavailable": "Jest teraz niedostępne.",
+      "cancelled": "Zostało anulowane.",
+      "busy": "Aplikacja jest zajęta. Spróbuj za chwilę.",
+      "internal": "Aplikacja napotkała błąd wewnętrzny.",
+      "model_required": "Wymagany model nie jest zainstalowany.",
+      "model_unavailable": "Nie udało się załadować wymaganego modelu.",
+      "transport": "Nie można połączyć się z backendem aplikacji."
+    }
+  },
+  "create": {
+    "group": "Utwórz grupę",
+    "groupBody": "Połącz postacie w czacie",
+    "title": "Utwórz",
+    "description": "Ktoś do rozmowy albo świat dla niego.",
+    "character": "Utwórz postać",
+    "characterBody": "Imię, wygląd, osobowość i sceny początkowe",
+    "persona": "Utwórz personę",
+    "personaBody": "Kim jesteś w czatach",
+    "lorebook": "Utwórz lorebook",
+    "lorebookBody": "Fakty o świecie — napisane samodzielnie, z pliku lub z AI",
+    "import": "Importuj kartę",
+    "importBody": "Karta postaci PNG lub JSON",
+    "imported": "Zaimportowano postać",
+    "discover": "Przeglądaj Odkrywaj",
+    "discoverBody": "Postacie udostępnione przez innych"
+  },
+  "providerSelect": {
+    "placeholder": "Wybierz dostawcę",
+    "title": "Dostawca",
+    "empty": "Brak dostępnych dostawców.",
+    "groups": {
+      "cloud": "Chmura",
+      "local": "Lokalne",
+      "custom": "Niestandardowe"
+    }
+  },
+  "designReferences": {
+    "note": "Notatka o wyglądzie",
+    "notePlaceholder": "Krótkie włosy, okrągłe okulary, długi szary płaszcz",
+    "noteHint": "Wygląd w kilku słowach. Używane do generowanych obrazów scen.",
+    "images": "Obrazy referencyjne",
+    "imagesHint": "Kilka obrazów pokazujących wygląd.",
+    "add": "Dodaj obraz",
+    "remove": "Usuń obraz"
+  },
+  "memoryDownload": {
+    "title": "Pobierz model pamięci",
+    "titleDone": "Pamięć jest gotowa",
+    "body": "Automatyczna pamięć wymaga małego modelu na tym urządzeniu. Pobiera się raz, potem działa offline.",
+    "bodyDone": "Twoje postacie będą teraz pamiętać, co ważne, nawet w długich czatach. Możesz to wyłączyć dla każdego czatu.",
+    "modelName": "Model pamięci Lettuce Eidos",
+    "keepOpen": "Nie zamykaj aplikacji, aż się zakończy.",
+    "download": "Pobierz i zakończ",
+    "downloading": "Pobieranie",
+    "checking": "Sprawdzanie modelu",
+    "useManual": "Użyj pamięci ręcznej",
+    "doneDetail": "Zainstalowano i przetestowano · działa offline",
+    "failedOffline": "Utracono połączenie. Spróbuj ponownie, aby kontynuować.",
+    "failedOther": "Pobieranie nie zostało ukończone. Spróbuj ponownie, aby kontynuować.",
+    "downloadOnly": "Pobierz",
+    "bodyInstall": "Dynamiczna pamięć wymaga małego modelu na tym urządzeniu. Pobiera się raz, potem działa offline.",
+    "failureCode": {
+      "integrity_failure": "Pobrane dane są uszkodzone. Spróbuj ponownie, aby kontynuować.",
+      "resource_unavailable": "Serwer modeli jest teraz niedostępny. Spróbuj ponownie, aby kontynuować.",
+      "storage_failure": "Nie udało się zapisać modelu na tym urządzeniu. Sprawdź wolne miejsce i spróbuj ponownie.",
+      "timed_out": "Pobieranie trwało zbyt długo. Spróbuj ponownie, aby kontynuować."
+    }
+  },
+  "emotionDownload": {
+    "title": "Pobierz model emocji",
+    "titleDone": "Uczucia są gotowe",
+    "body": "Tryb towarzysza odczytuje uczucie za każdą wiadomością za pomocą małego modelu na tym urządzeniu. Pobiera się raz, potem działa offline.",
+    "bodyDone": "Każda odpowiedź może teraz zmieniać uczucia twoich towarzyszy i waszą bliskość.",
+    "download": "Pobierz",
+    "close": "Nie teraz",
+    "finish": "Gotowe"
+  },
+  "structuredFallback": {
+    "title": "Gdy model nie obsługuje narzędzi",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Kompaktowy. Działa z większością modeli."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Dla modeli, które piszą XML pewniej niż JSON."
+      }
+    },
+    "hint": "Najpierw próbowane są wywołania narzędzi. Ten format jest używany tylko wtedy, gdy model ich nie obsługuje."
+  },
+  "promptPicker": {
+    "builtIn": "Wbudowany",
+    "builtInBody": "Własny prompt aplikacji",
+    "builtInMissing": "Wbudowany prompt jest niedostępny",
+    "search": "Szukaj promptów",
+    "clearSearch": "Wyczyść wyszukiwanie",
+    "noMatches": "Brak pasujących promptów",
+    "manage": "Prompty systemowe",
+    "manageBody": "Utwórz lub edytuj prompt",
+    "close": "Zamknij"
+  },
+  "lorebookPicker": {
+    "title": "Lorebooki",
+    "done": "Gotowe",
+    "empty": "Nie ma jeszcze lorebooków",
+    "emptyBody": "Utworzone lub zaimportowane lorebooki pojawią się tutaj.",
+    "edit": "Edytuj {{name}}"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "generate": "Avatar oluştur",
+  "title": "Avatar oluştur",
+  "bannerCrop": {
+    "title": "Banner'ı konumlandır",
+    "description": "Kapağı çerçeveleyin. Taşımak için sürükleyin; yakınlaştırmak için iki parmakla kaydırın veya tekerleği çevirin.",
+    "saveFailed": "Banner kaydedilemedi"
+  },
+  "crop": {
+    "title": "Avatarı konumlandır",
+    "description": "Taşımak için sürükleyin. Yakınlaştırmak için iki parmakla kaydırın veya tekerleği çevirin.",
+    "zoom": "Yakınlaştırma",
+    "zoomIn": "Yakınlaştır",
+    "zoomOut": "Uzaklaştır",
+    "center": "Ortala",
+    "area": "Çerçeveleme alanı",
+    "keyboard": "Ok tuşları resmi taşır. Artı ve eksi yakınlaştırır, C ortalar, 0 sıfırlar.",
+    "reset": "Sıfırla",
+    "apply": "Bu konumu kullan",
+    "loadFailed": "Görsel yüklenemedi",
+    "saveFailed": "Avatar kaydedilemedi"
+  },
+  "preview": {
+    "empty": "Henüz görsel yok",
+    "emptyBody": "Aşağıda bir avatar tanımlayın veya kendi görselinizle başlayın.",
+    "alt": "Avatar önizlemesi",
+    "unchanged": "Formda zaten bulunan avatar",
+    "editedFrom": "{{version}} sürümünden: {{request}}"
+  },
+  "versions": {
+    "label": "Sürümler",
+    "count_one": "{{count}} sürüm",
+    "count_other": "{{count}} sürüm",
+    "current": "Mevcut avatar",
+    "upload": "Yüklenen görsel {{number}}",
+    "generation": "Oluşturulan görsel {{number}}",
+    "edit": "Düzenlenen görsel {{number}}",
+    "short": {
+      "current": "Mevcut",
+      "upload": "Yükle {{number}}",
+      "generation": "Görsel {{number}}",
+      "edit": "Düzenle {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Görsel yükle"
+  },
+  "mode": {
+    "label": "Ne yapılacak",
+    "generate": "Yeni görsel",
+    "edit": "Seçileni düzenle",
+    "generateHint": "Yalnızca açıklamadan baştan başlar",
+    "editHint": "{{version}} sürümünün bir kopyasını değiştirir"
+  },
+  "prompt": {
+    "label": "Avatarı tanımlayın",
+    "placeholder": "Örgü atkılı, gülümseyen bir tilki, yumuşak ışık"
+  },
+  "instruction": {
+    "label": "Neyin değişeceği",
+    "placeholder": "Atkıyı mavi yap"
+  },
+  "actions": {
+    "generate": "Oluştur",
+    "edit": "Düzenlemeyi uygula",
+    "cancel": "İptal",
+    "use": "Bu avatarı kullan",
+    "retry": "Tekrar deneyin"
+  },
+  "busy": {
+    "uploading": "Görsel ekleniyor",
+    "generating": "Görsel oluşturuluyor",
+    "editing": "Görsel düzenleniyor",
+    "cancelling": "İptal ediliyor"
+  },
+  "job": {
+    "progress": "{{current}} / {{total}}",
+    "rejected_one": "{{count}} sonuç bir kenara ayrıldı",
+    "rejected_other": "{{count}} sonuç bir kenara ayrıldı",
+    "cancelled": "Oluşturma iptal edildi"
+  },
+  "settings": {
+    "open": "Görsel ayarlarını aç"
+  },
+  "notice": {
+    "options": {
+      "title": "Avatar modeli kontrol edilemedi",
+      "body": "Yükleme yine de çalışır."
+    },
+    "disabled": {
+      "title": "Avatar oluşturma kapalı",
+      "body": "Oluşturmak için görsel ayarlarında açın. Yükleme yine de çalışır."
+    },
+    "noModel": {
+      "title": "Avatar modeli seçilmedi",
+      "body": "Görsel kabul edip döndüren bir model seçin. Yükleme yine de çalışır."
+    },
+    "incompatible": {
+      "title": "Bu model avatar oluşturamıyor",
+      "body": "Avatarlar için görsel kabul edip döndüren bir model gerekir. Yükleme yine de çalışır."
+    },
+    "upload": {
+      "title": "Görsel eklenemedi"
+    },
+    "generation": {
+      "title": "Görsel oluşturulamadı"
+    },
+    "cancellation": {
+      "title": "İptal edilemedi",
+      "body": "İstek hâlâ çalışıyor olabilir. Tekrar iptal etmeyi deneyin."
+    },
+    "uncertain": {
+      "title": "Sonuç bekleniyor",
+      "body": "Sonuç gelmeden bağlantı kesildi. Yeniden bağlanmak için tekrar deneyin veya isteği iptal edin."
+    }
+  },
+  "failure": {
+    "cancelled": "Oluşturma iptal edildi.",
+    "setup": "Görsel modeli doğru şekilde kurulmamış. Görsel ayarlarında kontrol edin.",
+    "invalidRequest": "İstek kabul edilmedi. Açıklamayı değiştirip tekrar deneyin.",
+    "engine": "Görsel motoru bitmeden durdu.",
+    "timedOut": "Görsel oluşturmak çok uzun sürdü.",
+    "memory": "Görsel modelinin belleği tükendi.",
+    "storage": "Görsel kaydedilemedi.",
+    "provider": "Sağlayıcı görseli oluşturamadı.",
+    "empty": "Hiçbir görsel dönmedi.",
+    "rejected": "Sonuç bir kenara ayrıldı ve hiçbir şey döndürülmedi.",
+    "refused": "Model bu görseli oluşturmayı reddetti. Açıklamayı değiştirip tekrar deneyin.",
+    "authentication": "Sağlayıcı kimlik bilgilerini reddetti. Sağlayıcıyı ayarlardan kontrol edin.",
+    "unavailable": "Görsel modeli şu anda kullanılamıyor.",
+    "unknown": "Görsel oluşturulurken bir şeyler ters gitti."
+  }
+}

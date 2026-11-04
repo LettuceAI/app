@@ -1,0 +1,103 @@
+{
+  "title": "Obrolan",
+  "homeTitle": "Beranda",
+  "characters": "Karakter",
+  "search": "Cari obrolan",
+  "searchCharacters": "Cari karakter",
+  "count": "{{shown}} dari {{total}}",
+  "noDescription": "Belum ada deskripsi",
+  "lastChat": "Obrolan terakhir {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Lanjutkan obrolan",
+  "empty": {
+    "title": "Belum ada karakter",
+    "body": "Buat seseorang untuk diajak bicara, atau impor kartu karakter dari disk.",
+    "create": "Buat karakter"
+  },
+  "noMatch": {
+    "title": "Tidak ada yang cocok dengan “{{query}}”",
+    "body": "Coba nama, atau kata dari deskripsi karakter.",
+    "clear": "Hapus pencarian"
+  },
+  "view": {
+    "label": "Tampilan",
+    "current": "Tampilan: {{view}}",
+    "home": "Beranda",
+    "list": "Daftar",
+    "hero": "Hero"
+  },
+  "layout": {
+    "title": "Tata Letak",
+    "body": "Cara Obrolan menampilkan karakter Anda.",
+    "current": "Tata letak: {{layout}}",
+    "list": {
+      "title": "Daftar",
+      "body": "Setiap karakter sebagai kartu, seperti tampilannya saat ini"
+    },
+    "recent": {
+      "title": "Terbaru",
+      "body": "Semua obrolan, terbaru lebih dulu, dengan baris terakhir tempat obrolan berhenti"
+    }
+  },
+  "recent": {
+    "today": "Hari ini",
+    "week": "Minggu ini",
+    "earlier": "Sebelumnya",
+    "empty": "Belum ada obrolan"
+  },
+  "menu": {
+    "history": "Riwayat obrolan",
+    "historyBody": "Obrolan sebelumnya dengan karakter ini",
+    "edit": "Edit karakter",
+    "cardStyle": "Gaya kartu",
+    "cardRow": "Baris, ganti ke banner",
+    "cardBanner": "Banner, ganti ke baris",
+    "export": "Ekspor",
+    "exportBody": "Sebagai kartu karakter",
+    "hide": "Sembunyikan dari Obrolan",
+    "hideBody": "Tetap ada di perpustakaan Anda",
+    "delete": "Hapus karakter",
+    "deleteTitle": "Hapus {{name}}?",
+    "deleteBody": "Karakter dan obrolan pribadinya akan dihapus. Tindakan ini tidak dapat dibatalkan.",
+    "noChats": "Belum ada obrolan"
+  },
+  "export": {
+    "title": "Format ekspor",
+    "body": "Pilih format",
+    "done": "Disimpan sebagai {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Format Unified Entity Card (.uec) (disarankan)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "JSON Character Card V3 (spesifikasi terbaru)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "JSON Character Card V2 (spesifikasi Tavern)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Edit obrolan",
+    "editCharacter": "Edit karakter",
+    "editGroup": "Edit grup",
+    "rename": "Ubah nama",
+    "renameTitle": "Ubah nama obrolan",
+    "save": "Simpan",
+    "delete": "Hapus obrolan",
+    "deleteTitle": "Hapus {{title}}?",
+    "deleteBody": "Karakter tetap ada; cerita ini dihapus."
+  },
+  "sidebar": {
+    "label": "Obrolan terbaru",
+    "empty": "Obrolan yang Anda mulai akan muncul di sini."
+  },
+  "discover": {
+    "title": "Jelajahi",
+    "soonTitle": "Jelajahi segera hadir",
+    "soonBody": "Tempat untuk menemukan dan berbagi karakter buatan komunitas. Kami sedang membangunnya di server kami sendiri, dengan moderasi sejak hari pertama.",
+    "create": "Buat karakter",
+    "discord": "Ikuti perkembangannya di Discord"
+  }
+}

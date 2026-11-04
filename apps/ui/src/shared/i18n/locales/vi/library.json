@@ -1,0 +1,121 @@
+{
+  "triggerPreview": "Xem trước kích hoạt",
+  "title": "Thư viện",
+  "loadMore": "Tải thêm",
+  "search": "Tìm trong thư viện",
+  "show": "Hiển thị",
+  "filters": {
+    "all": "Tất cả",
+    "characters": "Nhân vật",
+    "personas": "Persona",
+    "lorebooks": "Sách lore",
+    "images": "Hình ảnh",
+    "audio": "Âm thanh"
+  },
+  "kinds": {
+    "character": "Nhân vật",
+    "persona": "Persona",
+    "lorebook": "Sách lore"
+  },
+  "you": "Bạn",
+  "entries_other": "{{count}} mục",
+  "defaultPersona": "Persona · mặc định của bạn",
+  "menu": {
+    "start": "Bắt đầu trò chuyện",
+    "edit_character": "Sửa nhân vật",
+    "edit_persona": "Sửa persona",
+    "edit_lorebook": "Sửa sách lore",
+    "default": "Đặt làm persona mặc định",
+    "defaultHint": "Cho các cuộc trò chuyện không chọn persona khác",
+    "export": "Xuất",
+    "export_character": "Thành thẻ nhân vật",
+    "export_persona": "Thành tệp UEC",
+    "export_lorebook": "Thành tệp UEC hoặc JSON",
+    "delete_character": "Xóa nhân vật",
+    "delete_persona": "Xóa persona",
+    "delete_lorebook": "Xóa sách lore",
+    "save": "Lưu vào thiết bị",
+    "deleteImage": "Xóa hình ảnh",
+    "deleteAudio": "Xóa bản ghi âm",
+    "avatar": "Dùng làm ảnh đại diện của {{name}}",
+    "more": "Thêm cho {{name}}",
+    "background": "Ảnh nền",
+    "generated": "Được tạo",
+    "uploaded": "Đã tải lên"
+  },
+  "create": {
+    "title": "Tạo",
+    "description": "Thêm thứ gì đó vào thư viện.",
+    "character": "Một người để trò chuyện",
+    "persona": "Bạn là ai trong cuộc trò chuyện",
+    "lorebook": "Thông tin thế giới để nhân vật dựa vào",
+    "import": "Nhập tệp",
+    "importHint": "Thẻ nhân vật, persona hoặc sách lore",
+    "new_character": "Nhân vật mới",
+    "new_lorebook": "Sách lore mới",
+    "button_character": "Tạo nhân vật",
+    "button_persona": "Tạo persona",
+    "button_lorebook": "Tạo sách lore"
+  },
+  "edit": {
+    "name": "Tên",
+    "hint_character": "Hiển thị trên thẻ và ở đầu cuộc trò chuyện.",
+    "placeholder_character": "ví dụ: Cassian",
+    "placeholder_lorebook": "ví dụ: Cổng phía bắc",
+    "create": "Tạo",
+    "cancel": "Hủy"
+  },
+  "delete": {
+    "title": "Xóa {{name}}?",
+    "confirm": "Xóa",
+    "character": "Các cuộc trò chuyện và ký ức của nhân vật cũng bị xóa theo.",
+    "persona": "Persona sẽ bị gỡ khỏi các cuộc trò chuyện đang dùng.",
+    "lorebook": "Nhân vật và cuộc trò chuyện dùng sách này sẽ mất quyền truy cập các mục của nó.",
+    "image": "Hình ảnh sẽ bị gỡ khỏi thiết bị này. Hình ảnh vẫn đang được dùng không thể xóa.",
+    "audio": "Bản ghi âm sẽ bị gỡ khỏi thiết bị này. Bản ghi vẫn đang được dùng không thể xóa."
+  },
+  "empty": {
+    "all": {
+      "title": "Thư viện đang trống",
+      "description": "Nhân vật, persona và sách lore bạn tạo hoặc nhập được lưu ở đây."
+    },
+    "characters": {
+      "title": "Chưa có nhân vật nào",
+      "description": "Nhân vật là người bạn trò chuyện cùng: một cái tên, một quá khứ, một cách nói chuyện."
+    },
+    "personas": {
+      "title": "Chưa có persona nào",
+      "description": "Persona là bạn trong cuộc trò chuyện. Nhân vật thấy tên và mô tả của persona."
+    },
+    "lorebooks": {
+      "title": "Chưa có sách lore",
+      "description": "Thông tin thế giới để nhân vật dựa vào khi được nhắc đến trong cuộc trò chuyện."
+    },
+    "images": {
+      "title": "Chưa có hình ảnh nào",
+      "description": "Hình ảnh được tạo trong cuộc trò chuyện được lưu ở đây."
+    },
+    "audio": {
+      "title": "Chưa có âm thanh nào",
+      "description": "Lời thoại được tạo hoặc ghi âm được lưu ở đây."
+    },
+    "matches": "Không có kết quả cho “{{query}}”",
+    "searchAll": "Thử tên khác, hoặc một phần của mô tả.",
+    "searchSection": "Không có gì trong mục này khớp. Phần còn lại của thư viện có thể có.",
+    "clear": "Xóa tìm kiếm",
+    "everything": "Tìm trong toàn bộ thư viện",
+    "import": "Nhập"
+  },
+  "toast": {
+    "created": "Đã thêm {{name}}",
+    "deleted": "Đã xóa {{name}}",
+    "default": "{{name}} là persona mặc định của bạn",
+    "exported": "Đã xuất tệp",
+    "imported": "Đã nhập tệp",
+    "warnings_other": "Đã chuyển tệp kèm {{count}} cảnh báo",
+    "mediaSaved": "Đã lưu vào thiết bị",
+    "avatar": "Đã cập nhật ảnh đại diện"
+  },
+  "draft": "Bản nháp",
+  "untitledDraft": "Bản nháp sách lore chưa đặt tên"
+}

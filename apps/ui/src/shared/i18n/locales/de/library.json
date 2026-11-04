@@ -1,0 +1,123 @@
+{
+  "triggerPreview": "Trigger-Vorschau",
+  "title": "Bibliothek",
+  "loadMore": "Mehr laden",
+  "search": "Bibliothek durchsuchen",
+  "show": "Anzeigen",
+  "filters": {
+    "all": "Alle",
+    "characters": "Charaktere",
+    "personas": "Personas",
+    "lorebooks": "Lorebooks",
+    "images": "Bilder",
+    "audio": "Audio"
+  },
+  "kinds": {
+    "character": "Charakter",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "Du",
+  "entries_one": "{{count}} Eintrag",
+  "entries_other": "{{count}} Einträge",
+  "defaultPersona": "Persona · dein Standard",
+  "menu": {
+    "start": "Chat starten",
+    "edit_character": "Charakter bearbeiten",
+    "edit_persona": "Persona bearbeiten",
+    "edit_lorebook": "Lorebook bearbeiten",
+    "default": "Als Standard-Persona verwenden",
+    "defaultHint": "Für Chats, die keine andere wählen",
+    "export": "Exportieren",
+    "export_character": "Als Charakterkarte",
+    "export_persona": "Als UEC-Datei",
+    "export_lorebook": "Als UEC- oder JSON-Datei",
+    "delete_character": "Charakter löschen",
+    "delete_persona": "Persona löschen",
+    "delete_lorebook": "Lorebook löschen",
+    "save": "Auf Gerät speichern",
+    "deleteImage": "Bild löschen",
+    "deleteAudio": "Aufnahme löschen",
+    "avatar": "Als Avatar für {{name}} verwenden",
+    "more": "Mehr für {{name}}",
+    "background": "Hintergrund",
+    "generated": "Generiert",
+    "uploaded": "Hochgeladen"
+  },
+  "create": {
+    "title": "Erstellen",
+    "description": "Füge deiner Bibliothek etwas hinzu.",
+    "character": "Jemand zum Reden",
+    "persona": "Wer du in einem Chat bist",
+    "lorebook": "Weltwissen, aus dem ein Charakter schöpfen kann",
+    "import": "Datei importieren",
+    "importHint": "Charakterkarte, Persona oder Lorebook",
+    "new_character": "Neuer Charakter",
+    "new_lorebook": "Neues Lorebook",
+    "button_character": "Charakter erstellen",
+    "button_persona": "Persona erstellen",
+    "button_lorebook": "Lorebook erstellen"
+  },
+  "edit": {
+    "name": "Name",
+    "hint_character": "Wird auf der Karte und im Chat-Kopf angezeigt.",
+    "placeholder_character": "z. B. Cassian",
+    "placeholder_lorebook": "z. B. Das Nordtor",
+    "create": "Erstellen",
+    "cancel": "Abbrechen"
+  },
+  "delete": {
+    "title": "{{name}} löschen?",
+    "confirm": "Löschen",
+    "character": "Die zugehörigen Chats und Erinnerungen werden mitgelöscht.",
+    "persona": "Die Persona wird aus Chats entfernt, die sie verwenden.",
+    "lorebook": "Charaktere und Chats, die es verwenden, verlieren den Zugriff auf seine Einträge.",
+    "image": "Das Bild wird von diesem Gerät entfernt. Bilder, die noch verwendet werden, können nicht gelöscht werden.",
+    "audio": "Die Aufnahme wird von diesem Gerät entfernt. Aufnahmen, die noch verwendet werden, können nicht gelöscht werden."
+  },
+  "empty": {
+    "all": {
+      "title": "Deine Bibliothek ist leer",
+      "description": "Charaktere, Personas und Lorebooks, die du erstellst oder importierst, werden hier aufbewahrt."
+    },
+    "characters": {
+      "title": "Noch keine Charaktere",
+      "description": "Ein Charakter ist, mit wem du sprichst: ein Name, eine Geschichte, eine Art zu sprechen."
+    },
+    "personas": {
+      "title": "Noch keine Personas",
+      "description": "Eine Persona ist, wer du in einem Chat bist. Charaktere sehen ihren Namen und ihre Beschreibung."
+    },
+    "lorebooks": {
+      "title": "Noch keine Lorebooks",
+      "description": "Weltwissen, aus dem ein Charakter schöpfen kann, wenn es im Gespräch zur Sprache kommt."
+    },
+    "images": {
+      "title": "Noch keine Bilder",
+      "description": "Bilder, die du in einem Chat generierst, werden hier aufbewahrt."
+    },
+    "audio": {
+      "title": "Noch kein Audio",
+      "description": "Sprachzeilen, die du generierst oder aufnimmst, werden hier aufbewahrt."
+    },
+    "matches": "Nichts passt zu „{{query}}“",
+    "searchAll": "Versuch es mit einem anderen Namen oder einem Teil einer Beschreibung.",
+    "searchSection": "In diesem Bereich passt nichts. Vielleicht im Rest deiner Bibliothek.",
+    "clear": "Suche löschen",
+    "everything": "Alles durchsuchen",
+    "import": "Importieren"
+  },
+  "toast": {
+    "created": "{{name}} hinzugefügt",
+    "deleted": "{{name}} gelöscht",
+    "default": "{{name}} ist deine Standard-Persona",
+    "exported": "Datei exportiert",
+    "imported": "Datei importiert",
+    "warnings_one": "Datei mit {{count}} Warnung übertragen",
+    "warnings_other": "Datei mit {{count}} Warnungen übertragen",
+    "mediaSaved": "Auf Gerät gespeichert",
+    "avatar": "Avatar aktualisiert"
+  },
+  "draft": "Entwurf",
+  "untitledDraft": "Unbenannter Lorebook-Entwurf"
+}

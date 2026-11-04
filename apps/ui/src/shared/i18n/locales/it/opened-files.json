@@ -1,0 +1,79 @@
+{
+  "cancel": "Annulla",
+  "retry": "Riprova",
+  "notRecognized": "Questo file non è una scheda o un backup di LettuceAI.",
+  "import": {
+    "title": {
+      "character": "Importa personaggio",
+      "persona": "Importa persona",
+      "lorebook": "Importa lorebook"
+    },
+    "kind": {
+      "character": "Personaggio",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_one": "{{count}} voce",
+    "entries_many": "{{count}} voci",
+    "entries_other": "{{count}} voci",
+    "confirm": "Importa",
+    "open": "Apri",
+    "done": "{{name}} importato",
+    "started": "Importazione avviata",
+    "warnings_one": "Importato con {{count}} avviso",
+    "warnings_many": "Importato con {{count}} avvisi",
+    "warnings_other": "Importato con {{count}} avvisi"
+  },
+  "restore": {
+    "title": "Ripristina backup",
+    "created": "Creato",
+    "version": "Versione dell'app",
+    "password": "Password",
+    "warning": "Il ripristino sostituisce tutte le chat, i personaggi e le impostazioni di questo dispositivo con il backup. I tuoi dati attuali vengono conservati come file separato.",
+    "action": "Ripristina",
+    "stop": "Interrompi",
+    "running": "Ripristino in corso",
+    "starting": "Avvio del ripristino",
+    "waiting": "In attesa che il ripristino inizi",
+    "step": "Passo {{step}} di {{total}}",
+    "keepOpen": "I backup di grandi dimensioni possono richiedere diversi minuti. Tieni l'app aperta finché non termina.",
+    "stages": {
+      "decode": "Apertura del backup",
+      "stage": "Preparazione dei file",
+      "write": "Scrittura dei tuoi dati",
+      "verify": "Verifica dei dati ripristinati",
+      "switch": "Passaggio ai dati ripristinati"
+    },
+    "failed": "Il ripristino si è fermato",
+    "failedAt": "Il ripristino si è fermato al passo {{step}} di {{total}}: {{stage}}",
+    "confirmTitle": "Sostituire tutto su questo dispositivo?",
+    "confirmBody": "Tutte le chat, i personaggi e le impostazioni vengono sostituiti con questo backup. I tuoi dati attuali vengono conservati come file separato.",
+    "confirm": "Ripristina",
+    "done": "Backup ripristinato",
+    "notBackup": "Quel file non è un backup di LettuceAI.",
+    "models": {
+      "title": "Scarica i modelli richiesti dai tuoi dati",
+      "required": "Senza di essi queste funzioni smettono di funzionare, quindi vanno scaricati prima di continuare."
+    },
+    "warnings_one": "Backup ripristinato con {{count}} avviso",
+    "warnings_many": "Backup ripristinato con {{count}} avvisi",
+    "warnings_other": "Backup ripristinato con {{count}} avvisi",
+    "failure": {
+      "unknown": "Impossibile ripristinare il backup.",
+      "backup_authentication": "La password è errata o il backup è danneggiato.",
+      "backup_invalid_envelope": "Questo file non è un backup valido.",
+      "backup_limit_exceeded": "Questo backup è più grande di quanto l'app possa ripristinare.",
+      "backup_unavailable": "I backup non sono disponibili al momento.",
+      "backup_file_not_found": "Impossibile trovare il file di backup.",
+      "backup_permission_denied": "L'app non è autorizzata a leggere questo file.",
+      "backup_file_busy": "Il file è in uso da un'altra app.",
+      "backup_file_unavailable": "Impossibile leggere il file di backup.",
+      "backup_file_unsupported": "Questo backup è stato creato da una versione che l'app non riesce a leggere.",
+      "backup_source_is_target": "Il backup è il file che l'app sta usando.",
+      "backup_cancelled": "Il ripristino è stato annullato.",
+      "backup_retry_required": "Il ripristino non è terminato. Riprova.",
+      "backup_recovery_required": "Il ripristino richiede che l'app venga riaperta.",
+      "backup_verification_failed": "Il backup non ha superato la verifica."
+    }
+  }
+}

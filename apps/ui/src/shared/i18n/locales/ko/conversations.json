@@ -1,0 +1,1154 @@
+{
+  "sceneImage": {
+    "title": "장면 이미지 생성",
+    "regenerate": "장면 이미지 다시 생성",
+    "hint": "채팅의 이 순간을 그려 보세요",
+    "write": "프롬프트 작성",
+    "writeHint": "그림을 직접 설명하세요",
+    "askAi": "AI에게 프롬프트 작성 요청",
+    "askAiHint": "채팅과 디자인 참조를 사용해요",
+    "rewrite": "AI로 다시 쓰기",
+    "prompt": "장면 프롬프트",
+    "promptHint": "그림을 만들기 전에 프롬프트를 검토하거나 편집하세요.",
+    "cast": "그림에 나올 사람",
+    "castHint": "장면에 누가 나올지 선택하세요.",
+    "castPersona": "내 페르소나",
+    "castEmpty": "장면에 넣을 사람을 최소 한 명 선택하세요.",
+    "placeholder": "캐릭터, 배경, 순간을 설명하세요…",
+    "generate": "이미지 생성",
+    "review": "장면 이미지 검토",
+    "requested": "장면 이미지가 검토를 기다려요",
+    "requestedHint": "그림을 만들기 전에 프롬프트를 확인하세요.",
+    "retry": "다시 시도",
+    "dismiss": "닫기",
+    "disabled": "장면 생성이 꺼져 있어요",
+    "noModel": "호환되는 장면 이미지 모델이 없어요",
+    "noWriter": "이미지 설정에서 호환되는 프롬프트 작성기를 선택하세요",
+    "setupHint": "설정에서 장면 생성을 켜고 이미지 모델을 선택하세요.",
+    "settings": "이미지 설정 열기",
+    "writing": "장면 프롬프트 작성 중",
+    "thinking": "장면 구상 중",
+    "generating": "장면 이미지 생성 중",
+    "attaching": "메시지에 장면 이미지 추가 중",
+    "progress": "{{total}}개 중 {{current}}개",
+    "queuePosition": "대기열 {{position}}번",
+    "phase": {
+      "starting": "이미지 엔진 시작 중",
+      "loading": "이미지 모델 불러오는 중",
+      "sampling": "장면 이미지 생성 중",
+      "queued": "장면 이미지 생성을 기다리는 중",
+      "generating": "장면 이미지 생성 중",
+      "retrying": "장면 생성 재시도 중",
+      "cancelled": "장면 생성 취소 중"
+    },
+    "failed": "장면 이미지를 생성하지 못했어요",
+    "promptFailed": "장면 프롬프트를 작성하지 못했어요",
+    "writerError": {
+      "scene_prompt_disabled": "이미지 설정에서 장면 생성이 꺼져 있어요.",
+      "scene_prompt_no_model": "이미지 설정에서 호환되는 장면 프롬프트 작성기를 선택하세요.",
+      "scene_prompt_no_reply": "프롬프트 작성기가 텍스트를 반환하지 않았어요. 다시 시도하거나 직접 프롬프트를 작성하세요.",
+      "cancelled": "프롬프트 작성이 취소됐어요.",
+      "failed": "다시 시도하거나 직접 프롬프트를 작성하세요."
+    },
+    "error": {
+      "media_unavailable": "이미지 저장소를 사용할 수 없어요.",
+      "disabled": "이미지 설정에서 장면 생성이 꺼져 있어요.",
+      "no_model": "이미지 설정에서 호환되는 장면 이미지 모델을 선택하세요.",
+      "no_image": "모델이 이미지를 반환하지 않았어요.",
+      "message_unavailable": "이미지를 추가하기 전에 답장이 변경됐어요.",
+      "interrupted": "생성이 중단됐어요. 다시 시도할 수 있어요.",
+      "failed": "프롬프트를 검토하고 다시 시도하세요."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "그룹 채팅으로 분기",
+    "characterTitle": "다른 캐릭터로 분기",
+    "history": "선택한 메시지까지 이 채팅과 기억을 복사해요.",
+    "sourceLocked": "현재 캐릭터는 그룹에 남아 있어요. 최소 한 명 더 선택하세요.",
+    "characters": "캐릭터",
+    "defaultName": "{{name}} 분기",
+    "search": "캐릭터 검색",
+    "empty": "캐릭터를 찾지 못했어요",
+    "create": "분기 만들기",
+    "memberCount_other": "캐릭터 {{count}}명 선택됨",
+    "changed": "이 채팅이 변경됐어요. 분기 지점을 다시 선택하세요.",
+    "chooseAgain": "다시 선택"
+  },
+  "historyPage": {
+    "archivedCharacter": "이 캐릭터를 라이브러리에서 복원해야 새 채팅을 시작할 수 있어요."
+  },
+  "header": {
+    "back": "뒤로",
+    "memories": "기억, {{count}}",
+    "memoriesBusy": "기억, 최신 답장 읽는 중",
+    "search": "메시지 검색",
+    "options": "채팅 옵션",
+    "onDevice": "기기 내",
+    "untitled": "채팅"
+  },
+  "search": {
+    "placeholder": "이 채팅에서 검색",
+    "done": "완료",
+    "previous": "이전 일치",
+    "next": "다음 일치",
+    "position": "{{total}}개 중 {{index}}개",
+    "none": "일치 항목 없음"
+  },
+  "timeline": {
+    "today": "오늘",
+    "yesterday": "어제",
+    "loadingOlder": "이전 메시지 불러오는 중",
+    "empty": "아직 메시지가 없어요",
+    "jumpToLatest": "최신으로 이동",
+    "selectingSpeaker": "캐릭터 선택 중…"
+  },
+  "composer": {
+    "placeholder": "{{name}}에게 메시지…",
+    "systemSend": {
+      "title": "시스템 메시지로 보낼까요?",
+      "description": "작성창 내용을 보이는 시스템 메시지로 보내요. 생성을 시작하지 않아요.",
+      "send": "보내기"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "캐릭터 추가",
+      "title": "캐릭터 추가",
+      "body": "지금부터 이 채팅에 참여해요.",
+      "search": "캐릭터 검색",
+      "empty": "모든 캐릭터가 이미 이 채팅에 있어요",
+      "noMatch": "일치하는 캐릭터가 없어요"
+    },
+    "remove": {
+      "label": "{{name}} 제거",
+      "title": "{{name}} 제거할까요?",
+      "body": "이 채팅에서 답변을 멈춰요. 이전 메시지는 남아 있어요.",
+      "confirm": "제거"
+    },
+    "followGroup": "그룹 구성원 따르기",
+    "followGroupHint": "구성원과 음소거한 캐릭터를 그룹 설정으로 초기화",
+    "models": "이 채팅의 캐릭터 모델",
+    "followModels": "그룹 모델 따르기",
+    "followModelsHint": "이 채팅의 모든 캐릭터 모델 재정의 제거",
+    "characterModel": "캐릭터 모델",
+    "characterModelHint": "캐릭터 자체 모델 설정 사용"
+  },
+  "mention": {
+    "title": "캐릭터 멘션",
+    "select": "선택",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "{{name}} 멘션",
+    "unmention": "{{name}} 멘션 제거",
+    "muted": "{{name}} 음소거됨. 길게 누르거나 우클릭해 해제하세요",
+    "speak": "{{name}} 응답시키기"
+  },
+  "director": {
+    "hint": "캐릭터를 눌러 누가 응답할지 선택하세요",
+    "selectedHint": "전송하면 {{name}} 응답해요",
+    "actionHint": "전송은 내 메시지만 추가해요. 캐릭터를 누르면 즉시 응답해요",
+    "respondingHint": "{{name}} 응답 중",
+    "addMessage": "답장 없이 메시지 추가",
+    "noAttachments": "디렉터 모드의 메시지에는 첨부 파일을 넣을 수 없어요"
+  },
+  "speaker": {
+    "speak": {
+      "title": "다음 화자",
+      "body": "답할 구성원을 고르거나 그룹이 정하게 하세요."
+    },
+    "branch": {
+      "title": "1:1로 이어가기",
+      "body": "한 구성원과 이 메시지까지의 이야기로 새 채팅을 열어요."
+    },
+    "regenerate": {
+      "title": "캐릭터 선택",
+      "body": "이 답장에만 적용돼요. 음소거한 구성원도 고를 수 있어요.",
+      "same": "같은 캐릭터",
+      "search": "캐릭터 검색",
+      "noMatches": "검색과 일치하는 캐릭터가 없어요"
+    },
+    "auto": "그룹이 정하게 하기",
+    "autoBody": "이 채팅의 화자 선택을 사용해요",
+    "muted": "이름이 불릴 때만 응답"
+  },
+  "message": {
+    "image": "첨부 이미지",
+    "imagePrompt": "이미지 프롬프트",
+    "copyImagePrompt": "프롬프트 복사",
+    "titleAssistant": "{{name}}의 메시지",
+    "titleUser": "내 메시지",
+    "titleScene": "장면",
+    "titleSystem": "시스템 메시지",
+    "audio": "오디오 클립",
+    "video": "동영상 파일",
+    "document": "문서"
+  },
+  "menu": {
+    "selection": {
+      "title": "이 캐릭터가 응답한 이유",
+      "fallback": "LLM 선택을 사용할 수 없어 참여도와 최근 답장으로 골랐어요."
+    },
+    "copy": "텍스트 복사",
+    "edit": "편집",
+    "regenerate": "재생성",
+    "regenerateHint": "이 버전을 유지하고, 넘겨서 비교하세요",
+    "regenerateBusy": "현재 답장이 끝날 때까지 기다리세요",
+    "pin": "고정",
+    "pinHint": "캐릭터가 항상 기억해요",
+    "unpin": "고정 해제",
+    "rewind": "여기로 되돌리기",
+    "rewindHint_other": "그 뒤 메시지 {{count}}개를 제거해요",
+    "delete": "메시지 삭제",
+    "deleteHint": "먼저 고정을 해제하세요",
+    "branch": "여기서 분기",
+    "branchHint": "여기까지의 이야기로 새 채팅을 열어요",
+    "branchGroup": "1:1로 이어가기",
+    "branchGroupHint": "한 구성원과 여기까지의 이야기로 채팅을 열어요",
+    "details": {
+      "title": "프롬프트 상세",
+      "hint": "이 답장에 보낸 내용",
+      "unavailable": "이 답장의 기록된 프롬프트를 사용할 수 없어요",
+      "noBreakdown": "이 답장은 분석 기능이 생기기 전에 기록됐어요",
+      "tokens": "{{count}} 토큰",
+      "character": "캐릭터 및 페르소나",
+      "lorebook": "로어북",
+      "memories": "기억",
+      "history": "채팅 기록",
+      "other": "기타",
+      "entries": "로어북 항목",
+      "untitled": "제목 없는 항목",
+      "partsLabel": "출처별 프롬프트 비중"
+    },
+    "stats": {
+      "prompt": "프롬프트 토큰",
+      "reply": "답장 토큰",
+      "total": "총계",
+      "firstToken": "첫 토큰까지 시간",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "답장 속도",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "멀티 토큰 예측: 라운드당 토큰과 초안 채택률",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "사용된 로어북 항목",
+      "memories": "사용된 기억",
+      "memory": "기억",
+      "match": "일치 {{score}}",
+      "noLorebooks": "이 답장에는 로어북 항목이 사용되지 않았어요.",
+      "noMemories": "이 답장에는 기억 항목이 사용되지 않았어요.",
+      "notRecorded": "이 답장에는 이 상세 정보가 기록되지 않았어요.",
+      "searchEntries": "사용된 항목 검색",
+      "searchMemories": "사용된 기억 검색",
+      "noMatches": "검색과 일치하는 항목이 없어요.",
+      "showing": "{{total}}개 중 {{shown}}개",
+      "more": "더 보기"
+    }
+  },
+  "regeneration": {
+    "title": "재생성 옵션",
+    "hint": "방향 및 모델",
+    "groupHint": "방향, 모델 및 캐릭터",
+    "oneReply": "이 답장에만",
+    "direction": "방향",
+    "directionHint": "선택 사항이에요. 새 답장에서 무엇을 바꿀지 설명하세요.",
+    "placeholder": "더 짧게, 말투를 바꾸거나 다른 방향으로",
+    "model": "답장 모델",
+    "usualModel": "평소 모델 사용",
+    "modelUnavailable": "이 모델은 더 이상 사용할 수 없어요. 다른 모델을 선택하세요.",
+    "character": "캐릭터",
+    "sameCharacter": "같은 캐릭터: {{name}}",
+    "characterUnavailable": "이 캐릭터는 더 이상 구성원이 아니에요. 다른 캐릭터를 선택하세요."
+  },
+  "edit": {
+    "title": "메시지 편집",
+    "assistantHint": "이야기가 기억할 {{name}}의 말",
+    "field": "메시지 텍스트",
+    "save": "저장"
+  },
+  "confirm": {
+    "cancel": "취소",
+    "rewindTitle": "이 메시지로 되돌릴까요?",
+    "rewindBody_other": "그 뒤 메시지 {{count}}개가 제거되고 이야기가 여기서 이어져요.",
+    "rewind": "되돌리기",
+    "deleteTitle": "이 메시지를 삭제할까요?",
+    "deleteBodyVersions": "이 메시지의 모든 버전 {{count}}개가 채팅에서 제거돼요.",
+    "deleteBody": "채팅과 캐릭터가 기억하는 내용에서 제거돼요.",
+    "delete": "삭제"
+  },
+  "banner": {
+    "modelRequired": "이 채팅에는 설치되지 않은 모델이 필요해요.",
+    "modelNamed": "이 채팅에는 설치되지 않은 {{model}} 모델이 필요해요.",
+    "modelsMissing": "이 채팅에는 설치되지 않은 모델이 필요해요: {{models}}.",
+    "openModels": "모델 열기",
+    "memoryBlocked": "이전 되돌리기를 끝내지 못해 메모리가 일시 중지됐어요.",
+    "memoryRetry": "다시 시도",
+    "memoryRetryStill": "그래도 끝내지 못했어요.",
+    "memoryRetried": "메모리가 정상으로 돌아왔어요",
+    "swapActive": "역할 바꾸기가 켜져 있어요",
+    "endSwap": "역할 바꾸기 종료"
+  },
+  "requiredModel": {
+    "embedding": "임베딩",
+    "emotion": "감정"
+  },
+  "failure": {
+    "title": "답장이 끝나지 않았어요",
+    "retry": "다시 시도",
+    "code": {
+      "invalid_conversation": "지금은 이 대화에 쓸 수 없어요.",
+      "missing_model": "이 채팅에 설정된 모델이 없어요. 채팅 옵션에서 고르거나 모델에서 추가하세요.",
+      "context_unavailable": "모델에 맞게 대화를 준비하지 못했어요.",
+      "speaker_unavailable": "응답할 수 있는 사람이 없어요.",
+      "provider_unavailable": "모델에 연결하지 못했어요. 연결과 제공자를 확인하세요.",
+      "provider_rejected": "제공자가 요청을 거부했어요. 다른 모델을 쓰거나 계정을 확인하세요.",
+      "empty_output": "모델이 아무것도 보내지 않았어요.",
+      "timed_out": "모델 응답이 너무 오래 걸렸어요.",
+      "recovery_unavailable": "답장이 중단됐고 복구할 수 없어요.",
+      "embedding_unavailable": "메모리에 필요한 임베딩 모델을 사용할 수 없어요.",
+      "internal": "앱에 내부 오류가 발생했어요.",
+      "database_write_fenced": "앱이 데이터를 저장하느라 바빠요. 잠시 후 다시 시도하세요."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "모델 불러오는 중",
+      "retrying": "모델 로드 재시도 중"
+    },
+    "loading": "{{model}} 불러오는 중, {{percent}}%",
+    "retrying": "{{model}} 다른 방법으로 불러오는 중, {{percent}}%",
+    "loaded": "{{model}} 준비 완료",
+    "failed": "{{model}} 불러오기 실패"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "채팅에 이미지가 있는 동안 빠른 디코딩이 꺼져요.",
+    "kv_cache_moved_to_ram": "컨텍스트 캐시가 비디오 메모리에 들어가지 않아 시스템 메모리로 옮겨졌어요."
+  },
+  "toast": {
+    "copied": "복사됨",
+    "copyFailed": "클립보드에 접근하지 못했어요",
+    "pinned": "고정했어요. 캐릭터가 계속 기억해요",
+    "unpinned": "고정 해제됨",
+    "edited": "메시지를 업데이트했어요",
+    "deleted": "메시지를 삭제했어요",
+    "branched": "여기서 새 채팅을 열었어요",
+    "rewound_other": "메시지 {{count}}개를 되돌렸어요",
+    "launchFailed": "채팅을 시작하지 못했어요",
+    "mediaImageUnsupported": "이 채팅의 모델은 이미지를 읽을 수 없어요. 이미지를 제거하거나 다른 모델을 선택하세요.",
+    "mediaAudioUnsupported": "이 채팅의 모델은 오디오를 들을 수 없어요. 오디오를 제거하거나 다른 모델을 선택하세요."
+  },
+  "crisp": {
+    "composerPlaceholder": "메시지…",
+    "composerMessage": "메시지",
+    "composerStop": "생성 중지",
+    "composerSend": "메시지 보내기",
+    "composerSendAsSystem": "길게 누르거나 우클릭해 시스템 메시지로 보내기",
+    "composerSending": "보내는 중",
+    "composerContinue": "캐릭터가 계속하도록 하기",
+    "messageScene": "장면",
+    "messageSystem": "시스템",
+    "messagePinned": "고정됨",
+    "messageMenuTitle": "메시지",
+    "messageReasoning": "사고 과정",
+    "messageTyping": "입력 중",
+    "sheetClose": "닫기",
+    "bannerDismiss": "닫기",
+    "alertDismiss": "닫기",
+    "composerAddAttachment": "콘텐츠 추가",
+    "composerCancelRecording": "녹음 취소",
+    "composerRecordVoice": "음성 녹음",
+    "composerStopAndTranscribe": "중지하고 전사",
+    "composerTranscribing": "전사 중",
+    "composerRecording": "녹음 중 {{elapsed}}",
+    "composerAttachment": "첨부 파일",
+    "composerFile": "파일",
+    "composerAttachmentRemove": "{{name}} 제거"
+  },
+  "streaming": {
+    "imagePrompt": "이미지 프롬프트 작성 중"
+  },
+  "tools": {
+    "title": "콘텐츠 추가",
+    "helpMeReply": "답장 도와줘",
+    "helpMeReplyHint": "모델이 할 말을 제안하게 하기",
+    "persona": "페르소나",
+    "background": "채팅 배경",
+    "backgroundHidden": "숨김",
+    "backgroundOwn": "이 채팅에 설정됨",
+    "backgroundDefault": "기본값 사용 중",
+    "backgroundNone": "배경 없음",
+    "note": "작가 노트",
+    "noteActive": "이 채팅에서 활성",
+    "noteInactive": "답장을 위한 비공개 지시",
+    "dice": "주사위",
+    "diceHint": "주사위를 굴려 결과를 메시지에 추가해요",
+    "swap": "역할 바꾸기",
+    "swapHint": "캐릭터로 채팅하고 모델이 내 페르소나로 답하게 해요",
+    "swapOn": "역할 바꾸기(켜짐)",
+    "swapOnHint": "캐릭터로 채팅 중이에요. 눌러서 끄세요",
+    "uploadImage": "이미지 업로드",
+    "uploadImageHint": "메시지에 이미지를 첨부해요",
+    "uploadAudio": "오디오 업로드",
+    "uploadAudioHint": "메시지에 오디오 클립을 첨부해요"
+  },
+  "persona": {
+    "title": "페르소나",
+    "none": "페르소나 없음",
+    "default": "기본",
+    "search": "페르소나 검색",
+    "noMatch": "일치하는 페르소나가 없어요",
+    "emptyTitle": "아직 페르소나가 없어요",
+    "emptyBody": "라이브러리에서 만들어 특정 인물로 말하세요.",
+    "loading": "페르소나 불러오는 중",
+    "loadFailed": "페르소나를 불러오지 못했어요",
+    "retry": "다시 시도"
+  },
+  "background": {
+    "title": "채팅 배경",
+    "current": "현재 배경",
+    "currentOwn": "이 채팅에 설정됨",
+    "currentDefault": "기본 배경",
+    "choose": "이미지 선택",
+    "replace": "이미지 교체",
+    "chooseHint": "이 채팅에만 적용",
+    "useDefault": "기본값 사용",
+    "useDefaultHint": "장면 또는 캐릭터 배경으로 돌아가기"
+  },
+  "note": {
+    "title": "작가 노트",
+    "inlineTitle": "인라인 편집기",
+    "inlineHint": "빠른 편집을 위해 메시지 상자 위에 작가 노트 표시",
+    "inlineToggle": "인라인 작가 노트 편집기 표시",
+    "inlineField": "인라인 작가 노트",
+    "inlineEdit": "인라인 작가 노트 편집",
+    "inlinePlaceholder": "작가 노트 추가",
+    "saving": "저장 중...",
+    "hint": "모델이 이 채팅에서 따르는 비공개 지시",
+    "placeholder": "모델을 이끄는 작가 노트를 작성하세요",
+    "save": "저장",
+    "clear": "제거",
+    "count_other": "{{count}}자",
+    "willRemove": "저장하면 노트가 제거돼요",
+    "none": "저장된 노트 없음"
+  },
+  "dice": {
+    "title": "주사위",
+    "hint": "주사위를 굴려 결과를 메시지에 추가해요",
+    "notation": "주사위 표기",
+    "roll": "굴리기",
+    "invalid": "1d20 또는 2d6+3 같은 표기를 사용하세요",
+    "tapToRoll": "굴려서 결과 보기",
+    "insert": "메시지에 삽입",
+    "recent": "최근",
+    "clear": "지우기"
+  },
+  "help": {
+    "title": "답장 도와줘",
+    "draftPrompt": "작성 중인 메시지가 있어요. 어떻게 할까요?",
+    "useMyText": "내 텍스트를 기반으로",
+    "useMyTextHint": "초안을 확장하고 개선해요",
+    "writeNew": "새로 쓰기",
+    "writeNewHint": "새 답장을 생성해요",
+    "resultTitle": "추천 답장",
+    "regenerate": "다시 시도",
+    "use": "이것 사용",
+    "writing": "답장 작성 중...",
+    "thinking": "쓰기 전에 생각 중...",
+    "callError": {
+      "model_required": "설정에서 답장 도우미 모델을 선택하세요.",
+      "model_unavailable": "답장 도우미 모델을 불러오지 못했어요.",
+      "busy": "앱이 처리 중이에요. 잠시 후 다시 시도하세요.",
+      "unavailable": "지금은 사용할 수 없어요."
+    },
+    "error": {
+      "failed": "답장 도우미가 실패했어요.",
+      "help_me_reply_disabled": "답장 도우미가 설정에서 꺼져 있어요.",
+      "help_me_reply_no_history": "아직 답할 내용이 없어요.",
+      "help_me_reply_no_model": "설정에서 답장 도우미 모델을 선택하세요.",
+      "help_me_reply_no_reply": "모델이 답장을 쓰지 않았어요."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "교정을 배울까요?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "배우기",
+      "ignore": "무시"
+    },
+    "error": {
+      "noModel": "받아쓰기를 사용하려면 음성 인식 모델을 설치하세요.",
+      "permission": "녹음하려면 마이크 접근을 허용하세요.",
+      "noMicrophone": "마이크를 찾지 못했어요.",
+      "noAudio": "아무것도 녹음되지 않았어요.",
+      "busy": "다른 녹음이 진행 중이에요.",
+      "unsupported": "이 기기에서는 마이크로 녹음할 수 없어요.",
+      "failed": "녹음을 전사하지 못했어요."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "채팅 설정",
+      "persona": "페르소나",
+      "model": "모델",
+      "lorebooks": "로어북",
+      "background": "채팅 배경",
+      "note": "작가 노트",
+      "history": "채팅 기록",
+      "notes": "예약 노트",
+      "starters": "새 채팅",
+      "advanced": "모델 설정",
+      "appearance": "외관"
+    },
+    "back": "뒤로",
+    "reset": "초기화",
+    "loading": "불러오는 중",
+    "loadFailed": "불러오지 못했어요",
+    "source": {
+      "conversation": "이 채팅만",
+      "group": "그룹에서",
+      "character": "캐릭터에서",
+      "launch": "채팅 시작 방식에서",
+      "app_default": "앱 기본값"
+    },
+    "meta": {
+      "messages_other": "메시지 {{count}}개",
+      "active": "{{date}} 활동"
+    },
+    "sections": {
+      "chat": "이 채팅",
+      "memory": "메모리",
+      "time": "시간",
+      "actions": "채팅",
+      "generation": "생성",
+      "lorebooks": "로어북",
+      "members": "구성원",
+      "speaker": "화자 선택"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "기본 모델로 누가 말할지 선택해요(토큰 사용)",
+      "heuristic": "휴리스틱",
+      "heuristicHint": "참여 균형과 문맥 단서를 사용해요(무료)",
+      "round_robin": "순환",
+      "round_robinHint": "캐릭터가 순서대로 돌아가며 말해요(무료)",
+      "director": "디렉터",
+      "directorHint": "각 메시지에 어떤 캐릭터가 응답할지 내가 골라요",
+      "style": "디렉터 스타일",
+      "cue": "큐",
+      "action": "액션",
+      "cueHint": "캐릭터를 눌러 누가 응답할지 고르세요. 전송하면 내 메시지가 전달되고 그 캐릭터가 답장해요.",
+      "actionHint": "전송은 내 메시지만 추가해요. 캐릭터 아바타를 누르면 즉시 응답해요.",
+      "own": "이 채팅은 자체 선택을 사용해요"
+    },
+    "members": {
+      "replies_other": "답장 {{count}}개, {{percent}}",
+      "muted": "이름이 불릴 때만 응답",
+      "last": "최소 한 명은 답해야 해요",
+      "answers": "이 채팅에서 {{name}} 답변"
+    },
+    "model": {
+      "title": "모델",
+      "none": "설정된 모델 없음",
+      "search": "모델 검색",
+      "useDefault": "캐릭터 기본값 사용",
+      "useDefaultHint": "캐릭터를 따른 뒤 앱 기본값을 따라요",
+      "remoteTitle": "원격 모델을 사용할까요?",
+      "remoteBody": "이 채팅은 답장마다 {{provider}}에 전송돼요.",
+      "use": "이 모델 사용",
+      "unknown": "알 수 없는 모델"
+    },
+    "lorebooks": {
+      "title": "로어북",
+      "count_other": "{{count}}개 로어북",
+      "useDefault": "기본 로어북 사용",
+      "useDefaultHint": "캐릭터의 로어북을 따라요",
+      "useCharacter": "캐릭터의 로어북 사용"
+    },
+    "background": {
+      "set": "이미지 설정됨"
+    },
+    "memory": {
+      "mode": "메모리 모드",
+      "modes": {
+        "manual": "수동",
+        "dynamic": "동적",
+        "disabled": "끔"
+      },
+      "open": "기억 열기",
+      "items_other": "기억 {{count}}개",
+      "summaryTokens_other": "요약 토큰 {{count}}개",
+      "off": "이 채팅은 메모리가 꺼져 있어요"
+    },
+    "notes": {
+      "title": "예약 노트",
+      "rowHint": "캐릭터가 정해진 시간에 보는 알림",
+      "groupRowHint": "그룹과 구성원이 정해진 시간에 보는 알림",
+      "hint": "노트는 캐릭터에 속하며 그 캐릭터와의 모든 채팅에 표시돼요.",
+      "groupHint": "노트는 그룹에 속하며 이 그룹의 모든 채팅에 표시돼요.",
+      "empty": "아직 예약 노트가 없어요.",
+      "add": "노트 추가",
+      "untitled": "제목 없는 노트",
+      "label": "라벨",
+      "labelPlaceholder": "라벨(선택)",
+      "content": "노트",
+      "contentPlaceholder": "캐릭터가 무엇을 알아야 하나요?",
+      "groupContentPlaceholder": "그룹이 무엇을 알아야 하나요?",
+      "startsOn": "시작일",
+      "stopsOn": "종료일(선택)",
+      "repeats": "반복",
+      "windowHours": "표시 기간(시간)",
+      "enabled": "활성화",
+      "enabledHint": "삭제하지 않고 노트를 끄기",
+      "deleteTitle": "이 노트를 삭제할까요?",
+      "deleteBody": "되돌릴 수 없어요.",
+      "recurrence": {
+        "none": "한 번",
+        "daily": "매일",
+        "weekly": "매주",
+        "monthly": "매월",
+        "yearly": "매년"
+      },
+      "whoSees": "볼 사람",
+      "whoSeesHint": "선택한 캐릭터만 이 노트를 읽어요.",
+      "everyone": "모든 구성원이 이 노트를 읽어요. 캐릭터를 골라 제한할 수 있어요.",
+      "useCharacter": "캐릭터 노트 사용"
+    },
+    "history": {
+      "filter": "채팅 필터",
+      "filters": {
+        "all": "전체",
+        "active": "활성",
+        "archived": "보관됨"
+      },
+      "sort": "채팅 정렬",
+      "sorts": {
+        "recent": "최근 사용",
+        "oldest": "오래된 순"
+      },
+      "results_other": "채팅 {{formattedCount}}개",
+      "untitled": "제목 없는 채팅",
+      "search": "채팅 검색",
+      "noMatch": "일치하는 채팅이 없어요",
+      "empty": "아직 채팅이 없어요",
+      "meta_other": "메시지 {{count}}개 · {{date}}",
+      "current": "현재",
+      "archived": "보관됨",
+      "actions": "{{title}} 작업",
+      "rename": "이름 바꾸기",
+      "export": "내보내기",
+      "archive": "보관",
+      "restore": "복원",
+      "delete": "삭제"
+    },
+    "starters": {
+      "hint": "캐릭터의 채팅 템플릿 중 하나로 시작하세요.",
+      "none": "템플릿 없이 시작"
+    },
+    "rename": {
+      "field": "채팅 제목",
+      "save": "제목 저장",
+      "open": "채팅 이름 바꾸기"
+    },
+    "delete": {
+      "title": "이 채팅을 삭제할까요?",
+      "body": "{{title}} 및 모든 메시지가 제거돼요. 되돌릴 수 없어요.",
+      "confirm": "삭제"
+    },
+    "export": {
+      "done": "채팅을 내보냈어요"
+    },
+    "duplicate": {
+      "done": "채팅을 복제했어요"
+    },
+    "actions": {
+      "newChat": "새 채팅",
+      "newChatHint": "이 캐릭터와 다른 대화를 시작해요",
+      "newGroupChatHint": "이 그룹과 다른 대화를 시작해요",
+      "history": "채팅 기록",
+      "historyHint": "이전 채팅을 열거나 이름을 바꾸거나 삭제해요",
+      "branches": "분기",
+      "branchesHint": "이 채팅이 갈라진 방향 사이를 전환해요",
+      "duplicate": "채팅 복제",
+      "duplicateHint": "모든 메시지와 함께 사본을 만들어요",
+      "export": "채팅 내보내기",
+      "exportHint": "대화를 파일로 저장해요",
+      "import": "채팅 로그 가져오기",
+      "importHint": "파일에서 대화를 가져와요",
+      "importGroupHint": "그룹 채팅에는 아직 사용할 수 없어요",
+      "archive": "채팅 보관",
+      "archiveHint": "목록에서 숨기고 모든 것을 유지해요",
+      "restore": "채팅 복원",
+      "restoreHint": "목록으로 다시 가져와요",
+      "delete": "채팅 삭제",
+      "deleteHint": "채팅과 메시지를 완전히 제거해요"
+    },
+    "generation": {
+      "title": "모델 설정",
+      "scope": "이 채팅에만",
+      "hint": "설정하지 않은 값은 모델 설정, 그다음 앱 기본값을 따라요.",
+      "noModel": "이 채팅에는 모델이 없어 앱 기본값만 적용돼요.",
+      "resetAll": "모두 초기화",
+      "discard": "버리기",
+      "inherited": "모델 및 앱 설정을 따르는 중",
+      "count_other": "이 채팅에서 값 {{count}}개 변경됨"
+    },
+    "time": {
+      "title": "채팅 시계",
+      "awareness": "시간 인식",
+      "awarenessHint": "모델에 날짜와 시간을 알려 주고 모든 메시지에 시간을 표시해요",
+      "live": "실시간",
+      "frozen": "정지됨",
+      "ticking": "작동 중",
+      "stoppedAt": "{{when}}에 정지됨",
+      "runningFrom": "{{when}}부터 작동 중",
+      "mode": "시계",
+      "anchor": "날짜 및 시간",
+      "apply": "적용",
+      "reset": "초기화",
+      "cancel": "취소",
+      "chooseAnchor": "날짜와 시간 선택",
+      "previousMonth": "이전 달",
+      "nextMonth": "다음 달",
+      "chooseMonth": "연도와 월 선택",
+      "previousYear": "이전 해",
+      "nextYear": "다음 해",
+      "year": "연도",
+      "time": "시간"
+    },
+    "groupAppearanceHint": "이 그룹의 모든 채팅 외관",
+    "characterAppearanceHint": "이 캐릭터와의 모든 채팅 외관"
+  },
+  "appearance": {
+    "forGroup": "이 그룹의 모든 채팅에",
+    "forCharacter": "{{name}}에게",
+    "moveLeft": "왼쪽으로 이동",
+    "moveRight": "오른쪽으로 이동",
+    "close": "외관 닫기",
+    "unsaved": "저장되지 않은 변경사항",
+    "saved": "변경 없음",
+    "discard": "버리기",
+    "save": "저장",
+    "discardTitle": "변경사항을 버릴까요?",
+    "discardBody": "적용한 외관 변경사항이 저장되지 않았어요.",
+    "discardConfirm": "변경사항 버리기",
+    "keepEditing": "계속 편집"
+  },
+  "memory": {
+    "title": "메모리",
+    "back": "채팅",
+    "tabs": {
+      "memories": "기억",
+      "activity": "활동",
+      "pinned": "고정됨"
+    },
+    "loading": "메모리 불러오는 중",
+    "off": {
+      "title": "이 채팅은 메모리가 꺼져 있어요",
+      "description": "이 채팅에서는 아무것도 기억하거나 답장에 보내지 않아요.",
+      "action": "채팅 설정 열기"
+    },
+    "search": "기억 검색",
+    "add": "추가",
+    "all": "전체",
+    "categories": {
+      "character_trait": "캐릭터 특성",
+      "relationship": "관계",
+      "plot_event": "줄거리 사건",
+      "world_detail": "세계관 정보",
+      "preference": "선호",
+      "other": "기타",
+      "milestone": "이정표",
+      "boundary": "경계",
+      "profile": "프로필",
+      "routine": "일과",
+      "episodic": "에피소드",
+      "emotional_snapshot": "감정 스냅샷"
+    },
+    "origins": {
+      "model": "모델",
+      "user": "나",
+      "import": "가져옴"
+    },
+    "temperature": {
+      "hot": "뜨거움",
+      "cold": "차가움"
+    },
+    "tokens_other": "{{count}} 토큰",
+    "window": "메시지 {{from}}~{{to}}",
+    "pinnedMark": "고정됨",
+    "list": {
+      "found_other": "{{count}}개 찾음",
+      "total_other": "기억 {{count}}개",
+      "byModel": "모델이 {{count}}개",
+      "byUser": "내가 {{count}}개",
+      "imported": "{{count}}개 가져옴",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "아직 기억이 없어요",
+      "dynamic": "채팅이 커지면 기억이 여기에 나타나요. 직접 추가할 수도 있어요.",
+      "manual": "캐릭터가 항상 기억해야 할 것을 추가하세요.",
+      "action": "기억 추가",
+      "noMatch": "\"{{query}}\"와 일치하는 항목이 없어요",
+      "noMatchBody": "기억 자체에 나오는 단어를 입력해 보세요.",
+      "noCategory": "이 카테고리에는 아무것도 없어요"
+    },
+    "sheet": {
+      "addTitle": "기억 추가",
+      "editTitle": "기억",
+      "byModel": "모델이 작성",
+      "byModelIn": "{{window}}에서 모델이 작성",
+      "byUser": "내가 작성",
+      "imported": "가져옴",
+      "text": "기억",
+      "textPlaceholder": "캐릭터가 무엇을 기억해야 하나요?",
+      "category": "카테고리",
+      "noCategory": "카테고리 없음",
+      "when": "일어난 시점",
+      "whenHint": "선택 사항이에요. 캐릭터가 시간을 배치할 수 있어요.",
+      "whenPlaceholder": "설정 안 됨",
+      "whenClear": "지우기",
+      "temperature": "온도",
+      "hotBody": "뜨거운 기억은 가까이 유지돼요",
+      "coldBody": "차가운 기억은 잘 맞을 때만 불러와져요",
+      "pin": "고정됨",
+      "pinBody": "모델은 고정된 기억을 절대 삭제하거나 보관하지 않아요",
+      "delete": "삭제",
+      "cancel": "취소",
+      "add": "추가",
+      "save": "저장",
+      "deleteTitle": "이 기억을 삭제할까요?",
+      "deleteBody": "이 채팅에서 더 이상 불러오지 않아요.",
+      "keep": "유지",
+      "added": "기억을 추가했어요",
+      "saved": "기억을 저장했어요",
+      "deleted": "기억을 삭제했어요"
+    },
+    "summary": {
+      "title": "컨텍스트 요약",
+      "empty": "캐릭터가 이야기의 흐름을 유지하도록 짧은 요약을 추가하세요.",
+      "description": "모든 답장에 함께 들어가는 짧은 요약",
+      "field": "요약",
+      "dynamicHint": "업데이트할 때마다 모델이 다시 써요. 그 전까지 내 편집이 유지돼요.",
+      "clear": "지우기",
+      "cancel": "취소",
+      "save": "저장",
+      "saved": "요약을 저장했어요",
+      "cleared": "요약을 지웠어요"
+    },
+    "status": {
+      "approvalTitle": "기억을 업데이트할까요?",
+      "approvalBody_other": "새 메시지 {{count}}개를 기억으로 요약할 준비가 됐어요.",
+      "update": "업데이트",
+      "notNow": "나중에",
+      "skipped_other": "건너뛰었어요. 다음 메시지 {{count}}개 후에 다시 물어봐요",
+      "runningTitle": "기억 업데이트 중",
+      "runningBody": "최신 메시지를 읽는 중",
+      "stop": "중지",
+      "failedTitle": "기억 업데이트 실패",
+      "tryAgain": "다시 시도",
+      "otherModel": "다른 모델 사용",
+      "pausedTitle": "마지막 기억 업데이트가 중단됐어요",
+      "pausedBody": "끝나기 전에 다른 프로세스가 넘겨받았어요.",
+      "nextIn_other": "메시지 {{count}}개 후 다음 업데이트",
+      "since_other": "마지막 업데이트 이후 메시지 {{count}}개",
+      "modes": {
+        "auto": "자동",
+        "ask_first": "먼저 묻기",
+        "manual": "수동"
+      },
+      "every_other": "{{mode}} · 메시지 {{count}}개마다",
+      "manualOnly": "{{mode}} · 여기서 시작할 때만 업데이트해요",
+      "progress": "{{total}}개 중 {{current}}개",
+      "updateNow": "지금 업데이트"
+    },
+    "failure": {
+      "embedding_unavailable": "임베딩 모델을 사용할 수 없어요.",
+      "model_missing": "메모리 모델이 설치되어 있지 않아요.",
+      "model_invalid": "메모리 모델을 사용할 수 없어요.",
+      "prompt_missing": "메모리 프롬프트가 없어요.",
+      "settings_invalid": "메모리 설정이 올바르지 않아요.",
+      "provider_unavailable": "제공자가 응답하지 않았어요.",
+      "provider_rejected": "제공자가 요청을 거부했어요.",
+      "invalid_response": "모델의 기억 응답을 처리하지 못했어요. 주기를 다시 실행하세요.",
+      "empty_response": "모델이 빈 답장을 반환했어요.",
+      "timed_out": "모델 응답이 너무 오래 걸렸어요.",
+      "round_limit": "모델이 너무 많은 단계를 사용했어요.",
+      "tool_failed": "기억 변경 중 하나가 실패했어요.",
+      "storage_failure": "기억을 저장하지 못했어요.",
+      "lease_lost": "다른 업데이트가 넘겨받았어요.",
+      "internal": "앱에 내부 오류가 발생했어요."
+    },
+    "gate": {
+      "not_dynamic": "이 채팅은 동적 메모리를 사용하지 않아요.",
+      "disabled": "설정에서 동적 메모리가 꺼져 있어요.",
+      "nothing_to_summarise": "아직 요약할 내용이 없어요.",
+      "cycle_running": "이미 업데이트가 실행 중이에요."
+    },
+    "activity": {
+      "empty": "아직 업데이트가 없어요",
+      "emptyBody": "모델이 실행한 각 기억 업데이트가 여기에 표시돼요.",
+      "badgeUndone": "취소됨",
+      "badgeFailed": "실패",
+      "badgeStopped": "중지됨",
+      "badgeInterrupted": "중단됨",
+      "badgeRunning": "실행 중",
+      "noDetails": "기록된 상세 정보가 없어요.",
+      "stopped": "이 업데이트는 끝나기 전에 중지됐어요.",
+      "running": "이 업데이트는 아직 실행 중이에요.",
+      "actions": {
+        "created": "추가됨",
+        "duplicate_skipped": "이미 알고 있음",
+        "deleted": "삭제됨",
+        "soft_deleted": "차가움으로 이동",
+        "pinned": "고정됨",
+        "unpinned": "고정 해제됨",
+        "target_not_found": "찾을 수 없음",
+        "done": "완료",
+        "rejected": "거부됨",
+        "skipped": "건너뜀",
+        "stopped_after_done": "완료 후 중지됨"
+      },
+      "undo": "이 업데이트 취소",
+      "blocked": "취소할 수 없어요: 이후 업데이트가 이 위에 쌓여 있어요.",
+      "blockedBy": "취소할 수 없어요: {{window}} 업데이트가 이 위에 쌓여 있어요.",
+      "dependent": "이후 업데이트가 이 위에 쌓여 있어 취소할 수 없어요.",
+      "userEdited": "작성한 기억을 내가 편집해서 취소할 수 없어요.",
+      "undoTitle": "{{window}} 업데이트를 취소할까요?",
+      "undoBody": "추가한 기억은 제거되고 변경한 기억은 되돌아와요. 내 편집은 유지돼요.",
+      "undoConfirm": "업데이트 취소",
+      "keep": "유지",
+      "undone": "업데이트를 취소했어요",
+      "loadMore": "이전 업데이트 보기"
+    },
+    "pinnedTab": {
+      "empty": "고정된 메시지가 없어요",
+      "emptyBody": "채팅에서 메시지를 고정하면 다음 답장에 항상 함께 전송돼요.",
+      "label": "답장과 항상 함께 전송",
+      "unpin": "고정 해제",
+      "unpinned": "고정 해제됨",
+      "noText": "첨부 파일",
+      "loadMore": "더 보기",
+      "you": "나"
+    }
+  },
+  "branches": {
+    "title": "분기",
+    "meta_other": "메시지 {{count}}개 · {{date}}",
+    "current": "현재",
+    "actions": "{{title}} 작업",
+    "rename": "이름 바꾸기",
+    "renameField": "분기 이름",
+    "delete": "삭제",
+    "deleteRoot": "원본 분기는 삭제할 수 없어요",
+    "deleteActive": "먼저 다른 분기로 전환하세요",
+    "deleteTitle": "이 분기를 삭제할까요?",
+    "deleteBody": "{{name}} 및 메시지가 제거돼요. 다른 분기는 남아 있어요.",
+    "deleted": "분기를 삭제했어요",
+    "untitled": "제목 없는 분기",
+    "thisChat": "이 채팅",
+    "renameSave": "이름 저장",
+    "original": "원본",
+    "untitledChat": "제목 없는 채팅"
+  },
+  "companion": {
+    "title": "동반자",
+    "back": "채팅",
+    "tabs": {
+      "relationship": "관계",
+      "bond": "유대",
+      "memories": "기억",
+      "soul": "소울",
+      "activity": "활동"
+    },
+    "bond": "유대",
+    "lastTalked": "마지막 대화 {{when}}",
+    "updated": "{{when}} 업데이트됨",
+    "messages": "메시지",
+    "togetherSince": "{{date}}부터 함께",
+    "engine": "감정 엔진",
+    "nothingTitle": "아직 보여 줄 것이 없어요",
+    "nothingBody": "{{name}}의 유대와 감정은 메시지 몇 개 후부터 움직여요. 동반자 설정의 기본값에서 시작해요.",
+    "missingTitle": "감정을 추적하지 않고 있어요",
+    "missingBody": "각 답장이 감정을 움직이도록 감정 모델을 설치하세요.",
+    "install": "설치",
+    "nothingNow": "지금은 아무것도 없어요",
+    "drivers": "활성 동인",
+    "timeline": "최근 타임라인",
+    "events_other": "이벤트 {{count}}개",
+    "currentState": "현재 상태",
+    "defaultMark": "캐릭터 기본값",
+    "aboveDefault_other": "캐릭터 기본값보다 {{count}}포인트 높음",
+    "belowDefault_other": "캐릭터 기본값보다 {{count}}포인트 낮음",
+    "axes": {
+      "closeness": {
+        "label": "친밀도",
+        "low": "물러남",
+        "mid": "아는 사이",
+        "high": "친밀함"
+      },
+      "trust": {
+        "label": "신뢰",
+        "low": "불신",
+        "mid": "중립",
+        "high": "신뢰"
+      },
+      "affection": {
+        "label": "애정",
+        "low": "적대적",
+        "mid": "중립",
+        "high": "애정 어림"
+      },
+      "tension": {
+        "label": "긴장",
+        "low": "편안함",
+        "mid": "",
+        "high": "팽팽함"
+      },
+      "stability": {
+        "label": "안정성",
+        "low": "변덕스러움",
+        "mid": "",
+        "high": "안정적"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "느끼는 것",
+        "hint": "내면에서 느끼는 감정"
+      },
+      "expressed": {
+        "title": "보여 주는 것",
+        "hint": "답장에 드러나는 감정"
+      },
+      "blocked": {
+        "title": "억누르는 것",
+        "hint": "성격이 감추는 감정"
+      },
+      "momentum": {
+        "title": "쌓이는 것",
+        "hint": "최근 몇 턴이 향하는 방향"
+      }
+    },
+    "emotions": {
+      "warmth": "온기",
+      "trust": "신뢰",
+      "calm": "차분함",
+      "vulnerability": "취약함",
+      "longing": "그리움",
+      "hurt": "상처",
+      "tension": "긴장",
+      "irritation": "짜증",
+      "affection_intensity": "애정",
+      "reassurance_need": "안심 필요"
+    },
+    "memories": {
+      "total_other": "기억 {{count}}개",
+      "found_other": "{{count}}개 찾음",
+      "kind": "종류",
+      "field": "기억",
+      "placeholder": "{{name}} 기억할 내용",
+      "emptyTitle": "여기에 기억이 없어요",
+      "emptyBody": "대화하면 기억이 나타나요. 직접 추가할 수도 있어요.",
+      "noMatch": "\"{{query}}\"와 일치하는 항목이 없어요",
+      "noMatchBody": "기억 자체에 나오는 단어를 입력해 보세요."
+    },
+    "soul": {
+      "title": "소울",
+      "edit": "편집",
+      "core": "정체성 핵심. 성장해도 바뀌지 않아요",
+      "notWritten": "아직 작성되지 않음",
+      "growth": "소울 성장",
+      "clear": "성장 지우기",
+      "intro": "기억으로 인해 변할 수 있는 특성이 어떻게 자랐는지 보여줘요. 본질, 특성, 과거 이야기는 여기서 바뀌지 않아요.",
+      "empty": "아직 성장이 없어요. 기억이 쌓이면 함께 변하는 특성이 여기에 나타나요.",
+      "zero": "변경 0개",
+      "added": "추가됨",
+      "adjusted": "조정됨",
+      "confidence": "신뢰도",
+      "locked": "잠김",
+      "lock": "잠금",
+      "unlock": "잠금 해제",
+      "lockHint": "이 사실을 잠그기",
+      "unlockHint": "이 사실 잠금 해제",
+      "historicalHint": "역사적 사실은 항상 유지돼요",
+      "remove": "이 성장 제거",
+      "sources_other": "기억 {{count}}개에서",
+      "retired_other": "이전 버전 {{count}}개가 은퇴했어요.",
+      "categories": {
+        "essence": "본질",
+        "traits": "특성",
+        "backstory": "과거 이야기",
+        "appearance": "외모",
+        "goals": "목표",
+        "likes": "좋아하는 것",
+        "voice": "내면의 목소리",
+        "relational_style": "관계 방식",
+        "vulnerabilities": "약점",
+        "fears": "두려움",
+        "habits": "습관",
+        "boundaries": "경계"
+      },
+      "policy": {
+        "current": {
+          "label": "현재",
+          "hint": "이전 내용을 대체해요"
+        },
+        "adaptive": {
+          "label": "적응형",
+          "hint": "대화하면서 계속 바뀔 수 있어요"
+        },
+        "historical": {
+          "label": "역사적",
+          "hint": "일어난 일이에요. 항상 유지돼요"
+        }
+      },
+      "removeTitle": "이것을 제거할까요?",
+      "removeBody": "배운 내용에서 제거돼요. 작성된 소울은 그대로예요.",
+      "clearTitle": "배운 것을 모두 지울까요?",
+      "clearBody": "대체된 기록을 포함해 모든 성장이 사라져요. 작성된 소울은 그대로예요.",
+      "keep": "유지",
+      "removeConfirm": "제거",
+      "clearConfirm": "모두 지우기",
+      "removed": "제거됨",
+      "cleared": "성장을 지웠어요",
+      "sourcesTitle": "출처",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "원본 기억을 더 이상 사용할 수 없어요.",
+      "sourcesMissing_other": "원본 기억 {{count}}개를 더 이상 사용할 수 없어요."
+    },
+    "effect": {
+      "title": "이 답장이 바꾼 것",
+      "feels": "느끼는 것",
+      "pickedUp": "받아들임",
+      "letGo": "놓아줌",
+      "remembered": "기억함",
+      "processing": "무엇이 바뀌었는지 보는 중",
+      "failed": "답장의 변화를 분석하지 못했어요.",
+      "invalidated": "이 변경은 더 이상 이 답장에 적용되지 않아요.",
+      "memoryCount_other": "기억 {{count}}개",
+      "axisSummary": "{{axis}} {{value}}",
+      "none": "보여 줄 변경이 없어요",
+      "quote": "“{{text}}”"
+    },
+    "activity": {
+      "undo": "이 업데이트 취소",
+      "undoTitle": "{{window}} 업데이트를 취소할까요?",
+      "undoBody": "추가한 기억은 제거되고 변경한 기억은 되돌아와요. 내 편집은 유지돼요.",
+      "undoConfirm": "업데이트 취소",
+      "blockedBy": "취소할 수 없어요: {{window}} 업데이트가 이 위에 쌓여 있어요.",
+      "blocked": "취소할 수 없어요: 이후 업데이트가 이 위에 쌓여 있어요."
+    },
+    "unavailable": "이 채팅에는 동반자가 없어요",
+    "unavailableBody": "동반자 채팅을 열어 유대, 기억, 소울을 확인하세요.",
+    "crisp": {
+      "close": "닫기",
+      "clearSearch": "검색 지우기"
+    },
+    "lastReply": "마지막 답장",
+    "replyHint": "채팅의 모든 메시지가 메뉴에서 이것을 열어요"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "create": {
+    "title": "Ny persona",
+    "back": "Tilbake",
+    "create": "Opprett persona",
+    "created": "{{name}} er opprettet",
+    "imported": "Personaen er importert",
+    "unattached_one": "{{count}} lorebok kunne ikke knyttes til. Knytt den til fra personaens innstillinger.",
+    "unattached_other": "{{count}} lorebøker kunne ikke knyttes til. Knytt dem til fra personaens innstillinger.",
+    "defaultFailed": "{{name}} ble opprettet, men kunne ikke bli standard.",
+    "discardTitle": "Forkaste denne personaen?",
+    "discardBody": "Det du har skrevet så langt, går tapt.",
+    "discard": "Forkast",
+    "keepEditing": "Fortsett å redigere",
+    "continueTo": "Fortsett til {{step}}"
+  },
+  "edit": {
+    "title": "Rediger persona",
+    "back": "Tilbake",
+    "backToLibrary": "Tilbake til biblioteket",
+    "more": "Flere handlinger",
+    "export": "Eksporter",
+    "delete": "Slett persona",
+    "exported": "Personaen er eksportert",
+    "exportWarnings_one": "Eksportert med {{count}} advarsel",
+    "exportWarnings_other": "Eksportert med {{count}} advarsler",
+    "deleteTitle": "Slette {{name}}?",
+    "deleteBody": "Personaen fjernes fra samtalene som bruker den.",
+    "deleteConfirm": "Slett",
+    "deleteCancel": "Avbryt",
+    "deleted": "{{name}} slettet",
+    "unsaved": "Ulagrede endringer",
+    "discard": "Forkast",
+    "save": "Lagre",
+    "saved": "Endringene er lagret",
+    "lorebooksFailed": "Lagret, men lorebøkene kunne ikke oppdateres. Prøv å lagre igjen.",
+    "leaveTitle": "Forkaste endringene dine?",
+    "leaveBody": "Endringer som ikke er lagret, går tapt.",
+    "leaveDiscard": "Forkast",
+    "leaveKeep": "Fortsett å redigere"
+  },
+  "steps": {
+    "identity": "Identitet",
+    "extras": "Ekstra"
+  },
+  "identity": {
+    "chooseAvatar": "Velg bilde",
+    "removeAvatar": "Fjern",
+    "name": "Navn",
+    "namePlaceholder": "Profesjonell forfatter",
+    "nameHint": "Hvem du er i samtaler",
+    "nickname": "Kallenavn",
+    "nicknamePlaceholder": "Det karakterene kaller deg",
+    "nicknameHint": "Valgfritt. Brukes i samtaler i stedet for navnet.",
+    "default": "Bruk som standard",
+    "defaultBody": "Nye samtaler starter med denne personaen",
+    "import": "Importer fra en fil",
+    "importBody": "Importer en persona eksportert fra LettuceAI.",
+    "chooseFile": "Velg fil"
+  },
+  "about": {
+    "description": "Beskrivelse",
+    "descriptionPlaceholder": "Hvordan karakterene bør henvende seg til deg, bakgrunnen din, preferanser og stil",
+    "descriptionHint": "Bruk {{user}} for denne personaen og {{char}} for karakteren.",
+    "words_one": "{{count}} ord",
+    "words_other": "{{count}} ord"
+  },
+  "extras": {
+    "body": "Alt her er valgfritt.",
+    "lorebooks": "Lorebøker",
+    "lorebooksNone": "Ingen",
+    "lorebooksCount_one": "{{count}} lorebok",
+    "lorebooksCount_other": "{{count}} lorebøker"
+  }
+}

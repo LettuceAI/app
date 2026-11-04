@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "歡迎回來。",
+    "bodyBefore": "這是 ",
+    "product": "LettuceAI Next",
+    "bodyAfter": "。從零重新打造，你創作的一切都一起帶過來了。",
+    "migrate": "移轉資料",
+    "notNow": "暫時不要"
+  },
+  "migrate": {
+    "title": "正在移轉你的資料",
+    "body": "你的對話、角色和媒體正在移轉。",
+    "note": "請保持應用程式開啟，直到完成。",
+    "stages": {
+      "read": "正在讀取你的資料",
+      "write": "正在移轉對話、角色和媒體",
+      "verify": "正在檢查所有內容",
+      "switch": "正在收尾"
+    },
+    "failed": "移轉未完成。",
+    "retry": "再試一次"
+  },
+  "models": {
+    "titlePending": "正在恢復你的功能",
+    "titleReady": "你的功能已恢復",
+    "checking": "正在檢查你的對話使用哪些功能",
+    "bodyPending_memory": "部分對話使用動態記憶。其模型會下載一次，之後即可離線執行。",
+    "bodyPending_emotion": "部分對話使用夥伴情緒。其模型會下載一次，之後即可離線執行。",
+    "bodyPending_both": "部分對話使用動態記憶和夥伴情緒。其模型會下載一次，之後即可離線執行。",
+    "bodyReady_memory": "動態記憶已就緒，可離線執行。",
+    "bodyReady_emotion": "夥伴情緒已就緒，可離線執行。",
+    "bodyReady_both": "動態記憶和夥伴情緒已就緒，可離線執行。",
+    "names": {
+      "embedding": "Lettuce Eidos 記憶模型",
+      "emotion": "Thymos 情緒模型"
+    },
+    "why": {
+      "embedding": "用於動態記憶",
+      "emotion": "用於夥伴情緒"
+    },
+    "ready": "就緒",
+    "waiting": "等待中",
+    "checkingFiles": "正在檢查檔案",
+    "progress": "{{done}} / {{total}}",
+    "failed": "下載未完成",
+    "download": "下載",
+    "notNow": "暫時不要",
+    "continue": "繼續",
+    "retry": "再試一次",
+    "notNowNote": "需要這些模型的對話會提示下載。你之後可以在設定中下載。",
+    "keepOpen": "請保持應用程式開啟，直到完成。"
+  },
+  "done": {
+    "title": "一切就緒。",
+    "body": "所有內容都在你離開的地方。",
+    "open": "開啟 LettuceAI"
+  },
+  "upgrade": {
+    "title": "先完成一個步驟",
+    "body": "你的資料來自較舊版本的 LettuceAI。請先用 {{version}} 版開啟一次以進行更新，然後回到這裡。",
+    "copy": "複製下載連結",
+    "copied": "已複製連結",
+    "fresh": "改為重新開始"
+  }
+}

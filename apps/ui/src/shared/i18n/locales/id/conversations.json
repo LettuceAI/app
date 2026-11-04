@@ -1,0 +1,1154 @@
+{
+  "sceneImage": {
+    "title": "Hasilkan gambar adegan",
+    "regenerate": "Regenerasi gambar adegan",
+    "hint": "Gambarkan momen ini dari obrolan",
+    "write": "Tulis prompt",
+    "writeHint": "Jelaskan gambarnya sendiri",
+    "askAi": "Minta AI menulis prompt",
+    "askAiHint": "Gunakan obrolan dan referensi desain",
+    "rewrite": "Tulis ulang dengan AI",
+    "prompt": "Prompt adegan",
+    "promptHint": "Tinjau atau edit prompt sebelum membuat gambar.",
+    "cast": "Dalam gambar",
+    "castHint": "Pilih siapa yang muncul dalam adegan.",
+    "castPersona": "Persona Anda",
+    "castEmpty": "Pilih setidaknya satu orang untuk adegan.",
+    "placeholder": "Jelaskan karakter, latar, dan momennya…",
+    "generate": "Hasilkan gambar",
+    "review": "Tinjau gambar adegan",
+    "requested": "Gambar adegan siap ditinjau",
+    "requestedHint": "Periksa prompt sebelum membuat gambar.",
+    "retry": "Coba lagi",
+    "dismiss": "Tutup",
+    "disabled": "Pembuatan adegan nonaktif",
+    "noModel": "Tidak ada model gambar adegan yang kompatibel",
+    "noWriter": "Pilih penulis prompt yang kompatibel di pengaturan gambar",
+    "setupHint": "Aktifkan pembuatan adegan dan pilih model gambar di pengaturan.",
+    "settings": "Buka pengaturan gambar",
+    "writing": "Menulis prompt adegan",
+    "thinking": "Memikirkan adegan",
+    "generating": "Menghasilkan gambar adegan",
+    "attaching": "Menambahkan gambar adegan ke pesan",
+    "progress": "{{current}} dari {{total}}",
+    "queuePosition": "Posisi antrean {{position}}",
+    "phase": {
+      "starting": "Memulai mesin gambar",
+      "loading": "Memuat model gambar",
+      "sampling": "Menghasilkan gambar adegan",
+      "queued": "Menunggu untuk menghasilkan gambar adegan",
+      "generating": "Menghasilkan gambar adegan",
+      "retrying": "Mencoba lagi pembuatan adegan",
+      "cancelled": "Membatalkan pembuatan adegan"
+    },
+    "failed": "Tidak dapat menghasilkan gambar adegan",
+    "promptFailed": "Tidak dapat menulis prompt adegan",
+    "writerError": {
+      "scene_prompt_disabled": "Pembuatan adegan nonaktif di pengaturan gambar.",
+      "scene_prompt_no_model": "Pilih penulis prompt adegan yang kompatibel di pengaturan gambar.",
+      "scene_prompt_no_reply": "Penulis prompt tidak mengembalikan teks. Coba lagi atau tulis prompt Anda sendiri.",
+      "cancelled": "Penulisan prompt dibatalkan.",
+      "failed": "Coba lagi atau tulis prompt Anda sendiri."
+    },
+    "error": {
+      "media_unavailable": "Penyimpanan gambar tidak tersedia.",
+      "disabled": "Pembuatan adegan nonaktif di pengaturan gambar.",
+      "no_model": "Pilih model gambar adegan yang kompatibel di pengaturan gambar.",
+      "no_image": "Model tidak mengembalikan gambar.",
+      "message_unavailable": "Balasan berubah sebelum gambarnya dapat ditambahkan.",
+      "interrupted": "Pembuatan terputus. Anda dapat mencoba lagi.",
+      "failed": "Tinjau prompt dan coba lagi."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "Cabangkan ke obrolan grup",
+    "characterTitle": "Cabangkan ke karakter lain",
+    "history": "Menyalin obrolan ini hingga pesan yang dipilih, termasuk memorinya.",
+    "sourceLocked": "Karakter saat ini tetap di grup. Pilih setidaknya satu lagi.",
+    "characters": "Karakter",
+    "defaultName": "Cabang {{name}}",
+    "search": "Cari karakter",
+    "empty": "Tidak ada karakter ditemukan",
+    "create": "Buat cabang",
+    "memberCount_other": "{{count}} karakter dipilih",
+    "changed": "Obrolan ini berubah. Pilih titik cabang lagi.",
+    "chooseAgain": "Pilih lagi"
+  },
+  "historyPage": {
+    "archivedCharacter": "Pulihkan karakter ini di perpustakaan Anda untuk memulai obrolan baru."
+  },
+  "header": {
+    "back": "Kembali",
+    "memories": "Memori, {{count}}",
+    "memoriesBusy": "Memori, membaca balasan terbaru",
+    "search": "Cari pesan",
+    "options": "Opsi obrolan",
+    "onDevice": "Di perangkat",
+    "untitled": "Obrolan"
+  },
+  "search": {
+    "placeholder": "Cari di obrolan ini",
+    "done": "Selesai",
+    "previous": "Kecocokan sebelumnya",
+    "next": "Kecocokan berikutnya",
+    "position": "{{index}} dari {{total}}",
+    "none": "Tidak ada kecocokan"
+  },
+  "timeline": {
+    "today": "Hari ini",
+    "yesterday": "Kemarin",
+    "loadingOlder": "Memuat pesan sebelumnya",
+    "empty": "Belum ada pesan",
+    "jumpToLatest": "Lompat ke terbaru",
+    "selectingSpeaker": "Memilih karakter…"
+  },
+  "composer": {
+    "placeholder": "Pesan ke {{name}}…",
+    "systemSend": {
+      "title": "Kirim sebagai pesan sistem?",
+      "description": "Mengirim isi kolom pesan sebagai pesan sistem yang terlihat. Ini tidak memicu pembuatan.",
+      "send": "Kirim"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "Tambah karakter",
+      "title": "Tambahkan karakter",
+      "body": "Mereka bergabung dalam obrolan ini mulai sekarang.",
+      "search": "Cari karakter",
+      "empty": "Setiap karakter sudah ada di obrolan ini",
+      "noMatch": "Tidak ada karakter yang cocok"
+    },
+    "remove": {
+      "label": "Hapus {{name}}",
+      "title": "Hapus {{name}}?",
+      "body": "Mereka berhenti menjawab di obrolan ini. Pesan mereka sebelumnya tetap ada.",
+      "confirm": "Hapus"
+    },
+    "followGroup": "Ikuti anggota grup",
+    "followGroupHint": "Atur ulang anggota dan karakter yang dibisukan ke pengaturan grup",
+    "models": "Model karakter dalam obrolan ini",
+    "followModels": "Ikuti model grup",
+    "followModelsHint": "Hapus semua penimpaan model karakter dalam obrolan ini",
+    "characterModel": "Model karakter",
+    "characterModelHint": "Gunakan pengaturan model karakter sendiri"
+  },
+  "mention": {
+    "title": "Sebut karakter",
+    "select": "untuk memilih",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "Sebut {{name}}",
+    "unmention": "Hapus sebutan {{name}}",
+    "muted": "{{name}} dibisukan. Tekan lama atau klik kanan untuk membunyikan",
+    "speak": "Minta {{name}} merespons"
+  },
+  "director": {
+    "hint": "Ketuk karakter untuk memilih siapa yang merespons",
+    "selectedHint": "{{name}} akan merespons saat Anda mengirim",
+    "actionHint": "Kirim menambahkan pesan Anda. Ketuk karakter agar mereka merespons",
+    "respondingHint": "{{name}} sedang merespons",
+    "addMessage": "Tambah pesan tanpa balasan",
+    "noAttachments": "Pesan dalam mode sutradara tidak dapat membawa lampiran"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Siapa yang berbicara berikutnya",
+      "body": "Pilih anggota untuk menjawab, atau biarkan grup memutuskan."
+    },
+    "branch": {
+      "title": "Lanjutkan pribadi",
+      "body": "Membuka obrolan baru dengan satu anggota dan cerita hingga pesan ini."
+    },
+    "regenerate": {
+      "title": "Pilih karakter",
+      "body": "Hanya untuk balasan ini. Anggota yang dibisukan juga dapat dipilih.",
+      "same": "Karakter sama",
+      "search": "Cari karakter",
+      "noMatches": "Tidak ada karakter yang cocok dengan pencarian Anda"
+    },
+    "auto": "Biarkan grup memutuskan",
+    "autoBody": "Menggunakan pemilihan pembicara obrolan ini",
+    "muted": "Dilewati kecuali disebut"
+  },
+  "message": {
+    "image": "Gambar terlampir",
+    "imagePrompt": "Prompt gambar",
+    "copyImagePrompt": "Salin prompt",
+    "titleAssistant": "Pesan {{name}}",
+    "titleUser": "Pesan Anda",
+    "titleScene": "Adegan",
+    "titleSystem": "Pesan sistem",
+    "audio": "Klip audio",
+    "video": "File video",
+    "document": "Dokumen"
+  },
+  "menu": {
+    "selection": {
+      "title": "Mengapa karakter ini merespons",
+      "fallback": "Pemilihan LLM tidak tersedia. Dipilih menggunakan partisipasi dan balasan terbaru."
+    },
+    "copy": "Salin teks",
+    "edit": "Edit",
+    "regenerate": "Regenerasi",
+    "regenerateHint": "Menyimpan versi ini, geser untuk membandingkan",
+    "regenerateBusy": "Tunggu balasan saat ini selesai",
+    "pin": "Sematkan",
+    "pinHint": "Karakter selalu mengingatnya",
+    "unpin": "Lepas sematan",
+    "rewind": "Mundur ke sini",
+    "rewindHint_other": "Menghapus {{count}} pesan setelahnya",
+    "delete": "Hapus pesan",
+    "deleteHint": "Lepas sematan dulu",
+    "branch": "Cabangkan dari sini",
+    "branchHint": "Membuka obrolan baru dengan cerita hingga sini",
+    "branchGroup": "Lanjutkan pribadi",
+    "branchGroupHint": "Membuka obrolan dengan satu anggota dan cerita hingga sini",
+    "details": {
+      "title": "Detail prompt",
+      "hint": "Apa yang dikirim untuk balasan ini",
+      "unavailable": "Prompt yang tercatat tidak tersedia untuk balasan ini",
+      "noBreakdown": "Balasan ini tercatat sebelum rincian ada",
+      "tokens": "{{count}} token",
+      "character": "Karakter dan persona",
+      "lorebook": "Lorebook",
+      "memories": "Memori",
+      "history": "Riwayat obrolan",
+      "other": "Lainnya",
+      "entries": "Entri lorebook",
+      "untitled": "Entri tanpa judul",
+      "partsLabel": "Porsi prompt menurut sumber"
+    },
+    "stats": {
+      "prompt": "Token prompt",
+      "reply": "Token balasan",
+      "total": "total",
+      "firstToken": "Waktu hingga token pertama",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "Kecepatan balasan",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "Prediksi multi-token: token per ronde dan penerimaan draf",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Entri lorebook yang digunakan",
+      "memories": "Memori yang digunakan",
+      "memory": "Memori",
+      "match": "Cocok {{score}}",
+      "noLorebooks": "Tidak ada entri lorebook yang digunakan untuk balasan ini.",
+      "noMemories": "Tidak ada item memori yang digunakan untuk balasan ini.",
+      "notRecorded": "Detail ini tidak dicatat untuk balasan ini.",
+      "searchEntries": "Cari entri yang digunakan",
+      "searchMemories": "Cari memori yang digunakan",
+      "noMatches": "Tidak ada yang cocok dengan pencarian Anda.",
+      "showing": "{{shown}} dari {{total}}",
+      "more": "Tampilkan lebih banyak"
+    }
+  },
+  "regeneration": {
+    "title": "Opsi regenerasi",
+    "hint": "Arahan dan model",
+    "groupHint": "Arahan, model, dan karakter",
+    "oneReply": "Hanya untuk balasan ini",
+    "direction": "Arahan",
+    "directionHint": "Opsional. Jelaskan apa yang harus diubah pada balasan baru.",
+    "placeholder": "Buat lebih singkat, ubah nada, atau ambil pendekatan lain",
+    "model": "Model balasan",
+    "usualModel": "Gunakan model biasa",
+    "modelUnavailable": "Model ini tidak lagi tersedia. Pilih yang lain.",
+    "character": "Karakter",
+    "sameCharacter": "Karakter sama: {{name}}",
+    "characterUnavailable": "Karakter ini bukan lagi anggota. Pilih yang lain."
+  },
+  "edit": {
+    "title": "Edit pesan",
+    "assistantHint": "Kata-kata {{name}}, sebagaimana cerita akan mengingatnya",
+    "field": "Teks pesan",
+    "save": "Simpan"
+  },
+  "confirm": {
+    "cancel": "Batal",
+    "rewindTitle": "Mundur ke pesan ini?",
+    "rewindBody_other": "{{count}} pesan setelahnya dihapus, dan cerita berlanjut dari sini.",
+    "rewind": "Mundur",
+    "deleteTitle": "Hapus pesan ini?",
+    "deleteBodyVersions": "Semua {{count}} versi pesan ini dihapus dari obrolan.",
+    "deleteBody": "Pesan ini dihapus dari obrolan dan dari yang diingat karakter.",
+    "delete": "Hapus"
+  },
+  "banner": {
+    "modelRequired": "Obrolan ini memerlukan model yang belum terpasang.",
+    "modelNamed": "Obrolan ini memerlukan model {{model}}, yang belum terpasang.",
+    "modelsMissing": "Obrolan ini memerlukan model yang belum terpasang: {{models}}.",
+    "openModels": "Buka model",
+    "memoryBlocked": "Memori dijeda karena pengembalian sebelumnya tidak dapat diselesaikan.",
+    "memoryRetry": "Coba lagi",
+    "memoryRetryStill": "Tetap tidak dapat diselesaikan.",
+    "memoryRetried": "Memori kembali normal",
+    "swapActive": "Tukar posisi aktif",
+    "endSwap": "Akhiri tukar posisi"
+  },
+  "requiredModel": {
+    "embedding": "embedding",
+    "emotion": "emosi"
+  },
+  "failure": {
+    "title": "Balasan tidak selesai",
+    "retry": "Coba lagi",
+    "code": {
+      "invalid_conversation": "Percakapan ini tidak dapat ditulisi saat ini.",
+      "missing_model": "Tidak ada model yang diatur untuk obrolan ini. Pilih di opsi obrolan atau tambahkan di Model.",
+      "context_unavailable": "Percakapan tidak dapat disiapkan untuk model.",
+      "speaker_unavailable": "Tidak ada yang tersedia untuk membalas.",
+      "provider_unavailable": "Model tidak dapat dijangkau. Periksa koneksi dan penyedia.",
+      "provider_rejected": "Penyedia menolak permintaan. Coba model lain atau periksa akun Anda.",
+      "empty_output": "Model tidak mengembalikan apa pun.",
+      "timed_out": "Model terlalu lama menjawab.",
+      "recovery_unavailable": "Balasan terputus dan tidak dapat dipulihkan.",
+      "embedding_unavailable": "Model embedding yang diperlukan untuk memori tidak tersedia.",
+      "internal": "Aplikasi mengalami kesalahan internal.",
+      "database_write_fenced": "Aplikasi sedang sibuk menyimpan data. Coba lagi sebentar lagi."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "Memuat model",
+      "retrying": "Mencoba lagi memuat model"
+    },
+    "loading": "Memuat {{model}}, {{percent}}%",
+    "retrying": "Mencoba cara lain memuat {{model}}, {{percent}}%",
+    "loaded": "{{model}} siap",
+    "failed": "Tidak dapat memuat {{model}}"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "Decoding lebih cepat nonaktif saat ada gambar dalam obrolan.",
+    "kv_cache_moved_to_ram": "Cache konteks tidak muat di memori video dan dipindahkan ke memori sistem."
+  },
+  "toast": {
+    "copied": "Tersalin",
+    "copyFailed": "Tidak dapat menjangkau papan klip",
+    "pinned": "Disematkan. Tetap di memori karakter",
+    "unpinned": "Sematan dilepas",
+    "edited": "Pesan diperbarui",
+    "deleted": "Pesan dihapus",
+    "branched": "Membuka obrolan baru dari sini",
+    "rewound_other": "Mundur {{count}} pesan",
+    "launchFailed": "Tidak dapat memulai obrolan",
+    "mediaImageUnsupported": "Model obrolan ini tidak dapat membaca gambar. Hapus atau pilih model lain.",
+    "mediaAudioUnsupported": "Model obrolan ini tidak dapat mendengarkan audio. Hapus atau pilih model lain."
+  },
+  "crisp": {
+    "composerPlaceholder": "Pesan…",
+    "composerMessage": "Pesan",
+    "composerStop": "Hentikan pembuatan",
+    "composerSend": "Kirim pesan",
+    "composerSendAsSystem": "Tekan lama atau klik kanan untuk kirim sebagai sistem",
+    "composerSending": "Mengirim",
+    "composerContinue": "Biarkan karakter melanjutkan",
+    "messageScene": "Adegan",
+    "messageSystem": "Sistem",
+    "messagePinned": "Disematkan",
+    "messageMenuTitle": "Pesan",
+    "messageReasoning": "Proses berpikir",
+    "messageTyping": "Mengetik",
+    "sheetClose": "Tutup",
+    "bannerDismiss": "Tutup",
+    "alertDismiss": "Tutup",
+    "composerAddAttachment": "Tambah konten",
+    "composerCancelRecording": "Batalkan rekaman",
+    "composerRecordVoice": "Rekam suara",
+    "composerStopAndTranscribe": "Hentikan dan transkripsikan",
+    "composerTranscribing": "Mentranskripsikan",
+    "composerRecording": "Merekam {{elapsed}}",
+    "composerAttachment": "Lampiran",
+    "composerFile": "File",
+    "composerAttachmentRemove": "Hapus {{name}}"
+  },
+  "streaming": {
+    "imagePrompt": "Menulis prompt gambar"
+  },
+  "tools": {
+    "title": "Tambah konten",
+    "helpMeReply": "Bantu saya balas",
+    "helpMeReplyHint": "Biarkan model menyarankan apa yang dikatakan",
+    "persona": "Persona",
+    "background": "Latar belakang obrolan",
+    "backgroundHidden": "Tersembunyi",
+    "backgroundOwn": "Diatur untuk obrolan ini",
+    "backgroundDefault": "Menggunakan default",
+    "backgroundNone": "Tanpa latar belakang",
+    "note": "Catatan penulis",
+    "noteActive": "Aktif untuk obrolan ini",
+    "noteInactive": "Arahan pribadi untuk balasan",
+    "dice": "Dadu",
+    "diceHint": "Lempar dadu dan tambahkan hasilnya ke pesan Anda",
+    "swap": "Tukar posisi",
+    "swapHint": "Mengobrol sebagai karakter dan biarkan model membalas sebagai persona Anda",
+    "swapOn": "Tukar posisi (aktif)",
+    "swapOnHint": "Anda mengobrol sebagai karakter. Ketuk untuk mematikan",
+    "uploadImage": "Unggah gambar",
+    "uploadImageHint": "Lampirkan gambar ke pesan Anda",
+    "uploadAudio": "Unggah audio",
+    "uploadAudioHint": "Lampirkan klip audio ke pesan Anda"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "Tanpa persona",
+    "default": "Default",
+    "search": "Cari persona",
+    "noMatch": "Tidak ada persona yang cocok",
+    "emptyTitle": "Belum ada persona",
+    "emptyBody": "Buat satu di perpustakaan untuk berbicara sebagai seseorang tertentu.",
+    "loading": "Memuat persona",
+    "loadFailed": "Tidak dapat memuat persona",
+    "retry": "Coba lagi"
+  },
+  "background": {
+    "title": "Latar belakang obrolan",
+    "current": "Latar belakang saat ini",
+    "currentOwn": "Diatur untuk obrolan ini",
+    "currentDefault": "Latar belakang default",
+    "choose": "Pilih gambar",
+    "replace": "Ganti gambar",
+    "chooseHint": "Hanya untuk obrolan ini",
+    "useDefault": "Gunakan default",
+    "useDefaultHint": "Kembali ke latar belakang adegan atau karakter"
+  },
+  "note": {
+    "title": "Catatan penulis",
+    "inlineTitle": "Editor inline",
+    "inlineHint": "Tampilkan catatan penulis di atas kotak pesan untuk pengeditan cepat",
+    "inlineToggle": "Tampilkan editor catatan penulis inline",
+    "inlineField": "Catatan penulis inline",
+    "inlineEdit": "Edit catatan penulis inline",
+    "inlinePlaceholder": "Tambahkan catatan penulis",
+    "saving": "Menyimpan...",
+    "hint": "Arahan pribadi yang diikuti model dalam obrolan ini",
+    "placeholder": "Tulis catatan penulis yang mengarahkan model",
+    "save": "Simpan",
+    "clear": "Hapus",
+    "count_other": "{{count}} karakter",
+    "willRemove": "Catatan akan dihapus saat disimpan",
+    "none": "Tidak ada catatan tersimpan"
+  },
+  "dice": {
+    "title": "Dadu",
+    "hint": "Lempar dadu dan tambahkan hasilnya ke pesan Anda",
+    "notation": "Notasi dadu",
+    "roll": "Lempar",
+    "invalid": "Gunakan notasi seperti 1d20 atau 2d6+3",
+    "tapToRoll": "Lempar untuk melihat hasil",
+    "insert": "Masukkan ke pesan",
+    "recent": "Terbaru",
+    "clear": "Bersihkan"
+  },
+  "help": {
+    "title": "Bantu saya balas",
+    "draftPrompt": "Anda memiliki draf pesan. Bagaimana Anda ingin melanjutkan?",
+    "useMyText": "Gunakan teks saya sebagai dasar",
+    "useMyTextHint": "Kembangkan dan perbaiki draf Anda",
+    "writeNew": "Tulis sesuatu yang baru",
+    "writeNewHint": "Hasilkan balasan baru",
+    "resultTitle": "Saran balasan",
+    "regenerate": "Coba lagi",
+    "use": "Gunakan ini",
+    "writing": "Menulis balasan Anda...",
+    "thinking": "Berpikir sebelum menulis...",
+    "callError": {
+      "model_required": "Pilih model untuk Bantu saya balas di pengaturan.",
+      "model_unavailable": "Model Bantu saya balas tidak dapat dimuat.",
+      "busy": "Aplikasi sedang sibuk. Coba lagi sebentar lagi.",
+      "unavailable": "Ini tidak tersedia saat ini."
+    },
+    "error": {
+      "failed": "Bantu saya balas gagal.",
+      "help_me_reply_disabled": "Bantu saya balas dinonaktifkan di pengaturan.",
+      "help_me_reply_no_history": "Belum ada yang bisa dibalas.",
+      "help_me_reply_no_model": "Pilih model untuk Bantu saya balas di pengaturan.",
+      "help_me_reply_no_reply": "Model tidak menulis balasan."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "Pelajari koreksi?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "Pelajari",
+      "ignore": "Abaikan"
+    },
+    "error": {
+      "noModel": "Pasang model pengenalan ucapan untuk mendikte.",
+      "permission": "Izinkan akses mikrofon untuk merekam.",
+      "noMicrophone": "Tidak ada mikrofon ditemukan.",
+      "noAudio": "Tidak ada yang direkam.",
+      "busy": "Rekaman lain sedang berlangsung.",
+      "unsupported": "Perangkat ini tidak dapat merekam dari mikrofon.",
+      "failed": "Rekaman tidak dapat ditranskripsikan."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Pengaturan obrolan",
+      "persona": "Persona",
+      "model": "Model",
+      "lorebooks": "Lorebook",
+      "background": "Latar belakang obrolan",
+      "note": "Catatan penulis",
+      "history": "Riwayat obrolan",
+      "notes": "Catatan terjadwal",
+      "starters": "Obrolan baru",
+      "advanced": "Pengaturan model",
+      "appearance": "Tampilan"
+    },
+    "back": "Kembali",
+    "reset": "Atur ulang",
+    "loading": "Memuat",
+    "loadFailed": "Tidak dapat memuat",
+    "source": {
+      "conversation": "Hanya obrolan ini",
+      "group": "Dari grup",
+      "character": "Dari karakter",
+      "launch": "Dari cara obrolan dimulai",
+      "app_default": "Default aplikasi"
+    },
+    "meta": {
+      "messages_other": "{{count}} pesan",
+      "active": "Aktif {{date}}"
+    },
+    "sections": {
+      "chat": "Obrolan ini",
+      "memory": "Memori",
+      "time": "Waktu",
+      "actions": "Obrolan",
+      "generation": "Pembuatan",
+      "lorebooks": "Lorebook",
+      "members": "Anggota",
+      "speaker": "Pemilihan pembicara"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Menggunakan model default Anda untuk memilih siapa yang berbicara (memakai token)",
+      "heuristic": "Heuristik",
+      "heuristicHint": "Menggunakan keseimbangan partisipasi dan petunjuk konteks (gratis)",
+      "round_robin": "Bergiliran",
+      "round_robinHint": "Karakter bergiliran sesuai urutan (gratis)",
+      "director": "Sutradara",
+      "directorHint": "Anda memilih karakter mana yang merespons setiap pesan",
+      "style": "Gaya sutradara",
+      "cue": "Petunjuk",
+      "action": "Tindakan",
+      "cueHint": "Ketuk karakter untuk memilih siapa yang merespons. Kirim mengirim pesan Anda dan memicu balasan mereka.",
+      "actionHint": "Kirim hanya menambahkan pesan Anda. Ketuk avatar karakter agar mereka langsung merespons.",
+      "own": "Obrolan ini punya pilihannya sendiri"
+    },
+    "members": {
+      "replies_other": "{{count}} balasan, {{percent}}",
+      "muted": "Dilewati kecuali disebut",
+      "last": "Setidaknya satu anggota harus menjawab",
+      "answers": "{{name}} menjawab di obrolan ini"
+    },
+    "model": {
+      "title": "Model",
+      "none": "Belum ada model diatur",
+      "search": "Cari model",
+      "useDefault": "Gunakan default karakter",
+      "useDefaultHint": "Ikuti karakter, lalu default aplikasi",
+      "remoteTitle": "Gunakan model jarak jauh?",
+      "remoteBody": "Obrolan ini akan dikirim ke {{provider}} untuk setiap balasan.",
+      "use": "Gunakan model ini",
+      "unknown": "Model tidak dikenal"
+    },
+    "lorebooks": {
+      "title": "Lorebook",
+      "count_other": "{{count}} lorebook",
+      "useDefault": "Gunakan lorebook default",
+      "useDefaultHint": "Ikuti lorebook karakter",
+      "useCharacter": "Gunakan lorebook karakter"
+    },
+    "background": {
+      "set": "Gambar diatur"
+    },
+    "memory": {
+      "mode": "Mode memori",
+      "modes": {
+        "manual": "Manual",
+        "dynamic": "Dinamis",
+        "disabled": "Mati"
+      },
+      "open": "Buka memori",
+      "items_other": "{{count}} memori",
+      "summaryTokens_other": "{{count}} token ringkasan",
+      "off": "Memori mati untuk obrolan ini"
+    },
+    "notes": {
+      "title": "Catatan terjadwal",
+      "rowHint": "Pengingat yang dilihat karakter pada waktu tertentu",
+      "groupRowHint": "Pengingat yang dilihat grup dan anggotanya pada waktu tertentu",
+      "hint": "Catatan milik karakter dan muncul di setiap obrolan dengannya.",
+      "groupHint": "Catatan milik grup dan muncul di setiap obrolan grup ini.",
+      "empty": "Belum ada catatan terjadwal.",
+      "add": "Tambah catatan",
+      "untitled": "Catatan tanpa judul",
+      "label": "Label",
+      "labelPlaceholder": "Label (opsional)",
+      "content": "Catatan",
+      "contentPlaceholder": "Apa yang harus diketahui karakter?",
+      "groupContentPlaceholder": "Apa yang harus diketahui grup?",
+      "startsOn": "Mulai pada",
+      "stopsOn": "Berhenti pada (opsional)",
+      "repeats": "Berulang",
+      "windowHours": "Terlihat selama (jam)",
+      "enabled": "Aktif",
+      "enabledHint": "Matikan catatan tanpa menghapusnya",
+      "deleteTitle": "Hapus catatan ini?",
+      "deleteBody": "Tindakan ini tidak dapat dibatalkan.",
+      "recurrence": {
+        "none": "Sekali",
+        "daily": "Harian",
+        "weekly": "Mingguan",
+        "monthly": "Bulanan",
+        "yearly": "Tahunan"
+      },
+      "whoSees": "Siapa yang melihatnya",
+      "whoSeesHint": "Hanya karakter yang Anda pilih yang membaca catatan ini.",
+      "everyone": "Setiap anggota membaca catatan ini. Pilih karakter untuk membatasinya.",
+      "useCharacter": "Gunakan catatan karakter"
+    },
+    "history": {
+      "filter": "Filter obrolan",
+      "filters": {
+        "all": "Semua",
+        "active": "Aktif",
+        "archived": "Diarsipkan"
+      },
+      "sort": "Urutkan obrolan",
+      "sorts": {
+        "recent": "Terakhir digunakan",
+        "oldest": "Terlama dulu"
+      },
+      "results_other": "{{formattedCount}} obrolan",
+      "untitled": "Obrolan tanpa judul",
+      "search": "Cari obrolan",
+      "noMatch": "Tidak ada obrolan yang cocok",
+      "empty": "Belum ada obrolan",
+      "meta_other": "{{count}} pesan · {{date}}",
+      "current": "Saat ini",
+      "archived": "Diarsipkan",
+      "actions": "Tindakan untuk {{title}}",
+      "rename": "Ubah nama",
+      "export": "Ekspor",
+      "archive": "Arsipkan",
+      "restore": "Pulihkan",
+      "delete": "Hapus"
+    },
+    "starters": {
+      "hint": "Mulai dari salah satu templat obrolan karakter.",
+      "none": "Mulai tanpa templat"
+    },
+    "rename": {
+      "field": "Judul obrolan",
+      "save": "Simpan judul",
+      "open": "Ubah nama obrolan"
+    },
+    "delete": {
+      "title": "Hapus obrolan ini?",
+      "body": "{{title}} dan semua pesannya akan dihapus. Tindakan ini tidak dapat dibatalkan.",
+      "confirm": "Hapus"
+    },
+    "export": {
+      "done": "Obrolan diekspor"
+    },
+    "duplicate": {
+      "done": "Obrolan diduplikasi"
+    },
+    "actions": {
+      "newChat": "Obrolan baru",
+      "newChatHint": "Mulai percakapan lain dengan karakter ini",
+      "newGroupChatHint": "Mulai percakapan lain dengan grup ini",
+      "history": "Riwayat obrolan",
+      "historyHint": "Buka, ubah nama, atau hapus obrolan sebelumnya",
+      "branches": "Cabang",
+      "branchesHint": "Beralih di antara arah yang diambil obrolan ini",
+      "duplicate": "Duplikat obrolan",
+      "duplicateHint": "Buat salinan dengan semua pesannya",
+      "export": "Ekspor obrolan",
+      "exportHint": "Simpan percakapan sebagai file",
+      "import": "Impor log obrolan",
+      "importHint": "Bawa percakapan masuk dari file",
+      "importGroupHint": "Belum tersedia untuk obrolan grup",
+      "archive": "Arsipkan obrolan",
+      "archiveHint": "Sembunyikan dari daftar, pertahankan semuanya",
+      "restore": "Pulihkan obrolan",
+      "restoreHint": "Kembalikan ke daftar",
+      "delete": "Hapus obrolan",
+      "deleteHint": "Hapus obrolan dan pesannya secara permanen"
+    },
+    "generation": {
+      "title": "Pengaturan model",
+      "scope": "Hanya untuk obrolan ini",
+      "hint": "Nilai yang tidak diatur mengikuti model, lalu default aplikasi.",
+      "noModel": "Obrolan ini tidak memiliki model, jadi hanya default aplikasi yang berlaku.",
+      "resetAll": "Atur ulang semua",
+      "discard": "Buang",
+      "inherited": "Mengikuti model dan pengaturan aplikasi",
+      "count_other": "{{count}} nilai diubah untuk obrolan ini"
+    },
+    "time": {
+      "title": "Jam obrolan",
+      "awareness": "Kesadaran waktu",
+      "awarenessHint": "Beri model tanggal dan waktu serta tandai setiap pesan dengannya",
+      "live": "Waktu nyata",
+      "frozen": "Berhenti",
+      "ticking": "Berjalan",
+      "stoppedAt": "Berhenti pada {{when}}",
+      "runningFrom": "Berjalan dari {{when}}",
+      "mode": "Jam",
+      "anchor": "Tanggal dan waktu",
+      "apply": "Terapkan",
+      "reset": "Atur ulang",
+      "cancel": "Batal",
+      "chooseAnchor": "Pilih tanggal dan waktu",
+      "previousMonth": "Bulan sebelumnya",
+      "nextMonth": "Bulan berikutnya",
+      "chooseMonth": "Pilih bulan dan tahun",
+      "previousYear": "Tahun sebelumnya",
+      "nextYear": "Tahun berikutnya",
+      "year": "Tahun",
+      "time": "Waktu"
+    },
+    "groupAppearanceHint": "Tampilan untuk semua obrolan di grup ini",
+    "characterAppearanceHint": "Tampilan untuk semua obrolan dengan karakter ini"
+  },
+  "appearance": {
+    "forGroup": "Untuk setiap obrolan di grup ini",
+    "forCharacter": "Untuk {{name}}",
+    "moveLeft": "Pindah ke kiri",
+    "moveRight": "Pindah ke kanan",
+    "close": "Tutup tampilan",
+    "unsaved": "Perubahan belum disimpan",
+    "saved": "Tidak ada perubahan",
+    "discard": "Buang",
+    "save": "Simpan",
+    "discardTitle": "Buang perubahan Anda?",
+    "discardBody": "Perubahan tampilan yang Anda buat belum disimpan.",
+    "discardConfirm": "Buang perubahan",
+    "keepEditing": "Lanjut mengedit"
+  },
+  "memory": {
+    "title": "Memori",
+    "back": "Obrolan",
+    "tabs": {
+      "memories": "Memori",
+      "activity": "Aktivitas",
+      "pinned": "Disematkan"
+    },
+    "loading": "Memuat memori",
+    "off": {
+      "title": "Memori mati untuk obrolan ini",
+      "description": "Tidak ada yang diingat atau dikirim dengan balasan di obrolan ini.",
+      "action": "Buka pengaturan obrolan"
+    },
+    "search": "Cari memori",
+    "add": "Tambah",
+    "all": "Semua",
+    "categories": {
+      "character_trait": "Sifat karakter",
+      "relationship": "Hubungan",
+      "plot_event": "Peristiwa plot",
+      "world_detail": "Detail dunia",
+      "preference": "Preferensi",
+      "other": "Lainnya",
+      "milestone": "Tonggak",
+      "boundary": "Batas",
+      "profile": "Profil",
+      "routine": "Rutinitas",
+      "episodic": "Episode",
+      "emotional_snapshot": "Cuplikan emosi"
+    },
+    "origins": {
+      "model": "Model",
+      "user": "Anda",
+      "import": "Diimpor"
+    },
+    "temperature": {
+      "hot": "Panas",
+      "cold": "Dingin"
+    },
+    "tokens_other": "{{count}} token",
+    "window": "Pesan {{from}} hingga {{to}}",
+    "pinnedMark": "Disematkan",
+    "list": {
+      "found_other": "{{count}} ditemukan",
+      "total_other": "{{count}} memori",
+      "byModel": "{{count}} oleh model",
+      "byUser": "{{count}} oleh Anda",
+      "imported": "{{count}} diimpor",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "Belum ada memori",
+      "dynamic": "Memori muncul di sini saat obrolan bertambah. Anda juga dapat menambahkan sendiri.",
+      "manual": "Tambahkan apa yang harus selalu diingat karakter.",
+      "action": "Tambah memori",
+      "noMatch": "Tidak ada yang cocok dengan \"{{query}}\"",
+      "noMatchBody": "Coba kata dari memorinya sendiri.",
+      "noCategory": "Tidak ada di kategori ini"
+    },
+    "sheet": {
+      "addTitle": "Tambah memori",
+      "editTitle": "Memori",
+      "byModel": "Ditulis oleh model",
+      "byModelIn": "Ditulis oleh model di {{window}}",
+      "byUser": "Ditulis oleh Anda",
+      "imported": "Diimpor",
+      "text": "Memori",
+      "textPlaceholder": "Apa yang harus diingat karakter?",
+      "category": "Kategori",
+      "noCategory": "Tanpa kategori",
+      "when": "Kapan itu terjadi",
+      "whenHint": "Opsional. Membantu karakter menempatkannya dalam waktu.",
+      "whenPlaceholder": "Belum diatur",
+      "whenClear": "Bersihkan",
+      "temperature": "Suhu",
+      "hotBody": "Memori panas tetap dekat",
+      "coldBody": "Memori dingin hanya diingat saat sangat cocok",
+      "pin": "Disematkan",
+      "pinBody": "Model tidak pernah menghapus atau mengarsipkan memori yang disematkan",
+      "delete": "Hapus",
+      "cancel": "Batal",
+      "add": "Tambah",
+      "save": "Simpan",
+      "deleteTitle": "Hapus memori ini?",
+      "deleteBody": "Memori ini tidak akan lagi diingat dalam obrolan ini.",
+      "keep": "Pertahankan",
+      "added": "Memori ditambahkan",
+      "saved": "Memori disimpan",
+      "deleted": "Memori dihapus"
+    },
+    "summary": {
+      "title": "Ringkasan konteks",
+      "empty": "Tambahkan ringkasan singkat agar karakter menjaga alur cerita.",
+      "description": "Rekap singkat yang menyertai setiap balasan",
+      "field": "Ringkasan",
+      "dynamicHint": "Model menulis ulang ini pada setiap pembaruan. Edit Anda dipertahankan hingga saat itu.",
+      "clear": "Bersihkan",
+      "cancel": "Batal",
+      "save": "Simpan",
+      "saved": "Ringkasan disimpan",
+      "cleared": "Ringkasan dibersihkan"
+    },
+    "status": {
+      "approvalTitle": "Perbarui memori?",
+      "approvalBody_other": "{{count}} pesan baru siap dirangkum ke dalam memori.",
+      "update": "Perbarui",
+      "notNow": "Nanti saja",
+      "skipped_other": "Dilewati. Akan bertanya lagi setelah {{count}} pesan berikutnya",
+      "runningTitle": "Memperbarui memori",
+      "runningBody": "Membaca pesan terbaru",
+      "stop": "Hentikan",
+      "failedTitle": "Pembaruan memori gagal",
+      "tryAgain": "Coba lagi",
+      "otherModel": "Gunakan model lain",
+      "pausedTitle": "Pembaruan memori terakhir terputus",
+      "pausedBody": "Proses lain mengambil alih sebelum selesai.",
+      "nextIn_other": "Pembaruan berikutnya dalam {{count}} pesan",
+      "since_other": "{{count}} pesan sejak pembaruan terakhir",
+      "modes": {
+        "auto": "Otomatis",
+        "ask_first": "Tanya dulu",
+        "manual": "Manual"
+      },
+      "every_other": "{{mode}} · setiap {{count}} pesan",
+      "manualOnly": "{{mode}} · pembaruan hanya berjalan saat Anda memulainya di sini",
+      "progress": "{{current}} dari {{total}}",
+      "updateNow": "Perbarui sekarang"
+    },
+    "failure": {
+      "embedding_unavailable": "Model embedding tidak tersedia.",
+      "model_missing": "Model memori belum terpasang.",
+      "model_invalid": "Model memori tidak dapat digunakan.",
+      "prompt_missing": "Prompt memori tidak ada.",
+      "settings_invalid": "Pengaturan memori tidak valid.",
+      "provider_unavailable": "Penyedia tidak menjawab.",
+      "provider_rejected": "Penyedia menolak permintaan.",
+      "invalid_response": "Respons memori model tidak dapat diproses. Coba siklusnya lagi.",
+      "empty_response": "Model mengembalikan balasan kosong.",
+      "timed_out": "Model terlalu lama menjawab.",
+      "round_limit": "Model menggunakan terlalu banyak langkah.",
+      "tool_failed": "Salah satu perubahan memori gagal.",
+      "storage_failure": "Memori tidak dapat disimpan.",
+      "lease_lost": "Pembaruan lain mengambil alih.",
+      "internal": "Aplikasi mengalami kesalahan internal."
+    },
+    "gate": {
+      "not_dynamic": "Obrolan ini tidak menggunakan memori dinamis.",
+      "disabled": "Memori dinamis dinonaktifkan di pengaturan.",
+      "nothing_to_summarise": "Belum ada yang bisa dirangkum.",
+      "cycle_running": "Pembaruan sedang berjalan."
+    },
+    "activity": {
+      "empty": "Belum ada pembaruan",
+      "emptyBody": "Setiap pembaruan memori yang dijalankan model tercantum di sini.",
+      "badgeUndone": "Diurungkan",
+      "badgeFailed": "Gagal",
+      "badgeStopped": "Dihentikan",
+      "badgeInterrupted": "Terputus",
+      "badgeRunning": "Berjalan",
+      "noDetails": "Tidak ada detail yang dicatat.",
+      "stopped": "Pembaruan ini dihentikan sebelum selesai.",
+      "running": "Pembaruan ini masih berjalan.",
+      "actions": {
+        "created": "Ditambahkan",
+        "duplicate_skipped": "Sudah diketahui",
+        "deleted": "Dihapus",
+        "soft_deleted": "Dipindah ke dingin",
+        "pinned": "Disematkan",
+        "unpinned": "Sematan dilepas",
+        "target_not_found": "Tidak ditemukan",
+        "done": "Selesai",
+        "rejected": "Ditolak",
+        "skipped": "Dilewati",
+        "stopped_after_done": "Dihentikan setelah selesai"
+      },
+      "undo": "Urungkan pembaruan ini",
+      "blocked": "Tidak dapat diurungkan: pembaruan berikutnya dibangun di atasnya.",
+      "blockedBy": "Tidak dapat diurungkan: pembaruan untuk {{window}} dibangun di atasnya.",
+      "dependent": "Pembaruan berikutnya dibangun di atasnya, jadi tidak dapat diurungkan.",
+      "userEdited": "Anda mengedit memori yang ditulisnya, jadi tidak dapat diurungkan.",
+      "undoTitle": "Urungkan pembaruan untuk {{window}}?",
+      "undoBody": "Memori yang ditambahkan dihapus dan yang diubah kembali. Edit Anda sendiri dipertahankan.",
+      "undoConfirm": "Urungkan pembaruan",
+      "keep": "Pertahankan",
+      "undone": "Pembaruan diurungkan",
+      "loadMore": "Tampilkan pembaruan lama"
+    },
+    "pinnedTab": {
+      "empty": "Tidak ada pesan disematkan",
+      "emptyBody": "Sematkan pesan dari obrolan dan pesan itu selalu ikut dengan balasan berikutnya.",
+      "label": "Selalu dikirim dengan balasan",
+      "unpin": "Lepas sematan",
+      "unpinned": "Sematan dilepas",
+      "noText": "Lampiran",
+      "loadMore": "Tampilkan lebih banyak",
+      "you": "Anda"
+    }
+  },
+  "branches": {
+    "title": "Cabang",
+    "meta_other": "{{count}} pesan · {{date}}",
+    "current": "Saat ini",
+    "actions": "Tindakan untuk {{title}}",
+    "rename": "Ubah nama",
+    "renameField": "Nama cabang",
+    "delete": "Hapus",
+    "deleteRoot": "Cabang asli tidak dapat dihapus",
+    "deleteActive": "Beralih ke cabang lain dulu",
+    "deleteTitle": "Hapus cabang ini?",
+    "deleteBody": "{{name}} dan pesannya dihapus. Cabang lain tetap.",
+    "deleted": "Cabang dihapus",
+    "untitled": "Cabang tanpa judul",
+    "thisChat": "Obrolan ini",
+    "renameSave": "Simpan nama",
+    "original": "Asli",
+    "untitledChat": "Obrolan tanpa judul"
+  },
+  "companion": {
+    "title": "Companion",
+    "back": "Obrolan",
+    "tabs": {
+      "relationship": "Hubungan",
+      "bond": "Ikatan",
+      "memories": "Memori",
+      "soul": "Jiwa",
+      "activity": "Aktivitas"
+    },
+    "bond": "Ikatan",
+    "lastTalked": "Terakhir berbicara {{when}}",
+    "updated": "Diperbarui {{when}}",
+    "messages": "Pesan",
+    "togetherSince": "Bersama sejak {{date}}",
+    "engine": "Mesin emosi",
+    "nothingTitle": "Belum ada yang ditampilkan",
+    "nothingBody": "Ikatan dan perasaan {{name}} mulai bergerak setelah beberapa pesan. Mereka mulai dari default di pengaturan companion-nya.",
+    "missingTitle": "Perasaan tidak dilacak",
+    "missingBody": "Pasang model emosi agar setiap balasan dapat mengubah perasaan mereka.",
+    "install": "Pasang",
+    "nothingNow": "Tidak ada saat ini",
+    "drivers": "Pendorong aktif",
+    "timeline": "Linimasa terbaru",
+    "events_other": "{{count}} peristiwa",
+    "currentState": "Keadaan saat ini",
+    "defaultMark": "Default karakter",
+    "aboveDefault_other": "{{count}} poin di atas default karakter",
+    "belowDefault_other": "{{count}} poin di bawah default karakter",
+    "axes": {
+      "closeness": {
+        "label": "Kedekatan",
+        "low": "Menarik diri",
+        "mid": "Kenalan",
+        "high": "Intim"
+      },
+      "trust": {
+        "label": "Kepercayaan",
+        "low": "Curiga",
+        "mid": "Netral",
+        "high": "Percaya"
+      },
+      "affection": {
+        "label": "Kasih sayang",
+        "low": "Bermusuhan",
+        "mid": "Netral",
+        "high": "Penuh kasih"
+      },
+      "tension": {
+        "label": "Ketegangan",
+        "low": "Santai",
+        "mid": "",
+        "high": "Memuncak"
+      },
+      "stability": {
+        "label": "Stabilitas",
+        "low": "Mudah berubah",
+        "mid": "",
+        "high": "Stabil"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Merasa",
+        "hint": "Apa yang mereka rasakan di dalam"
+      },
+      "expressed": {
+        "title": "Menunjukkan",
+        "hint": "Apa yang terlihat dalam balasan mereka"
+      },
+      "blocked": {
+        "title": "Menahan",
+        "hint": "Apa yang ditahan kepribadian mereka"
+      },
+      "momentum": {
+        "title": "Meningkat",
+        "hint": "Ke mana beberapa giliran terakhir menuju"
+      }
+    },
+    "emotions": {
+      "warmth": "Kehangatan",
+      "trust": "Kepercayaan",
+      "calm": "Ketenangan",
+      "vulnerability": "Kerentanan",
+      "longing": "Kerinduan",
+      "hurt": "Luka",
+      "tension": "Ketegangan",
+      "irritation": "Kejengkelan",
+      "affection_intensity": "Kasih sayang",
+      "reassurance_need": "Butuh peneguhan"
+    },
+    "memories": {
+      "total_other": "{{count}} memori",
+      "found_other": "{{count}} ditemukan",
+      "kind": "Jenis",
+      "field": "Memori",
+      "placeholder": "Apa yang harus diingat {{name}}?",
+      "emptyTitle": "Tidak ada memori di sini",
+      "emptyBody": "Memori muncul saat Anda berbicara. Anda juga dapat menambahkan sendiri.",
+      "noMatch": "Tidak ada yang cocok dengan \"{{query}}\"",
+      "noMatchBody": "Coba kata dari memorinya sendiri."
+    },
+    "soul": {
+      "title": "Jiwa",
+      "edit": "Edit",
+      "core": "Inti identitas. Pertumbuhan tidak pernah mengubahnya",
+      "notWritten": "Belum ditulis",
+      "growth": "Pertumbuhan jiwa",
+      "clear": "Hapus pertumbuhan",
+      "intro": "Bagaimana sifat yang dapat berubah telah berkembang dari memori Anda. Esensi, sifat, dan latar belakang tidak pernah berubah di sini.",
+      "empty": "Belum ada pertumbuhan. Saat memori terbentuk, sifat yang berubah bersama Anda muncul di sini.",
+      "zero": "0 perubahan",
+      "added": "Ditambahkan",
+      "adjusted": "Disesuaikan",
+      "confidence": "Kepercayaan diri",
+      "locked": "Terkunci",
+      "lock": "Kunci",
+      "unlock": "Buka kunci",
+      "lockHint": "Kunci fakta ini",
+      "unlockHint": "Buka kunci fakta ini",
+      "historicalHint": "Fakta historis selalu dipertahankan",
+      "remove": "Hapus pertumbuhan ini",
+      "sources_other": "dari {{count}} memori",
+      "retired_other": "{{count}} versi sebelumnya dipensiunkan.",
+      "categories": {
+        "essence": "Esensi",
+        "traits": "Sifat",
+        "backstory": "Latar belakang",
+        "appearance": "Penampilan",
+        "goals": "Tujuan",
+        "likes": "Kesukaan",
+        "voice": "Suara",
+        "relational_style": "Gaya relasi",
+        "vulnerabilities": "Kerentanan",
+        "fears": "Ketakutan",
+        "habits": "Kebiasaan",
+        "boundaries": "Batas"
+      },
+      "policy": {
+        "current": {
+          "label": "Saat ini",
+          "hint": "Menggantikan yang sebelumnya"
+        },
+        "adaptive": {
+          "label": "Adaptif",
+          "hint": "Dapat terus bergeser saat Anda berbicara"
+        },
+        "historical": {
+          "label": "Historis",
+          "hint": "Sesuatu yang terjadi. Selalu dipertahankan"
+        }
+      },
+      "removeTitle": "Hapus ini?",
+      "removeBody": "Ini dikeluarkan dari apa yang telah mereka pelajari. Jiwa tertulis mereka tetap sama.",
+      "clearTitle": "Hapus semua yang telah mereka pelajari?",
+      "clearBody": "Semua pertumbuhan hilang, termasuk riwayat yang digantikan. Jiwa tertulis mereka tetap sama.",
+      "keep": "Pertahankan",
+      "removeConfirm": "Hapus",
+      "clearConfirm": "Hapus semua",
+      "removed": "Dihapus",
+      "cleared": "Pertumbuhan dihapus",
+      "sourcesTitle": "Dari mana ini berasal",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "Memori sumber tidak lagi tersedia.",
+      "sourcesMissing_other": "{{count}} memori sumber tidak lagi tersedia."
+    },
+    "effect": {
+      "title": "Apa yang diubah balasan ini",
+      "feels": "Apa yang mereka rasakan",
+      "pickedUp": "Menangkap",
+      "letGo": "Melepaskan",
+      "remembered": "Mengingat",
+      "processing": "Melihat apa yang berubah",
+      "failed": "Perubahan balasan tidak dapat dianalisis.",
+      "invalidated": "Perubahan ini tidak lagi berlaku untuk balasan ini.",
+      "memoryCount_other": "{{count}} memori",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "Tidak ada perubahan untuk ditampilkan",
+      "quote": "“{{text}}”"
+    },
+    "activity": {
+      "undo": "Urungkan pembaruan ini",
+      "undoTitle": "Urungkan {{window}}?",
+      "undoBody": "Memori yang ditambahkan dihapus dan yang diubah kembali. Edit Anda sendiri dipertahankan.",
+      "undoConfirm": "Urungkan pembaruan",
+      "blockedBy": "Tidak dapat diurungkan: {{window}} dibangun di atasnya.",
+      "blocked": "Tidak dapat diurungkan: pembaruan berikutnya dibangun di atasnya."
+    },
+    "unavailable": "Obrolan ini tidak memiliki companion",
+    "unavailableBody": "Buka obrolan companion untuk melihat ikatan, memori, dan jiwanya.",
+    "crisp": {
+      "close": "Tutup",
+      "clearSearch": "Hapus pencarian"
+    },
+    "lastReply": "Balasan terakhir",
+    "replyHint": "Setiap pesan dalam obrolan membuka ini dari menunya"
+  }
+}

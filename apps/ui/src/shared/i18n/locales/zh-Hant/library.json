@@ -1,0 +1,121 @@
+{
+  "triggerPreview": "觸發預覽",
+  "title": "資源庫",
+  "loadMore": "載入更多",
+  "search": "搜尋資源庫",
+  "show": "顯示",
+  "filters": {
+    "all": "全部",
+    "characters": "角色",
+    "personas": "人設",
+    "lorebooks": "設定集",
+    "images": "圖片",
+    "audio": "音訊"
+  },
+  "kinds": {
+    "character": "角色",
+    "persona": "人設",
+    "lorebook": "設定集"
+  },
+  "you": "你",
+  "entries_other": "{{count}} 個條目",
+  "defaultPersona": "人設 · 你的預設",
+  "menu": {
+    "start": "開始對話",
+    "edit_character": "編輯角色",
+    "edit_persona": "編輯人設",
+    "edit_lorebook": "編輯設定集",
+    "default": "設為預設人設",
+    "defaultHint": "供未選擇其他人設的對話使用",
+    "export": "匯出",
+    "export_character": "匯出為角色卡",
+    "export_persona": "匯出為 UEC 檔案",
+    "export_lorebook": "匯出為 UEC 或 JSON 檔案",
+    "delete_character": "刪除角色",
+    "delete_persona": "刪除人設",
+    "delete_lorebook": "刪除設定集",
+    "save": "儲存至裝置",
+    "deleteImage": "刪除圖片",
+    "deleteAudio": "刪除錄音",
+    "avatar": "設為 {{name}} 的大頭貼",
+    "more": "{{name}} 的更多動作",
+    "background": "背景",
+    "generated": "已生成",
+    "uploaded": "已上傳"
+  },
+  "create": {
+    "title": "建立",
+    "description": "將內容加入你的資源庫。",
+    "character": "可以聊天的人",
+    "persona": "你在對話中的身分",
+    "lorebook": "角色可以引用的世界觀設定",
+    "import": "匯入檔案",
+    "importHint": "角色卡、人設或設定集",
+    "new_character": "新角色",
+    "new_lorebook": "新設定集",
+    "button_character": "建立角色",
+    "button_persona": "建立人設",
+    "button_lorebook": "建立設定集"
+  },
+  "edit": {
+    "name": "名稱",
+    "hint_character": "顯示於角色卡和對話標題。",
+    "placeholder_character": "例如：凱西安",
+    "placeholder_lorebook": "例如：北門",
+    "create": "建立",
+    "cancel": "取消"
+  },
+  "delete": {
+    "title": "要刪除 {{name}} 嗎？",
+    "confirm": "刪除",
+    "character": "其對話和記憶也會一併刪除。",
+    "persona": "使用此人設的對話將移除它。",
+    "lorebook": "使用它的角色和對話將無法存取其條目。",
+    "image": "圖片會從此裝置移除。仍在使用中的圖片無法刪除。",
+    "audio": "錄音會從此裝置移除。仍在使用中的錄音無法刪除。"
+  },
+  "empty": {
+    "all": {
+      "title": "你的資源庫是空的",
+      "description": "你建立或匯入的角色、人設和設定集都會保存在這裡。"
+    },
+    "characters": {
+      "title": "尚無角色",
+      "description": "角色是與你對話的對象：一個名字、一段過去、一種說話方式。"
+    },
+    "personas": {
+      "title": "尚無人設",
+      "description": "人設是你在對話中的身分。角色會看到它的名稱和描述。"
+    },
+    "lorebooks": {
+      "title": "尚無設定集",
+      "description": "角色在對話中談到相關內容時可以引用的世界觀設定。"
+    },
+    "images": {
+      "title": "尚無圖片",
+      "description": "你在對話中生成的圖片會保存在這裡。"
+    },
+    "audio": {
+      "title": "尚無音訊",
+      "description": "你生成或錄製的語音會保存在這裡。"
+    },
+    "matches": "沒有符合「{{query}}」的項目",
+    "searchAll": "試試其他名稱，或描述的一部分。",
+    "searchSection": "此區段沒有符合項目，但資源庫其他部分可能會有。",
+    "clear": "清除搜尋",
+    "everything": "搜尋全部",
+    "import": "匯入"
+  },
+  "toast": {
+    "created": "已新增 {{name}}",
+    "deleted": "已刪除 {{name}}",
+    "default": "{{name}} 是你的預設人設",
+    "exported": "已匯出檔案",
+    "imported": "已匯入檔案",
+    "warnings_other": "檔案已傳輸，但有 {{count}} 個警告",
+    "mediaSaved": "已儲存至裝置",
+    "avatar": "已更新大頭貼"
+  },
+  "draft": "草稿",
+  "untitledDraft": "未命名設定集草稿"
+}

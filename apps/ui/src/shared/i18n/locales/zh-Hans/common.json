@@ -1,0 +1,174 @@
+{
+  "onnxModelsUnloaded": "已释放闲置模型以节省内存：{{models}}。需要时会再次加载。",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "正在连接应用…"
+  },
+  "navigation": {
+    "primary": "主导航",
+    "chats": "聊天",
+    "groups": "群组",
+    "discover": "发现",
+    "library": "资源库",
+    "settings": "设置",
+    "home": "首页",
+    "create": "创建",
+    "collapse": "收起",
+    "collapseSidebar": "收起侧边栏",
+    "expandSidebar": "展开侧边栏",
+    "backToApp": "返回应用"
+  },
+  "downloads": {
+    "loading": "正在加载下载内容",
+    "title": "下载",
+    "titleActive_other": "{{count}} 个下载进行中",
+    "empty": "没有正在下载的内容。",
+    "emptyBody": "安装和更新会显示在这里。",
+    "generic": "下载",
+    "done": "{{name}} 已就绪",
+    "failed": "{{name}} 下载失败"
+  },
+  "window": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "close": "关闭窗口",
+    "failed": "窗口操作未能完成，请重试。"
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "其他"
+  },
+  "actions": {
+    "retry": "重试",
+    "cancel": "取消",
+    "reload": "重新加载"
+  },
+  "errors": {
+    "fatalTitle": "出错了",
+    "fatalDescription": "应用遇到了意外问题。重新加载通常能解决。",
+    "loadTitle": "无法加载",
+    "notFoundTitle": "这里什么也没有",
+    "notFoundDescription": "应用中没有这个页面。",
+    "code": {
+      "not_found": "它已不存在。",
+      "in_use": "它仍在使用中。请移除相关引用后再试。",
+      "malformed": "服务商返回了无法读取的响应。",
+      "conflict": "它在别处被修改过。请重新加载后再试。",
+      "invalid_input": "请求中有无效内容。",
+      "unsupported": "此处不支持该操作。",
+      "unavailable": "它目前不可用。",
+      "cancelled": "操作已取消。",
+      "busy": "应用正忙，请稍后再试。",
+      "internal": "应用遇到了内部错误。",
+      "model_required": "尚未安装所需的模型。",
+      "model_unavailable": "无法加载所需的模型。",
+      "transport": "无法连接到应用的后端。"
+    }
+  },
+  "create": {
+    "group": "创建群组",
+    "groupBody": "把角色放进同一个聊天",
+    "title": "创建",
+    "description": "找个聊天对象，或为他们建一个世界。",
+    "character": "创建角色",
+    "characterBody": "名字、外貌、性格和开场场景",
+    "persona": "创建人设",
+    "personaBody": "你在聊天中的身份",
+    "lorebook": "创建知识库",
+    "lorebookBody": "世界设定，可自己写、从文件导入或用 AI 生成",
+    "import": "导入角色卡",
+    "importBody": "PNG 或 JSON 角色卡",
+    "imported": "角色已导入",
+    "discover": "浏览发现",
+    "discoverBody": "其他人分享的角色"
+  },
+  "providerSelect": {
+    "placeholder": "选择服务商",
+    "title": "服务商",
+    "empty": "没有可用的服务商。",
+    "groups": {
+      "cloud": "云端",
+      "local": "本地",
+      "custom": "自定义"
+    }
+  },
+  "designReferences": {
+    "note": "设计说明",
+    "notePlaceholder": "短发、圆眼镜、灰色长外套",
+    "noteHint": "用几句话描述外貌，用于生成场景图片。",
+    "images": "参考图片",
+    "imagesHint": "几张能体现外观的图片。",
+    "add": "添加图片",
+    "remove": "移除图片"
+  },
+  "memoryDownload": {
+    "title": "下载记忆模型",
+    "titleDone": "记忆已就绪",
+    "body": "自动记忆需要在本设备上运行一个小型模型。下载一次后即可离线运行。",
+    "bodyDone": "你的角色现在能记住重要的事，即使聊天很长。你可以按聊天关闭此功能。",
+    "modelName": "Lettuce Eidos 记忆模型",
+    "keepOpen": "下载完成前请保持应用开启。",
+    "download": "下载并完成",
+    "downloading": "正在下载",
+    "checking": "正在检查模型",
+    "useManual": "改用手动记忆",
+    "doneDetail": "已安装并测试 · 可离线运行",
+    "failedOffline": "连接已断开，请重试以继续。",
+    "failedOther": "下载未完成，请重试以继续。",
+    "downloadOnly": "下载",
+    "bodyInstall": "动态记忆需要在本设备上运行一个小型模型。下载一次后即可离线运行。",
+    "failureCode": {
+      "integrity_failure": "下载内容已损坏，请重试以继续。",
+      "resource_unavailable": "模型服务器暂时不可用，请重试以继续。",
+      "storage_failure": "无法将模型保存到本设备。请检查可用空间后重试。",
+      "timed_out": "下载耗时过长，请重试以继续。"
+    }
+  },
+  "emotionDownload": {
+    "title": "下载情绪模型",
+    "titleDone": "情绪已就绪",
+    "body": "伙伴模式会用本设备上的小型模型解读每条消息背后的情绪。下载一次后即可离线运行。",
+    "bodyDone": "现在每条回复都会影响伙伴的感受和你们的亲密度。",
+    "download": "下载",
+    "close": "暂不",
+    "finish": "完成"
+  },
+  "structuredFallback": {
+    "title": "当模型无法使用工具时",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "紧凑，适用于大多数模型。"
+      },
+      "xml": {
+        "title": "XML",
+        "body": "适合写 XML 比写 JSON 更可靠的模型。"
+      }
+    },
+    "hint": "会优先尝试工具调用。仅当模型不支持时才使用此格式。"
+  },
+  "promptPicker": {
+    "builtIn": "内置",
+    "builtInBody": "应用自带的提示词",
+    "builtInMissing": "内置提示词不可用",
+    "search": "搜索提示词",
+    "clearSearch": "清除搜索",
+    "noMatches": "没有匹配的提示词",
+    "manage": "系统提示词",
+    "manageBody": "创建或编辑提示词",
+    "close": "关闭"
+  },
+  "lorebookPicker": {
+    "title": "知识库",
+    "done": "完成",
+    "empty": "还没有知识库",
+    "emptyBody": "你创建或导入的知识库会显示在这里。",
+    "edit": "编辑 {{name}}"
+  }
+}

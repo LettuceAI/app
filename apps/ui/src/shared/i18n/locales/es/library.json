@@ -1,0 +1,125 @@
+{
+  "triggerPreview": "Vista previa de activación",
+  "title": "Biblioteca",
+  "loadMore": "Cargar más",
+  "search": "Buscar en la biblioteca",
+  "show": "Mostrar",
+  "filters": {
+    "all": "Todo",
+    "characters": "Personajes",
+    "personas": "Personas",
+    "lorebooks": "Libros de lore",
+    "images": "Imágenes",
+    "audio": "Audio"
+  },
+  "kinds": {
+    "character": "Personaje",
+    "persona": "Persona",
+    "lorebook": "Libro de lore"
+  },
+  "you": "Tú",
+  "entries_one": "{{count}} entrada",
+  "entries_many": "{{count}} entradas",
+  "entries_other": "{{count}} entradas",
+  "defaultPersona": "Persona · tu predeterminada",
+  "menu": {
+    "start": "Iniciar chat",
+    "edit_character": "Editar personaje",
+    "edit_persona": "Editar persona",
+    "edit_lorebook": "Editar libro de lore",
+    "default": "Usar como persona predeterminada",
+    "defaultHint": "Para los chats que no eligen otra",
+    "export": "Exportar",
+    "export_character": "Como tarjeta de personaje",
+    "export_persona": "Como archivo UEC",
+    "export_lorebook": "Como archivo UEC o JSON",
+    "delete_character": "Eliminar personaje",
+    "delete_persona": "Eliminar persona",
+    "delete_lorebook": "Eliminar libro de lore",
+    "save": "Guardar en el dispositivo",
+    "deleteImage": "Eliminar imagen",
+    "deleteAudio": "Eliminar grabación",
+    "avatar": "Usar como avatar de {{name}}",
+    "more": "Más de {{name}}",
+    "background": "Fondo",
+    "generated": "Generado",
+    "uploaded": "Subido"
+  },
+  "create": {
+    "title": "Crear",
+    "description": "Añade algo a tu biblioteca.",
+    "character": "Alguien con quien hablar",
+    "persona": "Quién eres tú en un chat",
+    "lorebook": "Datos del mundo de los que un personaje puede tirar",
+    "import": "Importar un archivo",
+    "importHint": "Tarjeta de personaje, persona o libro de lore",
+    "new_character": "Nuevo personaje",
+    "new_lorebook": "Nuevo libro de lore",
+    "button_character": "Crear personaje",
+    "button_persona": "Crear persona",
+    "button_lorebook": "Crear libro de lore"
+  },
+  "edit": {
+    "name": "Nombre",
+    "hint_character": "Se muestra en la tarjeta y en la cabecera del chat.",
+    "placeholder_character": "p. ej. Cassian",
+    "placeholder_lorebook": "p. ej. La puerta norte",
+    "create": "Crear",
+    "cancel": "Cancelar"
+  },
+  "delete": {
+    "title": "¿Eliminar {{name}}?",
+    "confirm": "Eliminar",
+    "character": "Sus chats y memorias se eliminan con él.",
+    "persona": "La persona se quita de los chats que la usan.",
+    "lorebook": "Los personajes y chats que lo usan pierden acceso a sus entradas.",
+    "image": "La imagen se elimina de este dispositivo. Las imágenes que aún estén en uso no se pueden eliminar.",
+    "audio": "La grabación se elimina de este dispositivo. Las grabaciones que aún estén en uso no se pueden eliminar."
+  },
+  "empty": {
+    "all": {
+      "title": "Tu biblioteca está vacía",
+      "description": "Los personajes, personas y libros de lore que crees o importes se guardan aquí."
+    },
+    "characters": {
+      "title": "Aún no hay personajes",
+      "description": "Un personaje es con quien hablas: un nombre, una historia, una forma de hablar."
+    },
+    "personas": {
+      "title": "Aún no hay personas",
+      "description": "Una persona es quién eres tú en un chat. Los personajes ven su nombre y su descripción."
+    },
+    "lorebooks": {
+      "title": "Aún no hay libros de lore",
+      "description": "Datos del mundo de los que un personaje puede tirar cuando surgen en la conversación."
+    },
+    "images": {
+      "title": "Aún no hay imágenes",
+      "description": "Las imágenes que generes en un chat se guardan aquí."
+    },
+    "audio": {
+      "title": "Aún no hay audio",
+      "description": "Las voces que generes o grabes se guardan aquí."
+    },
+    "matches": "Nada coincide con «{{query}}»",
+    "searchAll": "Prueba con otro nombre o con parte de una descripción.",
+    "searchSection": "En esta sección no hay nada. Puede que en el resto de tu biblioteca sí.",
+    "clear": "Limpiar búsqueda",
+    "everything": "Buscar en todo",
+    "import": "Importar"
+  },
+  "toast": {
+    "created": "Se añadió {{name}}",
+    "deleted": "Se eliminó {{name}}",
+    "default": "{{name}} es tu persona predeterminada",
+    "exported": "Archivo exportado",
+    "imported": "Archivo importado",
+    "warnings_one": "Archivo transferido con {{count}} advertencia",
+    "warnings_many": "Archivo transferido con {{count}} advertencias",
+    "warnings_other": "Archivo transferido con {{count}} advertencias",
+    "mediaSaved": "Guardado en el dispositivo",
+    "avatar": "Avatar actualizado"
+  },
+  "draft": "Borrador",
+  "untitledDraft": "Borrador de libro de lore sin título"
+}

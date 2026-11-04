@@ -1,0 +1,73 @@
+{
+  "cancel": "取消",
+  "retry": "重试",
+  "notRecognized": "这个文件不是 LettuceAI 角色卡或备份。",
+  "import": {
+    "title": {
+      "character": "导入角色",
+      "persona": "导入人设",
+      "lorebook": "导入知识库"
+    },
+    "kind": {
+      "character": "角色",
+      "persona": "人设",
+      "lorebook": "知识库"
+    },
+    "entries_other": "{{count}} 个条目",
+    "confirm": "导入",
+    "open": "打开",
+    "done": "{{name}} 已导入",
+    "started": "导入已开始",
+    "warnings_other": "导入完成，有 {{count}} 条警告"
+  },
+  "restore": {
+    "title": "恢复备份",
+    "created": "创建时间",
+    "version": "应用版本",
+    "password": "密码",
+    "warning": "恢复会用备份替换本设备上的所有聊天、角色和设置。你当前的数据会另存为一个单独的文件。",
+    "action": "恢复",
+    "stop": "停止",
+    "running": "正在恢复",
+    "starting": "正在启动恢复",
+    "waiting": "正在等待恢复开始",
+    "step": "第 {{step}} 步，共 {{total}} 步",
+    "keepOpen": "大型备份可能需要几分钟。完成前请保持应用开启。",
+    "stages": {
+      "decode": "正在打开备份",
+      "stage": "正在准备文件",
+      "write": "正在写入数据",
+      "verify": "正在校验恢复的数据",
+      "switch": "正在切换到恢复的数据"
+    },
+    "failed": "恢复已停止",
+    "failedAt": "恢复在第 {{step}} 步（共 {{total}} 步）停止：{{stage}}",
+    "confirmTitle": "替换本设备上的所有内容？",
+    "confirmBody": "所有聊天、角色和设置都会被此备份替换。你当前的数据会另存为一个单独的文件。",
+    "confirm": "恢复",
+    "done": "备份已恢复",
+    "notBackup": "该文件不是 LettuceAI 备份。",
+    "models": {
+      "title": "下载数据所需的模型",
+      "required": "没有这些模型，相关功能会停止工作，因此必须先下载才能继续。"
+    },
+    "warnings_other": "备份已恢复，有 {{count}} 条警告",
+    "failure": {
+      "unknown": "无法恢复该备份。",
+      "backup_authentication": "密码错误或备份已损坏。",
+      "backup_invalid_envelope": "此文件不是有效的备份。",
+      "backup_limit_exceeded": "此备份超出了应用可恢复的大小上限。",
+      "backup_unavailable": "备份功能目前不可用。",
+      "backup_file_not_found": "找不到备份文件。",
+      "backup_permission_denied": "应用无权读取此文件。",
+      "backup_file_busy": "该文件正被另一个应用占用。",
+      "backup_file_unavailable": "无法读取备份文件。",
+      "backup_file_unsupported": "此备份由应用无法读取的版本创建。",
+      "backup_source_is_target": "备份文件正是应用当前使用的文件。",
+      "backup_cancelled": "恢复已取消。",
+      "backup_retry_required": "恢复未完成，请重试。",
+      "backup_recovery_required": "需要重新打开应用才能完成恢复。",
+      "backup_verification_failed": "备份未通过校验。"
+    }
+  }
+}

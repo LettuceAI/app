@@ -1,0 +1,355 @@
+{
+  "header": {
+    "back": "返回",
+    "learn": "引導設定 · 基礎入門，{{current}} / {{total}}",
+    "path": "引導設定 · 免費或付費",
+    "guided": "引導設定 · {{name}}，{{current}} / {{total}}",
+    "connect": "設定 · 1 / 3",
+    "model": "設定 · 2 / 3",
+    "memory": "設定 · 3 / 3"
+  },
+  "welcome": {
+    "line1": "你的<brand>故事</brand>，",
+    "line2": "你的<brand>角色</brand>。",
+    "pitch": "對話和角色都留在你的裝置上。由你選擇哪個 AI 來撰寫回覆。",
+    "start": "開始使用",
+    "other": "其他選項"
+  },
+  "actions": {
+    "exitSetup": "返回設定",
+    "next": "下一步",
+    "gotIt": "知道了",
+    "haveKey": "我有金鑰",
+    "connect": "連線",
+    "checking": "正在檢查金鑰",
+    "useModel": "使用此模型",
+    "saving": "正在儲存模型",
+    "finish": "完成設定",
+    "finishing": "正在完成設定",
+    "openApp": "開啟 LettuceAI"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "歡迎",
+      "title": "歡迎使用 LettuceAI",
+      "body": "你即將設定第一次 AI 角色扮演。接下來幾個步驟會用簡單的說明介紹基礎概念，然後我們會協助你完成連線。只需要幾分鐘。"
+    },
+    "car": {
+      "tag": "運作方式",
+      "title": "應用程式是車子，不是引擎",
+      "body": "把這個應用程式想成一輛還沒有引擎的車。它有儀表板、座椅和你的角色，但無法自己行駛。你加入引擎，而這幾個步驟會告訴你怎麼做。",
+      "plain": "這個應用程式是畫面和角色。真正撰寫回覆的 AI 在線上執行，你把應用程式連線到它。"
+    },
+    "provider": {
+      "tag": "步驟 1 / 3",
+      "title": "選擇引擎的來源",
+      "body": "供應商是提供並執行引擎的公司，例如 Google 或 OpenRouter。你向其中一家申請免費或付費帳號，應用程式就會借用他們的引擎來驅動你的對話。",
+      "plain": "供應商是執行 AI 模型的公司。你向其中一家註冊帳號，應用程式會把你的訊息傳給他們以取得回覆。"
+    },
+    "key": {
+      "tag": "步驟 2 / 3",
+      "title": "你的金鑰啟動引擎",
+      "body": "API 金鑰就像車鑰匙。供應商交給你一把，你插入應用程式，就能啟動引擎。請妥善保管，它會留在你的裝置上，就像口袋裡的鑰匙。",
+      "plain": "API 金鑰是供應商提供的秘密代碼，讓應用程式使用你的帳號。你只要貼上一次，它就只會儲存在你的裝置上。"
+    },
+    "engine": {
+      "tag": "步驟 3 / 3",
+      "title": "選擇你的引擎",
+      "body": "模型就是引擎本身。供應商提供小型、高效率的引擎，以及大型、強力的引擎。引擎越大跑得越好，但也更耗油，所以費用更高。你隨時可以更換引擎。",
+      "plain": "模型是實際撰寫回覆的 AI。模型越大越聰明，但費用也越高，你可以隨時切換。"
+    },
+    "cost": {
+      "tag": "費用",
+      "title": "免費或付費，由你選擇",
+      "body": "有些模型完全免費使用，但每天有對話量限制。付費模型會針對每則訊息收取少量費用，通常不到一分錢。",
+      "plain": "你只需要付錢給供應商，永遠不用付給這個應用程式。你可以先從免費開始，之後想付費再切換。"
+    },
+    "inOtherWords": "換句話說"
+  },
+  "path": {
+    "gemini": {
+      "title": "免費",
+      "subtitle": "Google Gemini",
+      "cta": "免費開始",
+      "pro1": "完全免費，也不需要綁定信用卡",
+      "pro2": "日常聊天有充足的每日額度",
+      "pro3": "角色扮演與對話品質良好",
+      "con1": "只能使用 Google 自家的模型",
+      "con2": "成人或露骨內容會遭到封鎖"
+    },
+    "openrouter": {
+      "title": "依用量付費",
+      "subtitle": "OpenRouter",
+      "cta": "使用 OpenRouter",
+      "pro1": "幾乎所有 AI 模型，包括最強大的",
+      "pro2": "沒有每日上限，用多少付多少",
+      "pro3": "隨時可切換到更便宜的模型",
+      "con1": "費用取決於模型和對話量",
+      "con2": "需要綁定信用卡或預付額度"
+    },
+    "title": "免費或付費？",
+    "lead": "兩者都會把應用程式連線到 AI。差別在於你是否付費，以及能選擇多少模型。",
+    "footer": "不確定嗎？先從免費開始。之後也能加入付費服務，不會有任何損失。"
+  },
+  "connect": {
+    "title": "連線 AI",
+    "lead": "LettuceAI 是應用程式；真正撰寫回覆的是 AI 服務。請連線你已持有金鑰的服務。",
+    "guidedLink": "第一次使用 AI 應用程式？試試引導設定",
+    "search": "搜尋 {{count}} 項服務",
+    "chooseAnother": "選擇其他服務",
+    "pickTitle": "從清單中選擇服務",
+    "pickBody": "你需要該服務的帳號和 API 金鑰。",
+    "groups": {
+      "cloud": "雲端服務",
+      "local": "在你的電腦或網路上",
+      "custom": "其他任何服務"
+    },
+    "subtitle": {
+      "custom": "你自己的端點",
+      "local": "在你的電腦上執行"
+    },
+    "form": {
+      "address": "位址",
+      "addressHintLocal": "伺服器執行處",
+      "addressHintCustom": "API 的基礎 URL",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API 金鑰",
+      "apiKeyOptional": "API 金鑰（選填）",
+      "apiKeyHint": "加密儲存在此裝置上",
+      "apiKeyPlaceholder": "貼上你的金鑰",
+      "name": "名稱",
+      "nameHint": "在選單中的顯示方式",
+      "namePlaceholder": "我的 {{name}}"
+    },
+    "error": {
+      "rejected": "此金鑰未被接受",
+      "unreachable": "無法連線至 {{name}}。請檢查你的網路連線。"
+    }
+  },
+  "guide": {
+    "previousPicture": "上一張圖片",
+    "nextPicture": "下一張圖片",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "螢幕截圖",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "貼上你的金鑰",
+      "geminiBody": "貼上你剛從 Google AI Studio 複製的金鑰。我們會向 Google 驗證，然後顯示它能解鎖的模型。",
+      "openrouterBody": "貼上你從 OpenRouter 複製的金鑰。它會以 sk-or 開頭。我們會驗證，然後顯示你可以使用的模型。",
+      "geminiPlaceholder": "貼上你的 API 金鑰",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "加密儲存在此裝置上，只會在對話時傳送給 {{name}}。"
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "開啟 Google AI Studio",
+        "body": "Google AI Studio 是建立免費 Gemini 金鑰的 Google 官方網站。使用下方按鈕在瀏覽器中開啟。頁面載入後，用你平常的 Google 帳號按右上角的「開始使用」登入。如果你已登入，就會直接進入。",
+        "open": "開啟 Google AI Studio",
+        "slide1": "按一下右上角的「開始使用」。"
+      },
+      "find": {
+        "title": "找到 API 金鑰",
+        "body": "你現在應該在 Google AI Studio 的主要工作區。API 金鑰不在主畫面，而是在頁面左側的側邊欄。請在側邊欄靠近底部的位置尋找小鑰匙圖示，按一下即可開啟金鑰管理頁面。",
+        "slide1": "按一下側邊欄左下角的鑰匙圖示。"
+      },
+      "create": {
+        "title": "建立你的金鑰",
+        "body": "建立金鑰需要依序按幾下，圖片會依序示範每個步驟。首先從右上角開啟新金鑰對話框，接著為金鑰建立一個專案，專案名稱可以任意取，最後建立金鑰本身。使用右側的箭頭逐步瀏覽每個畫面。",
+        "slide1": "按一下右上角的「建立 API 金鑰」。",
+        "slide2": "開啟下拉式選單，按一下「建立專案」。",
+        "slide3": "輸入任意名稱，然後按一下「建立專案」。",
+        "slide4": "選取你的專案後，按一下「建立金鑰」。"
+      },
+      "copy": {
+        "title": "複製你的金鑰",
+        "body": "你的金鑰已建立，現在會完整顯示。按一下旁邊的複製圖示，將整組金鑰複製到剪貼簿。這是 Google 唯一會顯示完整金鑰的時候，請在關閉對話框前先複製，然後回到這裡貼上。",
+        "slide1": "按一下複製圖示以複製你的 API 金鑰。"
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "開啟 Google AI Studio",
+        "body": "Google AI Studio 是建立免費 Gemini 金鑰的 Google 官方網站。使用下方按鈕在瀏覽器中開啟，我們會一起取得金鑰。兩張圖片會顯示頁面載入後確切的點按位置，如果不確定要看哪裡，可以左右滑動切換。",
+        "open": "開啟 Google AI Studio",
+        "slide1": "點按右上角的選單。",
+        "slide2": "然後點按底部的「開始使用」。"
+      },
+      "find": {
+        "title": "找到 API 金鑰",
+        "body": "你現在應該已登入，並在 Google AI Studio 的主要頁面。你需要的內容藏在側邊選單裡，不在主畫面。開啟選單，然後在底部尋找小鑰匙圖示。點按它就會直接前往建立金鑰的頁面。",
+        "slide1": "開啟左上角的選單。",
+        "slide2": "點按選單底部的鑰匙圖示。"
+      },
+      "start": {
+        "title": "建立新金鑰",
+        "body": "這裡是 API 金鑰頁面，目前是空的，因為你還沒建立任何金鑰。這完全正常。開始流程的按鈕位於畫面右上角，點按它即可開始建立第一組金鑰。",
+        "slide1": "點按右上角的「建立 API 金鑰」。"
+      },
+      "project": {
+        "title": "先建立專案",
+        "body": "在 Google 給你金鑰之前，會先詢問金鑰要歸屬於哪個專案。專案只是 Google 用來整理內容的資料夾，而你目前還沒有。建立一個新專案，名稱可以任意取，例如 LettuceAI。名稱不影響任何功能，挑最方便的就好。",
+        "slide1": "開啟下拉式選單，點按「建立專案」。",
+        "slide2": "輸入任意名稱，然後點按「建立專案」。"
+      },
+      "create": {
+        "title": "建立並複製金鑰",
+        "body": "選取新專案後，建立金鑰本身。金鑰出現後，立刻用複製圖示複製。這是 Google 唯一會顯示完整金鑰的時候，請務必在關閉視窗前複製。下一步你會將它貼到應用程式中。",
+        "slide1": "選取專案後，點按「建立金鑰」。",
+        "slide2": "點按複製圖示以複製你的金鑰。"
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "建立你的帳號",
+        "body": "OpenRouter 是一項服務，透過單一帳號和單一金鑰，讓你連結來自許多公司、數百種 AI 模型。使用下方按鈕在瀏覽器中開啟並建立免費帳號。註冊按鈕位於頁面右上角。",
+        "open": "開啟 OpenRouter",
+        "slide1": "按一下右上角的「註冊」。"
+      },
+      "key": {
+        "title": "取得你的 API 金鑰",
+        "body": "註冊後，OpenRouter 會詢問你打算如何使用。選擇「個人」，這是個人使用的正確選項。選擇後，它會立刻建立你的第一組 API 金鑰並顯示在畫面上。現在就複製這組金鑰。它會以 sk-or 開頭，稍後你會將它貼到應用程式中。",
+        "slide1": "被詢問時選擇「個人」。",
+        "slide2": "複製你的新 API 金鑰（以 sk-or 開頭）。"
+      },
+      "payment": {
+        "title": "新增付款方式",
+        "body": "付費模型會針對每則訊息收取極少量費用，因此 OpenRouter 需要先有信用卡才能執行。現在新增帳單資訊以解鎖模型。此步驟不會扣款，只是確認你的身分，並讓你之後能使用額度。",
+        "slide1": "填寫你的帳單資訊。",
+        "slide2": "新增完成後就一切就緒。"
+      },
+      "credits": {
+        "title": "新增額度",
+        "body": "額度是實際支付對話費用的餘額。從側邊欄開啟「額度」頁面，儲值少量金額即可開始。即使只有幾美元，使用大多數模型也能維持很久，之後額度不足時隨時可以再加值。",
+        "slide1": "從側邊欄開啟「額度」。",
+        "slide2": "按一下「新增額度」並選擇金額。"
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "建立你的帳號",
+        "body": "OpenRouter 是一項服務，透過單一帳號和單一金鑰，讓你連結來自許多公司、數百種 AI 模型。使用下方按鈕在瀏覽器中開啟並建立免費帳號。註冊按鈕位於頁面右上角。",
+        "open": "開啟 OpenRouter",
+        "slide1": "點按右上角的「註冊」。"
+      },
+      "key": {
+        "title": "取得你的 API 金鑰",
+        "body": "註冊後，OpenRouter 會詢問你打算如何使用。選擇「個人」，這是個人使用的正確選項。選擇後，它會立刻建立你的第一組 API 金鑰並顯示在畫面上。現在就複製這組金鑰。它會以 sk-or 開頭，稍後你會將它貼到應用程式中。",
+        "slide1": "被詢問時選擇「個人」。",
+        "slide2": "複製你的新 API 金鑰（以 sk-or 開頭）。"
+      },
+      "payment": {
+        "title": "新增付款方式",
+        "body": "付費模型會針對每則訊息收取極少量費用，因此 OpenRouter 需要先有信用卡才能執行。現在新增帳單資訊以解鎖模型。此步驟不會扣款，只是確認你的身分，並讓你之後能使用額度。",
+        "slide1": "填寫你的帳單資訊。",
+        "slide2": "新增完成後就一切就緒。"
+      },
+      "credits": {
+        "title": "新增額度",
+        "body": "額度是實際支付對話費用的餘額。從選單前往「額度」頁面，儲值少量金額即可開始。即使只有幾美元，使用大多數模型也能維持很久，之後額度不足時隨時可以再加值。",
+        "slide1": "開啟選單並前往「額度」。",
+        "slide2": "點按「新增額度」並選擇金額。"
+      }
+    }
+  },
+  "model": {
+    "title": "選擇模型",
+    "lead": "選擇撰寫回覆的 {{name}} 模型。你隨時可以變更或新增。",
+    "model": "模型",
+    "modelId": "模型 ID",
+    "modelIdHint": "服務要求的確切 ID",
+    "modelIdPlaceholder": "model-name",
+    "choose": "從 {{count}} 個模型中選擇",
+    "customId": "自訂 ID",
+    "displayName": "顯示名稱",
+    "displayNameHint": "在應用程式內看到的名稱",
+    "displayNamePlaceholder": "我的模型",
+    "connected": "已連線",
+    "context": "上下文",
+    "contextTokens": "{{value}} tokens",
+    "contextSuffix": "上下文 {{value}}",
+    "images": "能理解圖片",
+    "yes": "是",
+    "no": "否",
+    "inputPerMillion": "輸入，每百萬",
+    "outputPerMillion": "輸出，每百萬",
+    "emptyTitle": "尚未選擇模型",
+    "emptyBody": "其上下文大小和價格會顯示在這裡。",
+    "free": "免費",
+    "priceIn": "輸入",
+    "priceOut": "輸出",
+    "picker": {
+      "title": "{{name}} 模型",
+      "search": "搜尋 {{count}} 個模型",
+      "filter": "篩選模型",
+      "layout": "版面",
+      "list": "列表",
+      "twoPerRow": "每列兩個",
+      "onlyFree": "僅免費模型",
+      "none": "沒有符合這些篩選條件的模型。",
+      "useId": "使用 <mono>{{id}}</mono>",
+      "useIdBody": "不在清單中：使用這個確切 ID",
+      "priceNote": "每百萬 token 的價格，來自 {{name}}。",
+      "loading": "正在載入模型"
+    },
+    "filters": {
+      "title": "篩選模型",
+      "madeBy": "開發者",
+      "capabilities": "能力",
+      "imagesTitle": "能理解圖片",
+      "imagesBody": "能讀取你在對話中傳送的圖片",
+      "sortBy": "排序方式",
+      "sortName": "名稱",
+      "sortPrice": "最便宜",
+      "sortContext": "上下文最長",
+      "clear": "清除",
+      "show_other": "顯示 {{count}} 個模型"
+    }
+  },
+  "memory": {
+    "title": "角色該如何記憶？",
+    "lead": "角色會忘記近期訊息以外的內容。選擇重要部分要如何重現。你之後可以針對每段對話變更。",
+    "group": "記憶",
+    "recommended": "建議",
+    "classic": "經典",
+    "detailTitle": "{{title}}記憶",
+    "automatic": {
+      "title": "自動",
+      "point1": "裝置上的小型模型會挑出重要內容，並在需要時重現",
+      "point2": "長對話也能保持一致",
+      "point3": "傳送的 token 較少，回覆成本更低",
+      "note": "需要一次性下載。之後即可離線執行。"
+    },
+    "manual": {
+      "title": "手動",
+      "point1": "由你標記訊息並自行撰寫事實",
+      "point2": "完全掌控要記住的內容",
+      "point3": "不會在背景執行任何程序",
+      "note": "無需下載。"
+    }
+  },
+  "other": {
+    "title": "其他選項",
+    "language": "語言",
+    "skip": "略過設定",
+    "skipBody": "先四處看看。對話需要先連線 AI 才能回覆。",
+    "restore": "還原備份",
+    "restoreBody": "從 .lettuce 檔案還原對話、角色和設定",
+    "languageTitle": "語言",
+    "warning": {
+      "title": "對話需要先連線 AI 才能回覆",
+      "body": "沒有連線的 AI，角色無法回答。你之後可以在設定中連線。",
+      "connect": "連線 AI",
+      "skipAnyway": "仍要略過"
+    }
+  },
+  "failure": {
+    "finish": "無法完成設定。",
+    "models": "無法載入模型。",
+    "save": "無法儲存。"
+  }
+}

@@ -1,0 +1,1185 @@
+{
+  "sceneImage": {
+    "title": "Szenenbild generieren",
+    "regenerate": "Szenenbild neu generieren",
+    "hint": "Zeichne diesen Moment aus dem Chat",
+    "write": "Einen Prompt schreiben",
+    "writeHint": "Beschreib das Bild selbst",
+    "askAi": "KI einen Prompt schreiben lassen",
+    "askAiHint": "Nutzt den Chat und Designreferenzen",
+    "rewrite": "Mit KI umschreiben",
+    "prompt": "Szenen-Prompt",
+    "promptHint": "Prüfe oder bearbeite den Prompt, bevor das Bild erstellt wird.",
+    "cast": "Im Bild",
+    "castHint": "Wähle, wer in der Szene erscheint.",
+    "castPersona": "Deine Persona",
+    "castEmpty": "Wähle mindestens eine Person für die Szene.",
+    "placeholder": "Beschreib die Charaktere, den Ort und den Moment…",
+    "generate": "Bild generieren",
+    "review": "Szenenbild prüfen",
+    "requested": "Ein Szenenbild ist bereit zur Prüfung",
+    "requestedHint": "Prüfe den Prompt, bevor das Bild erstellt wird.",
+    "retry": "Erneut versuchen",
+    "dismiss": "Ausblenden",
+    "disabled": "Szenengenerierung ist aus",
+    "noModel": "Kein kompatibles Szenenbild-Modell",
+    "noWriter": "Wähle in den Bildeinstellungen einen kompatiblen Prompt-Schreiber",
+    "setupHint": "Aktiviere die Szenengenerierung und wähle in den Einstellungen ein Bildmodell.",
+    "settings": "Bildeinstellungen öffnen",
+    "writing": "Szenen-Prompt wird geschrieben",
+    "thinking": "Die Szene wird durchdacht",
+    "generating": "Szenenbild wird generiert",
+    "attaching": "Szenenbild wird an die Nachricht angehängt",
+    "progress": "{{current}} von {{total}}",
+    "queuePosition": "Warteschlangenposition {{position}}",
+    "phase": {
+      "starting": "Bild-Engine wird gestartet",
+      "loading": "Bildmodell wird geladen",
+      "sampling": "Szenenbild wird generiert",
+      "queued": "Warten auf die Generierung des Szenenbilds",
+      "generating": "Szenenbild wird generiert",
+      "retrying": "Szenengenerierung wird wiederholt",
+      "cancelled": "Szenengenerierung wird abgebrochen"
+    },
+    "failed": "Das Szenenbild konnte nicht generiert werden",
+    "promptFailed": "Der Szenen-Prompt konnte nicht geschrieben werden",
+    "writerError": {
+      "scene_prompt_disabled": "Die Szenengenerierung ist in den Bildeinstellungen ausgeschaltet.",
+      "scene_prompt_no_model": "Wähle in den Bildeinstellungen einen kompatiblen Szenen-Prompt-Schreiber.",
+      "scene_prompt_no_reply": "Der Prompt-Schreiber hat keinen Text zurückgegeben. Versuch es erneut oder schreib deinen eigenen Prompt.",
+      "cancelled": "Das Schreiben des Prompts wurde abgebrochen.",
+      "failed": "Versuch es erneut oder schreib deinen eigenen Prompt."
+    },
+    "error": {
+      "media_unavailable": "Der Bildspeicher ist nicht verfügbar.",
+      "disabled": "Die Szenengenerierung ist in den Bildeinstellungen ausgeschaltet.",
+      "no_model": "Wähle in den Bildeinstellungen ein kompatibles Szenenbild-Modell.",
+      "no_image": "Das Modell hat kein Bild zurückgegeben.",
+      "message_unavailable": "Die Antwort hat sich geändert, bevor ihr Bild hinzugefügt werden konnte.",
+      "interrupted": "Die Generierung wurde unterbrochen. Du kannst es erneut versuchen.",
+      "failed": "Prüfe den Prompt und versuch es erneut."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "Zu Gruppenchat abzweigen",
+    "characterTitle": "Zu einem anderen Charakter abzweigen",
+    "history": "Kopiert diesen Chat bis zur ausgewählten Nachricht, einschließlich seiner Erinnerungen.",
+    "sourceLocked": "Der aktuelle Charakter bleibt in der Gruppe. Wähle mindestens einen weiteren.",
+    "characters": "Charaktere",
+    "defaultName": "Zweig von {{name}}",
+    "search": "Charaktere durchsuchen",
+    "empty": "Keine Charaktere gefunden",
+    "create": "Zweig erstellen",
+    "memberCount_one": "{{count}} Charakter ausgewählt",
+    "memberCount_other": "{{count}} Charaktere ausgewählt",
+    "changed": "Dieser Chat hat sich geändert. Wähle den Abzweigpunkt erneut.",
+    "chooseAgain": "Erneut wählen"
+  },
+  "historyPage": {
+    "archivedCharacter": "Stelle diesen Charakter in deiner Bibliothek wieder her, um einen neuen Chat zu starten."
+  },
+  "header": {
+    "back": "Zurück",
+    "memories": "Erinnerungen, {{count}}",
+    "memoriesBusy": "Erinnerungen, die neueste Antwort wird gelesen",
+    "search": "Nachrichten durchsuchen",
+    "options": "Chat-Optionen",
+    "onDevice": "Auf diesem Gerät",
+    "untitled": "Chat"
+  },
+  "search": {
+    "placeholder": "Diesen Chat durchsuchen",
+    "done": "Fertig",
+    "previous": "Vorheriger Treffer",
+    "next": "Nächster Treffer",
+    "position": "{{index}} von {{total}}",
+    "none": "Keine Treffer"
+  },
+  "timeline": {
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "loadingOlder": "Ältere Nachrichten werden geladen",
+    "empty": "Noch keine Nachrichten",
+    "jumpToLatest": "Zum Neuesten springen",
+    "selectingSpeaker": "Charakter wird gewählt…"
+  },
+  "composer": {
+    "placeholder": "Nachricht an {{name}}…",
+    "systemSend": {
+      "title": "Als Systemnachricht senden?",
+      "description": "Sendet den Inhalt des Eingabefelds als sichtbare Systemnachricht. Es löst keine Generierung aus.",
+      "send": "Senden"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "Charakter hinzufügen",
+      "title": "Einen Charakter hinzufügen",
+      "body": "Die Person nimmt ab jetzt an diesem Chat teil.",
+      "search": "Charaktere durchsuchen",
+      "empty": "Jeder Charakter ist bereits in diesem Chat",
+      "noMatch": "Kein Charakter passt"
+    },
+    "remove": {
+      "label": "{{name}} entfernen",
+      "title": "{{name}} entfernen?",
+      "body": "Die Person antwortet nicht mehr in diesem Chat. Frühere Nachrichten bleiben erhalten.",
+      "confirm": "Entfernen"
+    },
+    "followGroup": "Gruppenmitgliedern folgen",
+    "followGroupHint": "Mitglieder und stummgeschaltete Charaktere auf die Gruppeneinstellungen zurücksetzen",
+    "models": "Charakter-Modelle in diesem Chat",
+    "followModels": "Gruppenmodellen folgen",
+    "followModelsHint": "Alle Modellüberschreibungen von Charakteren in diesem Chat entfernen",
+    "characterModel": "Modell des Charakters",
+    "characterModelHint": "Die eigene Modelleinstellung des Charakters verwenden"
+  },
+  "mention": {
+    "title": "Einen Charakter erwähnen",
+    "select": "zum Auswählen",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "{{name}} erwähnen",
+    "unmention": "Erwähnung von {{name}} entfernen",
+    "muted": "{{name}} ist stummgeschaltet. Zum Aufheben lange drücken oder mit rechts klicken",
+    "speak": "{{name}} antworten lassen"
+  },
+  "director": {
+    "hint": "Tippe auf einen Charakter, um zu wählen, wer antwortet",
+    "selectedHint": "{{name}} antwortet, wenn du sendest",
+    "actionHint": "Senden fügt deine Nachricht hinzu. Tippe auf einen Charakter, damit er antwortet",
+    "respondingHint": "{{name}} antwortet",
+    "addMessage": "Nachricht ohne Antwort hinzufügen",
+    "noAttachments": "Nachrichten im Regie-Modus können keine Anhänge enthalten"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Wer spricht als Nächstes",
+      "body": "Wähle ein Mitglied zum Antworten oder lass die Gruppe entscheiden."
+    },
+    "branch": {
+      "title": "Einzeln fortsetzen",
+      "body": "Öffnet einen neuen Chat mit einem Mitglied und der Geschichte bis zu dieser Nachricht."
+    },
+    "regenerate": {
+      "title": "Charakter wählen",
+      "body": "Nur für diese Antwort. Auch stummgeschaltete Mitglieder können gewählt werden.",
+      "same": "Gleicher Charakter",
+      "search": "Charaktere durchsuchen",
+      "noMatches": "Keine Charaktere passen zu deiner Suche"
+    },
+    "auto": "Die Gruppe entscheiden lassen",
+    "autoBody": "Verwendet die Sprecherauswahl dieses Chats",
+    "muted": "Übersprungen, außer wenn genannt"
+  },
+  "message": {
+    "image": "Angehängtes Bild",
+    "imagePrompt": "Bild-Prompt",
+    "copyImagePrompt": "Prompt kopieren",
+    "titleAssistant": "Nachricht von {{name}}",
+    "titleUser": "Deine Nachricht",
+    "titleScene": "Szene",
+    "titleSystem": "Systemnachricht",
+    "audio": "Audioclip",
+    "video": "Videodatei",
+    "document": "Dokument"
+  },
+  "menu": {
+    "selection": {
+      "title": "Warum dieser Charakter geantwortet hat",
+      "fallback": "Die LLM-Auswahl war nicht verfügbar. Ausgewählt anhand von Beteiligung und letzten Antworten."
+    },
+    "copy": "Text kopieren",
+    "edit": "Bearbeiten",
+    "regenerate": "Neu generieren",
+    "regenerateHint": "Behält diese Version, wische zum Vergleichen",
+    "regenerateBusy": "Warte, bis die aktuelle Antwort fertig ist",
+    "pin": "Anheften",
+    "pinHint": "Der Charakter behält es immer im Sinn",
+    "unpin": "Loslösen",
+    "rewind": "Bis hierher zurückspulen",
+    "rewindHint_one": "Entfernt die {{count}} Nachricht danach",
+    "rewindHint_other": "Entfernt die {{count}} Nachrichten danach",
+    "delete": "Nachricht löschen",
+    "deleteHint": "Löse sie zuerst",
+    "branch": "Von hier abzweigen",
+    "branchHint": "Öffnet einen neuen Chat mit der Geschichte bis hierher",
+    "branchGroup": "Einzeln fortsetzen",
+    "branchGroupHint": "Öffnet einen Chat mit einem Mitglied und der Geschichte bis hierher",
+    "details": {
+      "title": "Prompt-Details",
+      "hint": "Was für diese Antwort gesendet wurde",
+      "unavailable": "Der aufgezeichnete Prompt ist für diese Antwort nicht verfügbar",
+      "noBreakdown": "Diese Antwort wurde aufgezeichnet, bevor die Aufschlüsselung existierte",
+      "tokens": "{{count}} Token",
+      "character": "Charakter und Persona",
+      "lorebook": "Lorebook",
+      "memories": "Erinnerungen",
+      "history": "Chatverlauf",
+      "other": "Sonstiges",
+      "entries": "Lorebook-Einträge",
+      "untitled": "Unbenannter Eintrag",
+      "partsLabel": "Anteil des Prompts nach Quelle"
+    },
+    "stats": {
+      "prompt": "Prompt-Token",
+      "reply": "Antwort-Token",
+      "total": "gesamt",
+      "firstToken": "Zeit bis zum ersten Token",
+      "firstTokenValue": "TTFT {{value}} ms",
+      "speed": "Antwortgeschwindigkeit",
+      "speedValue": "{{value}} Tok./s",
+      "mtp": "Multi-Token-Vorhersage: Token pro Runde und Entwurfsannahme",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Verwendete Lorebook-Einträge",
+      "memories": "Verwendete Erinnerungen",
+      "memory": "Erinnerung",
+      "match": "Übereinstimmung {{score}}",
+      "noLorebooks": "Für diese Antwort wurden keine Lorebook-Einträge verwendet.",
+      "noMemories": "Für diese Antwort wurden keine Erinnerungen verwendet.",
+      "notRecorded": "Diese Details wurden für diese Antwort nicht aufgezeichnet.",
+      "searchEntries": "Verwendete Einträge durchsuchen",
+      "searchMemories": "Verwendete Erinnerungen durchsuchen",
+      "noMatches": "Nichts passt zu deiner Suche.",
+      "showing": "{{shown}} von {{total}}",
+      "more": "Mehr anzeigen"
+    }
+  },
+  "regeneration": {
+    "title": "Optionen für die Neugenerierung",
+    "hint": "Regie und Modell",
+    "groupHint": "Regie, Modell und Charakter",
+    "oneReply": "Nur für diese Antwort",
+    "direction": "Regie",
+    "directionHint": "Optional. Beschreib, was sich in der neuen Antwort ändern soll.",
+    "placeholder": "Kürzer halten, den Ton ändern oder einen anderen Ansatz wählen",
+    "model": "Antwortmodell",
+    "usualModel": "Das übliche Modell verwenden",
+    "modelUnavailable": "Dieses Modell ist nicht mehr verfügbar. Wähle ein anderes.",
+    "character": "Charakter",
+    "sameCharacter": "Gleicher Charakter: {{name}}",
+    "characterUnavailable": "Dieser Charakter ist kein Mitglied mehr. Wähle einen anderen."
+  },
+  "edit": {
+    "title": "Nachricht bearbeiten",
+    "assistantHint": "Die Worte von {{name}}, wie die Geschichte sie behalten wird",
+    "field": "Nachrichtentext",
+    "save": "Speichern"
+  },
+  "confirm": {
+    "cancel": "Abbrechen",
+    "rewindTitle": "Bis zu dieser Nachricht zurückspulen?",
+    "rewindBody_one": "Die {{count}} Nachricht danach wird entfernt, und die Geschichte geht von hier weiter.",
+    "rewindBody_other": "Die {{count}} Nachrichten danach werden entfernt, und die Geschichte geht von hier weiter.",
+    "rewind": "Zurückspulen",
+    "deleteTitle": "Diese Nachricht löschen?",
+    "deleteBodyVersions": "Alle {{count}} Versionen davon werden aus dem Chat entfernt.",
+    "deleteBody": "Sie wird aus dem Chat und aus dem entfernt, woran sich der Charakter erinnert.",
+    "delete": "Löschen"
+  },
+  "banner": {
+    "modelRequired": "Dieser Chat braucht ein Modell, das nicht installiert ist.",
+    "modelNamed": "Dieser Chat braucht das Modell {{model}}, das nicht installiert ist.",
+    "modelsMissing": "Dieser Chat braucht ein Modell, das nicht installiert ist: {{models}}.",
+    "openModels": "Modelle öffnen",
+    "memoryBlocked": "Der Speicher ist pausiert, weil ein früheres Zurückspulen nicht abgeschlossen werden konnte.",
+    "memoryRetry": "Erneut versuchen",
+    "memoryRetryStill": "Es konnte weiterhin nicht abgeschlossen werden.",
+    "memoryRetried": "Der Speicher läuft wieder",
+    "swapActive": "Platzwechsel ist an",
+    "endSwap": "Platzwechsel beenden"
+  },
+  "requiredModel": {
+    "embedding": "Embedding",
+    "emotion": "Emotion"
+  },
+  "failure": {
+    "title": "Die Antwort wurde nicht fertig",
+    "retry": "Erneut versuchen",
+    "code": {
+      "invalid_conversation": "In diese Unterhaltung kann gerade nicht geschrieben werden.",
+      "missing_model": "Für diesen Chat ist kein Modell festgelegt. Wähle eines in den Chat-Optionen oder füge unter Modelle eines hinzu.",
+      "context_unavailable": "Die Unterhaltung konnte nicht für das Modell vorbereitet werden.",
+      "speaker_unavailable": "Niemand ist zum Antworten verfügbar.",
+      "provider_unavailable": "Das Modell war nicht erreichbar. Prüfe die Verbindung und den Anbieter.",
+      "provider_rejected": "Der Anbieter hat die Anfrage abgelehnt. Versuch ein anderes Modell oder prüfe dein Konto.",
+      "empty_output": "Das Modell hat nichts zurückgegeben.",
+      "timed_out": "Das Modell hat zu lange zum Antworten gebraucht.",
+      "recovery_unavailable": "Die Antwort wurde unterbrochen und kann nicht wiederhergestellt werden.",
+      "embedding_unavailable": "Das für den Speicher benötigte Embedding-Modell ist nicht verfügbar.",
+      "internal": "In der App ist ein interner Fehler aufgetreten.",
+      "database_write_fenced": "Die App ist mit dem Speichern von Daten beschäftigt. Versuch es gleich noch einmal."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "Modell wird geladen",
+      "retrying": "Laden des Modells wird wiederholt"
+    },
+    "loading": "{{model}} wird geladen, {{percent}} %",
+    "retrying": "Andere Ladeart für {{model}} wird versucht, {{percent}} %",
+    "loaded": "{{model}} ist bereit",
+    "failed": "{{model}} konnte nicht geladen werden"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "Schnelleres Dekodieren ist aus, solange Bilder im Chat sind.",
+    "kv_cache_moved_to_ram": "Der Kontext-Cache passte nicht in den Videospeicher und wurde in den Arbeitsspeicher verschoben."
+  },
+  "toast": {
+    "copied": "Kopiert",
+    "copyFailed": "Zwischenablage nicht erreichbar",
+    "pinned": "Angeheftet. Es bleibt im Gedächtnis des Charakters",
+    "unpinned": "Losgelöst",
+    "edited": "Nachricht aktualisiert",
+    "deleted": "Nachricht gelöscht",
+    "branched": "Neuer Chat von hier aus geöffnet",
+    "rewound_one": "{{count}} Nachricht zurückgespult",
+    "rewound_other": "{{count}} Nachrichten zurückgespult",
+    "launchFailed": "Der Chat konnte nicht gestartet werden",
+    "mediaImageUnsupported": "Das Modell dieses Chats kann keine Bilder lesen. Entferne sie oder wähle ein anderes Modell.",
+    "mediaAudioUnsupported": "Das Modell dieses Chats kann kein Audio hören. Entferne es oder wähle ein anderes Modell."
+  },
+  "crisp": {
+    "composerPlaceholder": "Nachricht…",
+    "composerMessage": "Nachricht",
+    "composerStop": "Generierung stoppen",
+    "composerSend": "Nachricht senden",
+    "composerSendAsSystem": "Zum Senden als System lange drücken oder mit rechts klicken",
+    "composerSending": "Wird gesendet",
+    "composerContinue": "Den Charakter fortfahren lassen",
+    "messageScene": "Szene",
+    "messageSystem": "System",
+    "messagePinned": "Angeheftet",
+    "messageMenuTitle": "Nachricht",
+    "messageReasoning": "Denkprozess",
+    "messageTyping": "Tippt",
+    "sheetClose": "Schließen",
+    "bannerDismiss": "Ausblenden",
+    "alertDismiss": "Ausblenden",
+    "composerAddAttachment": "Inhalt hinzufügen",
+    "composerCancelRecording": "Aufnahme abbrechen",
+    "composerRecordVoice": "Stimme aufnehmen",
+    "composerStopAndTranscribe": "Stoppen und transkribieren",
+    "composerTranscribing": "Wird transkribiert",
+    "composerRecording": "Aufnahme {{elapsed}}",
+    "composerAttachment": "Anhang",
+    "composerFile": "Datei",
+    "composerAttachmentRemove": "{{name}} entfernen"
+  },
+  "streaming": {
+    "imagePrompt": "Bild-Prompt wird geschrieben"
+  },
+  "tools": {
+    "title": "Inhalt hinzufügen",
+    "helpMeReply": "Hilf mir antworten",
+    "helpMeReplyHint": "Lass das Modell vorschlagen, was du sagen könntest",
+    "persona": "Persona",
+    "background": "Chat-Hintergrund",
+    "backgroundHidden": "Ausgeblendet",
+    "backgroundOwn": "Für diesen Chat festgelegt",
+    "backgroundDefault": "Standard wird verwendet",
+    "backgroundNone": "Kein Hintergrund",
+    "note": "Autorenhinweis",
+    "noteActive": "Für diesen Chat aktiv",
+    "noteInactive": "Private Anweisung für Antworten",
+    "dice": "Würfel",
+    "diceHint": "Würfle und füge das Ergebnis deiner Nachricht hinzu",
+    "swap": "Plätze tauschen",
+    "swapHint": "Chatte als der Charakter und lass das Modell als deine Persona antworten",
+    "swapOn": "Plätze tauschen (an)",
+    "swapOnHint": "Du chattest als der Charakter. Tippe, um es auszuschalten",
+    "uploadImage": "Bild hochladen",
+    "uploadImageHint": "Hänge deiner Nachricht ein Bild an",
+    "uploadAudio": "Audio hochladen",
+    "uploadAudioHint": "Hänge deiner Nachricht einen Audioclip an"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "Keine Persona",
+    "default": "Standard",
+    "search": "Personas durchsuchen",
+    "noMatch": "Keine Personas passen",
+    "emptyTitle": "Noch keine Personas",
+    "emptyBody": "Erstelle eine in der Bibliothek, um als jemand Bestimmtes zu sprechen.",
+    "loading": "Personas werden geladen",
+    "loadFailed": "Personas konnten nicht geladen werden",
+    "retry": "Erneut versuchen"
+  },
+  "background": {
+    "title": "Chat-Hintergrund",
+    "current": "Aktueller Hintergrund",
+    "currentOwn": "Für diesen Chat festgelegt",
+    "currentDefault": "Der Standardhintergrund",
+    "choose": "Ein Bild wählen",
+    "replace": "Das Bild ersetzen",
+    "chooseHint": "Nur für diesen Chat",
+    "useDefault": "Den Standard verwenden",
+    "useDefaultHint": "Zum Szenen- oder Charakterhintergrund zurückkehren"
+  },
+  "note": {
+    "title": "Autorenhinweis",
+    "inlineTitle": "Inline-Editor",
+    "inlineHint": "Zeigt den Autorenhinweis über dem Nachrichtenfeld für schnelle Änderungen",
+    "inlineToggle": "Inline-Editor für Autorenhinweis anzeigen",
+    "inlineField": "Inline-Autorenhinweis",
+    "inlineEdit": "Inline-Autorenhinweis bearbeiten",
+    "inlinePlaceholder": "Autorenhinweis hinzufügen",
+    "saving": "Wird gespeichert...",
+    "hint": "Eine private Anweisung, der das Modell in diesem Chat folgt",
+    "placeholder": "Schreib einen Autorenhinweis, der das Modell steuert",
+    "save": "Speichern",
+    "clear": "Entfernen",
+    "count_one": "{{count}} Zeichen",
+    "count_other": "{{count}} Zeichen",
+    "willRemove": "Der Hinweis wird beim Speichern entfernt",
+    "none": "Kein Hinweis gespeichert"
+  },
+  "dice": {
+    "title": "Würfel",
+    "hint": "Würfle und füge das Ergebnis deiner Nachricht hinzu",
+    "notation": "Würfelnotation",
+    "roll": "Würfeln",
+    "invalid": "Verwende eine Notation wie 1d20 oder 2d6+3",
+    "tapToRoll": "Würfle, um ein Ergebnis zu sehen",
+    "insert": "In Nachricht einfügen",
+    "recent": "Zuletzt",
+    "clear": "Löschen"
+  },
+  "help": {
+    "title": "Hilf mir antworten",
+    "draftPrompt": "Du hast einen Nachrichtenentwurf. Wie möchtest du fortfahren?",
+    "useMyText": "Meinen Text als Grundlage verwenden",
+    "useMyTextHint": "Deinen Entwurf erweitern und verbessern",
+    "writeNew": "Etwas Neues schreiben",
+    "writeNewHint": "Eine neue Antwort generieren",
+    "resultTitle": "Vorgeschlagene Antwort",
+    "regenerate": "Erneut versuchen",
+    "use": "Diese verwenden",
+    "writing": "Deine Antwort wird geschrieben...",
+    "thinking": "Wird vor dem Schreiben durchdacht...",
+    "callError": {
+      "model_required": "Wähle in den Einstellungen ein Modell für „Hilf mir antworten“.",
+      "model_unavailable": "Das Modell für „Hilf mir antworten“ konnte nicht geladen werden.",
+      "busy": "Die App ist beschäftigt. Versuch es gleich noch einmal.",
+      "unavailable": "Es ist gerade nicht verfügbar."
+    },
+    "error": {
+      "failed": "„Hilf mir antworten“ ist fehlgeschlagen.",
+      "help_me_reply_disabled": "„Hilf mir antworten“ ist in den Einstellungen ausgeschaltet.",
+      "help_me_reply_no_history": "Es gibt noch nichts, worauf geantwortet werden kann.",
+      "help_me_reply_no_model": "Wähle in den Einstellungen ein Modell für „Hilf mir antworten“.",
+      "help_me_reply_no_reply": "Das Modell hat keine Antwort geschrieben."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "Korrektur lernen?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "Lernen",
+      "ignore": "Ignorieren"
+    },
+    "error": {
+      "noModel": "Installiere ein Spracherkennungsmodell, um zu diktieren.",
+      "permission": "Erlaube den Mikrofonzugriff zum Aufnehmen.",
+      "noMicrophone": "Es wurde kein Mikrofon gefunden.",
+      "noAudio": "Es wurde nichts aufgenommen.",
+      "busy": "Eine andere Aufnahme läuft bereits.",
+      "unsupported": "Dieses Gerät kann nicht über ein Mikrofon aufnehmen.",
+      "failed": "Die Aufnahme konnte nicht transkribiert werden."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Chat-Einstellungen",
+      "persona": "Persona",
+      "model": "Modell",
+      "lorebooks": "Lorebooks",
+      "background": "Chat-Hintergrund",
+      "note": "Autorenhinweis",
+      "history": "Chatverlauf",
+      "notes": "Geplante Notizen",
+      "starters": "Neuer Chat",
+      "advanced": "Modelleinstellungen",
+      "appearance": "Darstellung"
+    },
+    "back": "Zurück",
+    "reset": "Zurücksetzen",
+    "loading": "Wird geladen",
+    "loadFailed": "Konnte nicht geladen werden",
+    "source": {
+      "conversation": "Nur dieser Chat",
+      "group": "Aus der Gruppe",
+      "character": "Vom Charakter",
+      "launch": "Vom Start des Chats",
+      "app_default": "App-Standard"
+    },
+    "meta": {
+      "messages_one": "{{count}} Nachricht",
+      "messages_other": "{{count}} Nachrichten",
+      "active": "Aktiv {{date}}"
+    },
+    "sections": {
+      "chat": "Dieser Chat",
+      "memory": "Speicher",
+      "time": "Zeit",
+      "actions": "Chat",
+      "generation": "Generierung",
+      "lorebooks": "Lorebooks",
+      "members": "Mitglieder",
+      "speaker": "Sprecherauswahl"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Nutzt dein Standardmodell, um zu wählen, wer spricht (kostet Token)",
+      "heuristic": "Heuristik",
+      "heuristicHint": "Nutzt Beteiligungsbalance und Kontexthinweise (kostenlos)",
+      "round_robin": "Reihum",
+      "round_robinHint": "Charaktere sind der Reihe nach dran (kostenlos)",
+      "director": "Regie",
+      "directorHint": "Du wählst, welcher Charakter auf jede Nachricht antwortet",
+      "style": "Regie-Stil",
+      "cue": "Stichwort",
+      "action": "Aktion",
+      "cueHint": "Tippe auf einen Charakter, um zu wählen, wer antwortet. Senden liefert deine Nachricht und löst seine Antwort aus.",
+      "actionHint": "Senden fügt nur deine Nachricht hinzu. Tippe auf den Avatar eines Charakters, damit er sofort antwortet.",
+      "own": "Dieser Chat hat seine eigene Auswahl"
+    },
+    "members": {
+      "replies_one": "{{count}} Antwort, {{percent}}",
+      "replies_other": "{{count}} Antworten, {{percent}}",
+      "muted": "Übersprungen, außer wenn genannt",
+      "last": "Mindestens ein Mitglied muss antworten",
+      "answers": "{{name}} antwortet in diesem Chat"
+    },
+    "model": {
+      "title": "Modell",
+      "none": "Kein Modell festgelegt",
+      "search": "Modelle durchsuchen",
+      "useDefault": "Charakter-Standard verwenden",
+      "useDefaultHint": "Dem Charakter und dann dem App-Standard folgen",
+      "remoteTitle": "Ein entferntes Modell verwenden?",
+      "remoteBody": "Dieser Chat wird für jede Antwort an {{provider}} gesendet.",
+      "use": "Dieses Modell verwenden",
+      "unknown": "Unbekanntes Modell"
+    },
+    "lorebooks": {
+      "title": "Lorebooks",
+      "count_one": "{{count}} Lorebook",
+      "count_other": "{{count}} Lorebooks",
+      "useDefault": "Die Standard-Lorebooks verwenden",
+      "useDefaultHint": "Den Lorebooks des Charakters folgen",
+      "useCharacter": "Die Lorebooks des Charakters verwenden"
+    },
+    "background": {
+      "set": "Bild festgelegt"
+    },
+    "memory": {
+      "mode": "Speichermodus",
+      "modes": {
+        "manual": "Manuell",
+        "dynamic": "Dynamisch",
+        "disabled": "Aus"
+      },
+      "open": "Erinnerungen öffnen",
+      "items_one": "{{count}} Erinnerung",
+      "items_other": "{{count}} Erinnerungen",
+      "summaryTokens_one": "{{count}} Zusammenfassungs-Token",
+      "summaryTokens_other": "{{count}} Zusammenfassungs-Token",
+      "off": "Der Speicher ist für diesen Chat aus"
+    },
+    "notes": {
+      "title": "Geplante Notizen",
+      "rowHint": "Erinnerungen, die der Charakter zu festgelegten Zeiten sieht",
+      "groupRowHint": "Erinnerungen, die die Gruppe und ihre Mitglieder zu festgelegten Zeiten sehen",
+      "hint": "Notizen gehören zum Charakter und erscheinen in jedem Chat mit ihm.",
+      "groupHint": "Notizen gehören zur Gruppe und erscheinen in jedem Chat dieser Gruppe.",
+      "empty": "Noch keine geplanten Notizen.",
+      "add": "Notiz hinzufügen",
+      "untitled": "Unbenannte Notiz",
+      "label": "Bezeichnung",
+      "labelPlaceholder": "Bezeichnung (optional)",
+      "content": "Notiz",
+      "contentPlaceholder": "Was sollte der Charakter wissen?",
+      "groupContentPlaceholder": "Was sollte die Gruppe wissen?",
+      "startsOn": "Beginnt am",
+      "stopsOn": "Endet am (optional)",
+      "repeats": "Wiederholt sich",
+      "windowHours": "Sichtbar für (Stunden)",
+      "enabled": "Aktiviert",
+      "enabledHint": "Eine Notiz ausschalten, ohne sie zu löschen",
+      "deleteTitle": "Diese Notiz löschen?",
+      "deleteBody": "Das kann nicht rückgängig gemacht werden.",
+      "recurrence": {
+        "none": "Einmal",
+        "daily": "Täglich",
+        "weekly": "Wöchentlich",
+        "monthly": "Monatlich",
+        "yearly": "Jährlich"
+      },
+      "whoSees": "Wer sieht sie",
+      "whoSeesHint": "Nur die Charaktere, die du auswählst, lesen diese Notiz.",
+      "everyone": "Jedes Mitglied liest diese Notiz. Wähle Charaktere, um sie einzuschränken.",
+      "useCharacter": "Charakternotizen verwenden"
+    },
+    "history": {
+      "filter": "Chats filtern",
+      "filters": {
+        "all": "Alle",
+        "active": "Aktiv",
+        "archived": "Archiviert"
+      },
+      "sort": "Chats sortieren",
+      "sorts": {
+        "recent": "Zuletzt verwendet",
+        "oldest": "Älteste zuerst"
+      },
+      "results_one": "{{formattedCount}} Chat",
+      "results_other": "{{formattedCount}} Chats",
+      "untitled": "Unbenannter Chat",
+      "search": "Chats durchsuchen",
+      "noMatch": "Keine Chats passen",
+      "empty": "Noch keine Chats",
+      "meta_one": "{{count}} Nachricht · {{date}}",
+      "meta_other": "{{count}} Nachrichten · {{date}}",
+      "current": "Aktuell",
+      "archived": "Archiviert",
+      "actions": "Aktionen für {{title}}",
+      "rename": "Umbenennen",
+      "export": "Exportieren",
+      "archive": "Archivieren",
+      "restore": "Wiederherstellen",
+      "delete": "Löschen"
+    },
+    "starters": {
+      "hint": "Starte mit einer der Chat-Vorlagen des Charakters.",
+      "none": "Ohne Vorlage starten"
+    },
+    "rename": {
+      "field": "Chat-Titel",
+      "save": "Titel speichern",
+      "open": "Chat umbenennen"
+    },
+    "delete": {
+      "title": "Diesen Chat löschen?",
+      "body": "{{title}} und alle seine Nachrichten werden entfernt. Das kann nicht rückgängig gemacht werden.",
+      "confirm": "Löschen"
+    },
+    "export": {
+      "done": "Chat exportiert"
+    },
+    "duplicate": {
+      "done": "Chat dupliziert"
+    },
+    "actions": {
+      "newChat": "Neuer Chat",
+      "newChatHint": "Eine weitere Unterhaltung mit diesem Charakter starten",
+      "newGroupChatHint": "Eine weitere Unterhaltung mit dieser Gruppe starten",
+      "history": "Chatverlauf",
+      "historyHint": "Frühere Chats öffnen, umbenennen oder löschen",
+      "branches": "Zweige",
+      "branchesHint": "Zwischen den Richtungen wechseln, die dieser Chat genommen hat",
+      "duplicate": "Chat duplizieren",
+      "duplicateHint": "Eine Kopie mit allen Nachrichten erstellen",
+      "export": "Chat exportieren",
+      "exportHint": "Die Unterhaltung als Datei speichern",
+      "import": "Chatprotokoll importieren",
+      "importHint": "Eine Unterhaltung aus einer Datei übernehmen",
+      "importGroupHint": "Für Gruppenchats noch nicht verfügbar",
+      "archive": "Chat archivieren",
+      "archiveHint": "Aus der Liste ausblenden, alles behalten",
+      "restore": "Chat wiederherstellen",
+      "restoreHint": "Zurück in die Liste holen",
+      "delete": "Chat löschen",
+      "deleteHint": "Ihn und seine Nachrichten endgültig entfernen"
+    },
+    "generation": {
+      "title": "Modelleinstellungen",
+      "scope": "Nur für diesen Chat",
+      "hint": "Nicht gesetzte Werte folgen dem Modell und dann den App-Standards.",
+      "noModel": "Dieser Chat hat kein Modell, daher gelten nur die App-Standards.",
+      "resetAll": "Alle zurücksetzen",
+      "discard": "Verwerfen",
+      "inherited": "Folgt den Modell- und App-Einstellungen",
+      "count_one": "{{count}} Wert für diesen Chat geändert",
+      "count_other": "{{count}} Werte für diesen Chat geändert"
+    },
+    "time": {
+      "title": "Chat-Uhr",
+      "awareness": "Zeitbewusstsein",
+      "awarenessHint": "Gib dem Modell Datum und Uhrzeit und versehe jede Nachricht damit",
+      "live": "Echtzeit",
+      "frozen": "Gestoppt",
+      "ticking": "Läuft",
+      "stoppedAt": "Gestoppt am {{when}}",
+      "runningFrom": "Läuft seit {{when}}",
+      "mode": "Uhr",
+      "anchor": "Datum und Uhrzeit",
+      "apply": "Übernehmen",
+      "reset": "Zurücksetzen",
+      "cancel": "Abbrechen",
+      "chooseAnchor": "Datum und Uhrzeit wählen",
+      "previousMonth": "Vorheriger Monat",
+      "nextMonth": "Nächster Monat",
+      "chooseMonth": "Monat und Jahr wählen",
+      "previousYear": "Vorheriges Jahr",
+      "nextYear": "Nächstes Jahr",
+      "year": "Jahr",
+      "time": "Uhrzeit"
+    },
+    "groupAppearanceHint": "Darstellung für alle Chats in dieser Gruppe",
+    "characterAppearanceHint": "Darstellung für alle Chats mit diesem Charakter"
+  },
+  "appearance": {
+    "forGroup": "Für jeden Chat in dieser Gruppe",
+    "forCharacter": "Für {{name}}",
+    "moveLeft": "Nach links verschieben",
+    "moveRight": "Nach rechts verschieben",
+    "close": "Darstellung schließen",
+    "unsaved": "Ungespeicherte Änderungen",
+    "saved": "Keine Änderungen",
+    "discard": "Verwerfen",
+    "save": "Speichern",
+    "discardTitle": "Deine Änderungen verwerfen?",
+    "discardBody": "Die Änderungen an der Darstellung wurden nicht gespeichert.",
+    "discardConfirm": "Änderungen verwerfen",
+    "keepEditing": "Weiter bearbeiten"
+  },
+  "memory": {
+    "title": "Speicher",
+    "back": "Chat",
+    "tabs": {
+      "memories": "Erinnerungen",
+      "activity": "Aktivität",
+      "pinned": "Angeheftet"
+    },
+    "loading": "Speicher wird geladen",
+    "off": {
+      "title": "Der Speicher ist für diesen Chat aus",
+      "description": "In diesem Chat wird nichts gemerkt oder mit den Antworten gesendet.",
+      "action": "Chat-Einstellungen öffnen"
+    },
+    "search": "Erinnerungen durchsuchen",
+    "add": "Hinzufügen",
+    "all": "Alle",
+    "categories": {
+      "character_trait": "Charaktereigenschaft",
+      "relationship": "Beziehung",
+      "plot_event": "Handlungsereignis",
+      "world_detail": "Weltdetail",
+      "preference": "Vorliebe",
+      "other": "Sonstiges",
+      "milestone": "Meilenstein",
+      "boundary": "Grenze",
+      "profile": "Profil",
+      "routine": "Routine",
+      "episodic": "Episode",
+      "emotional_snapshot": "Emotionaler Schnappschuss"
+    },
+    "origins": {
+      "model": "Modell",
+      "user": "Du",
+      "import": "Importiert"
+    },
+    "temperature": {
+      "hot": "Heiß",
+      "cold": "Kalt"
+    },
+    "tokens_one": "{{count}} Token",
+    "tokens_other": "{{count}} Token",
+    "window": "Nachrichten {{from}} bis {{to}}",
+    "pinnedMark": "Angeheftet",
+    "list": {
+      "found_one": "{{count}} gefunden",
+      "found_other": "{{count}} gefunden",
+      "total_one": "{{count}} Erinnerung",
+      "total_other": "{{count}} Erinnerungen",
+      "byModel": "{{count}} vom Modell",
+      "byUser": "{{count}} von dir",
+      "imported": "{{count}} importiert",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "Noch keine Erinnerungen",
+      "dynamic": "Erinnerungen erscheinen hier, während der Chat wächst. Du kannst auch eigene hinzufügen.",
+      "manual": "Füge hinzu, woran sich der Charakter immer erinnern soll.",
+      "action": "Erinnerung hinzufügen",
+      "noMatch": "Nichts passt zu „{{query}}“",
+      "noMatchBody": "Versuch es mit einem Wort aus der Erinnerung selbst.",
+      "noCategory": "Nichts in dieser Kategorie"
+    },
+    "sheet": {
+      "addTitle": "Erinnerung hinzufügen",
+      "editTitle": "Erinnerung",
+      "byModel": "Vom Modell geschrieben",
+      "byModelIn": "Vom Modell geschrieben in {{window}}",
+      "byUser": "Von dir geschrieben",
+      "imported": "Importiert",
+      "text": "Erinnerung",
+      "textPlaceholder": "Woran sollte sich der Charakter erinnern?",
+      "category": "Kategorie",
+      "noCategory": "Keine Kategorie",
+      "when": "Wann es passiert ist",
+      "whenHint": "Optional. Hilft dem Charakter, es zeitlich einzuordnen.",
+      "whenPlaceholder": "Nicht festgelegt",
+      "whenClear": "Löschen",
+      "temperature": "Temperatur",
+      "hotBody": "Heiße Erinnerungen bleiben griffbereit",
+      "coldBody": "Kalte Erinnerungen werden nur abgerufen, wenn sie gut passen",
+      "pin": "Angeheftet",
+      "pinBody": "Das Modell löscht oder archiviert eine angeheftete Erinnerung nie",
+      "delete": "Löschen",
+      "cancel": "Abbrechen",
+      "add": "Hinzufügen",
+      "save": "Speichern",
+      "deleteTitle": "Diese Erinnerung löschen?",
+      "deleteBody": "Sie wird in diesem Chat nicht mehr abgerufen.",
+      "keep": "Behalten",
+      "added": "Erinnerung hinzugefügt",
+      "saved": "Erinnerung gespeichert",
+      "deleted": "Erinnerung gelöscht"
+    },
+    "summary": {
+      "title": "Kontextzusammenfassung",
+      "empty": "Füge eine kurze Zusammenfassung hinzu, damit der Charakter den Faden der Geschichte behält.",
+      "description": "Eine kurze Zusammenfassung, die mit jeder Antwort mitgeht",
+      "field": "Zusammenfassung",
+      "dynamicHint": "Das Modell schreibt sie bei jeder Aktualisierung neu. Deine Änderungen bleiben bis dahin erhalten.",
+      "clear": "Löschen",
+      "cancel": "Abbrechen",
+      "save": "Speichern",
+      "saved": "Zusammenfassung gespeichert",
+      "cleared": "Zusammenfassung gelöscht"
+    },
+    "status": {
+      "approvalTitle": "Speicher aktualisieren?",
+      "approvalBody_one": "{{count}} neue Nachricht ist bereit, im Speicher zusammengefasst zu werden.",
+      "approvalBody_other": "{{count}} neue Nachrichten sind bereit, im Speicher zusammengefasst zu werden.",
+      "update": "Aktualisieren",
+      "notNow": "Nicht jetzt",
+      "skipped_one": "Übersprungen. Es fragt nach der nächsten {{count}} Nachricht erneut",
+      "skipped_other": "Übersprungen. Es fragt nach den nächsten {{count}} Nachrichten erneut",
+      "runningTitle": "Speicher wird aktualisiert",
+      "runningBody": "Die neuesten Nachrichten werden gelesen",
+      "stop": "Stoppen",
+      "failedTitle": "Speicheraktualisierung fehlgeschlagen",
+      "tryAgain": "Erneut versuchen",
+      "otherModel": "Anderes Modell verwenden",
+      "pausedTitle": "Die letzte Speicheraktualisierung wurde unterbrochen",
+      "pausedBody": "Ein anderer Prozess hat übernommen, bevor sie fertig war.",
+      "nextIn_one": "Nächste Aktualisierung in {{count}} Nachricht",
+      "nextIn_other": "Nächste Aktualisierung in {{count}} Nachrichten",
+      "since_one": "{{count}} Nachricht seit der letzten Aktualisierung",
+      "since_other": "{{count}} Nachrichten seit der letzten Aktualisierung",
+      "modes": {
+        "auto": "Automatisch",
+        "ask_first": "Erst fragen",
+        "manual": "Manuell"
+      },
+      "every_one": "{{mode}} · alle {{count}} Nachricht",
+      "every_other": "{{mode}} · alle {{count}} Nachrichten",
+      "manualOnly": "{{mode}} · Aktualisierungen laufen nur, wenn du sie hier startest",
+      "progress": "{{current}} von {{total}}",
+      "updateNow": "Jetzt aktualisieren"
+    },
+    "failure": {
+      "embedding_unavailable": "Das Embedding-Modell ist nicht verfügbar.",
+      "model_missing": "Das Speichermodell ist nicht installiert.",
+      "model_invalid": "Das Speichermodell kann nicht verwendet werden.",
+      "prompt_missing": "Der Speicher-Prompt fehlt.",
+      "settings_invalid": "Die Speichereinstellungen sind ungültig.",
+      "provider_unavailable": "Der Anbieter hat nicht geantwortet.",
+      "provider_rejected": "Der Anbieter hat die Anfrage abgelehnt.",
+      "invalid_response": "Die Speicherantwort des Modells konnte nicht verarbeitet werden. Versuch den Zyklus erneut.",
+      "empty_response": "Das Modell hat eine leere Antwort zurückgegeben.",
+      "timed_out": "Das Modell hat zu lange zum Antworten gebraucht.",
+      "round_limit": "Das Modell hat zu viele Schritte verwendet.",
+      "tool_failed": "Eine der Speicheränderungen ist fehlgeschlagen.",
+      "storage_failure": "Der Speicher konnte nicht gespeichert werden.",
+      "lease_lost": "Eine andere Aktualisierung hat übernommen.",
+      "internal": "In der App ist ein interner Fehler aufgetreten."
+    },
+    "gate": {
+      "not_dynamic": "Dieser Chat verwendet keinen dynamischen Speicher.",
+      "disabled": "Der dynamische Speicher ist in den Einstellungen ausgeschaltet.",
+      "nothing_to_summarise": "Es gibt noch nichts zusammenzufassen.",
+      "cycle_running": "Es läuft bereits eine Aktualisierung."
+    },
+    "activity": {
+      "empty": "Noch keine Aktualisierungen",
+      "emptyBody": "Jede Speicheraktualisierung des Modells wird hier aufgelistet.",
+      "badgeUndone": "Rückgängig",
+      "badgeFailed": "Fehlgeschlagen",
+      "badgeStopped": "Gestoppt",
+      "badgeInterrupted": "Unterbrochen",
+      "badgeRunning": "Läuft",
+      "noDetails": "Es wurden keine Details aufgezeichnet.",
+      "stopped": "Diese Aktualisierung wurde vor dem Abschluss gestoppt.",
+      "running": "Diese Aktualisierung läuft noch.",
+      "actions": {
+        "created": "Hinzugefügt",
+        "duplicate_skipped": "Bereits bekannt",
+        "deleted": "Gelöscht",
+        "soft_deleted": "Nach kalt verschoben",
+        "pinned": "Angeheftet",
+        "unpinned": "Losgelöst",
+        "target_not_found": "Nicht gefunden",
+        "done": "Fertig",
+        "rejected": "Abgelehnt",
+        "skipped": "Übersprungen",
+        "stopped_after_done": "Nach Abschluss gestoppt"
+      },
+      "undo": "Diese Aktualisierung rückgängig machen",
+      "blocked": "Kann nicht rückgängig gemacht werden: Eine spätere Aktualisierung baut darauf auf.",
+      "blockedBy": "Kann nicht rückgängig gemacht werden: Die Aktualisierung für {{window}} baut darauf auf.",
+      "dependent": "Eine spätere Aktualisierung baut darauf auf, daher kann sie nicht rückgängig gemacht werden.",
+      "userEdited": "Du hast eine von ihr geschriebene Erinnerung bearbeitet, daher kann sie nicht rückgängig gemacht werden.",
+      "undoTitle": "Aktualisierung für {{window}} rückgängig machen?",
+      "undoBody": "Die von ihr hinzugefügten Erinnerungen werden entfernt und die geänderten kommen zurück. Deine eigenen Änderungen bleiben.",
+      "undoConfirm": "Aktualisierung rückgängig machen",
+      "keep": "Behalten",
+      "undone": "Aktualisierung rückgängig gemacht",
+      "loadMore": "Ältere Aktualisierungen anzeigen"
+    },
+    "pinnedTab": {
+      "empty": "Keine angehefteten Nachrichten",
+      "emptyBody": "Hefte eine Nachricht aus dem Chat an, und sie geht immer mit der nächsten Antwort mit.",
+      "label": "Wird immer mit der Antwort gesendet",
+      "unpin": "Loslösen",
+      "unpinned": "Losgelöst",
+      "noText": "Anhang",
+      "loadMore": "Mehr anzeigen",
+      "you": "Du"
+    }
+  },
+  "branches": {
+    "title": "Zweige",
+    "meta_one": "{{count}} Nachricht · {{date}}",
+    "meta_other": "{{count}} Nachrichten · {{date}}",
+    "current": "Aktuell",
+    "actions": "Aktionen für {{title}}",
+    "rename": "Umbenennen",
+    "renameField": "Zweigname",
+    "delete": "Löschen",
+    "deleteRoot": "Der ursprüngliche Zweig kann nicht gelöscht werden",
+    "deleteActive": "Wechsle zuerst zu einem anderen Zweig",
+    "deleteTitle": "Diesen Zweig löschen?",
+    "deleteBody": "{{name}} und seine Nachrichten werden entfernt. Die anderen Zweige bleiben.",
+    "deleted": "Zweig gelöscht",
+    "untitled": "Unbenannter Zweig",
+    "thisChat": "Dieser Chat",
+    "renameSave": "Namen speichern",
+    "original": "Original",
+    "untitledChat": "Unbenannter Chat"
+  },
+  "companion": {
+    "title": "Companion",
+    "back": "Chat",
+    "tabs": {
+      "relationship": "Beziehung",
+      "bond": "Bindung",
+      "memories": "Erinnerungen",
+      "soul": "Soul",
+      "activity": "Aktivität"
+    },
+    "bond": "Bindung",
+    "lastTalked": "Zuletzt gesprochen {{when}}",
+    "updated": "Aktualisiert {{when}}",
+    "messages": "Nachrichten",
+    "togetherSince": "Zusammen seit {{date}}",
+    "engine": "Emotions-Engine",
+    "nothingTitle": "Noch nichts zu zeigen",
+    "nothingBody": "Bindung und Gefühle von {{name}} beginnen sich nach ein paar Nachrichten zu bewegen. Sie starten mit den Standardwerten aus den Companion-Einstellungen.",
+    "missingTitle": "Gefühle werden nicht verfolgt",
+    "missingBody": "Installiere das Emotionsmodell, damit jede Antwort beeinflussen kann, wie sie sich fühlen.",
+    "install": "Installieren",
+    "nothingNow": "Gerade nichts",
+    "drivers": "Aktive Einflüsse",
+    "timeline": "Letzte Zeitleiste",
+    "events_one": "{{count}} Ereignis",
+    "events_other": "{{count}} Ereignisse",
+    "currentState": "Aktueller Zustand",
+    "defaultMark": "Charakter-Standard",
+    "aboveDefault_one": "{{count}} Punkt über dem Charakter-Standard",
+    "aboveDefault_other": "{{count}} Punkte über dem Charakter-Standard",
+    "belowDefault_one": "{{count}} Punkt unter dem Charakter-Standard",
+    "belowDefault_other": "{{count}} Punkte unter dem Charakter-Standard",
+    "axes": {
+      "closeness": {
+        "label": "Nähe",
+        "low": "Zurückgezogen",
+        "mid": "Bekannt",
+        "high": "Vertraut"
+      },
+      "trust": {
+        "label": "Vertrauen",
+        "low": "Misstrauisch",
+        "mid": "Neutral",
+        "high": "Vertrauensvoll"
+      },
+      "affection": {
+        "label": "Zuneigung",
+        "low": "Feindselig",
+        "mid": "Neutral",
+        "high": "Zugewandt"
+      },
+      "tension": {
+        "label": "Spannung",
+        "low": "Locker",
+        "mid": "",
+        "high": "Geladen"
+      },
+      "stability": {
+        "label": "Stabilität",
+        "low": "Wechselhaft",
+        "mid": "",
+        "high": "Stabil"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Fühlt",
+        "hint": "Was sie innerlich fühlen"
+      },
+      "expressed": {
+        "title": "Zeigt",
+        "hint": "Was in ihren Antworten durchkommt"
+      },
+      "blocked": {
+        "title": "Hält zurück",
+        "hint": "Was ihre Persönlichkeit für sich behält"
+      },
+      "momentum": {
+        "title": "Baut sich auf",
+        "hint": "Wohin die letzten Züge führen"
+      }
+    },
+    "emotions": {
+      "warmth": "Wärme",
+      "trust": "Vertrauen",
+      "calm": "Ruhe",
+      "vulnerability": "Verletzlichkeit",
+      "longing": "Sehnsucht",
+      "hurt": "Verletzung",
+      "tension": "Spannung",
+      "irritation": "Gereiztheit",
+      "affection_intensity": "Zuneigung",
+      "reassurance_need": "Braucht Rückversicherung"
+    },
+    "memories": {
+      "total_one": "{{count}} Erinnerung",
+      "total_other": "{{count}} Erinnerungen",
+      "found_one": "{{count}} gefunden",
+      "found_other": "{{count}} gefunden",
+      "kind": "Art",
+      "field": "Erinnerung",
+      "placeholder": "Woran sollte sich {{name}} erinnern?",
+      "emptyTitle": "Keine Erinnerungen hier",
+      "emptyBody": "Erinnerungen erscheinen, während ihr sprecht. Du kannst auch eigene hinzufügen.",
+      "noMatch": "Nichts passt zu „{{query}}“",
+      "noMatchBody": "Versuch es mit einem Wort aus der Erinnerung selbst."
+    },
+    "soul": {
+      "title": "Soul",
+      "edit": "Bearbeiten",
+      "core": "Identitätskern. Die Entwicklung ändert ihn nie",
+      "notWritten": "Noch nicht geschrieben",
+      "growth": "Soul-Entwicklung",
+      "clear": "Entwicklung löschen",
+      "intro": "Wie sich die veränderbaren Eigenschaften aus deinen Erinnerungen entwickelt haben. Wesen, Eigenschaften und Vorgeschichte ändern sich hier nie.",
+      "empty": "Noch keine Entwicklung. Während Erinnerungen entstehen, erscheinen hier die Eigenschaften, die sich mit dir verändern.",
+      "zero": "0 Änderungen",
+      "added": "Hinzugefügt",
+      "adjusted": "Angepasst",
+      "confidence": "Sicherheit",
+      "locked": "Gesperrt",
+      "lock": "Sperren",
+      "unlock": "Entsperren",
+      "lockHint": "Diese Tatsache sperren",
+      "unlockHint": "Diese Tatsache entsperren",
+      "historicalHint": "Historische Tatsachen werden immer behalten",
+      "remove": "Diese Entwicklung entfernen",
+      "sources_one": "aus {{count}} Erinnerung",
+      "sources_other": "aus {{count}} Erinnerungen",
+      "retired_one": "{{count}} frühere Version wurde zurückgezogen.",
+      "retired_other": "{{count}} frühere Versionen wurden zurückgezogen.",
+      "categories": {
+        "essence": "Wesen",
+        "traits": "Eigenschaften",
+        "backstory": "Vorgeschichte",
+        "appearance": "Aussehen",
+        "goals": "Ziele",
+        "likes": "Vorlieben",
+        "voice": "Stimme",
+        "relational_style": "Beziehungsstil",
+        "vulnerabilities": "Verletzlichkeiten",
+        "fears": "Ängste",
+        "habits": "Gewohnheiten",
+        "boundaries": "Grenzen"
+      },
+      "policy": {
+        "current": {
+          "label": "Aktuell",
+          "hint": "Ersetzt, was vorher da war"
+        },
+        "adaptive": {
+          "label": "Anpassungsfähig",
+          "hint": "Kann sich beim Sprechen weiter verschieben"
+        },
+        "historical": {
+          "label": "Historisch",
+          "hint": "Etwas, das passiert ist. Wird immer behalten"
+        }
+      },
+      "removeTitle": "Dies entfernen?",
+      "removeBody": "Es verschwindet aus dem, was sie gelernt haben. Ihre geschriebene Soul bleibt gleich.",
+      "clearTitle": "Alles löschen, was sie gelernt haben?",
+      "clearBody": "Die gesamte Entwicklung geht verloren, einschließlich der ersetzten Vorgeschichte. Ihre geschriebene Soul bleibt gleich.",
+      "keep": "Behalten",
+      "removeConfirm": "Entfernen",
+      "clearConfirm": "Alles löschen",
+      "removed": "Entfernt",
+      "cleared": "Entwicklung gelöscht",
+      "sourcesTitle": "Woher das stammt",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "Die Quellerinnerungen sind nicht mehr verfügbar.",
+      "sourcesMissing_one": "{{count}} Quellerinnerung ist nicht mehr verfügbar.",
+      "sourcesMissing_other": "{{count}} Quellerinnerungen sind nicht mehr verfügbar."
+    },
+    "effect": {
+      "title": "Was diese Antwort verändert hat",
+      "feels": "Was sie fühlen",
+      "pickedUp": "Aufgenommen",
+      "letGo": "Losgelassen",
+      "remembered": "Erinnert",
+      "processing": "Es wird geprüft, was sich geändert hat",
+      "failed": "Die Änderungen der Antwort konnten nicht analysiert werden.",
+      "invalidated": "Diese Änderungen gelten für diese Antwort nicht mehr.",
+      "memoryCount_one": "{{count}} Erinnerung",
+      "memoryCount_other": "{{count}} Erinnerungen",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "Keine Änderungen anzuzeigen",
+      "quote": "„{{text}}“"
+    },
+    "activity": {
+      "undo": "Diese Aktualisierung rückgängig machen",
+      "undoTitle": "{{window}} rückgängig machen?",
+      "undoBody": "Die von ihr hinzugefügten Erinnerungen werden entfernt und die geänderten kommen zurück. Deine eigenen Änderungen bleiben.",
+      "undoConfirm": "Aktualisierung rückgängig machen",
+      "blockedBy": "Kann nicht rückgängig gemacht werden: {{window}} baut darauf auf.",
+      "blocked": "Kann nicht rückgängig gemacht werden: Eine spätere Aktualisierung baut darauf auf."
+    },
+    "unavailable": "Dieser Chat hat keinen Companion",
+    "unavailableBody": "Öffne einen Companion-Chat, um Bindung, Erinnerungen und Soul zu sehen.",
+    "crisp": {
+      "close": "Schließen",
+      "clearSearch": "Suche löschen"
+    },
+    "lastReply": "Letzte Antwort",
+    "replyHint": "Jede Nachricht im Chat öffnet dies über ihr Menü"
+  }
+}

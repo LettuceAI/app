@@ -1,0 +1,75 @@
+{
+  "create": {
+    "title": "Yeni persona",
+    "back": "Geri",
+    "create": "Persona oluştur",
+    "created": "{{name}} oluşturuldu",
+    "imported": "Persona içe aktarıldı",
+    "unattached_one": "{{count}} lore kitabı eklenemedi. Personanın ayarlarından ekleyin.",
+    "unattached_other": "{{count}} lore kitabı eklenemedi. Personanın ayarlarından ekleyin.",
+    "defaultFailed": "{{name}} oluşturuldu ancak varsayılan yapılamadı.",
+    "discardTitle": "Bu personadan vazgeçilsin mi?",
+    "discardBody": "Buraya kadar girdikleriniz kaybolur.",
+    "discard": "Vazgeç",
+    "keepEditing": "Düzenlemeye devam et",
+    "continueTo": "{{step}} adımına geç"
+  },
+  "edit": {
+    "title": "Personayı düzenle",
+    "back": "Geri",
+    "backToLibrary": "Kütüphaneye dön",
+    "more": "Diğer işlemler",
+    "export": "Dışa aktar",
+    "delete": "Personayı sil",
+    "exported": "Persona dışa aktarıldı",
+    "exportWarnings_one": "{{count}} uyarıyla dışa aktarıldı",
+    "exportWarnings_other": "{{count}} uyarıyla dışa aktarıldı",
+    "deleteTitle": "{{name}} silinsin mi?",
+    "deleteBody": "Persona, onu kullanan sohbetlerden kaldırılır.",
+    "deleteConfirm": "Sil",
+    "deleteCancel": "İptal",
+    "deleted": "{{name}} silindi",
+    "unsaved": "Kaydedilmemiş değişiklikler",
+    "discard": "Vazgeç",
+    "save": "Kaydet",
+    "saved": "Değişiklikler kaydedildi",
+    "lorebooksFailed": "Kaydedildi, ancak lore kitapları güncellenemedi. Tekrar kaydetmeyi deneyin.",
+    "leaveTitle": "Değişikliklerinizden vazgeçilsin mi?",
+    "leaveBody": "Kaydedilmemiş değişiklikler kaybolur.",
+    "leaveDiscard": "Vazgeç",
+    "leaveKeep": "Düzenlemeye devam et"
+  },
+  "steps": {
+    "identity": "Kimlik",
+    "extras": "Ekstralar"
+  },
+  "identity": {
+    "chooseAvatar": "Görsel seç",
+    "removeAvatar": "Kaldır",
+    "name": "İsim",
+    "namePlaceholder": "Profesyonel yazar",
+    "nameHint": "Sohbetlerde kim olduğunuz",
+    "nickname": "Takma ad",
+    "nicknamePlaceholder": "Karakterlerin size nasıl hitap ettiği",
+    "nicknameHint": "İsteğe bağlı. Sohbetlerde isim yerine kullanılır.",
+    "default": "Varsayılan olarak kullan",
+    "defaultBody": "Yeni sohbetler bu personayla başlar",
+    "import": "Dosyadan içe aktar",
+    "importBody": "LettuceAI'dan dışa aktarılmış bir persona içe aktarın.",
+    "chooseFile": "Dosya seç"
+  },
+  "about": {
+    "description": "Açıklama",
+    "descriptionPlaceholder": "Karakterlerin size nasıl hitap etmesi gerektiği, geçmişiniz, tercihleriniz ve tarzınız",
+    "descriptionHint": "Bu persona için {{user}}, karakter için {{char}} kullanın.",
+    "words_one": "{{count}} kelime",
+    "words_other": "{{count}} kelime"
+  },
+  "extras": {
+    "body": "Buradaki her şey isteğe bağlıdır.",
+    "lorebooks": "Lore kitapları",
+    "lorebooksNone": "Yok",
+    "lorebooksCount_one": "{{count}} lore kitabı",
+    "lorebooksCount_other": "{{count}} lore kitabı"
+  }
+}

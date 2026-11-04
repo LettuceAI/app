@@ -1,0 +1,103 @@
+{
+  "title": "Aiuto e FAQ",
+  "subtitle": "Le basi, le chiavi API, la privacy e le domande frequenti",
+  "sections": {
+    "gettingStarted": "Per iniziare",
+    "privacySafety": "Privacy e sicurezza",
+    "modelsProviders": "Modelli e provider",
+    "charactersChats": "Personaggi e chat"
+  },
+  "stillStuck": {
+    "title": "Ancora bloccato?",
+    "docsTitle": "Documentazione completa",
+    "docsDescription": "Guide e riferimenti per LettuceAI",
+    "discordTitle": "Unisciti al Discord",
+    "discordDescription": "Chiedi alla community o segnala un bug"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Cos'è LettuceAI?",
+      "answer": "LettuceAI è un'app di chat per personaggi AI. Scegli tu il provider e il modello che scrivono le risposte, e le tue chat e i personaggi restano sul tuo dispositivo. I provider cloud usano il tuo account; i modelli locali supportati girano sul tuo computer."
+    },
+    "whatIsApiKey": {
+      "question": "Cos'è una chiave API e perché mi serve? (BYOK spiegato)",
+      "answer": "BYOK significa Bring Your Own Key, cioè usa la tua chiave. Una chiave API consente a LettuceAI di inviare richieste a un provider usando il tuo account. Crea una chiave presso il provider, poi aggiungila in Impostazioni > Provider. Le richieste vanno dal tuo dispositivo a quel provider, che applica le proprie tariffe e i propri limiti. I modelli locali supportati non richiedono una chiave API cloud. Tratta la chiave come una password e non condividerla."
+    },
+    "cheapestStart": {
+      "question": "Qual è il modo più economico o semplice per iniziare?",
+      "answer": "Usa la Guida alla configurazione per collegare un provider e scegliere un modello. Confronta i prezzi attuali del provider, i piani gratuiti e i limiti di richieste prima di aggiungere credito. Inizia con un budget ridotto e controlla Impostazioni > Analisi utilizzo mentre chatti. Su desktop, i modelli locali supportati sono un'altra opzione se il computer ha memoria e spazio sufficienti."
+    },
+    "alternative": {
+      "question": "È un'alternativa ad altre app di chat AI?",
+      "answer": "Sì. LettuceAI ti permette di scegliere provider, modello e configurazione dei personaggi invece di legare ogni chat a un unico servizio. Gestisci tu il tuo account del provider e tieni i dati sul tuo dispositivo. Una breve configurazione collega il modello che vuoi usare."
+    },
+    "cost": {
+      "question": "Quanto costa?",
+      "answer": "LettuceAI è gratuito. Un provider cloud può addebitare sul tuo account le richieste oppure offrire un piano gratuito. Le sue tariffe dipendono dal modello, dalla quantità di testo inviato e generato e dalle funzioni di immagini o audio che usi. Controlla i prezzi del provider prima di scegliere un modello. L'analisi utilizzo mostra i token dichiarati e i costi noti; l'assenza di un prezzo non significa che le richieste siano gratuite."
+    },
+    "apiKeySafe": {
+      "question": "La mia chiave API è al sicuro?",
+      "answer": "Le credenziali del provider sono salvate localmente e usate per collegarsi al provider che configuri. LettuceAI non fa passare le tue richieste da un proprio server di chat. Inserisci chiavi solo per servizi di cui ti fidi, controlla con attenzione gli URL dei provider personalizzati e proteggi il dispositivo e i file di backup."
+    },
+    "chatsStored": {
+      "question": "Dove sono conservate le mie chat? Qualcuno può leggerle?",
+      "answer": "Le chat sono salvate nel database locale dell'app. Quando un modello cloud risponde, il prompt e il contesto pertinente della conversazione vengono inviati al provider che hai scelto. Quel provider elabora la richiesta secondo la propria informativa sulla privacy. Anche chi ha accesso al tuo dispositivo o ai backup esportati potrebbe leggere i tuoi dati."
+    },
+    "chatsDeleted": {
+      "question": "Le mie chat possono cancellarsi da sole?",
+      "answer": "LettuceAI non conserva una copia su un server che possa ripristinare le tue chat. Eliminare una chat, ripristinare l'app, disinstallarla, cancellare i dati dell'app o perdere il dispositivo può rimuovere i dati locali. Conserva backup di tutto ciò che vuoi preservare."
+    },
+    "editRemotely": {
+      "question": "Qualcuno può modificare i miei dati da remoto?",
+      "answer": "LettuceAI non ha un servizio di amministrazione remota per le tue chat e i tuoi personaggi locali. Il provider che scegli genera le risposte ma non gestisce il database dell'app. Mantieni sicuri il dispositivo e i file che importi o condividi."
+    },
+    "shutdown": {
+      "question": "Cosa succede ai miei dati se LettuceAI chiude?",
+      "answer": "Le chat e i personaggi salvati restano sul tuo dispositivo e possono essere letti senza un account LettuceAI. Le risposte cloud dipendono comunque dalla disponibilità del provider e dal funzionamento del tuo account. Conserva una copia dei tuoi dati con Impostazioni > Backup e ripristino."
+    },
+    "training": {
+      "question": "I provider useranno le mie conversazioni per l'addestramento?",
+      "answer": "Dipende dal provider, dal tipo di account e dalla sua attuale politica sui dati. LettuceAI non può cambiare queste condizioni. Leggi le impostazioni di privacy e conservazione del provider prima di inviare informazioni sensibili. I modelli locali supportati elaborano i loro prompt sul tuo computer."
+    },
+    "whatIsModel": {
+      "question": "Cos'è un 'modello'? Quale dovrei scegliere?",
+      "answer": "Un modello è l'AI che scrive le risposte. I modelli differiscono per stile di scrittura, velocità, lunghezza del contesto, requisiti hardware e prezzo. Aggiungi un provider in Impostazioni > Provider, poi configura un modello in Impostazioni > Modelli. Puoi impostare un modello predefinito dell'app oppure sceglierne uno per un singolo personaggio o una singola chat."
+    },
+    "freeProviders": {
+      "question": "Esistono provider gratuiti?",
+      "answer": "Alcuni provider offrono modelli gratuiti o piani di utilizzo gratuiti, con propri requisiti di account e limiti di richieste. La disponibilità può cambiare, quindi controlla le condizioni attuali del provider. Un piano gratuito può comunque richiedere una chiave API. I modelli locali supportati non costano nulla per richiesta, ma usano l'hardware, lo spazio e l'energia del tuo computer."
+    },
+    "freeVsPaid": {
+      "question": "Qual è la differenza tra provider gratuiti e a pagamento?",
+      "answer": "I piani gratuiti e a pagamento possono differire per modelli disponibili, limiti di richieste, velocità di risposta, condizioni di privacy e assistenza. I dettagli spettano a ciascun provider; un piano a pagamento non implica automaticamente una determinata politica sulla privacy. Puoi collegare più provider e scegliere un modello adatto a ogni chat."
+    },
+    "whatIsToken": {
+      "question": "Cos'è un token?",
+      "answer": "Un token è un piccolo frammento di testo, come una parola o parte di una parola. La suddivisione esatta dipende dal modello e dalla lingua. Una richiesta comprende i token di input del prompt e del contesto della conversazione, più i token di output della risposta. I provider possono applicare prezzi diversi. Cronologie lunghe e risposte lunghe possono aumentare l'utilizzo."
+    },
+    "noDefaultModel": {
+      "question": "Vedo 'nessun modello predefinito configurato'",
+      "answer": "Apri Impostazioni > Modelli e aggiungi un modello da un provider configurato. Poi imposta un modello predefinito dell'app oppure scegline uno nelle impostazioni del personaggio. Un personaggio o una chat possono sostituire il predefinito, quindi controlla il modello selezionato se le risposte non partono."
+    },
+    "cloudVsLocal": {
+      "question": "Qual è la differenza tra modelli cloud e locali?",
+      "answer": "I modelli cloud girano sull'hardware del provider e richiedono una connessione a quel servizio. I modelli locali supportati girano sul tuo computer desktop e richiedono memoria e spazio sufficienti. L'installazione e i controlli di esecuzione dei modelli locali sono disponibili su desktop; su mobile usa un provider collegato."
+    },
+    "whatIsCharacter": {
+      "question": "Cos'è un personaggio? Posso crearne uno mio?",
+      "answer": "Un personaggio ha un nome, un'immagine e una descrizione che ne determinano il modo di parlare. Usa il pulsante Crea per crearne uno, oppure importa una scheda personaggio in Libreria. Modifica la descrizione e le impostazioni del modello per cambiare come vengono generate le risposte future."
+    },
+    "whatIsPersona": {
+      "question": "Cos'è una persona?",
+      "answer": "Una persona descrive la tua parte della conversazione: il tuo nome e i dettagli che il personaggio dovrebbe conoscere su di te. Crea o importa persone in Libreria, poi scegli quella da usare per una chat."
+    },
+    "charactersPrivate": {
+      "question": "I personaggi che creo sono privati?",
+      "answer": "I personaggi che crei sono conservati sul tuo dispositivo. Esportare e condividere una scheda personaggio permette ad altri di leggerla. Quando chatti con un modello cloud, anche i dettagli del personaggio usati nel prompt vengono inviati al provider che hai scelto."
+    },
+    "backupMove": {
+      "question": "Come faccio un backup o passo a un altro dispositivo?",
+      "answer": "Apri Impostazioni > Backup e ripristino per creare un file di backup. Conservalo in un posto sicuro. Per cambiare dispositivo, installa LettuceAI sull'altro dispositivo e ripristina lì quel file. Segui gli avvisi della schermata di ripristino prima di sostituire i dati esistenti."
+    }
+  }
+}

@@ -1,0 +1,1154 @@
+{
+  "sceneImage": {
+    "title": "シーン画像を生成",
+    "regenerate": "シーン画像を再生成",
+    "hint": "チャットのこの瞬間を描く",
+    "write": "プロンプトを書く",
+    "writeHint": "画像を自分で説明する",
+    "askAi": "AIにプロンプトを書いてもらう",
+    "askAiHint": "チャットとデザインリファレンスを使う",
+    "rewrite": "AIで書き直す",
+    "prompt": "シーンプロンプト",
+    "promptHint": "画像を生成する前にプロンプトを確認または編集してください。",
+    "cast": "画像に含める人",
+    "castHint": "シーンに登場する人を選んでください。",
+    "castPersona": "あなたのペルソナ",
+    "castEmpty": "シーンに少なくとも1人選んでください。",
+    "placeholder": "キャラクター、設定、瞬間を説明…",
+    "generate": "画像を生成",
+    "review": "シーン画像を確認",
+    "requested": "シーン画像を確認できます",
+    "requestedHint": "画像を作成する前にプロンプトを確認してください。",
+    "retry": "再試行",
+    "dismiss": "閉じる",
+    "disabled": "シーン生成はオフです",
+    "noModel": "互換性のあるシーン画像モデルがありません",
+    "noWriter": "画像設定で互換性のあるプロンプトライターを選択してください",
+    "setupHint": "設定でシーン生成を有効にし、画像モデルを選択してください。",
+    "settings": "画像設定を開く",
+    "writing": "シーンプロンプトを書いています",
+    "thinking": "シーンを考えています",
+    "generating": "シーン画像を生成中",
+    "attaching": "シーン画像をメッセージに追加中",
+    "progress": "{{total}}件中{{current}}件",
+    "queuePosition": "キューの位置{{position}}",
+    "phase": {
+      "starting": "画像エンジンを起動中",
+      "loading": "画像モデルを読み込み中",
+      "sampling": "シーン画像を生成中",
+      "queued": "シーン画像の生成を待機中",
+      "generating": "シーン画像を生成中",
+      "retrying": "シーン生成を再試行中",
+      "cancelled": "シーン生成をキャンセル中"
+    },
+    "failed": "シーン画像を生成できませんでした",
+    "promptFailed": "シーンプロンプトを書けませんでした",
+    "writerError": {
+      "scene_prompt_disabled": "画像設定でシーン生成がオフです。",
+      "scene_prompt_no_model": "画像設定で互換性のあるシーンプロンプトライターを選択してください。",
+      "scene_prompt_no_reply": "プロンプトライターがテキストを返しませんでした。再試行するか、独自のプロンプトを書いてください。",
+      "cancelled": "プロンプトの作成はキャンセルされました。",
+      "failed": "再試行するか、独自のプロンプトを書いてください。"
+    },
+    "error": {
+      "media_unavailable": "画像ストレージを利用できません。",
+      "disabled": "画像設定でシーン生成がオフです。",
+      "no_model": "画像設定で互換性のあるシーン画像モデルを選択してください。",
+      "no_image": "モデルが画像を返しませんでした。",
+      "message_unavailable": "画像を追加する前に返信が変更されました。",
+      "interrupted": "生成が中断されました。再試行できます。",
+      "failed": "プロンプトを確認して再試行してください。"
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "グループチャットに分岐",
+    "characterTitle": "別のキャラクターに分岐",
+    "history": "選択したメッセージまでこのチャットをメモリごとコピーします。",
+    "sourceLocked": "現在のキャラクターはグループに残ります。もう1人以上選んでください。",
+    "characters": "キャラクター",
+    "defaultName": "{{name}}分岐",
+    "search": "キャラクターを検索",
+    "empty": "キャラクターが見つかりません",
+    "create": "分岐を作成",
+    "memberCount_other": "{{count}}人のキャラクターを選択中",
+    "changed": "このチャットが変更されました。分岐点を選び直してください。",
+    "chooseAgain": "選び直す"
+  },
+  "historyPage": {
+    "archivedCharacter": "新しいチャットを開始するには、このキャラクターをライブラリで復元してください。"
+  },
+  "header": {
+    "back": "戻る",
+    "memories": "メモリ、{{count}}",
+    "memoriesBusy": "メモリ、最新の返信を読み取り中",
+    "search": "メッセージを検索",
+    "options": "チャットオプション",
+    "onDevice": "デバイス上",
+    "untitled": "チャット"
+  },
+  "search": {
+    "placeholder": "このチャットを検索",
+    "done": "完了",
+    "previous": "前の一致",
+    "next": "次の一致",
+    "position": "{{total}}件中{{index}}件",
+    "none": "一致なし"
+  },
+  "timeline": {
+    "today": "今日",
+    "yesterday": "昨日",
+    "loadingOlder": "以前のメッセージを読み込み中",
+    "empty": "メッセージはまだありません",
+    "jumpToLatest": "最新へ移動",
+    "selectingSpeaker": "キャラクターを選択中…"
+  },
+  "composer": {
+    "placeholder": "{{name}}にメッセージ…",
+    "systemSend": {
+      "title": "システムメッセージとして送信しますか？",
+      "description": "入力内容を表示されるシステムメッセージとして送信します。生成は開始されません。",
+      "send": "送信"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "キャラクターを追加",
+      "title": "キャラクターを追加",
+      "body": "これ以降このチャットに参加します。",
+      "search": "キャラクターを検索",
+      "empty": "すべてのキャラクターがすでにこのチャットにいます",
+      "noMatch": "一致するキャラクターはありません"
+    },
+    "remove": {
+      "label": "{{name}}を削除",
+      "title": "{{name}}を削除しますか？",
+      "body": "このチャットで応答しなくなります。以前のメッセージは残ります。",
+      "confirm": "削除"
+    },
+    "followGroup": "グループのメンバーに従う",
+    "followGroupHint": "メンバーとミュートしたキャラクターをグループ設定に戻す",
+    "models": "このチャットのキャラクターモデル",
+    "followModels": "グループのモデルに従う",
+    "followModelsHint": "このチャットのキャラクターモデルの上書きをすべて削除",
+    "characterModel": "キャラクターのモデル",
+    "characterModelHint": "キャラクター自身のモデル設定を使用"
+  },
+  "mention": {
+    "title": "キャラクターをメンション",
+    "select": "選択",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "{{name}}をメンション",
+    "unmention": "{{name}}のメンションを解除",
+    "muted": "{{name}}はミュートされています。長押しまたは右クリックで解除",
+    "speak": "{{name}}に応答させる"
+  },
+  "director": {
+    "hint": "キャラクターをタップして応答者を選択",
+    "selectedHint": "送信すると{{name}}が応答します",
+    "actionHint": "送信でメッセージを追加します。キャラクターをタップすると応答させられます",
+    "respondingHint": "{{name}}が応答中",
+    "addMessage": "返信なしでメッセージを追加",
+    "noAttachments": "ディレクターモードのメッセージには添付できません"
+  },
+  "speaker": {
+    "speak": {
+      "title": "次に話すのは",
+      "body": "応答するメンバーを選ぶか、グループに任せます。"
+    },
+    "branch": {
+      "title": "1対1で続ける",
+      "body": "1人のメンバーと、このメッセージまでの物語で新しいチャットを開きます。"
+    },
+    "regenerate": {
+      "title": "キャラクターを選択",
+      "body": "この返信のみ。ミュートしたメンバーも選べます。",
+      "same": "同じキャラクター",
+      "search": "キャラクターを検索",
+      "noMatches": "検索に一致するキャラクターはいません"
+    },
+    "auto": "グループに任せる",
+    "autoBody": "このチャットの発言者選択を使用します",
+    "muted": "指名されない限りスキップ"
+  },
+  "message": {
+    "image": "添付画像",
+    "imagePrompt": "画像プロンプト",
+    "copyImagePrompt": "プロンプトをコピー",
+    "titleAssistant": "{{name}}のメッセージ",
+    "titleUser": "あなたのメッセージ",
+    "titleScene": "シーン",
+    "titleSystem": "システムメッセージ",
+    "audio": "音声クリップ",
+    "video": "動画ファイル",
+    "document": "ドキュメント"
+  },
+  "menu": {
+    "selection": {
+      "title": "このキャラクターが応答した理由",
+      "fallback": "LLMの選択を利用できませんでした。参加状況と最近の返信から選ばれました。"
+    },
+    "copy": "テキストをコピー",
+    "edit": "編集",
+    "regenerate": "再生成",
+    "regenerateHint": "このバージョンを保持し、スワイプで比較",
+    "regenerateBusy": "現在の返信が完了するまで待ってください",
+    "pin": "固定",
+    "pinHint": "キャラクターは常にこれを覚えています",
+    "unpin": "固定を解除",
+    "rewind": "ここまで戻る",
+    "rewindHint_other": "その後の{{count}}件のメッセージを削除します",
+    "delete": "メッセージを削除",
+    "deleteHint": "先に固定を解除してください",
+    "branch": "ここから分岐",
+    "branchHint": "ここまでの物語で新しいチャットを開きます",
+    "branchGroup": "1対1で続ける",
+    "branchGroupHint": "1人のメンバーと、ここまでの物語でチャットを開きます",
+    "details": {
+      "title": "プロンプトの詳細",
+      "hint": "この返信に送信された内容",
+      "unavailable": "この返信の記録済みプロンプトは利用できません",
+      "noBreakdown": "この返信は内訳が存在する前に記録されました",
+      "tokens": "{{count}}トークン",
+      "character": "キャラクターとペルソナ",
+      "lorebook": "ロアブック",
+      "memories": "メモリ",
+      "history": "チャット履歴",
+      "other": "その他",
+      "entries": "ロアブックエントリー",
+      "untitled": "無題のエントリー",
+      "partsLabel": "ソース別のプロンプト割合"
+    },
+    "stats": {
+      "prompt": "プロンプトトークン",
+      "reply": "返信トークン",
+      "total": "合計",
+      "firstToken": "最初のトークンまで",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "返信速度",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "マルチトークン予測：ラウンドあたりのトークンとドラフト採用率",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "使用したロアブックエントリー",
+      "memories": "使用したメモリ",
+      "memory": "メモリ",
+      "match": "一致 {{score}}",
+      "noLorebooks": "この返信ではロアブックエントリーが使用されませんでした。",
+      "noMemories": "この返信ではメモリ項目が使用されませんでした。",
+      "notRecorded": "この返信のこれらの詳細は記録されていません。",
+      "searchEntries": "使用したエントリーを検索",
+      "searchMemories": "使用したメモリを検索",
+      "noMatches": "検索に一致するものはありません。",
+      "showing": "{{total}}件中{{shown}}件",
+      "more": "さらに表示"
+    }
+  },
+  "regeneration": {
+    "title": "再生成オプション",
+    "hint": "方向性とモデル",
+    "groupHint": "方向性、モデル、キャラクター",
+    "oneReply": "この返信のみ",
+    "direction": "方向性",
+    "directionHint": "任意。新しい返信で変更したいことを説明してください。",
+    "placeholder": "短くする、トーンを変える、別のアプローチにする",
+    "model": "返信モデル",
+    "usualModel": "いつものモデルを使用",
+    "modelUnavailable": "このモデルはもう利用できません。別のものを選んでください。",
+    "character": "キャラクター",
+    "sameCharacter": "同じキャラクター：{{name}}",
+    "characterUnavailable": "このキャラクターはもうメンバーではありません。別のキャラクターを選んでください。"
+  },
+  "edit": {
+    "title": "メッセージを編集",
+    "assistantHint": "{{name}}の言葉、物語が記憶する形で",
+    "field": "メッセージ本文",
+    "save": "保存"
+  },
+  "confirm": {
+    "cancel": "キャンセル",
+    "rewindTitle": "このメッセージまで戻りますか？",
+    "rewindBody_other": "その後の{{count}}件のメッセージが削除され、物語はここから続きます。",
+    "rewind": "戻る",
+    "deleteTitle": "このメッセージを削除しますか？",
+    "deleteBodyVersions": "その{{count}}バージョンすべてがチャットから削除されます。",
+    "deleteBody": "チャットと、キャラクターが覚えている内容から削除されます。",
+    "delete": "削除"
+  },
+  "banner": {
+    "modelRequired": "このチャットにはインストールされていないモデルが必要です。",
+    "modelNamed": "このチャットには{{model}}モデルが必要ですが、インストールされていません。",
+    "modelsMissing": "このチャットにはインストールされていないモデルが必要です：{{models}}。",
+    "openModels": "モデルを開く",
+    "memoryBlocked": "以前の巻き戻しが完了できなかったため、メモリは一時停止しています。",
+    "memoryRetry": "再試行",
+    "memoryRetryStill": "まだ完了できませんでした。",
+    "memoryRetried": "メモリが正常に戻りました",
+    "swapActive": "入れ替えがオン",
+    "endSwap": "入れ替えを終了"
+  },
+  "requiredModel": {
+    "embedding": "埋め込み",
+    "emotion": "感情"
+  },
+  "failure": {
+    "title": "返信が完了しませんでした",
+    "retry": "再試行",
+    "code": {
+      "invalid_conversation": "この会話には現在書き込めません。",
+      "missing_model": "このチャットにモデルが設定されていません。チャットオプションで選ぶか、モデルで追加してください。",
+      "context_unavailable": "モデル用に会話を準備できませんでした。",
+      "speaker_unavailable": "応答できる人がいません。",
+      "provider_unavailable": "モデルに接続できませんでした。接続とプロバイダーを確認してください。",
+      "provider_rejected": "プロバイダーがリクエストを拒否しました。別のモデルを試すか、アカウントを確認してください。",
+      "empty_output": "モデルが何も返しませんでした。",
+      "timed_out": "モデルの応答に時間がかかりすぎました。",
+      "recovery_unavailable": "返信が中断され、復元できません。",
+      "embedding_unavailable": "メモリに必要な埋め込みモデルを利用できません。",
+      "internal": "アプリで内部エラーが発生しました。",
+      "database_write_fenced": "アプリがデータを保存中です。しばらくしてからもう一度お試しください。"
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "モデルを読み込み中",
+      "retrying": "モデルの読み込みを再試行中"
+    },
+    "loading": "{{model}}を読み込み中、{{percent}}%",
+    "retrying": "別の方法で{{model}}を読み込み中、{{percent}}%",
+    "loaded": "{{model}}の準備ができました",
+    "failed": "{{model}}を読み込めませんでした"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "チャットに画像がある間は高速デコードがオフです。",
+    "kv_cache_moved_to_ram": "コンテキストキャッシュがビデオメモリに収まらず、システムメモリに移動しました。"
+  },
+  "toast": {
+    "copied": "コピーしました",
+    "copyFailed": "クリップボードにアクセスできませんでした",
+    "pinned": "固定しました。キャラクターのメモリに残ります",
+    "unpinned": "固定を解除しました",
+    "edited": "メッセージを更新しました",
+    "deleted": "メッセージを削除しました",
+    "branched": "ここから新しいチャットを開きました",
+    "rewound_other": "{{count}}件のメッセージを巻き戻しました",
+    "launchFailed": "チャットを開始できませんでした",
+    "mediaImageUnsupported": "このチャットのモデルは画像を読めません。削除するか、別のモデルを選んでください。",
+    "mediaAudioUnsupported": "このチャットのモデルは音声を聞けません。削除するか、別のモデルを選んでください。"
+  },
+  "crisp": {
+    "composerPlaceholder": "メッセージ…",
+    "composerMessage": "メッセージ",
+    "composerStop": "生成を停止",
+    "composerSend": "メッセージを送信",
+    "composerSendAsSystem": "長押しまたは右クリックでシステムとして送信",
+    "composerSending": "送信中",
+    "composerContinue": "キャラクターに続けさせる",
+    "messageScene": "シーン",
+    "messageSystem": "システム",
+    "messagePinned": "固定済み",
+    "messageMenuTitle": "メッセージ",
+    "messageReasoning": "思考プロセス",
+    "messageTyping": "入力中",
+    "sheetClose": "閉じる",
+    "bannerDismiss": "閉じる",
+    "alertDismiss": "閉じる",
+    "composerAddAttachment": "コンテンツを追加",
+    "composerCancelRecording": "録音をキャンセル",
+    "composerRecordVoice": "音声を録音",
+    "composerStopAndTranscribe": "停止して文字起こし",
+    "composerTranscribing": "文字起こし中",
+    "composerRecording": "録音中 {{elapsed}}",
+    "composerAttachment": "添付ファイル",
+    "composerFile": "ファイル",
+    "composerAttachmentRemove": "{{name}}を削除"
+  },
+  "streaming": {
+    "imagePrompt": "画像プロンプトを書いています"
+  },
+  "tools": {
+    "title": "コンテンツを追加",
+    "helpMeReply": "返信アシスト",
+    "helpMeReplyHint": "モデルに言うべきことを提案させる",
+    "persona": "ペルソナ",
+    "background": "チャット背景",
+    "backgroundHidden": "非表示",
+    "backgroundOwn": "このチャット用に設定",
+    "backgroundDefault": "既定を使用",
+    "backgroundNone": "背景なし",
+    "note": "作者ノート",
+    "noteActive": "このチャットで有効",
+    "noteInactive": "返信への非公開の指示",
+    "dice": "ダイス",
+    "diceHint": "ダイスを振って結果をメッセージに追加",
+    "swap": "入れ替え",
+    "swapHint": "キャラクターとしてチャットし、モデルにペルソナとして返信させる",
+    "swapOn": "入れ替え（オン）",
+    "swapOnHint": "キャラクターとしてチャットしています。タップでオフ",
+    "uploadImage": "画像をアップロード",
+    "uploadImageHint": "メッセージに画像を添付",
+    "uploadAudio": "音声をアップロード",
+    "uploadAudioHint": "メッセージに音声クリップを添付"
+  },
+  "persona": {
+    "title": "ペルソナ",
+    "none": "ペルソナなし",
+    "default": "既定",
+    "search": "ペルソナを検索",
+    "noMatch": "一致するペルソナはありません",
+    "emptyTitle": "ペルソナはまだありません",
+    "emptyBody": "特定の誰かとして話すには、ライブラリで作成してください。",
+    "loading": "ペルソナを読み込み中",
+    "loadFailed": "ペルソナを読み込めませんでした",
+    "retry": "再試行"
+  },
+  "background": {
+    "title": "チャット背景",
+    "current": "現在の背景",
+    "currentOwn": "このチャット用に設定",
+    "currentDefault": "既定の背景",
+    "choose": "画像を選択",
+    "replace": "画像を置き換え",
+    "chooseHint": "このチャットのみ",
+    "useDefault": "既定を使用",
+    "useDefaultHint": "シーンまたはキャラクターの背景に戻る"
+  },
+  "note": {
+    "title": "作者ノート",
+    "inlineTitle": "インラインエディター",
+    "inlineHint": "すばやく編集できるようメッセージ欄の上に作者ノートを表示",
+    "inlineToggle": "インライン作者ノートエディターを表示",
+    "inlineField": "インライン作者ノート",
+    "inlineEdit": "インライン作者ノートを編集",
+    "inlinePlaceholder": "作者ノートを追加",
+    "saving": "保存中...",
+    "hint": "このチャットでモデルが従う非公開の指示",
+    "placeholder": "モデルを導く作者ノートを書く",
+    "save": "保存",
+    "clear": "削除",
+    "count_other": "{{count}}文字",
+    "willRemove": "保存時にノートが削除されます",
+    "none": "ノートは保存されていません"
+  },
+  "dice": {
+    "title": "ダイス",
+    "hint": "ダイスを振って結果をメッセージに追加",
+    "notation": "ダイスの表記",
+    "roll": "振る",
+    "invalid": "1d20や2d6+3のような表記を使ってください",
+    "tapToRoll": "振って結果を表示",
+    "insert": "メッセージに挿入",
+    "recent": "最近",
+    "clear": "クリア"
+  },
+  "help": {
+    "title": "返信アシスト",
+    "draftPrompt": "下書きメッセージがあります。どう進めますか？",
+    "useMyText": "自分のテキストをベースにする",
+    "useMyTextHint": "下書きを膨らませて改善",
+    "writeNew": "新しく書く",
+    "writeNewHint": "新しい返信を生成",
+    "resultTitle": "提案された返信",
+    "regenerate": "再試行",
+    "use": "これを使用",
+    "writing": "返信を書いています...",
+    "thinking": "書く前に考えています...",
+    "callError": {
+      "model_required": "設定で返信アシスト用のモデルを選んでください。",
+      "model_unavailable": "返信アシストのモデルを読み込めませんでした。",
+      "busy": "アプリが処理中です。しばらくしてからもう一度お試しください。",
+      "unavailable": "現在利用できません。"
+    },
+    "error": {
+      "failed": "返信アシストに失敗しました。",
+      "help_me_reply_disabled": "設定で返信アシストがオフになっています。",
+      "help_me_reply_no_history": "まだ返信する内容がありません。",
+      "help_me_reply_no_model": "設定で返信アシスト用のモデルを選んでください。",
+      "help_me_reply_no_reply": "モデルが返信を書きませんでした。"
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "修正を学習しますか？",
+      "pair": "<wrong>{{wrong}}</wrong>→<correct>{{correct}}</correct>",
+      "save": "学習",
+      "ignore": "無視"
+    },
+    "error": {
+      "noModel": "音声認識モデルをインストールしてディクテーションしてください。",
+      "permission": "録音にはマイクへのアクセスを許可してください。",
+      "noMicrophone": "マイクが見つかりませんでした。",
+      "noAudio": "何も録音されませんでした。",
+      "busy": "別の録音が進行中です。",
+      "unsupported": "このデバイスはマイクから録音できません。",
+      "failed": "録音を文字起こしできませんでした。"
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "チャット設定",
+      "persona": "ペルソナ",
+      "model": "モデル",
+      "lorebooks": "ロアブック",
+      "background": "チャット背景",
+      "note": "作者ノート",
+      "history": "チャット履歴",
+      "notes": "スケジュールノート",
+      "starters": "新しいチャット",
+      "advanced": "モデル設定",
+      "appearance": "外観"
+    },
+    "back": "戻る",
+    "reset": "リセット",
+    "loading": "読み込み中",
+    "loadFailed": "読み込めませんでした",
+    "source": {
+      "conversation": "このチャットのみ",
+      "group": "グループから",
+      "character": "キャラクターから",
+      "launch": "チャットの開始方法から",
+      "app_default": "アプリの既定"
+    },
+    "meta": {
+      "messages_other": "{{count}}件のメッセージ",
+      "active": "{{date}}にアクティブ"
+    },
+    "sections": {
+      "chat": "このチャット",
+      "memory": "メモリ",
+      "time": "時間",
+      "actions": "チャット",
+      "generation": "生成",
+      "lorebooks": "ロアブック",
+      "members": "メンバー",
+      "speaker": "発言者の選択"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "既定モデルを使って誰が話すかを選びます（トークン消費あり）",
+      "heuristic": "ヒューリスティック",
+      "heuristicHint": "参加バランスと文脈の手がかりを使います（無料）",
+      "round_robin": "ラウンドロビン",
+      "round_robinHint": "キャラクターが順番に話します（無料）",
+      "director": "ディレクター",
+      "directorHint": "各メッセージにどのキャラクターが応答するかをあなたが選びます",
+      "style": "ディレクタースタイル",
+      "cue": "キュー",
+      "action": "アクション",
+      "cueHint": "キャラクターをタップして応答者を選びます。送信でメッセージを届けて返信を促します。",
+      "actionHint": "送信はメッセージを追加するだけです。キャラクターのアバターをタップするとすぐに応答させられます。",
+      "own": "このチャットは独自の選択を使用"
+    },
+    "members": {
+      "replies_other": "{{count}}件の返信、{{percent}}",
+      "muted": "指名されない限りスキップ",
+      "last": "少なくとも1人のメンバーが応答する必要があります",
+      "answers": "このチャットでは{{name}}が応答します"
+    },
+    "model": {
+      "title": "モデル",
+      "none": "モデル未設定",
+      "search": "モデルを検索",
+      "useDefault": "キャラクターの既定を使用",
+      "useDefaultHint": "キャラクター、次にアプリの既定に従う",
+      "remoteTitle": "リモートモデルを使用しますか？",
+      "remoteBody": "このチャットは返信ごとに{{provider}}へ送信されます。",
+      "use": "このモデルを使用",
+      "unknown": "不明なモデル"
+    },
+    "lorebooks": {
+      "title": "ロアブック",
+      "count_other": "{{count}}件のロアブック",
+      "useDefault": "既定のロアブックを使用",
+      "useDefaultHint": "キャラクターのロアブックに従う",
+      "useCharacter": "キャラクターのロアブックを使用"
+    },
+    "background": {
+      "set": "画像を設定しました"
+    },
+    "memory": {
+      "mode": "メモリモード",
+      "modes": {
+        "manual": "手動",
+        "dynamic": "ダイナミック",
+        "disabled": "オフ"
+      },
+      "open": "メモリを開く",
+      "items_other": "{{count}}件のメモリ",
+      "summaryTokens_other": "{{count}}件の要約トークン",
+      "off": "このチャットではメモリがオフです"
+    },
+    "notes": {
+      "title": "スケジュールノート",
+      "rowHint": "キャラクターが決まった時刻に見るリマインダー",
+      "groupRowHint": "グループとメンバーが決まった時刻に見るリマインダー",
+      "hint": "ノートはキャラクターに属し、そのキャラクターとのすべてのチャットに表示されます。",
+      "groupHint": "ノートはグループに属し、このグループのすべてのチャットに表示されます。",
+      "empty": "スケジュールノートはまだありません。",
+      "add": "ノートを追加",
+      "untitled": "無題のノート",
+      "label": "ラベル",
+      "labelPlaceholder": "ラベル（任意）",
+      "content": "ノート",
+      "contentPlaceholder": "キャラクターは何を知るべきですか？",
+      "groupContentPlaceholder": "グループは何を知るべきですか？",
+      "startsOn": "開始日",
+      "stopsOn": "終了日（任意）",
+      "repeats": "繰り返し",
+      "windowHours": "表示時間（時間）",
+      "enabled": "有効",
+      "enabledHint": "削除せずにノートをオフにする",
+      "deleteTitle": "このノートを削除しますか？",
+      "deleteBody": "元に戻せません。",
+      "recurrence": {
+        "none": "1回",
+        "daily": "毎日",
+        "weekly": "毎週",
+        "monthly": "毎月",
+        "yearly": "毎年"
+      },
+      "whoSees": "閲覧者",
+      "whoSeesHint": "選んだキャラクターだけがこのノートを読みます。",
+      "everyone": "すべてのメンバーがこのノートを読みます。制限するにはキャラクターを選んでください。",
+      "useCharacter": "キャラクターノートを使用"
+    },
+    "history": {
+      "filter": "チャットを絞り込む",
+      "filters": {
+        "all": "すべて",
+        "active": "アクティブ",
+        "archived": "アーカイブ済み"
+      },
+      "sort": "チャットを並べ替え",
+      "sorts": {
+        "recent": "最後に使用",
+        "oldest": "古い順"
+      },
+      "results_other": "{{formattedCount}}件のチャット",
+      "untitled": "無題のチャット",
+      "search": "チャットを検索",
+      "noMatch": "一致するチャットはありません",
+      "empty": "チャットはまだありません",
+      "meta_other": "{{count}}件のメッセージ · {{date}}",
+      "current": "現在",
+      "archived": "アーカイブ済み",
+      "actions": "{{title}}の操作",
+      "rename": "名前を変更",
+      "export": "エクスポート",
+      "archive": "アーカイブ",
+      "restore": "復元",
+      "delete": "削除"
+    },
+    "starters": {
+      "hint": "キャラクターのチャットテンプレートから開始します。",
+      "none": "テンプレートなしで開始"
+    },
+    "rename": {
+      "field": "チャットタイトル",
+      "save": "タイトルを保存",
+      "open": "チャット名を変更"
+    },
+    "delete": {
+      "title": "このチャットを削除しますか？",
+      "body": "{{title}}とそのすべてのメッセージが削除されます。元に戻せません。",
+      "confirm": "削除"
+    },
+    "export": {
+      "done": "チャットをエクスポートしました"
+    },
+    "duplicate": {
+      "done": "チャットを複製しました"
+    },
+    "actions": {
+      "newChat": "新しいチャット",
+      "newChatHint": "このキャラクターとの別の会話を開始",
+      "newGroupChatHint": "このグループとの別の会話を開始",
+      "history": "チャット履歴",
+      "historyHint": "以前のチャットを開く、名前を変更する、削除する",
+      "branches": "分岐",
+      "branchesHint": "このチャットがたどった方向を切り替える",
+      "duplicate": "チャットを複製",
+      "duplicateHint": "すべてのメッセージを含むコピーを作成",
+      "export": "チャットをエクスポート",
+      "exportHint": "会話をファイルとして保存",
+      "import": "チャットログをインポート",
+      "importHint": "ファイルから会話を取り込む",
+      "importGroupHint": "グループチャットではまだ利用できません",
+      "archive": "チャットをアーカイブ",
+      "archiveHint": "リストから隠し、すべてを保持",
+      "restore": "チャットを復元",
+      "restoreHint": "リストに戻す",
+      "delete": "チャットを削除",
+      "deleteHint": "チャットとメッセージを完全に削除"
+    },
+    "generation": {
+      "title": "モデル設定",
+      "scope": "このチャットのみ",
+      "hint": "未設定の値はモデル、次にアプリの既定に従います。",
+      "noModel": "このチャットにはモデルがないため、アプリの既定のみ適用されます。",
+      "resetAll": "すべてリセット",
+      "discard": "破棄",
+      "inherited": "モデルとアプリの設定に従っています",
+      "count_other": "このチャットで{{count}}個の値を変更"
+    },
+    "time": {
+      "title": "チャット時計",
+      "awareness": "時間の認識",
+      "awarenessHint": "モデルに日付と時刻を伝え、すべてのメッセージに刻印する",
+      "live": "リアルタイム",
+      "frozen": "停止",
+      "ticking": "進行中",
+      "stoppedAt": "{{when}}に停止",
+      "runningFrom": "{{when}}から進行中",
+      "mode": "時計",
+      "anchor": "日付と時刻",
+      "apply": "適用",
+      "reset": "リセット",
+      "cancel": "キャンセル",
+      "chooseAnchor": "日付と時刻を選択",
+      "previousMonth": "前の月",
+      "nextMonth": "次の月",
+      "chooseMonth": "月と年を選択",
+      "previousYear": "前の年",
+      "nextYear": "次の年",
+      "year": "年",
+      "time": "時刻"
+    },
+    "groupAppearanceHint": "このグループのすべてのチャットの外観",
+    "characterAppearanceHint": "このキャラクターとのすべてのチャットの外観"
+  },
+  "appearance": {
+    "forGroup": "このグループのすべてのチャット用",
+    "forCharacter": "{{name}}用",
+    "moveLeft": "左へ移動",
+    "moveRight": "右へ移動",
+    "close": "外観を閉じる",
+    "unsaved": "未保存の変更",
+    "saved": "変更なし",
+    "discard": "破棄",
+    "save": "保存",
+    "discardTitle": "変更を破棄しますか？",
+    "discardBody": "行った外観の変更は保存されていません。",
+    "discardConfirm": "変更を破棄",
+    "keepEditing": "編集を続ける"
+  },
+  "memory": {
+    "title": "メモリ",
+    "back": "チャット",
+    "tabs": {
+      "memories": "メモリ",
+      "activity": "アクティビティ",
+      "pinned": "固定済み"
+    },
+    "loading": "メモリを読み込み中",
+    "off": {
+      "title": "このチャットではメモリがオフです",
+      "description": "このチャットでは何も記憶されず、返信にも何も送信されません。",
+      "action": "チャット設定を開く"
+    },
+    "search": "メモリを検索",
+    "add": "追加",
+    "all": "すべて",
+    "categories": {
+      "character_trait": "キャラクター特性",
+      "relationship": "関係",
+      "plot_event": "プロットイベント",
+      "world_detail": "世界の詳細",
+      "preference": "好み",
+      "other": "その他",
+      "milestone": "マイルストーン",
+      "boundary": "境界",
+      "profile": "プロフィール",
+      "routine": "習慣",
+      "episodic": "エピソード",
+      "emotional_snapshot": "感情のスナップショット"
+    },
+    "origins": {
+      "model": "モデル",
+      "user": "あなた",
+      "import": "インポート済み"
+    },
+    "temperature": {
+      "hot": "ホット",
+      "cold": "コールド"
+    },
+    "tokens_other": "{{count}}トークン",
+    "window": "{{from}}から{{to}}までのメッセージ",
+    "pinnedMark": "固定済み",
+    "list": {
+      "found_other": "{{count}}件見つかりました",
+      "total_other": "{{count}}件のメモリ",
+      "byModel": "モデルによる{{count}}件",
+      "byUser": "あなたによる{{count}}件",
+      "imported": "{{count}}件インポート済み",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "メモリはまだありません",
+      "dynamic": "チャットが進むとメモリがここに表示されます。自分で追加することもできます。",
+      "manual": "キャラクターが常に覚えておくべきことを追加してください。",
+      "action": "メモリを追加",
+      "noMatch": "「{{query}}」に一致するものはありません",
+      "noMatchBody": "メモリ自体の言葉を試してください。",
+      "noCategory": "このカテゴリには何もありません"
+    },
+    "sheet": {
+      "addTitle": "メモリを追加",
+      "editTitle": "メモリ",
+      "byModel": "モデルが書きました",
+      "byModelIn": "{{window}}でモデルが書きました",
+      "byUser": "あなたが書きました",
+      "imported": "インポート済み",
+      "text": "メモリ",
+      "textPlaceholder": "キャラクターは何を覚えておくべきですか？",
+      "category": "カテゴリ",
+      "noCategory": "カテゴリなし",
+      "when": "起きたとき",
+      "whenHint": "任意。キャラクターが時間軸に置けるようにします。",
+      "whenPlaceholder": "未設定",
+      "whenClear": "クリア",
+      "temperature": "温度",
+      "hotBody": "ホットなメモリは常に手元に残ります",
+      "coldBody": "コールドなメモリは密接に一致するときだけ呼び出されます",
+      "pin": "固定",
+      "pinBody": "モデルは固定されたメモリを削除もアーカイブもしません",
+      "delete": "削除",
+      "cancel": "キャンセル",
+      "add": "追加",
+      "save": "保存",
+      "deleteTitle": "このメモリを削除しますか？",
+      "deleteBody": "このチャットではもう呼び出されません。",
+      "keep": "保持",
+      "added": "メモリを追加しました",
+      "saved": "メモリを保存しました",
+      "deleted": "メモリを削除しました"
+    },
+    "summary": {
+      "title": "コンテキスト要約",
+      "empty": "キャラクターが物語の筋を保てるよう、短い要約を追加してください。",
+      "description": "すべての返信に付く短い要約",
+      "field": "要約",
+      "dynamicHint": "モデルは更新のたびにこれを書き直します。それまではあなたの編集が保持されます。",
+      "clear": "クリア",
+      "cancel": "キャンセル",
+      "save": "保存",
+      "saved": "要約を保存しました",
+      "cleared": "要約をクリアしました"
+    },
+    "status": {
+      "approvalTitle": "メモリを更新しますか？",
+      "approvalBody_other": "{{count}}件の新しいメッセージをメモリに要約できます。",
+      "update": "更新",
+      "notNow": "今はしない",
+      "skipped_other": "スキップしました。次の{{count}}件のメッセージ後に再度確認します",
+      "runningTitle": "メモリを更新中",
+      "runningBody": "最新のメッセージを読み取り中",
+      "stop": "停止",
+      "failedTitle": "メモリの更新に失敗しました",
+      "tryAgain": "再試行",
+      "otherModel": "別のモデルを使用",
+      "pausedTitle": "前回のメモリ更新が中断されました",
+      "pausedBody": "完了する前に別のプロセスが引き継ぎました。",
+      "nextIn_other": "次の更新は{{count}}件のメッセージ後",
+      "since_other": "前回の更新から{{count}}件のメッセージ",
+      "modes": {
+        "auto": "自動",
+        "ask_first": "先に確認",
+        "manual": "手動"
+      },
+      "every_other": "{{mode}} · {{count}}件のメッセージごと",
+      "manualOnly": "{{mode}} · ここで開始したときだけ更新されます",
+      "progress": "{{total}}件中{{current}}件",
+      "updateNow": "今すぐ更新"
+    },
+    "failure": {
+      "embedding_unavailable": "埋め込みモデルを利用できません。",
+      "model_missing": "メモリモデルがインストールされていません。",
+      "model_invalid": "メモリモデルを使用できません。",
+      "prompt_missing": "メモリプロンプトがありません。",
+      "settings_invalid": "メモリ設定が有効ではありません。",
+      "provider_unavailable": "プロバイダーが応答しませんでした。",
+      "provider_rejected": "プロバイダーがリクエストを拒否しました。",
+      "invalid_response": "モデルのメモリ応答を処理できませんでした。サイクルをもう一度お試しください。",
+      "empty_response": "モデルが空の返信を返しました。",
+      "timed_out": "モデルの応答に時間がかかりすぎました。",
+      "round_limit": "モデルがステップを使いすぎました。",
+      "tool_failed": "メモリの変更の1つが失敗しました。",
+      "storage_failure": "メモリを保存できませんでした。",
+      "lease_lost": "別の更新が引き継ぎました。",
+      "internal": "アプリで内部エラーが発生しました。"
+    },
+    "gate": {
+      "not_dynamic": "このチャットはダイナミックメモリを使用していません。",
+      "disabled": "設定でダイナミックメモリがオフになっています。",
+      "nothing_to_summarise": "まだ要約するものはありません。",
+      "cycle_running": "更新はすでに実行中です。"
+    },
+    "activity": {
+      "empty": "更新はまだありません",
+      "emptyBody": "モデルが実行する各メモリ更新がここに表示されます。",
+      "badgeUndone": "元に戻し済み",
+      "badgeFailed": "失敗",
+      "badgeStopped": "停止",
+      "badgeInterrupted": "中断",
+      "badgeRunning": "実行中",
+      "noDetails": "詳細は記録されていません。",
+      "stopped": "この更新は完了前に停止しました。",
+      "running": "この更新はまだ実行中です。",
+      "actions": {
+        "created": "追加",
+        "duplicate_skipped": "既知",
+        "deleted": "削除",
+        "soft_deleted": "コールドに移動",
+        "pinned": "固定",
+        "unpinned": "固定解除",
+        "target_not_found": "見つかりません",
+        "done": "完了",
+        "rejected": "拒否",
+        "skipped": "スキップ",
+        "stopped_after_done": "完了後に停止"
+      },
+      "undo": "この更新を元に戻す",
+      "blocked": "元に戻せません：後の更新がこれを基にしています。",
+      "blockedBy": "元に戻せません：{{window}}の更新がこれを基にしています。",
+      "dependent": "後の更新がこれを基にしているため、元に戻せません。",
+      "userEdited": "書き込まれたメモリを編集したため、元に戻せません。",
+      "undoTitle": "{{window}}の更新を元に戻しますか？",
+      "undoBody": "追加されたメモリは削除され、変更されたものは元に戻ります。あなたの編集は保持されます。",
+      "undoConfirm": "更新を元に戻す",
+      "keep": "保持",
+      "undone": "更新を元に戻しました",
+      "loadMore": "古い更新を表示"
+    },
+    "pinnedTab": {
+      "empty": "固定されたメッセージはありません",
+      "emptyBody": "チャットからメッセージを固定すると、常に次の返信に含まれます。",
+      "label": "返信に常に含まれる",
+      "unpin": "固定を解除",
+      "unpinned": "固定を解除しました",
+      "noText": "添付ファイル",
+      "loadMore": "さらに表示",
+      "you": "あなた"
+    }
+  },
+  "branches": {
+    "title": "分岐",
+    "meta_other": "{{count}}件のメッセージ · {{date}}",
+    "current": "現在",
+    "actions": "{{title}}の操作",
+    "rename": "名前を変更",
+    "renameField": "分岐名",
+    "delete": "削除",
+    "deleteRoot": "元の分岐は削除できません",
+    "deleteActive": "先に別の分岐に切り替えてください",
+    "deleteTitle": "この分岐を削除しますか？",
+    "deleteBody": "{{name}}とそのメッセージが削除されます。他の分岐は残ります。",
+    "deleted": "分岐を削除しました",
+    "untitled": "無題の分岐",
+    "thisChat": "このチャット",
+    "renameSave": "名前を保存",
+    "original": "元",
+    "untitledChat": "無題のチャット"
+  },
+  "companion": {
+    "title": "コンパニオン",
+    "back": "チャット",
+    "tabs": {
+      "relationship": "関係",
+      "bond": "絆",
+      "memories": "メモリ",
+      "soul": "ソウル",
+      "activity": "アクティビティ"
+    },
+    "bond": "絆",
+    "lastTalked": "最後の会話 {{when}}",
+    "updated": "{{when}}に更新",
+    "messages": "メッセージ",
+    "togetherSince": "{{date}}から一緒",
+    "engine": "感情エンジン",
+    "nothingTitle": "まだ表示するものはありません",
+    "nothingBody": "{{name}}の絆と感情は数件のメッセージの後に動き始めます。コンパニオン設定の既定値から始まります。",
+    "missingTitle": "感情が追跡されていません",
+    "missingBody": "感情モデルをインストールすると、返信ごとに感情が動きます。",
+    "install": "インストール",
+    "nothingNow": "今は何もありません",
+    "drivers": "有効な要因",
+    "timeline": "最近のタイムライン",
+    "events_other": "{{count}}件のイベント",
+    "currentState": "現在の状態",
+    "defaultMark": "キャラクターの既定",
+    "aboveDefault_other": "キャラクターの既定より{{count}}ポイント上",
+    "belowDefault_other": "キャラクターの既定より{{count}}ポイント下",
+    "axes": {
+      "closeness": {
+        "label": "親密さ",
+        "low": "引いた",
+        "mid": "知り合い",
+        "high": "親密"
+      },
+      "trust": {
+        "label": "信頼",
+        "low": "不信",
+        "mid": "中立",
+        "high": "信頼"
+      },
+      "affection": {
+        "label": "愛情",
+        "low": "敵意",
+        "mid": "中立",
+        "high": "愛情"
+      },
+      "tension": {
+        "label": "緊張",
+        "low": "穏やか",
+        "mid": "",
+        "high": "張り詰め"
+      },
+      "stability": {
+        "label": "安定",
+        "low": "不安定",
+        "mid": "",
+        "high": "安定"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "感じている",
+        "hint": "内面で感じていること"
+      },
+      "expressed": {
+        "title": "表に出る",
+        "hint": "返信に現れること"
+      },
+      "blocked": {
+        "title": "抑えている",
+        "hint": "性格が内に留めていること"
+      },
+      "momentum": {
+        "title": "高まっている",
+        "hint": "直近の数ターンが向かう先"
+      }
+    },
+    "emotions": {
+      "warmth": "温かさ",
+      "trust": "信頼",
+      "calm": "落ち着き",
+      "vulnerability": "脆さ",
+      "longing": "恋しさ",
+      "hurt": "傷つき",
+      "tension": "緊張",
+      "irritation": "いらだち",
+      "affection_intensity": "愛情",
+      "reassurance_need": "安心を求めている"
+    },
+    "memories": {
+      "total_other": "{{count}}件のメモリ",
+      "found_other": "{{count}}件見つかりました",
+      "kind": "種類",
+      "field": "メモリ",
+      "placeholder": "{{name}}は何を覚えておくべきですか？",
+      "emptyTitle": "ここにメモリはありません",
+      "emptyBody": "会話するとメモリが表示されます。自分で追加することもできます。",
+      "noMatch": "「{{query}}」に一致するものはありません",
+      "noMatchBody": "メモリ自体の言葉を試してください。"
+    },
+    "soul": {
+      "title": "ソウル",
+      "edit": "編集",
+      "core": "アイデンティティの核。成長しても変わりません",
+      "notWritten": "まだ書かれていません",
+      "growth": "ソウルの成長",
+      "clear": "成長をクリア",
+      "intro": "メモリから変わりやすい特性がどう成長したか。本質、特性、過去はここでは変わりません。",
+      "empty": "まだ成長はありません。メモリができるにつれ、あなたとともに変わる特性がここに現れます。",
+      "zero": "0件の変更",
+      "added": "追加",
+      "adjusted": "調整",
+      "confidence": "信頼度",
+      "locked": "ロック済み",
+      "lock": "ロック",
+      "unlock": "ロック解除",
+      "lockHint": "この事実をロック",
+      "unlockHint": "この事実のロックを解除",
+      "historicalHint": "歴史的事実は常に保持されます",
+      "remove": "この成長を削除",
+      "sources_other": "{{count}}件のメモリから",
+      "retired_other": "以前のバージョン{{count}}件を引退させました。",
+      "categories": {
+        "essence": "本質",
+        "traits": "特性",
+        "backstory": "過去",
+        "appearance": "外見",
+        "goals": "目標",
+        "likes": "好きなもの",
+        "voice": "声",
+        "relational_style": "関係スタイル",
+        "vulnerabilities": "弱さ",
+        "fears": "恐れ",
+        "habits": "癖",
+        "boundaries": "境界線"
+      },
+      "policy": {
+        "current": {
+          "label": "現在",
+          "hint": "以前の内容を置き換える"
+        },
+        "adaptive": {
+          "label": "適応",
+          "hint": "会話に応じて変わり続けられる"
+        },
+        "historical": {
+          "label": "歴史",
+          "hint": "起きたこと。常に保持"
+        }
+      },
+      "removeTitle": "これを削除しますか？",
+      "removeBody": "学んだ内容から削除されます。書かれたソウルは変わりません。",
+      "clearTitle": "学んだことをすべてクリアしますか？",
+      "clearBody": "置き換えられた履歴を含むすべての成長が削除されます。書かれたソウルは変わりません。",
+      "keep": "保持",
+      "removeConfirm": "削除",
+      "clearConfirm": "すべてクリア",
+      "removed": "削除しました",
+      "cleared": "成長をクリアしました",
+      "sourcesTitle": "出所",
+      "sourceDescription": "{{category}}：{{text}}",
+      "sourcesEmpty": "ソースのメモリはもう利用できません。",
+      "sourcesMissing_other": "ソースのメモリ{{count}}件はもう利用できません。"
+    },
+    "effect": {
+      "title": "この返信で変わったこと",
+      "feels": "感じていること",
+      "pickedUp": "受け取った",
+      "letGo": "手放した",
+      "remembered": "覚えた",
+      "processing": "変わったことを確認中",
+      "failed": "返信の変化を分析できませんでした。",
+      "invalidated": "これらの変更はこの返信にはもう適用されません。",
+      "memoryCount_other": "{{count}}件のメモリ",
+      "axisSummary": "{{axis}} {{value}}",
+      "none": "表示する変更はありません",
+      "quote": "「{{text}}」"
+    },
+    "activity": {
+      "undo": "この更新を元に戻す",
+      "undoTitle": "{{window}}を元に戻しますか？",
+      "undoBody": "追加されたメモリは削除され、変更されたものは元に戻ります。あなたの編集は保持されます。",
+      "undoConfirm": "更新を元に戻す",
+      "blockedBy": "元に戻せません：{{window}}がこれを基にしています。",
+      "blocked": "元に戻せません：後の更新がこれを基にしています。"
+    },
+    "unavailable": "このチャットにはコンパニオンがいません",
+    "unavailableBody": "コンパニオンチャットを開いて、絆、メモリ、ソウルを確認してください。",
+    "crisp": {
+      "close": "閉じる",
+      "clearSearch": "検索をクリア"
+    },
+    "lastReply": "最後の返信",
+    "replyHint": "チャットの各メッセージがそのメニューからこれを開きます"
+  }
+}

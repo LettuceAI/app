@@ -1,0 +1,176 @@
+{
+  "onnxModelsUnloaded": "Modèles inactifs libérés pour économiser de la mémoire : {{models}}. Ils seront rechargés au besoin.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Connexion à l'application…"
+  },
+  "navigation": {
+    "primary": "Navigation principale",
+    "chats": "Discussions",
+    "groups": "Groupes",
+    "discover": "Découvrir",
+    "library": "Bibliothèque",
+    "settings": "Paramètres",
+    "home": "Accueil",
+    "create": "Créer",
+    "collapse": "Réduire",
+    "collapseSidebar": "Réduire la barre latérale",
+    "expandSidebar": "Développer la barre latérale",
+    "backToApp": "Retour à l'application"
+  },
+  "downloads": {
+    "loading": "Chargement des téléchargements",
+    "title": "Téléchargements",
+    "titleActive_one": "Téléchargements, {{count}} en cours",
+    "titleActive_many": "Téléchargements, {{count}} en cours",
+    "titleActive_other": "Téléchargements, {{count}} en cours",
+    "empty": "Aucun téléchargement.",
+    "emptyBody": "Les installations et mises à jour apparaissent ici.",
+    "generic": "Téléchargement",
+    "done": "{{name}} est prêt",
+    "failed": "Impossible de télécharger {{name}}"
+  },
+  "window": {
+    "minimize": "Réduire",
+    "maximize": "Agrandir",
+    "close": "Fermer la fenêtre",
+    "failed": "L'action sur la fenêtre n'a pas pu être effectuée. Réessayez."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Autre"
+  },
+  "actions": {
+    "retry": "Réessayer",
+    "cancel": "Annuler",
+    "reload": "Recharger"
+  },
+  "errors": {
+    "fatalTitle": "Un problème est survenu",
+    "fatalDescription": "L'application a rencontré un problème inattendu. La recharger suffit généralement à le résoudre.",
+    "loadTitle": "Impossible de charger ce contenu",
+    "notFoundTitle": "Rien ici",
+    "notFoundDescription": "Cette page n'existe pas dans l'application.",
+    "code": {
+      "not_found": "Il n'existe plus.",
+      "in_use": "Il est encore utilisé. Supprimez ses références et réessayez.",
+      "malformed": "Le fournisseur a renvoyé une réponse illisible.",
+      "conflict": "Il a été modifié ailleurs. Rechargez et réessayez.",
+      "invalid_input": "Un élément de la requête n'est pas valide.",
+      "unsupported": "Ce n'est pas pris en charge ici.",
+      "unavailable": "Ce n'est pas disponible pour le moment.",
+      "cancelled": "L'opération a été annulée.",
+      "busy": "L'application est occupée. Réessayez dans un instant.",
+      "internal": "L'application a rencontré une erreur interne.",
+      "model_required": "Un modèle requis n'est pas installé.",
+      "model_unavailable": "Impossible de charger un modèle requis.",
+      "transport": "Le backend de l'application est injoignable."
+    }
+  },
+  "create": {
+    "group": "Créer un groupe",
+    "groupBody": "Réunir des personnages dans une discussion",
+    "title": "Créer",
+    "description": "Quelqu'un à qui parler, ou un monde pour lui.",
+    "character": "Créer un personnage",
+    "characterBody": "Nom, apparence, personnalité et scènes d'ouverture",
+    "persona": "Créer un persona",
+    "personaBody": "Qui vous êtes dans les discussions",
+    "lorebook": "Créer une encyclopédie",
+    "lorebookBody": "Faits du monde, rédigés par vous, depuis un fichier ou avec l'IA",
+    "import": "Importer une carte",
+    "importBody": "Carte de personnage PNG ou JSON",
+    "imported": "Personnage importé",
+    "discover": "Parcourir Découvrir",
+    "discoverBody": "Personnages partagés par d'autres personnes"
+  },
+  "providerSelect": {
+    "placeholder": "Choisir un fournisseur",
+    "title": "Fournisseur",
+    "empty": "Aucun fournisseur disponible.",
+    "groups": {
+      "cloud": "Cloud",
+      "local": "Local",
+      "custom": "Personnalisé"
+    }
+  },
+  "designReferences": {
+    "note": "Note de design",
+    "notePlaceholder": "Cheveux courts, lunettes rondes, long manteau gris",
+    "noteHint": "Apparence en quelques mots. Utilisée pour les images de scène générées.",
+    "images": "Images de référence",
+    "imagesHint": "Quelques images qui montrent l'allure.",
+    "add": "Ajouter une image",
+    "remove": "Retirer l'image"
+  },
+  "memoryDownload": {
+    "title": "Télécharger le modèle de mémoire",
+    "titleDone": "La mémoire est prête",
+    "body": "La mémoire automatique nécessite un petit modèle sur cet appareil. Il se télécharge une fois, puis fonctionne hors ligne.",
+    "bodyDone": "Vos personnages retiendront désormais ce qui compte, même dans les longues discussions. Vous pouvez désactiver cela pour chaque discussion.",
+    "modelName": "Modèle de mémoire Lettuce Eidos",
+    "keepOpen": "Gardez l'application ouverte jusqu'à la fin.",
+    "download": "Télécharger et terminer",
+    "downloading": "Téléchargement",
+    "checking": "Vérification du modèle",
+    "useManual": "Utiliser la mémoire manuelle à la place",
+    "doneDetail": "Installé et testé · fonctionne hors ligne",
+    "failedOffline": "Connexion perdue. Réessayez pour continuer.",
+    "failedOther": "Le téléchargement ne s'est pas terminé. Réessayez pour continuer.",
+    "downloadOnly": "Télécharger",
+    "bodyInstall": "La mémoire dynamique nécessite un petit modèle sur cet appareil. Il se télécharge une fois, puis fonctionne hors ligne.",
+    "failureCode": {
+      "integrity_failure": "Le téléchargement est endommagé. Réessayez pour continuer.",
+      "resource_unavailable": "Le serveur du modèle n'est pas disponible pour le moment. Réessayez pour continuer.",
+      "storage_failure": "Le modèle n'a pas pu être enregistré sur cet appareil. Vérifiez l'espace libre et réessayez.",
+      "timed_out": "Le téléchargement a pris trop de temps. Réessayez pour continuer."
+    }
+  },
+  "emotionDownload": {
+    "title": "Télécharger le modèle d'émotion",
+    "titleDone": "Les émotions sont prêtes",
+    "body": "Le mode compagnon lit l'émotion derrière chaque message grâce à un petit modèle sur cet appareil. Il se télécharge une fois, puis fonctionne hors ligne.",
+    "bodyDone": "Chaque réponse peut désormais influencer ce que ressentent vos compagnons et votre proximité.",
+    "download": "Télécharger",
+    "close": "Pas maintenant",
+    "finish": "Terminé"
+  },
+  "structuredFallback": {
+    "title": "Quand le modèle ne peut pas utiliser d'outils",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Compact. Compatible avec la plupart des modèles."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Pour les modèles qui écrivent du XML plus fiablement que du JSON."
+      }
+    },
+    "hint": "Les appels d'outils sont essayés en premier. Ce format n'est utilisé que si le modèle ne les prend pas en charge."
+  },
+  "promptPicker": {
+    "builtIn": "Intégré",
+    "builtInBody": "Le prompt de l'application",
+    "builtInMissing": "Le prompt intégré n'est pas disponible",
+    "search": "Rechercher des prompts",
+    "clearSearch": "Effacer la recherche",
+    "noMatches": "Aucun prompt correspondant",
+    "manage": "Prompts système",
+    "manageBody": "Créer ou modifier un prompt",
+    "close": "Fermer"
+  },
+  "lorebookPicker": {
+    "title": "Encyclopédies",
+    "done": "Terminé",
+    "empty": "Aucune encyclopédie pour l'instant",
+    "emptyBody": "Les encyclopédies que vous créez ou importez apparaissent ici.",
+    "edit": "Modifier {{name}}"
+  }
+}

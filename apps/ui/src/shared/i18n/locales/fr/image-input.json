@@ -1,0 +1,135 @@
+{
+  "generate": "Générer un avatar",
+  "title": "Générer un avatar",
+  "bannerCrop": {
+    "title": "Positionner la bannière",
+    "description": "Cadrez la couverture. Faites glisser pour déplacer, pincez ou faites défiler pour zoomer.",
+    "saveFailed": "Impossible d'enregistrer la bannière"
+  },
+  "crop": {
+    "title": "Positionner l'avatar",
+    "description": "Faites glisser pour déplacer. Pincez ou faites défiler pour zoomer.",
+    "zoom": "Zoom",
+    "zoomIn": "Zoom avant",
+    "zoomOut": "Zoom arrière",
+    "center": "Centrer",
+    "area": "Zone de cadrage",
+    "keyboard": "Les flèches déplacent l'image. Plus et moins zooment, C centre, 0 réinitialise.",
+    "reset": "Réinitialiser",
+    "apply": "Utiliser cette position",
+    "loadFailed": "Impossible de charger l'image",
+    "saveFailed": "Impossible d'enregistrer l'avatar"
+  },
+  "preview": {
+    "empty": "Aucune image pour l'instant",
+    "emptyBody": "Décrivez un avatar ci-dessous ou partez de votre propre image.",
+    "alt": "Aperçu de l'avatar",
+    "unchanged": "L'avatar déjà présent sur le formulaire",
+    "editedFrom": "Depuis {{version}} : {{request}}"
+  },
+  "versions": {
+    "label": "Versions",
+    "count_one": "{{count}} version",
+    "count_many": "{{count}} versions",
+    "count_other": "{{count}} versions",
+    "current": "Avatar actuel",
+    "upload": "Image importée {{number}}",
+    "generation": "Image générée {{number}}",
+    "edit": "Image modifiée {{number}}",
+    "short": {
+      "current": "Actuel",
+      "upload": "Import {{number}}",
+      "generation": "Image {{number}}",
+      "edit": "Modif. {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Importer une image"
+  },
+  "mode": {
+    "label": "Que faire",
+    "generate": "Nouvelle image",
+    "edit": "Modifier la sélection",
+    "generateHint": "Repart de la description uniquement",
+    "editHint": "Modifie une copie de {{version}}"
+  },
+  "prompt": {
+    "label": "Décrivez l'avatar",
+    "placeholder": "Un renard souriant avec une écharpe en tricot, lumière douce"
+  },
+  "instruction": {
+    "label": "Que changer",
+    "placeholder": "Rendre l'écharpe bleue"
+  },
+  "actions": {
+    "generate": "Générer",
+    "edit": "Appliquer la modification",
+    "cancel": "Annuler",
+    "use": "Utiliser cet avatar",
+    "retry": "Réessayer"
+  },
+  "busy": {
+    "uploading": "Ajout de l'image",
+    "generating": "Génération de l'image",
+    "editing": "Modification de l'image",
+    "cancelling": "Annulation"
+  },
+  "job": {
+    "progress": "{{current}} sur {{total}}",
+    "rejected_one": "{{count}} résultat a été écarté",
+    "rejected_many": "{{count}} résultats ont été écartés",
+    "rejected_other": "{{count}} résultats ont été écartés",
+    "cancelled": "Génération annulée"
+  },
+  "settings": {
+    "open": "Ouvrir les paramètres d'image"
+  },
+  "notice": {
+    "options": {
+      "title": "Impossible de vérifier le modèle d'avatar",
+      "body": "L'import fonctionne toujours."
+    },
+    "disabled": {
+      "title": "La génération d'avatars est désactivée",
+      "body": "Activez-la dans les paramètres d'image pour générer. L'import fonctionne toujours."
+    },
+    "noModel": {
+      "title": "Aucun modèle d'avatar choisi",
+      "body": "Choisissez un modèle qui accepte et renvoie des images. L'import fonctionne toujours."
+    },
+    "incompatible": {
+      "title": "Ce modèle ne peut pas créer d'avatars",
+      "body": "Les avatars nécessitent un modèle qui accepte et renvoie des images. L'import fonctionne toujours."
+    },
+    "upload": {
+      "title": "Impossible d'ajouter l'image"
+    },
+    "generation": {
+      "title": "Impossible de créer l'image"
+    },
+    "cancellation": {
+      "title": "Impossible d'annuler",
+      "body": "La requête est peut-être toujours en cours. Essayez d'annuler à nouveau."
+    },
+    "uncertain": {
+      "title": "En attente du résultat",
+      "body": "La connexion a été interrompue avant l'arrivée du résultat. Réessayez de vous connecter ou annulez la requête."
+    }
+  },
+  "failure": {
+    "cancelled": "La génération a été annulée.",
+    "setup": "Le modèle d'image n'est pas correctement configuré. Vérifiez-le dans les paramètres d'image.",
+    "invalidRequest": "La requête n'a pas été acceptée. Modifiez la description et réessayez.",
+    "engine": "Le moteur d'image s'est arrêté avant la fin.",
+    "timedOut": "La création de l'image a pris trop de temps.",
+    "memory": "Le modèle d'image a manqué de mémoire.",
+    "storage": "L'image n'a pas pu être enregistrée.",
+    "provider": "Le fournisseur n'a pas pu créer l'image.",
+    "empty": "Aucune image n'a été renvoyée.",
+    "rejected": "Le résultat a été écarté et rien n'a été renvoyé.",
+    "refused": "Le modèle a refusé de créer cette image. Modifiez la description et réessayez.",
+    "authentication": "Le fournisseur a rejeté les identifiants. Vérifiez le fournisseur dans les paramètres.",
+    "unavailable": "Le modèle d'image n'est pas disponible pour le moment.",
+    "unknown": "Un problème est survenu pendant la création de l'image."
+  }
+}

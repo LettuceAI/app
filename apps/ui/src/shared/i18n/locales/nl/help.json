@@ -1,0 +1,103 @@
+{
+  "title": "Help & FAQ",
+  "subtitle": "De basis, API-sleutels, privacy en veelgestelde vragen",
+  "sections": {
+    "gettingStarted": "Aan de slag",
+    "privacySafety": "Privacy & veiligheid",
+    "modelsProviders": "Modellen & providers",
+    "charactersChats": "Karakters & chats"
+  },
+  "stillStuck": {
+    "title": "Loop je nog vast?",
+    "docsTitle": "Volledige documentatie",
+    "docsDescription": "Handleidingen en referentie voor LettuceAI",
+    "discordTitle": "Sluit je aan bij Discord",
+    "discordDescription": "Vraag het de community of meld een bug"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Wat is LettuceAI?",
+      "answer": "LettuceAI is een chatapp voor AI-karakters. Jij kiest de provider en het model dat de antwoorden schrijft, en je chats en karakters blijven op je apparaat. Cloudproviders gebruiken je eigen account; ondersteunde lokale modellen draaien op je computer."
+    },
+    "whatIsApiKey": {
+      "question": "Wat is een API-sleutel en waarom heb ik er een nodig? (BYOK uitgelegd)",
+      "answer": "BYOK betekent Bring Your Own Key. Met een API-sleutel kan LettuceAI verzoeken naar een provider sturen met jouw account. Maak een sleutel aan bij de provider en voeg hem toe via Instellingen > Providers. Verzoeken gaan van je apparaat naar die provider, die zijn eigen facturering en limieten toepast. Ondersteunde lokale modellen hebben geen cloud-API-sleutel nodig. Behandel een sleutel als een wachtwoord en deel hem niet."
+    },
+    "cheapestStart": {
+      "question": "Wat is de goedkoopste of makkelijkste manier om te beginnen?",
+      "answer": "Gebruik de installatiegids om een provider te verbinden en een model te kiezen. Vergelijk de actuele prijzen, gratis tiers en verzoeklimieten van de provider voordat je tegoed toevoegt. Begin met een klein budget en controleer Instellingen > Gebruiksanalyse terwijl je chat. Op desktop zijn ondersteunde lokale modellen een andere optie als je computer genoeg geheugen en opslag heeft."
+    },
+    "alternative": {
+      "question": "Is dit een alternatief voor andere AI-chat-apps?",
+      "answer": "Ja. Met LettuceAI kies je zelf de provider, het model en de karakteropzet, in plaats van elke chat aan één dienst te binden. Je beheert je eigen provideraccount en houdt je gegevens op je apparaat. Met een korte installatie verbind je het model dat je wilt gebruiken."
+    },
+    "cost": {
+      "question": "Wat kost het?",
+      "answer": "LettuceAI is gratis. Een cloudprovider kan je account kosten in rekening brengen voor verzoeken of een gratis tier aanbieden. De tarieven hangen af van het model, de hoeveelheid verzonden en gegenereerde tekst, en eventuele beeld- of audiofuncties die je gebruikt. Controleer de prijzen van de provider voordat je een model kiest. Gebruiksanalyse toont gerapporteerde tokens en bekende kosten; ontbrekende prijzen betekenen niet hetzelfde als gratis verzoeken."
+    },
+    "apiKeySafe": {
+      "question": "Is mijn API-sleutel veilig?",
+      "answer": "Inloggegevens van providers worden lokaal opgeslagen en gebruikt om verbinding te maken met de provider die je instelt. LettuceAI stuurt je verzoeken niet via zijn eigen chatserver. Voer alleen sleutels in voor diensten die je vertrouwt, controleer aangepaste provider-URL's zorgvuldig en bescherm je apparaat en back-upbestanden."
+    },
+    "chatsStored": {
+      "question": "Waar worden mijn chats opgeslagen? Kan iemand ze lezen?",
+      "answer": "Chats worden opgeslagen in de lokale database van de app. Wanneer een cloudmodel antwoordt, worden de prompt en relevante gesprekscontext naar de provider van je keuze gestuurd. Die provider verwerkt het verzoek volgens zijn eigen privacybeleid. Iedereen met toegang tot je apparaat of geëxporteerde back-ups kan je gegevens mogelijk ook lezen."
+    },
+    "chatsDeleted": {
+      "question": "Kunnen mijn chats vanzelf worden verwijderd?",
+      "answer": "LettuceAI bewaart geen serverkopie die je chats kan herstellen. Een chat verwijderen, de app resetten, de app verwijderen, de appopslag wissen of het apparaat verliezen kan lokale gegevens verwijderen. Maak back-ups van alles wat je wilt bewaren."
+    },
+    "editRemotely": {
+      "question": "Kan iemand mijn gegevens op afstand bewerken?",
+      "answer": "LettuceAI heeft geen externe beheerdienst voor je lokale chats en karakters. De provider die je kiest genereert antwoorden, maar beheert de database van de app niet. Houd je apparaat en eventuele bestanden die je importeert of deelt veilig."
+    },
+    "shutdown": {
+      "question": "Wat gebeurt er met mijn gegevens als LettuceAI stopt?",
+      "answer": "Je opgeslagen chats en karakters blijven op je apparaat staan en kunnen zonder LettuceAI-account worden gelezen. Cloudantwoorden blijven afhankelijk van de beschikbaarheid van je provider en een werkend account. Bewaar een kopie van je gegevens via Instellingen > Back-up & herstel."
+    },
+    "training": {
+      "question": "Trainen providers op mijn gesprekken?",
+      "answer": "Dat hangt af van de provider, je accounttype en het actuele databeleid. LettuceAI kan die voorwaarden niet wijzigen. Lees de privacy- en bewaarinstellingen van de provider voordat je gevoelige informatie verstuurt. Ondersteunde lokale modellen verwerken hun prompts op je computer."
+    },
+    "whatIsModel": {
+      "question": "Wat is een 'model'? Welk moet ik kiezen?",
+      "answer": "Een model is de AI die de antwoorden schrijft. Modellen verschillen in schrijfstijl, snelheid, contextlengte, hardware-eisen en prijs. Voeg een provider toe via Instellingen > Providers en stel daarna een model in via Instellingen > Modellen. Je kunt een app-standaard instellen of een model kiezen voor een bepaald karakter of een bepaalde chat."
+    },
+    "freeProviders": {
+      "question": "Zijn er gratis providers?",
+      "answer": "Sommige providers bieden gratis modellen of gratis gebruikstiers, met eigen accountvereisten en limieten. De beschikbaarheid kan veranderen, dus controleer de actuele voorwaarden van de provider. Een gratis tier kan nog steeds een API-sleutel vereisen. Ondersteunde lokale modellen rekenen niets per verzoek, maar gebruiken de hardware, opslag en stroom van je computer."
+    },
+    "freeVsPaid": {
+      "question": "Wat is het verschil tussen gratis en betaalde providers?",
+      "answer": "Gratis en betaalde plannen kunnen verschillen in beschikbare modellen, verzoeklimieten, antwoordsnelheid, privacyvoorwaarden en ondersteuning. De details verschillen per provider; een betaald plan betekent niet automatisch een bepaald privacybeleid. Je kunt meer dan één provider verbinden en per chat een passend model kiezen."
+    },
+    "whatIsToken": {
+      "question": "Wat is een token?",
+      "answer": "Een token is een klein stukje tekst, zoals een woord of een deel van een woord. De exacte verdeling hangt af van het model en de taal. Een verzoek bevat invoertokens uit de prompt en de gesprekscontext, plus uitvoertokens uit het antwoord. Providers kunnen hier verschillende prijzen voor rekenen. Lange geschiedenissen en lange antwoorden kunnen het gebruik verhogen."
+    },
+    "noDefaultModel": {
+      "question": "Ik zie 'geen standaardmodel ingesteld'",
+      "answer": "Open Instellingen > Modellen en voeg een model toe van een ingestelde provider. Stel daarna een app-standaard in of kies een model in de instellingen van het karakter. Een karakter of chat kan de standaard overschrijven, dus controleer de modelkeuze als antwoorden nog steeds niet beginnen."
+    },
+    "cloudVsLocal": {
+      "question": "Wat is het verschil tussen cloud- en lokale modellen?",
+      "answer": "Cloudmodellen draaien op de hardware van de provider en hebben een verbinding met die dienst nodig. Ondersteunde lokale modellen draaien op je desktopcomputer en hebben genoeg geheugen en opslag nodig. Installatie en runtime-instellingen voor lokale modellen zijn beschikbaar op desktop; gebruik op mobiel een verbonden provider."
+    },
+    "whatIsCharacter": {
+      "question": "Wat is een karakter? Kan ik er zelf een maken?",
+      "answer": "Een karakter heeft een naam, afbeelding en beschrijving die bepalen hoe het praat. Gebruik de knop Aanmaken om er een te maken, of importeer een karakterkaart in de Bibliotheek. Bewerk de beschrijving en modelinstellingen om te veranderen hoe toekomstige antwoorden worden gegenereerd."
+    },
+    "whatIsPersona": {
+      "question": "Wat is een persona?",
+      "answer": "Een persona beschrijft jouw kant van het gesprek: je naam en details die het karakter over jou moet weten. Maak of importeer persona's in de Bibliotheek en kies daarna degene die je voor een chat wilt gebruiken."
+    },
+    "charactersPrivate": {
+      "question": "Zijn de karakters die ik maak privé?",
+      "answer": "Karakters die je maakt, worden op je apparaat opgeslagen. Als je een karakterkaart exporteert en deelt, kunnen anderen hem lezen. Wanneer je met een cloudmodel chat, worden de karakterdetails die in de prompt worden gebruikt ook naar de provider van je keuze gestuurd."
+    },
+    "backupMove": {
+      "question": "Hoe maak ik een back-up of verhuis ik naar een ander apparaat?",
+      "answer": "Open Instellingen > Back-up & herstel om een back-upbestand te maken. Bewaar het op een veilige plek. Om van apparaat te wisselen, installeer je LettuceAI op het andere apparaat en herstel je dat bestand daar. Volg de waarschuwingen op het herstelscherm voordat je bestaande gegevens vervangt."
+    }
+  }
+}

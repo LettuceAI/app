@@ -1,0 +1,76 @@
+{
+  "cancel": "İptal",
+  "retry": "Tekrar deneyin",
+  "notRecognized": "Bu dosya bir LettuceAI kartı veya yedeği değil.",
+  "import": {
+    "title": {
+      "character": "Karakter içe aktar",
+      "persona": "Persona içe aktar",
+      "lorebook": "Lore kitabı içe aktar"
+    },
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "lorebook": "Lore kitabı"
+    },
+    "entries_one": "{{count}} girdi",
+    "entries_other": "{{count}} girdi",
+    "confirm": "İçe aktar",
+    "open": "Aç",
+    "done": "{{name}} içe aktarıldı",
+    "started": "İçe aktarma başladı",
+    "warnings_one": "{{count}} uyarıyla içe aktarıldı",
+    "warnings_other": "{{count}} uyarıyla içe aktarıldı"
+  },
+  "restore": {
+    "title": "Yedeği geri yükle",
+    "created": "Oluşturulma",
+    "version": "Uygulama sürümü",
+    "password": "Parola",
+    "warning": "Geri yükleme, bu cihazdaki tüm sohbetleri, karakterleri ve ayarları yedekle değiştirir. Mevcut verileriniz ayrı bir dosya olarak tutulur.",
+    "action": "Geri yükle",
+    "stop": "Durdur",
+    "running": "Geri yükleniyor",
+    "starting": "Geri yükleme başlatılıyor",
+    "waiting": "Geri yüklemenin başlaması bekleniyor",
+    "step": "Adım {{step}} / {{total}}",
+    "keepOpen": "Büyük yedekler birkaç dakika sürebilir. İşlem bitene kadar uygulamayı açık tutun.",
+    "stages": {
+      "decode": "Yedek açılıyor",
+      "stage": "Dosyalar hazırlanıyor",
+      "write": "Verileriniz yazılıyor",
+      "verify": "Geri yüklenen veriler kontrol ediliyor",
+      "switch": "Geri yüklenen verilere geçiliyor"
+    },
+    "failed": "Geri yükleme durdu",
+    "failedAt": "Geri yükleme adım {{step}} / {{total}} konumunda durdu: {{stage}}",
+    "confirmTitle": "Bu cihazdaki her şey değiştirilsin mi?",
+    "confirmBody": "Tüm sohbetler, karakterler ve ayarlar bu yedekle değiştirilir. Mevcut verileriniz ayrı bir dosya olarak tutulur.",
+    "confirm": "Geri yükle",
+    "done": "Yedek geri yüklendi",
+    "notBackup": "Bu dosya bir LettuceAI yedeği değil.",
+    "models": {
+      "title": "Verilerinizin ihtiyaç duyduğu modelleri indirin",
+      "required": "Bu özellikler onlar olmadan çalışmayı durdurur, bu yüzden devam etmeden önce indirilmeleri gerekir."
+    },
+    "warnings_one": "Yedek {{count}} uyarıyla geri yüklendi",
+    "warnings_other": "Yedek {{count}} uyarıyla geri yüklendi",
+    "failure": {
+      "unknown": "Yedek geri yüklenemedi.",
+      "backup_authentication": "Parola yanlış veya yedek bozuk.",
+      "backup_invalid_envelope": "Bu dosya geçerli bir yedek değil.",
+      "backup_limit_exceeded": "Bu yedek, uygulamanın geri yükleyebileceğinden büyük.",
+      "backup_unavailable": "Yedekler şu anda kullanılamıyor.",
+      "backup_file_not_found": "Yedek dosyası bulunamadı.",
+      "backup_permission_denied": "Uygulamanın bu dosyayı okuma izni yok.",
+      "backup_file_busy": "Dosya başka bir uygulama tarafından kullanılıyor.",
+      "backup_file_unavailable": "Yedek dosyası okunamadı.",
+      "backup_file_unsupported": "Bu yedek, uygulamanın okuyamadığı bir sürüm tarafından oluşturulmuş.",
+      "backup_source_is_target": "Yedek, uygulamanın kullandığı dosyanın kendisi.",
+      "backup_cancelled": "Geri yükleme iptal edildi.",
+      "backup_retry_required": "Geri yükleme tamamlanmadı. Tekrar deneyin.",
+      "backup_recovery_required": "Geri yükleme için uygulamanın yeniden açılması gerekiyor.",
+      "backup_verification_failed": "Yedek doğrulamayı geçemedi."
+    }
+  }
+}

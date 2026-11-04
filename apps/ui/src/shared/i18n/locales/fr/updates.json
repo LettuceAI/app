@@ -1,0 +1,28 @@
+{
+  "title": "Nouveautés",
+  "installed": "Version installée : {{version}}",
+  "releaseMismatch": "Ces notes concernent {{version}}. Vous utilisez {{installed}}.",
+  "fullChangelog": "Journal complet des modifications",
+  "continue": "Continuer",
+  "markFailed": "Impossible d'enregistrer la version consultée",
+  "types": {
+    "feature": "Ajouté",
+    "improvement": "Amélioré",
+    "bugfix": "Corrigé",
+    "breaking": "Changements majeurs"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5 : répartition de l'usage du contexte et mémoire dynamique allégée",
+    "description": "Chaque message de l'assistant indique désormais la part de la fenêtre de contexte utilisée par son prompt et ce qui la remplit, en discussion individuelle comme en groupe. La mémoire dynamique des discussions individuelles cesse d'envoyer toute la banque de souvenirs à chaque tour, et les embeddings redémarrent sur macOS.",
+    "changes": {
+      "contextUsage": "Un panneau Usage du contexte dans les actions des messages de l'assistant montre la fenêtre de contexte répartie entre occupé, réservé à la réponse et libre, ainsi qu'un détail de ce qui remplit le prompt : système, personnage, persona, souvenirs, encyclopédie, note de l'auteur, état du compagnon et historique de la discussion. Les parts sont estimées avec tiktoken et ramenées aux tokens de prompt réellement signalés par le fournisseur.",
+      "groupContextUsage": "Les messages de discussion de groupe bénéficient du même panneau, reconstruit à partir du message stocké sans relancer la récupération, avec une catégorie Distribution du groupe qui compte les profils des autres participants.",
+      "responseBudget": "Sur llama.cpp et Ollama, le budget de réponse réservé (réponse plus raisonnement) est lu dans la requête réelle, et un avertissement s'affiche lorsque le prompt et cette réservation dépassent ensemble la fenêtre de contexte, afin que vous puissiez réduire les tokens max ou alléger le contexte avant que le prompt soit tronqué ou la réponse coupée.",
+      "developerBreakdown": "La page de débogage des messages du développeur inclut la même répartition des tokens par catégorie, avec les totaux et l'usage de la fenêtre de contexte.",
+      "memoryRetrieval": "La mémoire dynamique des discussions individuelles ne remplit plus {{key_memories}} avec toute la banque de souvenirs actifs à chaque prompt, en plus des souvenirs récupérés. Seuls les souvenirs récupérés pour ce tour sont envoyés, pour les personnages de roleplay comme pour les compagnons, lors des nouvelles réponses, des régénérations et des continuations.",
+      "macEmbeddings": "Les embeddings ne échouent plus au démarrage sur macOS avec une erreur « different Team IDs ». Le runtime ONNX téléchargé à l'exécution est signé par Microsoft, ce que macOS refusait de charger dans l'application ; il est désormais re-signé localement avant d'être chargé."
+    }
+  }
+}

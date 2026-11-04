@@ -1,0 +1,79 @@
+{
+  "cancel": "Cancelar",
+  "retry": "Reintentar",
+  "notRecognized": "Este archivo no es una tarjeta ni una copia de seguridad de LettuceAI.",
+  "import": {
+    "title": {
+      "character": "Importar personaje",
+      "persona": "Importar persona",
+      "lorebook": "Importar libro de lore"
+    },
+    "kind": {
+      "character": "Personaje",
+      "persona": "Persona",
+      "lorebook": "Libro de lore"
+    },
+    "entries_one": "{{count}} entrada",
+    "entries_many": "{{count}} entradas",
+    "entries_other": "{{count}} entradas",
+    "confirm": "Importar",
+    "open": "Abrir",
+    "done": "Se importó {{name}}",
+    "started": "Importación iniciada",
+    "warnings_one": "Importado con {{count}} advertencia",
+    "warnings_many": "Importado con {{count}} advertencias",
+    "warnings_other": "Importado con {{count}} advertencias"
+  },
+  "restore": {
+    "title": "Restaurar copia de seguridad",
+    "created": "Creada",
+    "version": "Versión de la app",
+    "password": "Contraseña",
+    "warning": "Restaurar reemplaza todos los chats, personajes y ajustes de este dispositivo con la copia de seguridad. Tus datos actuales se guardan en un archivo aparte.",
+    "action": "Restaurar",
+    "stop": "Detener",
+    "running": "Restaurando",
+    "starting": "Iniciando la restauración",
+    "waiting": "Esperando a que empiece la restauración",
+    "step": "Paso {{step}} de {{total}}",
+    "keepOpen": "Las copias grandes pueden tardar varios minutos. Mantén la app abierta hasta que termine.",
+    "stages": {
+      "decode": "Abriendo la copia de seguridad",
+      "stage": "Preparando los archivos",
+      "write": "Escribiendo tus datos",
+      "verify": "Comprobando los datos restaurados",
+      "switch": "Cambiando a los datos restaurados"
+    },
+    "failed": "La restauración se detuvo",
+    "failedAt": "La restauración se detuvo en el paso {{step}} de {{total}}: {{stage}}",
+    "confirmTitle": "¿Reemplazar todo en este dispositivo?",
+    "confirmBody": "Todos los chats, personajes y ajustes se reemplazan con esta copia de seguridad. Tus datos actuales se guardan en un archivo aparte.",
+    "confirm": "Restaurar",
+    "done": "Copia de seguridad restaurada",
+    "notBackup": "Ese archivo no es una copia de seguridad de LettuceAI.",
+    "models": {
+      "title": "Descarga los modelos que necesitan tus datos",
+      "required": "Estas funciones dejan de funcionar sin ellos, así que hay que descargarlos antes de continuar."
+    },
+    "warnings_one": "Copia restaurada con {{count}} advertencia",
+    "warnings_many": "Copia restaurada con {{count}} advertencias",
+    "warnings_other": "Copia restaurada con {{count}} advertencias",
+    "failure": {
+      "unknown": "No se pudo restaurar la copia de seguridad.",
+      "backup_authentication": "La contraseña es incorrecta o la copia de seguridad está dañada.",
+      "backup_invalid_envelope": "Este archivo no es una copia de seguridad válida.",
+      "backup_limit_exceeded": "Esta copia de seguridad es más grande de lo que la app puede restaurar.",
+      "backup_unavailable": "Las copias de seguridad no están disponibles ahora mismo.",
+      "backup_file_not_found": "No se encontró el archivo de copia de seguridad.",
+      "backup_permission_denied": "La app no tiene permiso para leer este archivo.",
+      "backup_file_busy": "Otro programa está usando el archivo.",
+      "backup_file_unavailable": "No se pudo leer el archivo de copia de seguridad.",
+      "backup_file_unsupported": "Esta copia de seguridad la creó una versión que la app no puede leer.",
+      "backup_source_is_target": "La copia de seguridad es el archivo que la app está usando.",
+      "backup_cancelled": "Se canceló la restauración.",
+      "backup_retry_required": "La restauración no terminó. Inténtalo de nuevo.",
+      "backup_recovery_required": "La restauración necesita que se vuelva a abrir la app.",
+      "backup_verification_failed": "La copia de seguridad no superó la verificación."
+    }
+  }
+}

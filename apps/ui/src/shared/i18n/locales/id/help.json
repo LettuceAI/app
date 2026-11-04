@@ -1,0 +1,103 @@
+{
+  "title": "Bantuan & FAQ",
+  "subtitle": "Dasar-dasar, kunci API, privasi, dan pertanyaan umum",
+  "sections": {
+    "gettingStarted": "Memulai",
+    "privacySafety": "Privasi & keamanan",
+    "modelsProviders": "Model & penyedia",
+    "charactersChats": "Karakter & obrolan"
+  },
+  "stillStuck": {
+    "title": "Masih bingung?",
+    "docsTitle": "Dokumentasi lengkap",
+    "docsDescription": "Panduan dan referensi untuk LettuceAI",
+    "discordTitle": "Gabung Discord",
+    "discordDescription": "Tanyakan ke komunitas atau laporkan bug"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Apa itu LettuceAI?",
+      "answer": "LettuceAI adalah aplikasi obrolan untuk karakter AI. Anda memilih penyedia dan model yang menulis balasan, dan obrolan serta karakter Anda tetap ada di perangkat Anda. Penyedia cloud menggunakan akun Anda sendiri; model lokal yang didukung berjalan di komputer Anda."
+    },
+    "whatIsApiKey": {
+      "question": "Apa itu kunci API dan mengapa saya membutuhkannya? (Penjelasan BYOK)",
+      "answer": "BYOK berarti Bring Your Own Key (bawa kunci sendiri). Kunci API memungkinkan LettuceAI mengirim permintaan ke penyedia menggunakan akun Anda. Buat kunci di penyedia, lalu tambahkan di Pengaturan > Penyedia. Permintaan dikirim dari perangkat Anda ke penyedia tersebut, yang menerapkan penagihan dan batasannya sendiri. Model lokal yang didukung tidak memerlukan kunci API cloud. Perlakukan kunci seperti kata sandi dan jangan bagikan."
+    },
+    "cheapestStart": {
+      "question": "Apa cara termurah atau termudah untuk memulai?",
+      "answer": "Gunakan Panduan penyiapan untuk menghubungkan penyedia dan memilih model. Bandingkan harga penyedia saat ini, paket gratis, dan batas permintaan sebelum menambahkan saldo. Mulailah dengan anggaran kecil dan periksa Pengaturan > Analitik penggunaan saat mengobrol. Di desktop, model lokal yang didukung adalah pilihan lain jika komputer Anda memiliki memori dan penyimpanan yang cukup."
+    },
+    "alternative": {
+      "question": "Apakah ini alternatif aplikasi obrolan AI lain?",
+      "answer": "Ya. LettuceAI memungkinkan Anda memilih penyedia, model, dan pengaturan karakter alih-alih mengikat setiap obrolan ke satu layanan. Anda mengelola akun penyedia sendiri dan menyimpan data di perangkat Anda. Penyiapan singkat menghubungkan model yang ingin Anda gunakan."
+    },
+    "cost": {
+      "question": "Berapa biayanya?",
+      "answer": "LettuceAI gratis. Penyedia cloud dapat menagih akun Anda untuk permintaan atau menawarkan paket gratis. Tarifnya bergantung pada model, jumlah teks yang dikirim dan dihasilkan, serta fitur gambar atau audio yang Anda gunakan. Periksa harga penyedia sebelum memilih model. Analitik penggunaan menampilkan token yang dilaporkan dan biaya yang diketahui; harga yang tidak ada bukan berarti permintaan gratis."
+    },
+    "apiKeySafe": {
+      "question": "Apakah kunci API saya aman?",
+      "answer": "Kredensial penyedia disimpan secara lokal dan digunakan untuk terhubung ke penyedia yang Anda konfigurasi. LettuceAI tidak meneruskan permintaan Anda melalui server obrolannya sendiri. Masukkan hanya kunci untuk layanan yang Anda percaya, periksa URL penyedia kustom dengan cermat, dan lindungi perangkat serta file cadangan Anda."
+    },
+    "chatsStored": {
+      "question": "Di mana obrolan saya disimpan? Apakah orang lain bisa membacanya?",
+      "answer": "Obrolan disimpan di basis data lokal aplikasi. Saat model cloud membalas, prompt dan konteks percakapan yang relevan dikirim ke penyedia yang Anda pilih. Penyedia tersebut memproses permintaan sesuai kebijakan privasinya sendiri. Siapa pun yang memiliki akses ke perangkat atau cadangan yang diekspor juga mungkin dapat membaca data Anda."
+    },
+    "chatsDeleted": {
+      "question": "Apakah obrolan saya bisa terhapus sendiri?",
+      "answer": "LettuceAI tidak menyimpan salinan server yang dapat memulihkan obrolan Anda. Menghapus obrolan, mengatur ulang aplikasi, mencopot pemasangannya, menghapus penyimpanan aplikasi, atau kehilangan perangkat dapat menghapus data lokal. Simpan cadangan untuk hal apa pun yang ingin Anda pertahankan."
+    },
+    "editRemotely": {
+      "question": "Apakah seseorang dapat mengedit data saya dari jarak jauh?",
+      "answer": "LettuceAI tidak memiliki layanan administrasi jarak jauh untuk obrolan dan karakter lokal Anda. Penyedia pilihan Anda menghasilkan balasan, tetapi tidak mengelola basis data aplikasi. Jaga keamanan perangkat dan file apa pun yang Anda impor atau bagikan."
+    },
+    "shutdown": {
+      "question": "Apa yang terjadi pada data saya jika LettuceAI berhenti beroperasi?",
+      "answer": "Obrolan dan karakter yang tersimpan tetap ada di perangkat Anda dan dapat dibaca tanpa akun LettuceAI. Balasan cloud tetap bergantung pada ketersediaan penyedia dan berfungsinya akun Anda. Simpan salinan data Anda dengan Pengaturan > Cadangan & pemulihan."
+    },
+    "training": {
+      "question": "Apakah penyedia melatih model dengan percakapan saya?",
+      "answer": "Itu bergantung pada penyedia, jenis akun Anda, dan kebijakan datanya saat ini. LettuceAI tidak dapat mengubah ketentuan tersebut. Baca pengaturan privasi dan penyimpanan penyedia sebelum mengirim informasi sensitif. Model lokal yang didukung memproses promptnya di komputer Anda."
+    },
+    "whatIsModel": {
+      "question": "Apa itu 'model'? Yang mana yang harus saya pilih?",
+      "answer": "Model adalah AI yang menulis balasan. Model berbeda dalam gaya penulisan, kecepatan, panjang konteks, kebutuhan perangkat keras, dan harga. Tambahkan penyedia di Pengaturan > Penyedia, lalu konfigurasi model di Pengaturan > Model. Anda dapat menetapkan default aplikasi atau memilih model untuk karakter atau obrolan tertentu."
+    },
+    "freeProviders": {
+      "question": "Apakah ada penyedia gratis?",
+      "answer": "Beberapa penyedia menawarkan model gratis atau paket penggunaan gratis, dengan persyaratan akun dan batas laju masing-masing. Ketersediaan dapat berubah, jadi periksa ketentuan penyedia saat ini. Paket gratis mungkin tetap memerlukan kunci API. Model lokal yang didukung tidak menagih per permintaan, tetapi menggunakan perangkat keras, penyimpanan, dan daya komputer Anda."
+    },
+    "freeVsPaid": {
+      "question": "Apa perbedaan penyedia gratis dan berbayar?",
+      "answer": "Paket gratis dan berbayar dapat berbeda dalam model yang tersedia, batas permintaan, kecepatan respons, ketentuan privasi, dan dukungan. Rinciannya milik masing-masing penyedia; paket berbayar tidak otomatis berarti kebijakan privasi tertentu. Anda dapat menghubungkan lebih dari satu penyedia dan memilih model yang sesuai untuk setiap obrolan."
+    },
+    "whatIsToken": {
+      "question": "Apa itu token?",
+      "answer": "Token adalah potongan kecil teks, seperti kata atau bagian dari kata. Pemecahannya bergantung pada model dan bahasa. Permintaan mencakup token masukan dari prompt dan konteks percakapan, ditambah token keluaran dari balasan. Penyedia dapat menetapkan harga berbeda untuk keduanya. Riwayat panjang dan balasan panjang dapat meningkatkan penggunaan."
+    },
+    "noDefaultModel": {
+      "question": "Saya melihat 'tidak ada model default yang dikonfigurasi'",
+      "answer": "Buka Pengaturan > Model dan tambahkan model dari penyedia yang sudah dikonfigurasi. Lalu tetapkan default aplikasi atau pilih model di pengaturan karakter. Karakter atau obrolan dapat menimpa default, jadi periksa pilihan modelnya jika balasan masih tidak dimulai."
+    },
+    "cloudVsLocal": {
+      "question": "Apa perbedaan model cloud dan lokal?",
+      "answer": "Model cloud berjalan di perangkat keras penyedia dan memerlukan koneksi ke layanan tersebut. Model lokal yang didukung berjalan di komputer desktop Anda dan memerlukan memori serta penyimpanan yang cukup. Pemasangan dan kontrol runtime model lokal tersedia di desktop; gunakan penyedia yang terhubung di seluler."
+    },
+    "whatIsCharacter": {
+      "question": "Apa itu karakter? Bisakah saya membuat sendiri?",
+      "answer": "Karakter memiliki nama, gambar, dan deskripsi yang membentuk cara bicaranya. Gunakan tombol buat untuk membuatnya, atau impor kartu karakter di Perpustakaan. Edit deskripsi dan pengaturan modelnya untuk mengubah cara balasan berikutnya dihasilkan."
+    },
+    "whatIsPersona": {
+      "question": "Apa itu persona?",
+      "answer": "Persona menjelaskan sisi Anda dalam percakapan: nama Anda dan detail tentang Anda yang perlu diketahui karakter. Buat atau impor persona di Perpustakaan, lalu pilih yang ingin Anda gunakan untuk suatu obrolan."
+    },
+    "charactersPrivate": {
+      "question": "Apakah karakter yang saya buat bersifat pribadi?",
+      "answer": "Karakter yang Anda buat disimpan di perangkat Anda. Mengekspor dan membagikan kartu karakter memungkinkan orang lain membacanya. Saat Anda mengobrol dengan model cloud, detail karakter yang digunakan dalam promptnya juga dikirim ke penyedia pilihan Anda."
+    },
+    "backupMove": {
+      "question": "Bagaimana cara mencadangkan atau pindah ke perangkat lain?",
+      "answer": "Buka Pengaturan > Cadangan & pemulihan untuk membuat file cadangan. Simpan di tempat yang aman. Untuk pindah perangkat, pasang LettuceAI di perangkat lain dan pulihkan file tersebut di sana. Ikuti peringatan di layar pemulihan sebelum mengganti data yang ada."
+    }
+  }
+}

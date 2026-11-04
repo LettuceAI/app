@@ -1,0 +1,71 @@
+{
+  "create": {
+    "title": "新しいペルソナ",
+    "back": "戻る",
+    "create": "ペルソナを作成",
+    "created": "{{name}}を作成しました",
+    "imported": "ペルソナをインポートしました",
+    "unattached_other": "{{count}}件のロアブックを関連付けられませんでした。ペルソナの設定から関連付けてください。",
+    "defaultFailed": "{{name}}は作成されましたが、既定に設定できませんでした。",
+    "discardTitle": "このペルソナを破棄しますか？",
+    "discardBody": "これまでに入力した内容は失われます。",
+    "discard": "破棄",
+    "keepEditing": "編集を続ける",
+    "continueTo": "{{step}}へ進む"
+  },
+  "edit": {
+    "title": "ペルソナを編集",
+    "back": "戻る",
+    "backToLibrary": "ライブラリに戻る",
+    "more": "その他の操作",
+    "export": "エクスポート",
+    "delete": "ペルソナを削除",
+    "exported": "ペルソナをエクスポートしました",
+    "exportWarnings_other": "{{count}}件の警告付きでエクスポートしました",
+    "deleteTitle": "{{name}}を削除しますか？",
+    "deleteBody": "このペルソナは使用中のチャットから削除されます。",
+    "deleteConfirm": "削除",
+    "deleteCancel": "キャンセル",
+    "deleted": "{{name}}を削除しました",
+    "unsaved": "未保存の変更",
+    "discard": "破棄",
+    "save": "保存",
+    "saved": "変更を保存しました",
+    "lorebooksFailed": "保存しましたが、ロアブックを更新できませんでした。もう一度保存してください。",
+    "leaveTitle": "変更を破棄しますか？",
+    "leaveBody": "保存されていない変更は失われます。",
+    "leaveDiscard": "破棄",
+    "leaveKeep": "編集を続ける"
+  },
+  "steps": {
+    "identity": "基本情報",
+    "extras": "その他"
+  },
+  "identity": {
+    "chooseAvatar": "画像を選択",
+    "removeAvatar": "削除",
+    "name": "名前",
+    "namePlaceholder": "プロのライター",
+    "nameHint": "チャットでのあなた",
+    "nickname": "ニックネーム",
+    "nicknamePlaceholder": "キャラクターがあなたを呼ぶ名前",
+    "nicknameHint": "任意。チャットで名前の代わりに使われます。",
+    "default": "既定として使用",
+    "defaultBody": "新しいチャットはこのペルソナで始まります",
+    "import": "ファイルからインポート",
+    "importBody": "LettuceAIからエクスポートしたペルソナをインポートします。",
+    "chooseFile": "ファイルを選択"
+  },
+  "about": {
+    "description": "説明",
+    "descriptionPlaceholder": "キャラクターがあなたをどう呼ぶべきか、あなたの背景、好み、スタイル",
+    "descriptionHint": "このペルソナには{{user}}、キャラクターには{{char}}を使います。",
+    "words_other": "{{count}}語"
+  },
+  "extras": {
+    "body": "ここはすべて任意です。",
+    "lorebooks": "ロアブック",
+    "lorebooksNone": "なし",
+    "lorebooksCount_other": "{{count}}件のロアブック"
+  }
+}

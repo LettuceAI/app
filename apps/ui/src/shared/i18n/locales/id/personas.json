@@ -1,0 +1,71 @@
+{
+  "create": {
+    "title": "Persona baru",
+    "back": "Kembali",
+    "create": "Buat persona",
+    "created": "{{name}} dibuat",
+    "imported": "Persona diimpor",
+    "unattached_other": "{{count}} lorebook tidak dapat dilampirkan. Lampirkan dari pengaturan persona.",
+    "defaultFailed": "{{name}} dibuat tetapi tidak dapat dijadikan default.",
+    "discardTitle": "Buang persona ini?",
+    "discardBody": "Yang sudah Anda masukkan sejauh ini akan hilang.",
+    "discard": "Buang",
+    "keepEditing": "Lanjut mengedit",
+    "continueTo": "Lanjut ke {{step}}"
+  },
+  "edit": {
+    "title": "Edit persona",
+    "back": "Kembali",
+    "backToLibrary": "Kembali ke perpustakaan",
+    "more": "Tindakan lainnya",
+    "export": "Ekspor",
+    "delete": "Hapus persona",
+    "exported": "Persona diekspor",
+    "exportWarnings_other": "Diekspor dengan {{count}} peringatan",
+    "deleteTitle": "Hapus {{name}}?",
+    "deleteBody": "Persona akan dihapus dari obrolan yang menggunakannya.",
+    "deleteConfirm": "Hapus",
+    "deleteCancel": "Batal",
+    "deleted": "{{name}} dihapus",
+    "unsaved": "Perubahan belum disimpan",
+    "discard": "Buang",
+    "save": "Simpan",
+    "saved": "Perubahan disimpan",
+    "lorebooksFailed": "Tersimpan, tetapi lorebook tidak dapat diperbarui. Coba simpan lagi.",
+    "leaveTitle": "Buang perubahan Anda?",
+    "leaveBody": "Perubahan yang tidak disimpan akan hilang.",
+    "leaveDiscard": "Buang",
+    "leaveKeep": "Lanjut mengedit"
+  },
+  "steps": {
+    "identity": "Identitas",
+    "extras": "Tambahan"
+  },
+  "identity": {
+    "chooseAvatar": "Pilih gambar",
+    "removeAvatar": "Hapus",
+    "name": "Nama",
+    "namePlaceholder": "Penulis profesional",
+    "nameHint": "Siapa Anda dalam obrolan",
+    "nickname": "Nama panggilan",
+    "nicknamePlaceholder": "Panggilan karakter kepada Anda",
+    "nicknameHint": "Opsional. Digunakan dalam obrolan menggantikan nama.",
+    "default": "Jadikan default",
+    "defaultBody": "Obrolan baru dimulai dengan persona ini",
+    "import": "Impor dari file",
+    "importBody": "Impor persona yang diekspor dari LettuceAI.",
+    "chooseFile": "Pilih file"
+  },
+  "about": {
+    "description": "Deskripsi",
+    "descriptionPlaceholder": "Bagaimana karakter harus menyapa Anda, latar belakang, preferensi, dan gaya Anda",
+    "descriptionHint": "Gunakan {{user}} untuk persona ini dan {{char}} untuk karakter.",
+    "words_other": "{{count}} kata"
+  },
+  "extras": {
+    "body": "Semua di sini opsional.",
+    "lorebooks": "Lorebook",
+    "lorebooksNone": "Tidak ada",
+    "lorebooksCount_other": "{{count}} lorebook"
+  }
+}

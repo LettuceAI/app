@@ -1,0 +1,28 @@
+{
+  "title": "Wat is er nieuw",
+  "installed": "Geïnstalleerde versie: {{version}}",
+  "releaseMismatch": "Deze opmerkingen zijn voor {{version}}. Je gebruikt {{installed}}.",
+  "fullChangelog": "Volledig wijzigingslogboek",
+  "continue": "Doorgaan",
+  "markFailed": "Kon de bekeken versie niet opslaan",
+  "types": {
+    "feature": "Toegevoegd",
+    "improvement": "Verbeterd",
+    "bugfix": "Opgelost",
+    "breaking": "Ingrijpende wijzigingen"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Contextgebruik uitgesplitst & slanker dynamisch geheugen",
+    "description": "Elk assistentbericht toont nu hoeveel van het contextvenster de prompt gebruikte en wat het vulde, in zowel één-op-één- als groepschats. Dynamisch geheugen in één-op-één-chats stuurt niet langer elke beurt de hele geheugenbank mee, en embeddings starten weer op macOS.",
+    "changes": {
+      "contextUsage": "Een paneel Contextgebruik bij de berichtacties van assistentantwoorden toont het contextvenster opgedeeld in bezet, gereserveerd voor het antwoord en vrij, plus een uitsplitsing van wat de prompt vult: systeem, karakter, persona, herinneringen, lorebook, auteursnotitie, metgezelstatus en chatgeschiedenis. Aandelen worden geschat met tiktoken en geschaald naar de prompttokens die de provider daadwerkelijk rapporteerde.",
+      "groupContextUsage": "Groepschatberichten krijgen hetzelfde paneel, opnieuw opgebouwd uit het opgeslagen bericht zonder de ophaalactie opnieuw uit te voeren, met een categorie Groepsbezetting die de profielen van de andere deelnemers meetelt.",
+      "responseBudget": "Op llama.cpp en Ollama wordt het gereserveerde antwoordbudget (antwoord plus redenering) uit het echte verzoek gelezen, en er verschijnt een waarschuwing wanneer de prompt en die reservering samen het contextvenster overschrijden, zodat je max tokens kunt verlagen of context kunt inkorten voordat de prompt wordt afgekapt of het antwoord wordt afgebroken.",
+      "developerBreakdown": "De foutopsporingspagina voor ontwikkelaarsberichten bevat dezelfde tokenuitsplitsing per categorie, met totalen en gebruik van het contextvenster.",
+      "memoryRetrieval": "Dynamisch geheugen in één-op-één-chats vult {{key_memories}} niet langer bij elke prompt met de volledige hete geheugenbank bovenop de opgehaalde herinneringen. Alleen de herinneringen die voor die beurt zijn opgehaald worden verstuurd, zowel voor roleplaykarakters als metgezellen, bij nieuwe antwoorden, regeneraties en vervolgen.",
+      "macEmbeddings": "Embeddings starten nu weer op macOS, zonder de fout over “different Team IDs”. De ONNX Runtime die tijdens runtime wordt gedownload is ondertekend door Microsoft, wat macOS weigerde in de app te laden, en wordt nu lokaal opnieuw ondertekend voordat hij wordt geladen."
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "title": "Discussions",
+  "homeTitle": "Accueil",
+  "characters": "Personnages",
+  "search": "Rechercher des discussions",
+  "searchCharacters": "Rechercher des personnages",
+  "count": "{{shown}} sur {{total}}",
+  "noDescription": "Pas encore de description",
+  "lastChat": "Dernière discussion {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Reprendre la discussion",
+  "empty": {
+    "title": "Aucun personnage pour l'instant",
+    "body": "Créez quelqu'un à qui parler ou importez une carte de personnage depuis votre disque.",
+    "create": "Créer un personnage"
+  },
+  "noMatch": {
+    "title": "Rien ne correspond à « {{query}} »",
+    "body": "Essayez un nom ou un mot de la description d'un personnage.",
+    "clear": "Effacer la recherche"
+  },
+  "view": {
+    "label": "Affichage",
+    "current": "Affichage : {{view}}",
+    "home": "Accueil",
+    "list": "Liste",
+    "hero": "Vedette"
+  },
+  "layout": {
+    "title": "Disposition",
+    "body": "Comment Discussions affiche vos personnages.",
+    "current": "Disposition : {{layout}}",
+    "list": {
+      "title": "Liste",
+      "body": "Chaque personnage sous forme de carte, comme aujourd'hui"
+    },
+    "recent": {
+      "title": "Récents",
+      "body": "Chaque discussion, de la plus récente à la plus ancienne, avec la ligne où elle s'est arrêtée"
+    }
+  },
+  "recent": {
+    "today": "Aujourd'hui",
+    "week": "Cette semaine",
+    "earlier": "Plus tôt",
+    "empty": "Aucune discussion pour l'instant"
+  },
+  "menu": {
+    "history": "Historique des discussions",
+    "historyBody": "Discussions précédentes avec ce personnage",
+    "edit": "Modifier le personnage",
+    "cardStyle": "Style de carte",
+    "cardRow": "Ligne, passer en bannière",
+    "cardBanner": "Bannière, passer en ligne",
+    "export": "Exporter",
+    "exportBody": "Sous forme de carte de personnage",
+    "hide": "Masquer de Discussions",
+    "hideBody": "Reste dans votre bibliothèque",
+    "delete": "Supprimer le personnage",
+    "deleteTitle": "Supprimer {{name}} ?",
+    "deleteBody": "Le personnage et ses discussions individuelles sont supprimés. Cette action est irréversible.",
+    "noChats": "Aucune discussion pour l'instant"
+  },
+  "export": {
+    "title": "Format d'export",
+    "body": "Choisissez un format",
+    "done": "Enregistré sous {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Format Unified Entity Card (.uec) (recommandé)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (spécification la plus récente)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (spécification Tavern)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Modifier la discussion",
+    "editCharacter": "Modifier le personnage",
+    "editGroup": "Modifier le groupe",
+    "rename": "Renommer",
+    "renameTitle": "Renommer la discussion",
+    "save": "Enregistrer",
+    "delete": "Supprimer la discussion",
+    "deleteTitle": "Supprimer {{title}} ?",
+    "deleteBody": "Le personnage reste ; cette histoire disparaît."
+  },
+  "sidebar": {
+    "label": "Discussions récentes",
+    "empty": "Les discussions que vous commencez apparaissent ici."
+  },
+  "discover": {
+    "title": "Découvrir",
+    "soonTitle": "Découvrir arrive bientôt",
+    "soonBody": "Un endroit pour trouver et partager des personnages créés par la communauté. Nous le construisons sur nos propres serveurs, avec une modération dès le premier jour.",
+    "create": "Créer un personnage",
+    "discord": "Suivre sur Discord"
+  }
+}

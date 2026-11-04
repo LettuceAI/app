@@ -1,0 +1,73 @@
+{
+  "cancel": "Hủy",
+  "retry": "Thử lại",
+  "notRecognized": "Tệp này không phải thẻ hoặc bản sao lưu LettuceAI.",
+  "import": {
+    "title": {
+      "character": "Nhập nhân vật",
+      "persona": "Nhập persona",
+      "lorebook": "Nhập sách lore"
+    },
+    "kind": {
+      "character": "Nhân vật",
+      "persona": "Persona",
+      "lorebook": "Sách lore"
+    },
+    "entries_other": "{{count}} mục",
+    "confirm": "Nhập",
+    "open": "Mở",
+    "done": "Đã nhập {{name}}",
+    "started": "Đã bắt đầu nhập",
+    "warnings_other": "Đã nhập kèm {{count}} cảnh báo"
+  },
+  "restore": {
+    "title": "Khôi phục bản sao lưu",
+    "created": "Đã tạo",
+    "version": "Phiên bản ứng dụng",
+    "password": "Mật khẩu",
+    "warning": "Khôi phục sẽ thay thế toàn bộ trò chuyện, nhân vật và cài đặt trên thiết bị này bằng bản sao lưu. Dữ liệu hiện tại được giữ thành một tệp riêng.",
+    "action": "Khôi phục",
+    "stop": "Dừng",
+    "running": "Đang khôi phục",
+    "starting": "Đang bắt đầu khôi phục",
+    "waiting": "Đang chờ quá trình khôi phục bắt đầu",
+    "step": "Bước {{step}} trên {{total}}",
+    "keepOpen": "Bản sao lưu lớn có thể mất vài phút. Giữ ứng dụng mở cho đến khi hoàn tất.",
+    "stages": {
+      "decode": "Đang mở bản sao lưu",
+      "stage": "Đang chuẩn bị tệp",
+      "write": "Đang ghi dữ liệu",
+      "verify": "Đang kiểm tra dữ liệu đã khôi phục",
+      "switch": "Đang chuyển sang dữ liệu đã khôi phục"
+    },
+    "failed": "Quá trình khôi phục đã dừng",
+    "failedAt": "Quá trình khôi phục dừng ở bước {{step}} trên {{total}}: {{stage}}",
+    "confirmTitle": "Thay thế mọi thứ trên thiết bị này?",
+    "confirmBody": "Toàn bộ trò chuyện, nhân vật và cài đặt sẽ được thay bằng bản sao lưu này. Dữ liệu hiện tại được giữ thành một tệp riêng.",
+    "confirm": "Khôi phục",
+    "done": "Đã khôi phục bản sao lưu",
+    "notBackup": "Tệp đó không phải bản sao lưu LettuceAI.",
+    "models": {
+      "title": "Tải các mô hình mà dữ liệu của bạn cần",
+      "required": "Các tính năng này sẽ ngừng hoạt động nếu thiếu chúng, nên phải tải xong trước khi tiếp tục."
+    },
+    "warnings_other": "Đã khôi phục bản sao lưu kèm {{count}} cảnh báo",
+    "failure": {
+      "unknown": "Không thể khôi phục bản sao lưu.",
+      "backup_authentication": "Mật khẩu không đúng hoặc bản sao lưu bị hỏng.",
+      "backup_invalid_envelope": "Tệp này không phải bản sao lưu hợp lệ.",
+      "backup_limit_exceeded": "Bản sao lưu này lớn hơn mức ứng dụng có thể khôi phục.",
+      "backup_unavailable": "Tính năng sao lưu hiện không khả dụng.",
+      "backup_file_not_found": "Không tìm thấy tệp sao lưu.",
+      "backup_permission_denied": "Ứng dụng không được phép đọc tệp này.",
+      "backup_file_busy": "Tệp đang được ứng dụng khác sử dụng.",
+      "backup_file_unavailable": "Không thể đọc tệp sao lưu.",
+      "backup_file_unsupported": "Bản sao lưu này được tạo bởi phiên bản mà ứng dụng không đọc được.",
+      "backup_source_is_target": "Bản sao lưu chính là tệp ứng dụng đang dùng.",
+      "backup_cancelled": "Quá trình khôi phục đã bị hủy.",
+      "backup_retry_required": "Quá trình khôi phục chưa hoàn tất. Thử lại.",
+      "backup_recovery_required": "Cần mở lại ứng dụng để khôi phục.",
+      "backup_verification_failed": "Bản sao lưu không vượt qua bước kiểm tra."
+    }
+  }
+}

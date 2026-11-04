@@ -1,0 +1,82 @@
+{
+  "cancel": "Anuluj",
+  "retry": "Spróbuj ponownie",
+  "notRecognized": "Ten plik nie jest kartą ani kopią zapasową LettuceAI.",
+  "import": {
+    "title": {
+      "character": "Importuj postać",
+      "persona": "Importuj personę",
+      "lorebook": "Importuj lorebook"
+    },
+    "kind": {
+      "character": "Postać",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_one": "{{count}} wpis",
+    "entries_few": "{{count}} wpisy",
+    "entries_many": "{{count}} wpisów",
+    "entries_other": "{{count}} wpisu",
+    "confirm": "Importuj",
+    "open": "Otwórz",
+    "done": "Zaimportowano {{name}}",
+    "started": "Rozpoczęto import",
+    "warnings_one": "Zaimportowano z {{count}} ostrzeżeniem",
+    "warnings_few": "Zaimportowano z {{count}} ostrzeżeniami",
+    "warnings_many": "Zaimportowano z {{count}} ostrzeżeniami",
+    "warnings_other": "Zaimportowano z {{count}} ostrzeżenia"
+  },
+  "restore": {
+    "title": "Przywróć kopię zapasową",
+    "created": "Utworzono",
+    "version": "Wersja aplikacji",
+    "password": "Hasło",
+    "warning": "Przywracanie zastępuje wszystkie czaty, postacie i ustawienia na tym urządzeniu kopią zapasową. Twoje obecne dane zostaną zachowane jako osobny plik.",
+    "action": "Przywróć",
+    "stop": "Zatrzymaj",
+    "running": "Przywracanie",
+    "starting": "Uruchamianie przywracania",
+    "waiting": "Oczekiwanie na rozpoczęcie przywracania",
+    "step": "Krok {{step}} z {{total}}",
+    "keepOpen": "Duże kopie zapasowe mogą zająć kilka minut. Nie zamykaj aplikacji, aż się zakończy.",
+    "stages": {
+      "decode": "Otwieranie kopii zapasowej",
+      "stage": "Przygotowywanie plików",
+      "write": "Zapisywanie danych",
+      "verify": "Sprawdzanie przywróconych danych",
+      "switch": "Przełączanie na przywrócone dane"
+    },
+    "failed": "Przywracanie zostało zatrzymane",
+    "failedAt": "Przywracanie zatrzymało się na kroku {{step}} z {{total}}: {{stage}}",
+    "confirmTitle": "Zastąpić wszystko na tym urządzeniu?",
+    "confirmBody": "Wszystkie czaty, postacie i ustawienia zostaną zastąpione tą kopią zapasową. Twoje obecne dane zostaną zachowane jako osobny plik.",
+    "confirm": "Przywróć",
+    "done": "Przywrócono kopię zapasową",
+    "notBackup": "Ten plik nie jest kopią zapasową LettuceAI.",
+    "models": {
+      "title": "Pobierz modele, których potrzebują twoje dane",
+      "required": "Te funkcje przestaną działać bez nich, więc trzeba je pobrać przed kontynuowaniem."
+    },
+    "warnings_one": "Przywrócono kopię zapasową z {{count}} ostrzeżeniem",
+    "warnings_few": "Przywrócono kopię zapasową z {{count}} ostrzeżeniami",
+    "warnings_many": "Przywrócono kopię zapasową z {{count}} ostrzeżeniami",
+    "warnings_other": "Przywrócono kopię zapasową z {{count}} ostrzeżenia",
+    "failure": {
+      "unknown": "Nie udało się przywrócić kopii zapasowej.",
+      "backup_authentication": "Hasło jest nieprawidłowe lub kopia zapasowa jest uszkodzona.",
+      "backup_invalid_envelope": "Ten plik nie jest prawidłową kopią zapasową.",
+      "backup_limit_exceeded": "Ta kopia zapasowa jest większa, niż aplikacja może przywrócić.",
+      "backup_unavailable": "Kopie zapasowe są teraz niedostępne.",
+      "backup_file_not_found": "Nie udało się znaleźć pliku kopii zapasowej.",
+      "backup_permission_denied": "Aplikacja nie ma uprawnień do odczytania tego pliku.",
+      "backup_file_busy": "Plik jest używany przez inną aplikację.",
+      "backup_file_unavailable": "Nie udało się odczytać pliku kopii zapasowej.",
+      "backup_file_unsupported": "Ta kopia zapasowa została utworzona przez wersję, której aplikacja nie potrafi odczytać.",
+      "backup_source_is_target": "Kopia zapasowa to plik używany przez aplikację.",
+      "backup_cancelled": "Przywracanie zostało anulowane.",
+      "backup_retry_required": "Przywracanie nie zostało ukończone. Spróbuj ponownie.",
+      "backup_recovery_required": "Przywracanie wymaga ponownego otwarcia aplikacji.",
+      "backup_verification_failed": "Kopia zapasowa nie przeszła weryfikacji."
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "title": "Novidades",
+  "installed": "Versão instalada: {{version}}",
+  "releaseMismatch": "Estas notas são da versão {{version}}. Você está usando a {{installed}}.",
+  "fullChangelog": "Registro de alterações completo",
+  "continue": "Continuar",
+  "markFailed": "Não foi possível salvar a versão vista",
+  "types": {
+    "feature": "Adicionado",
+    "improvement": "Melhorado",
+    "bugfix": "Corrigido",
+    "breaking": "Mudanças incompatíveis"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Detalhamento do uso de contexto e memória dinâmica mais enxuta",
+    "description": "Toda mensagem do assistente agora mostra quanto da janela de contexto o prompt dela usou e o que ocupou esse espaço, tanto em conversas individuais quanto em grupo. A memória dinâmica em conversas individuais deixa de enviar o banco de memória inteiro a cada turno, e os embeddings voltam a iniciar no macOS.",
+    "changes": {
+      "contextUsage": "Um painel de uso de contexto nas ações das respostas do assistente mostra a janela de contexto dividida em ocupada, reservada para a resposta e livre, além de um detalhamento do que preenche o prompt: sistema, personagem, persona, memórias, livro de lore, nota do autor, estado do companion e histórico da conversa. As parcelas são estimadas com tiktoken e ajustadas para os tokens de prompt que o provedor realmente reportou.",
+      "groupContextUsage": "As mensagens de conversas em grupo ganham o mesmo painel, reconstruído a partir da mensagem armazenada sem refazer a recuperação, com uma categoria de elenco do grupo que conta os perfis dos outros participantes.",
+      "responseBudget": "No llama.cpp e no Ollama, o orçamento de resposta reservado (resposta mais raciocínio) é lido da solicitação real, e um aviso aparece quando o prompt e essa reserva juntos ultrapassam a janela de contexto, para você reduzir o máximo de tokens ou enxugar o contexto antes que o prompt seja truncado ou a resposta seja cortada.",
+      "developerBreakdown": "A página de depuração da mensagem do desenvolvedor inclui o mesmo detalhamento de tokens por categoria, com totais e uso da janela de contexto.",
+      "memoryRetrieval": "A memória dinâmica em conversas individuais não preenche mais {{key_memories}} com o banco inteiro de memórias quentes a cada prompt, além das memórias recuperadas. Só as memórias recuperadas para aquele turno são enviadas, tanto para personagens de roleplay quanto para companions, em novas respostas, regenerações e continuações.",
+      "macEmbeddings": "Os embeddings não falham mais ao iniciar no macOS com um erro de \"Team IDs diferentes\". O ONNX Runtime baixado em tempo de execução é assinado pela Microsoft, e o macOS se recusava a carregá-lo no app; agora ele é reassinado localmente antes de ser carregado."
+    }
+  }
+}

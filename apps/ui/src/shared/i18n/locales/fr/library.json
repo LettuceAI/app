@@ -1,0 +1,125 @@
+{
+  "triggerPreview": "Aperçu du déclenchement",
+  "title": "Bibliothèque",
+  "loadMore": "Charger plus",
+  "search": "Rechercher dans la bibliothèque",
+  "show": "Afficher",
+  "filters": {
+    "all": "Tout",
+    "characters": "Personnages",
+    "personas": "Personas",
+    "lorebooks": "Encyclopédies",
+    "images": "Images",
+    "audio": "Audio"
+  },
+  "kinds": {
+    "character": "Personnage",
+    "persona": "Persona",
+    "lorebook": "Encyclopédie"
+  },
+  "you": "Vous",
+  "entries_one": "{{count}} entrée",
+  "entries_many": "{{count}} entrées",
+  "entries_other": "{{count}} entrées",
+  "defaultPersona": "Persona · votre persona par défaut",
+  "menu": {
+    "start": "Démarrer une discussion",
+    "edit_character": "Modifier le personnage",
+    "edit_persona": "Modifier le persona",
+    "edit_lorebook": "Modifier l'encyclopédie",
+    "default": "Utiliser comme persona par défaut",
+    "defaultHint": "Pour les discussions qui n'en choisissent pas d'autre",
+    "export": "Exporter",
+    "export_character": "Sous forme de carte de personnage",
+    "export_persona": "Sous forme de fichier UEC",
+    "export_lorebook": "Sous forme de fichier UEC ou JSON",
+    "delete_character": "Supprimer le personnage",
+    "delete_persona": "Supprimer le persona",
+    "delete_lorebook": "Supprimer l'encyclopédie",
+    "save": "Enregistrer sur l'appareil",
+    "deleteImage": "Supprimer l'image",
+    "deleteAudio": "Supprimer l'enregistrement",
+    "avatar": "Utiliser comme avatar de {{name}}",
+    "more": "Plus d'options pour {{name}}",
+    "background": "Arrière-plan",
+    "generated": "Générée",
+    "uploaded": "Importée"
+  },
+  "create": {
+    "title": "Créer",
+    "description": "Ajoutez quelque chose à votre bibliothèque.",
+    "character": "Quelqu'un à qui parler",
+    "persona": "Qui vous êtes dans une discussion",
+    "lorebook": "Faits du monde qu'un personnage peut mobiliser",
+    "import": "Importer un fichier",
+    "importHint": "Carte de personnage, persona ou encyclopédie",
+    "new_character": "Nouveau personnage",
+    "new_lorebook": "Nouvelle encyclopédie",
+    "button_character": "Créer un personnage",
+    "button_persona": "Créer un persona",
+    "button_lorebook": "Créer une encyclopédie"
+  },
+  "edit": {
+    "name": "Nom",
+    "hint_character": "Affiché sur la carte et dans l'en-tête de la discussion.",
+    "placeholder_character": "ex. Cassian",
+    "placeholder_lorebook": "ex. La porte nord",
+    "create": "Créer",
+    "cancel": "Annuler"
+  },
+  "delete": {
+    "title": "Supprimer {{name}} ?",
+    "confirm": "Supprimer",
+    "character": "Ses discussions et souvenirs sont supprimés avec lui.",
+    "persona": "Le persona est retiré des discussions qui l'utilisent.",
+    "lorebook": "Les personnages et discussions qui l'utilisent perdent l'accès à ses entrées.",
+    "image": "L'image est retirée de cet appareil. Les images encore utilisées ne peuvent pas être supprimées.",
+    "audio": "L'enregistrement est retiré de cet appareil. Les enregistrements encore utilisés ne peuvent pas être supprimés."
+  },
+  "empty": {
+    "all": {
+      "title": "Votre bibliothèque est vide",
+      "description": "Les personnages, personas et encyclopédies que vous créez ou importez sont conservés ici."
+    },
+    "characters": {
+      "title": "Aucun personnage pour l'instant",
+      "description": "Un personnage est celui à qui vous parlez : un nom, une histoire, une façon de parler."
+    },
+    "personas": {
+      "title": "Aucun persona pour l'instant",
+      "description": "Un persona est qui vous êtes dans une discussion. Les personnages voient son nom et sa description."
+    },
+    "lorebooks": {
+      "title": "Aucune encyclopédie pour l'instant",
+      "description": "Des faits du monde qu'un personnage peut mobiliser lorsqu'ils surgissent dans la conversation."
+    },
+    "images": {
+      "title": "Aucune image pour l'instant",
+      "description": "Les images que vous générez dans une discussion sont conservées ici."
+    },
+    "audio": {
+      "title": "Aucun audio pour l'instant",
+      "description": "Les répliques vocales que vous générez ou enregistrez sont conservées ici."
+    },
+    "matches": "Rien ne correspond à « {{query}} »",
+    "searchAll": "Essayez un autre nom ou une partie d'une description.",
+    "searchSection": "Rien dans cette section ne correspond. Le reste de votre bibliothèque pourrait contenir quelque chose.",
+    "clear": "Effacer la recherche",
+    "everything": "Tout rechercher",
+    "import": "Importer"
+  },
+  "toast": {
+    "created": "{{name}} ajouté",
+    "deleted": "{{name}} supprimé",
+    "default": "{{name}} est votre persona par défaut",
+    "exported": "Fichier exporté",
+    "imported": "Fichier importé",
+    "warnings_one": "Fichier transféré avec {{count}} avertissement",
+    "warnings_many": "Fichier transféré avec {{count}} avertissements",
+    "warnings_other": "Fichier transféré avec {{count}} avertissements",
+    "mediaSaved": "Enregistré sur l'appareil",
+    "avatar": "Avatar mis à jour"
+  },
+  "draft": "Brouillon",
+  "untitledDraft": "Brouillon d'encyclopédie sans titre"
+}

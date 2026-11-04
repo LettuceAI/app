@@ -1,0 +1,137 @@
+{
+  "generate": "Generuj awatar",
+  "title": "Generuj awatar",
+  "bannerCrop": {
+    "title": "Ustaw baner",
+    "description": "Wykadruj okładkę. Przeciągnij, aby przesunąć; ściśnij lub przewiń, aby powiększyć.",
+    "saveFailed": "Nie udało się zapisać banera"
+  },
+  "crop": {
+    "title": "Ustaw awatar",
+    "description": "Przeciągnij, aby przesunąć. Ściśnij lub przewiń, aby powiększyć.",
+    "zoom": "Powiększenie",
+    "zoomIn": "Powiększ",
+    "zoomOut": "Pomniejsz",
+    "center": "Wyśrodkuj",
+    "area": "Obszar kadrowania",
+    "keyboard": "Strzałki przesuwają obraz. Plus i minus zmieniają powiększenie, C centruje, 0 resetuje.",
+    "reset": "Resetuj",
+    "apply": "Użyj tego ustawienia",
+    "loadFailed": "Nie udało się załadować obrazu",
+    "saveFailed": "Nie udało się zapisać awatara"
+  },
+  "preview": {
+    "empty": "Nie ma jeszcze obrazu",
+    "emptyBody": "Opisz awatar poniżej albo zacznij od własnego obrazu.",
+    "alt": "Podgląd awatara",
+    "unchanged": "Awatar już obecny w formularzu",
+    "editedFrom": "Z {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Wersje",
+    "count_one": "{{count}} wersja",
+    "count_few": "{{count}} wersje",
+    "count_many": "{{count}} wersji",
+    "count_other": "{{count}} wersji",
+    "current": "Bieżący awatar",
+    "upload": "Wgrany obraz {{number}}",
+    "generation": "Wygenerowany obraz {{number}}",
+    "edit": "Edytowany obraz {{number}}",
+    "short": {
+      "current": "Bieżący",
+      "upload": "Wgrany {{number}}",
+      "generation": "Obraz {{number}}",
+      "edit": "Edycja {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Wgraj obraz"
+  },
+  "mode": {
+    "label": "Co zrobić",
+    "generate": "Nowy obraz",
+    "edit": "Edytuj wybrany",
+    "generateHint": "Zaczyna od nowa, tylko na podstawie opisu",
+    "editHint": "Zmienia kopię {{version}}"
+  },
+  "prompt": {
+    "label": "Opisz awatar",
+    "placeholder": "Uśmiechnięty lis w dzianinowym szaliku, miękkie światło"
+  },
+  "instruction": {
+    "label": "Co zmienić",
+    "placeholder": "Zrób szalik niebieski"
+  },
+  "actions": {
+    "generate": "Generuj",
+    "edit": "Zastosuj edycję",
+    "cancel": "Anuluj",
+    "use": "Użyj tego awatara",
+    "retry": "Spróbuj ponownie"
+  },
+  "busy": {
+    "uploading": "Dodawanie obrazu",
+    "generating": "Generowanie obrazu",
+    "editing": "Edytowanie obrazu",
+    "cancelling": "Anulowanie"
+  },
+  "job": {
+    "progress": "{{current}} z {{total}}",
+    "rejected_one": "{{count}} wynik odłożono",
+    "rejected_few": "{{count}} wyniki odłożono",
+    "rejected_many": "{{count}} wyników odłożono",
+    "rejected_other": "{{count}} wyniku odłożono",
+    "cancelled": "Anulowano generowanie"
+  },
+  "settings": {
+    "open": "Otwórz ustawienia obrazów"
+  },
+  "notice": {
+    "options": {
+      "title": "Nie udało się sprawdzić modelu awatarów",
+      "body": "Wgrywanie nadal działa."
+    },
+    "disabled": {
+      "title": "Generowanie awatarów jest wyłączone",
+      "body": "Włącz je w ustawieniach obrazów, aby generować. Wgrywanie nadal działa."
+    },
+    "noModel": {
+      "title": "Nie wybrano modelu awatarów",
+      "body": "Wybierz model, który przyjmuje i zwraca obrazy. Wgrywanie nadal działa."
+    },
+    "incompatible": {
+      "title": "Ten model nie potrafi tworzyć awatarów",
+      "body": "Awatary wymagają modelu, który przyjmuje i zwraca obrazy. Wgrywanie nadal działa."
+    },
+    "upload": {
+      "title": "Nie udało się dodać obrazu"
+    },
+    "generation": {
+      "title": "Nie udało się utworzyć obrazu"
+    },
+    "cancellation": {
+      "title": "Nie udało się anulować",
+      "body": "Żądanie może nadal trwać. Spróbuj anulować ponownie."
+    },
+    "uncertain": {
+      "title": "Oczekiwanie na wynik",
+      "body": "Połączenie zostało przerwane, zanim dotarł wynik. Spróbuj ponownie się połączyć albo anuluj żądanie."
+    }
+  },
+  "failure": {
+    "cancelled": "Generowanie zostało anulowane.",
+    "setup": "Model obrazów nie jest poprawnie skonfigurowany. Sprawdź go w ustawieniach obrazów.",
+    "invalidRequest": "Żądanie nie zostało przyjęte. Zmień opis i spróbuj ponownie.",
+    "engine": "Silnik obrazów zatrzymał się przed ukończeniem.",
+    "timedOut": "Tworzenie obrazu trwało zbyt długo.",
+    "memory": "Model obrazów zużył całą dostępną pamięć.",
+    "storage": "Nie udało się zapisać obrazu.",
+    "provider": "Dostawca nie mógł utworzyć obrazu.",
+    "empty": "Nie wrócił żaden obraz.",
+    "rejected": "Wynik został odłożony i nic nie zwrócono.",
+    "refused": "Model odmówił utworzenia tego obrazu. Zmień opis i spróbuj ponownie.",
+    "authentication": "Dostawca odrzucił dane logowania. Sprawdź dostawcę w ustawieniach.",
+    "unavailable": "Model obrazów jest teraz niedostępny.",
+    "unknown": "Coś poszło nie tak podczas tworzenia obrazu."
+  }
+}

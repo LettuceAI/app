@@ -1,0 +1,28 @@
+{
+  "title": "Yang baru",
+  "installed": "Versi terpasang: {{version}}",
+  "releaseMismatch": "Catatan ini untuk {{version}}. Anda menjalankan {{installed}}.",
+  "fullChangelog": "Catatan perubahan lengkap",
+  "continue": "Lanjutkan",
+  "markFailed": "Tidak dapat menyimpan versi yang dilihat",
+  "types": {
+    "feature": "Ditambahkan",
+    "improvement": "Ditingkatkan",
+    "bugfix": "Diperbaiki",
+    "breaking": "Perubahan besar"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Rincian Penggunaan Konteks & Memori Dinamis Lebih Ringkas",
+    "description": "Setiap pesan asisten kini menampilkan berapa banyak jendela konteks yang dipakai promptnya dan apa yang mengisinya, baik di obrolan pribadi maupun grup. Memori dinamis di obrolan pribadi berhenti mengirim seluruh bank memori pada setiap giliran, dan embedding mulai berjalan lagi di macOS.",
+    "changes": {
+      "contextUsage": "Panel Penggunaan Konteks di tindakan pesan balasan asisten menampilkan jendela konteks yang terbagi menjadi terpakai, dicadangkan untuk respons, dan kosong, plus rincian apa yang mengisi prompt: sistem, karakter, persona, memori, lorebook, catatan penulis, status companion, dan riwayat obrolan. Porsinya diperkirakan dengan tiktoken dan diskalakan ke token prompt yang benar-benar dilaporkan penyedia.",
+      "groupContextUsage": "Pesan obrolan grup mendapat panel yang sama, dibangun ulang dari pesan tersimpan tanpa menjalankan ulang pengambilan, dengan kategori Cast Grup yang menghitung profil peserta lain.",
+      "responseBudget": "Di llama.cpp dan Ollama, anggaran respons yang dicadangkan (respons plus penalaran) dibaca dari permintaan sebenarnya, dan peringatan muncul saat prompt dan cadangan tersebut bersama-sama melebihi jendela konteks, sehingga Anda dapat menurunkan token maksimum atau memangkas konteks sebelum prompt terpotong atau balasan terputus.",
+      "developerBreakdown": "Halaman debug pesan pengembang menyertakan rincian token per kategori yang sama, dengan total dan penggunaan jendela konteks.",
+      "memoryRetrieval": "Memori dinamis di obrolan pribadi tidak lagi mengisi {{key_memories}} dengan seluruh bank memori aktif pada setiap prompt di atas memori yang diambil. Hanya memori yang diambil untuk giliran itu yang dikirim, baik untuk karakter roleplay maupun companion, di semua balasan baru, regenerasi, dan kelanjutan.",
+      "macEmbeddings": "Embedding tidak lagi gagal dimulai di macOS dengan kesalahan \"different Team IDs\". ONNX Runtime yang diunduh saat runtime ditandatangani oleh Microsoft, yang ditolak macOS untuk dimuat ke aplikasi, dan kini ditandatangani ulang secara lokal sebelum dimuat."
+    }
+  }
+}

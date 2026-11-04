@@ -1,0 +1,73 @@
+{
+  "cancel": "キャンセル",
+  "retry": "再試行",
+  "notRecognized": "このファイルはLettuceAIのカードまたはバックアップではありません。",
+  "import": {
+    "title": {
+      "character": "キャラクターをインポート",
+      "persona": "ペルソナをインポート",
+      "lorebook": "ロアブックをインポート"
+    },
+    "kind": {
+      "character": "キャラクター",
+      "persona": "ペルソナ",
+      "lorebook": "ロアブック"
+    },
+    "entries_other": "{{count}}件",
+    "confirm": "インポート",
+    "open": "開く",
+    "done": "{{name}}をインポートしました",
+    "started": "インポートを開始しました",
+    "warnings_other": "{{count}}件の警告付きでインポートしました"
+  },
+  "restore": {
+    "title": "バックアップを復元",
+    "created": "作成日",
+    "version": "アプリのバージョン",
+    "password": "パスワード",
+    "warning": "復元すると、このデバイスのすべてのチャット、キャラクター、設定がバックアップに置き換わります。現在のデータは別ファイルとして保持されます。",
+    "action": "復元",
+    "stop": "停止",
+    "running": "復元中",
+    "starting": "復元を開始しています",
+    "waiting": "復元の開始を待っています",
+    "step": "{{total}}ステップ中{{step}}",
+    "keepOpen": "大きなバックアップは数分かかることがあります。完了するまでアプリを開いたままにしてください。",
+    "stages": {
+      "decode": "バックアップを開いています",
+      "stage": "ファイルを準備中",
+      "write": "データを書き込み中",
+      "verify": "復元したデータを確認中",
+      "switch": "復元したデータに切り替え中"
+    },
+    "failed": "復元が停止しました",
+    "failedAt": "復元は{{total}}ステップ中{{step}}（{{stage}}）で停止しました",
+    "confirmTitle": "このデバイスのすべてを置き換えますか？",
+    "confirmBody": "すべてのチャット、キャラクター、設定がこのバックアップに置き換わります。現在のデータは別ファイルとして保持されます。",
+    "confirm": "復元",
+    "done": "バックアップを復元しました",
+    "notBackup": "そのファイルはLettuceAIのバックアップではありません。",
+    "models": {
+      "title": "データに必要なモデルをダウンロード",
+      "required": "これらの機能はモデルがないと動作しないため、続行する前にダウンロードする必要があります。"
+    },
+    "warnings_other": "{{count}}件の警告付きでバックアップを復元しました",
+    "failure": {
+      "unknown": "バックアップを復元できませんでした。",
+      "backup_authentication": "パスワードが間違っているか、バックアップが破損しています。",
+      "backup_invalid_envelope": "このファイルは有効なバックアップではありません。",
+      "backup_limit_exceeded": "このバックアップはアプリが復元できるサイズを超えています。",
+      "backup_unavailable": "現在バックアップを利用できません。",
+      "backup_file_not_found": "バックアップファイルが見つかりませんでした。",
+      "backup_permission_denied": "アプリはこのファイルを読み取る権限がありません。",
+      "backup_file_busy": "ファイルが別のアプリで使用中です。",
+      "backup_file_unavailable": "バックアップファイルを読み取れませんでした。",
+      "backup_file_unsupported": "このバックアップはアプリが読めないバージョンで作成されています。",
+      "backup_source_is_target": "バックアップがアプリの使用中ファイルと同じです。",
+      "backup_cancelled": "復元はキャンセルされました。",
+      "backup_retry_required": "復元が完了しませんでした。もう一度お試しください。",
+      "backup_recovery_required": "復元にはアプリの再起動が必要です。",
+      "backup_verification_failed": "バックアップが検証に合格しませんでした。"
+    }
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "onnxModelsUnloaded": "메모리를 확보하기 위해 유휴 모델을 해제했어요: {{models}}. 필요하면 다시 로드해요.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "앱에 연결하는 중…"
+  },
+  "navigation": {
+    "primary": "주요 내비게이션",
+    "chats": "채팅",
+    "groups": "그룹",
+    "discover": "탐색",
+    "library": "라이브러리",
+    "settings": "설정",
+    "home": "홈",
+    "create": "만들기",
+    "collapse": "접기",
+    "collapseSidebar": "사이드바 접기",
+    "expandSidebar": "사이드바 펼치기",
+    "backToApp": "앱으로 돌아가기"
+  },
+  "downloads": {
+    "loading": "다운로드 불러오는 중",
+    "title": "다운로드",
+    "titleActive_other": "다운로드, {{count}}개 진행 중",
+    "empty": "다운로드 중인 항목이 없어요.",
+    "emptyBody": "설치와 업데이트가 여기에 표시돼요.",
+    "generic": "다운로드",
+    "done": "{{name}} 준비 완료",
+    "failed": "{{name}} 다운로드에 실패했어요"
+  },
+  "window": {
+    "minimize": "최소화",
+    "maximize": "최대화",
+    "close": "창 닫기",
+    "failed": "창 작업을 완료하지 못했어요. 다시 시도해 주세요."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "기타"
+  },
+  "actions": {
+    "retry": "다시 시도",
+    "cancel": "취소",
+    "reload": "새로고침"
+  },
+  "errors": {
+    "fatalTitle": "문제가 발생했어요",
+    "fatalDescription": "앱에 예기치 않은 문제가 생겼어요. 새로고침하면 보통 해결돼요.",
+    "loadTitle": "불러오지 못했어요",
+    "notFoundTitle": "여기에는 아무것도 없어요",
+    "notFoundDescription": "앱에 이 페이지가 없어요.",
+    "code": {
+      "not_found": "더 이상 존재하지 않아요.",
+      "in_use": "아직 사용 중이에요. 참조를 제거하고 다시 시도해 주세요.",
+      "malformed": "제공자가 읽을 수 없는 응답을 반환했어요.",
+      "conflict": "다른 곳에서 변경됐어요. 새로고침하고 다시 시도해 주세요.",
+      "invalid_input": "요청에 잘못된 부분이 있어요.",
+      "unsupported": "여기서는 지원하지 않아요.",
+      "unavailable": "지금은 사용할 수 없어요.",
+      "cancelled": "취소됐어요.",
+      "busy": "앱이 처리 중이에요. 잠시 후 다시 시도해 주세요.",
+      "internal": "앱에 내부 오류가 발생했어요.",
+      "model_required": "필요한 모델이 설치되어 있지 않아요.",
+      "model_unavailable": "필요한 모델을 불러오지 못했어요.",
+      "transport": "앱 백엔드에 연결할 수 없어요."
+    }
+  },
+  "create": {
+    "group": "그룹 만들기",
+    "groupBody": "캐릭터들을 한 채팅에 모아요",
+    "title": "만들기",
+    "description": "대화할 상대나, 그들이 살 세계를 만들어요.",
+    "character": "캐릭터 만들기",
+    "characterBody": "이름, 외모, 성격, 첫 장면",
+    "persona": "페르소나 만들기",
+    "personaBody": "채팅에서 내가 누구인지",
+    "lorebook": "로어북 만들기",
+    "lorebookBody": "직접 쓰거나, 파일 또는 AI로 만드는 세계 설정",
+    "import": "카드 가져오기",
+    "importBody": "PNG 또는 JSON 캐릭터 카드",
+    "imported": "캐릭터를 가져왔어요",
+    "discover": "탐색 둘러보기",
+    "discoverBody": "다른 사람들이 공유한 캐릭터"
+  },
+  "providerSelect": {
+    "placeholder": "제공자를 선택하세요",
+    "title": "제공자",
+    "empty": "사용 가능한 제공자가 없어요.",
+    "groups": {
+      "cloud": "클라우드",
+      "local": "로컬",
+      "custom": "커스텀"
+    }
+  },
+  "designReferences": {
+    "note": "디자인 메모",
+    "notePlaceholder": "짧은 머리, 둥근 안경, 긴 회색 코트",
+    "noteHint": "외모를 몇 마디로 표현하세요. 생성된 장면 이미지에 사용돼요.",
+    "images": "참조 이미지",
+    "imagesHint": "외모를 보여주는 이미지 몇 장.",
+    "add": "이미지 추가",
+    "remove": "이미지 제거"
+  },
+  "memoryDownload": {
+    "title": "메모리 모델 다운로드",
+    "titleDone": "메모리 준비 완료",
+    "body": "자동 메모리에는 기기 내 작은 모델이 필요해요. 한 번만 다운로드하면 오프라인으로 실행돼요.",
+    "bodyDone": "이제 캐릭터가 긴 대화에서도 중요한 내용을 기억해요. 채팅별로 끌 수 있어요.",
+    "modelName": "Lettuce Eidos 메모리 모델",
+    "keepOpen": "완료될 때까지 앱을 열어 두세요.",
+    "download": "다운로드 후 완료",
+    "downloading": "다운로드 중",
+    "checking": "모델 확인 중",
+    "useManual": "대신 수동 메모리 사용",
+    "doneDetail": "설치 및 테스트 완료 · 오프라인 실행",
+    "failedOffline": "연결이 끊겼어요. 다시 시도하면 계속돼요.",
+    "failedOther": "다운로드가 끝나지 않았어요. 다시 시도하면 계속돼요.",
+    "downloadOnly": "다운로드",
+    "bodyInstall": "동적 메모리에는 기기 내 작은 모델이 필요해요. 한 번만 다운로드하면 오프라인으로 실행돼요.",
+    "failureCode": {
+      "integrity_failure": "다운로드 파일이 손상됐어요. 다시 시도하면 계속돼요.",
+      "resource_unavailable": "모델 서버를 지금 사용할 수 없어요. 다시 시도하면 계속돼요.",
+      "storage_failure": "모델을 이 기기에 저장하지 못했어요. 여유 공간을 확인하고 다시 시도하세요.",
+      "timed_out": "다운로드 시간이 너무 오래 걸렸어요. 다시 시도하면 계속돼요."
+    }
+  },
+  "emotionDownload": {
+    "title": "감정 모델 다운로드",
+    "titleDone": "감정 준비 완료",
+    "body": "동반자 모드는 기기 내 작은 모델로 각 메시지에 담긴 감정을 읽어요. 한 번만 다운로드하면 오프라인으로 실행돼요.",
+    "bodyDone": "이제 답장에 따라 동반자의 감정과 친밀도가 달라져요.",
+    "download": "다운로드",
+    "close": "나중에",
+    "finish": "완료"
+  },
+  "structuredFallback": {
+    "title": "모델이 도구를 사용할 수 없을 때",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "간결해요. 대부분의 모델에서 작동해요."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "JSON보다 XML을 더 안정적으로 쓰는 모델용이에요."
+      }
+    },
+    "hint": "도구 호출을 먼저 시도해요. 이 형식은 모델이 도구 호출을 지원하지 않을 때만 사용돼요."
+  },
+  "promptPicker": {
+    "builtIn": "기본 제공",
+    "builtInBody": "앱 자체 프롬프트",
+    "builtInMissing": "기본 제공 프롬프트를 사용할 수 없어요",
+    "search": "프롬프트 검색",
+    "clearSearch": "검색 지우기",
+    "noMatches": "일치하는 프롬프트가 없어요",
+    "manage": "시스템 프롬프트",
+    "manageBody": "프롬프트 만들기 또는 편집",
+    "close": "닫기"
+  },
+  "lorebookPicker": {
+    "title": "로어북",
+    "done": "완료",
+    "empty": "아직 로어북이 없어요",
+    "emptyBody": "만들거나 가져온 로어북이 여기에 표시돼요.",
+    "edit": "{{name}} 편집"
+  }
+}

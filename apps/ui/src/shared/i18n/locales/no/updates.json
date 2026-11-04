@@ -1,0 +1,28 @@
+{
+  "title": "Hva er nytt",
+  "installed": "Installert versjon: {{version}}",
+  "releaseMismatch": "Disse notatene gjelder {{version}}. Du kjører {{installed}}.",
+  "fullChangelog": "Full endringslogg",
+  "continue": "Fortsett",
+  "markFailed": "Kunne ikke lagre den viste versjonen",
+  "types": {
+    "feature": "Lagt til",
+    "improvement": "Forbedret",
+    "bugfix": "Rettet",
+    "breaking": "Brytende endringer"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Oppdeling av kontekstbruk og lettere dynamisk minne",
+    "description": "Hver assistentmelding viser nå hvor mye av kontekstvinduet prompten brukte og hva som fylte det, både i en-til-en- og gruppesamtaler. Dynamisk minne i en-til-en-samtaler slutter å sende hele minnebanken hver tur, og embedding starter igjen på macOS.",
+    "changes": {
+      "contextUsage": "Et Kontekstbruk-panel i meldingshandlingene for assistentsvar viser kontekstvinduet delt inn i opptatt, reservert til svaret og ledig, pluss en oversikt over hva som fyller prompten: system, karakter, persona, minner, lorebok, forfatternotat, kompanjongtilstand og samtalens historikk. Andelene estimeres med tiktoken og skaleres til prompt-tokenene leverandøren faktisk rapporterte.",
+      "groupContextUsage": "Gruppesamtalemeldinger får samme panel, bygget opp fra den lagrede meldingen uten å kjøre søket på nytt, med en kategori for gruppebesetning som teller de andre deltakernes profiler.",
+      "responseBudget": "På llama.cpp og Ollama leses det reserverte svarbudsjettet (svar pluss resonnering) fra den faktiske forespørselen, og en advarsel vises når prompten og reservasjonen til sammen overstiger kontekstvinduet, slik at du kan senke maks tokens eller kutte kontekst før prompten blir avkortet eller svaret blir kuttet.",
+      "developerBreakdown": "Utviklermeldingens feilsøkingsside har den samme tokenfordelingen per kategori, med totaler og bruk av kontekstvinduet.",
+      "memoryRetrieval": "Dynamisk minne i en-til-en-samtaler fyller ikke lenger {{key_memories}} med hele den aktive minnebanken ved hver prompt, i tillegg til de hentede minnene. Bare minnene som hentes for den turen, sendes, for både rollespillkarakterer og kompanjonger, på tvers av nye svar, regenereringer og fortsettelser.",
+      "macEmbeddings": "Embedding feiler ikke lenger å starte på macOS med feilen «different Team IDs». ONNX Runtime som lastes ned ved kjøring, er signert av Microsoft, noe macOS nektet å laste inn i appen, og den signeres nå lokalt på nytt før den lastes."
+    }
+  }
+}

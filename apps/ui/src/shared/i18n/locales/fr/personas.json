@@ -1,0 +1,79 @@
+{
+  "create": {
+    "title": "Nouveau persona",
+    "back": "Retour",
+    "create": "Créer un persona",
+    "created": "{{name}} créé",
+    "imported": "Persona importé",
+    "unattached_one": "{{count}} encyclopédie n'a pas pu être associée. Associez-la depuis les paramètres du persona.",
+    "unattached_many": "{{count}} encyclopédies n'ont pas pu être associées. Associez-les depuis les paramètres du persona.",
+    "unattached_other": "{{count}} encyclopédies n'ont pas pu être associées. Associez-les depuis les paramètres du persona.",
+    "defaultFailed": "{{name}} a été créé, mais n'a pas pu devenir le persona par défaut.",
+    "discardTitle": "Abandonner ce persona ?",
+    "discardBody": "Ce que vous avez saisi jusqu'ici sera perdu.",
+    "discard": "Abandonner",
+    "keepEditing": "Continuer la modification",
+    "continueTo": "Continuer vers {{step}}"
+  },
+  "edit": {
+    "title": "Modifier le persona",
+    "back": "Retour",
+    "backToLibrary": "Retour à la bibliothèque",
+    "more": "Plus d'actions",
+    "export": "Exporter",
+    "delete": "Supprimer le persona",
+    "exported": "Persona exporté",
+    "exportWarnings_one": "Exporté avec {{count}} avertissement",
+    "exportWarnings_many": "Exporté avec {{count}} avertissements",
+    "exportWarnings_other": "Exporté avec {{count}} avertissements",
+    "deleteTitle": "Supprimer {{name}} ?",
+    "deleteBody": "Le persona est retiré des discussions qui l'utilisent.",
+    "deleteConfirm": "Supprimer",
+    "deleteCancel": "Annuler",
+    "deleted": "{{name}} supprimé",
+    "unsaved": "Modifications non enregistrées",
+    "discard": "Abandonner",
+    "save": "Enregistrer",
+    "saved": "Modifications enregistrées",
+    "lorebooksFailed": "Enregistré, mais les encyclopédies n'ont pas pu être mises à jour. Essayez d'enregistrer à nouveau.",
+    "leaveTitle": "Abandonner vos modifications ?",
+    "leaveBody": "Les modifications non enregistrées seront perdues.",
+    "leaveDiscard": "Abandonner",
+    "leaveKeep": "Continuer la modification"
+  },
+  "steps": {
+    "identity": "Identité",
+    "extras": "Extras"
+  },
+  "identity": {
+    "chooseAvatar": "Choisir une image",
+    "removeAvatar": "Retirer",
+    "name": "Nom",
+    "namePlaceholder": "Écrivain professionnel",
+    "nameHint": "Qui vous êtes dans les discussions",
+    "nickname": "Surnom",
+    "nicknamePlaceholder": "Comment les personnages vous appellent",
+    "nicknameHint": "Facultatif. Utilisé dans les discussions à la place du nom.",
+    "default": "Utiliser par défaut",
+    "defaultBody": "Les nouvelles discussions démarrent avec ce persona",
+    "import": "Importer depuis un fichier",
+    "importBody": "Importer un persona exporté depuis LettuceAI.",
+    "chooseFile": "Choisir un fichier"
+  },
+  "about": {
+    "description": "Description",
+    "descriptionPlaceholder": "Comment les personnages doivent s'adresser à vous, votre parcours, vos préférences et votre style",
+    "descriptionHint": "Utilisez {{user}} pour ce persona et {{char}} pour le personnage.",
+    "words_one": "{{count}} mot",
+    "words_many": "{{count}} mots",
+    "words_other": "{{count}} mots"
+  },
+  "extras": {
+    "body": "Tout ici est facultatif.",
+    "lorebooks": "Encyclopédies",
+    "lorebooksNone": "Aucune",
+    "lorebooksCount_one": "{{count}} encyclopédie",
+    "lorebooksCount_many": "{{count}} encyclopédies",
+    "lorebooksCount_other": "{{count}} encyclopédies"
+  }
+}

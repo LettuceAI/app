@@ -1,0 +1,103 @@
+{
+  "title": "Trợ giúp & Câu hỏi thường gặp",
+  "subtitle": "Những điều cơ bản, API key, quyền riêng tư và các câu hỏi phổ biến",
+  "sections": {
+    "gettingStarted": "Bắt đầu",
+    "privacySafety": "Quyền riêng tư & an toàn",
+    "modelsProviders": "Mô hình & nhà cung cấp",
+    "charactersChats": "Nhân vật & trò chuyện"
+  },
+  "stillStuck": {
+    "title": "Vẫn chưa giải quyết được?",
+    "docsTitle": "Tài liệu đầy đủ",
+    "docsDescription": "Hướng dẫn và tài liệu tham khảo cho LettuceAI",
+    "discordTitle": "Tham gia Discord",
+    "discordDescription": "Hỏi cộng đồng hoặc báo lỗi"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "LettuceAI là gì?",
+      "answer": "LettuceAI là ứng dụng trò chuyện với nhân vật AI. Bạn chọn nhà cung cấp và mô hình viết câu trả lời, còn trò chuyện và nhân vật vẫn ở trên thiết bị của bạn. Nhà cung cấp đám mây dùng tài khoản của chính bạn; các mô hình cục bộ được hỗ trợ chạy trên máy tính của bạn."
+    },
+    "whatIsApiKey": {
+      "question": "API key là gì và tại sao cần có? (giải thích BYOK)",
+      "answer": "BYOK nghĩa là Bring Your Own Key (tự mang khóa của bạn). API key cho phép LettuceAI gửi yêu cầu đến nhà cung cấp bằng tài khoản của bạn. Tạo khóa với nhà cung cấp, rồi thêm vào Cài đặt > Nhà cung cấp. Yêu cầu đi từ thiết bị của bạn đến nhà cung cấp đó, nơi áp dụng cách tính phí và giới hạn riêng. Các mô hình cục bộ được hỗ trợ không cần API key đám mây. Hãy coi khóa như mật khẩu và không chia sẻ."
+    },
+    "cheapestStart": {
+      "question": "Cách rẻ nhất hoặc dễ nhất để bắt đầu là gì?",
+      "answer": "Dùng hướng dẫn Thiết lập để kết nối nhà cung cấp và chọn mô hình. So sánh giá hiện tại, gói miễn phí và giới hạn yêu cầu của nhà cung cấp trước khi nạp tiền. Bắt đầu với ngân sách nhỏ và xem Cài đặt > Phân tích sử dụng trong khi trò chuyện. Trên máy tính, các mô hình cục bộ được hỗ trợ là một lựa chọn khác nếu máy có đủ bộ nhớ và dung lượng."
+    },
+    "alternative": {
+      "question": "Đây có phải lựa chọn thay thế cho các ứng dụng trò chuyện AI khác không?",
+      "answer": "Có. LettuceAI cho phép bạn chọn nhà cung cấp, mô hình và cách thiết lập nhân vật thay vì gắn mọi cuộc trò chuyện vào một dịch vụ. Bạn tự quản lý tài khoản nhà cung cấp và giữ dữ liệu trên thiết bị. Chỉ cần thiết lập nhanh là có thể kết nối mô hình bạn muốn dùng."
+    },
+    "cost": {
+      "question": "Chi phí là bao nhiêu?",
+      "answer": "LettuceAI miễn phí. Nhà cung cấp đám mây có thể tính phí tài khoản của bạn cho các yêu cầu hoặc cung cấp gói miễn phí. Giá của họ phụ thuộc vào mô hình, lượng văn bản gửi đi và tạo ra, cùng các tính năng hình ảnh hoặc âm thanh bạn dùng. Kiểm tra bảng giá của nhà cung cấp trước khi chọn mô hình. Phân tích sử dụng hiển thị số token được báo cáo và chi phí đã biết; thiếu giá không có nghĩa là yêu cầu miễn phí."
+    },
+    "apiKeySafe": {
+      "question": "API key của tôi có an toàn không?",
+      "answer": "Thông tin đăng nhập của nhà cung cấp được lưu cục bộ và dùng để kết nối đến nhà cung cấp bạn đã cấu hình. LettuceAI không chuyển tiếp yêu cầu của bạn qua máy chủ trò chuyện riêng. Chỉ nhập khóa cho các dịch vụ bạn tin tưởng, kiểm tra kỹ URL nhà cung cấp tùy chỉnh, và bảo vệ thiết bị cùng các tệp sao lưu."
+    },
+    "chatsStored": {
+      "question": "Trò chuyện của tôi được lưu ở đâu? Người khác có đọc được không?",
+      "answer": "Trò chuyện được lưu trong cơ sở dữ liệu cục bộ của ứng dụng. Khi mô hình đám mây trả lời, lời nhắc và ngữ cảnh hội thoại liên quan được gửi đến nhà cung cấp bạn chọn. Nhà cung cấp đó xử lý yêu cầu theo chính sách quyền riêng tư của họ. Bất kỳ ai có quyền truy cập thiết bị hoặc bản sao lưu đã xuất cũng có thể đọc dữ liệu của bạn."
+    },
+    "chatsDeleted": {
+      "question": "Trò chuyện của tôi có thể tự bị xóa không?",
+      "answer": "LettuceAI không giữ bản sao trên máy chủ để có thể khôi phục trò chuyện. Xóa trò chuyện, đặt lại ứng dụng, gỡ cài đặt, xóa dữ liệu ứng dụng hoặc mất thiết bị có thể xóa dữ liệu cục bộ. Hãy sao lưu những gì bạn muốn giữ."
+    },
+    "editRemotely": {
+      "question": "Người khác có thể sửa dữ liệu của tôi từ xa không?",
+      "answer": "LettuceAI không có dịch vụ quản trị từ xa cho trò chuyện và nhân vật cục bộ của bạn. Nhà cung cấp bạn chọn tạo câu trả lời nhưng không quản lý cơ sở dữ liệu của ứng dụng. Hãy bảo vệ thiết bị và mọi tệp bạn nhập hoặc chia sẻ."
+    },
+    "shutdown": {
+      "question": "Dữ liệu của tôi sẽ ra sao nếu LettuceAI ngừng hoạt động?",
+      "answer": "Trò chuyện và nhân vật đã lưu vẫn ở trên thiết bị và có thể đọc mà không cần tài khoản LettuceAI. Câu trả lời đám mây vẫn phụ thuộc vào việc nhà cung cấp còn hoạt động và tài khoản của bạn còn dùng được. Hãy giữ một bản dữ liệu bằng Cài đặt > Sao lưu & khôi phục."
+    },
+    "training": {
+      "question": "Nhà cung cấp có dùng cuộc trò chuyện của tôi để huấn luyện không?",
+      "answer": "Điều đó phụ thuộc vào nhà cung cấp, loại tài khoản và chính sách dữ liệu hiện tại của họ. LettuceAI không thể thay đổi các điều khoản đó. Đọc cài đặt quyền riêng tư và lưu trữ của nhà cung cấp trước khi gửi thông tin nhạy cảm. Các mô hình cục bộ được hỗ trợ xử lý lời nhắc trên máy tính của bạn."
+    },
+    "whatIsModel": {
+      "question": "'Mô hình' là gì? Nên chọn mô hình nào?",
+      "answer": "Mô hình là AI viết câu trả lời. Các mô hình khác nhau về phong cách viết, tốc độ, độ dài ngữ cảnh, yêu cầu phần cứng và giá. Thêm nhà cung cấp trong Cài đặt > Nhà cung cấp, rồi cấu hình mô hình trong Cài đặt > Mô hình. Bạn có thể đặt mặc định cho ứng dụng hoặc chọn mô hình cho từng nhân vật hay cuộc trò chuyện."
+    },
+    "freeProviders": {
+      "question": "Có nhà cung cấp miễn phí không?",
+      "answer": "Một số nhà cung cấp có mô hình miễn phí hoặc gói sử dụng miễn phí, kèm yêu cầu tài khoản và giới hạn tốc độ riêng. Tính khả dụng có thể thay đổi, nên hãy kiểm tra điều khoản hiện tại của nhà cung cấp. Gói miễn phí vẫn có thể cần API key. Các mô hình cục bộ được hỗ trợ không tính phí theo yêu cầu, nhưng dùng phần cứng, dung lượng lưu trữ và điện năng của máy bạn."
+    },
+    "freeVsPaid": {
+      "question": "Nhà cung cấp miễn phí và trả phí khác nhau thế nào?",
+      "answer": "Gói miễn phí và trả phí có thể khác nhau về mô hình có sẵn, giới hạn yêu cầu, tốc độ phản hồi, điều khoản quyền riêng tư và hỗ trợ. Chi tiết do từng nhà cung cấp quyết định; gói trả phí không tự động đồng nghĩa với một chính sách quyền riêng tư cụ thể. Bạn có thể kết nối nhiều nhà cung cấp và chọn mô hình phù hợp cho từng cuộc trò chuyện."
+    },
+    "whatIsToken": {
+      "question": "Token là gì?",
+      "answer": "Token là một mẩu văn bản nhỏ, như một từ hoặc một phần của từ. Cách chia chính xác phụ thuộc vào mô hình và ngôn ngữ. Một yêu cầu gồm token đầu vào từ lời nhắc và ngữ cảnh hội thoại, cộng token đầu ra từ câu trả lời. Nhà cung cấp có thể tính giá các loại này khác nhau. Lịch sử dài và câu trả lời dài có thể làm tăng mức sử dụng."
+    },
+    "noDefaultModel": {
+      "question": "Tôi thấy 'chưa cấu hình mô hình mặc định'",
+      "answer": "Mở Cài đặt > Mô hình và thêm mô hình từ một nhà cung cấp đã cấu hình. Sau đó đặt mặc định cho ứng dụng hoặc chọn mô hình trong cài đặt của nhân vật. Nhân vật hoặc cuộc trò chuyện có thể ghi đè mặc định, nên hãy kiểm tra lựa chọn mô hình của nó nếu câu trả lời vẫn không bắt đầu."
+    },
+    "cloudVsLocal": {
+      "question": "Mô hình đám mây và cục bộ khác nhau thế nào?",
+      "answer": "Mô hình đám mây chạy trên phần cứng của nhà cung cấp và cần kết nối đến dịch vụ đó. Các mô hình cục bộ được hỗ trợ chạy trên máy tính để bàn và cần đủ bộ nhớ cùng dung lượng. Việc cài đặt và điều khiển mô hình cục bộ có trên máy tính; trên thiết bị di động hãy dùng nhà cung cấp được kết nối."
+    },
+    "whatIsCharacter": {
+      "question": "Nhân vật là gì? Tôi có thể tự tạo không?",
+      "answer": "Nhân vật có tên, hình ảnh và mô tả định hình cách họ nói chuyện. Dùng nút tạo để làm một nhân vật mới, hoặc nhập thẻ nhân vật trong Thư viện. Sửa mô tả và cài đặt mô hình để thay đổi cách tạo các câu trả lời sau này."
+    },
+    "whatIsPersona": {
+      "question": "Persona là gì?",
+      "answer": "Persona mô tả phía của bạn trong cuộc trò chuyện: tên và những chi tiết nhân vật nên biết về bạn. Tạo hoặc nhập persona trong Thư viện, rồi chọn persona muốn dùng cho một cuộc trò chuyện."
+    },
+    "charactersPrivate": {
+      "question": "Nhân vật tôi tạo có riêng tư không?",
+      "answer": "Nhân vật bạn tạo được lưu trên thiết bị. Xuất và chia sẻ thẻ nhân vật cho phép người khác đọc nó. Khi trò chuyện với mô hình đám mây, các chi tiết nhân vật dùng trong lời nhắc cũng được gửi đến nhà cung cấp bạn chọn."
+    },
+    "backupMove": {
+      "question": "Làm sao sao lưu hoặc chuyển sang thiết bị khác?",
+      "answer": "Mở Cài đặt > Sao lưu & khôi phục để tạo tệp sao lưu. Giữ tệp ở nơi an toàn. Để chuyển thiết bị, cài LettuceAI trên thiết bị kia và khôi phục tệp đó ở đó. Làm theo cảnh báo trên màn hình khôi phục trước khi thay thế dữ liệu hiện có."
+    }
+  }
+}

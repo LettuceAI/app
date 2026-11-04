@@ -1,0 +1,73 @@
+{
+  "cancel": "取消",
+  "retry": "再試一次",
+  "notRecognized": "此檔案不是 LettuceAI 角色卡或備份。",
+  "import": {
+    "title": {
+      "character": "匯入角色",
+      "persona": "匯入人設",
+      "lorebook": "匯入設定集"
+    },
+    "kind": {
+      "character": "角色",
+      "persona": "人設",
+      "lorebook": "設定集"
+    },
+    "entries_other": "{{count}} 個條目",
+    "confirm": "匯入",
+    "open": "開啟",
+    "done": "已匯入 {{name}}",
+    "started": "已開始匯入",
+    "warnings_other": "已匯入，但有 {{count}} 個警告"
+  },
+  "restore": {
+    "title": "還原備份",
+    "created": "建立時間",
+    "version": "應用程式版本",
+    "password": "密碼",
+    "warning": "還原會以此備份取代此裝置上的所有對話、角色和設定。你目前的資料會另存為獨立檔案。",
+    "action": "還原",
+    "stop": "停止",
+    "running": "還原中",
+    "starting": "正在開始還原",
+    "waiting": "正在等待還原開始",
+    "step": "第 {{step}} 步，共 {{total}} 步",
+    "keepOpen": "大型備份可能需要幾分鐘。請保持應用程式開啟，直到完成。",
+    "stages": {
+      "decode": "正在開啟備份",
+      "stage": "正在準備檔案",
+      "write": "正在寫入你的資料",
+      "verify": "正在檢查還原的資料",
+      "switch": "正在切換至還原的資料"
+    },
+    "failed": "還原已停止",
+    "failedAt": "還原在第 {{step}} 步（共 {{total}} 步）停止：{{stage}}",
+    "confirmTitle": "要取代此裝置上的所有內容嗎？",
+    "confirmBody": "所有對話、角色和設定都會被此備份取代。你目前的資料會另存為獨立檔案。",
+    "confirm": "還原",
+    "done": "已還原備份",
+    "notBackup": "該檔案不是 LettuceAI 備份。",
+    "models": {
+      "title": "下載你的資料所需的模型",
+      "required": "沒有這些模型，這些功能會停止運作，因此必須先下載才能繼續。"
+    },
+    "warnings_other": "已還原備份，但有 {{count}} 個警告",
+    "failure": {
+      "unknown": "無法還原備份。",
+      "backup_authentication": "密碼錯誤或備份已損毀。",
+      "backup_invalid_envelope": "此檔案不是有效的備份。",
+      "backup_limit_exceeded": "此備份超過應用程式可還原的大小。",
+      "backup_unavailable": "目前無法使用備份功能。",
+      "backup_file_not_found": "找不到備份檔案。",
+      "backup_permission_denied": "應用程式無權讀取此檔案。",
+      "backup_file_busy": "檔案正被其他應用程式使用。",
+      "backup_file_unavailable": "無法讀取備份檔案。",
+      "backup_file_unsupported": "此備份由應用程式無法讀取的版本所建立。",
+      "backup_source_is_target": "此備份就是應用程式正在使用的檔案。",
+      "backup_cancelled": "已取消還原。",
+      "backup_retry_required": "還原未完成。請再試一次。",
+      "backup_recovery_required": "還原需要重新開啟應用程式。",
+      "backup_verification_failed": "備份未通過驗證。"
+    }
+  }
+}

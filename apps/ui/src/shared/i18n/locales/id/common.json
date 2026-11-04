@@ -1,0 +1,174 @@
+{
+  "onnxModelsUnloaded": "Model diam dibebaskan untuk mengosongkan memori: {{models}}. Model akan dimuat lagi saat dibutuhkan.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Menghubungkan ke aplikasi…"
+  },
+  "navigation": {
+    "primary": "Navigasi utama",
+    "chats": "Obrolan",
+    "groups": "Grup",
+    "discover": "Jelajahi",
+    "library": "Perpustakaan",
+    "settings": "Pengaturan",
+    "home": "Beranda",
+    "create": "Buat",
+    "collapse": "Ciutkan",
+    "collapseSidebar": "Ciutkan bilah sisi",
+    "expandSidebar": "Perluas bilah sisi",
+    "backToApp": "Kembali ke aplikasi"
+  },
+  "downloads": {
+    "loading": "Memuat unduhan",
+    "title": "Unduhan",
+    "titleActive_other": "Unduhan, {{count}} aktif",
+    "empty": "Tidak ada yang diunduh.",
+    "emptyBody": "Pemasangan dan pembaruan muncul di sini.",
+    "generic": "Unduhan",
+    "done": "{{name}} siap",
+    "failed": "{{name}} tidak dapat diunduh"
+  },
+  "window": {
+    "minimize": "Perkecil",
+    "maximize": "Perbesar",
+    "close": "Tutup jendela",
+    "failed": "Tindakan jendela tidak dapat diselesaikan. Coba lagi."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Lainnya"
+  },
+  "actions": {
+    "retry": "Coba lagi",
+    "cancel": "Batal",
+    "reload": "Muat ulang"
+  },
+  "errors": {
+    "fatalTitle": "Terjadi kesalahan",
+    "fatalDescription": "Aplikasi mengalami masalah tak terduga. Memuat ulang biasanya memperbaikinya.",
+    "loadTitle": "Tidak dapat memuat ini",
+    "notFoundTitle": "Tidak ada apa pun di sini",
+    "notFoundDescription": "Halaman ini tidak ada di aplikasi.",
+    "code": {
+      "not_found": "Ini sudah tidak ada lagi.",
+      "in_use": "Masih digunakan. Hapus referensinya lalu coba lagi.",
+      "malformed": "Penyedia mengembalikan respons yang tidak dapat dibaca.",
+      "conflict": "Ini berubah di tempat lain. Muat ulang lalu coba lagi.",
+      "invalid_input": "Ada sesuatu dalam permintaan yang tidak valid.",
+      "unsupported": "Ini tidak didukung di sini.",
+      "unavailable": "Ini tidak tersedia saat ini.",
+      "cancelled": "Ini dibatalkan.",
+      "busy": "Aplikasi sedang sibuk. Coba lagi sebentar lagi.",
+      "internal": "Aplikasi mengalami kesalahan internal.",
+      "model_required": "Model yang diperlukan belum terpasang.",
+      "model_unavailable": "Model yang diperlukan tidak dapat dimuat.",
+      "transport": "Backend aplikasi tidak dapat dijangkau."
+    }
+  },
+  "create": {
+    "group": "Buat grup",
+    "groupBody": "Kumpulkan karakter dalam satu obrolan",
+    "title": "Buat",
+    "description": "Seseorang untuk diajak bicara, atau dunia untuk mereka.",
+    "character": "Buat karakter",
+    "characterBody": "Nama, penampilan, kepribadian, dan adegan pembuka",
+    "persona": "Buat persona",
+    "personaBody": "Siapa Anda dalam obrolan",
+    "lorebook": "Buat lorebook",
+    "lorebookBody": "Fakta dunia, ditulis sendiri, dari file, atau dengan AI",
+    "import": "Impor kartu",
+    "importBody": "Kartu karakter PNG atau JSON",
+    "imported": "Karakter diimpor",
+    "discover": "Jelajahi",
+    "discoverBody": "Karakter yang dibagikan orang lain"
+  },
+  "providerSelect": {
+    "placeholder": "Pilih penyedia",
+    "title": "Penyedia",
+    "empty": "Tidak ada penyedia tersedia.",
+    "groups": {
+      "cloud": "Cloud",
+      "local": "Lokal",
+      "custom": "Kustom"
+    }
+  },
+  "designReferences": {
+    "note": "Catatan desain",
+    "notePlaceholder": "Rambut pendek, kacamata bulat, mantel kelabu panjang",
+    "noteHint": "Penampilan dalam beberapa kata. Digunakan untuk gambar adegan yang dihasilkan.",
+    "images": "Gambar referensi",
+    "imagesHint": "Beberapa gambar yang menunjukkan penampilan.",
+    "add": "Tambah gambar",
+    "remove": "Hapus gambar"
+  },
+  "memoryDownload": {
+    "title": "Unduh model memori",
+    "titleDone": "Memori siap",
+    "body": "Memori otomatis memerlukan model kecil di perangkat ini. Model diunduh sekali, lalu berjalan offline.",
+    "bodyDone": "Karakter Anda sekarang akan mengingat hal-hal penting, bahkan dalam obrolan panjang. Anda dapat menonaktifkannya per obrolan.",
+    "modelName": "Model memori Lettuce Eidos",
+    "keepOpen": "Biarkan aplikasi tetap terbuka hingga selesai.",
+    "download": "Unduh dan selesaikan",
+    "downloading": "Mengunduh",
+    "checking": "Memeriksa model",
+    "useManual": "Gunakan memori manual saja",
+    "doneDetail": "Terpasang dan teruji · berjalan offline",
+    "failedOffline": "Koneksi terputus. Coba lagi untuk melanjutkan.",
+    "failedOther": "Unduhan tidak selesai. Coba lagi untuk melanjutkan.",
+    "downloadOnly": "Unduh",
+    "bodyInstall": "Memori dinamis memerlukan model kecil di perangkat ini. Model diunduh sekali, lalu berjalan offline.",
+    "failureCode": {
+      "integrity_failure": "Unduhan rusak. Coba lagi untuk melanjutkan.",
+      "resource_unavailable": "Server model tidak tersedia saat ini. Coba lagi untuk melanjutkan.",
+      "storage_failure": "Model tidak dapat disimpan di perangkat ini. Periksa ruang kosong lalu coba lagi.",
+      "timed_out": "Unduhan memakan waktu terlalu lama. Coba lagi untuk melanjutkan."
+    }
+  },
+  "emotionDownload": {
+    "title": "Unduh model emosi",
+    "titleDone": "Perasaan siap",
+    "body": "Mode companion membaca perasaan di balik setiap pesan dengan model kecil di perangkat ini. Model diunduh sekali, lalu berjalan offline.",
+    "bodyDone": "Setiap balasan kini dapat memengaruhi perasaan companion Anda dan seberapa dekat hubungan Anda.",
+    "download": "Unduh",
+    "close": "Nanti saja",
+    "finish": "Selesai"
+  },
+  "structuredFallback": {
+    "title": "Saat model tidak dapat menggunakan alat",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Ringkas. Berfungsi dengan sebagian besar model."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Untuk model yang menulis XML lebih andal daripada JSON."
+      }
+    },
+    "hint": "Pemanggilan alat dicoba lebih dulu. Format ini hanya digunakan saat model tidak mendukungnya."
+  },
+  "promptPicker": {
+    "builtIn": "Bawaan",
+    "builtInBody": "Prompt milik aplikasi",
+    "builtInMissing": "Prompt bawaan tidak tersedia",
+    "search": "Cari prompt",
+    "clearSearch": "Hapus pencarian",
+    "noMatches": "Tidak ada prompt yang cocok",
+    "manage": "Prompt sistem",
+    "manageBody": "Buat atau edit prompt",
+    "close": "Tutup"
+  },
+  "lorebookPicker": {
+    "title": "Lorebook",
+    "done": "Selesai",
+    "empty": "Belum ada lorebook",
+    "emptyBody": "Lorebook yang Anda buat atau impor akan muncul di sini.",
+    "edit": "Edit {{name}}"
+  }
+}

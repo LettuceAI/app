@@ -1,0 +1,356 @@
+{
+  "header": {
+    "back": "Geri",
+    "learn": "Rehberli kurulum · Temeller, {{current}} / {{total}}",
+    "path": "Rehberli kurulum · Ücretsiz veya ücretli",
+    "guided": "Rehberli kurulum · {{name}}, {{current}} / {{total}}",
+    "connect": "Kurulum · 1 / 3",
+    "model": "Kurulum · 2 / 3",
+    "memory": "Kurulum · 3 / 3"
+  },
+  "welcome": {
+    "line1": "Sizin <brand>hikâyeleriniz</brand>,",
+    "line2": "<brand>karakterleriniz</brand>.",
+    "pitch": "Sohbetler ve karakterler cihazınızda kalır. Yanıtları hangi yapay zekânın yazacağını siz seçersiniz.",
+    "start": "Başlayın",
+    "other": "Diğer seçenekler"
+  },
+  "actions": {
+    "exitSetup": "Ayarlara dön",
+    "next": "İleri",
+    "gotIt": "Anladım",
+    "haveKey": "Anahtarım var",
+    "connect": "Bağlan",
+    "checking": "Anahtarınız kontrol ediliyor",
+    "useModel": "Bu modeli kullan",
+    "saving": "Modeliniz kaydediliyor",
+    "finish": "Kurulumu bitir",
+    "finishing": "Kurulum tamamlanıyor",
+    "openApp": "LettuceAI'ı aç"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Hoş geldiniz",
+      "title": "LettuceAI'ya hoş geldiniz",
+      "body": "İlk yapay zekâ rol yapma deneyiminizi kurmak üzeresiniz. Sonraki birkaç adım temelleri sade bir dille açıklar, ardından her şeyi bağlamanıza yardımcı oluruz. Yalnızca birkaç dakika sürer."
+    },
+    "car": {
+      "tag": "Nasıl çalışır",
+      "title": "Uygulama araba, motor değil",
+      "body": "Bu uygulamayı henüz motoru olmayan bir araba gibi düşünün. Gösterge paneli, koltuklar ve karakterleriniz var ama kendi başına gidemez. Bir motor eklersiniz ve bu birkaç adım size nasıl yapacağınızı gösterir.",
+      "plain": "Bu uygulama ekran ve karakterlerdir. Yanıtları gerçekten yazan yapay zekâ çevrimiçi çalışır ve uygulamayı ona bağlarsınız."
+    },
+    "provider": {
+      "tag": "3. adımın 1.'si",
+      "title": "Motorun nereden geldiğini seçin",
+      "body": "Sağlayıcı, motoru tedarik eden ve çalıştıran şirkettir; Google veya OpenRouter gibi. Birinde ücretsiz veya ücretli bir hesap açarsınız ve uygulama sohbetlerinizi çalıştırmak için onların motorunu ödünç alır.",
+      "plain": "Sağlayıcı, yapay zekâ modellerini çalıştıran bir şirkettir. Birinde hesap açarsınız ve uygulama yanıt almak için mesajlarınızı onlara gönderir."
+    },
+    "key": {
+      "tag": "3. adımın 2.'si",
+      "title": "Anahtarınız motoru çalıştırır",
+      "body": "API anahtarı tıpkı bir araba anahtarı gibi çalışır. Sağlayıcı size bir tane verir, siz uygulamaya takarsınız ve motoru çalıştırır. Onu kendinize saklayın. Cebinizdeki bir anahtar gibi cihazınızda kalır.",
+      "plain": "API anahtarı, sağlayıcınızdan gelen ve uygulamanın hesabınızı kullanmasını sağlayan gizli bir koddur. Bir kez yapıştırırsınız ve yalnızca cihazınızda saklanır."
+    },
+    "engine": {
+      "tag": "3. adımın 3.'sü",
+      "title": "Motorunuzu seçin",
+      "body": "Model, motorun kendisidir. Sağlayıcılar küçük, verimli motorlar ve büyük, güçlü motorlar sunar. Büyük motorlar daha iyi gider ama daha fazla yakıt yakar, bu yüzden daha pahalıdır. Motorları istediğiniz zaman değiştirebilirsiniz.",
+      "plain": "Model, yanıtları yazan belirli yapay zekâdır. Büyük modeller daha akıllıdır ama daha pahalıdır ve istediğiniz zaman aralarında geçiş yapabilirsiniz."
+    },
+    "cost": {
+      "tag": "Maliyet",
+      "title": "Ücretsiz veya ücretli, sizin seçiminiz",
+      "body": "Bazı modeller tamamen ücretsizdir, günlük ne kadar sohbet edebileceğinize dair bir sınırla. Ücretli modeller her mesaj için küçük bir tutar alır, genellikle bir sentten az.",
+      "plain": "Yalnızca sağlayıcıya ödeme yaparsınız, bu uygulamaya asla. Ücretsiz başlayabilir ve isterseniz daha sonra ücretliye geçebilirsiniz."
+    },
+    "inOtherWords": "Başka bir deyişle"
+  },
+  "path": {
+    "gemini": {
+      "title": "Ücretsiz",
+      "subtitle": "Google Gemini",
+      "cta": "Ücretsiz başla",
+      "pro1": "Hiçbir ücret yok ve asla kart istemez",
+      "pro2": "Günlük sohbet için cömert bir günlük kota",
+      "pro3": "Roleplay ve sohbet için iyi kalite",
+      "con1": "Yalnızca Google'ın kendi modelleri",
+      "con2": "Olgun veya açık içerik engellenir"
+    },
+    "openrouter": {
+      "title": "Kullandıkça öde",
+      "subtitle": "OpenRouter",
+      "cta": "OpenRouter kullan",
+      "pro1": "En güçlüleri dahil neredeyse her yapay zekâ modeli",
+      "pro2": "Günlük sınır yok, yalnızca kullandığınız kadar ödersiniz",
+      "pro3": "İstediğiniz zaman daha ucuz modellere geçin",
+      "con1": "Maliyet modele ve ne kadar sohbet ettiğinize bağlıdır",
+      "con2": "Kart veya ön ödemeli kredi gerekir"
+    },
+    "title": "Ücretsiz mi, ücretli mi?",
+    "lead": "İkisi de uygulamayı bir yapay zekâya bağlar. Fark, ödeme yapıp yapmadığınız ve kaç model arasından seçim yapabileceğinizdir.",
+    "footer": "Emin değil misiniz? Ücretsiz başlayın. Hiçbir şey kaybetmeden daha sonra ücretli bir hizmet ekleyebilirsiniz."
+  },
+  "connect": {
+    "title": "Bir yapay zekâ bağlayın",
+    "lead": "LettuceAI uygulamadır; yanıtları bir yapay zekâ hizmeti yazar. Anahtarınız olan hizmeti bağlayın.",
+    "guidedLink": "Yapay zekâ uygulamalarında yeni misiniz? Rehberli kurulumu deneyin",
+    "search": "{{count}} hizmet ara",
+    "chooseAnother": "Başka bir hizmet seçin",
+    "pickTitle": "Listeden bir hizmet seçin",
+    "pickBody": "Bir hesaba ve ondan alınan bir API anahtarına ihtiyacınız var.",
+    "groups": {
+      "cloud": "Bulut hizmetleri",
+      "local": "Bilgisayarınızda veya ağınızda",
+      "custom": "Diğer herhangi bir hizmet"
+    },
+    "subtitle": {
+      "custom": "Kendi uç noktanız",
+      "local": "Bilgisayarınızda çalışır"
+    },
+    "form": {
+      "address": "Adres",
+      "addressHintLocal": "Sunucunun çalıştığı yer",
+      "addressHintCustom": "API'nin temel URL'si",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API anahtarı",
+      "apiKeyOptional": "API anahtarı (isteğe bağlı)",
+      "apiKeyHint": "Bu cihazda şifrelenmiş olarak saklanır",
+      "apiKeyPlaceholder": "Anahtarınızı yapıştırın",
+      "name": "Ad",
+      "nameHint": "Menülerinizde nasıl görüneceği",
+      "namePlaceholder": "Benim {{name}}"
+    },
+    "error": {
+      "rejected": "Bu anahtar kabul edilmedi",
+      "unreachable": "{{name}} hizmetine ulaşılamadı. Bağlantınızı kontrol edin."
+    }
+  },
+  "guide": {
+    "previousPicture": "Önceki resim",
+    "nextPicture": "Sonraki resim",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Ekran görüntüsü",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Anahtarınızı yapıştırın",
+      "geminiBody": "Az önce Google AI Studio'dan kopyaladığınız anahtarı yapıştırın. Google ile kontrol eder, ardından açtığı modelleri gösteririz.",
+      "openrouterBody": "OpenRouter'dan kopyaladığınız anahtarı yapıştırın. sk-or ile başlar. Kontrol eder, ardından kullanabileceğiniz modelleri gösteririz.",
+      "geminiPlaceholder": "API anahtarınızı yapıştırın",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Bu cihazda şifrelenmiş olarak saklanır. Yalnızca sohbet ettiğinizde {{name}} hizmetine gönderilir."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Google AI Studio'yu açın",
+        "body": "Google AI Studio, ücretsiz Gemini anahtarınızın oluşturulduğu resmi Google sitesidir. Aşağıdaki düğmeyi kullanarak tarayıcınızda açın. Sayfa yüklendiğinde, sağ üst köşedeki Başlayın'a tıklayarak normal Google hesabınızla oturum açın. Zaten oturum açtıysanız sizi doğrudan geçirir.",
+        "open": "Google AI Studio'yu aç",
+        "slide1": "Sağ üst köşedeki Başlayın'a tıklayın."
+      },
+      "find": {
+        "title": "API anahtarlarını bulun",
+        "body": "Artık Google AI Studio'nun ana çalışma alanını görüyor olmalısınız. API anahtarları ana ekranda değil, sayfanın sol tarafındaki kenar çubuğunda yer alır. Kenar çubuğunun alt kısmına yakın küçük bir anahtar simgesi arayın ve anahtarların yönetildiği sayfayı açmak için tıklayın.",
+        "slide1": "Kenar çubuğunun sol altındaki anahtar simgesine tıklayın."
+      },
+      "create": {
+        "title": "Anahtarınızı oluşturun",
+        "body": "Anahtar oluşturmak kısa bir tıklama dizisi gerektirir ve resimler her birini sırayla gösterir. Önce sağ üstten yeni anahtar penceresini açın, ardından anahtarın bulunacağı bir proje oluşturun, projeye istediğiniz adı verin ve son olarak anahtarı oluşturun. Her ekranda ilerlemek için sağdaki okları kullanın.",
+        "slide1": "Sağ üstteki API anahtarı oluştur'a tıklayın.",
+        "slide2": "Açılır menüyü açın ve Proje oluştur'a tıklayın.",
+        "slide3": "İstediğiniz bir ad verin, ardından Proje oluştur'a tıklayın.",
+        "slide4": "Projeniz seçiliyken Anahtar oluştur'a tıklayın."
+      },
+      "copy": {
+        "title": "Anahtarınızı kopyalayın",
+        "body": "Anahtarınız oluşturuldu ve artık tam olarak gösteriliyor. Anahtarın tamamını panonuza kopyalamak için yanındaki kopyalama simgesine tıklayın. Google'ın tam anahtarı gösterdiği tek zaman budur, bu yüzden pencereyi kapatmadan önce şimdi kopyalayın ve yapıştırmak için buraya dönün.",
+        "slide1": "API anahtarınızı kopyalamak için kopyalama simgesine tıklayın."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Google AI Studio'yu açın",
+        "body": "Google AI Studio, ücretsiz Gemini anahtarınızın oluşturulduğu resmi Google sitesidir. Aşağıdaki düğmeyi kullanarak tarayıcınızda açın, anahtar alma sürecini birlikte adım adım geçelim. İki resim, sayfa yüklendiğinde tam olarak nereye dokunacağınızı gösterir; nereye bakacağınızdan emin değilseniz aralarında kaydırın.",
+        "open": "Google AI Studio'yu aç",
+        "slide1": "Sağ üst köşedeki menüye dokunun.",
+        "slide2": "Ardından alttaki Başlayın'a dokunun."
+      },
+      "find": {
+        "title": "API anahtarlarını bulun",
+        "body": "Artık oturum açmış olmalı ve Google AI Studio'nun ana sayfasına bakıyor olmalısınız. İhtiyacınız olan kısım ana ekranda değil, yan menünün içinde saklı. O menüyü açın, ardından en altta küçük bir anahtar simgesi arayın. Dokunmak sizi doğrudan anahtarların oluşturulduğu sayfaya götürür.",
+        "slide1": "Sol üst köşedeki menüyü açın.",
+        "slide2": "Menünün altındaki anahtar simgesine dokunun."
+      },
+      "start": {
+        "title": "Yeni bir anahtar başlatın",
+        "body": "Burası API Anahtarları sayfanız ve henüz bir tane oluşturmadığınız için şu anda boş. Bu tamamen normal. Süreci başlatan düğme ekranın sağ üst köşesinde, ilk anahtarınızı oluşturmaya başlamak için ona dokunun.",
+        "slide1": "Sağ üstteki API anahtarı oluştur'a dokunun."
+      },
+      "project": {
+        "title": "Önce bir proje oluşturun",
+        "body": "Google size bir anahtar vermeden önce, anahtarın hangi projeye ait olacağını sorar. Proje, Google'ın işleri düzenli tutmak için kullandığı bir klasördür ve henüz bir tane yok. Yeni bir proje oluşturun ve LettuceAI gibi istediğiniz adı verin. Ad hiçbir şeyi etkilemez, en kolayını seçin.",
+        "slide1": "Açılır menüyü açın ve Proje oluştur'a dokunun.",
+        "slide2": "İstediğiniz bir ad verin, ardından Proje oluştur'a dokunun."
+      },
+      "create": {
+        "title": "Anahtarınızı oluşturun ve kopyalayın",
+        "body": "Yeni projeniz seçiliyken anahtarı oluşturun. Göründüğünde kopyalama simgesini kullanarak hemen kopyalayın. Google'ın size tam anahtarı gösterdiği tek zaman budur, bu yüzden pencereyi kapatmadan önce kopyalamanız önemlidir. Sonraki adımda uygulamaya yapıştıracaksınız.",
+        "slide1": "Projeniz seçiliyken Anahtar oluştur'a dokunun.",
+        "slide2": "Anahtarınızı kopyalamak için kopyalama simgesine dokunun."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Hesabınızı oluşturun",
+        "body": "OpenRouter, sizi tek bir hesap ve tek bir anahtar üzerinden birçok farklı şirketin yüzlerce yapay zekâ modeline bağlayan tek bir hizmettir. Aşağıdaki düğmeyi kullanarak tarayıcınızda açın ve ücretsiz bir hesap oluşturun. Kaydol düğmesi sayfanın sağ üst köşesinde.",
+        "open": "OpenRouter'ı aç",
+        "slide1": "Sağ üst köşedeki Kaydol'a tıklayın."
+      },
+      "key": {
+        "title": "API anahtarınızı alın",
+        "body": "Kaydolduktan sonra OpenRouter onu nasıl kullanmayı planladığınızı sorar. Kişisel kullanım için doğru seçenek olan Bireysel'i seçin. Seçtiğiniz anda ilk API anahtarınızı oluşturur ve ekranda gösterir. Bu anahtarı şimdi kopyalayın. sk-or ile başlar ve birazdan uygulamaya yapıştıracaksınız.",
+        "slide1": "Sorulduğunda Bireysel'i seçin.",
+        "slide2": "Yeni API anahtarınızı kopyalayın (sk-or ile başlar)."
+      },
+      "payment": {
+        "title": "Bir ödeme yöntemi ekleyin",
+        "body": "Ücretli modeller her mesaj için çok küçük bir tutar alır, bu yüzden OpenRouter onları çalıştırmadan önce dosyada bir kart ister. Modellerin kilidini açmak için faturalandırma bilgilerinizi şimdi ekleyin. Bu adımda hiçbir ücret alınmaz; yalnızca kim olduğunuzu doğrular ve daha sonra kredi harcamanıza izin verir.",
+        "slide1": "Faturalandırma bilgilerinizi doldurun.",
+        "slide2": "Eklendiğinde her şey hazır olur."
+      },
+      "credits": {
+        "title": "Biraz kredi ekleyin",
+        "body": "Kredi, sohbet ettikçe mesajlarınızın gerçekte ödemesini yapan bakiyedir. Kenar çubuğundan Krediler sayfasını açın ve başlamak için küçük bir tutar yükleyin. Birkaç dolar bile çoğu modelle uzun süre dayanır ve düştüğünüzde her zaman daha fazla ekleyebilirsiniz.",
+        "slide1": "Kenar çubuğundan Krediler'i açın.",
+        "slide2": "Kredi ekle'ye tıklayın ve bir tutar seçin."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Hesabınızı oluşturun",
+        "body": "OpenRouter, sizi tek bir hesap ve tek bir anahtar üzerinden birçok farklı şirketin yüzlerce yapay zekâ modeline bağlayan tek bir hizmettir. Aşağıdaki düğmeyi kullanarak tarayıcınızda açın ve ücretsiz bir hesap oluşturun. Kaydol düğmesi sayfanın sağ üst köşesinde.",
+        "open": "OpenRouter'ı aç",
+        "slide1": "Sağ üst köşedeki Kaydol'a dokunun."
+      },
+      "key": {
+        "title": "API anahtarınızı alın",
+        "body": "Kaydolduktan sonra OpenRouter onu nasıl kullanmayı planladığınızı sorar. Kişisel kullanım için doğru seçenek olan Bireysel'i seçin. Seçtiğiniz anda ilk API anahtarınızı oluşturur ve ekranda gösterir. Bu anahtarı şimdi kopyalayın. sk-or ile başlar ve birazdan uygulamaya yapıştıracaksınız.",
+        "slide1": "Sorulduğunda Bireysel'i seçin.",
+        "slide2": "Yeni API anahtarınızı kopyalayın (sk-or ile başlar)."
+      },
+      "payment": {
+        "title": "Bir ödeme yöntemi ekleyin",
+        "body": "Ücretli modeller her mesaj için çok küçük bir tutar alır, bu yüzden OpenRouter onları çalıştırmadan önce dosyada bir kart ister. Modellerin kilidini açmak için faturalandırma bilgilerinizi şimdi ekleyin. Bu adımda hiçbir ücret alınmaz; yalnızca kim olduğunuzu doğrular ve daha sonra kredi harcamanıza izin verir.",
+        "slide1": "Faturalandırma bilgilerinizi doldurun.",
+        "slide2": "Eklendiğinde her şey hazır olur."
+      },
+      "credits": {
+        "title": "Biraz kredi ekleyin",
+        "body": "Kredi, sohbet ettikçe mesajlarınızın gerçekte ödemesini yapan bakiyedir. Menüyü açın, Krediler sayfasına gidin ve başlamak için küçük bir tutar yükleyin. Birkaç dolar bile çoğu modelle uzun süre dayanır ve düştüğünüzde her zaman daha fazla ekleyebilirsiniz.",
+        "slide1": "Menüyü açın ve Krediler'e gidin.",
+        "slide2": "Kredi ekle'ye dokunun ve bir tutar seçin."
+      }
+    }
+  },
+  "model": {
+    "title": "Bir model seçin",
+    "lead": "Yanıtları yazan {{name}} modelini seçin. İstediğiniz zaman değiştirebilir veya daha fazla ekleyebilirsiniz.",
+    "model": "Model",
+    "modelId": "Model kimliği",
+    "modelIdHint": "Hizmetin beklediği tam kimlik",
+    "modelIdPlaceholder": "model-adı",
+    "choose": "{{count}} model arasından seçin",
+    "customId": "Özel kimlik",
+    "displayName": "Görünen ad",
+    "displayNameHint": "Uygulama içinde gördüğünüz",
+    "displayNamePlaceholder": "Modelim",
+    "connected": "Bağlandı",
+    "context": "Bağlam",
+    "contextTokens": "{{value}} token",
+    "contextSuffix": "{{value}} bağlam",
+    "images": "Görselleri anlar",
+    "yes": "Evet",
+    "no": "Hayır",
+    "inputPerMillion": "Giriş, milyon başına",
+    "outputPerMillion": "Çıkış, milyon başına",
+    "emptyTitle": "Henüz model seçilmedi",
+    "emptyBody": "Bağlam boyutu ve fiyatları burada görünür.",
+    "free": "Ücretsiz",
+    "priceIn": "giriş",
+    "priceOut": "çıkış",
+    "picker": {
+      "title": "{{name}} modelleri",
+      "search": "{{count}} model ara",
+      "filter": "Modelleri filtrele",
+      "layout": "Düzen",
+      "list": "Liste",
+      "twoPerRow": "Satırda iki",
+      "onlyFree": "Yalnızca ücretsiz modeller",
+      "none": "Bu filtrelerle eşleşen model yok.",
+      "useId": "<mono>{{id}}</mono> kullan",
+      "useIdBody": "Listede yok: bu tam kimliği kullan",
+      "priceNote": "Milyon token başına fiyatlar, {{name}} kaynağından.",
+      "loading": "Modeller yükleniyor"
+    },
+    "filters": {
+      "title": "Modelleri filtrele",
+      "madeBy": "Üretici",
+      "capabilities": "Özellikler",
+      "imagesTitle": "Görselleri anlar",
+      "imagesBody": "Bir sohbette gönderdiğiniz resimleri okuyabilir",
+      "sortBy": "Sıralama",
+      "sortName": "Ad",
+      "sortPrice": "En ucuz",
+      "sortContext": "En uzun bağlam",
+      "clear": "Temizle",
+      "show_one": "{{count}} model göster",
+      "show_other": "{{count}} model göster"
+    }
+  },
+  "memory": {
+    "title": "Karakterler nasıl hatırlamalı?",
+    "lead": "Karakterler son mesajların dışında kalanları unutur. Önemli kısımların nasıl geri geleceğini seçin. Bunu daha sonra her sohbet için değiştirebilirsiniz.",
+    "group": "Hafıza",
+    "recommended": "Önerilen",
+    "classic": "Klasik",
+    "detailTitle": "{{title}} hafıza",
+    "automatic": {
+      "title": "Otomatik",
+      "point1": "Cihazınızdaki küçük bir model önemli olanı seçer ve gerektiğinde geri getirir",
+      "point2": "Uzun sohbetler tutarlı kalır",
+      "point3": "Daha az token gönderilir, böylece yanıtlar daha az maliyetli olur",
+      "note": "Tek seferlik bir indirme gerektirir. Ardından çevrimdışı çalışır."
+    },
+    "manual": {
+      "title": "Manuel",
+      "point1": "Mesajları siz sabitler ve gerçekleri kendiniz yazarsınız",
+      "point2": "Neyin hatırlanacağı üzerinde tam kontrol",
+      "point3": "Arka planda hiçbir şey çalışmaz",
+      "note": "İndirilecek bir şey yok."
+    }
+  },
+  "other": {
+    "title": "Diğer seçenekler",
+    "language": "Dil",
+    "skip": "Kurulumu atla",
+    "skipBody": "Önce etrafa bir göz atın. Sohbetlerin yanıt verebilmesi için bir yapay zekâ gerekir.",
+    "restore": "Yedeği geri yükle",
+    "restoreBody": "Sohbetleri, karakterleri ve ayarları bir .lettuce dosyasından geri getirin",
+    "languageTitle": "Dil",
+    "warning": {
+      "title": "Sohbetlerin yanıt verebilmesi için bir yapay zekâ gerekir",
+      "body": "Bağlı bir yapay zekâ olmadan karakterler yanıt veremez. Daha sonra ayarlardan birini bağlayabilirsiniz.",
+      "connect": "Bir yapay zekâ bağlayın",
+      "skipAnyway": "Yine de atla"
+    }
+  },
+  "failure": {
+    "finish": "Kurulum tamamlanamadı.",
+    "models": "Modeller yüklenemedi.",
+    "save": "Kaydedilemedi."
+  }
+}

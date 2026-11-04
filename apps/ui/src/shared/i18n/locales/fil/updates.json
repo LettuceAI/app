@@ -1,0 +1,28 @@
+{
+  "title": "Ano'ng bago",
+  "installed": "Naka-install na version: {{version}}",
+  "releaseMismatch": "Para sa {{version}} ang mga tala na ito. Nasa {{installed}} ka.",
+  "fullChangelog": "Buong changelog",
+  "continue": "Magpatuloy",
+  "markFailed": "Hindi ma-save ang nakitang version",
+  "types": {
+    "feature": "Idinagdag",
+    "improvement": "Pinahusay",
+    "bugfix": "Naayos",
+    "breaking": "Mga breaking change"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Breakdown ng Paggamit ng Context at Mas Magaang Dynamic Memory",
+    "description": "Ipinapakita na ngayon ng bawat assistant message kung gaano karami sa context window ang nagamit ng prompt nito at ano ang pumuno dito, sa 1-on-1 at group chat. Titigil na ang dynamic memory sa 1-on-1 chats sa pagpapadala ng buong memory bank sa bawat turn, at babalik na ang embeddings sa macOS.",
+    "changes": {
+      "contextUsage": "Ipinapakita ng Context Usage panel sa mga message action ng assistant reply ang context window na hinati sa occupied, nakareserba para sa tugon, at libre, kasama ang breakdown ng pumupuno sa prompt: system, karakter, persona, mga memory, lorebook, author's note, companion state, at chat history. Ang mga share ay tinatantya gamit ang tiktoken at ini-scale sa prompt tokens na aktwal na iniulat ng provider.",
+      "groupContextUsage": "Nakukuha rin ng mga group chat message ang parehong panel, na binubuo muli mula sa naka-store na mensahe nang hindi ini-execute muli ang retrieval, may kategoryang Group cast na binibilang ang mga profile ng ibang kalahok.",
+      "responseBudget": "Sa llama.cpp at Ollama, binabasa ang nakareserbang response budget (tugon at reasoning) mula sa totoong request, at may babalang lumalabas kapag ang prompt at ang reservation na iyon nang magkasama ay lumampas sa context window, para mababa mo ang max tokens o mabawasan ang context bago maputol ang prompt o mahati ang tugon.",
+      "developerBreakdown": "Kasama sa developer message debug page ang parehong per-category na breakdown ng token, kasama ang mga total at paggamit ng context window.",
+      "memoryRetrieval": "Hindi na pinupuno ng dynamic memory sa 1-on-1 chats ang {{key_memories}} ng buong hot memory bank sa bawat prompt bukod pa sa mga na-retrieve na memory. Ang mga memory na na-retrieve lang para sa turn na iyon ang ipinapadala, para sa mga roleplay character at companion, sa mga bagong reply, regeneration, at continuation.",
+      "macEmbeddings": "Hindi na nabibigo ang pagsisimula ng embeddings sa macOS dahil sa “different Team IDs” error. Ang ONNX Runtime na dina-download sa runtime ay pirma ng Microsoft, na tinanggihan ng macOS na i-load sa app, at pinipirmahan na ito nang lokal bago i-load."
+    }
+  }
+}

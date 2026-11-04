@@ -1,0 +1,103 @@
+{
+  "title": "Tulong at FAQ",
+  "subtitle": "Ang mga pangunahing bagay, API key, privacy at mga karaniwang tanong",
+  "sections": {
+    "gettingStarted": "Pagsisimula",
+    "privacySafety": "Privacy at kaligtasan",
+    "modelsProviders": "Mga Modelo at provider",
+    "charactersChats": "Mga Karakter at chat"
+  },
+  "stillStuck": {
+    "title": "Stuck pa rin?",
+    "docsTitle": "Buong dokumentasyon",
+    "docsDescription": "Mga guide at reference para sa LettuceAI",
+    "discordTitle": "Sumali sa Discord",
+    "discordDescription": "Magtanong sa komunidad o mag-report ng bug"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Ano ang LettuceAI?",
+      "answer": "Ang LettuceAI ay chat app para sa mga AI character. Ikaw ang pumipili ng provider at model na magsusulat ng mga tugon, at nananatili sa device mo ang mga chat at karakter. Gumagamit ang mga cloud provider ng sarili mong account; tumatakbo sa computer mo ang mga sinusuportahang local model."
+    },
+    "whatIsApiKey": {
+      "question": "Ano ang API key at bakit kailangan ko ito? (Paliwanag ng BYOK)",
+      "answer": "Ang BYOK ay Bring Your Own Key. Ang API key ang nagbibigay-daan sa LettuceAI na magpadala ng request sa provider gamit ang account mo. Gumawa ng key sa provider, tapos idagdag ito sa Settings > Providers. Dumadaan ang mga request mula sa device mo papunta sa provider na iyon, na naglalapat ng sariling billing at limit. Hindi kailangan ng cloud API key ang mga sinusuportahang local model. Tratuhin ang key na parang password at huwag itong ibahagi."
+    },
+    "cheapestStart": {
+      "question": "Ano ang pinakamura o pinakamadaling paraan para magsimula?",
+      "answer": "Gamitin ang Setup guide para kumonekta ng provider at pumili ng modelo. Ikumpara ang kasalukuyang presyo, free tier at limit sa request ng provider bago magdagdag ng credit. Magsimula sa maliit na budget at tingnan ang Settings > Usage analytics habang nag-chat. Sa desktop, isa pang opsyon ang mga sinusuportahang local model kung sapat ang memory at storage ng computer mo."
+    },
+    "alternative": {
+      "question": "Alternatibo ba ito sa ibang AI chat app?",
+      "answer": "Oo. Hinahayaan ka ng LettuceAI na pumili ng provider, modelo at setup ng karakter sa halip na ikabit ang bawat chat sa isang serbisyo. Ikaw ang namamahala ng sarili mong provider account at nasa device mo ang data mo. Maikling setup lang ang kailangan para makakonekta ang modelong gusto mong gamitin."
+    },
+    "cost": {
+      "question": "Magkano ito?",
+      "answer": "Libre ang LettuceAI. Puwedeng singilin ng cloud provider ang account mo para sa mga request o mag-alok ng free tier. Nakadepende ang rate nito sa modelo, dami ng text na ipinapadala at ginagawa, at anumang image o audio feature na ginagamit mo. Tingnan ang pricing ng provider bago pumili ng modelo. Ipinapakita ng usage analytics ang iniulat na token at kilalang gastos; ang nawawalang presyo ay hindi katumbas ng libreng request."
+    },
+    "apiKeySafe": {
+      "question": "Ligtas ba ang API key ko?",
+      "answer": "Lokal na naka-store ang mga credential ng provider at ginagamit ito para kumonekta sa provider na kina-configure mo. Hindi pinapadaan ng LettuceAI ang mga request mo sa sarili nitong chat server. Maglagay lang ng key para sa mga serbisyong pinagkakatiwalaan mo, suriin nang mabuti ang mga custom provider URL, at protektahan ang device at mga backup file mo."
+    },
+    "chatsStored": {
+      "question": "Saan naka-store ang mga chat ko? May makakabasa ba nito?",
+      "answer": "Naka-save ang mga chat sa lokal na database ng app. Kapag sumagot ang cloud model, ipinapadala ang prompt at kaugnay na konteksto ng usapan sa pinili mong provider. Pinoproseso ng provider na iyon ang request sa ilalim ng sarili nitong privacy policy. Maaari ring mabasa ng sinumang may access sa device mo o sa mga na-export na backup ang data mo."
+    },
+    "chatsDeleted": {
+      "question": "Puwede bang mabura nang kusa ang mga chat ko?",
+      "answer": "Wala namang server copy ang LettuceAI na makakapagbalik ng mga chat mo. Kapag nagtanggal ka ng chat, nag-reset ng app, nag-uninstall, nag-clear ng app storage o nawala ang device, puwedeng mawala ang lokal na data. Magtabi ng backup para sa anumang gusto mong panatilihin."
+    },
+    "editRemotely": {
+      "question": "May makakapag-edit ba ng data ko nang remote?",
+      "answer": "Walang remote administration service ang LettuceAI para sa lokal mong chat at karakter. Gumagawa ng tugon ang pinili mong provider pero hindi nito pinamamahalaan ang database ng app. Panatilihing secure ang device mo at ang anumang file na ini-import o ibinabahagi mo."
+    },
+    "shutdown": {
+      "question": "Ano ang mangyayari sa data ko kung magsara ang LettuceAI?",
+      "answer": "Mananatili sa device mo ang mga naka-save na chat at karakter at mababasa mo ito nang walang LettuceAI account. Nakadepende pa rin ang cloud replies sa availability ng provider at sa paggana ng account mo. Magtabi ng kopya ng data mo gamit ang Settings > Backup & restore."
+    },
+    "training": {
+      "question": "Gagamitin ba ng mga provider ang mga usapan ko sa training?",
+      "answer": "Nakadepende iyon sa provider, sa uri ng account mo at sa kasalukuyang data policy nito. Hindi mababago ng LettuceAI ang mga tuntuning iyon. Basahin ang privacy at retention settings ng provider bago magpadala ng sensitibong impormasyon. Pinoproseso ng mga sinusuportahang local model ang mga prompt sa computer mo."
+    },
+    "whatIsModel": {
+      "question": "Ano ang 'model'? Alin ang pipiliin ko?",
+      "answer": "Ang model ay ang AI na nagsusulat ng mga tugon. Nagkakaiba ang mga modelo sa istilo ng pagsulat, bilis, haba ng context, pangangailangan sa hardware at presyo. Magdagdag ng provider sa Settings > Providers, tapos mag-configure ng modelo sa Settings > Models. Puwede kang mag-set ng default ng app o pumili ng modelo para sa isang partikular na karakter o chat."
+    },
+    "freeProviders": {
+      "question": "May mga libreng provider ba?",
+      "answer": "May mga provider na nag-aalok ng libreng modelo o free usage tier, na may sariling requirement sa account at rate limit. Puwedeng magbago ang availability, kaya tingnan ang kasalukuyang terms ng provider. Puwedeng kailangan pa rin ng API key ang free tier. Hindi nagsisingil per request ang mga sinusuportahang local model, pero ginagamit nito ang hardware, storage at kuryente ng computer mo."
+    },
+    "freeVsPaid": {
+      "question": "Ano ang pagkakaiba ng libre at bayad na provider?",
+      "answer": "Puwedeng magkaiba ang mga libre at bayad na plano sa available na modelo, limit sa request, bilis ng tugon, privacy terms at suporta. Nasa bawat provider ang mga detalye; hindi awtomatikong ibig sabihin ng bayad na plano ang isang partikular na privacy policy. Puwede kang kumonekta ng higit sa isang provider at pumili ng modelo na bagay sa bawat chat."
+    },
+    "whatIsToken": {
+      "question": "Ano ang token?",
+      "answer": "Ang token ay maliit na bahagi ng text, tulad ng isang salita o bahagi ng salita. Nakadepende ang eksaktong paghahati sa modelo at wika. Kasama sa request ang input token mula sa prompt at konteksto ng usapan, at output token mula sa tugon. Puwedeng magkaiba ang presyo ng mga ito sa provider. Puwedeng dumami ang gamit kapag mahaba ang history at tugon."
+    },
+    "noDefaultModel": {
+      "question": "Nakikita ko ang 'no default model configured'",
+      "answer": "Buksan ang Settings > Models at magdagdag ng modelo mula sa naka-configure na provider. Tapos mag-set ng default ng app o pumili ng modelo sa settings ng karakter. Puwedeng i-override ng karakter o chat ang default, kaya tingnan ang napiling modelo nito kung hindi pa rin nagsisimula ang mga tugon."
+    },
+    "cloudVsLocal": {
+      "question": "Ano ang pagkakaiba ng cloud at local model?",
+      "answer": "Tumatakbo ang mga cloud model sa hardware ng provider at kailangan ng koneksyon sa serbisyong iyon. Tumatakbo ang mga sinusuportahang local model sa desktop computer mo at kailangan ng sapat na memory at storage. Available sa desktop ang pag-install at runtime control ng local model; gumamit ng konektadong provider sa mobile."
+    },
+    "whatIsCharacter": {
+      "question": "Ano ang karakter? Puwede ba akong gumawa ng sarili ko?",
+      "answer": "May pangalan, larawan at deskripsyon ang isang karakter na humuhubog sa paraan ng pagsasalita nito. Gamitin ang create button para gumawa, o mag-import ng character card sa Library. I-edit ang deskripsyon at model settings nito para baguhin kung paano gagawin ang mga susunod na tugon."
+    },
+    "whatIsPersona": {
+      "question": "Ano ang persona?",
+      "answer": "Inilalarawan ng persona ang side mo sa usapan: ang pangalan mo at mga detalye tungkol sa iyo na dapat malaman ng karakter. Gumawa o mag-import ng persona sa Library, tapos piliin ang gagamitin mo para sa isang chat."
+    },
+    "charactersPrivate": {
+      "question": "Pribado ba ang mga karakter na ginagawa ko?",
+      "answer": "Naka-store sa device mo ang mga karakter na ginagawa mo. Kapag nag-export at nagbahagi ka ng character card, mababasa ito ng ibang tao. Kapag nag-chat ka sa cloud model, ipinapadala rin sa pinili mong provider ang mga detalye ng karakter na ginagamit sa prompt nito."
+    },
+    "backupMove": {
+      "question": "Paano ako mag-back up o lumipat sa ibang device?",
+      "answer": "Buksan ang Settings > Backup & restore para gumawa ng backup file. Itago ito sa ligtas na lugar. Para lumipat ng device, i-install ang LettuceAI sa kabilang device at i-restore ang file doon. Sundin ang mga warning sa restore screen bago palitan ang umiiral na data."
+    }
+  }
+}

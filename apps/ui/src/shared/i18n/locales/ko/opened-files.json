@@ -1,0 +1,73 @@
+{
+  "cancel": "취소",
+  "retry": "다시 시도",
+  "notRecognized": "이 파일은 LettuceAI 카드나 백업이 아니에요.",
+  "import": {
+    "title": {
+      "character": "캐릭터 가져오기",
+      "persona": "페르소나 가져오기",
+      "lorebook": "로어북 가져오기"
+    },
+    "kind": {
+      "character": "캐릭터",
+      "persona": "페르소나",
+      "lorebook": "로어북"
+    },
+    "entries_other": "{{count}}개 항목",
+    "confirm": "가져오기",
+    "open": "열기",
+    "done": "{{name}} 가져옴",
+    "started": "가져오기를 시작했어요",
+    "warnings_other": "{{count}}건의 경고와 함께 가져왔어요"
+  },
+  "restore": {
+    "title": "백업 복원",
+    "created": "생성일",
+    "version": "앱 버전",
+    "password": "비밀번호",
+    "warning": "복원하면 이 기기의 모든 채팅, 캐릭터, 설정이 백업으로 바뀌어요. 현재 데이터는 별도 파일로 보관돼요.",
+    "action": "복원",
+    "stop": "중지",
+    "running": "복원 중",
+    "starting": "복원 시작 중",
+    "waiting": "복원이 시작되기를 기다리는 중",
+    "step": "{{total}}단계 중 {{step}}단계",
+    "keepOpen": "큰 백업은 몇 분 걸릴 수 있어요. 완료될 때까지 앱을 열어 두세요.",
+    "stages": {
+      "decode": "백업 여는 중",
+      "stage": "파일 준비 중",
+      "write": "데이터 쓰는 중",
+      "verify": "복원된 데이터 확인 중",
+      "switch": "복원된 데이터로 전환 중"
+    },
+    "failed": "복원이 중단됐어요",
+    "failedAt": "{{total}}단계 중 {{step}}단계({{stage}})에서 복원이 중단됐어요",
+    "confirmTitle": "이 기기의 모든 데이터를 바꿀까요?",
+    "confirmBody": "모든 채팅, 캐릭터, 설정이 이 백업으로 바뀌어요. 현재 데이터는 별도 파일로 보관돼요.",
+    "confirm": "복원",
+    "done": "백업을 복원했어요",
+    "notBackup": "이 파일은 LettuceAI 백업이 아니에요.",
+    "models": {
+      "title": "데이터에 필요한 모델 다운로드",
+      "required": "이 기능들은 모델이 없으면 작동하지 않으므로 계속하기 전에 다운로드해야 해요."
+    },
+    "warnings_other": "{{count}}건의 경고와 함께 백업을 복원했어요",
+    "failure": {
+      "unknown": "백업을 복원하지 못했어요.",
+      "backup_authentication": "비밀번호가 틀렸거나 백업이 손상됐어요.",
+      "backup_invalid_envelope": "이 파일은 올바른 백업이 아니에요.",
+      "backup_limit_exceeded": "이 백업은 앱이 복원할 수 있는 크기를 넘어요.",
+      "backup_unavailable": "지금은 백업을 사용할 수 없어요.",
+      "backup_file_not_found": "백업 파일을 찾지 못했어요.",
+      "backup_permission_denied": "앱이 이 파일을 읽을 권한이 없어요.",
+      "backup_file_busy": "다른 앱에서 이 파일을 사용 중이에요.",
+      "backup_file_unavailable": "백업 파일을 읽지 못했어요.",
+      "backup_file_unsupported": "이 백업은 앱이 읽을 수 없는 버전에서 만들어졌어요.",
+      "backup_source_is_target": "백업 파일이 앱이 사용 중인 파일과 같아요.",
+      "backup_cancelled": "복원이 취소됐어요.",
+      "backup_retry_required": "복원이 끝나지 않았어요. 다시 시도하세요.",
+      "backup_recovery_required": "복원하려면 앱을 다시 열어야 해요.",
+      "backup_verification_failed": "백업이 검증을 통과하지 못했어요."
+    }
+  }
+}

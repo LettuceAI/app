@@ -1,0 +1,1185 @@
+{
+  "sceneImage": {
+    "title": "Scèneafbeelding genereren",
+    "regenerate": "Scèneafbeelding opnieuw genereren",
+    "hint": "Teken dit moment uit de chat",
+    "write": "Een prompt schrijven",
+    "writeHint": "Beschrijf de afbeelding zelf",
+    "askAi": "Laat AI een prompt schrijven",
+    "askAiHint": "Gebruik de chat en ontwerpreferenties",
+    "rewrite": "Herschrijven met AI",
+    "prompt": "Scèneprompt",
+    "promptHint": "Bekijk of bewerk de prompt voordat je de afbeelding genereert.",
+    "cast": "In de afbeelding",
+    "castHint": "Kies wie er in de scène verschijnt.",
+    "castPersona": "Je persona",
+    "castEmpty": "Kies minstens één persoon voor de scène.",
+    "placeholder": "Beschrijf de karakters, de setting en het moment…",
+    "generate": "Afbeelding genereren",
+    "review": "Scèneafbeelding beoordelen",
+    "requested": "Er staat een scèneafbeelding klaar om te beoordelen",
+    "requestedHint": "Controleer de prompt voordat je de afbeelding maakt.",
+    "retry": "Opnieuw proberen",
+    "dismiss": "Sluiten",
+    "disabled": "Scènegeneratie staat uit",
+    "noModel": "Geen compatibel scèneafbeeldingsmodel",
+    "noWriter": "Kies een compatibele promptschrijver in de afbeeldingsinstellingen",
+    "setupHint": "Schakel scènegeneratie in en kies een afbeeldingsmodel in de instellingen.",
+    "settings": "Afbeeldingsinstellingen openen",
+    "writing": "De scèneprompt schrijven",
+    "thinking": "Nadenken over de scène",
+    "generating": "De scèneafbeelding genereren",
+    "attaching": "De scèneafbeelding aan het bericht toevoegen",
+    "progress": "{{current}} van {{total}}",
+    "queuePosition": "Wachtrijpositie {{position}}",
+    "phase": {
+      "starting": "De afbeeldingsengine starten",
+      "loading": "Het afbeeldingsmodel laden",
+      "sampling": "De scèneafbeelding genereren",
+      "queued": "Wachten om de scèneafbeelding te genereren",
+      "generating": "De scèneafbeelding genereren",
+      "retrying": "Scènegeneratie opnieuw proberen",
+      "cancelled": "Scènegeneratie annuleren"
+    },
+    "failed": "Kon de scèneafbeelding niet genereren",
+    "promptFailed": "Kon de scèneprompt niet schrijven",
+    "writerError": {
+      "scene_prompt_disabled": "Scènegeneratie staat uit in de afbeeldingsinstellingen.",
+      "scene_prompt_no_model": "Kies een compatibele scènepromptschrijver in de afbeeldingsinstellingen.",
+      "scene_prompt_no_reply": "De promptschrijver gaf geen tekst terug. Probeer het opnieuw of schrijf je eigen prompt.",
+      "cancelled": "Het schrijven van de prompt is geannuleerd.",
+      "failed": "Probeer het opnieuw of schrijf je eigen prompt."
+    },
+    "error": {
+      "media_unavailable": "Afbeeldingsopslag is niet beschikbaar.",
+      "disabled": "Scènegeneratie staat uit in de afbeeldingsinstellingen.",
+      "no_model": "Kies een compatibel scèneafbeeldingsmodel in de afbeeldingsinstellingen.",
+      "no_image": "Het model gaf geen afbeelding terug.",
+      "message_unavailable": "Het antwoord is gewijzigd voordat de afbeelding kon worden toegevoegd.",
+      "interrupted": "De generatie is onderbroken. Je kunt het opnieuw proberen.",
+      "failed": "Bekijk de prompt en probeer het opnieuw."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "Vertakken naar groepschat",
+    "characterTitle": "Vertakken naar een ander karakter",
+    "history": "Kopieert deze chat tot het geselecteerde bericht, inclusief de herinneringen.",
+    "sourceLocked": "Het huidige karakter blijft in de groep. Kies er minstens één bij.",
+    "characters": "Karakters",
+    "defaultName": "{{name}}-vertakking",
+    "search": "Karakters zoeken",
+    "empty": "Geen karakters gevonden",
+    "create": "Vertakking maken",
+    "memberCount_one": "{{count}} karakter geselecteerd",
+    "memberCount_other": "{{count}} karakters geselecteerd",
+    "changed": "Deze chat is gewijzigd. Kies het vertakkingspunt opnieuw.",
+    "chooseAgain": "Opnieuw kiezen"
+  },
+  "historyPage": {
+    "archivedCharacter": "Herstel dit karakter in je bibliotheek om een nieuwe chat te starten."
+  },
+  "header": {
+    "back": "Terug",
+    "memories": "Herinneringen, {{count}}",
+    "memoriesBusy": "Herinneringen, het laatste antwoord lezen",
+    "search": "Berichten zoeken",
+    "options": "Chatopties",
+    "onDevice": "Op het apparaat",
+    "untitled": "Chat"
+  },
+  "search": {
+    "placeholder": "Deze chat doorzoeken",
+    "done": "Klaar",
+    "previous": "Vorige overeenkomst",
+    "next": "Volgende overeenkomst",
+    "position": "{{index}} van {{total}}",
+    "none": "Geen overeenkomsten"
+  },
+  "timeline": {
+    "today": "Vandaag",
+    "yesterday": "Gisteren",
+    "loadingOlder": "Eerdere berichten laden",
+    "empty": "Nog geen berichten",
+    "jumpToLatest": "Naar het nieuwste",
+    "selectingSpeaker": "Karakter kiezen…"
+  },
+  "composer": {
+    "placeholder": "Bericht aan {{name}}…",
+    "systemSend": {
+      "title": "Als systeembericht versturen?",
+      "description": "Verstuurt de inhoud van het invoerveld als een zichtbaar systeembericht. Het start geen generatie.",
+      "send": "Versturen"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "Karakter toevoegen",
+      "title": "Een karakter toevoegen",
+      "body": "Ze doen vanaf nu mee in deze chat.",
+      "search": "Karakters zoeken",
+      "empty": "Elk karakter zit al in deze chat",
+      "noMatch": "Geen karakter komt overeen"
+    },
+    "remove": {
+      "label": "{{name}} verwijderen",
+      "title": "{{name}} verwijderen?",
+      "body": "Ze stoppen met antwoorden in deze chat. Hun eerdere berichten blijven.",
+      "confirm": "Verwijderen"
+    },
+    "followGroup": "Groepsleden volgen",
+    "followGroupHint": "Leden en gedempte karakters terugzetten naar de groepsinstellingen",
+    "models": "Karaktermodellen in deze chat",
+    "followModels": "Groepsmodellen volgen",
+    "followModelsHint": "Alle overschrijvingen van karaktermodellen in deze chat verwijderen",
+    "characterModel": "Model van het karakter",
+    "characterModelHint": "De eigen modelinstelling van het karakter gebruiken"
+  },
+  "mention": {
+    "title": "Een karakter vermelden",
+    "select": "om te selecteren",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "{{name}} vermelden",
+    "unmention": "De vermelding van {{name}} verwijderen",
+    "muted": "{{name}} is gedempt. Houd ingedrukt of klik rechts om de demping op te heffen",
+    "speak": "{{name}} laten antwoorden"
+  },
+  "director": {
+    "hint": "Tik op een karakter om te kiezen wie reageert",
+    "selectedHint": "{{name}} reageert wanneer je verstuurt",
+    "actionHint": "Verzenden voegt je bericht toe. Tik op een karakter om hen te laten reageren",
+    "respondingHint": "{{name}} is aan het antwoorden",
+    "addMessage": "Bericht toevoegen zonder antwoord",
+    "noAttachments": "Berichten in regisseursmodus kunnen geen bijlagen bevatten"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Wie spreekt er nu",
+      "body": "Kies een lid om te antwoorden, of laat de groep beslissen."
+    },
+    "branch": {
+      "title": "Eén-op-één voortzetten",
+      "body": "Opent een nieuwe chat met één lid en het verhaal tot dit bericht."
+    },
+    "regenerate": {
+      "title": "Karakter kiezen",
+      "body": "Alleen voor dit antwoord. Gedempte leden kunnen ook worden gekozen.",
+      "same": "Zelfde karakter",
+      "search": "Karakters zoeken",
+      "noMatches": "Geen karakters komen overeen met je zoekopdracht"
+    },
+    "auto": "Laat de groep beslissen",
+    "autoBody": "Gebruikt de sprekerskeuze van deze chat",
+    "muted": "Overgeslagen tenzij bij naam genoemd"
+  },
+  "message": {
+    "image": "Bijgevoegde afbeelding",
+    "imagePrompt": "Afbeeldingsprompt",
+    "copyImagePrompt": "Prompt kopiëren",
+    "titleAssistant": "Bericht van {{name}}",
+    "titleUser": "Je bericht",
+    "titleScene": "Scène",
+    "titleSystem": "Systeembericht",
+    "audio": "Audioclip",
+    "video": "Videobestand",
+    "document": "Document"
+  },
+  "menu": {
+    "selection": {
+      "title": "Waarom dit karakter reageerde",
+      "fallback": "LLM-selectie was niet beschikbaar. Gekozen op basis van deelname en recente antwoorden."
+    },
+    "copy": "Tekst kopiëren",
+    "edit": "Bewerken",
+    "regenerate": "Opnieuw genereren",
+    "regenerateHint": "Bewaart deze versie, veeg om te vergelijken",
+    "regenerateBusy": "Wacht tot het huidige antwoord klaar is",
+    "pin": "Vastzetten",
+    "pinHint": "Het karakter houdt het altijd in gedachten",
+    "unpin": "Losmaken",
+    "rewind": "Terugspoelen naar hier",
+    "rewindHint_one": "Verwijdert het {{count}} bericht erna",
+    "rewindHint_other": "Verwijdert de {{count}} berichten erna",
+    "delete": "Bericht verwijderen",
+    "deleteHint": "Zet het eerst los",
+    "branch": "Vanaf hier vertakken",
+    "branchHint": "Opent een nieuwe chat met het verhaal tot hier",
+    "branchGroup": "Eén-op-één voortzetten",
+    "branchGroupHint": "Opent een chat met één lid en het verhaal tot hier",
+    "details": {
+      "title": "Promptdetails",
+      "hint": "Wat er voor dit antwoord is verstuurd",
+      "unavailable": "De vastgelegde prompt is niet beschikbaar voor dit antwoord",
+      "noBreakdown": "Dit antwoord is vastgelegd voordat de uitsplitsing bestond",
+      "tokens": "{{count}} tokens",
+      "character": "Karakter en persona",
+      "lorebook": "Lorebook",
+      "memories": "Herinneringen",
+      "history": "Chatgeschiedenis",
+      "other": "Overig",
+      "entries": "Lorebookitems",
+      "untitled": "Naamloos item",
+      "partsLabel": "Aandeel van de prompt per bron"
+    },
+    "stats": {
+      "prompt": "Prompttokens",
+      "reply": "Antwoordtokens",
+      "total": "totaal",
+      "firstToken": "Tijd tot eerste token",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "Antwoordsnelheid",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "Meertokenvoorspelling: tokens per ronde en conceptacceptatie",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Gebruikte lorebookitems",
+      "memories": "Gebruikte herinneringen",
+      "memory": "Geheugen",
+      "match": "Overeenkomst {{score}}",
+      "noLorebooks": "Er zijn geen lorebookitems gebruikt voor dit antwoord.",
+      "noMemories": "Er zijn geen geheugenitems gebruikt voor dit antwoord.",
+      "notRecorded": "Deze details zijn niet vastgelegd voor dit antwoord.",
+      "searchEntries": "Gebruikte items doorzoeken",
+      "searchMemories": "Gebruikte herinneringen doorzoeken",
+      "noMatches": "Niets komt overeen met je zoekopdracht.",
+      "showing": "{{shown}} van {{total}}",
+      "more": "Meer tonen"
+    }
+  },
+  "regeneration": {
+    "title": "Regeneratieopties",
+    "hint": "Regie en model",
+    "groupHint": "Regie, model en karakter",
+    "oneReply": "Alleen voor dit antwoord",
+    "direction": "Regie",
+    "directionHint": "Optioneel. Beschrijf wat er in het nieuwe antwoord anders moet.",
+    "placeholder": "Houd het korter, verander de toon, of kies een andere aanpak",
+    "model": "Antwoordmodel",
+    "usualModel": "Het gebruikelijke model gebruiken",
+    "modelUnavailable": "Dit model is niet meer beschikbaar. Kies een ander.",
+    "character": "Karakter",
+    "sameCharacter": "Zelfde karakter: {{name}}",
+    "characterUnavailable": "Dit karakter is geen lid meer. Kies een ander."
+  },
+  "edit": {
+    "title": "Bericht bewerken",
+    "assistantHint": "De woorden van {{name}}, zoals het verhaal ze zal onthouden",
+    "field": "Berichttekst",
+    "save": "Opslaan"
+  },
+  "confirm": {
+    "cancel": "Annuleren",
+    "rewindTitle": "Terugspoelen naar dit bericht?",
+    "rewindBody_one": "Het {{count}} bericht erna wordt verwijderd, en het verhaal gaat vanaf hier verder.",
+    "rewindBody_other": "De {{count}} berichten erna worden verwijderd, en het verhaal gaat vanaf hier verder.",
+    "rewind": "Terugspoelen",
+    "deleteTitle": "Dit bericht verwijderen?",
+    "deleteBodyVersions": "Alle {{count}} versies ervan worden uit de chat verwijderd.",
+    "deleteBody": "Het wordt uit de chat en uit wat het karakter onthoudt verwijderd.",
+    "delete": "Verwijderen"
+  },
+  "banner": {
+    "modelRequired": "Deze chat heeft een model nodig dat niet is geïnstalleerd.",
+    "modelNamed": "Deze chat heeft het model {{model}} nodig, dat niet is geïnstalleerd.",
+    "modelsMissing": "Deze chat heeft een model nodig dat niet is geïnstalleerd: {{models}}.",
+    "openModels": "Modellen openen",
+    "memoryBlocked": "Geheugen is gepauzeerd omdat een eerdere terugspoeling niet kon worden afgerond.",
+    "memoryRetry": "Opnieuw proberen",
+    "memoryRetryStill": "Het kon nog steeds niet worden afgerond.",
+    "memoryRetried": "Geheugen is weer op koers",
+    "swapActive": "Van plaats wisselen staat aan",
+    "endSwap": "Wisselen beëindigen"
+  },
+  "requiredModel": {
+    "embedding": "embedding",
+    "emotion": "emotie"
+  },
+  "failure": {
+    "title": "Het antwoord is niet afgerond",
+    "retry": "Opnieuw proberen",
+    "code": {
+      "invalid_conversation": "Naar dit gesprek kan nu niet worden geschreven.",
+      "missing_model": "Er is geen model ingesteld voor deze chat. Kies er een in de chatopties of voeg er een toe bij Modellen.",
+      "context_unavailable": "Het gesprek kon niet voor het model worden voorbereid.",
+      "speaker_unavailable": "Niemand is beschikbaar om te antwoorden.",
+      "provider_unavailable": "Het model was niet bereikbaar. Controleer de verbinding en de provider.",
+      "provider_rejected": "De provider wees het verzoek af. Probeer een ander model of controleer je account.",
+      "empty_output": "Het model stuurde niets terug.",
+      "timed_out": "Het model deed er te lang over om te antwoorden.",
+      "recovery_unavailable": "Het antwoord is onderbroken en kan niet worden hersteld.",
+      "embedding_unavailable": "Het embeddingmodel dat nodig is voor geheugen is niet beschikbaar.",
+      "internal": "De app kreeg een interne fout.",
+      "database_write_fenced": "De app is bezig gegevens op te slaan. Probeer het zo opnieuw."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "Model laden",
+      "retrying": "Model opnieuw laden"
+    },
+    "loading": "{{model}} laden, {{percent}}%",
+    "retrying": "Een andere manier proberen om {{model}} te laden, {{percent}}%",
+    "loaded": "{{model}} is klaar",
+    "failed": "Kon {{model}} niet laden"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "Sneller decoderen staat uit zolang er afbeeldingen in de chat zijn.",
+    "kv_cache_moved_to_ram": "De contextcache paste niet in videogeheugen en is naar systeemgeheugen verplaatst."
+  },
+  "toast": {
+    "copied": "Gekopieerd",
+    "copyFailed": "Kon het klembord niet bereiken",
+    "pinned": "Vastgezet. Het blijft in het geheugen van het karakter",
+    "unpinned": "Losgemaakt",
+    "edited": "Bericht bijgewerkt",
+    "deleted": "Bericht verwijderd",
+    "branched": "Een nieuwe chat vanaf hier geopend",
+    "rewound_one": "{{count}} bericht teruggespoeld",
+    "rewound_other": "{{count}} berichten teruggespoeld",
+    "launchFailed": "Kon de chat niet starten",
+    "mediaImageUnsupported": "Het model van deze chat kan geen afbeeldingen lezen. Verwijder ze of kies een ander model.",
+    "mediaAudioUnsupported": "Het model van deze chat kan geen audio beluisteren. Verwijder het of kies een ander model."
+  },
+  "crisp": {
+    "composerPlaceholder": "Bericht…",
+    "composerMessage": "Bericht",
+    "composerStop": "Stoppen met genereren",
+    "composerSend": "Bericht versturen",
+    "composerSendAsSystem": "Houd ingedrukt of klik rechts om als systeem te versturen",
+    "composerSending": "Versturen",
+    "composerContinue": "Laat het karakter doorgaan",
+    "messageScene": "Scène",
+    "messageSystem": "Systeem",
+    "messagePinned": "Vastgezet",
+    "messageMenuTitle": "Bericht",
+    "messageReasoning": "Denkproces",
+    "messageTyping": "Typen",
+    "sheetClose": "Sluiten",
+    "bannerDismiss": "Sluiten",
+    "alertDismiss": "Sluiten",
+    "composerAddAttachment": "Inhoud toevoegen",
+    "composerCancelRecording": "Opname annuleren",
+    "composerRecordVoice": "Stem opnemen",
+    "composerStopAndTranscribe": "Stoppen en transcriberen",
+    "composerTranscribing": "Transcriberen",
+    "composerRecording": "Opnemen {{elapsed}}",
+    "composerAttachment": "Bijlage",
+    "composerFile": "Bestand",
+    "composerAttachmentRemove": "{{name}} verwijderen"
+  },
+  "streaming": {
+    "imagePrompt": "De afbeeldingsprompt schrijven"
+  },
+  "tools": {
+    "title": "Inhoud toevoegen",
+    "helpMeReply": "Help me antwoorden",
+    "helpMeReplyHint": "Laat het model voorstellen wat je kunt zeggen",
+    "persona": "Persona",
+    "background": "Chatachtergrond",
+    "backgroundHidden": "Verborgen",
+    "backgroundOwn": "Ingesteld voor deze chat",
+    "backgroundDefault": "De standaard gebruiken",
+    "backgroundNone": "Geen achtergrond",
+    "note": "Auteursnotitie",
+    "noteActive": "Actief voor deze chat",
+    "noteInactive": "Privéregie voor antwoorden",
+    "dice": "Dobbelsteen",
+    "diceHint": "Dobbel en voeg het resultaat toe aan je bericht",
+    "swap": "Van plaats wisselen",
+    "swapHint": "Chat als het karakter en laat het model antwoorden als je persona",
+    "swapOn": "Van plaats wisselen (aan)",
+    "swapOnHint": "Je chat als het karakter. Tik om het uit te zetten",
+    "uploadImage": "Afbeelding uploaden",
+    "uploadImageHint": "Voeg een afbeelding toe aan je bericht",
+    "uploadAudio": "Audio uploaden",
+    "uploadAudioHint": "Voeg een audioclip toe aan je bericht"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "Geen persona",
+    "default": "Standaard",
+    "search": "Persona's zoeken",
+    "noMatch": "Geen persona's komen overeen",
+    "emptyTitle": "Nog geen persona's",
+    "emptyBody": "Maak er een in de bibliotheek om als iemand specifieks te spreken.",
+    "loading": "Persona's laden",
+    "loadFailed": "Kon persona's niet laden",
+    "retry": "Opnieuw proberen"
+  },
+  "background": {
+    "title": "Chatachtergrond",
+    "current": "Huidige achtergrond",
+    "currentOwn": "Ingesteld voor deze chat",
+    "currentDefault": "De standaardachtergrond",
+    "choose": "Kies een afbeelding",
+    "replace": "De afbeelding vervangen",
+    "chooseHint": "Alleen voor deze chat",
+    "useDefault": "De standaard gebruiken",
+    "useDefaultHint": "Terug naar de scène- of karakterachtergrond"
+  },
+  "note": {
+    "title": "Auteursnotitie",
+    "inlineTitle": "Inline-editor",
+    "inlineHint": "Toon de auteursnotitie boven het berichtvak voor snelle bewerkingen",
+    "inlineToggle": "Inline-editor voor auteursnotitie tonen",
+    "inlineField": "Inline-auteursnotitie",
+    "inlineEdit": "Inline-auteursnotitie bewerken",
+    "inlinePlaceholder": "Voeg een auteursnotitie toe",
+    "saving": "Opslaan...",
+    "hint": "Een privéregie die het model in deze chat volgt",
+    "placeholder": "Schrijf een auteursnotitie die het model stuurt",
+    "save": "Opslaan",
+    "clear": "Verwijderen",
+    "count_one": "{{count}} teken",
+    "count_other": "{{count}} tekens",
+    "willRemove": "De notitie wordt bij opslaan verwijderd",
+    "none": "Geen notitie opgeslagen"
+  },
+  "dice": {
+    "title": "Dobbelsteen",
+    "hint": "Dobbel en voeg het resultaat toe aan je bericht",
+    "notation": "Dobbelnotatie",
+    "roll": "Gooien",
+    "invalid": "Gebruik een notatie zoals 1d20 of 2d6+3",
+    "tapToRoll": "Gooi om een resultaat te zien",
+    "insert": "In bericht invoegen",
+    "recent": "Recent",
+    "clear": "Wissen"
+  },
+  "help": {
+    "title": "Help me antwoorden",
+    "draftPrompt": "Je hebt een conceptbericht. Hoe wil je verdergaan?",
+    "useMyText": "Mijn tekst als basis gebruiken",
+    "useMyTextHint": "Breid je concept uit en verbeter het",
+    "writeNew": "Iets nieuws schrijven",
+    "writeNewHint": "Een nieuw antwoord genereren",
+    "resultTitle": "Voorgesteld antwoord",
+    "regenerate": "Opnieuw proberen",
+    "use": "Dit gebruiken",
+    "writing": "Je antwoord schrijven...",
+    "thinking": "Nadenken voordat ik schrijf...",
+    "callError": {
+      "model_required": "Kies een model voor Help me antwoorden in de instellingen.",
+      "model_unavailable": "Het model voor Help me antwoorden kon niet worden geladen.",
+      "busy": "De app is bezig. Probeer het zo opnieuw.",
+      "unavailable": "Het is nu niet beschikbaar."
+    },
+    "error": {
+      "failed": "Help me antwoorden is mislukt.",
+      "help_me_reply_disabled": "Help me antwoorden staat uit in de instellingen.",
+      "help_me_reply_no_history": "Er is nog niets om op te antwoorden.",
+      "help_me_reply_no_model": "Kies een model voor Help me antwoorden in de instellingen.",
+      "help_me_reply_no_reply": "Het model schreef geen antwoord."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "Correctie leren?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "Leren",
+      "ignore": "Negeren"
+    },
+    "error": {
+      "noModel": "Installeer een spraakherkenningsmodel om te dicteren.",
+      "permission": "Sta microfoontoegang toe om op te nemen.",
+      "noMicrophone": "Er is geen microfoon gevonden.",
+      "noAudio": "Er is niets opgenomen.",
+      "busy": "Er is al een opname bezig.",
+      "unsupported": "Dit apparaat kan niet opnemen via een microfoon.",
+      "failed": "De opname kon niet worden getranscribeerd."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Chatinstellingen",
+      "persona": "Persona",
+      "model": "Model",
+      "lorebooks": "Lorebooks",
+      "background": "Chatachtergrond",
+      "note": "Auteursnotitie",
+      "history": "Chatgeschiedenis",
+      "notes": "Geplande notities",
+      "starters": "Nieuwe chat",
+      "advanced": "Modelinstellingen",
+      "appearance": "Weergave"
+    },
+    "back": "Terug",
+    "reset": "Resetten",
+    "loading": "Laden",
+    "loadFailed": "Kon niet laden",
+    "source": {
+      "conversation": "Alleen deze chat",
+      "group": "Van de groep",
+      "character": "Van het karakter",
+      "launch": "Van hoe de chat begon",
+      "app_default": "App-standaard"
+    },
+    "meta": {
+      "messages_one": "{{count}} bericht",
+      "messages_other": "{{count}} berichten",
+      "active": "Actief {{date}}"
+    },
+    "sections": {
+      "chat": "Deze chat",
+      "memory": "Geheugen",
+      "time": "Tijd",
+      "actions": "Chat",
+      "generation": "Generatie",
+      "lorebooks": "Lorebooks",
+      "members": "Leden",
+      "speaker": "Sprekerskeuze"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Gebruikt je standaardmodel om te kiezen wie spreekt (kost tokens)",
+      "heuristic": "Heuristiek",
+      "heuristicHint": "Gebruikt deelnamebalans en contextuele aanwijzingen (gratis)",
+      "round_robin": "Om de beurt",
+      "round_robinHint": "Karakters gaan in volgorde om de beurt (gratis)",
+      "director": "Regisseur",
+      "directorHint": "Jij kiest welk karakter op elk bericht reageert",
+      "style": "Regisseurstijl",
+      "cue": "Aanwijzing",
+      "action": "Actie",
+      "cueHint": "Tik op een karakter om te kiezen wie reageert. Verzenden levert je bericht af en lokt hun antwoord uit.",
+      "actionHint": "Verzenden voegt alleen je bericht toe. Tik op de avatar van een karakter om hen direct te laten reageren.",
+      "own": "Deze chat heeft een eigen keuze"
+    },
+    "members": {
+      "replies_one": "{{count}} antwoord, {{percent}}",
+      "replies_other": "{{count}} antwoorden, {{percent}}",
+      "muted": "Overgeslagen tenzij bij naam genoemd",
+      "last": "Minstens één lid moet antwoorden",
+      "answers": "{{name}} antwoordt in deze chat"
+    },
+    "model": {
+      "title": "Model",
+      "none": "Geen model ingesteld",
+      "search": "Modellen zoeken",
+      "useDefault": "De karakterstandaard gebruiken",
+      "useDefaultHint": "Volg het karakter en daarna de app-standaard",
+      "remoteTitle": "Een extern model gebruiken?",
+      "remoteBody": "Deze chat wordt bij elk antwoord naar {{provider}} gestuurd.",
+      "use": "Dit model gebruiken",
+      "unknown": "Onbekend model"
+    },
+    "lorebooks": {
+      "title": "Lorebooks",
+      "count_one": "{{count}} lorebook",
+      "count_other": "{{count}} lorebooks",
+      "useDefault": "De standaardlorebooks gebruiken",
+      "useDefaultHint": "Volg de lorebooks van het karakter",
+      "useCharacter": "De lorebooks van het karakter gebruiken"
+    },
+    "background": {
+      "set": "Afbeelding ingesteld"
+    },
+    "memory": {
+      "mode": "Geheugenmodus",
+      "modes": {
+        "manual": "Handmatig",
+        "dynamic": "Dynamisch",
+        "disabled": "Uit"
+      },
+      "open": "Herinneringen openen",
+      "items_one": "{{count}} herinnering",
+      "items_other": "{{count}} herinneringen",
+      "summaryTokens_one": "{{count}} samenvattingstoken",
+      "summaryTokens_other": "{{count}} samenvattingstokens",
+      "off": "Geheugen staat uit voor deze chat"
+    },
+    "notes": {
+      "title": "Geplande notities",
+      "rowHint": "Herinneringen die het karakter op vaste tijden ziet",
+      "groupRowHint": "Herinneringen die de groep en haar leden op vaste tijden zien",
+      "hint": "Notities horen bij het karakter en verschijnen in elke chat met hen.",
+      "groupHint": "Notities horen bij de groep en verschijnen in elke chat van deze groep.",
+      "empty": "Nog geen geplande notities.",
+      "add": "Een notitie toevoegen",
+      "untitled": "Naamloze notitie",
+      "label": "Label",
+      "labelPlaceholder": "Label (optioneel)",
+      "content": "Notitie",
+      "contentPlaceholder": "Wat moet het karakter weten?",
+      "groupContentPlaceholder": "Wat moet de groep weten?",
+      "startsOn": "Begint op",
+      "stopsOn": "Stopt op (optioneel)",
+      "repeats": "Herhaalt",
+      "windowHours": "Zichtbaar voor (uren)",
+      "enabled": "Ingeschakeld",
+      "enabledHint": "Zet een notitie uit zonder hem te verwijderen",
+      "deleteTitle": "Deze notitie verwijderen?",
+      "deleteBody": "Dit kan niet ongedaan worden gemaakt.",
+      "recurrence": {
+        "none": "Eén keer",
+        "daily": "Dagelijks",
+        "weekly": "Wekelijks",
+        "monthly": "Maandelijks",
+        "yearly": "Jaarlijks"
+      },
+      "whoSees": "Wie ziet het",
+      "whoSeesHint": "Alleen de karakters die je kiest lezen deze notitie.",
+      "everyone": "Elk lid leest deze notitie. Kies karakters om het te beperken.",
+      "useCharacter": "Notities van karakters gebruiken"
+    },
+    "history": {
+      "filter": "Chats filteren",
+      "filters": {
+        "all": "Alles",
+        "active": "Actief",
+        "archived": "Gearchiveerd"
+      },
+      "sort": "Chats sorteren",
+      "sorts": {
+        "recent": "Laatst gebruikt",
+        "oldest": "Oudste eerst"
+      },
+      "results_one": "{{formattedCount}} chat",
+      "results_other": "{{formattedCount}} chats",
+      "untitled": "Naamloze chat",
+      "search": "Chats zoeken",
+      "noMatch": "Geen chats komen overeen",
+      "empty": "Nog geen chats",
+      "meta_one": "{{count}} bericht · {{date}}",
+      "meta_other": "{{count}} berichten · {{date}}",
+      "current": "Huidig",
+      "archived": "Gearchiveerd",
+      "actions": "Acties voor {{title}}",
+      "rename": "Hernoemen",
+      "export": "Exporteren",
+      "archive": "Archiveren",
+      "restore": "Herstellen",
+      "delete": "Verwijderen"
+    },
+    "starters": {
+      "hint": "Begin met een van de chatsjablonen van het karakter.",
+      "none": "Zonder sjabloon beginnen"
+    },
+    "rename": {
+      "field": "Chattitel",
+      "save": "Titel opslaan",
+      "open": "Chat hernoemen"
+    },
+    "delete": {
+      "title": "Deze chat verwijderen?",
+      "body": "{{title}} en alle berichten worden verwijderd. Dit kan niet ongedaan worden gemaakt.",
+      "confirm": "Verwijderen"
+    },
+    "export": {
+      "done": "Chat geëxporteerd"
+    },
+    "duplicate": {
+      "done": "Chat gedupliceerd"
+    },
+    "actions": {
+      "newChat": "Nieuwe chat",
+      "newChatHint": "Start nog een gesprek met dit karakter",
+      "newGroupChatHint": "Start nog een gesprek met deze groep",
+      "history": "Chatgeschiedenis",
+      "historyHint": "Open, hernoem of verwijder eerdere chats",
+      "branches": "Vertakkingen",
+      "branchesHint": "Wissel tussen de richtingen die deze chat nam",
+      "duplicate": "Chat dupliceren",
+      "duplicateHint": "Maak een kopie met alle berichten",
+      "export": "Chat exporteren",
+      "exportHint": "Sla het gesprek op als bestand",
+      "import": "Een chatlog importeren",
+      "importHint": "Haal een gesprek uit een bestand binnen",
+      "importGroupHint": "Nog niet beschikbaar voor groepschats",
+      "archive": "Chat archiveren",
+      "archiveHint": "Verberg hem uit de lijst, bewaar alles",
+      "restore": "Chat herstellen",
+      "restoreHint": "Zet hem terug in de lijst",
+      "delete": "Chat verwijderen",
+      "deleteHint": "Verwijder hem en zijn berichten definitief"
+    },
+    "generation": {
+      "title": "Modelinstellingen",
+      "scope": "Alleen voor deze chat",
+      "hint": "Niet-ingestelde waarden volgen het model en daarna de app-standaarden.",
+      "noModel": "Deze chat heeft geen model, dus alleen de app-standaarden gelden.",
+      "resetAll": "Alles resetten",
+      "discard": "Verwerpen",
+      "inherited": "Volgt het model en de app-instellingen",
+      "count_one": "{{count}} waarde gewijzigd voor deze chat",
+      "count_other": "{{count}} waarden gewijzigd voor deze chat"
+    },
+    "time": {
+      "title": "Chatklok",
+      "awareness": "Tijdsbesef",
+      "awarenessHint": "Geef het model de datum en tijd en voorzie elk bericht daarvan",
+      "live": "Echte tijd",
+      "frozen": "Gestopt",
+      "ticking": "Loopt",
+      "stoppedAt": "Gestopt op {{when}}",
+      "runningFrom": "Loopt vanaf {{when}}",
+      "mode": "Klok",
+      "anchor": "Datum en tijd",
+      "apply": "Toepassen",
+      "reset": "Resetten",
+      "cancel": "Annuleren",
+      "chooseAnchor": "Kies een datum en tijd",
+      "previousMonth": "Vorige maand",
+      "nextMonth": "Volgende maand",
+      "chooseMonth": "Kies maand en jaar",
+      "previousYear": "Vorig jaar",
+      "nextYear": "Volgend jaar",
+      "year": "Jaar",
+      "time": "Tijd"
+    },
+    "groupAppearanceHint": "Weergave voor alle chats in deze groep",
+    "characterAppearanceHint": "Weergave voor alle chats met dit karakter"
+  },
+  "appearance": {
+    "forGroup": "Voor elke chat in deze groep",
+    "forCharacter": "Voor {{name}}",
+    "moveLeft": "Naar links verplaatsen",
+    "moveRight": "Naar rechts verplaatsen",
+    "close": "Weergave sluiten",
+    "unsaved": "Onopgeslagen wijzigingen",
+    "saved": "Geen wijzigingen",
+    "discard": "Verwerpen",
+    "save": "Opslaan",
+    "discardTitle": "Je wijzigingen verwerpen?",
+    "discardBody": "De weergavewijzigingen die je hebt gemaakt, zijn niet opgeslagen.",
+    "discardConfirm": "Wijzigingen verwerpen",
+    "keepEditing": "Blijven bewerken"
+  },
+  "memory": {
+    "title": "Geheugen",
+    "back": "Chat",
+    "tabs": {
+      "memories": "Herinneringen",
+      "activity": "Activiteit",
+      "pinned": "Vastgezet"
+    },
+    "loading": "Geheugen laden",
+    "off": {
+      "title": "Geheugen staat uit voor deze chat",
+      "description": "Er wordt niets onthouden of met de antwoorden meegestuurd in deze chat.",
+      "action": "Chatinstellingen openen"
+    },
+    "search": "Herinneringen zoeken",
+    "add": "Toevoegen",
+    "all": "Alles",
+    "categories": {
+      "character_trait": "Karaktereigenschap",
+      "relationship": "Relatie",
+      "plot_event": "Verhaalgebeurtenis",
+      "world_detail": "Werelddetail",
+      "preference": "Voorkeur",
+      "other": "Overig",
+      "milestone": "Mijlpaal",
+      "boundary": "Grens",
+      "profile": "Profiel",
+      "routine": "Routine",
+      "episodic": "Episode",
+      "emotional_snapshot": "Emotionele momentopname"
+    },
+    "origins": {
+      "model": "Model",
+      "user": "Jij",
+      "import": "Geïmporteerd"
+    },
+    "temperature": {
+      "hot": "Warm",
+      "cold": "Koud"
+    },
+    "tokens_one": "{{count}} token",
+    "tokens_other": "{{count}} tokens",
+    "window": "Berichten {{from}} tot {{to}}",
+    "pinnedMark": "Vastgezet",
+    "list": {
+      "found_one": "{{count}} gevonden",
+      "found_other": "{{count}} gevonden",
+      "total_one": "{{count}} herinnering",
+      "total_other": "{{count}} herinneringen",
+      "byModel": "{{count}} door het model",
+      "byUser": "{{count}} door jou",
+      "imported": "{{count}} geïmporteerd",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "Nog geen herinneringen",
+      "dynamic": "Herinneringen verschijnen hier naarmate de chat groeit. Je kunt ook je eigen herinneringen toevoegen.",
+      "manual": "Voeg toe wat het karakter altijd moet onthouden.",
+      "action": "Herinnering toevoegen",
+      "noMatch": "Niets komt overeen met \"{{query}}\"",
+      "noMatchBody": "Probeer een woord uit de herinnering zelf.",
+      "noCategory": "Niets in deze categorie"
+    },
+    "sheet": {
+      "addTitle": "Herinnering toevoegen",
+      "editTitle": "Herinnering",
+      "byModel": "Geschreven door het model",
+      "byModelIn": "Geschreven door het model in {{window}}",
+      "byUser": "Geschreven door jou",
+      "imported": "Geïmporteerd",
+      "text": "Herinnering",
+      "textPlaceholder": "Wat moet het karakter onthouden?",
+      "category": "Categorie",
+      "noCategory": "Geen categorie",
+      "when": "Wanneer het gebeurde",
+      "whenHint": "Optioneel. Laat het karakter het in de tijd plaatsen.",
+      "whenPlaceholder": "Niet ingesteld",
+      "whenClear": "Wissen",
+      "temperature": "Temperatuur",
+      "hotBody": "Warme herinneringen blijven binnen handbereik",
+      "coldBody": "Koude herinneringen worden alleen opgehaald als ze sterk overeenkomen",
+      "pin": "Vastgezet",
+      "pinBody": "Het model verwijdert of archiveert een vastgezette herinnering nooit",
+      "delete": "Verwijderen",
+      "cancel": "Annuleren",
+      "add": "Toevoegen",
+      "save": "Opslaan",
+      "deleteTitle": "Deze herinnering verwijderen?",
+      "deleteBody": "Hij wordt niet meer opgehaald in deze chat.",
+      "keep": "Behouden",
+      "added": "Herinnering toegevoegd",
+      "saved": "Herinnering opgeslagen",
+      "deleted": "Herinnering verwijderd"
+    },
+    "summary": {
+      "title": "Contextsamenvatting",
+      "empty": "Voeg een korte samenvatting toe zodat het karakter de draad van het verhaal vasthoudt.",
+      "description": "Een korte samenvatting die met elk antwoord meegaat",
+      "field": "Samenvatting",
+      "dynamicHint": "Het model herschrijft dit bij elke update. Je bewerkingen blijven tot dan bewaard.",
+      "clear": "Wissen",
+      "cancel": "Annuleren",
+      "save": "Opslaan",
+      "saved": "Samenvatting opgeslagen",
+      "cleared": "Samenvatting gewist"
+    },
+    "status": {
+      "approvalTitle": "Geheugen bijwerken?",
+      "approvalBody_one": "{{count}} nieuw bericht staat klaar om in het geheugen te worden samengevat.",
+      "approvalBody_other": "{{count}} nieuwe berichten staan klaar om in het geheugen te worden samengevat.",
+      "update": "Bijwerken",
+      "notNow": "Niet nu",
+      "skipped_one": "Overgeslagen. Het vraagt opnieuw na het volgende {{count}} bericht",
+      "skipped_other": "Overgeslagen. Het vraagt opnieuw na de volgende {{count}} berichten",
+      "runningTitle": "Geheugen bijwerken",
+      "runningBody": "De laatste berichten lezen",
+      "stop": "Stoppen",
+      "failedTitle": "Geheugenupdate mislukt",
+      "tryAgain": "Opnieuw proberen",
+      "otherModel": "Een ander model gebruiken",
+      "pausedTitle": "De laatste geheugenupdate is onderbroken",
+      "pausedBody": "Een ander proces nam het over voordat het klaar was.",
+      "nextIn_one": "Volgende update over {{count}} bericht",
+      "nextIn_other": "Volgende update over {{count}} berichten",
+      "since_one": "{{count}} bericht sinds de laatste update",
+      "since_other": "{{count}} berichten sinds de laatste update",
+      "modes": {
+        "auto": "Automatisch",
+        "ask_first": "Eerst vragen",
+        "manual": "Handmatig"
+      },
+      "every_one": "{{mode}} · elke {{count}} bericht",
+      "every_other": "{{mode}} · elke {{count}} berichten",
+      "manualOnly": "{{mode}} · updates draaien alleen als je ze hier start",
+      "progress": "{{current}} van {{total}}",
+      "updateNow": "Nu bijwerken"
+    },
+    "failure": {
+      "embedding_unavailable": "Het embeddingmodel is niet beschikbaar.",
+      "model_missing": "Het geheugenmodel is niet geïnstalleerd.",
+      "model_invalid": "Het geheugenmodel kan niet worden gebruikt.",
+      "prompt_missing": "De geheugenprompt ontbreekt.",
+      "settings_invalid": "De geheugeninstellingen zijn ongeldig.",
+      "provider_unavailable": "De provider antwoordde niet.",
+      "provider_rejected": "De provider wees het verzoek af.",
+      "invalid_response": "De geheugenreactie van het model kon niet worden verwerkt. Probeer de cyclus opnieuw.",
+      "empty_response": "Het model gaf een leeg antwoord terug.",
+      "timed_out": "Het model deed er te lang over om te antwoorden.",
+      "round_limit": "Het model gebruikte te veel stappen.",
+      "tool_failed": "Een van de geheugenwijzigingen is mislukt.",
+      "storage_failure": "Geheugen kon niet worden opgeslagen.",
+      "lease_lost": "Een andere update nam het over.",
+      "internal": "De app kreeg een interne fout."
+    },
+    "gate": {
+      "not_dynamic": "Deze chat gebruikt geen dynamisch geheugen.",
+      "disabled": "Dynamisch geheugen staat uit in de instellingen.",
+      "nothing_to_summarise": "Er is nog niets om samen te vatten.",
+      "cycle_running": "Er loopt al een update."
+    },
+    "activity": {
+      "empty": "Nog geen updates",
+      "emptyBody": "Elke geheugenupdate die het model uitvoert, staat hier.",
+      "badgeUndone": "Ongedaan gemaakt",
+      "badgeFailed": "Mislukt",
+      "badgeStopped": "Gestopt",
+      "badgeInterrupted": "Onderbroken",
+      "badgeRunning": "Loopt",
+      "noDetails": "Er zijn geen details vastgelegd.",
+      "stopped": "Deze update is gestopt voordat hij klaar was.",
+      "running": "Deze update loopt nog.",
+      "actions": {
+        "created": "Toegevoegd",
+        "duplicate_skipped": "Al bekend",
+        "deleted": "Verwijderd",
+        "soft_deleted": "Naar koud verplaatst",
+        "pinned": "Vastgezet",
+        "unpinned": "Losgemaakt",
+        "target_not_found": "Niet gevonden",
+        "done": "Klaar",
+        "rejected": "Afgewezen",
+        "skipped": "Overgeslagen",
+        "stopped_after_done": "Gestopt na afronding"
+      },
+      "undo": "Deze update ongedaan maken",
+      "blocked": "Kan niet ongedaan worden gemaakt: een latere update bouwt erop voort.",
+      "blockedBy": "Kan niet ongedaan worden gemaakt: de update voor {{window}} bouwt erop voort.",
+      "dependent": "Een latere update bouwt erop voort, dus het kan niet ongedaan worden gemaakt.",
+      "userEdited": "Je hebt een herinnering die het schreef bewerkt, dus het kan niet ongedaan worden gemaakt.",
+      "undoTitle": "De update voor {{window}} ongedaan maken?",
+      "undoBody": "Herinneringen die het toevoegde worden verwijderd en de gewijzigde komen terug. Je eigen bewerkingen blijven bewaard.",
+      "undoConfirm": "Update ongedaan maken",
+      "keep": "Behouden",
+      "undone": "Update ongedaan gemaakt",
+      "loadMore": "Oudere updates tonen"
+    },
+    "pinnedTab": {
+      "empty": "Geen vastgezette berichten",
+      "emptyBody": "Zet een bericht uit de chat vast en het gaat altijd mee met het volgende antwoord.",
+      "label": "Altijd met het antwoord meegestuurd",
+      "unpin": "Losmaken",
+      "unpinned": "Losgemaakt",
+      "noText": "Bijlage",
+      "loadMore": "Meer tonen",
+      "you": "Jij"
+    }
+  },
+  "branches": {
+    "title": "Vertakkingen",
+    "meta_one": "{{count}} bericht · {{date}}",
+    "meta_other": "{{count}} berichten · {{date}}",
+    "current": "Huidig",
+    "actions": "Acties voor {{title}}",
+    "rename": "Hernoemen",
+    "renameField": "Naam van vertakking",
+    "delete": "Verwijderen",
+    "deleteRoot": "De oorspronkelijke vertakking kan niet worden verwijderd",
+    "deleteActive": "Schakel eerst over naar een andere vertakking",
+    "deleteTitle": "Deze vertakking verwijderen?",
+    "deleteBody": "{{name}} en de berichten ervan worden verwijderd. De andere vertakkingen blijven.",
+    "deleted": "Vertakking verwijderd",
+    "untitled": "Naamloze vertakking",
+    "thisChat": "Deze chat",
+    "renameSave": "Naam opslaan",
+    "original": "Origineel",
+    "untitledChat": "Naamloze chat"
+  },
+  "companion": {
+    "title": "Metgezel",
+    "back": "Chat",
+    "tabs": {
+      "relationship": "Relatie",
+      "bond": "Band",
+      "memories": "Herinneringen",
+      "soul": "Ziel",
+      "activity": "Activiteit"
+    },
+    "bond": "Band",
+    "lastTalked": "Laatst gesproken {{when}}",
+    "updated": "Bijgewerkt {{when}}",
+    "messages": "Berichten",
+    "togetherSince": "Samen sinds {{date}}",
+    "engine": "Emotionele engine",
+    "nothingTitle": "Nog niets te tonen",
+    "nothingBody": "De band en gevoelens van {{name}} beginnen te bewegen na een paar berichten. Ze starten vanuit de standaardwaarden in de metgezelinstellingen.",
+    "missingTitle": "Gevoelens worden niet bijgehouden",
+    "missingBody": "Installeer het emotiemodel zodat elk antwoord kan beïnvloeden hoe ze zich voelen.",
+    "install": "Installeren",
+    "nothingNow": "Nu niets",
+    "drivers": "Actieve drijfveren",
+    "timeline": "Recente tijdlijn",
+    "events_one": "{{count}} gebeurtenis",
+    "events_other": "{{count}} gebeurtenissen",
+    "currentState": "Huidige toestand",
+    "defaultMark": "Karakterstandaard",
+    "aboveDefault_one": "{{count}} punt boven de karakterstandaard",
+    "aboveDefault_other": "{{count}} punten boven de karakterstandaard",
+    "belowDefault_one": "{{count}} punt onder de karakterstandaard",
+    "belowDefault_other": "{{count}} punten onder de karakterstandaard",
+    "axes": {
+      "closeness": {
+        "label": "Nabijheid",
+        "low": "Teruggetrokken",
+        "mid": "Bekend",
+        "high": "Intiem"
+      },
+      "trust": {
+        "label": "Vertrouwen",
+        "low": "Wantrouwend",
+        "mid": "Neutraal",
+        "high": "Vertrouwend"
+      },
+      "affection": {
+        "label": "Genegenheid",
+        "low": "Vijandig",
+        "mid": "Neutraal",
+        "high": "Liefdevol"
+      },
+      "tension": {
+        "label": "Spanning",
+        "low": "Ontspannen",
+        "mid": "",
+        "high": "Geladen"
+      },
+      "stability": {
+        "label": "Stabiliteit",
+        "low": "Wisselvallig",
+        "mid": "",
+        "high": "Stabiel"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Voelt",
+        "hint": "Wat ze van binnen voelen"
+      },
+      "expressed": {
+        "title": "Toont",
+        "hint": "Wat er in hun antwoorden doorkomt"
+      },
+      "blocked": {
+        "title": "Houdt tegen",
+        "hint": "Wat hun persoonlijkheid binnenhoudt"
+      },
+      "momentum": {
+        "title": "Bouwt op",
+        "hint": "Waar de laatste paar beurten naartoe gaan"
+      }
+    },
+    "emotions": {
+      "warmth": "Warmte",
+      "trust": "Vertrouwen",
+      "calm": "Kalmte",
+      "vulnerability": "Kwetsbaarheid",
+      "longing": "Verlangen",
+      "hurt": "Pijn",
+      "tension": "Spanning",
+      "irritation": "Irritatie",
+      "affection_intensity": "Genegenheid",
+      "reassurance_need": "Heeft geruststelling nodig"
+    },
+    "memories": {
+      "total_one": "{{count}} herinnering",
+      "total_other": "{{count}} herinneringen",
+      "found_one": "{{count}} gevonden",
+      "found_other": "{{count}} gevonden",
+      "kind": "Soort",
+      "field": "Herinnering",
+      "placeholder": "Wat moet {{name}} onthouden?",
+      "emptyTitle": "Geen herinneringen hier",
+      "emptyBody": "Herinneringen verschijnen terwijl je praat. Je kunt ook je eigen herinneringen toevoegen.",
+      "noMatch": "Niets komt overeen met \"{{query}}\"",
+      "noMatchBody": "Probeer een woord uit de herinnering zelf."
+    },
+    "soul": {
+      "title": "Ziel",
+      "edit": "Bewerken",
+      "core": "Identiteitskern. Groei verandert die nooit",
+      "notWritten": "Nog niet geschreven",
+      "growth": "Zielgroei",
+      "clear": "Groei wissen",
+      "intro": "Hoe hun veranderlijke eigenschappen zijn gegroeid vanuit je herinneringen. Essentie, eigenschappen en achtergrondverhaal veranderen hier nooit.",
+      "empty": "Nog geen groei. Naarmate er herinneringen ontstaan, verschijnen de eigenschappen die met je meeveranderen hier.",
+      "zero": "0 wijzigingen",
+      "added": "Toegevoegd",
+      "adjusted": "Aangepast",
+      "confidence": "Zekerheid",
+      "locked": "Vergrendeld",
+      "lock": "Vergrendelen",
+      "unlock": "Ontgrendelen",
+      "lockHint": "Dit feit vergrendelen",
+      "unlockHint": "Dit feit ontgrendelen",
+      "historicalHint": "Historische feiten worden altijd bewaard",
+      "remove": "Deze groei verwijderen",
+      "sources_one": "uit {{count}} herinnering",
+      "sources_other": "uit {{count}} herinneringen",
+      "retired_one": "{{count}} eerdere versie uitgefaseerd.",
+      "retired_other": "{{count}} eerdere versies uitgefaseerd.",
+      "categories": {
+        "essence": "Essentie",
+        "traits": "Eigenschappen",
+        "backstory": "Achtergrondverhaal",
+        "appearance": "Uiterlijk",
+        "goals": "Doelen",
+        "likes": "Interesses",
+        "voice": "Stem",
+        "relational_style": "Relationele stijl",
+        "vulnerabilities": "Kwetsbaarheden",
+        "fears": "Angsten",
+        "habits": "Gewoonten",
+        "boundaries": "Grenzen"
+      },
+      "policy": {
+        "current": {
+          "label": "Actueel",
+          "hint": "Vervangt wat er eerder stond"
+        },
+        "adaptive": {
+          "label": "Adaptief",
+          "hint": "Kan blijven verschuiven terwijl je praat"
+        },
+        "historical": {
+          "label": "Historisch",
+          "hint": "Iets wat is gebeurd. Wordt altijd bewaard"
+        }
+      },
+      "removeTitle": "Dit verwijderen?",
+      "removeBody": "Het verdwijnt uit wat ze hebben geleerd. Hun geschreven ziel blijft hetzelfde.",
+      "clearTitle": "Alles wissen wat ze hebben geleerd?",
+      "clearBody": "Alle groei gaat weg, inclusief de vervangen geschiedenis. Hun geschreven ziel blijft hetzelfde.",
+      "keep": "Behouden",
+      "removeConfirm": "Verwijderen",
+      "clearConfirm": "Alles wissen",
+      "removed": "Verwijderd",
+      "cleared": "Groei gewist",
+      "sourcesTitle": "Waar dit vandaan kwam",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "De bronherinneringen zijn niet meer beschikbaar.",
+      "sourcesMissing_one": "{{count}} bronherinnering is niet meer beschikbaar.",
+      "sourcesMissing_other": "{{count}} bronherinneringen zijn niet meer beschikbaar."
+    },
+    "effect": {
+      "title": "Wat dit antwoord veranderde",
+      "feels": "Wat ze voelen",
+      "pickedUp": "Opgepikt",
+      "letGo": "Losgelaten",
+      "remembered": "Onthouden",
+      "processing": "Kijken wat er veranderde",
+      "failed": "De veranderingen van het antwoord konden niet worden geanalyseerd.",
+      "invalidated": "Deze veranderingen gelden niet meer voor dit antwoord.",
+      "memoryCount_one": "{{count}} herinnering",
+      "memoryCount_other": "{{count}} herinneringen",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "Geen veranderingen om te tonen",
+      "quote": "“{{text}}”"
+    },
+    "activity": {
+      "undo": "Deze update ongedaan maken",
+      "undoTitle": "{{window}} ongedaan maken?",
+      "undoBody": "Herinneringen die het toevoegde worden verwijderd en de gewijzigde komen terug. Je eigen bewerkingen blijven bewaard.",
+      "undoConfirm": "Update ongedaan maken",
+      "blockedBy": "Kan niet ongedaan worden gemaakt: {{window}} bouwt erop voort.",
+      "blocked": "Kan niet ongedaan worden gemaakt: een latere update bouwt erop voort."
+    },
+    "unavailable": "Deze chat heeft geen metgezel",
+    "unavailableBody": "Open een metgezelchat om de band, herinneringen en ziel te zien.",
+    "crisp": {
+      "close": "Sluiten",
+      "clearSearch": "Zoekopdracht wissen"
+    },
+    "lastReply": "Laatste antwoord",
+    "replyHint": "Elk bericht in de chat opent dit via het menu"
+  }
+}

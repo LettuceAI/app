@@ -1,0 +1,76 @@
+{
+  "cancel": "Annuleren",
+  "retry": "Opnieuw proberen",
+  "notRecognized": "Dit bestand is geen LettuceAI-kaart of back-up.",
+  "import": {
+    "title": {
+      "character": "Karakter importeren",
+      "persona": "Persona importeren",
+      "lorebook": "Lorebook importeren"
+    },
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_one": "{{count}} item",
+    "entries_other": "{{count}} items",
+    "confirm": "Importeren",
+    "open": "Openen",
+    "done": "{{name}} geïmporteerd",
+    "started": "Import gestart",
+    "warnings_one": "Geïmporteerd met {{count}} waarschuwing",
+    "warnings_other": "Geïmporteerd met {{count}} waarschuwingen"
+  },
+  "restore": {
+    "title": "Back-up herstellen",
+    "created": "Aangemaakt",
+    "version": "App-versie",
+    "password": "Wachtwoord",
+    "warning": "Herstellen vervangt alle chats, karakters en instellingen op dit apparaat door de back-up. Je huidige gegevens worden als apart bestand bewaard.",
+    "action": "Herstellen",
+    "stop": "Stoppen",
+    "running": "Herstellen",
+    "starting": "Herstel starten",
+    "waiting": "Wachten tot het herstel begint",
+    "step": "Stap {{step}} van {{total}}",
+    "keepOpen": "Grote back-ups kunnen meerdere minuten duren. Houd de app open totdat het klaar is.",
+    "stages": {
+      "decode": "De back-up openen",
+      "stage": "Bestanden voorbereiden",
+      "write": "Je gegevens schrijven",
+      "verify": "De herstelde gegevens controleren",
+      "switch": "Overschakelen naar de herstelde gegevens"
+    },
+    "failed": "Het herstel is gestopt",
+    "failedAt": "Het herstel stopte bij stap {{step}} van {{total}}: {{stage}}",
+    "confirmTitle": "Alles op dit apparaat vervangen?",
+    "confirmBody": "Alle chats, karakters en instellingen worden vervangen door deze back-up. Je huidige gegevens worden als apart bestand bewaard.",
+    "confirm": "Herstellen",
+    "done": "Back-up hersteld",
+    "notBackup": "Dat bestand is geen LettuceAI-back-up.",
+    "models": {
+      "title": "Download de modellen die je gegevens nodig hebben",
+      "required": "Deze functies werken niet zonder, dus ze moeten worden gedownload voordat je verdergaat."
+    },
+    "warnings_one": "Back-up hersteld met {{count}} waarschuwing",
+    "warnings_other": "Back-up hersteld met {{count}} waarschuwingen",
+    "failure": {
+      "unknown": "De back-up kon niet worden hersteld.",
+      "backup_authentication": "Het wachtwoord is onjuist of de back-up is beschadigd.",
+      "backup_invalid_envelope": "Dit bestand is geen geldige back-up.",
+      "backup_limit_exceeded": "Deze back-up is groter dan de app kan herstellen.",
+      "backup_unavailable": "Back-ups zijn nu niet beschikbaar.",
+      "backup_file_not_found": "Het back-upbestand kon niet worden gevonden.",
+      "backup_permission_denied": "De app mag dit bestand niet lezen.",
+      "backup_file_busy": "Het bestand wordt door een andere app gebruikt.",
+      "backup_file_unavailable": "Het back-upbestand kon niet worden gelezen.",
+      "backup_file_unsupported": "Deze back-up is gemaakt door een versie die de app niet kan lezen.",
+      "backup_source_is_target": "De back-up is het bestand dat de app gebruikt.",
+      "backup_cancelled": "Het herstel is geannuleerd.",
+      "backup_retry_required": "Het herstel is niet afgerond. Probeer het opnieuw.",
+      "backup_recovery_required": "Voor het herstel moet de app opnieuw worden geopend.",
+      "backup_verification_failed": "De back-up is niet door de verificatie gekomen."
+    }
+  }
+}

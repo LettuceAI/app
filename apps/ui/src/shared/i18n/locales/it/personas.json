@@ -1,0 +1,79 @@
+{
+  "create": {
+    "title": "Nuova persona",
+    "back": "Indietro",
+    "create": "Crea persona",
+    "created": "{{name}} creata",
+    "imported": "Persona importata",
+    "unattached_one": "Impossibile collegare {{count}} lorebook. Collegalo dalle impostazioni della persona.",
+    "unattached_many": "Impossibile collegare {{count}} lorebook. Collegani dalle impostazioni della persona.",
+    "unattached_other": "Impossibile collegare {{count}} lorebook. Collegani dalle impostazioni della persona.",
+    "defaultFailed": "{{name}} è stata creata ma non è stato possibile impostarla come predefinita.",
+    "discardTitle": "Scartare questa persona?",
+    "discardBody": "Quello che hai inserito finora andrà perso.",
+    "discard": "Scarta",
+    "keepEditing": "Continua a modificare",
+    "continueTo": "Continua con {{step}}"
+  },
+  "edit": {
+    "title": "Modifica persona",
+    "back": "Indietro",
+    "backToLibrary": "Torna alla libreria",
+    "more": "Altre azioni",
+    "export": "Esporta",
+    "delete": "Elimina persona",
+    "exported": "Persona esportata",
+    "exportWarnings_one": "Esportata con {{count}} avviso",
+    "exportWarnings_many": "Esportata con {{count}} avvisi",
+    "exportWarnings_other": "Esportata con {{count}} avvisi",
+    "deleteTitle": "Eliminare {{name}}?",
+    "deleteBody": "La persona viene rimossa dalle chat che la usano.",
+    "deleteConfirm": "Elimina",
+    "deleteCancel": "Annulla",
+    "deleted": "{{name}} eliminata",
+    "unsaved": "Modifiche non salvate",
+    "discard": "Scarta",
+    "save": "Salva",
+    "saved": "Modifiche salvate",
+    "lorebooksFailed": "Salvato, ma non è stato possibile aggiornare i lorebook. Prova a salvare di nuovo.",
+    "leaveTitle": "Scartare le modifiche?",
+    "leaveBody": "Le modifiche non salvate andranno perse.",
+    "leaveDiscard": "Scarta",
+    "leaveKeep": "Continua a modificare"
+  },
+  "steps": {
+    "identity": "Identità",
+    "extras": "Extra"
+  },
+  "identity": {
+    "chooseAvatar": "Scegli immagine",
+    "removeAvatar": "Rimuovi",
+    "name": "Nome",
+    "namePlaceholder": "Scrittore professionista",
+    "nameHint": "Chi sei tu nelle chat",
+    "nickname": "Soprannome",
+    "nicknamePlaceholder": "Come ti chiamano i personaggi",
+    "nicknameHint": "Facoltativo. Usato nelle chat al posto del nome.",
+    "default": "Usa come predefinita",
+    "defaultBody": "Le nuove chat iniziano con questa persona",
+    "import": "Importa da un file",
+    "importBody": "Importa una persona esportata da LettuceAI.",
+    "chooseFile": "Scegli file"
+  },
+  "about": {
+    "description": "Descrizione",
+    "descriptionPlaceholder": "Come i personaggi devono rivolgersi a te, il tuo passato, preferenze e stile",
+    "descriptionHint": "Usa {{user}} per questa persona e {{char}} per il personaggio.",
+    "words_one": "{{count}} parola",
+    "words_many": "{{count}} parole",
+    "words_other": "{{count}} parole"
+  },
+  "extras": {
+    "body": "Qui è tutto facoltativo.",
+    "lorebooks": "Lorebook",
+    "lorebooksNone": "Nessuno",
+    "lorebooksCount_one": "{{count}} lorebook",
+    "lorebooksCount_many": "{{count}} lorebook",
+    "lorebooksCount_other": "{{count}} lorebook"
+  }
+}

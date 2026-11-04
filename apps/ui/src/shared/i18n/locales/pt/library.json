@@ -1,0 +1,125 @@
+{
+  "triggerPreview": "Prévia do gatilho",
+  "title": "Biblioteca",
+  "loadMore": "Carregar mais",
+  "search": "Pesquisar na biblioteca",
+  "show": "Mostrar",
+  "filters": {
+    "all": "Tudo",
+    "characters": "Personagens",
+    "personas": "Personas",
+    "lorebooks": "Livros de lore",
+    "images": "Imagens",
+    "audio": "Áudio"
+  },
+  "kinds": {
+    "character": "Personagem",
+    "persona": "Persona",
+    "lorebook": "Livro de lore"
+  },
+  "you": "Você",
+  "entries_one": "{{count}} entrada",
+  "entries_many": "{{count}} entradas",
+  "entries_other": "{{count}} entradas",
+  "defaultPersona": "Persona · sua padrão",
+  "menu": {
+    "start": "Iniciar conversa",
+    "edit_character": "Editar personagem",
+    "edit_persona": "Editar persona",
+    "edit_lorebook": "Editar livro de lore",
+    "default": "Usar como persona padrão",
+    "defaultHint": "Para conversas que não escolhem outra",
+    "export": "Exportar",
+    "export_character": "Como um card de personagem",
+    "export_persona": "Como um arquivo UEC",
+    "export_lorebook": "Como um arquivo UEC ou JSON",
+    "delete_character": "Excluir personagem",
+    "delete_persona": "Excluir persona",
+    "delete_lorebook": "Excluir livro de lore",
+    "save": "Salvar no dispositivo",
+    "deleteImage": "Excluir imagem",
+    "deleteAudio": "Excluir gravação",
+    "avatar": "Usar como avatar de {{name}}",
+    "more": "Mais opções para {{name}}",
+    "background": "Plano de fundo",
+    "generated": "Gerado",
+    "uploaded": "Enviado"
+  },
+  "create": {
+    "title": "Criar",
+    "description": "Adicione algo à sua biblioteca.",
+    "character": "Alguém para conversar",
+    "persona": "Quem você é em uma conversa",
+    "lorebook": "Fatos do mundo que um personagem pode usar",
+    "import": "Importar um arquivo",
+    "importHint": "Card de personagem, persona ou livro de lore",
+    "new_character": "Novo personagem",
+    "new_lorebook": "Novo livro de lore",
+    "button_character": "Criar personagem",
+    "button_persona": "Criar persona",
+    "button_lorebook": "Criar livro de lore"
+  },
+  "edit": {
+    "name": "Nome",
+    "hint_character": "Aparece no card e no cabeçalho da conversa.",
+    "placeholder_character": "ex.: Cassian",
+    "placeholder_lorebook": "ex.: O portão norte",
+    "create": "Criar",
+    "cancel": "Cancelar"
+  },
+  "delete": {
+    "title": "Excluir {{name}}?",
+    "confirm": "Excluir",
+    "character": "Suas conversas e memórias são excluídas junto.",
+    "persona": "A persona é removida das conversas que a usam.",
+    "lorebook": "Personagens e conversas que o usam perdem acesso às suas entradas.",
+    "image": "A imagem é removida deste dispositivo. Imagens ainda em uso não podem ser excluídas.",
+    "audio": "A gravação é removida deste dispositivo. Gravações ainda em uso não podem ser excluídas."
+  },
+  "empty": {
+    "all": {
+      "title": "Sua biblioteca está vazia",
+      "description": "Personagens, personas e livros de lore que você criar ou importar ficam aqui."
+    },
+    "characters": {
+      "title": "Nenhum personagem ainda",
+      "description": "Um personagem é com quem você conversa: um nome, uma história, um jeito de falar."
+    },
+    "personas": {
+      "title": "Nenhuma persona ainda",
+      "description": "Uma persona é quem você é em uma conversa. Os personagens veem o nome e a descrição dela."
+    },
+    "lorebooks": {
+      "title": "Nenhum livro de lore ainda",
+      "description": "Fatos do mundo que um personagem pode usar quando surgirem na conversa."
+    },
+    "images": {
+      "title": "Nenhuma imagem ainda",
+      "description": "Imagens que você gerar em uma conversa ficam aqui."
+    },
+    "audio": {
+      "title": "Nenhum áudio ainda",
+      "description": "Falas de voz que você gerar ou gravar ficam aqui."
+    },
+    "matches": "Nada corresponde a “{{query}}”",
+    "searchAll": "Tente outro nome ou parte de uma descrição.",
+    "searchSection": "Nada nesta seção corresponde. O resto da sua biblioteca pode ter algo.",
+    "clear": "Limpar pesquisa",
+    "everything": "Pesquisar em tudo",
+    "import": "Importar"
+  },
+  "toast": {
+    "created": "{{name}} adicionado",
+    "deleted": "{{name}} excluído",
+    "default": "{{name}} é sua persona padrão",
+    "exported": "Arquivo exportado",
+    "imported": "Arquivo importado",
+    "warnings_one": "Arquivo transferido com {{count}} aviso",
+    "warnings_many": "Arquivo transferido com {{count}} avisos",
+    "warnings_other": "Arquivo transferido com {{count}} avisos",
+    "mediaSaved": "Salvo no dispositivo",
+    "avatar": "Avatar atualizado"
+  },
+  "draft": "Rascunho",
+  "untitledDraft": "Rascunho de livro de lore sem título"
+}

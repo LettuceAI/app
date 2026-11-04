@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Willkommen zurück.",
+    "bodyBefore": "Das ist ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Von Grund auf neu gebaut, mit allem, was du erstellt hast, im Gepäck.",
+    "migrate": "Daten migrieren",
+    "notNow": "Nicht jetzt"
+  },
+  "migrate": {
+    "title": "Deine Daten werden verschoben",
+    "body": "Deine Chats, Charaktere und Medien werden übernommen.",
+    "note": "Lass die App geöffnet, bis der Vorgang abgeschlossen ist.",
+    "stages": {
+      "read": "Deine Daten werden gelesen",
+      "write": "Chats, Charaktere und Medien werden verschoben",
+      "verify": "Alles wird geprüft",
+      "switch": "Abschluss"
+    },
+    "failed": "Der Umzug wurde nicht abgeschlossen.",
+    "retry": "Erneut versuchen"
+  },
+  "models": {
+    "titlePending": "Deine Funktionen kommen zurück",
+    "titleReady": "Deine Funktionen sind zurück",
+    "checking": "Es wird geprüft, welche Funktionen deine Chats nutzen",
+    "bodyPending_memory": "Einige deiner Chats nutzen den dynamischen Speicher. Das Modell wird einmal heruntergeladen und läuft danach offline.",
+    "bodyPending_emotion": "Einige deiner Chats nutzen Companion-Gefühle. Das Modell wird einmal heruntergeladen und läuft danach offline.",
+    "bodyPending_both": "Einige deiner Chats nutzen den dynamischen Speicher und Companion-Gefühle. Die Modelle werden einmal heruntergeladen und laufen danach offline.",
+    "bodyReady_memory": "Der dynamische Speicher ist bereit und läuft offline.",
+    "bodyReady_emotion": "Die Companion-Gefühle sind bereit und laufen offline.",
+    "bodyReady_both": "Der dynamische Speicher und die Companion-Gefühle sind bereit und laufen offline.",
+    "names": {
+      "embedding": "Lettuce Eidos Speichermodell",
+      "emotion": "Thymos Emotionsmodell"
+    },
+    "why": {
+      "embedding": "Für den dynamischen Speicher",
+      "emotion": "Für Companion-Gefühle"
+    },
+    "ready": "Bereit",
+    "waiting": "Wartet",
+    "checkingFiles": "Dateien werden geprüft",
+    "progress": "{{done}} von {{total}}",
+    "failed": "Der Download wurde nicht abgeschlossen",
+    "download": "Herunterladen",
+    "notNow": "Nicht jetzt",
+    "continue": "Weiter",
+    "retry": "Erneut versuchen",
+    "notNowNote": "Chats, die diese Modelle brauchen, fragen danach. Du kannst sie später in den Einstellungen herunterladen.",
+    "keepOpen": "Lass die App geöffnet, bis der Vorgang abgeschlossen ist."
+  },
+  "done": {
+    "title": "Alles bereit.",
+    "body": "Alles ist, wo du es gelassen hast.",
+    "open": "LettuceAI öffnen"
+  },
+  "upgrade": {
+    "title": "Erst ein Schritt",
+    "body": "Deine Daten stammen von einem älteren LettuceAI. Öffne es einmal mit Version {{version}}, damit es aktualisiert werden kann, und komm dann hierher zurück.",
+    "copy": "Download-Link kopieren",
+    "copied": "Link kopiert",
+    "fresh": "Stattdessen neu anfangen"
+  }
+}

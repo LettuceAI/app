@@ -1,0 +1,121 @@
+{
+  "triggerPreview": "トリガープレビュー",
+  "title": "ライブラリ",
+  "loadMore": "さらに読み込む",
+  "search": "ライブラリを検索",
+  "show": "表示",
+  "filters": {
+    "all": "すべて",
+    "characters": "キャラクター",
+    "personas": "ペルソナ",
+    "lorebooks": "ロアブック",
+    "images": "画像",
+    "audio": "音声"
+  },
+  "kinds": {
+    "character": "キャラクター",
+    "persona": "ペルソナ",
+    "lorebook": "ロアブック"
+  },
+  "you": "あなた",
+  "entries_other": "{{count}}件",
+  "defaultPersona": "ペルソナ · 既定",
+  "menu": {
+    "start": "チャットを開始",
+    "edit_character": "キャラクターを編集",
+    "edit_persona": "ペルソナを編集",
+    "edit_lorebook": "ロアブックを編集",
+    "default": "既定のペルソナとして使用",
+    "defaultHint": "別のペルソナを選ばないチャット用",
+    "export": "エクスポート",
+    "export_character": "キャラクターカードとして",
+    "export_persona": "UECファイルとして",
+    "export_lorebook": "UECまたはJSONファイルとして",
+    "delete_character": "キャラクターを削除",
+    "delete_persona": "ペルソナを削除",
+    "delete_lorebook": "ロアブックを削除",
+    "save": "デバイスに保存",
+    "deleteImage": "画像を削除",
+    "deleteAudio": "録音を削除",
+    "avatar": "{{name}}のアバターとして使用",
+    "more": "{{name}}のその他",
+    "background": "背景",
+    "generated": "生成",
+    "uploaded": "アップロード"
+  },
+  "create": {
+    "title": "作成",
+    "description": "ライブラリに何かを追加します。",
+    "character": "話し相手",
+    "persona": "チャットでのあなた",
+    "lorebook": "キャラクターが参照できる世界の設定",
+    "import": "ファイルをインポート",
+    "importHint": "キャラクターカード、ペルソナ、ロアブック",
+    "new_character": "新しいキャラクター",
+    "new_lorebook": "新しいロアブック",
+    "button_character": "キャラクターを作成",
+    "button_persona": "ペルソナを作成",
+    "button_lorebook": "ロアブックを作成"
+  },
+  "edit": {
+    "name": "名前",
+    "hint_character": "カードとチャットヘッダーに表示されます。",
+    "placeholder_character": "例：Cassian",
+    "placeholder_lorebook": "例：北の門",
+    "create": "作成",
+    "cancel": "キャンセル"
+  },
+  "delete": {
+    "title": "{{name}}を削除しますか？",
+    "confirm": "削除",
+    "character": "チャットとメモリも一緒に削除されます。",
+    "persona": "このペルソナは使用中のチャットから削除されます。",
+    "lorebook": "使用中のキャラクターとチャットはそのエントリーにアクセスできなくなります。",
+    "image": "画像はこのデバイスから削除されます。使用中の画像は削除できません。",
+    "audio": "録音はこのデバイスから削除されます。使用中の録音は削除できません。"
+  },
+  "empty": {
+    "all": {
+      "title": "ライブラリは空です",
+      "description": "作成またはインポートしたキャラクター、ペルソナ、ロアブックがここに保存されます。"
+    },
+    "characters": {
+      "title": "キャラクターはまだありません",
+      "description": "キャラクターは話す相手です。名前、履歴、話し方があります。"
+    },
+    "personas": {
+      "title": "ペルソナはまだありません",
+      "description": "ペルソナはチャットでのあなた自身です。キャラクターはその名前と説明を見ます。"
+    },
+    "lorebooks": {
+      "title": "ロアブックはまだありません",
+      "description": "会話に出てきたときにキャラクターが参照できる世界の設定。"
+    },
+    "images": {
+      "title": "画像はまだありません",
+      "description": "チャットで生成した画像がここに保存されます。"
+    },
+    "audio": {
+      "title": "音声はまだありません",
+      "description": "生成または録音したボイスラインがここに保存されます。"
+    },
+    "matches": "「{{query}}」に一致するものはありません",
+    "searchAll": "別の名前か、説明の一部を試してください。",
+    "searchSection": "このセクションにはありません。ライブラリのほかに見つかるかもしれません。",
+    "clear": "検索をクリア",
+    "everything": "すべてを検索",
+    "import": "インポート"
+  },
+  "toast": {
+    "created": "{{name}}を追加しました",
+    "deleted": "{{name}}を削除しました",
+    "default": "{{name}}が既定のペルソナです",
+    "exported": "ファイルをエクスポートしました",
+    "imported": "ファイルをインポートしました",
+    "warnings_other": "{{count}}件の警告付きでファイルを転送しました",
+    "mediaSaved": "デバイスに保存しました",
+    "avatar": "アバターを更新しました"
+  },
+  "draft": "下書き",
+  "untitledDraft": "無題のロアブック下書き"
+}

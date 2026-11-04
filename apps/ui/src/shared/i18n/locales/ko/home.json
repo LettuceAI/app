@@ -1,0 +1,103 @@
+{
+  "title": "채팅",
+  "homeTitle": "홈",
+  "characters": "캐릭터",
+  "search": "채팅 검색",
+  "searchCharacters": "캐릭터 검색",
+  "count": "{{total}}개 중 {{shown}}개",
+  "noDescription": "아직 설명이 없어요",
+  "lastChat": "마지막 채팅 {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "채팅 계속하기",
+  "empty": {
+    "title": "아직 캐릭터가 없어요",
+    "body": "대화할 상대를 만들거나, 디스크에서 캐릭터 카드를 가져오세요.",
+    "create": "캐릭터 만들기"
+  },
+  "noMatch": {
+    "title": "“{{query}}”와 일치하는 항목이 없어요",
+    "body": "이름이나 캐릭터 설명에 나오는 단어를 입력해 보세요.",
+    "clear": "검색 지우기"
+  },
+  "view": {
+    "label": "보기",
+    "current": "보기: {{view}}",
+    "home": "홈",
+    "list": "목록",
+    "hero": "히어로"
+  },
+  "layout": {
+    "title": "레이아웃",
+    "body": "채팅에서 캐릭터를 표시하는 방식이에요.",
+    "current": "레이아웃: {{layout}}",
+    "list": {
+      "title": "목록",
+      "body": "지금 모습 그대로 카드로 보여줘요"
+    },
+    "recent": {
+      "title": "최근",
+      "body": "모든 채팅을 최신순으로, 멈춘 지점의 대사와 함께 보여줘요"
+    }
+  },
+  "recent": {
+    "today": "오늘",
+    "week": "이번 주",
+    "earlier": "이전",
+    "empty": "아직 채팅이 없어요"
+  },
+  "menu": {
+    "history": "채팅 기록",
+    "historyBody": "이 캐릭터와 나눈 이전 채팅",
+    "edit": "캐릭터 편집",
+    "cardStyle": "카드 스타일",
+    "cardRow": "행, 배너로 전환",
+    "cardBanner": "배너, 행으로 전환",
+    "export": "내보내기",
+    "exportBody": "캐릭터 카드로",
+    "hide": "채팅에서 숨기기",
+    "hideBody": "라이브러리에는 남아 있어요",
+    "delete": "캐릭터 삭제",
+    "deleteTitle": "{{name}} 삭제할까요?",
+    "deleteBody": "캐릭터와 1:1 채팅이 삭제돼요. 되돌릴 수 없어요.",
+    "noChats": "아직 채팅이 없어요"
+  },
+  "export": {
+    "title": "내보내기 형식",
+    "body": "형식을 선택하세요",
+    "done": "{{name}} 파일로 저장했어요",
+    "uec": {
+      "title": "UEC",
+      "body": "통합 엔티티 카드(.uec) 형식이에요(권장)."
+    },
+    "v3": {
+      "title": "캐릭터 카드 V3",
+      "body": "캐릭터 카드 V3 JSON(최신 사양)이에요."
+    },
+    "v2": {
+      "title": "캐릭터 카드 V2",
+      "body": "캐릭터 카드 V2 JSON(Tavern 사양)이에요."
+    }
+  },
+  "chatMenu": {
+    "editChat": "채팅 편집",
+    "editCharacter": "캐릭터 편집",
+    "editGroup": "그룹 편집",
+    "rename": "이름 바꾸기",
+    "renameTitle": "채팅 이름 바꾸기",
+    "save": "저장",
+    "delete": "채팅 삭제",
+    "deleteTitle": "{{title}} 삭제할까요?",
+    "deleteBody": "캐릭터는 남고, 이 이야기만 사라져요."
+  },
+  "sidebar": {
+    "label": "최근 채팅",
+    "empty": "시작한 채팅이 여기에 표시돼요."
+  },
+  "discover": {
+    "title": "탐색",
+    "soonTitle": "탐색 기능이 곧 찾아와요",
+    "soonBody": "커뮤니티가 만든 캐릭터를 찾고 공유하는 공간이에요. 첫날부터 관리와 함께 자체 서버에서 준비하고 있어요.",
+    "create": "캐릭터 만들기",
+    "discord": "Discord에서 소식 보기"
+  }
+}

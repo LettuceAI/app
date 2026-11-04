@@ -1,0 +1,71 @@
+{
+  "create": {
+    "title": "新人設",
+    "back": "返回",
+    "create": "建立人設",
+    "created": "已建立 {{name}}",
+    "imported": "已匯入人設",
+    "unattached_other": "有 {{count}} 個設定集無法附加，請從人設設定中附加。",
+    "defaultFailed": "已建立 {{name}}，但無法設為預設。",
+    "discardTitle": "要捨棄這個人設嗎？",
+    "discardBody": "你目前輸入的內容將會遺失。",
+    "discard": "捨棄",
+    "keepEditing": "繼續編輯",
+    "continueTo": "繼續前往{{step}}"
+  },
+  "edit": {
+    "title": "編輯人設",
+    "back": "返回",
+    "backToLibrary": "返回資源庫",
+    "more": "更多動作",
+    "export": "匯出",
+    "delete": "刪除人設",
+    "exported": "已匯出人設",
+    "exportWarnings_other": "已匯出，但有 {{count}} 個警告",
+    "deleteTitle": "要刪除 {{name}} 嗎？",
+    "deleteBody": "使用此人設的對話將移除它。",
+    "deleteConfirm": "刪除",
+    "deleteCancel": "取消",
+    "deleted": "已刪除 {{name}}",
+    "unsaved": "未儲存的變更",
+    "discard": "捨棄",
+    "save": "儲存",
+    "saved": "已儲存變更",
+    "lorebooksFailed": "已儲存，但無法更新設定集。請再儲存一次。",
+    "leaveTitle": "要捨棄你的變更嗎？",
+    "leaveBody": "未儲存的變更將會遺失。",
+    "leaveDiscard": "捨棄",
+    "leaveKeep": "繼續編輯"
+  },
+  "steps": {
+    "identity": "身分",
+    "extras": "其他"
+  },
+  "identity": {
+    "chooseAvatar": "選擇圖片",
+    "removeAvatar": "移除",
+    "name": "名稱",
+    "namePlaceholder": "專業作家",
+    "nameHint": "你在對話中的身分",
+    "nickname": "暱稱",
+    "nicknamePlaceholder": "角色怎麼稱呼你",
+    "nicknameHint": "選填。對話中會以暱稱取代名稱。",
+    "default": "設為預設",
+    "defaultBody": "新對話會以此人設開始",
+    "import": "從檔案匯入",
+    "importBody": "匯入從 LettuceAI 匯出的人設。",
+    "chooseFile": "選擇檔案"
+  },
+  "about": {
+    "description": "描述",
+    "descriptionPlaceholder": "角色應該如何稱呼你、你的背景、偏好與風格",
+    "descriptionHint": "使用 {{user}} 代表此人設，{{char}} 代表角色。",
+    "words_other": "{{count}} 字"
+  },
+  "extras": {
+    "body": "這裡全都是選填。",
+    "lorebooks": "設定集",
+    "lorebooksNone": "無",
+    "lorebooksCount_other": "{{count}} 個設定集"
+  }
+}

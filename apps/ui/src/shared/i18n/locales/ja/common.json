@@ -1,0 +1,174 @@
+{
+  "onnxModelsUnloaded": "アイドル状態のモデルを解放してメモリを空けました：{{models}}。必要になると再び読み込まれます。",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "アプリに接続しています…"
+  },
+  "navigation": {
+    "primary": "メインナビゲーション",
+    "chats": "チャット",
+    "groups": "グループ",
+    "discover": "探索",
+    "library": "ライブラリ",
+    "settings": "設定",
+    "home": "ホーム",
+    "create": "作成",
+    "collapse": "折りたたむ",
+    "collapseSidebar": "サイドバーを折りたたむ",
+    "expandSidebar": "サイドバーを展開",
+    "backToApp": "アプリに戻る"
+  },
+  "downloads": {
+    "loading": "ダウンロードを読み込み中",
+    "title": "ダウンロード",
+    "titleActive_other": "ダウンロード、{{count}}件アクティブ",
+    "empty": "ダウンロード中の項目はありません。",
+    "emptyBody": "インストールとアップデートはここに表示されます。",
+    "generic": "ダウンロード",
+    "done": "{{name}}の準備ができました",
+    "failed": "{{name}}をダウンロードできませんでした"
+  },
+  "window": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "close": "ウィンドウを閉じる",
+    "failed": "ウィンドウ操作を完了できませんでした。もう一度お試しください。"
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "その他"
+  },
+  "actions": {
+    "retry": "再試行",
+    "cancel": "キャンセル",
+    "reload": "再読み込み"
+  },
+  "errors": {
+    "fatalTitle": "問題が発生しました",
+    "fatalDescription": "アプリで予期しない問題が発生しました。通常は再読み込みで解決します。",
+    "loadTitle": "読み込めませんでした",
+    "notFoundTitle": "ここには何もありません",
+    "notFoundDescription": "このページはアプリに存在しません。",
+    "code": {
+      "not_found": "もう存在しません。",
+      "in_use": "まだ使用中です。参照を削除してからもう一度お試しください。",
+      "malformed": "プロバイダーから読めない応答が返されました。",
+      "conflict": "ほかの場所で変更されました。再読み込みしてもう一度お試しください。",
+      "invalid_input": "リクエストの内容が正しくありません。",
+      "unsupported": "ここではサポートされていません。",
+      "unavailable": "現在利用できません。",
+      "cancelled": "キャンセルされました。",
+      "busy": "アプリが処理中です。しばらくしてからもう一度お試しください。",
+      "internal": "アプリで内部エラーが発生しました。",
+      "model_required": "必要なモデルがインストールされていません。",
+      "model_unavailable": "必要なモデルを読み込めませんでした。",
+      "transport": "アプリのバックエンドに接続できませんでした。"
+    }
+  },
+  "create": {
+    "group": "グループを作成",
+    "groupBody": "キャラクターを集めてチャット",
+    "title": "作成",
+    "description": "話し相手を、あるいはその人たちの世界を。",
+    "character": "キャラクターを作成",
+    "characterBody": "名前、見た目、性格、オープニングシーン",
+    "persona": "ペルソナを作成",
+    "personaBody": "チャットでのあなた自身",
+    "lorebook": "ロアブックを作成",
+    "lorebookBody": "世界の設定を自分で書くか、ファイルやAIから",
+    "import": "カードをインポート",
+    "importBody": "PNGまたはJSONのキャラクターカード",
+    "imported": "キャラクターをインポートしました",
+    "discover": "探索をブラウズ",
+    "discoverBody": "ほかの人が共有したキャラクター"
+  },
+  "providerSelect": {
+    "placeholder": "プロバイダーを選択",
+    "title": "プロバイダー",
+    "empty": "利用できるプロバイダーがありません。",
+    "groups": {
+      "cloud": "クラウド",
+      "local": "ローカル",
+      "custom": "カスタム"
+    }
+  },
+  "designReferences": {
+    "note": "デザインメモ",
+    "notePlaceholder": "短い髪、丸眼鏡、長いグレーのコート",
+    "noteHint": "見た目をひとことで。生成シーン画像に使われます。",
+    "images": "参照画像",
+    "imagesHint": "見た目がわかる画像を数枚。",
+    "add": "画像を追加",
+    "remove": "画像を削除"
+  },
+  "memoryDownload": {
+    "title": "メモリモデルをダウンロード",
+    "titleDone": "メモリの準備ができました",
+    "body": "自動メモリにはこのデバイス上の小さなモデルが必要です。一度ダウンロードすれば、その後はオフラインで動作します。",
+    "bodyDone": "キャラクターが重要なことを覚えておけるようになります。長いチャットでも同様です。チャットごとにオフにできます。",
+    "modelName": "Lettuce Eidosメモリモデル",
+    "keepOpen": "完了するまでアプリを開いたままにしてください。",
+    "download": "ダウンロードして完了",
+    "downloading": "ダウンロード中",
+    "checking": "モデルを確認中",
+    "useManual": "代わりに手動メモリを使う",
+    "doneDetail": "インストール済み・テスト済み · オフラインで動作",
+    "failedOffline": "接続が切れました。もう一度お試しください。",
+    "failedOther": "ダウンロードが完了しませんでした。もう一度お試しください。",
+    "downloadOnly": "ダウンロード",
+    "bodyInstall": "ダイナミックメモリにはこのデバイス上の小さなモデルが必要です。一度ダウンロードすれば、その後はオフラインで動作します。",
+    "failureCode": {
+      "integrity_failure": "ダウンロードが破損しています。もう一度お試しください。",
+      "resource_unavailable": "モデルサーバーが現在利用できません。もう一度お試しください。",
+      "storage_failure": "モデルをこのデバイスに保存できませんでした。空き容量を確認してもう一度お試しください。",
+      "timed_out": "ダウンロードに時間がかかりすぎました。もう一度お試しください。"
+    }
+  },
+  "emotionDownload": {
+    "title": "感情モデルをダウンロード",
+    "titleDone": "感情の準備ができました",
+    "body": "コンパニオンモードは、このデバイス上の小さなモデルで各メッセージの裏にある感情を読み取ります。一度ダウンロードすれば、その後はオフラインで動作します。",
+    "bodyDone": "返信ごとに、コンパニオンがどう感じるか、どれだけ親しいかが変わります。",
+    "download": "ダウンロード",
+    "close": "今はしない",
+    "finish": "完了"
+  },
+  "structuredFallback": {
+    "title": "モデルがツールを使えないとき",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "コンパクト。ほとんどのモデルで動作します。"
+      },
+      "xml": {
+        "title": "XML",
+        "body": "JSONよりもXMLを安定して書くモデル向け。"
+      }
+    },
+    "hint": "ツール呼び出しが最初に試されます。この形式はモデルが対応していない場合にのみ使われます。"
+  },
+  "promptPicker": {
+    "builtIn": "組み込み",
+    "builtInBody": "アプリ標準のプロンプト",
+    "builtInMissing": "組み込みプロンプトを利用できません",
+    "search": "プロンプトを検索",
+    "clearSearch": "検索をクリア",
+    "noMatches": "一致するプロンプトはありません",
+    "manage": "システムプロンプト",
+    "manageBody": "プロンプトを作成または編集",
+    "close": "閉じる"
+  },
+  "lorebookPicker": {
+    "title": "ロアブック",
+    "done": "完了",
+    "empty": "ロアブックはまだありません",
+    "emptyBody": "作成またはインポートしたロアブックがここに表示されます。",
+    "edit": "{{name}}を編集"
+  }
+}

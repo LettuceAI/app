@@ -1,0 +1,175 @@
+{
+  "onnxModelsUnloaded": "Belleği boşaltmak için boşta bekleyen modeller serbest bırakıldı: {{models}}. Gerektiğinde yeniden yüklenecekler.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Uygulamaya bağlanılıyor…"
+  },
+  "navigation": {
+    "primary": "Ana gezinme",
+    "chats": "Sohbetler",
+    "groups": "Gruplar",
+    "discover": "Keşfet",
+    "library": "Kütüphane",
+    "settings": "Ayarlar",
+    "home": "Ana sayfa",
+    "create": "Oluştur",
+    "collapse": "Daralt",
+    "collapseSidebar": "Kenar çubuğunu daralt",
+    "expandSidebar": "Kenar çubuğunu genişlet",
+    "backToApp": "Uygulamaya dön"
+  },
+  "downloads": {
+    "loading": "İndirmeler yükleniyor",
+    "title": "İndirmeler",
+    "titleActive_one": "İndirmeler, bir etkin",
+    "titleActive_other": "İndirmeler, {{count}} etkin",
+    "empty": "İndirilen bir şey yok.",
+    "emptyBody": "Kurulumlar ve güncellemeler burada görünür.",
+    "generic": "İndir",
+    "done": "{{name}} hazır",
+    "failed": "{{name}} indirilemedi"
+  },
+  "window": {
+    "minimize": "Simge durumuna küçült",
+    "maximize": "Büyüt",
+    "close": "Pencereyi kapat",
+    "failed": "Pencere işlemi tamamlanamadı. Tekrar deneyin."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Diğer"
+  },
+  "actions": {
+    "retry": "Tekrar deneyin",
+    "cancel": "İptal",
+    "reload": "Yeniden yükle"
+  },
+  "errors": {
+    "fatalTitle": "Bir şeyler ters gitti",
+    "fatalDescription": "Uygulama beklenmeyen bir sorunla karşılaştı. Yeniden yüklemek genellikle sorunu çözer.",
+    "loadTitle": "Bu yüklenemedi",
+    "notFoundTitle": "Burada bir şey yok",
+    "notFoundDescription": "Bu sayfa uygulamada mevcut değil.",
+    "code": {
+      "not_found": "Artık mevcut değil.",
+      "in_use": "Hâlâ kullanımda. Referanslarını kaldırıp tekrar deneyin.",
+      "malformed": "Sağlayıcı okunamayan bir yanıt döndürdü.",
+      "conflict": "Başka bir yerde değiştirildi. Yeniden yükleyip tekrar deneyin.",
+      "invalid_input": "İstekte geçersiz bir şey var.",
+      "unsupported": "Bu burada desteklenmiyor.",
+      "unavailable": "Şu anda kullanılamıyor.",
+      "cancelled": "İptal edildi.",
+      "busy": "Uygulama meşgul. Birazdan tekrar deneyin.",
+      "internal": "Uygulama bir iç hatayla karşılaştı.",
+      "model_required": "Gerekli bir model yüklü değil.",
+      "model_unavailable": "Gerekli bir model yüklenemedi.",
+      "transport": "Uygulamanın arka ucuna ulaşılamadı."
+    }
+  },
+  "create": {
+    "group": "Grup oluştur",
+    "groupBody": "Karakterleri bir sohbette bir araya getirin",
+    "title": "Oluştur",
+    "description": "Sohbet edecek biri ya da onlar için bir dünya.",
+    "character": "Karakter oluştur",
+    "characterBody": "İsim, görünüm, kişilik ve açılış sahneleri",
+    "persona": "Persona oluştur",
+    "personaBody": "Sohbetlerde siz kimsiniz",
+    "lorebook": "Lore kitabı oluştur",
+    "lorebookBody": "Dünya bilgileri: kendiniz yazın, bir dosyadan alın veya yapay zekâyla oluşturun",
+    "import": "Kart içe aktar",
+    "importBody": "PNG veya JSON karakter kartı",
+    "imported": "Karakter içe aktarıldı",
+    "discover": "Keşfet bölümüne göz at",
+    "discoverBody": "Başkalarının paylaştığı karakterler"
+  },
+  "providerSelect": {
+    "placeholder": "Sağlayıcı seçin",
+    "title": "Sağlayıcı",
+    "empty": "Kullanılabilir sağlayıcı yok.",
+    "groups": {
+      "cloud": "Bulut",
+      "local": "Yerel",
+      "custom": "Özel"
+    }
+  },
+  "designReferences": {
+    "note": "Tasarım notu",
+    "notePlaceholder": "Kısa saç, yuvarlak gözlük, uzun gri palto",
+    "noteHint": "Görünümü birkaç kelimeyle anlatın. Oluşturulan sahne görsellerinde kullanılır.",
+    "images": "Referans görselleri",
+    "imagesHint": "Görünümü gösteren birkaç görsel.",
+    "add": "Görsel ekle",
+    "remove": "Görseli kaldır"
+  },
+  "memoryDownload": {
+    "title": "Hafıza modelini indirin",
+    "titleDone": "Hafıza hazır",
+    "body": "Otomatik hafıza için bu cihazda küçük bir model gerekir. Bir kez indirilir, ardından çevrimdışı çalışır.",
+    "bodyDone": "Karakterleriniz artık uzun sohbetlerde bile önemli olanları takip edecek. Bunu her sohbet için kapatabilirsiniz.",
+    "modelName": "Lettuce Eidos hafıza modeli",
+    "keepOpen": "İşlem bitene kadar uygulamayı açık tutun.",
+    "download": "İndir ve tamamla",
+    "downloading": "İndiriliyor",
+    "checking": "Model kontrol ediliyor",
+    "useManual": "Bunun yerine manuel hafızayı kullan",
+    "doneDetail": "Yüklendi ve test edildi · çevrimdışı çalışır",
+    "failedOffline": "Bağlantı kesildi. Devam etmek için tekrar deneyin.",
+    "failedOther": "İndirme tamamlanmadı. Devam etmek için tekrar deneyin.",
+    "downloadOnly": "İndir",
+    "bodyInstall": "Dinamik hafıza için bu cihazda küçük bir model gerekir. Bir kez indirilir, ardından çevrimdışı çalışır.",
+    "failureCode": {
+      "integrity_failure": "İndirme bozuk. Devam etmek için tekrar deneyin.",
+      "resource_unavailable": "Model sunucusu şu anda kullanılamıyor. Devam etmek için tekrar deneyin.",
+      "storage_failure": "Model bu cihaza kaydedilemedi. Boş alanı kontrol edip tekrar deneyin.",
+      "timed_out": "İndirme çok uzun sürdü. Devam etmek için tekrar deneyin."
+    }
+  },
+  "emotionDownload": {
+    "title": "Duygu modelini indirin",
+    "titleDone": "Duygular hazır",
+    "body": "Yoldaş modu, bu cihazdaki küçük bir modelle her mesajın arkasındaki duyguyu okur. Bir kez indirilir, ardından çevrimdışı çalışır.",
+    "bodyDone": "Artık her yanıt, yoldaşlarınızın nasıl hissettiğini ve ne kadar yakın olduğunuzu etkileyebilir.",
+    "download": "İndir",
+    "close": "Şimdi değil",
+    "finish": "Tamam"
+  },
+  "structuredFallback": {
+    "title": "Model araçları kullanamadığında",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Kompakt. Çoğu modelle çalışır."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "XML'i JSON'dan daha güvenilir yazan modeller için."
+      }
+    },
+    "hint": "Önce araç çağrıları denenir. Bu biçim yalnızca model bunları desteklemediğinde kullanılır."
+  },
+  "promptPicker": {
+    "builtIn": "Yerleşik",
+    "builtInBody": "Uygulamanın kendi promptu",
+    "builtInMissing": "Yerleşik prompt kullanılamıyor",
+    "search": "Promptlarda ara",
+    "clearSearch": "Aramayı temizle",
+    "noMatches": "Eşleşen prompt yok",
+    "manage": "Sistem promptları",
+    "manageBody": "Prompt oluşturun veya düzenleyin",
+    "close": "Kapat"
+  },
+  "lorebookPicker": {
+    "title": "Lore kitapları",
+    "done": "Tamam",
+    "empty": "Henüz lore kitabı yok",
+    "emptyBody": "Oluşturduğunuz veya içe aktardığınız lore kitapları burada görünür.",
+    "edit": "{{name}} öğesini düzenle"
+  }
+}

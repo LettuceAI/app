@@ -1,0 +1,103 @@
+{
+  "title": "Ajuda e FAQ",
+  "subtitle": "O básico, chaves de API, privacidade e perguntas comuns",
+  "sections": {
+    "gettingStarted": "Primeiros passos",
+    "privacySafety": "Privacidade e segurança",
+    "modelsProviders": "Modelos e provedores",
+    "charactersChats": "Personagens e conversas"
+  },
+  "stillStuck": {
+    "title": "Ainda com dúvidas?",
+    "docsTitle": "Documentação completa",
+    "docsDescription": "Guias e referência para o LettuceAI",
+    "discordTitle": "Entrar no Discord",
+    "discordDescription": "Pergunte à comunidade ou relate um bug"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "O que é o LettuceAI?",
+      "answer": "O LettuceAI é um app de conversa com personagens de IA. Você escolhe o provedor e o modelo que escrevem as respostas, e suas conversas e personagens ficam no seu dispositivo. Provedores na nuvem usam sua própria conta; modelos locais compatíveis rodam no seu computador."
+    },
+    "whatIsApiKey": {
+      "question": "O que é uma chave de API e por que preciso de uma? (BYOK explicado)",
+      "answer": "BYOK significa Bring Your Own Key (traga sua própria chave). Uma chave de API permite que o LettuceAI envie solicitações a um provedor usando sua conta. Crie uma chave com o provedor e adicione-a em Configurações > Provedores. As solicitações vão do seu dispositivo para esse provedor, que aplica a própria cobrança e os próprios limites. Modelos locais compatíveis não precisam de uma chave de API na nuvem. Trate uma chave como uma senha e não a compartilhe."
+    },
+    "cheapestStart": {
+      "question": "Qual é a forma mais barata ou fácil de começar?",
+      "answer": "Use o guia de configuração para conectar um provedor e escolher um modelo. Compare os preços atuais do provedor, os planos gratuitos e os limites de solicitação antes de adicionar crédito. Comece com um orçamento pequeno e confira Configurações > Análise de uso enquanto conversa. No desktop, modelos locais compatíveis são outra opção se o computador tiver memória e armazenamento suficientes."
+    },
+    "alternative": {
+      "question": "Isto é uma alternativa a outros apps de conversa com IA?",
+      "answer": "Sim. O LettuceAI permite escolher o provedor, o modelo e a configuração de personagem em vez de prender cada conversa a um único serviço. Você gerencia sua própria conta de provedor e mantém seus dados no dispositivo. Uma configuração rápida conecta o modelo que você quer usar."
+    },
+    "cost": {
+      "question": "Quanto custa?",
+      "answer": "O LettuceAI é gratuito. Um provedor na nuvem pode cobrar da sua conta pelas solicitações ou oferecer um plano gratuito. As tarifas dependem do modelo, da quantidade de texto enviada e gerada e de quaisquer recursos de imagem ou áudio que você usar. Confira os preços do provedor antes de escolher um modelo. A análise de uso mostra tokens reportados e custos conhecidos; preços ausentes não significam solicitações gratuitas."
+    },
+    "apiKeySafe": {
+      "question": "Minha chave de API está segura?",
+      "answer": "As credenciais do provedor são armazenadas localmente e usadas para conectar ao provedor que você configurar. O LettuceAI não retransmite suas solicitações pelo próprio servidor de conversa. Insira chaves apenas para serviços em que confia, verifique com cuidado as URLs de provedores personalizados e proteja seu dispositivo e seus arquivos de backup."
+    },
+    "chatsStored": {
+      "question": "Onde minhas conversas são armazenadas? Alguém pode lê-las?",
+      "answer": "As conversas são salvas no banco de dados local do app. Quando um modelo na nuvem responde, o prompt e o contexto relevante da conversa são enviados ao provedor escolhido. Esse provedor processa a solicitação de acordo com a própria política de privacidade. Qualquer pessoa com acesso ao seu dispositivo ou aos backups exportados também pode conseguir ler seus dados."
+    },
+    "chatsDeleted": {
+      "question": "Minhas conversas podem ser excluídas sozinhas?",
+      "answer": "O LettuceAI não mantém uma cópia em servidor que possa restaurar suas conversas. Excluir uma conversa, redefinir o app, desinstalá-lo, limpar o armazenamento do app ou perder o dispositivo pode remover dados locais. Mantenha backups de tudo o que quiser preservar."
+    },
+    "editRemotely": {
+      "question": "Alguém pode editar meus dados remotamente?",
+      "answer": "O LettuceAI não tem serviço de administração remota para suas conversas e personagens locais. O provedor escolhido gera respostas, mas não gerencia o banco de dados do app. Mantenha seu dispositivo e quaisquer arquivos que você importar ou compartilhar em segurança."
+    },
+    "shutdown": {
+      "question": "O que acontece com meus dados se o LettuceAI fechar?",
+      "answer": "Suas conversas e personagens salvos permanecem no seu dispositivo e podem ser lidos sem uma conta no LettuceAI. As respostas na nuvem ainda dependem de o provedor estar disponível e de sua conta funcionar. Mantenha uma cópia dos seus dados com Configurações > Backup e restauração."
+    },
+    "training": {
+      "question": "Os provedores vão treinar com minhas conversas?",
+      "answer": "Isso depende do provedor, do tipo de conta e da política de dados atual dele. O LettuceAI não pode mudar esses termos. Leia as configurações de privacidade e retenção do provedor antes de enviar informações sensíveis. Modelos locais compatíveis processam seus prompts no seu computador."
+    },
+    "whatIsModel": {
+      "question": "O que é um 'modelo'? Qual devo escolher?",
+      "answer": "Um modelo é a IA que escreve as respostas. Modelos diferem em estilo de escrita, velocidade, comprimento de contexto, requisitos de hardware e preço. Adicione um provedor em Configurações > Provedores e configure um modelo em Configurações > Modelos. Você pode definir um padrão do app ou escolher um modelo para um personagem ou conversa específica."
+    },
+    "freeProviders": {
+      "question": "Existem provedores gratuitos?",
+      "answer": "Alguns provedores oferecem modelos gratuitos ou planos de uso gratuitos, com os próprios requisitos de conta e limites de taxa. A disponibilidade pode mudar, então confira os termos atuais do provedor. Um plano gratuito ainda pode exigir uma chave de API. Modelos locais compatíveis não cobram por solicitação, mas usam o hardware, o armazenamento e a energia do seu computador."
+    },
+    "freeVsPaid": {
+      "question": "Qual é a diferença entre provedores gratuitos e pagos?",
+      "answer": "Planos gratuitos e pagos podem diferir em modelos disponíveis, limites de solicitação, velocidade de resposta, termos de privacidade e suporte. Os detalhes pertencem a cada provedor; um plano pago não significa automaticamente uma política de privacidade específica. Você pode conectar mais de um provedor e escolher um modelo para cada conversa."
+    },
+    "whatIsToken": {
+      "question": "O que é um token?",
+      "answer": "Um token é um pequeno trecho de texto, como uma palavra ou parte de uma palavra. A divisão exata depende do modelo e do idioma. Uma solicitação inclui tokens de entrada do prompt e do contexto da conversa, além de tokens de saída da resposta. Os provedores podem cobrar valores diferentes por eles. Históricos longos e respostas longas podem aumentar o uso."
+    },
+    "noDefaultModel": {
+      "question": "Vejo 'nenhum modelo padrão configurado'",
+      "answer": "Abra Configurações > Modelos e adicione um modelo de um provedor configurado. Depois defina um padrão do app ou escolha um modelo nas configurações do personagem. Um personagem ou conversa pode substituir o padrão, então verifique a seleção de modelo dele se as respostas ainda não começarem."
+    },
+    "cloudVsLocal": {
+      "question": "Qual é a diferença entre modelos na nuvem e locais?",
+      "answer": "Modelos na nuvem rodam no hardware do provedor e precisam de conexão com esse serviço. Modelos locais compatíveis rodam no seu computador de mesa e precisam de memória e armazenamento suficientes. A instalação e os controles de execução de modelos locais estão disponíveis no desktop; no celular, use um provedor conectado."
+    },
+    "whatIsCharacter": {
+      "question": "O que é um personagem? Posso criar o meu?",
+      "answer": "Um personagem tem um nome, uma imagem e uma descrição que moldam como ele fala. Use o botão de criar para fazer um ou importe um card de personagem na Biblioteca. Edite a descrição e as configurações de modelo para mudar como as próximas respostas são geradas."
+    },
+    "whatIsPersona": {
+      "question": "O que é uma persona?",
+      "answer": "Uma persona descreve o seu lado da conversa: seu nome e detalhes que o personagem deve saber sobre você. Crie ou importe personas na Biblioteca e escolha a que quiser usar em uma conversa."
+    },
+    "charactersPrivate": {
+      "question": "Os personagens que eu crio são privados?",
+      "answer": "Os personagens que você cria ficam armazenados no seu dispositivo. Exportar e compartilhar um card de personagem permite que outras pessoas o leiam. Quando você conversa com um modelo na nuvem, os detalhes do personagem usados no prompt também são enviados ao provedor escolhido."
+    },
+    "backupMove": {
+      "question": "Como faço backup ou mudo para outro dispositivo?",
+      "answer": "Abra Configurações > Backup e restauração para criar um arquivo de backup. Guarde-o em um lugar seguro. Para mudar de dispositivo, instale o LettuceAI no outro dispositivo e restaure esse arquivo lá. Siga os avisos da tela de restauração antes de substituir os dados existentes."
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "title": "Yenilikler",
+  "installed": "Yüklü sürüm: {{version}}",
+  "releaseMismatch": "Bu notlar {{version}} için. Siz {{installed}} çalıştırıyorsunuz.",
+  "fullChangelog": "Tam değişiklik günlüğü",
+  "continue": "Devam",
+  "markFailed": "Görüntülenen sürüm kaydedilemedi",
+  "types": {
+    "feature": "Eklendi",
+    "improvement": "İyileştirildi",
+    "bugfix": "Düzeltildi",
+    "breaking": "Kırıcı değişiklikler"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Bağlam Kullanımı Dökümü ve Daha Yalın Dinamik Hafıza",
+    "description": "Artık her asistan mesajı, promptunun bağlam penceresinin ne kadarını kullandığını ve bunu neyin doldurduğunu bire bir ve grup sohbetlerinde gösteriyor. Bire bir sohbetlerdeki dinamik hafıza her turda tüm hafıza bankasını göndermeyi bırakıyor ve macOS'ta embedding'ler yeniden başlıyor.",
+    "changes": {
+      "contextUsage": "Asistan yanıtlarının mesaj işlemlerindeki Bağlam Kullanımı paneli, bağlam penceresini dolu, yanıt için ayrılmış ve boş olarak böler; ayrıca promptu neyin doldurduğunun dökümünü verir: sistem, karakter, persona, anılar, lore kitabı, yazar notu, yoldaş durumu ve sohbet geçmişi. Paylar tiktoken ile tahmin edilir ve sağlayıcının gerçekten bildirdiği prompt tokenlarına ölçeklenir.",
+      "groupContextUsage": "Grup sohbeti mesajları da aynı paneli alır; saklanan mesajdan, arama yeniden çalıştırılmadan yeniden oluşturulur ve diğer katılımcıların profillerini sayan bir Grup kadrosu kategorisi içerir.",
+      "responseBudget": "llama.cpp ve Ollama'da ayrılmış yanıt bütçesi (yanıt artı akıl yürütme) gerçek istekten okunur ve prompt ile bu rezervasyon birlikte bağlam penceresini aştığında bir uyarı görünür; böylece prompt kesilmeden veya yanıt kısaltılmadan önce maksimum tokenları düşürebilir veya bağlamı kısaltabilirsiniz.",
+      "developerBreakdown": "Geliştirici mesaj hata ayıklama sayfası, toplamlar ve bağlam penceresi kullanımıyla birlikte aynı kategori bazlı token dökümünü içerir.",
+      "memoryRetrieval": "Bire bir sohbetlerdeki dinamik hafıza, her promptta {{key_memories}} alanını alınan anıların üzerine tüm sıcak hafıza bankasıyla doldurmaz. Yalnızca o tur için alınan anılar gönderilir; bu hem roleplay karakterleri hem de yoldaşlar için yeni yanıtlar, yeniden oluşturmalar ve devamlar boyunca geçerlidir.",
+      "macEmbeddings": "Embedding'ler artık macOS'ta \"farklı Team ID'ler\" hatasıyla başlamıyor. Çalışma zamanında indirilen ONNX Runtime Microsoft tarafından imzalanıyor ve macOS bunu uygulamaya yüklemeyi reddediyordu; artık yüklenmeden önce yerel olarak yeniden imzalanıyor."
+    }
+  }
+}

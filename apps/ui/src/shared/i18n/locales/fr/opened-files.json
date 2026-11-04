@@ -1,0 +1,79 @@
+{
+  "cancel": "Annuler",
+  "retry": "Réessayer",
+  "notRecognized": "Ce fichier n'est pas une carte ou une sauvegarde LettuceAI.",
+  "import": {
+    "title": {
+      "character": "Importer un personnage",
+      "persona": "Importer un persona",
+      "lorebook": "Importer une encyclopédie"
+    },
+    "kind": {
+      "character": "Personnage",
+      "persona": "Persona",
+      "lorebook": "Encyclopédie"
+    },
+    "entries_one": "{{count}} entrée",
+    "entries_many": "{{count}} entrées",
+    "entries_other": "{{count}} entrées",
+    "confirm": "Importer",
+    "open": "Ouvrir",
+    "done": "{{name}} importé",
+    "started": "Importation lancée",
+    "warnings_one": "Importé avec {{count}} avertissement",
+    "warnings_many": "Importé avec {{count}} avertissements",
+    "warnings_other": "Importé avec {{count}} avertissements"
+  },
+  "restore": {
+    "title": "Restaurer la sauvegarde",
+    "created": "Créée le",
+    "version": "Version de l'application",
+    "password": "Mot de passe",
+    "warning": "La restauration remplace toutes les discussions, tous les personnages et tous les paramètres de cet appareil par la sauvegarde. Vos données actuelles sont conservées dans un fichier séparé.",
+    "action": "Restaurer",
+    "stop": "Arrêter",
+    "running": "Restauration en cours",
+    "starting": "Démarrage de la restauration",
+    "waiting": "En attente du démarrage de la restauration",
+    "step": "Étape {{step}} sur {{total}}",
+    "keepOpen": "Les grosses sauvegardes peuvent prendre plusieurs minutes. Gardez l'application ouverte jusqu'à la fin.",
+    "stages": {
+      "decode": "Ouverture de la sauvegarde",
+      "stage": "Préparation des fichiers",
+      "write": "Écriture de vos données",
+      "verify": "Vérification des données restaurées",
+      "switch": "Bascule vers les données restaurées"
+    },
+    "failed": "La restauration s'est arrêtée",
+    "failedAt": "La restauration s'est arrêtée à l'étape {{step}} sur {{total}} : {{stage}}",
+    "confirmTitle": "Tout remplacer sur cet appareil ?",
+    "confirmBody": "Toutes les discussions, tous les personnages et tous les paramètres sont remplacés par cette sauvegarde. Vos données actuelles sont conservées dans un fichier séparé.",
+    "confirm": "Restaurer",
+    "done": "Sauvegarde restaurée",
+    "notBackup": "Ce fichier n'est pas une sauvegarde LettuceAI.",
+    "models": {
+      "title": "Télécharger les modèles dont vos données ont besoin",
+      "required": "Ces fonctionnalités cessent de fonctionner sans eux ; ils doivent donc être téléchargés avant de continuer."
+    },
+    "warnings_one": "Sauvegarde restaurée avec {{count}} avertissement",
+    "warnings_many": "Sauvegarde restaurée avec {{count}} avertissements",
+    "warnings_other": "Sauvegarde restaurée avec {{count}} avertissements",
+    "failure": {
+      "unknown": "La sauvegarde n'a pas pu être restaurée.",
+      "backup_authentication": "Le mot de passe est incorrect ou la sauvegarde est endommagée.",
+      "backup_invalid_envelope": "Ce fichier n'est pas une sauvegarde valide.",
+      "backup_limit_exceeded": "Cette sauvegarde est trop volumineuse pour être restaurée par l'application.",
+      "backup_unavailable": "Les sauvegardes ne sont pas disponibles pour le moment.",
+      "backup_file_not_found": "Le fichier de sauvegarde est introuvable.",
+      "backup_permission_denied": "L'application n'est pas autorisée à lire ce fichier.",
+      "backup_file_busy": "Le fichier est utilisé par une autre application.",
+      "backup_file_unavailable": "Le fichier de sauvegarde n'a pas pu être lu.",
+      "backup_file_unsupported": "Cette sauvegarde a été créée par une version que l'application ne peut pas lire.",
+      "backup_source_is_target": "La sauvegarde correspond au fichier utilisé par l'application.",
+      "backup_cancelled": "La restauration a été annulée.",
+      "backup_retry_required": "La restauration ne s'est pas terminée. Réessayez.",
+      "backup_recovery_required": "La restauration nécessite de rouvrir l'application.",
+      "backup_verification_failed": "La sauvegarde n'a pas passé la vérification."
+    }
+  }
+}

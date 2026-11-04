@@ -1,0 +1,131 @@
+{
+  "generate": "Tạo ảnh đại diện",
+  "title": "Tạo ảnh đại diện",
+  "bannerCrop": {
+    "title": "Căn vị trí ảnh bìa",
+    "description": "Căn khung ảnh bìa. Kéo để di chuyển, chụm hoặc cuộn để thu phóng.",
+    "saveFailed": "Không thể lưu ảnh bìa"
+  },
+  "crop": {
+    "title": "Căn vị trí ảnh đại diện",
+    "description": "Kéo để di chuyển. Chụm hoặc cuộn để thu phóng.",
+    "zoom": "Thu phóng",
+    "zoomIn": "Phóng to",
+    "zoomOut": "Thu nhỏ",
+    "center": "Căn giữa",
+    "area": "Vùng căn khung",
+    "keyboard": "Phím mũi tên di chuyển ảnh. Dấu cộng và trừ để thu phóng, C căn giữa, 0 đặt lại.",
+    "reset": "Đặt lại",
+    "apply": "Dùng vị trí này",
+    "loadFailed": "Không thể tải hình ảnh",
+    "saveFailed": "Không thể lưu ảnh đại diện"
+  },
+  "preview": {
+    "empty": "Chưa có hình ảnh",
+    "emptyBody": "Mô tả ảnh đại diện bên dưới, hoặc bắt đầu từ ảnh của bạn.",
+    "alt": "Xem trước ảnh đại diện",
+    "unchanged": "Ảnh đại diện đã có trong biểu mẫu",
+    "editedFrom": "Từ {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Phiên bản",
+    "count_other": "{{count}} phiên bản",
+    "current": "Ảnh đại diện hiện tại",
+    "upload": "Ảnh đã tải lên {{number}}",
+    "generation": "Ảnh được tạo {{number}}",
+    "edit": "Ảnh đã chỉnh sửa {{number}}",
+    "short": {
+      "current": "Hiện tại",
+      "upload": "Tải lên {{number}}",
+      "generation": "Ảnh {{number}}",
+      "edit": "Sửa {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Tải ảnh lên"
+  },
+  "mode": {
+    "label": "Thao tác",
+    "generate": "Ảnh mới",
+    "edit": "Sửa ảnh đã chọn",
+    "generateHint": "Bắt đầu lại chỉ từ phần mô tả",
+    "editHint": "Thay đổi một bản sao của {{version}}"
+  },
+  "prompt": {
+    "label": "Mô tả ảnh đại diện",
+    "placeholder": "Một chú cáo đang mỉm cười quàng khăn len, ánh sáng dịu"
+  },
+  "instruction": {
+    "label": "Cần thay đổi gì",
+    "placeholder": "Đổi khăn thành màu xanh"
+  },
+  "actions": {
+    "generate": "Tạo",
+    "edit": "Áp dụng chỉnh sửa",
+    "cancel": "Hủy",
+    "use": "Dùng ảnh đại diện này",
+    "retry": "Thử lại"
+  },
+  "busy": {
+    "uploading": "Đang thêm hình ảnh",
+    "generating": "Đang tạo hình ảnh",
+    "editing": "Đang chỉnh sửa hình ảnh",
+    "cancelling": "Đang hủy"
+  },
+  "job": {
+    "progress": "{{current}} trên {{total}}",
+    "rejected_other": "Đã bỏ qua {{count}} kết quả",
+    "cancelled": "Đã hủy tạo ảnh"
+  },
+  "settings": {
+    "open": "Mở cài đặt hình ảnh"
+  },
+  "notice": {
+    "options": {
+      "title": "Không thể kiểm tra mô hình ảnh đại diện",
+      "body": "Tải lên vẫn hoạt động."
+    },
+    "disabled": {
+      "title": "Tính năng tạo ảnh đại diện đang tắt",
+      "body": "Bật trong cài đặt hình ảnh để tạo. Tải lên vẫn hoạt động."
+    },
+    "noModel": {
+      "title": "Chưa chọn mô hình ảnh đại diện",
+      "body": "Chọn mô hình nhận và trả về hình ảnh. Tải lên vẫn hoạt động."
+    },
+    "incompatible": {
+      "title": "Mô hình này không tạo được ảnh đại diện",
+      "body": "Ảnh đại diện cần mô hình nhận và trả về hình ảnh. Tải lên vẫn hoạt động."
+    },
+    "upload": {
+      "title": "Không thể thêm hình ảnh"
+    },
+    "generation": {
+      "title": "Không thể tạo hình ảnh"
+    },
+    "cancellation": {
+      "title": "Không thể hủy",
+      "body": "Yêu cầu có thể vẫn đang chạy. Thử hủy lại."
+    },
+    "uncertain": {
+      "title": "Đang chờ kết quả",
+      "body": "Kết nối bị ngắt trước khi có kết quả. Thử lại để kết nối lại, hoặc hủy yêu cầu."
+    }
+  },
+  "failure": {
+    "cancelled": "Quá trình tạo ảnh đã bị hủy.",
+    "setup": "Mô hình hình ảnh chưa được thiết lập đúng. Kiểm tra trong cài đặt hình ảnh.",
+    "invalidRequest": "Yêu cầu không được chấp nhận. Thay đổi mô tả rồi thử lại.",
+    "engine": "Bộ máy tạo ảnh đã dừng trước khi hoàn tất.",
+    "timedOut": "Quá trình tạo ảnh mất quá lâu.",
+    "memory": "Mô hình hình ảnh hết bộ nhớ.",
+    "storage": "Không thể lưu hình ảnh.",
+    "provider": "Nhà cung cấp không thể tạo hình ảnh.",
+    "empty": "Không nhận được hình ảnh nào.",
+    "rejected": "Kết quả đã bị bỏ qua và không có gì được trả về.",
+    "refused": "Mô hình từ chối tạo hình ảnh này. Thay đổi mô tả rồi thử lại.",
+    "authentication": "Nhà cung cấp từ chối thông tin đăng nhập. Kiểm tra nhà cung cấp trong cài đặt.",
+    "unavailable": "Mô hình hình ảnh hiện không khả dụng.",
+    "unknown": "Đã xảy ra lỗi khi tạo hình ảnh."
+  }
+}

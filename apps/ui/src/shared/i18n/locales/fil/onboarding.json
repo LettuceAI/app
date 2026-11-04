@@ -1,0 +1,356 @@
+{
+  "header": {
+    "back": "Bumalik",
+    "learn": "Guided setup · Ang mga pangunahing bagay, {{current}} sa {{total}}",
+    "path": "Guided setup · Libre o bayad",
+    "guided": "Guided setup · {{name}}, {{current}} sa {{total}}",
+    "connect": "Setup · 1 sa 3",
+    "model": "Setup · 2 sa 3",
+    "memory": "Setup · 3 sa 3"
+  },
+  "welcome": {
+    "line1": "Ang <brand>kuwento</brand> mo,",
+    "line2": "ang <brand>karakter</brand> mo.",
+    "pitch": "Nananatili sa device mo ang mga chat at karakter. Ikaw ang pumipili kung aling AI ang magsusulat ng mga tugon.",
+    "start": "Magsimula",
+    "other": "Iba pang opsyon"
+  },
+  "actions": {
+    "exitSetup": "Bumalik sa settings",
+    "next": "Susunod",
+    "gotIt": "Nakuha ko",
+    "haveKey": "May key na ako",
+    "connect": "Kumonekta",
+    "checking": "Sinusuri ang key mo",
+    "useModel": "Gamitin ang modelong ito",
+    "saving": "Sine-save ang modelo mo",
+    "finish": "Tapusin ang setup",
+    "finishing": "Tinatapos ang setup",
+    "openApp": "Buksan ang LettuceAI"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Maligayang pagdating",
+      "title": "Maligayang pagdating sa LettuceAI",
+      "body": "Ise-set up mo na ang una mong AI roleplay. Ipapaliwanag ng susunod na mga hakbang ang mga pangunahing bagay sa simpleng salita, tapos tutulungan ka naming ikonekta ang lahat. Ilang minuto lang ito."
+    },
+    "car": {
+      "tag": "Paano ito gumagana",
+      "title": "Ang app ang kotse, hindi ang makina",
+      "body": "Isipin ang app na ito bilang kotseng wala pang makina. May dashboard, upuan at mga karakter ka na, pero hindi ito makakaandar nang mag-isa. Magdadagdag ka ng makina, at ipapakita ng ilang hakbang na ito kung paano.",
+      "plain": "Ang app na ito ang screen at ang mga karakter. Ang AI na aktwal na nagsusulat ng mga tugon ay tumatakbo online, at ikokonekta mo ang app dito."
+    },
+    "provider": {
+      "tag": "Hakbang 1 sa 3",
+      "title": "Piliin kung saan galing ang makina",
+      "body": "Ang provider ay ang kumpanyang nagbibigay at nagpapatakbo ng makina, tulad ng Google o OpenRouter. Magbubukas ka ng libre o bayad na account sa isa, at hihiramin ng app ang makina nila para patakbuhin ang mga chat mo.",
+      "plain": "Ang provider ay kumpanyang nagpapatakbo ng mga AI model. Gagawa ka ng account sa isa, at ipapadala ng app ang mga mensahe mo sa kanila para makakuha ng tugon."
+    },
+    "key": {
+      "tag": "Hakbang 2 sa 3",
+      "title": "Ang key mo ang nagpapaandar ng makina",
+      "body": "Ang API key ay parang susi ng kotse. Bibigyan ka ng provider ng isa, isasaksak mo ito sa app, at bubuksan nito ang makina. Itago mo ito sa sarili mo. Nananatili ito sa device mo, parang susi sa bulsa mo.",
+      "plain": "Ang API key ay lihim na code mula sa provider mo na nagbibigay-daan sa app na gamitin ang account mo. I-paste mo ito nang isang beses, at sa device mo lang ito naka-save."
+    },
+    "engine": {
+      "tag": "Hakbang 3 sa 3",
+      "title": "Piliin ang makina mo",
+      "body": "Ang modelo ang mismong makina. May iniaalok ang mga provider na maliit at matipid na makina, at malalaki at malalakas. Mas mahusay magpatakbo ang mas malalaking makina pero mas maraming gasolina ang nauubos, kaya mas mahal. Puwede kang magpalit ng makina anumang oras.",
+      "plain": "Ang modelo ang partikular na AI na nagsusulat ng mga tugon. Mas matalino ang mas malalaking modelo pero mas mahal, at puwede kang lumipat sa pagitan nila anumang oras."
+    },
+    "cost": {
+      "tag": "Ang gastos",
+      "title": "Libre o bayad, ikaw ang pipili",
+      "body": "May mga modelong ganap na libreng gamitin, may arawang limitasyon sa tagal ng chat mo. Ang mga bayad na modelo ay nagsisingil ng maliit na halaga sa bawat mensahe, kadalasan wala pang isang sentimo.",
+      "plain": "Sa provider ka lang nagbabayad, hindi kailanman sa app na ito. Puwede kang magsimulang libre at lumipat sa bayad mamaya kung gusto mo."
+    },
+    "inOtherWords": "Sa madaling salita"
+  },
+  "path": {
+    "gemini": {
+      "title": "Libre",
+      "subtitle": "Google Gemini",
+      "cta": "Magsimula nang libre",
+      "pro1": "Walang bayad at hindi kailanman humihingi ng card",
+      "pro2": "Sapat na arawang allowance para sa araw-araw na chat",
+      "pro3": "Magandang kalidad para sa roleplay at usapan",
+      "con1": "Mga modelo lang ng Google",
+      "con2": "Naka-block ang mature o explicit na content"
+    },
+    "openrouter": {
+      "title": "Bayad sa gamit",
+      "subtitle": "OpenRouter",
+      "cta": "Gamitin ang OpenRouter",
+      "pro1": "Halos lahat ng AI model, kasama ang pinakamalakas",
+      "pro2": "Walang arawang cap, sa gamit mo lang nagbabayad",
+      "pro3": "Lumipat sa mas murang modelo anumang oras",
+      "con1": "Nakadepende ang gastos sa modelo at tagal ng chat mo",
+      "con2": "Kailangan ng card o prepaid credit"
+    },
+    "title": "Libre o bayad?",
+    "lead": "Ikinokonekta ng pareho ang app sa isang AI. Ang pagkakaiba ay kung magbabayad ka, at kung ilang modelo ang mapipili mo.",
+    "footer": "Hindi sigurado? Magsimula nang libre. Puwede kang magdagdag ng bayad na serbisyo mamaya nang walang mawawala."
+  },
+  "connect": {
+    "title": "Kumonekta ng AI",
+    "lead": "Ang LettuceAI ang app; ang AI service ang nagsusulat ng mga tugon. Ikonekta ang may key ka.",
+    "guidedLink": "Bago sa AI apps? Subukan ang guided setup",
+    "search": "Maghanap sa {{count}} serbisyo",
+    "chooseAnother": "Pumili ng ibang serbisyo",
+    "pickTitle": "Pumili ng serbisyo sa listahan",
+    "pickBody": "Kailangan mo ng account at API key mula rito.",
+    "groups": {
+      "cloud": "Mga cloud service",
+      "local": "Sa computer o network mo",
+      "custom": "Ibang serbisyo"
+    },
+    "subtitle": {
+      "custom": "Sarili mong endpoint",
+      "local": "Tumatakbo sa computer mo"
+    },
+    "form": {
+      "address": "Address",
+      "addressHintLocal": "Kung saan tumatakbo ang server",
+      "addressHintCustom": "Ang base URL ng API",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API key",
+      "apiKeyOptional": "API key (opsyonal)",
+      "apiKeyHint": "Naka-encrypt na naka-store sa device na ito",
+      "apiKeyPlaceholder": "I-paste ang key mo",
+      "name": "Pangalan",
+      "nameHint": "Paano ito lumalabas sa mga menu mo",
+      "namePlaceholder": "Ang {{name}} ko"
+    },
+    "error": {
+      "rejected": "Hindi tinanggap ang key na ito",
+      "unreachable": "Hindi maabot ang {{name}}. Tingnan ang koneksyon mo."
+    }
+  },
+  "guide": {
+    "previousPicture": "Nakaraang larawan",
+    "nextPicture": "Susunod na larawan",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Screenshot",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "I-paste ang key mo",
+      "geminiBody": "I-paste ang key na kinopya mo lang mula sa Google AI Studio. Sinusuri namin ito sa Google, tapos ipapakita namin ang mga modelong nabubuksan nito.",
+      "openrouterBody": "I-paste ang key na kinopya mo mula sa OpenRouter. Nagsisimula ito sa sk-or. Sinusuri namin ito, tapos ipapakita namin ang mga modelong magagamit mo.",
+      "geminiPlaceholder": "I-paste ang API key mo",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Naka-encrypt na naka-store sa device na ito. Ipinapadala lang sa {{name}} kapag nag-chat ka."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Buksan ang Google AI Studio",
+        "body": "Ang Google AI Studio ang opisyal na site ng Google kung saan ginagawa ang libre mong Gemini key. Buksan ito sa browser mo gamit ang button sa ibaba. Pag-load ng page, mag-sign in gamit ang normal mong Google account sa pamamagitan ng pag-click sa Get started sa kanang itaas na sulok. Kung naka-sign in ka na, deretso ka na.",
+        "open": "Buksan ang Google AI Studio",
+        "slide1": "I-click ang Get started sa kanang itaas na sulok."
+      },
+      "find": {
+        "title": "Hanapin ang mga API key",
+        "body": "Dapat ay nasa pangunahing workspace ng Google AI Studio ka na ngayon. Wala sa pangunahing screen ang mga API key, nasa sidebar sila sa kaliwang gilid ng page. Tingnan malapit sa ibaba ng sidebar na iyon para sa maliit na key icon at i-click ito para buksan ang page kung saan pinamamahalaan ang mga key.",
+        "slide1": "I-click ang key icon sa ibabang kaliwa ng sidebar."
+      },
+      "create": {
+        "title": "Gumawa ng key",
+        "body": "Ilang click lang ang paggawa ng key, at dadaanan ng mga larawan ang bawat isa nang sunod-sunod. Buksan muna ang new-key dialog mula sa kanang itaas, tapos gumawa ng project para paglagyan ng key, bigyan ang project ng kahit anong pangalan, at panghuli, gumawa ng key mismo. Gamitin ang mga arrow sa kanan para dumaan sa bawat screen.",
+        "slide1": "I-click ang Create API key sa kanang itaas.",
+        "slide2": "Buksan ang dropdown at i-click ang Create project.",
+        "slide3": "Bigyan ito ng kahit anong pangalan, tapos i-click ang Create project.",
+        "slide4": "Kapag napili na ang project mo, i-click ang Create key."
+      },
+      "copy": {
+        "title": "Kopyahin ang key mo",
+        "body": "Nagawa na ang key mo at ipinapakita na ito nang buo. I-click ang copy icon sa tabi nito para kopyahin ang buong key sa clipboard mo. Ito lang ang pagkakataong ipinapakita ng Google ang kumpletong key, kaya kopyahin ito ngayon bago isara ang dialog, tapos bumalik dito para i-paste.",
+        "slide1": "I-click ang copy icon para kopyahin ang API key mo."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Buksan ang Google AI Studio",
+        "body": "Ang Google AI Studio ang opisyal na site ng Google kung saan ginagawa ang libre mong Gemini key. Buksan ito sa browser mo gamit ang button sa ibaba, at sabay nating dadaanan ang pagkuha ng key. Ipinapakita ng dalawang larawan kung saan eksaktong i-tap pag-load ng page, kaya mag-swipe sa pagitan ng mga ito kung hindi ka sigurado kung saan titingin.",
+        "open": "Buksan ang Google AI Studio",
+        "slide1": "I-tap ang menu sa kanang itaas na sulok.",
+        "slide2": "Tapos i-tap ang Get started sa ibaba."
+      },
+      "find": {
+        "title": "Hanapin ang mga API key",
+        "body": "Dapat ay naka-sign in ka na at nasa pangunahing page ng Google AI Studio. Nasa side menu ang kailangan mo, hindi sa pangunahing screen. Buksan ang menu na iyon, tapos tingnan sa pinakailalim para sa maliit na key icon. Dadalhin ka ng pag-tap dito deretso sa page kung saan ginagawa ang mga key.",
+        "slide1": "Buksan ang menu sa kaliwang itaas na sulok.",
+        "slide2": "I-tap ang key icon sa ibaba ng menu."
+      },
+      "start": {
+        "title": "Magsimula ng bagong key",
+        "body": "Ito ang API Keys page mo, at walang laman ito ngayon dahil wala ka pang nagagawa. Normal lang iyon. Nasa kanang itaas na sulok ng screen ang button na nagsisimula ng proseso, kaya i-tap ito para simulan ang paggawa ng una mong key.",
+        "slide1": "I-tap ang Create API key sa kanang itaas."
+      },
+      "project": {
+        "title": "Gumawa muna ng project",
+        "body": "Bago ka bigyan ng Google ng key, itatanong nito kung anong project dapat mapabilang ang key. Ang project ay folder lang na ginagamit ng Google para maayos ang mga bagay, at wala ka pa nito. Gumawa ng bagong project at bigyan ito ng kahit anong pangalan, tulad ng LettuceAI. Walang epekto ang pangalan sa kahit ano, kaya piliin kung alin ang pinakamadali.",
+        "slide1": "Buksan ang dropdown at i-tap ang Create project.",
+        "slide2": "Bigyan ito ng kahit anong pangalan, tapos i-tap ang Create project."
+      },
+      "create": {
+        "title": "Gumawa at kopyahin ang key mo",
+        "body": "Kapag napili na ang bago mong project, gumawa ng key mismo. Kapag lumabas ito, kopyahin agad gamit ang copy icon. Ito lang ang pagkakataong ipinapakita ng Google ang buong key, kaya mahalagang kopyahin ito ngayon bago isara ang window. I-paste mo ito sa app sa susunod na hakbang.",
+        "slide1": "Kapag napili na ang project mo, i-tap ang Create key.",
+        "slide2": "I-tap ang copy icon para kopyahin ang key mo."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Gumawa ng account",
+        "body": "Ang OpenRouter ay isang serbisyong nagkokonekta sa iyo sa daan-daang AI model mula sa maraming kumpanya, sa isang account at isang key. Buksan ito sa browser mo gamit ang button sa ibaba at gumawa ng libreng account. Nasa kanang itaas na sulok ng page ang Sign Up button.",
+        "open": "Buksan ang OpenRouter",
+        "slide1": "I-click ang Sign Up sa kanang itaas na sulok."
+      },
+      "key": {
+        "title": "Kunin ang API key mo",
+        "body": "Pagkatapos mag-sign up, tatanungin ka ng OpenRouter kung paano mo balak gamitin ito. Piliin ang Individual, ang tamang opsyon para sa personal na gamit. Agad na gagawa ito ng una mong API key at ipapakita sa screen. Kopyahin agad ang key na iyon. Nagsisimula ito sa sk-or, at i-paste mo ito sa app maya-maya.",
+        "slide1": "Piliin ang Individual kapag tinanong.",
+        "slide2": "Kopyahin ang bago mong API key (nagsisimula sa sk-or)."
+      },
+      "payment": {
+        "title": "Magdagdag ng payment method",
+        "body": "Nagsisingil ang mga bayad na modelo ng napakaliit na halaga sa bawat mensahe, kaya kailangan ng OpenRouter ng card na naka-file bago nito patakbuhin ang mga ito. Idagdag ang billing details mo ngayon para mabuksan ang mga modelo. Walang sisingilin sa hakbang na ito, kinukumpirma lang nito kung sino ka at pinapayagan kang gumastos ng credit mamaya.",
+        "slide1": "Ilagay ang billing details mo.",
+        "slide2": "Ayos na kapag naidagdag na."
+      },
+      "credits": {
+        "title": "Magdagdag ng credits",
+        "body": "Ang credit ang balanseng aktwal na nagbabayad sa mga mensahe mo habang nag-chat. Buksan ang Credits page mula sa sidebar at mag-top up ng maliit na halaga para makapagsimula. Kahit ilang dolyar, matagal nang tumatagal sa karamihan ng modelo, at puwede kang magdagdag pa mamaya kapag naubos.",
+        "slide1": "Buksan ang Credits mula sa sidebar.",
+        "slide2": "I-click ang Add Credits at pumili ng halaga."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Gumawa ng account",
+        "body": "Ang OpenRouter ay isang serbisyong nagkokonekta sa iyo sa daan-daang AI model mula sa maraming kumpanya, sa isang account at isang key. Buksan ito sa browser mo gamit ang button sa ibaba at gumawa ng libreng account. Nasa kanang itaas na sulok ng page ang Sign Up button.",
+        "open": "Buksan ang OpenRouter",
+        "slide1": "I-tap ang Sign Up sa kanang itaas na sulok."
+      },
+      "key": {
+        "title": "Kunin ang API key mo",
+        "body": "Pagkatapos mag-sign up, tatanungin ka ng OpenRouter kung paano mo balak gamitin ito. Piliin ang Individual, ang tamang opsyon para sa personal na gamit. Agad na gagawa ito ng una mong API key at ipapakita sa screen. Kopyahin agad ang key na iyon. Nagsisimula ito sa sk-or, at i-paste mo ito sa app maya-maya.",
+        "slide1": "Piliin ang Individual kapag tinanong.",
+        "slide2": "Kopyahin ang bago mong API key (nagsisimula sa sk-or)."
+      },
+      "payment": {
+        "title": "Magdagdag ng payment method",
+        "body": "Nagsisingil ang mga bayad na modelo ng napakaliit na halaga sa bawat mensahe, kaya kailangan ng OpenRouter ng card na naka-file bago nito patakbuhin ang mga ito. Idagdag ang billing details mo ngayon para mabuksan ang mga modelo. Walang sisingilin sa hakbang na ito, kinukumpirma lang nito kung sino ka at pinapayagan kang gumastos ng credit mamaya.",
+        "slide1": "Ilagay ang billing details mo.",
+        "slide2": "Ayos na kapag naidagdag na."
+      },
+      "credits": {
+        "title": "Magdagdag ng credits",
+        "body": "Ang credit ang balanseng aktwal na nagbabayad sa mga mensahe mo habang nag-chat. Buksan ang menu, pumunta sa Credits page, at mag-top up ng maliit na halaga para makapagsimula. Kahit ilang dolyar, matagal nang tumatagal sa karamihan ng modelo, at puwede kang magdagdag pa mamaya kapag naubos.",
+        "slide1": "Buksan ang menu at pumunta sa Credits.",
+        "slide2": "I-tap ang Add Credits at pumili ng halaga."
+      }
+    }
+  },
+  "model": {
+    "title": "Pumili ng modelo",
+    "lead": "Piliin ang {{name}} model na magsusulat ng mga tugon. Puwede mo itong palitan o magdagdag pa anumang oras.",
+    "model": "Modelo",
+    "modelId": "Model id",
+    "modelIdHint": "Ang eksaktong id na inaasahan ng serbisyo",
+    "modelIdPlaceholder": "model-name",
+    "choose": "Pumili mula sa {{count}} modelo",
+    "customId": "Custom id",
+    "displayName": "Display name",
+    "displayNameHint": "Ang nakikita mo sa loob ng app",
+    "displayNamePlaceholder": "Ang modelo ko",
+    "connected": "Nakakonekta",
+    "context": "Context",
+    "contextTokens": "{{value}} token",
+    "contextSuffix": "{{value}} context",
+    "images": "Nakakaunawa ng larawan",
+    "yes": "Oo",
+    "no": "Hindi",
+    "inputPerMillion": "Input, kada milyon",
+    "outputPerMillion": "Output, kada milyon",
+    "emptyTitle": "Wala pang napiling modelo",
+    "emptyBody": "Dito lalabas ang laki ng context at mga presyo nito.",
+    "free": "Libre",
+    "priceIn": "pumasok",
+    "priceOut": "lumabas",
+    "picker": {
+      "title": "Mga modelo ng {{name}}",
+      "search": "Maghanap sa {{count}} modelo",
+      "filter": "I-filter ang mga modelo",
+      "layout": "Layout",
+      "list": "Listahan",
+      "twoPerRow": "Dalawa kada row",
+      "onlyFree": "Mga libreng modelo lang",
+      "none": "Walang modelong tumutugma sa mga filter na ito.",
+      "useId": "Gamitin ang <mono>{{id}}</mono>",
+      "useIdBody": "Wala sa listahan: gamitin ang eksaktong id na ito",
+      "priceNote": "Mga presyo kada milyong token, mula sa {{name}}.",
+      "loading": "Naglo-load ng mga modelo"
+    },
+    "filters": {
+      "title": "I-filter ang mga modelo",
+      "madeBy": "Gawa ng",
+      "capabilities": "Mga kakayahan",
+      "imagesTitle": "Nakakaunawa ng larawan",
+      "imagesBody": "Kayang basahin ang mga larawang ipinapadala mo sa chat",
+      "sortBy": "I-sort ayon sa",
+      "sortName": "Pangalan",
+      "sortPrice": "Pinakamura",
+      "sortContext": "Pinakamahabang context",
+      "clear": "Burahin",
+      "show_one": "Ipakita ang {{count}} modelo",
+      "show_other": "Ipakita ang {{count}} modelo"
+    }
+  },
+  "memory": {
+    "title": "Paano dapat matandaan ng mga karakter?",
+    "lead": "Nakalilimutan ng mga karakter ang nasa labas ng kamakailang mensahe. Piliin kung paano bumabalik ang mahahalagang bahagi. Puwede mong baguhin ito sa bawat chat mamaya.",
+    "group": "Memory",
+    "recommended": "Inirerekomenda",
+    "classic": "Classic",
+    "detailTitle": "{{title}} na memory",
+    "automatic": {
+      "title": "Awtomatiko",
+      "point1": "May maliit na modelo sa device mo na pumipili ng mahalaga at ibinabalik ito kapag kailangan",
+      "point2": "Nananatiling pare-pareho ang mahahabang chat",
+      "point3": "Mas kaunting token ang ipinapadala, kaya mas mura ang mga tugon",
+      "note": "Kailangan ng isang beses na download. Tumatakbo nang offline pagkatapos."
+    },
+    "manual": {
+      "title": "Manual",
+      "point1": "Ikaw ang nagpi-pin ng mga mensahe at nagsusulat ng mga fact",
+      "point2": "Buong kontrol sa kung ano ang natatandaan",
+      "point3": "Walang tumatakbo sa background",
+      "note": "Walang ido-download."
+    }
+  },
+  "other": {
+    "title": "Iba pang opsyon",
+    "language": "Wika",
+    "skip": "Laktawan ang setup",
+    "skipBody": "Tumingin-tumingin muna. Kailangan ng AI ang mga chat bago sila makasagot.",
+    "restore": "I-restore ang backup",
+    "restoreBody": "Ibalik ang mga chat, karakter at setting mula sa .lettuce file",
+    "languageTitle": "Wika",
+    "warning": {
+      "title": "Kailangan ng AI ang mga chat bago sila makasagot",
+      "body": "Kung walang konektadong AI, hindi makakasagot ang mga karakter. Puwede kang kumonekta mamaya sa settings.",
+      "connect": "Kumonekta ng AI",
+      "skipAnyway": "Laktawan pa rin"
+    }
+  },
+  "failure": {
+    "finish": "Hindi natapos ang setup.",
+    "models": "Hindi ma-load ang mga modelo.",
+    "save": "Hindi ma-save."
+  }
+}

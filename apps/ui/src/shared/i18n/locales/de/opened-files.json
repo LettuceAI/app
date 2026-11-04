@@ -1,0 +1,76 @@
+{
+  "cancel": "Abbrechen",
+  "retry": "Erneut versuchen",
+  "notRecognized": "Diese Datei ist keine LettuceAI-Karte und keine Sicherung.",
+  "import": {
+    "title": {
+      "character": "Charakter importieren",
+      "persona": "Persona importieren",
+      "lorebook": "Lorebook importieren"
+    },
+    "kind": {
+      "character": "Charakter",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_one": "{{count}} Eintrag",
+    "entries_other": "{{count}} Einträge",
+    "confirm": "Importieren",
+    "open": "Öffnen",
+    "done": "{{name}} importiert",
+    "started": "Import gestartet",
+    "warnings_one": "Mit {{count}} Warnung importiert",
+    "warnings_other": "Mit {{count}} Warnungen importiert"
+  },
+  "restore": {
+    "title": "Sicherung wiederherstellen",
+    "created": "Erstellt",
+    "version": "App-Version",
+    "password": "Passwort",
+    "warning": "Beim Wiederherstellen werden alle Chats, Charaktere und Einstellungen auf diesem Gerät durch die Sicherung ersetzt. Deine aktuellen Daten werden als separate Datei aufbewahrt.",
+    "action": "Wiederherstellen",
+    "stop": "Stoppen",
+    "running": "Wird wiederhergestellt",
+    "starting": "Wiederherstellung wird gestartet",
+    "waiting": "Warten auf den Start der Wiederherstellung",
+    "step": "Schritt {{step}} von {{total}}",
+    "keepOpen": "Große Sicherungen können mehrere Minuten dauern. Lass die App geöffnet, bis der Vorgang abgeschlossen ist.",
+    "stages": {
+      "decode": "Sicherung wird geöffnet",
+      "stage": "Dateien werden vorbereitet",
+      "write": "Daten werden geschrieben",
+      "verify": "Wiederhergestellte Daten werden geprüft",
+      "switch": "Wechsel zu den wiederhergestellten Daten"
+    },
+    "failed": "Die Wiederherstellung wurde angehalten",
+    "failedAt": "Die Wiederherstellung wurde bei Schritt {{step}} von {{total}} angehalten: {{stage}}",
+    "confirmTitle": "Alles auf diesem Gerät ersetzen?",
+    "confirmBody": "Alle Chats, Charaktere und Einstellungen werden durch diese Sicherung ersetzt. Deine aktuellen Daten werden als separate Datei aufbewahrt.",
+    "confirm": "Wiederherstellen",
+    "done": "Sicherung wiederhergestellt",
+    "notBackup": "Diese Datei ist keine LettuceAI-Sicherung.",
+    "models": {
+      "title": "Die Modelle herunterladen, die deine Daten brauchen",
+      "required": "Ohne sie funktionieren diese Funktionen nicht, daher müssen sie heruntergeladen werden, bevor du fortfährst."
+    },
+    "warnings_one": "Sicherung mit {{count}} Warnung wiederhergestellt",
+    "warnings_other": "Sicherung mit {{count}} Warnungen wiederhergestellt",
+    "failure": {
+      "unknown": "Die Sicherung konnte nicht wiederhergestellt werden.",
+      "backup_authentication": "Das Passwort ist falsch oder die Sicherung ist beschädigt.",
+      "backup_invalid_envelope": "Diese Datei ist keine gültige Sicherung.",
+      "backup_limit_exceeded": "Diese Sicherung ist größer, als die App wiederherstellen kann.",
+      "backup_unavailable": "Sicherungen sind gerade nicht verfügbar.",
+      "backup_file_not_found": "Die Sicherungsdatei wurde nicht gefunden.",
+      "backup_permission_denied": "Die App darf diese Datei nicht lesen.",
+      "backup_file_busy": "Die Datei wird von einer anderen App verwendet.",
+      "backup_file_unavailable": "Die Sicherungsdatei konnte nicht gelesen werden.",
+      "backup_file_unsupported": "Diese Sicherung stammt von einer Version, die die App nicht lesen kann.",
+      "backup_source_is_target": "Die Sicherung ist die Datei, die die App gerade verwendet.",
+      "backup_cancelled": "Die Wiederherstellung wurde abgebrochen.",
+      "backup_retry_required": "Die Wiederherstellung wurde nicht abgeschlossen. Versuch es erneut.",
+      "backup_recovery_required": "Für die Wiederherstellung muss die App neu geöffnet werden.",
+      "backup_verification_failed": "Die Sicherung hat die Prüfung nicht bestanden."
+    }
+  }
+}

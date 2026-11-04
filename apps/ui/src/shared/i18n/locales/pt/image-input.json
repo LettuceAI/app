@@ -1,0 +1,135 @@
+{
+  "generate": "Gerar avatar",
+  "title": "Gerar avatar",
+  "bannerCrop": {
+    "title": "Posicionar banner",
+    "description": "Enquadre a capa. Arraste para mover, faça pinça ou role para ampliar.",
+    "saveFailed": "Não foi possível salvar o banner"
+  },
+  "crop": {
+    "title": "Posicionar avatar",
+    "description": "Arraste para mover. Faça pinça ou role para ampliar.",
+    "zoom": "Zoom",
+    "zoomIn": "Ampliar",
+    "zoomOut": "Reduzir",
+    "center": "Centralizar",
+    "area": "Área de enquadramento",
+    "keyboard": "As setas movem a imagem. Mais e menos ampliam, C centraliza, 0 redefine.",
+    "reset": "Redefinir",
+    "apply": "Usar esta posição",
+    "loadFailed": "Não foi possível carregar a imagem",
+    "saveFailed": "Não foi possível salvar o avatar"
+  },
+  "preview": {
+    "empty": "Nenhuma imagem ainda",
+    "emptyBody": "Descreva um avatar abaixo ou comece com sua própria imagem.",
+    "alt": "Prévia do avatar",
+    "unchanged": "O avatar que já está no formulário",
+    "editedFrom": "De {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Versões",
+    "count_one": "{{count}} versão",
+    "count_many": "{{count}} versões",
+    "count_other": "{{count}} versões",
+    "current": "Avatar atual",
+    "upload": "Imagem enviada {{number}}",
+    "generation": "Imagem gerada {{number}}",
+    "edit": "Imagem editada {{number}}",
+    "short": {
+      "current": "Atual",
+      "upload": "Envio {{number}}",
+      "generation": "Imagem {{number}}",
+      "edit": "Edição {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Enviar imagem"
+  },
+  "mode": {
+    "label": "O que fazer",
+    "generate": "Nova imagem",
+    "edit": "Editar selecionada",
+    "generateHint": "Começa do zero apenas com a descrição",
+    "editHint": "Altera uma cópia de {{version}}"
+  },
+  "prompt": {
+    "label": "Descreva o avatar",
+    "placeholder": "Uma raposa sorridente com um cachecol de tricô, iluminação suave"
+  },
+  "instruction": {
+    "label": "O que mudar",
+    "placeholder": "Deixe o cachecol azul"
+  },
+  "actions": {
+    "generate": "Gerar",
+    "edit": "Aplicar edição",
+    "cancel": "Cancelar",
+    "use": "Usar este avatar",
+    "retry": "Tentar novamente"
+  },
+  "busy": {
+    "uploading": "Adicionando a imagem",
+    "generating": "Gerando a imagem",
+    "editing": "Editando a imagem",
+    "cancelling": "Cancelando"
+  },
+  "job": {
+    "progress": "{{current}} de {{total}}",
+    "rejected_one": "{{count}} resultado foi descartado",
+    "rejected_many": "{{count}} resultados foram descartados",
+    "rejected_other": "{{count}} resultados foram descartados",
+    "cancelled": "Geração cancelada"
+  },
+  "settings": {
+    "open": "Abrir configurações de imagem"
+  },
+  "notice": {
+    "options": {
+      "title": "Não foi possível verificar o modelo de avatar",
+      "body": "O envio ainda funciona."
+    },
+    "disabled": {
+      "title": "A geração de avatar está desativada",
+      "body": "Ative-a nas configurações de imagem para gerar. O envio ainda funciona."
+    },
+    "noModel": {
+      "title": "Nenhum modelo de avatar escolhido",
+      "body": "Escolha um modelo que aceite e retorne imagens. O envio ainda funciona."
+    },
+    "incompatible": {
+      "title": "Este modelo não consegue criar avatares",
+      "body": "Avatares precisam de um modelo que aceite e retorne imagens. O envio ainda funciona."
+    },
+    "upload": {
+      "title": "Não foi possível adicionar a imagem"
+    },
+    "generation": {
+      "title": "Não foi possível criar a imagem"
+    },
+    "cancellation": {
+      "title": "Não foi possível cancelar",
+      "body": "A solicitação pode ainda estar em andamento. Tente cancelar de novo."
+    },
+    "uncertain": {
+      "title": "Aguardando o resultado",
+      "body": "A conexão caiu antes de o resultado chegar. Tente novamente para reconectar ou cancele a solicitação."
+    }
+  },
+  "failure": {
+    "cancelled": "A geração foi cancelada.",
+    "setup": "O modelo de imagem não está configurado corretamente. Verifique-o nas configurações de imagem.",
+    "invalidRequest": "A solicitação não foi aceita. Altere a descrição e tente novamente.",
+    "engine": "O motor de imagem parou antes de terminar.",
+    "timedOut": "A imagem demorou demais para ser criada.",
+    "memory": "O modelo de imagem ficou sem memória.",
+    "storage": "Não foi possível salvar a imagem.",
+    "provider": "O provedor não conseguiu criar a imagem.",
+    "empty": "Nenhuma imagem retornou.",
+    "rejected": "O resultado foi descartado e nada foi retornado.",
+    "refused": "O modelo se recusou a criar esta imagem. Altere a descrição e tente novamente.",
+    "authentication": "O provedor rejeitou as credenciais. Verifique o provedor nas configurações.",
+    "unavailable": "O modelo de imagem não está disponível no momento.",
+    "unknown": "Algo deu errado ao criar a imagem."
+  }
+}

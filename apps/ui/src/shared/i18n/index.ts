@@ -25,7 +25,7 @@ import welcomeBack from "./locales/en/welcome-back.json";
 
 export const defaultNamespace = "common";
 
-export const resources = {
+const english = {
   en: {
     help,
     updates,
@@ -52,9 +52,25 @@ export const resources = {
   },
 } as const;
 
-export type Language = keyof typeof resources;
+type Namespaces = Record<string, Record<string, unknown>>;
 
-export const fallbackLanguage: Language = "en";
+const bundles = import.meta.glob<Record<string, unknown>>("./locales/*/*.json", {
+  eager: true,
+  import: "default",
+});
+
+const translated: Record<string, Namespaces> = {};
+for (const [path, bundle] of Object.entries(bundles)) {
+  const [, language, file] = path.match(/\.\/locales\/([^/]+)\/([^/]+)\.json$/) ?? [];
+  if (!language || !file || language === "en") continue;
+  (translated[language] ??= {})[file] = bundle;
+}
+
+export const resources: typeof english & Record<string, Namespaces> = { ...translated, ...english };
+
+export type Language = string;
+
+export const fallbackLanguage = "en";
 
 /** One i18next instance per app (or per test); features add their namespaces to `resources`. */
 export async function createI18n(language: string = fallbackLanguage): Promise<i18n> {

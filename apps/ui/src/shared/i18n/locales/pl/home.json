@@ -1,0 +1,103 @@
+{
+  "title": "Czaty",
+  "homeTitle": "Główna",
+  "characters": "Postacie",
+  "search": "Szukaj czatów",
+  "searchCharacters": "Szukaj postaci",
+  "count": "{{shown}} z {{total}}",
+  "noDescription": "Brak opisu",
+  "lastChat": "Ostatni czat {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Kontynuuj czat",
+  "empty": {
+    "title": "Nie ma jeszcze postaci",
+    "body": "Stwórz kogoś do rozmowy albo zaimportuj kartę postaci z dysku.",
+    "create": "Utwórz postać"
+  },
+  "noMatch": {
+    "title": "Nic nie pasuje do „{{query}}”",
+    "body": "Spróbuj imienia lub słowa z opisu postaci.",
+    "clear": "Wyczyść wyszukiwanie"
+  },
+  "view": {
+    "label": "Widok",
+    "current": "Widok: {{view}}",
+    "home": "Główna",
+    "list": "Lista",
+    "hero": "Hero"
+  },
+  "layout": {
+    "title": "Układ",
+    "body": "Sposób, w jaki Czaty pokazują postacie.",
+    "current": "Układ: {{layout}}",
+    "list": {
+      "title": "Lista",
+      "body": "Każda postać jako karta, tak jak wygląda dziś"
+    },
+    "recent": {
+      "title": "Ostatnie",
+      "body": "Wszystkie czaty, najnowsze najpierw, z wierszem, na którym się zatrzymały"
+    }
+  },
+  "recent": {
+    "today": "Dzisiaj",
+    "week": "W tym tygodniu",
+    "earlier": "Wcześniej",
+    "empty": "Nie ma jeszcze czatów"
+  },
+  "menu": {
+    "history": "Historia czatu",
+    "historyBody": "Wcześniejsze czaty z tą postacią",
+    "edit": "Edytuj postać",
+    "cardStyle": "Styl karty",
+    "cardRow": "Wiersz, przełącz na baner",
+    "cardBanner": "Baner, przełącz na wiersz",
+    "export": "Eksportuj",
+    "exportBody": "Jako karta postaci",
+    "hide": "Ukryj w Czatach",
+    "hideBody": "Pozostanie w bibliotece",
+    "delete": "Usuń postać",
+    "deleteTitle": "Usunąć {{name}}?",
+    "deleteBody": "Postać i jej czaty jeden na jeden zostaną usunięte. Tego nie można cofnąć.",
+    "noChats": "Nie ma jeszcze czatów"
+  },
+  "export": {
+    "title": "Format eksportu",
+    "body": "Wybierz format",
+    "done": "Zapisano jako {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Format Unified Entity Card (.uec) (zalecany)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (najnowsza specyfikacja)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (specyfikacja Tavern)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Edytuj czat",
+    "editCharacter": "Edytuj postać",
+    "editGroup": "Edytuj grupę",
+    "rename": "Zmień nazwę",
+    "renameTitle": "Zmień nazwę czatu",
+    "save": "Zapisz",
+    "delete": "Usuń czat",
+    "deleteTitle": "Usunąć {{title}}?",
+    "deleteBody": "Postać zostaje; ta historia odchodzi."
+  },
+  "sidebar": {
+    "label": "Ostatnie czaty",
+    "empty": "Czaty, które rozpoczniesz, pojawią się tutaj."
+  },
+  "discover": {
+    "title": "Odkrywaj",
+    "soonTitle": "Odkrywaj już wkrótce",
+    "soonBody": "Miejsce, w którym można znaleźć i udostępniać postacie stworzone przez społeczność. Budujemy je na własnych serwerach, z moderacją od pierwszego dnia.",
+    "create": "Utwórz postać",
+    "discord": "Śledź na Discordzie"
+  }
+}

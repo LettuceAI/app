@@ -1,0 +1,103 @@
+{
+  "title": "Trò chuyện",
+  "homeTitle": "Trang chủ",
+  "characters": "Nhân vật",
+  "search": "Tìm cuộc trò chuyện",
+  "searchCharacters": "Tìm nhân vật",
+  "count": "{{shown}} trên {{total}}",
+  "noDescription": "Chưa có mô tả",
+  "lastChat": "Trò chuyện gần nhất {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Tiếp tục trò chuyện",
+  "empty": {
+    "title": "Chưa có nhân vật nào",
+    "body": "Tạo một người để trò chuyện, hoặc nhập thẻ nhân vật từ máy.",
+    "create": "Tạo nhân vật"
+  },
+  "noMatch": {
+    "title": "Không có kết quả cho “{{query}}”",
+    "body": "Thử tên, hoặc một từ trong mô tả của nhân vật.",
+    "clear": "Xóa tìm kiếm"
+  },
+  "view": {
+    "label": "Chế độ xem",
+    "current": "Chế độ xem: {{view}}",
+    "home": "Trang chủ",
+    "list": "Danh sách",
+    "hero": "Ảnh lớn"
+  },
+  "layout": {
+    "title": "Bố cục",
+    "body": "Cách mục Trò chuyện hiển thị nhân vật.",
+    "current": "Bố cục: {{layout}}",
+    "list": {
+      "title": "Danh sách",
+      "body": "Mỗi nhân vật thành một thẻ, giống giao diện hiện tại"
+    },
+    "recent": {
+      "title": "Gần đây",
+      "body": "Mọi cuộc trò chuyện, mới nhất trước, kèm dòng cuối cùng"
+    }
+  },
+  "recent": {
+    "today": "Hôm nay",
+    "week": "Tuần này",
+    "earlier": "Trước đó",
+    "empty": "Chưa có cuộc trò chuyện"
+  },
+  "menu": {
+    "history": "Lịch sử trò chuyện",
+    "historyBody": "Các cuộc trò chuyện trước với nhân vật này",
+    "edit": "Sửa nhân vật",
+    "cardStyle": "Kiểu thẻ",
+    "cardRow": "Hàng, chuyển sang banner",
+    "cardBanner": "Banner, chuyển sang hàng",
+    "export": "Xuất",
+    "exportBody": "Thành thẻ nhân vật",
+    "hide": "Ẩn khỏi Trò chuyện",
+    "hideBody": "Vẫn ở trong thư viện",
+    "delete": "Xóa nhân vật",
+    "deleteTitle": "Xóa {{name}}?",
+    "deleteBody": "Nhân vật và các cuộc trò chuyện riêng với họ sẽ bị xóa. Không thể hoàn tác.",
+    "noChats": "Chưa có cuộc trò chuyện"
+  },
+  "export": {
+    "title": "Định dạng xuất",
+    "body": "Chọn định dạng",
+    "done": "Đã lưu thành {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Định dạng Unified Entity Card (.uec) (khuyên dùng)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "JSON Character Card V3 (đặc tả mới nhất)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "JSON Character Card V2 (đặc tả Tavern)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Sửa cuộc trò chuyện",
+    "editCharacter": "Sửa nhân vật",
+    "editGroup": "Sửa nhóm",
+    "rename": "Đổi tên",
+    "renameTitle": "Đổi tên cuộc trò chuyện",
+    "save": "Lưu",
+    "delete": "Xóa cuộc trò chuyện",
+    "deleteTitle": "Xóa {{title}}?",
+    "deleteBody": "Nhân vật vẫn còn; cuộc trò chuyện này sẽ bị xóa."
+  },
+  "sidebar": {
+    "label": "Cuộc trò chuyện gần đây",
+    "empty": "Các cuộc trò chuyện bạn bắt đầu sẽ hiện ở đây."
+  },
+  "discover": {
+    "title": "Khám phá",
+    "soonTitle": "Khám phá sắp ra mắt",
+    "soonBody": "Nơi tìm và chia sẻ nhân vật do cộng đồng tạo. Chúng tôi đang xây dựng trên máy chủ riêng, có kiểm duyệt ngay từ ngày đầu.",
+    "create": "Tạo nhân vật",
+    "discord": "Theo dõi trên Discord"
+  }
+}

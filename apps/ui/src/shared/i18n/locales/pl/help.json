@@ -1,0 +1,103 @@
+{
+  "title": "Pomoc i FAQ",
+  "subtitle": "Podstawy, klucze API, prywatność i częste pytania",
+  "sections": {
+    "gettingStarted": "Pierwsze kroki",
+    "privacySafety": "Prywatność i bezpieczeństwo",
+    "modelsProviders": "Modele i dostawcy",
+    "charactersChats": "Postacie i czaty"
+  },
+  "stillStuck": {
+    "title": "Nadal utknąłeś?",
+    "docsTitle": "Pełna dokumentacja",
+    "docsDescription": "Poradniki i materiały o LettuceAI",
+    "discordTitle": "Dołącz do Discorda",
+    "discordDescription": "Zapytaj społeczność lub zgłoś błąd"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Czym jest LettuceAI?",
+      "answer": "LettuceAI to aplikacja do czatowania z postaciami AI. Wybierasz dostawcę i model, które piszą odpowiedzi, a twoje czaty i postacie zostają na twoim urządzeniu. Dostawcy chmurowi korzystają z twojego konta; obsługiwane modele lokalne działają na twoim komputerze."
+    },
+    "whatIsApiKey": {
+      "question": "Czym jest klucz API i po co mi on? (BYOK wyjaśnione)",
+      "answer": "BYOK oznacza Bring Your Own Key — użyj własnego klucza. Klucz API pozwala LettuceAI wysyłać żądania do dostawcy za pomocą twojego konta. Utwórz klucz u dostawcy, a następnie dodaj go w Ustawienia > Dostawcy. Żądania trafiają z twojego urządzenia do tego dostawcy, który stosuje własne rozliczenia i limity. Obsługiwane modele lokalne nie wymagają klucza API chmury. Traktuj klucz jak hasło i nie udostępniaj go."
+    },
+    "cheapestStart": {
+      "question": "Jaki jest najtańszy lub najłatwiejszy sposób na start?",
+      "answer": "Użyj Przewodnika konfiguracji, aby połączyć dostawcę i wybrać model. Przed dodaniem środków porównaj aktualne ceny, darmowe plany i limity żądań dostawcy. Zacznij od małego budżetu i sprawdzaj Ustawienia > Analityka użycia podczas czatowania. Na komputerze obsługiwane modele lokalne są kolejną opcją, jeśli masz dość pamięci i miejsca."
+    },
+    "alternative": {
+      "question": "Czy to alternatywa dla innych aplikacji do czatowania z AI?",
+      "answer": "Tak. LettuceAI pozwala wybrać dostawcę, model i konfigurację postaci, zamiast wiązać każdy czat z jedną usługą. Sam zarządzasz kontem dostawcy i trzymasz dane na swoim urządzeniu. Krótka konfiguracja łączy model, którego chcesz używać."
+    },
+    "cost": {
+      "question": "Ile to kosztuje?",
+      "answer": "LettuceAI jest darmowe. Dostawca chmurowy może obciążyć twoje konto za żądania lub zaoferować darmowy plan. Jego stawki zależą od modelu, ilości wysyłanego i generowanego tekstu oraz funkcji obrazu lub dźwięku, których używasz. Sprawdź cennik dostawcy przed wyborem modelu. Analityka użycia pokazuje zgłoszone tokeny i znane koszty; brak ceny to nie to samo co darmowe żądania."
+    },
+    "apiKeySafe": {
+      "question": "Czy mój klucz API jest bezpieczny?",
+      "answer": "Dane logowania dostawcy są przechowywane lokalnie i używane do łączenia się ze skonfigurowanym dostawcą. LettuceAI nie przekazuje twoich żądań przez własny serwer czatu. Wprowadzaj klucze tylko dla usług, którym ufasz, uważnie sprawdzaj adresy URL niestandardowych dostawców i chroń urządzenie oraz pliki kopii zapasowych."
+    },
+    "chatsStored": {
+      "question": "Gdzie są przechowywane moje czaty? Czy ktoś może je przeczytać?",
+      "answer": "Czaty są zapisywane w lokalnej bazie danych aplikacji. Gdy odpowiada model chmurowy, prompt i odpowiedni kontekst rozmowy są wysyłane do wybranego dostawcy. Dostawca przetwarza żądanie zgodnie z własną polityką prywatności. Każdy, kto ma dostęp do twojego urządzenia lub wyeksportowanych kopii zapasowych, również może móc odczytać twoje dane."
+    },
+    "chatsDeleted": {
+      "question": "Czy moje czaty mogą same się usunąć?",
+      "answer": "LettuceAI nie przechowuje kopii na serwerze, która mogłaby przywrócić czaty. Usunięcie czatu, reset aplikacji, odinstalowanie, wyczyszczenie pamięci aplikacji lub utrata urządzenia mogą usunąć dane lokalne. Rób kopie zapasowe wszystkiego, co chcesz zachować."
+    },
+    "editRemotely": {
+      "question": "Czy ktoś może zdalnie edytować moje dane?",
+      "answer": "LettuceAI nie ma zdalnej usługi administracyjnej dla twoich lokalnych czatów i postaci. Wybrany dostawca generuje odpowiedzi, ale nie zarządza bazą danych aplikacji. Chroń urządzenie oraz wszelkie pliki, które importujesz lub udostępniasz."
+    },
+    "shutdown": {
+      "question": "Co się stanie z moimi danymi, jeśli LettuceAI zostanie zamknięte?",
+      "answer": "Zapisane czaty i postacie pozostają na twoim urządzeniu i można je odczytać bez konta LettuceAI. Odpowiedzi z chmury nadal zależą od dostępności dostawcy i działania twojego konta. Zachowaj kopię danych w Ustawienia > Kopia zapasowa i przywracanie."
+    },
+    "training": {
+      "question": "Czy dostawcy będą trenować na moich rozmowach?",
+      "answer": "To zależy od dostawcy, typu twojego konta i jego aktualnej polityki danych. LettuceAI nie może zmienić tych warunków. Przeczytaj ustawienia prywatności i przechowywania dostawcy, zanim wyślesz wrażliwe informacje. Obsługiwane modele lokalne przetwarzają prompty na twoim komputerze."
+    },
+    "whatIsModel": {
+      "question": "Czym jest „model”? Który wybrać?",
+      "answer": "Model to AI, która pisze odpowiedzi. Modele różnią się stylem pisania, szybkością, długością kontekstu, wymaganiami sprzętowymi i ceną. Dodaj dostawcę w Ustawienia > Dostawcy, a potem skonfiguruj model w Ustawienia > Modele. Możesz ustawić domyślny model aplikacji albo wybrać model dla konkretnej postaci lub czatu."
+    },
+    "freeProviders": {
+      "question": "Czy są darmowi dostawcy?",
+      "answer": "Niektórzy dostawcy oferują darmowe modele lub darmowe plany, z własnymi wymaganiami konta i limitami. Dostępność może się zmieniać, więc sprawdzaj aktualne warunki dostawcy. Darmowy plan nadal może wymagać klucza API. Obsługiwane modele lokalne nie pobierają opłat za żądanie, ale korzystają ze sprzętu, pamięci i energii twojego komputera."
+    },
+    "freeVsPaid": {
+      "question": "Jaka jest różnica między darmowymi i płatnymi dostawcami?",
+      "answer": "Darmowe i płatne plany mogą się różnić dostępnymi modelami, limitami żądań, szybkością odpowiedzi, warunkami prywatności i wsparciem. Szczegóły należą do każdego dostawcy; płatny plan nie oznacza automatycznie określonej polityki prywatności. Możesz połączyć więcej niż jednego dostawcę i wybierać model pasujący do każdego czatu."
+    },
+    "whatIsToken": {
+      "question": "Czym jest token?",
+      "answer": "Token to mały fragment tekstu, np. słowo lub część słowa. Dokładny podział zależy od modelu i języka. Żądanie obejmuje tokeny wejściowe z promptu i kontekstu rozmowy oraz tokeny wyjściowe z odpowiedzi. Dostawcy mogą wyceniać je różnie. Długie historie i długie odpowiedzi mogą zwiększyć zużycie."
+    },
+    "noDefaultModel": {
+      "question": "Widzę „brak skonfigurowanego modelu domyślnego”",
+      "answer": "Otwórz Ustawienia > Modele i dodaj model od skonfigurowanego dostawcy. Następnie ustaw domyślny model aplikacji albo wybierz model w ustawieniach postaci. Postać lub czat mogą nadpisać ustawienie domyślne, więc sprawdź wybór modelu, jeśli odpowiedzi nadal się nie zaczynają."
+    },
+    "cloudVsLocal": {
+      "question": "Jaka jest różnica między modelami chmurowymi i lokalnymi?",
+      "answer": "Modele chmurowe działają na sprzęcie dostawcy i wymagają połączenia z tą usługą. Obsługiwane modele lokalne działają na twoim komputerze i wymagają dość pamięci oraz miejsca. Instalacja i kontrola działania modeli lokalnych są dostępne na komputerze; na urządzeniu mobilnym użyj połączonego dostawcy."
+    },
+    "whatIsCharacter": {
+      "question": "Czym jest postać? Czy mogę stworzyć własną?",
+      "answer": "Postać ma imię, obraz i opis, które kształtują sposób, w jaki mówi. Użyj przycisku tworzenia, aby ją stworzyć, albo zaimportuj kartę postaci w Bibliotece. Edytuj jej opis i ustawienia modelu, aby zmienić sposób generowania przyszłych odpowiedzi."
+    },
+    "whatIsPersona": {
+      "question": "Czym jest persona?",
+      "answer": "Persona opisuje twoją stronę rozmowy: twoje imię i szczegóły, które postać powinna o tobie wiedzieć. Twórz lub importuj persony w Bibliotece, a potem wybierz tę, której chcesz użyć w czacie."
+    },
+    "charactersPrivate": {
+      "question": "Czy tworzone przeze mnie postacie są prywatne?",
+      "answer": "Tworzone postacie są przechowywane na twoim urządzeniu. Eksportowanie i udostępnianie karty postaci pozwala innym ją przeczytać. Gdy rozmawiasz z modelem chmurowym, szczegóły postaci użyte w prompcie są również wysyłane do wybranego dostawcy."
+    },
+    "backupMove": {
+      "question": "Jak zrobić kopię zapasową lub przenieść dane na inne urządzenie?",
+      "answer": "Otwórz Ustawienia > Kopia zapasowa i przywracanie, aby utworzyć plik kopii zapasowej. Trzymaj go w bezpiecznym miejscu. Aby przenieść dane, zainstaluj LettuceAI na drugim urządzeniu i przywróć tam ten plik. Przeczytaj ostrzeżenia na ekranie przywracania, zanim zastąpisz istniejące dane."
+    }
+  }
+}

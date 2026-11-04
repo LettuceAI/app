@@ -1,0 +1,73 @@
+{
+  "cancel": "Batal",
+  "retry": "Coba lagi",
+  "notRecognized": "File ini bukan kartu atau cadangan LettuceAI.",
+  "import": {
+    "title": {
+      "character": "Impor karakter",
+      "persona": "Impor persona",
+      "lorebook": "Impor lorebook"
+    },
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_other": "{{count}} entri",
+    "confirm": "Impor",
+    "open": "Buka",
+    "done": "{{name}} diimpor",
+    "started": "Impor dimulai",
+    "warnings_other": "Diimpor dengan {{count}} peringatan"
+  },
+  "restore": {
+    "title": "Pulihkan cadangan",
+    "created": "Dibuat",
+    "version": "Versi aplikasi",
+    "password": "Kata sandi",
+    "warning": "Memulihkan akan mengganti semua obrolan, karakter, dan pengaturan di perangkat ini dengan cadangan. Data Anda saat ini disimpan sebagai file terpisah.",
+    "action": "Pulihkan",
+    "stop": "Hentikan",
+    "running": "Memulihkan",
+    "starting": "Memulai pemulihan",
+    "waiting": "Menunggu pemulihan dimulai",
+    "step": "Langkah {{step}} dari {{total}}",
+    "keepOpen": "Cadangan besar dapat memakan beberapa menit. Biarkan aplikasi tetap terbuka hingga selesai.",
+    "stages": {
+      "decode": "Membuka cadangan",
+      "stage": "Menyiapkan file",
+      "write": "Menulis data Anda",
+      "verify": "Memeriksa data yang dipulihkan",
+      "switch": "Beralih ke data yang dipulihkan"
+    },
+    "failed": "Pemulihan berhenti",
+    "failedAt": "Pemulihan berhenti pada langkah {{step}} dari {{total}}: {{stage}}",
+    "confirmTitle": "Ganti semua yang ada di perangkat ini?",
+    "confirmBody": "Semua obrolan, karakter, dan pengaturan diganti dengan cadangan ini. Data Anda saat ini disimpan sebagai file terpisah.",
+    "confirm": "Pulihkan",
+    "done": "Cadangan dipulihkan",
+    "notBackup": "File itu bukan cadangan LettuceAI.",
+    "models": {
+      "title": "Unduh model yang dibutuhkan data Anda",
+      "required": "Fitur ini berhenti berfungsi tanpanya, jadi harus diunduh sebelum Anda melanjutkan."
+    },
+    "warnings_other": "Cadangan dipulihkan dengan {{count}} peringatan",
+    "failure": {
+      "unknown": "Cadangan tidak dapat dipulihkan.",
+      "backup_authentication": "Kata sandi salah atau cadangan rusak.",
+      "backup_invalid_envelope": "File ini bukan cadangan yang valid.",
+      "backup_limit_exceeded": "Cadangan ini lebih besar dari yang dapat dipulihkan aplikasi.",
+      "backup_unavailable": "Cadangan tidak tersedia saat ini.",
+      "backup_file_not_found": "File cadangan tidak ditemukan.",
+      "backup_permission_denied": "Aplikasi tidak diizinkan membaca file ini.",
+      "backup_file_busy": "File sedang digunakan aplikasi lain.",
+      "backup_file_unavailable": "File cadangan tidak dapat dibaca.",
+      "backup_file_unsupported": "Cadangan ini dibuat oleh versi yang tidak dapat dibaca aplikasi.",
+      "backup_source_is_target": "Cadangan adalah file yang sedang digunakan aplikasi.",
+      "backup_cancelled": "Pemulihan dibatalkan.",
+      "backup_retry_required": "Pemulihan tidak selesai. Coba lagi.",
+      "backup_recovery_required": "Pemulihan mengharuskan aplikasi dibuka kembali.",
+      "backup_verification_failed": "Cadangan tidak lolos verifikasi."
+    }
+  }
+}

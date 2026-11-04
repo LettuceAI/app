@@ -1,0 +1,103 @@
+{
+  "title": "對話",
+  "homeTitle": "首頁",
+  "characters": "角色",
+  "search": "搜尋對話",
+  "searchCharacters": "搜尋角色",
+  "count": "{{shown}} / {{total}}",
+  "noDescription": "尚無描述",
+  "lastChat": "上次對話 {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "繼續對話",
+  "empty": {
+    "title": "尚無角色",
+    "body": "建立一個可以聊天的人，或從磁碟匯入角色卡。",
+    "create": "建立角色"
+  },
+  "noMatch": {
+    "title": "沒有符合「{{query}}」的項目",
+    "body": "試試名稱，或角色描述中的某個詞。",
+    "clear": "清除搜尋"
+  },
+  "view": {
+    "label": "檢視",
+    "current": "檢視：{{view}}",
+    "home": "首頁",
+    "list": "列表",
+    "hero": "大圖"
+  },
+  "layout": {
+    "title": "版面",
+    "body": "對話頁面如何顯示你的角色。",
+    "current": "版面：{{layout}}",
+    "list": {
+      "title": "列表",
+      "body": "每個角色一張卡片，也就是目前的外觀"
+    },
+    "recent": {
+      "title": "最近",
+      "body": "每段對話，最新的在前，並顯示停在哪一行"
+    }
+  },
+  "recent": {
+    "today": "今天",
+    "week": "本週",
+    "earlier": "更早",
+    "empty": "尚無對話"
+  },
+  "menu": {
+    "history": "對話記錄",
+    "historyBody": "與此角色的較早對話",
+    "edit": "編輯角色",
+    "cardStyle": "角色卡樣式",
+    "cardRow": "橫列，切換為橫幅",
+    "cardBanner": "橫幅，切換為橫列",
+    "export": "匯出",
+    "exportBody": "匯出為角色卡",
+    "hide": "從對話中隱藏",
+    "hideBody": "仍保留在資源庫",
+    "delete": "刪除角色",
+    "deleteTitle": "要刪除 {{name}} 嗎？",
+    "deleteBody": "角色及其一對一對話將被刪除。此動作無法復原。",
+    "noChats": "尚無對話"
+  },
+  "export": {
+    "title": "匯出格式",
+    "body": "選擇格式",
+    "done": "已儲存為 {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "統一實體卡（.uec）格式（建議）。"
+    },
+    "v3": {
+      "title": "角色卡 V3",
+      "body": "角色卡 V3 JSON（最新規格）。"
+    },
+    "v2": {
+      "title": "角色卡 V2",
+      "body": "角色卡 V2 JSON（Tavern 規格）。"
+    }
+  },
+  "chatMenu": {
+    "editChat": "編輯對話",
+    "editCharacter": "編輯角色",
+    "editGroup": "編輯群組",
+    "rename": "重新命名",
+    "renameTitle": "重新命名對話",
+    "save": "儲存",
+    "delete": "刪除對話",
+    "deleteTitle": "要刪除 {{title}} 嗎？",
+    "deleteBody": "角色會保留，但這段故事會消失。"
+  },
+  "sidebar": {
+    "label": "最近的對話",
+    "empty": "你開始的對話會顯示在這裡。"
+  },
+  "discover": {
+    "title": "探索",
+    "soonTitle": "探索即將推出",
+    "soonBody": "一個尋找及分享社群創作角色的地方。我們正在自己的伺服器上打造，從第一天就有審核機制。",
+    "create": "建立角色",
+    "discord": "在 Discord 上關注"
+  }
+}

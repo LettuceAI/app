@@ -1,0 +1,103 @@
+{
+  "title": "Yardım ve SSS",
+  "subtitle": "Temeller, API anahtarları, gizlilik ve sık sorulan sorular",
+  "sections": {
+    "gettingStarted": "Başlarken",
+    "privacySafety": "Gizlilik ve güvenlik",
+    "modelsProviders": "Modeller ve sağlayıcılar",
+    "charactersChats": "Karakterler ve sohbetler"
+  },
+  "stillStuck": {
+    "title": "Hâlâ takıldınız mı?",
+    "docsTitle": "Tam belgeler",
+    "docsDescription": "LettuceAI için kılavuzlar ve başvuru",
+    "discordTitle": "Discord'a katılın",
+    "discordDescription": "Topluluğa sorun veya hata bildirin"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "LettuceAI nedir?",
+      "answer": "LettuceAI, yapay zekâ karakterleriyle sohbet etmek için bir uygulamadır. Yanıtları yazan sağlayıcıyı ve modeli siz seçersiniz; sohbetleriniz ve karakterleriniz cihazınızda kalır. Bulut sağlayıcıları kendi hesabınızı kullanır; desteklenen yerel modeller bilgisayarınızda çalışır."
+    },
+    "whatIsApiKey": {
+      "question": "API anahtarı nedir ve neden ihtiyacım var? (BYOK açıklaması)",
+      "answer": "BYOK, Kendi Anahtarını Getir anlamına gelir. API anahtarı, LettuceAI'nin sizin hesabınızı kullanarak bir sağlayıcıya istek göndermesini sağlar. Sağlayıcıda bir anahtar oluşturun, ardından Ayarlar > Sağlayıcılar bölümünde ekleyin. İstekler cihazınızdan o sağlayıcıya gider; faturalandırma ve sınırlar sağlayıcıya aittir. Desteklenen yerel modeller bulut API anahtarı gerektirmez. Anahtarı bir parola gibi koruyun ve paylaşmayın."
+    },
+    "cheapestStart": {
+      "question": "Başlamanın en ucuz veya en kolay yolu nedir?",
+      "answer": "Bir sağlayıcı bağlamak ve model seçmek için Kurulum kılavuzunu kullanın. Kredi eklemeden önce sağlayıcının güncel fiyatlarını, ücretsiz katmanlarını ve istek sınırlarını karşılaştırın. Küçük bir bütçeyle başlayın ve sohbet ettikçe Ayarlar > Kullanım analizi bölümünü kontrol edin. Masaüstünde, bilgisayarınızda yeterli bellek ve depolama varsa desteklenen yerel modeller de bir seçenektir."
+    },
+    "alternative": {
+      "question": "Bu, diğer yapay zekâ sohbet uygulamalarına bir alternatif mi?",
+      "answer": "Evet. LettuceAI, her sohbeti tek bir hizmete bağlamak yerine sağlayıcıyı, modeli ve karakter kurulumunu seçmenize olanak tanır. Sağlayıcı hesabınızı kendiniz yönetir ve verilerinizi cihazınızda tutarsınız. Kısa bir kurulumla kullanmak istediğiniz modeli bağlarsınız."
+    },
+    "cost": {
+      "question": "Ne kadar tutar?",
+      "answer": "LettuceAI ücretsizdir. Bir bulut sağlayıcısı istekler için hesabınızdan ücret alabilir veya ücretsiz bir katman sunabilir. Ücretleri modele, gönderilen ve oluşturulan metin miktarına ve kullandığınız görsel veya ses özelliklerine bağlıdır. Model seçmeden önce sağlayıcının fiyatlandırmasını kontrol edin. Kullanım analizi bildirilen tokenları ve bilinen maliyetleri gösterir; eksik fiyatlar ücretsiz isteklerle aynı şey değildir."
+    },
+    "apiKeySafe": {
+      "question": "API anahtarım güvende mi?",
+      "answer": "Sağlayıcı kimlik bilgileri yerel olarak saklanır ve yapılandırdığınız sağlayıcıya bağlanmak için kullanılır. LettuceAI isteklerinizi kendi sohbet sunucusundan geçirmez. Yalnızca güvendiğiniz hizmetler için anahtar girin, özel sağlayıcı URL'lerini dikkatle kontrol edin ve cihazınızı ve yedek dosyalarınızı koruyun."
+    },
+    "chatsStored": {
+      "question": "Sohbetlerim nerede saklanıyor? Herkes okuyabilir mi?",
+      "answer": "Sohbetler uygulamanın yerel veritabanında saklanır. Bir bulut modeli yanıt verdiğinde, prompt ve ilgili konuşma bağlamı seçtiğiniz sağlayıcıya gönderilir. Sağlayıcı isteği kendi gizlilik politikasına göre işler. Cihazınıza veya dışa aktarılmış yedeklerinize erişimi olan herkes de verilerinizi okuyabilir."
+    },
+    "chatsDeleted": {
+      "question": "Sohbetlerim kendiliğinden silinebilir mi?",
+      "answer": "LettuceAI, sohbetlerinizi geri yükleyebilecek bir sunucu kopyası tutmaz. Bir sohbeti silmek, uygulamayı sıfırlamak, kaldırmak, uygulama depolamasını temizlemek veya cihazı kaybetmek yerel verileri silebilir. Saklamak istediğiniz her şeyin yedeğini alın."
+    },
+    "editRemotely": {
+      "question": "Biri verilerimi uzaktan düzenleyebilir mi?",
+      "answer": "LettuceAI'nin yerel sohbetleriniz ve karakterleriniz için uzaktan yönetim hizmeti yoktur. Seçtiğiniz sağlayıcı yanıtları oluşturur ancak uygulamanın veritabanını yönetmez. Cihazınızı ve içe aktardığınız veya paylaştığınız dosyaları güvende tutun."
+    },
+    "shutdown": {
+      "question": "LettuceAI kapanırsa verilerime ne olur?",
+      "answer": "Kaydedilmiş sohbetleriniz ve karakterleriniz cihazınızda kalır ve LettuceAI hesabı olmadan okunabilir. Bulut yanıtları yine de sağlayıcınızın kullanılabilir olmasına ve hesabınızın çalışmasına bağlıdır. Ayarlar > Yedekleme ve geri yükleme ile verilerinizin bir kopyasını tutun."
+    },
+    "training": {
+      "question": "Sağlayıcılar konuşmalarım üzerinde eğitim yapar mı?",
+      "answer": "Bu, sağlayıcıya, hesap türünüze ve güncel veri politikasına bağlıdır. LettuceAI bu koşulları değiştiremez. Hassas bilgiler göndermeden önce sağlayıcının gizlilik ve saklama ayarlarını okuyun. Desteklenen yerel modeller promptlarını bilgisayarınızda işler."
+    },
+    "whatIsModel": {
+      "question": "Bir 'model' nedir? Hangisini seçmeliyim?",
+      "answer": "Model, yanıtları yazan yapay zekâdır. Modeller yazma stili, hız, bağlam uzunluğu, donanım gereksinimleri ve fiyat açısından farklılık gösterir. Ayarlar > Sağlayıcılar bölümünde bir sağlayıcı ekleyin, ardından Ayarlar > Modeller bölümünde bir model yapılandırın. Uygulama varsayılanı belirleyebilir veya tek bir karakter ya da sohbet için model seçebilirsiniz."
+    },
+    "freeProviders": {
+      "question": "Ücretsiz sağlayıcılar var mı?",
+      "answer": "Bazı sağlayıcılar kendi hesap gereksinimleri ve hız sınırlarıyla birlikte ücretsiz modeller veya ücretsiz kullanım katmanları sunar. Kullanılabilirlik değişebilir, bu yüzden sağlayıcının güncel koşullarını kontrol edin. Ücretsiz bir katman yine de API anahtarı gerektirebilir. Desteklenen yerel modeller istek başına ücret almaz, ancak bilgisayarınızın donanımını, depolamasını ve gücünü kullanır."
+    },
+    "freeVsPaid": {
+      "question": "Ücretsiz ve ücretli sağlayıcılar arasındaki fark nedir?",
+      "answer": "Ücretsiz ve ücretli planlar mevcut modeller, istek sınırları, yanıt hızı, gizlilik koşulları ve destek açısından farklılık gösterebilir. Ayrıntılar her sağlayıcıya aittir; ücretli bir plan otomatik olarak belirli bir gizlilik politikası anlamına gelmez. Birden fazla sağlayıcı bağlayabilir ve her sohbete uygun bir model seçebilirsiniz."
+    },
+    "whatIsToken": {
+      "question": "Token nedir?",
+      "answer": "Token, bir kelime veya bir kelimenin parçası gibi küçük bir metin parçasıdır. Tam bölünme modele ve dile bağlıdır. Bir istek, prompt ve konuşma bağlamından gelen giriş tokenlarını ve yanıttan gelen çıkış tokenlarını içerir. Sağlayıcılar bunları farklı şekilde fiyatlandırabilir. Uzun geçmişler ve uzun yanıtlar kullanımı artırabilir."
+    },
+    "noDefaultModel": {
+      "question": "'Yapılandırılmış varsayılan model yok' görüyorum",
+      "answer": "Ayarlar > Modeller bölümünü açın ve yapılandırılmış bir sağlayıcıdan model ekleyin. Ardından bir uygulama varsayılanı belirleyin veya karakterin ayarlarında model seçin. Bir karakter veya sohbet varsayılanı geçersiz kılabilir; yanıtlar hâlâ başlamıyorsa model seçimini kontrol edin."
+    },
+    "cloudVsLocal": {
+      "question": "Bulut ve yerel modeller arasındaki fark nedir?",
+      "answer": "Bulut modelleri sağlayıcının donanımında çalışır ve o hizmete bağlantı gerektirir. Desteklenen yerel modeller masaüstü bilgisayarınızda çalışır ve yeterli bellek ve depolama gerektirir. Yerel model kurulumu ve çalışma kontrolleri masaüstünde kullanılabilir; mobilde bağlı bir sağlayıcı kullanın."
+    },
+    "whatIsCharacter": {
+      "question": "Karakter nedir? Kendi karakterimi oluşturabilir miyim?",
+      "answer": "Bir karakterin adı, görseli ve nasıl konuştuğunu şekillendiren bir açıklaması vardır. Oluştur düğmesini kullanarak bir tane yapın veya Kütüphane'den bir karakter kartı içe aktarın. Gelecekteki yanıtların nasıl oluşturulacağını değiştirmek için açıklamasını ve model ayarlarını düzenleyin."
+    },
+    "whatIsPersona": {
+      "question": "Persona nedir?",
+      "answer": "Persona, konuşmanın sizin tarafını tanımlar: adınız ve karakterin sizin hakkınızda bilmesi gereken ayrıntılar. Kütüphane'de personalar oluşturun veya içe aktarın, ardından bir sohbet için kullanmak istediğinizi seçin."
+    },
+    "charactersPrivate": {
+      "question": "Oluşturduğum karakterler özel mi?",
+      "answer": "Oluşturduğunuz karakterler cihazınızda saklanır. Bir karakter kartını dışa aktarıp paylaşmak, başkalarının onu okumasına olanak tanır. Bir bulut modeliyle sohbet ettiğinizde, promptunda kullanılan karakter ayrıntıları da seçtiğiniz sağlayıcıya gönderilir."
+    },
+    "backupMove": {
+      "question": "Nasıl yedek alırım veya başka bir cihaza taşırım?",
+      "answer": "Yedek dosyası oluşturmak için Ayarlar > Yedekleme ve geri yükleme bölümünü açın. Güvenli bir yerde saklayın. Cihaz değiştirmek için diğer cihaza LettuceAI'ı kurun ve o dosyayı orada geri yükleyin. Mevcut verileri değiştirmeden önce geri yükleme ekranındaki uyarıları dikkate alın."
+    }
+  }
+}

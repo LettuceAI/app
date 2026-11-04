@@ -1,0 +1,28 @@
+{
+  "title": "Was ist neu",
+  "installed": "Installierte Version: {{version}}",
+  "releaseMismatch": "Diese Hinweise gelten für {{version}}. Du verwendest {{installed}}.",
+  "fullChangelog": "Vollständiges Änderungsprotokoll",
+  "continue": "Weiter",
+  "markFailed": "Die angesehene Version konnte nicht gespeichert werden",
+  "types": {
+    "feature": "Hinzugefügt",
+    "improvement": "Verbessert",
+    "bugfix": "Behoben",
+    "breaking": "Inkompatible Änderungen"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Kontextnutzung im Detail & schlankerer dynamischer Speicher",
+    "description": "Jede Assistenten-Nachricht zeigt jetzt an, wie viel des Kontextfensters ihr Prompt beansprucht hat und womit es gefüllt war – in Einzel- wie in Gruppenchats. Der dynamische Speicher in Einzelchats sendet nicht mehr bei jedem Zug die gesamte Speicherbank, und Embeddings starten unter macOS wieder.",
+    "changes": {
+      "contextUsage": "Ein Panel zur Kontextnutzung in den Nachrichtenaktionen von Assistenten-Antworten zeigt das Kontextfenster aufgeteilt in belegt, für die Antwort reserviert und frei, plus eine Aufschlüsselung der Prompt-Füllung: System, Charakter, Persona, Erinnerungen, Lorebook, Autorennotiz, Companion-Zustand und Chatverlauf. Die Anteile werden mit tiktoken geschätzt und auf die Prompt-Token skaliert, die der Anbieter tatsächlich gemeldet hat.",
+      "groupContextUsage": "Nachrichten in Gruppenchats erhalten dasselbe Panel, aus der gespeicherten Nachricht neu aufgebaut, ohne die Abfrage erneut auszuführen, mit einer Kategorie für die Gruppenbesetzung, die die Profile der anderen Teilnehmenden zählt.",
+      "responseBudget": "Bei llama.cpp und Ollama wird das reservierte Antwortbudget (Antwort plus Denkprozess) aus der echten Anfrage gelesen, und es erscheint eine Warnung, wenn Prompt und Reservierung zusammen das Kontextfenster überschreiten, damit du die maximalen Token senken oder den Kontext kürzen kannst, bevor der Prompt abgeschnitten oder die Antwort zu kurz wird.",
+      "developerBreakdown": "Die Debug-Seite für Entwicklernachrichten enthält dieselbe Token-Aufschlüsselung pro Kategorie, mit Summen und Nutzung des Kontextfensters.",
+      "memoryRetrieval": "Der dynamische Speicher in Einzelchats füllt {{key_memories}} nicht mehr bei jedem Prompt zusätzlich zu den abgerufenen Erinnerungen mit der gesamten aktiven Speicherbank. Es werden nur die für diesen Zug abgerufenen Erinnerungen gesendet, bei Roleplay-Charakteren wie bei Companions, über neue Antworten, Neugenerierungen und Fortsetzungen hinweg.",
+      "macEmbeddings": "Embeddings schlagen unter macOS nicht mehr mit einem Fehler zu „unterschiedlichen Team IDs“ beim Start fehl. Die zur Laufzeit heruntergeladene ONNX Runtime ist von Microsoft signiert, was macOS nicht in die App laden wollte; sie wird jetzt vor dem Laden lokal neu signiert."
+    }
+  }
+}

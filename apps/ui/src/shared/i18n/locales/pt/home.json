@@ -1,0 +1,103 @@
+{
+  "title": "Conversas",
+  "homeTitle": "Início",
+  "characters": "Personagens",
+  "search": "Pesquisar conversas",
+  "searchCharacters": "Pesquisar personagens",
+  "count": "{{shown}} de {{total}}",
+  "noDescription": "Sem descrição ainda",
+  "lastChat": "Última conversa {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Continuar conversa",
+  "empty": {
+    "title": "Nenhum personagem ainda",
+    "body": "Crie alguém para conversar ou importe um card de personagem do seu disco.",
+    "create": "Criar um personagem"
+  },
+  "noMatch": {
+    "title": "Nada corresponde a “{{query}}”",
+    "body": "Tente um nome ou uma palavra da descrição de um personagem.",
+    "clear": "Limpar pesquisa"
+  },
+  "view": {
+    "label": "Visualização",
+    "current": "Visualização: {{view}}",
+    "home": "Início",
+    "list": "Lista",
+    "hero": "Destaque"
+  },
+  "layout": {
+    "title": "Layout",
+    "body": "Como Conversas mostra seus personagens.",
+    "current": "Layout: {{layout}}",
+    "list": {
+      "title": "Lista",
+      "body": "Cada personagem como um card, do jeito que ele é hoje"
+    },
+    "recent": {
+      "title": "Recentes",
+      "body": "Toda conversa, mais recentes primeiro, com a linha em que parou"
+    }
+  },
+  "recent": {
+    "today": "Hoje",
+    "week": "Esta semana",
+    "earlier": "Mais antigas",
+    "empty": "Nenhuma conversa ainda"
+  },
+  "menu": {
+    "history": "Histórico de conversas",
+    "historyBody": "Conversas anteriores com este personagem",
+    "edit": "Editar personagem",
+    "cardStyle": "Estilo do card",
+    "cardRow": "Linha, mudar para banner",
+    "cardBanner": "Banner, mudar para linha",
+    "export": "Exportar",
+    "exportBody": "Como um card de personagem",
+    "hide": "Ocultar de Conversas",
+    "hideBody": "Continua na sua biblioteca",
+    "delete": "Excluir personagem",
+    "deleteTitle": "Excluir {{name}}?",
+    "deleteBody": "O personagem e suas conversas individuais são excluídos. Isto não pode ser desfeito.",
+    "noChats": "Nenhuma conversa ainda"
+  },
+  "export": {
+    "title": "Formato de exportação",
+    "body": "Escolha um formato",
+    "done": "Salvo como {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Formato Unified Entity Card (.uec) (recomendado)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (especificação mais recente)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (especificação Tavern)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Editar conversa",
+    "editCharacter": "Editar personagem",
+    "editGroup": "Editar grupo",
+    "rename": "Renomear",
+    "renameTitle": "Renomear conversa",
+    "save": "Salvar",
+    "delete": "Excluir conversa",
+    "deleteTitle": "Excluir {{title}}?",
+    "deleteBody": "O personagem fica; esta história vai."
+  },
+  "sidebar": {
+    "label": "Conversas recentes",
+    "empty": "Conversas que você iniciar aparecem aqui."
+  },
+  "discover": {
+    "title": "Descobrir",
+    "soonTitle": "Descobrir está a caminho",
+    "soonBody": "Um lugar para encontrar e compartilhar personagens feitos pela comunidade. Estamos construindo nos nossos próprios servidores, com moderação desde o primeiro dia.",
+    "create": "Criar um personagem",
+    "discord": "Acompanhe no Discord"
+  }
+}

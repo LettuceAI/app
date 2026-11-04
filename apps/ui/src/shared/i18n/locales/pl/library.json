@@ -1,0 +1,127 @@
+{
+  "triggerPreview": "Podgląd wyzwalacza",
+  "title": "Biblioteka",
+  "loadMore": "Wczytaj więcej",
+  "search": "Szukaj w bibliotece",
+  "show": "Pokaż",
+  "filters": {
+    "all": "Wszystko",
+    "characters": "Postacie",
+    "personas": "Persony",
+    "lorebooks": "Lorebooki",
+    "images": "Obrazy",
+    "audio": "Dźwięk"
+  },
+  "kinds": {
+    "character": "Postać",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "Ty",
+  "entries_one": "{{count}} element",
+  "entries_few": "{{count}} elementy",
+  "entries_many": "{{count}} elementów",
+  "entries_other": "{{count}} elementu",
+  "defaultPersona": "Persona · twoja domyślna",
+  "menu": {
+    "start": "Rozpocznij czat",
+    "edit_character": "Edytuj postać",
+    "edit_persona": "Edytuj personę",
+    "edit_lorebook": "Edytuj lorebook",
+    "default": "Używaj jako domyślnej persony",
+    "defaultHint": "Dla czatów, które nie wybierają innej",
+    "export": "Eksportuj",
+    "export_character": "Jako karta postaci",
+    "export_persona": "Jako plik UEC",
+    "export_lorebook": "Jako plik UEC lub JSON",
+    "delete_character": "Usuń postać",
+    "delete_persona": "Usuń personę",
+    "delete_lorebook": "Usuń lorebook",
+    "save": "Zapisz na urządzeniu",
+    "deleteImage": "Usuń obraz",
+    "deleteAudio": "Usuń nagranie",
+    "avatar": "Użyj jako awatara {{name}}",
+    "more": "Więcej dla {{name}}",
+    "background": "Tło",
+    "generated": "Wygenerowane",
+    "uploaded": "Wgrane"
+  },
+  "create": {
+    "title": "Utwórz",
+    "description": "Dodaj coś do swojej biblioteki.",
+    "character": "Ktoś do rozmowy",
+    "persona": "Kim jesteś w czacie",
+    "lorebook": "Fakty o świecie, z których postać może czerpać",
+    "import": "Importuj plik",
+    "importHint": "Karta postaci, persona lub lorebook",
+    "new_character": "Nowa postać",
+    "new_lorebook": "Nowy lorebook",
+    "button_character": "Utwórz postać",
+    "button_persona": "Utwórz personę",
+    "button_lorebook": "Utwórz lorebook"
+  },
+  "edit": {
+    "name": "Imię",
+    "hint_character": "Widoczne na karcie i w nagłówku czatu.",
+    "placeholder_character": "np. Cassian",
+    "placeholder_lorebook": "np. Północna brama",
+    "create": "Utwórz",
+    "cancel": "Anuluj"
+  },
+  "delete": {
+    "title": "Usunąć {{name}}?",
+    "confirm": "Usuń",
+    "character": "Jej czaty i wspomnienia zostaną usunięte razem z nią.",
+    "persona": "Persona zostanie usunięta z czatów, które jej używają.",
+    "lorebook": "Postacie i czaty, które go używają, utracą dostęp do jego wpisów.",
+    "image": "Obraz zostanie usunięty z tego urządzenia. Obrazów nadal używanych nie można usunąć.",
+    "audio": "Nagranie zostanie usunięte z tego urządzenia. Nagrań nadal używanych nie można usunąć."
+  },
+  "empty": {
+    "all": {
+      "title": "Twoja biblioteka jest pusta",
+      "description": "Postacie, persony i lorebooki, które tworzysz lub importujesz, są przechowywane tutaj."
+    },
+    "characters": {
+      "title": "Nie ma jeszcze postaci",
+      "description": "Postać to ktoś, z kim rozmawiasz: imię, historia, sposób mówienia."
+    },
+    "personas": {
+      "title": "Nie ma jeszcze person",
+      "description": "Persona to ty w czacie. Postacie widzą jej imię i opis."
+    },
+    "lorebooks": {
+      "title": "Nie ma jeszcze lorebooków",
+      "description": "Fakty o świecie, z których postać może czerpać, gdy pojawią się w rozmowie."
+    },
+    "images": {
+      "title": "Nie ma jeszcze obrazów",
+      "description": "Obrazy generowane w czacie są przechowywane tutaj."
+    },
+    "audio": {
+      "title": "Nie ma jeszcze dźwięków",
+      "description": "Linie głosowe, które generujesz lub nagrywasz, są przechowywane tutaj."
+    },
+    "matches": "Nic nie pasuje do „{{query}}”",
+    "searchAll": "Spróbuj innego imienia lub fragmentu opisu.",
+    "searchSection": "W tej sekcji nic nie pasuje. Reszta biblioteki może.",
+    "clear": "Wyczyść wyszukiwanie",
+    "everything": "Przeszukaj wszystko",
+    "import": "Importuj"
+  },
+  "toast": {
+    "created": "Dodano {{name}}",
+    "deleted": "Usunięto {{name}}",
+    "default": "{{name}} jest twoją domyślną personą",
+    "exported": "Wyeksportowano plik",
+    "imported": "Zaimportowano plik",
+    "warnings_one": "Plik przeniesiony z {{count}} ostrzeżeniem",
+    "warnings_few": "Plik przeniesiony z {{count}} ostrzeżeniami",
+    "warnings_many": "Plik przeniesiony z {{count}} ostrzeżeniami",
+    "warnings_other": "Plik przeniesiony z {{count}} ostrzeżenia",
+    "mediaSaved": "Zapisano na urządzeniu",
+    "avatar": "Zaktualizowano awatar"
+  },
+  "draft": "Szkic",
+  "untitledDraft": "Szkic lorebooka bez tytułu"
+}

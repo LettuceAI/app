@@ -1,0 +1,355 @@
+{
+  "header": {
+    "back": "Quay lại",
+    "learn": "Thiết lập có hướng dẫn · Những điều cơ bản, {{current}} trên {{total}}",
+    "path": "Thiết lập có hướng dẫn · Miễn phí hoặc trả phí",
+    "guided": "Thiết lập có hướng dẫn · {{name}}, {{current}} trên {{total}}",
+    "connect": "Thiết lập · 1/3",
+    "model": "Thiết lập · 2/3",
+    "memory": "Thiết lập · 3/3"
+  },
+  "welcome": {
+    "line1": "Những <brand>câu chuyện</brand> của bạn,",
+    "line2": "những <brand>nhân vật</brand> của bạn.",
+    "pitch": "Trò chuyện và nhân vật vẫn ở trên thiết bị. Bạn chọn AI nào viết câu trả lời.",
+    "start": "Bắt đầu",
+    "other": "Tùy chọn khác"
+  },
+  "actions": {
+    "exitSetup": "Về cài đặt",
+    "next": "Tiếp theo",
+    "gotIt": "Đã hiểu",
+    "haveKey": "Tôi đã có khóa",
+    "connect": "Kết nối",
+    "checking": "Đang kiểm tra khóa",
+    "useModel": "Dùng mô hình này",
+    "saving": "Đang lưu mô hình",
+    "finish": "Hoàn tất thiết lập",
+    "finishing": "Đang hoàn tất thiết lập",
+    "openApp": "Mở LettuceAI"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Chào mừng",
+      "title": "Chào mừng đến với LettuceAI",
+      "body": "Bạn sắp thiết lập buổi nhập vai AI đầu tiên. Vài bước tiếp theo giải thích những điều cơ bản bằng ngôn ngữ dễ hiểu, rồi chúng tôi giúp bạn kết nối mọi thứ. Chỉ mất vài phút."
+    },
+    "car": {
+      "tag": "Cách hoạt động",
+      "title": "Ứng dụng là chiếc xe, không phải động cơ",
+      "body": "Hãy coi ứng dụng này như một chiếc xe chưa có động cơ. Nó có bảng điều khiển, ghế ngồi và các nhân vật của bạn, nhưng chưa thể tự chạy. Bạn thêm động cơ, và vài bước sau sẽ chỉ cách làm.",
+      "plain": "Ứng dụng này là màn hình và các nhân vật. AI thực sự viết câu trả lời chạy trực tuyến, và bạn kết nối ứng dụng với nó."
+    },
+    "provider": {
+      "tag": "Bước 1/3",
+      "title": "Chọn nơi lấy động cơ",
+      "body": "Nhà cung cấp là công ty cung cấp và vận hành động cơ, như Google hay OpenRouter. Bạn mở tài khoản miễn phí hoặc trả phí với họ, và ứng dụng mượn động cơ của họ để chạy trò chuyện.",
+      "plain": "Nhà cung cấp là công ty vận hành mô hình AI. Bạn tạo tài khoản với họ, và ứng dụng gửi tin nhắn đến đó để nhận câu trả lời."
+    },
+    "key": {
+      "tag": "Bước 2/3",
+      "title": "Khóa của bạn khởi động động cơ",
+      "body": "API key hoạt động giống chìa khóa xe. Nhà cung cấp đưa bạn một chiếc, bạn cắm vào ứng dụng, và nó bật động cơ. Hãy giữ kín. Khóa ở lại trên thiết bị của bạn, như chìa khóa trong túi.",
+      "plain": "API key là mã bí mật từ nhà cung cấp cho phép ứng dụng dùng tài khoản của bạn. Bạn dán một lần, và nó chỉ được lưu trên thiết bị."
+    },
+    "engine": {
+      "tag": "Bước 3/3",
+      "title": "Chọn động cơ của bạn",
+      "body": "Mô hình chính là động cơ. Nhà cung cấp có động cơ nhỏ gọn, hiệu quả và động cơ lớn, mạnh mẽ. Động cơ lớn chạy tốt hơn nhưng tốn nhiên liệu hơn, nên tốn kém hơn. Có thể đổi động cơ bất cứ lúc nào.",
+      "plain": "Mô hình là AI cụ thể viết câu trả lời. Mô hình lớn thông minh hơn nhưng tốn kém hơn, và có thể chuyển đổi bất cứ lúc nào."
+    },
+    "cost": {
+      "tag": "Chi phí",
+      "title": "Miễn phí hay trả phí, tùy bạn",
+      "body": "Một số mô hình hoàn toàn miễn phí, với giới hạn số lần trò chuyện mỗi ngày. Mô hình trả phí tính một khoản nhỏ cho mỗi tin nhắn, thường dưới một xu.",
+      "plain": "Bạn chỉ trả tiền cho nhà cung cấp, không bao giờ cho ứng dụng này. Có thể bắt đầu miễn phí và chuyển sang trả phí sau nếu muốn."
+    },
+    "inOtherWords": "Nói cách khác"
+  },
+  "path": {
+    "gemini": {
+      "title": "Miễn phí",
+      "subtitle": "Google Gemini",
+      "cta": "Bắt đầu miễn phí",
+      "pro1": "Không tốn phí và không bao giờ yêu cầu thẻ",
+      "pro2": "Hạn mức hàng ngày thoải mái cho trò chuyện thường ngày",
+      "pro3": "Chất lượng tốt cho nhập vai và trò chuyện",
+      "con1": "Chỉ có mô hình của Google",
+      "con2": "Nội dung người lớn hoặc nhạy cảm bị chặn"
+    },
+    "openrouter": {
+      "title": "Trả theo mức dùng",
+      "subtitle": "OpenRouter",
+      "cta": "Dùng OpenRouter",
+      "pro1": "Gần như mọi mô hình AI, kể cả mạnh nhất",
+      "pro2": "Không giới hạn hàng ngày, chỉ trả cho phần dùng",
+      "pro3": "Chuyển sang mô hình rẻ hơn bất cứ lúc nào",
+      "con1": "Chi phí phụ thuộc mô hình và mức trò chuyện",
+      "con2": "Cần thẻ hoặc tín dụng trả trước"
+    },
+    "title": "Miễn phí hay trả phí?",
+    "lead": "Cả hai đều kết nối ứng dụng với AI. Khác biệt là bạn có trả tiền hay không, và có bao nhiêu mô hình để chọn.",
+    "footer": "Chưa chắc? Hãy bắt đầu miễn phí. Có thể thêm dịch vụ trả phí sau mà không mất gì."
+  },
+  "connect": {
+    "title": "Kết nối AI",
+    "lead": "LettuceAI là ứng dụng; một dịch vụ AI viết câu trả lời. Kết nối dịch vụ bạn có khóa.",
+    "guidedLink": "Mới dùng ứng dụng AI? Hãy xem hướng dẫn thiết lập",
+    "search": "Tìm {{count}} dịch vụ",
+    "chooseAnother": "Chọn dịch vụ khác",
+    "pickTitle": "Chọn một dịch vụ trong danh sách",
+    "pickBody": "Bạn cần tài khoản và API key từ dịch vụ đó.",
+    "groups": {
+      "cloud": "Dịch vụ đám mây",
+      "local": "Trên máy tính hoặc mạng của bạn",
+      "custom": "Dịch vụ khác"
+    },
+    "subtitle": {
+      "custom": "Điểm cuối của riêng bạn",
+      "local": "Chạy trên máy tính của bạn"
+    },
+    "form": {
+      "address": "Địa chỉ",
+      "addressHintLocal": "Nơi máy chủ chạy",
+      "addressHintCustom": "URL gốc của API",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API key",
+      "apiKeyOptional": "API key (tùy chọn)",
+      "apiKeyHint": "Được lưu mã hóa trên thiết bị này",
+      "apiKeyPlaceholder": "Dán khóa của bạn",
+      "name": "Tên",
+      "nameHint": "Cách hiển thị trong menu",
+      "namePlaceholder": "{{name}} của tôi"
+    },
+    "error": {
+      "rejected": "Khóa này không được chấp nhận",
+      "unreachable": "Không thể kết nối đến {{name}}. Kiểm tra kết nối."
+    }
+  },
+  "guide": {
+    "previousPicture": "Hình trước",
+    "nextPicture": "Hình tiếp theo",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Ảnh chụp màn hình",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Dán khóa của bạn",
+      "geminiBody": "Dán khóa bạn vừa sao chép từ Google AI Studio. Chúng tôi kiểm tra với Google, rồi hiển thị các mô hình mà khóa mở khóa.",
+      "openrouterBody": "Dán khóa bạn đã sao chép từ OpenRouter. Khóa bắt đầu bằng sk-or. Chúng tôi kiểm tra, rồi hiển thị các mô hình bạn có thể dùng.",
+      "geminiPlaceholder": "Dán API key của bạn",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Được lưu mã hóa trên thiết bị này. Chỉ gửi đến {{name}} khi bạn trò chuyện."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Mở Google AI Studio",
+        "body": "Google AI Studio là trang chính thức của Google, nơi tạo khóa Gemini miễn phí. Mở trang trong trình duyệt bằng nút bên dưới. Khi trang tải xong, đăng nhập bằng tài khoản Google thường của bạn bằng cách nhấp Get started ở góc trên bên phải. Nếu đã đăng nhập, trang sẽ đưa bạn đi tiếp.",
+        "open": "Mở Google AI Studio",
+        "slide1": "Nhấp Get started ở góc trên bên phải."
+      },
+      "find": {
+        "title": "Tìm API key",
+        "body": "Bây giờ bạn sẽ thấy không gian làm việc chính của Google AI Studio. API key không nằm trên màn hình chính mà ở thanh bên trái của trang. Nhìn gần cuối thanh bên để thấy biểu tượng chìa khóa nhỏ và nhấp vào đó để mở trang quản lý khóa.",
+        "slide1": "Nhấp biểu tượng chìa khóa ở cuối thanh bên trái."
+      },
+      "create": {
+        "title": "Tạo khóa",
+        "body": "Tạo khóa chỉ cần vài cú nhấp, và các hình sẽ hướng dẫn từng bước theo thứ tự. Trước tiên mở hộp thoại tạo khóa mới ở góc trên bên phải, rồi tạo một dự án để chứa khóa, đặt tên bất kỳ cho dự án, và cuối cùng tạo khóa. Dùng mũi tên bên phải để xem từng màn hình.",
+        "slide1": "Nhấp Create API key ở góc trên bên phải.",
+        "slide2": "Mở menu thả xuống và nhấp Create project.",
+        "slide3": "Đặt tên bất kỳ, rồi nhấp Create project.",
+        "slide4": "Sau khi chọn dự án, nhấp Create key."
+      },
+      "copy": {
+        "title": "Sao chép khóa",
+        "body": "Khóa đã được tạo và hiện đầy đủ. Nhấp biểu tượng sao chép bên cạnh để sao chép toàn bộ khóa vào bộ nhớ tạm. Đây là lần duy nhất Google hiển thị khóa đầy đủ, nên hãy sao chép ngay trước khi đóng hộp thoại, rồi quay lại đây dán.",
+        "slide1": "Nhấp biểu tượng sao chép để sao chép API key."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Mở Google AI Studio",
+        "body": "Google AI Studio là trang chính thức của Google, nơi tạo khóa Gemini miễn phí. Mở trang trong trình duyệt bằng nút bên dưới, và chúng ta sẽ cùng lấy khóa. Hai hình cho thấy chính xác cần chạm vào đâu khi trang tải xong, hãy vuốt giữa chúng nếu chưa chắc.",
+        "open": "Mở Google AI Studio",
+        "slide1": "Chạm menu ở góc trên bên phải.",
+        "slide2": "Rồi chạm Get started ở phía dưới."
+      },
+      "find": {
+        "title": "Tìm API key",
+        "body": "Bây giờ bạn đã đăng nhập và đang ở trang chính của Google AI Studio. Phần bạn cần nằm trong menu bên chứ không ở màn hình chính. Mở menu đó, rồi nhìn xuống cuối để thấy biểu tượng chìa khóa nhỏ. Chạm vào đó để đến thẳng trang tạo khóa.",
+        "slide1": "Mở menu ở góc trên bên trái.",
+        "slide2": "Chạm biểu tượng chìa khóa ở cuối menu."
+      },
+      "start": {
+        "title": "Bắt đầu khóa mới",
+        "body": "Đây là trang API Keys của bạn, hiện đang trống vì chưa tạo khóa nào. Điều đó hoàn toàn bình thường. Nút bắt đầu nằm ở góc trên bên phải màn hình, hãy chạm để bắt đầu tạo khóa đầu tiên.",
+        "slide1": "Chạm Create API key ở góc trên bên phải."
+      },
+      "project": {
+        "title": "Tạo dự án trước",
+        "body": "Trước khi Google cấp khóa, họ hỏi khóa thuộc dự án nào. Dự án chỉ là thư mục Google dùng để sắp xếp mọi thứ, và bạn chưa có. Hãy tạo dự án mới và đặt tên bất kỳ, như LettuceAI. Tên không ảnh hưởng gì, nên chọn gì dễ nhất cũng được.",
+        "slide1": "Mở menu thả xuống và chạm Create project.",
+        "slide2": "Đặt tên bất kỳ, rồi chạm Create project."
+      },
+      "create": {
+        "title": "Tạo và sao chép khóa",
+        "body": "Sau khi chọn dự án mới, hãy tạo khóa. Khi khóa xuất hiện, sao chép ngay bằng biểu tượng sao chép. Đây là lần duy nhất Google hiển thị khóa đầy đủ, nên cần sao chép ngay trước khi đóng cửa sổ. Bạn sẽ dán vào ứng dụng ở bước tiếp theo.",
+        "slide1": "Sau khi chọn dự án, chạm Create key.",
+        "slide2": "Chạm biểu tượng sao chép để sao chép khóa."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Tạo tài khoản",
+        "body": "OpenRouter là một dịch vụ kết nối bạn với hàng trăm mô hình AI từ nhiều công ty khác nhau, tất cả qua một tài khoản và một khóa. Mở trang trong trình duyệt bằng nút bên dưới và tạo tài khoản miễn phí. Nút Sign Up nằm ở góc trên bên phải trang.",
+        "open": "Mở OpenRouter",
+        "slide1": "Nhấp Sign Up ở góc trên bên phải."
+      },
+      "key": {
+        "title": "Lấy API key",
+        "body": "Sau khi đăng ký, OpenRouter hỏi bạn định dùng thế nào. Chọn Individual, lựa chọn phù hợp cho mục đích cá nhân. Ngay khi chọn, dịch vụ tạo API key đầu tiên và hiển thị trên màn hình. Hãy sao chép khóa đó. Khóa bắt đầu bằng sk-or, và bạn sẽ dán vào ứng dụng ngay sau đây.",
+        "slide1": "Chọn Individual khi được hỏi.",
+        "slide2": "Sao chép API key mới (bắt đầu bằng sk-or)."
+      },
+      "payment": {
+        "title": "Thêm phương thức thanh toán",
+        "body": "Mô hình trả phí tính một khoản rất nhỏ cho mỗi tin nhắn, nên OpenRouter cần có thẻ trong hồ sơ trước khi chạy chúng. Thêm thông tin thanh toán ngay để mở khóa các mô hình. Bước này không tính phí, chỉ xác nhận danh tính và cho phép dùng tín dụng sau.",
+        "slide1": "Điền thông tin thanh toán.",
+        "slide2": "Hoàn tất khi thông tin được thêm."
+      },
+      "credits": {
+        "title": "Nạp tín dụng",
+        "body": "Tín dụng là số dư thực sự trả cho tin nhắn khi bạn trò chuyện. Mở trang Credits từ thanh bên và nạp một khoản nhỏ để bắt đầu. Với hầu hết mô hình, vài đô-la dùng được rất lâu, và luôn có thể nạp thêm khi sắp hết.",
+        "slide1": "Mở Credits từ thanh bên.",
+        "slide2": "Nhấp Add Credits và chọn số tiền."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Tạo tài khoản",
+        "body": "OpenRouter là một dịch vụ kết nối bạn với hàng trăm mô hình AI từ nhiều công ty khác nhau, tất cả qua một tài khoản và một khóa. Mở trang trong trình duyệt bằng nút bên dưới và tạo tài khoản miễn phí. Nút Sign Up nằm ở góc trên bên phải trang.",
+        "open": "Mở OpenRouter",
+        "slide1": "Chạm Sign Up ở góc trên bên phải."
+      },
+      "key": {
+        "title": "Lấy API key",
+        "body": "Sau khi đăng ký, OpenRouter hỏi bạn định dùng thế nào. Chọn Individual, lựa chọn phù hợp cho mục đích cá nhân. Ngay khi chọn, dịch vụ tạo API key đầu tiên và hiển thị trên màn hình. Hãy sao chép khóa đó. Khóa bắt đầu bằng sk-or, và bạn sẽ dán vào ứng dụng ngay sau đây.",
+        "slide1": "Chọn Individual khi được hỏi.",
+        "slide2": "Sao chép API key mới (bắt đầu bằng sk-or)."
+      },
+      "payment": {
+        "title": "Thêm phương thức thanh toán",
+        "body": "Mô hình trả phí tính một khoản rất nhỏ cho mỗi tin nhắn, nên OpenRouter cần có thẻ trong hồ sơ trước khi chạy chúng. Thêm thông tin thanh toán ngay để mở khóa các mô hình. Bước này không tính phí, chỉ xác nhận danh tính và cho phép dùng tín dụng sau.",
+        "slide1": "Điền thông tin thanh toán.",
+        "slide2": "Hoàn tất khi thông tin được thêm."
+      },
+      "credits": {
+        "title": "Nạp tín dụng",
+        "body": "Tín dụng là số dư thực sự trả cho tin nhắn khi bạn trò chuyện. Mở menu, vào trang Credits, và nạp một khoản nhỏ để bắt đầu. Với hầu hết mô hình, vài đô-la dùng được rất lâu, và luôn có thể nạp thêm khi sắp hết.",
+        "slide1": "Mở menu và vào Credits.",
+        "slide2": "Chạm Add Credits và chọn số tiền."
+      }
+    }
+  },
+  "model": {
+    "title": "Chọn mô hình",
+    "lead": "Chọn mô hình {{name}} viết câu trả lời. Có thể thay đổi hoặc thêm mô hình bất cứ lúc nào.",
+    "model": "Mô hình",
+    "modelId": "ID mô hình",
+    "modelIdHint": "ID chính xác mà dịch vụ yêu cầu",
+    "modelIdPlaceholder": "model-name",
+    "choose": "Chọn từ {{count}} mô hình",
+    "customId": "ID tùy chỉnh",
+    "displayName": "Tên hiển thị",
+    "displayNameHint": "Tên bạn thấy trong ứng dụng",
+    "displayNamePlaceholder": "Mô hình của tôi",
+    "connected": "Đã kết nối",
+    "context": "Ngữ cảnh",
+    "contextTokens": "{{value}} token",
+    "contextSuffix": "ngữ cảnh {{value}}",
+    "images": "Hiểu hình ảnh",
+    "yes": "Có",
+    "no": "Không",
+    "inputPerMillion": "Đầu vào, mỗi triệu",
+    "outputPerMillion": "Đầu ra, mỗi triệu",
+    "emptyTitle": "Chưa chọn mô hình",
+    "emptyBody": "Kích thước ngữ cảnh và giá sẽ hiện ở đây.",
+    "free": "Miễn phí",
+    "priceIn": "vào",
+    "priceOut": "ra",
+    "picker": {
+      "title": "Mô hình {{name}}",
+      "search": "Tìm {{count}} mô hình",
+      "filter": "Lọc mô hình",
+      "layout": "Bố cục",
+      "list": "Danh sách",
+      "twoPerRow": "Hai mỗi hàng",
+      "onlyFree": "Chỉ mô hình miễn phí",
+      "none": "Không có mô hình phù hợp bộ lọc.",
+      "useId": "Dùng <mono>{{id}}</mono>",
+      "useIdBody": "Không có trong danh sách: dùng ID chính xác này",
+      "priceNote": "Giá mỗi triệu token, từ {{name}}.",
+      "loading": "Đang tải mô hình"
+    },
+    "filters": {
+      "title": "Lọc mô hình",
+      "madeBy": "Tạo bởi",
+      "capabilities": "Khả năng",
+      "imagesTitle": "Hiểu hình ảnh",
+      "imagesBody": "Có thể đọc hình bạn gửi trong trò chuyện",
+      "sortBy": "Sắp xếp theo",
+      "sortName": "Tên",
+      "sortPrice": "Rẻ nhất",
+      "sortContext": "Ngữ cảnh dài nhất",
+      "clear": "Xóa",
+      "show_other": "Hiện {{count}} mô hình"
+    }
+  },
+  "memory": {
+    "title": "Nhân vật nên ghi nhớ thế nào?",
+    "lead": "Nhân vật quên những gì nằm ngoài các tin nhắn gần đây. Chọn cách đưa những phần quan trọng trở lại. Có thể thay đổi cho từng cuộc trò chuyện sau.",
+    "group": "Bộ nhớ",
+    "recommended": "Khuyên dùng",
+    "classic": "Cổ điển",
+    "detailTitle": "Bộ nhớ {{title}}",
+    "automatic": {
+      "title": "Tự động",
+      "point1": "Một mô hình nhỏ trên thiết bị chọn ra điều quan trọng và gợi lại khi cần",
+      "point2": "Trò chuyện dài vẫn nhất quán",
+      "point3": "Gửi ít token hơn nên câu trả lời rẻ hơn",
+      "note": "Cần tải một lần. Sau đó chạy ngoại tuyến."
+    },
+    "manual": {
+      "title": "Thủ công",
+      "point1": "Bạn ghim tin nhắn và tự viết thông tin",
+      "point2": "Toàn quyền kiểm soát những gì được ghi nhớ",
+      "point3": "Không có gì chạy ở nền",
+      "note": "Không cần tải gì."
+    }
+  },
+  "other": {
+    "title": "Tùy chọn khác",
+    "language": "Ngôn ngữ",
+    "skip": "Bỏ qua thiết lập",
+    "skipBody": "Xem qua trước đã. Trò chuyện cần AI trước khi có thể trả lời.",
+    "restore": "Khôi phục bản sao lưu",
+    "restoreBody": "Mang lại trò chuyện, nhân vật và cài đặt từ tệp .lettuce",
+    "languageTitle": "Ngôn ngữ",
+    "warning": {
+      "title": "Trò chuyện cần AI trước khi có thể trả lời",
+      "body": "Nếu chưa kết nối AI, nhân vật không thể trả lời. Có thể kết nối sau trong cài đặt.",
+      "connect": "Kết nối AI",
+      "skipAnyway": "Vẫn bỏ qua"
+    }
+  },
+  "failure": {
+    "finish": "Không thể hoàn tất thiết lập.",
+    "models": "Không thể tải mô hình.",
+    "save": "Không thể lưu."
+  }
+}

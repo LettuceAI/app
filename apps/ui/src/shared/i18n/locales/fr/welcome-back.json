@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Bon retour.",
+    "bodyBefore": "Voici ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Entièrement reconstruit, avec tout ce que vous avez créé.",
+    "migrate": "Migrer les données",
+    "notNow": "Pas maintenant"
+  },
+  "migrate": {
+    "title": "Transfert de vos données",
+    "body": "Vos discussions, personnages et médias sont en cours de transfert.",
+    "note": "Gardez l'application ouverte jusqu'à la fin.",
+    "stages": {
+      "read": "Lecture de vos données",
+      "write": "Transfert des discussions, personnages et médias",
+      "verify": "Vérification de l'ensemble",
+      "switch": "Finalisation"
+    },
+    "failed": "Le transfert ne s'est pas terminé.",
+    "retry": "Réessayer"
+  },
+  "models": {
+    "titlePending": "Restauration de vos fonctionnalités",
+    "titleReady": "Vos fonctionnalités sont de retour",
+    "checking": "Vérification des fonctionnalités utilisées par vos discussions",
+    "bodyPending_memory": "Certaines de vos discussions utilisent la mémoire dynamique. Son modèle se télécharge une fois, puis fonctionne hors ligne.",
+    "bodyPending_emotion": "Certaines de vos discussions utilisent les émotions du compagnon. Son modèle se télécharge une fois, puis fonctionne hors ligne.",
+    "bodyPending_both": "Certaines de vos discussions utilisent la mémoire dynamique et les émotions du compagnon. Leurs modèles se téléchargent une fois, puis fonctionnent hors ligne.",
+    "bodyReady_memory": "La mémoire dynamique est prête et fonctionne hors ligne.",
+    "bodyReady_emotion": "Les émotions du compagnon sont prêtes et fonctionnent hors ligne.",
+    "bodyReady_both": "La mémoire dynamique et les émotions du compagnon sont prêtes et fonctionnent hors ligne.",
+    "names": {
+      "embedding": "Modèle de mémoire Lettuce Eidos",
+      "emotion": "Modèle d'émotion Thymos"
+    },
+    "why": {
+      "embedding": "Pour la mémoire dynamique",
+      "emotion": "Pour les émotions du compagnon"
+    },
+    "ready": "Prêt",
+    "waiting": "En attente",
+    "checkingFiles": "Vérification des fichiers",
+    "progress": "{{done}} sur {{total}}",
+    "failed": "Le téléchargement ne s'est pas terminé",
+    "download": "Télécharger",
+    "notNow": "Pas maintenant",
+    "continue": "Continuer",
+    "retry": "Réessayer",
+    "notNowNote": "Les discussions qui ont besoin de ces modèles vous les demanderont. Vous pourrez les télécharger plus tard dans les paramètres.",
+    "keepOpen": "Gardez l'application ouverte jusqu'à la fin."
+  },
+  "done": {
+    "title": "Tout est prêt.",
+    "body": "Tout est là où vous l'avez laissé.",
+    "open": "Ouvrir LettuceAI"
+  },
+  "upgrade": {
+    "title": "Une étape d'abord",
+    "body": "Vos données proviennent d'une ancienne version de LettuceAI. Ouvrez-la une fois avec la version {{version}} pour qu'elle soit mise à jour, puis revenez ici.",
+    "copy": "Copier le lien de téléchargement",
+    "copied": "Lien copié",
+    "fresh": "Repartir de zéro"
+  }
+}

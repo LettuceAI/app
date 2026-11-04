@@ -872,7 +872,7 @@ export function ChatSettings({
             t("bubbleBlur"),
             opts([
               ["none", t("none")],
-              ["light", t("light")],
+              ["light", t("blurLight")],
               ["medium", t("medium")],
               ["heavy", t("heavy")],
             ] as const),

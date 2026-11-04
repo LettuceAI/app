@@ -1,0 +1,28 @@
+{
+  "title": "Có gì mới",
+  "installed": "Phiên bản đã cài: {{version}}",
+  "releaseMismatch": "Các ghi chú này dành cho {{version}}. Bạn đang chạy {{installed}}.",
+  "fullChangelog": "Nhật ký thay đổi đầy đủ",
+  "continue": "Tiếp tục",
+  "markFailed": "Không thể lưu phiên bản đã xem",
+  "types": {
+    "feature": "Đã thêm",
+    "improvement": "Đã cải thiện",
+    "bugfix": "Đã sửa",
+    "breaking": "Thay đổi phá vỡ tương thích"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Phân tích mức dùng ngữ cảnh & bộ nhớ động gọn nhẹ hơn",
+    "description": "Mỗi tin nhắn của trợ lý giờ hiển thị lượng cửa sổ ngữ cảnh mà lời nhắc của nó đã dùng và thứ gì lấp đầy, ở cả trò chuyện riêng lẫn nhóm. Bộ nhớ động trong trò chuyện riêng không còn gửi toàn bộ ngân hàng bộ nhớ mỗi lượt, và embedding bắt đầu hoạt động lại trên macOS.",
+    "changes": {
+      "contextUsage": "Bảng Mức dùng ngữ cảnh trong phần thao tác tin nhắn của câu trả lời trợ lý hiển thị cửa sổ ngữ cảnh chia thành đã chiếm, dành cho phản hồi và còn trống, kèm phân tích thứ lấp đầy lời nhắc: hệ thống, nhân vật, persona, ký ức, sách lore, ghi chú tác giả, trạng thái bạn đồng hành và lịch sử trò chuyện. Tỷ lệ được ước tính bằng tiktoken và quy đổi theo số token lời nhắc mà nhà cung cấp thực sự báo cáo.",
+      "groupContextUsage": "Tin nhắn trong trò chuyện nhóm có cùng bảng này, dựng lại từ tin nhắn đã lưu mà không chạy lại truy xuất, với mục Dàn nhóm tính cả hồ sơ của những người tham gia khác.",
+      "responseBudget": "Trên llama.cpp và Ollama, ngân sách phản hồi dành riêng (phản hồi cộng suy luận) được đọc từ yêu cầu thật, và cảnh báo hiện ra khi lời nhắc cùng khoản dành riêng vượt quá cửa sổ ngữ cảnh, để có thể giảm số token tối đa hoặc cắt bớt ngữ cảnh trước khi lời nhắc bị cắt cụt hay câu trả lời bị ngắn lại.",
+      "developerBreakdown": "Trang gỡ lỗi tin nhắn dành cho nhà phát triển có cùng phân tích token theo từng mục, kèm tổng và mức dùng cửa sổ ngữ cảnh.",
+      "memoryRetrieval": "Bộ nhớ động trong trò chuyện riêng không còn lấp đầy {{key_memories}} bằng toàn bộ ngân hàng bộ nhớ đang nóng ở mỗi lời nhắc, chồng lên các ký ức đã truy xuất. Chỉ những ký ức được truy xuất cho lượt đó mới được gửi, với cả nhân vật nhập vai lẫn bạn đồng hành, trong câu trả lời mới, tạo lại và tiếp tục.",
+      "macEmbeddings": "Embedding không còn lỗi khởi động trên macOS với lỗi \"different Team IDs\". ONNX Runtime tải lúc chạy do Microsoft ký, macOS từ chối nạp vào ứng dụng, và nay được ký lại cục bộ trước khi nạp."
+    }
+  }
+}

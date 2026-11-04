@@ -1,0 +1,103 @@
+{
+  "title": "Chats",
+  "homeTitle": "Start",
+  "characters": "Karakters",
+  "search": "Chats zoeken",
+  "searchCharacters": "Karakters zoeken",
+  "count": "{{shown}} van {{total}}",
+  "noDescription": "Nog geen beschrijving",
+  "lastChat": "Laatste chat {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Chat voortzetten",
+  "empty": {
+    "title": "Nog geen karakters",
+    "body": "Maak iemand om mee te praten, of importeer een karakterkaart van je schijf.",
+    "create": "Een karakter maken"
+  },
+  "noMatch": {
+    "title": "Niets komt overeen met “{{query}}”",
+    "body": "Probeer een naam, of een woord uit de beschrijving van een karakter.",
+    "clear": "Zoekopdracht wissen"
+  },
+  "view": {
+    "label": "Weergave",
+    "current": "Weergave: {{view}}",
+    "home": "Start",
+    "list": "Lijst",
+    "hero": "Hero"
+  },
+  "layout": {
+    "title": "Indeling",
+    "body": "Hoe Chats je karakters toont.",
+    "current": "Indeling: {{layout}}",
+    "list": {
+      "title": "Lijst",
+      "body": "Elk karakter als kaart, zoals ze er nu uitzien"
+    },
+    "recent": {
+      "title": "Recent",
+      "body": "Elke chat, nieuwste eerst, met de regel waar hij stopte"
+    }
+  },
+  "recent": {
+    "today": "Vandaag",
+    "week": "Deze week",
+    "earlier": "Eerder",
+    "empty": "Nog geen chats"
+  },
+  "menu": {
+    "history": "Chatgeschiedenis",
+    "historyBody": "Eerdere chats met dit karakter",
+    "edit": "Karakter bewerken",
+    "cardStyle": "Kaartstijl",
+    "cardRow": "Rij, wissel naar banner",
+    "cardBanner": "Banner, wissel naar rij",
+    "export": "Exporteren",
+    "exportBody": "Als karakterkaart",
+    "hide": "Verbergen in Chats",
+    "hideBody": "Blijft in je bibliotheek",
+    "delete": "Karakter verwijderen",
+    "deleteTitle": "{{name}} verwijderen?",
+    "deleteBody": "Het karakter en de één-op-één-chats worden verwijderd. Dit kan niet ongedaan worden gemaakt.",
+    "noChats": "Nog geen chats"
+  },
+  "export": {
+    "title": "Exportformaat",
+    "body": "Kies een formaat",
+    "done": "Opgeslagen als {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Unified Entity Card (.uec)-formaat (aanbevolen)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (nieuwste specificatie)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (Tavern-specificatie)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Chat bewerken",
+    "editCharacter": "Karakter bewerken",
+    "editGroup": "Groep bewerken",
+    "rename": "Hernoemen",
+    "renameTitle": "Chat hernoemen",
+    "save": "Opslaan",
+    "delete": "Chat verwijderen",
+    "deleteTitle": "{{title}} verwijderen?",
+    "deleteBody": "Het karakter blijft; dit verhaal gaat weg."
+  },
+  "sidebar": {
+    "label": "Recente chats",
+    "empty": "Chats die je start, verschijnen hier."
+  },
+  "discover": {
+    "title": "Ontdekken",
+    "soonTitle": "Ontdekken komt eraan",
+    "soonBody": "Een plek om karakters van de community te vinden en te delen. We bouwen het op onze eigen servers, vanaf dag één met moderatie.",
+    "create": "Een karakter maken",
+    "discord": "Volg ons op Discord"
+  }
+}

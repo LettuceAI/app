@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Witaj ponownie.",
+    "bodyBefore": "To jest ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Odbudowane od podstaw, a wszystko, co stworzyłeś, przechodzi razem z tobą.",
+    "migrate": "Przenieś dane",
+    "notNow": "Nie teraz"
+  },
+  "migrate": {
+    "title": "Przenoszenie danych",
+    "body": "Twoje czaty, postacie i multimedia są przenoszone.",
+    "note": "Nie zamykaj aplikacji, aż się zakończy.",
+    "stages": {
+      "read": "Odczytywanie danych",
+      "write": "Przenoszenie czatów, postaci i multimediów",
+      "verify": "Sprawdzanie wszystkiego",
+      "switch": "Kończenie"
+    },
+    "failed": "Przenoszenie nie zostało ukończone.",
+    "retry": "Spróbuj ponownie"
+  },
+  "models": {
+    "titlePending": "Przywracanie funkcji",
+    "titleReady": "Twoje funkcje wróciły",
+    "checking": "Sprawdzanie, których funkcji używają twoje czaty",
+    "bodyPending_memory": "Niektóre twoje czaty używają pamięci dynamicznej. Jej model pobiera się raz, potem działa offline.",
+    "bodyPending_emotion": "Niektóre twoje czaty używają emocji towarzyszy. Ich model pobiera się raz, potem działa offline.",
+    "bodyPending_both": "Niektóre twoje czaty używają pamięci dynamicznej i emocji towarzyszy. Oba modele pobierają się raz, potem działają offline.",
+    "bodyReady_memory": "Pamięć dynamiczna jest gotowa i działa offline.",
+    "bodyReady_emotion": "Emocje towarzyszy są gotowe i działają offline.",
+    "bodyReady_both": "Pamięć dynamiczna i emocje towarzyszy są gotowe i działają offline.",
+    "names": {
+      "embedding": "Model pamięci Lettuce Eidos",
+      "emotion": "Model emocji Thymos"
+    },
+    "why": {
+      "embedding": "Do pamięci dynamicznej",
+      "emotion": "Do emocji towarzyszy"
+    },
+    "ready": "Gotowe",
+    "waiting": "Oczekiwanie",
+    "checkingFiles": "Sprawdzanie plików",
+    "progress": "{{done}} z {{total}}",
+    "failed": "Pobieranie nie zostało ukończone",
+    "download": "Pobierz",
+    "notNow": "Nie teraz",
+    "continue": "Kontynuuj",
+    "retry": "Spróbuj ponownie",
+    "notNowNote": "Czaty, które potrzebują tych modeli, poproszą o nie. Możesz pobrać je później w Ustawieniach.",
+    "keepOpen": "Nie zamykaj aplikacji, aż się zakończy."
+  },
+  "done": {
+    "title": "Wszystko gotowe.",
+    "body": "Wszystko jest tam, gdzie to zostawiłeś.",
+    "open": "Otwórz LettuceAI"
+  },
+  "upgrade": {
+    "title": "Najpierw jeden krok",
+    "body": "Twoje dane pochodzą ze starszej wersji LettuceAI. Otwórz je raz w wersji {{version}}, aby mogły zostać zaktualizowane, a potem wróć tutaj.",
+    "copy": "Kopiuj link do pobrania",
+    "copied": "Skopiowano link",
+    "fresh": "Zacznij od nowa"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "generate": "Generer avatar",
+  "title": "Generer avatar",
+  "bannerCrop": {
+    "title": "Plasser banneret",
+    "description": "Juster omslaget. Dra for å flytte, klyp eller rull for å zoome.",
+    "saveFailed": "Kunne ikke lagre banneret"
+  },
+  "crop": {
+    "title": "Plasser avataren",
+    "description": "Dra for å flytte. Klyp eller rull for å zoome.",
+    "zoom": "Zoom",
+    "zoomIn": "Zoom inn",
+    "zoomOut": "Zoom ut",
+    "center": "Midtstill",
+    "area": "Innrammingsområde",
+    "keyboard": "Piltastene flytter bildet. Pluss og minus zoomer, C midtstiller, 0 tilbakestiller.",
+    "reset": "Tilbakestill",
+    "apply": "Bruk denne plasseringen",
+    "loadFailed": "Kunne ikke laste bildet",
+    "saveFailed": "Kunne ikke lagre avataren"
+  },
+  "preview": {
+    "empty": "Ingen bilde ennå",
+    "emptyBody": "Beskriv en avatar nedenfor, eller start med ditt eget bilde.",
+    "alt": "Forhåndsvisning av avatar",
+    "unchanged": "Avataren som allerede er i skjemaet",
+    "editedFrom": "Fra {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Versjoner",
+    "count_one": "{{count}} versjon",
+    "count_other": "{{count}} versjoner",
+    "current": "Gjeldende avatar",
+    "upload": "Lastet opp bilde {{number}}",
+    "generation": "Generert bilde {{number}}",
+    "edit": "Redigert bilde {{number}}",
+    "short": {
+      "current": "Gjeldende",
+      "upload": "Opplasting {{number}}",
+      "generation": "Bilde {{number}}",
+      "edit": "Redigering {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Last opp bilde"
+  },
+  "mode": {
+    "label": "Hva du vil gjøre",
+    "generate": "Nytt bilde",
+    "edit": "Rediger valgt",
+    "generateHint": "Starter på nytt kun fra beskrivelsen",
+    "editHint": "Endrer en kopi av {{version}}"
+  },
+  "prompt": {
+    "label": "Beskriv avataren",
+    "placeholder": "En smilende rev med strikket skjerf, mykt lys"
+  },
+  "instruction": {
+    "label": "Hva du vil endre",
+    "placeholder": "Gjør skjerfet blått"
+  },
+  "actions": {
+    "generate": "Generer",
+    "edit": "Bruk endring",
+    "cancel": "Avbryt",
+    "use": "Bruk denne avataren",
+    "retry": "Prøv igjen"
+  },
+  "busy": {
+    "uploading": "Legger til bildet",
+    "generating": "Genererer bildet",
+    "editing": "Redigerer bildet",
+    "cancelling": "Avbryter"
+  },
+  "job": {
+    "progress": "{{current}} av {{total}}",
+    "rejected_one": "{{count}} resultat ble lagt til side",
+    "rejected_other": "{{count}} resultater ble lagt til side",
+    "cancelled": "Genereringen ble avbrutt"
+  },
+  "settings": {
+    "open": "Åpne bildeinnstillinger"
+  },
+  "notice": {
+    "options": {
+      "title": "Kunne ikke sjekke avatarmodellen",
+      "body": "Opplasting fungerer fortsatt."
+    },
+    "disabled": {
+      "title": "Avatargenerering er av",
+      "body": "Slå det på i bildeinnstillingene for å generere. Opplasting fungerer fortsatt."
+    },
+    "noModel": {
+      "title": "Ingen avatarmodell valgt",
+      "body": "Velg en modell som godtar og returnerer bilder. Opplasting fungerer fortsatt."
+    },
+    "incompatible": {
+      "title": "Denne modellen kan ikke lage avatarer",
+      "body": "Avatarer trenger en modell som godtar og returnerer bilder. Opplasting fungerer fortsatt."
+    },
+    "upload": {
+      "title": "Kunne ikke legge til bildet"
+    },
+    "generation": {
+      "title": "Kunne ikke lage bildet"
+    },
+    "cancellation": {
+      "title": "Kunne ikke avbryte",
+      "body": "Forespørselen kjører kanskje fortsatt. Prøv å avbryte igjen."
+    },
+    "uncertain": {
+      "title": "Venter på resultatet",
+      "body": "Tilkoblingen ble brutt før resultatet kom. Prøv igjen for å koble til på nytt, eller avbryt forespørselen."
+    }
+  },
+  "failure": {
+    "cancelled": "Genereringen ble avbrutt.",
+    "setup": "Bildemodellen er ikke riktig satt opp. Sjekk den i bildeinnstillingene.",
+    "invalidRequest": "Forespørselen ble ikke godtatt. Endre beskrivelsen og prøv igjen.",
+    "engine": "Bildemotoren stoppet før den ble ferdig.",
+    "timedOut": "Bildet tok for lang tid å lage.",
+    "memory": "Bildemodellen gikk tom for minne.",
+    "storage": "Bildet kunne ikke lagres.",
+    "provider": "Leverandøren kunne ikke lage bildet.",
+    "empty": "Ingen bilde kom tilbake.",
+    "rejected": "Resultatet ble lagt til side, og ingenting ble returnert.",
+    "refused": "Modellen nektet å lage dette bildet. Endre beskrivelsen og prøv igjen.",
+    "authentication": "Leverandøren avviste påloggingsdataene. Sjekk leverandøren i innstillingene.",
+    "unavailable": "Bildemodellen er ikke tilgjengelig akkurat nå.",
+    "unknown": "Noe gikk galt da bildet skulle lages."
+  }
+}

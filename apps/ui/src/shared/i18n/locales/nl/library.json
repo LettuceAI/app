@@ -1,0 +1,123 @@
+{
+  "triggerPreview": "Triggerpreview",
+  "title": "Bibliotheek",
+  "loadMore": "Meer laden",
+  "search": "Bibliotheek doorzoeken",
+  "show": "Tonen",
+  "filters": {
+    "all": "Alles",
+    "characters": "Karakters",
+    "personas": "Persona's",
+    "lorebooks": "Lorebooks",
+    "images": "Afbeeldingen",
+    "audio": "Audio"
+  },
+  "kinds": {
+    "character": "Karakter",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "Jij",
+  "entries_one": "{{count}} item",
+  "entries_other": "{{count}} items",
+  "defaultPersona": "Persona · je standaard",
+  "menu": {
+    "start": "Chat starten",
+    "edit_character": "Karakter bewerken",
+    "edit_persona": "Persona bewerken",
+    "edit_lorebook": "Lorebook bewerken",
+    "default": "Als standaardpersona gebruiken",
+    "defaultHint": "Voor chats die geen andere kiezen",
+    "export": "Exporteren",
+    "export_character": "Als karakterkaart",
+    "export_persona": "Als UEC-bestand",
+    "export_lorebook": "Als UEC- of JSON-bestand",
+    "delete_character": "Karakter verwijderen",
+    "delete_persona": "Persona verwijderen",
+    "delete_lorebook": "Lorebook verwijderen",
+    "save": "Op apparaat opslaan",
+    "deleteImage": "Afbeelding verwijderen",
+    "deleteAudio": "Opname verwijderen",
+    "avatar": "Als avatar van {{name}} gebruiken",
+    "more": "Meer voor {{name}}",
+    "background": "Achtergrond",
+    "generated": "Gegenereerd",
+    "uploaded": "Geüpload"
+  },
+  "create": {
+    "title": "Aanmaken",
+    "description": "Voeg iets toe aan je bibliotheek.",
+    "character": "Iemand om mee te praten",
+    "persona": "Wie je bent in een chat",
+    "lorebook": "Wereldfeiten waar een karakter uit kan putten",
+    "import": "Een bestand importeren",
+    "importHint": "Karakterkaart, persona of lorebook",
+    "new_character": "Nieuw karakter",
+    "new_lorebook": "Nieuw lorebook",
+    "button_character": "Karakter maken",
+    "button_persona": "Persona maken",
+    "button_lorebook": "Lorebook maken"
+  },
+  "edit": {
+    "name": "Naam",
+    "hint_character": "Getoond op de kaart en in de chatkop.",
+    "placeholder_character": "bijv. Cassian",
+    "placeholder_lorebook": "bijv. De noordelijke poort",
+    "create": "Aanmaken",
+    "cancel": "Annuleren"
+  },
+  "delete": {
+    "title": "{{name}} verwijderen?",
+    "confirm": "Verwijderen",
+    "character": "De chats en herinneringen worden ermee verwijderd.",
+    "persona": "De persona wordt verwijderd uit chats die hem gebruiken.",
+    "lorebook": "Karakters en chats die het gebruiken verliezen toegang tot de items.",
+    "image": "De afbeelding wordt van dit apparaat verwijderd. Afbeeldingen die nog in gebruik zijn, kunnen niet worden verwijderd.",
+    "audio": "De opname wordt van dit apparaat verwijderd. Opnamen die nog in gebruik zijn, kunnen niet worden verwijderd."
+  },
+  "empty": {
+    "all": {
+      "title": "Je bibliotheek is leeg",
+      "description": "Karakters, persona's en lorebooks die je maakt of importeert, worden hier bewaard."
+    },
+    "characters": {
+      "title": "Nog geen karakters",
+      "description": "Een karakter is wie je aanspreekt: een naam, een verleden, een manier van praten."
+    },
+    "personas": {
+      "title": "Nog geen persona's",
+      "description": "Een persona is wie je bent in een chat. Karakters zien de naam en beschrijving."
+    },
+    "lorebooks": {
+      "title": "Nog geen lorebooks",
+      "description": "Wereldfeiten waar een karakter uit kan putten wanneer ze ter sprake komen."
+    },
+    "images": {
+      "title": "Nog geen afbeeldingen",
+      "description": "Afbeeldingen die je in een chat genereert, worden hier bewaard."
+    },
+    "audio": {
+      "title": "Nog geen audio",
+      "description": "Stemregels die je genereert of opneemt, worden hier bewaard."
+    },
+    "matches": "Niets komt overeen met “{{query}}”",
+    "searchAll": "Probeer een andere naam, of een deel van een beschrijving.",
+    "searchSection": "Niets in dit onderdeel wel. De rest van je bibliotheek misschien.",
+    "clear": "Zoekopdracht wissen",
+    "everything": "Alles doorzoeken",
+    "import": "Importeren"
+  },
+  "toast": {
+    "created": "{{name}} toegevoegd",
+    "deleted": "{{name}} verwijderd",
+    "default": "{{name}} is je standaardpersona",
+    "exported": "Bestand geëxporteerd",
+    "imported": "Bestand geïmporteerd",
+    "warnings_one": "Bestand overgedragen met {{count}} waarschuwing",
+    "warnings_other": "Bestand overgedragen met {{count}} waarschuwingen",
+    "mediaSaved": "Op apparaat opgeslagen",
+    "avatar": "Avatar bijgewerkt"
+  },
+  "draft": "Concept",
+  "untitledDraft": "Naamloos lorebook-concept"
+}

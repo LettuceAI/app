@@ -1,0 +1,103 @@
+{
+  "title": "Aide et FAQ",
+  "subtitle": "Les bases, les clés API, la confidentialité et les questions fréquentes",
+  "sections": {
+    "gettingStarted": "Premiers pas",
+    "privacySafety": "Confidentialité et sécurité",
+    "modelsProviders": "Modèles et fournisseurs",
+    "charactersChats": "Personnages et discussions"
+  },
+  "stillStuck": {
+    "title": "Toujours bloqué ?",
+    "docsTitle": "Documentation complète",
+    "docsDescription": "Guides et référence pour LettuceAI",
+    "discordTitle": "Rejoindre le Discord",
+    "discordDescription": "Demandez à la communauté ou signalez un bug"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Qu'est-ce que LettuceAI ?",
+      "answer": "LettuceAI est une application de discussion avec des personnages IA. Vous choisissez le fournisseur et le modèle qui rédigent les réponses, et vos discussions et personnages restent sur votre appareil. Les fournisseurs cloud utilisent votre propre compte ; les modèles locaux pris en charge fonctionnent sur votre ordinateur."
+    },
+    "whatIsApiKey": {
+      "question": "Qu'est-ce qu'une clé API et pourquoi en ai-je besoin ? (le BYOK expliqué)",
+      "answer": "BYOK signifie « apportez votre propre clé » (Bring Your Own Key). Une clé API permet à LettuceAI d'envoyer des requêtes à un fournisseur avec votre compte. Créez une clé chez le fournisseur, puis ajoutez-la dans Paramètres > Fournisseurs. Les requêtes partent de votre appareil vers ce fournisseur, qui applique sa propre facturation et ses limites. Les modèles locaux pris en charge n'ont pas besoin de clé API cloud. Traitez une clé comme un mot de passe et ne la partagez pas."
+    },
+    "cheapestStart": {
+      "question": "Quel est le moyen le plus économique ou le plus simple de commencer ?",
+      "answer": "Utilisez le guide de configuration pour connecter un fournisseur et choisir un modèle. Comparez les prix actuels du fournisseur, ses offres gratuites et ses limites de requêtes avant d'ajouter du crédit. Commencez avec un petit budget et consultez Paramètres > Statistiques d'utilisation au fil de vos discussions. Sur ordinateur, les modèles locaux pris en charge sont une autre option si votre machine dispose d'assez de mémoire et de stockage."
+    },
+    "alternative": {
+      "question": "Est-ce une alternative aux autres applications de discussion IA ?",
+      "answer": "Oui. LettuceAI vous laisse choisir le fournisseur, le modèle et la configuration des personnages au lieu de lier chaque discussion à un seul service. Vous gérez votre propre compte fournisseur et gardez vos données sur votre appareil. Une courte configuration suffit pour connecter le modèle que vous voulez utiliser."
+    },
+    "cost": {
+      "question": "Combien cela coûte-t-il ?",
+      "answer": "LettuceAI est gratuit. Un fournisseur cloud peut facturer des requêtes sur votre compte ou proposer une offre gratuite. Ses tarifs dépendent du modèle, de la quantité de texte envoyée et générée, et des fonctions d'image ou d'audio que vous utilisez. Vérifiez la tarification du fournisseur avant de choisir un modèle. Les statistiques d'utilisation affichent les tokens signalés et les coûts connus ; l'absence de prix ne signifie pas que les requêtes sont gratuites."
+    },
+    "apiKeySafe": {
+      "question": "Ma clé API est-elle en sécurité ?",
+      "answer": "Les identifiants du fournisseur sont stockés localement et servent à vous connecter au fournisseur que vous configurez. LettuceAI ne fait pas transiter vos requêtes par son propre serveur de discussion. Ne saisissez des clés que pour des services de confiance, vérifiez soigneusement les URL des fournisseurs personnalisés et protégez votre appareil et vos fichiers de sauvegarde."
+    },
+    "chatsStored": {
+      "question": "Où sont stockées mes discussions ? Quelqu'un peut-il les lire ?",
+      "answer": "Les discussions sont enregistrées dans la base de données locale de l'application. Lorsqu'un modèle cloud répond, le prompt et le contexte pertinent de la conversation sont envoyés au fournisseur choisi. Ce fournisseur traite la requête selon sa propre politique de confidentialité. Toute personne ayant accès à votre appareil ou à vos sauvegardes exportées peut aussi lire vos données."
+    },
+    "chatsDeleted": {
+      "question": "Mes discussions peuvent-elles être supprimées d'elles-mêmes ?",
+      "answer": "LettuceAI ne conserve pas de copie serveur capable de restaurer vos discussions. Supprimer une discussion, réinitialiser l'application, la désinstaller, effacer le stockage de l'application ou perdre l'appareil peut supprimer les données locales. Faites des sauvegardes de tout ce que vous souhaitez conserver."
+    },
+    "editRemotely": {
+      "question": "Quelqu'un peut-il modifier mes données à distance ?",
+      "answer": "LettuceAI n'a pas de service d'administration à distance pour vos discussions et personnages locaux. Le fournisseur choisi génère les réponses mais ne gère pas la base de données de l'application. Sécurisez votre appareil ainsi que les fichiers que vous importez ou partagez."
+    },
+    "shutdown": {
+      "question": "Que deviennent mes données si LettuceAI ferme ?",
+      "answer": "Vos discussions et personnages enregistrés restent sur votre appareil et peuvent être lus sans compte LettuceAI. Les réponses cloud dépendent toujours de la disponibilité de votre fournisseur et du bon fonctionnement de votre compte. Conservez une copie de vos données via Paramètres > Sauvegarde et restauration."
+    },
+    "training": {
+      "question": "Les fournisseurs vont-ils entraîner leurs modèles sur mes conversations ?",
+      "answer": "Cela dépend du fournisseur, du type de votre compte et de sa politique de données actuelle. LettuceAI ne peut pas modifier ces conditions. Lisez les paramètres de confidentialité et de conservation du fournisseur avant d'envoyer des informations sensibles. Les modèles locaux pris en charge traitent leurs prompts sur votre ordinateur."
+    },
+    "whatIsModel": {
+      "question": "Qu'est-ce qu'un « modèle » ? Lequel choisir ?",
+      "answer": "Un modèle est l'IA qui rédige les réponses. Les modèles diffèrent par leur style d'écriture, leur vitesse, la longueur du contexte, les exigences matérielles et le prix. Ajoutez un fournisseur dans Paramètres > Fournisseurs, puis configurez un modèle dans Paramètres > Modèles. Vous pouvez définir un modèle par défaut pour l'application ou en choisir un pour un personnage ou une discussion."
+    },
+    "freeProviders": {
+      "question": "Existe-t-il des fournisseurs gratuits ?",
+      "answer": "Certains fournisseurs proposent des modèles gratuits ou des paliers d'utilisation gratuits, avec leurs propres exigences de compte et limites de débit. La disponibilité peut changer, vérifiez donc les conditions actuelles du fournisseur. Un palier gratuit peut tout de même nécessiter une clé API. Les modèles locaux pris en charge ne facturent pas chaque requête, mais utilisent le matériel, le stockage et l'énergie de votre ordinateur."
+    },
+    "freeVsPaid": {
+      "question": "Quelle est la différence entre fournisseurs gratuits et payants ?",
+      "answer": "Les offres gratuites et payantes peuvent différer par les modèles disponibles, les limites de requêtes, la vitesse de réponse, les conditions de confidentialité et le support. Les détails appartiennent à chaque fournisseur ; une offre payante ne garantit pas automatiquement une politique de confidentialité particulière. Vous pouvez connecter plusieurs fournisseurs et choisir un modèle adapté à chaque discussion."
+    },
+    "whatIsToken": {
+      "question": "Qu'est-ce qu'un token ?",
+      "answer": "Un token est un petit morceau de texte, comme un mot ou une partie de mot. Le découpage exact dépend du modèle et de la langue. Une requête comprend les tokens d'entrée du prompt et du contexte de la conversation, plus les tokens de sortie de la réponse. Les fournisseurs peuvent les facturer différemment. Les longs historiques et les longues réponses peuvent augmenter l'usage."
+    },
+    "noDefaultModel": {
+      "question": "Je vois « aucun modèle par défaut configuré »",
+      "answer": "Ouvrez Paramètres > Modèles et ajoutez un modèle depuis un fournisseur configuré. Définissez ensuite un modèle par défaut pour l'application ou choisissez-en un dans les paramètres du personnage. Un personnage ou une discussion peut remplacer le modèle par défaut ; vérifiez donc sa sélection de modèle si les réponses ne démarrent toujours pas."
+    },
+    "cloudVsLocal": {
+      "question": "Quelle est la différence entre modèles cloud et locaux ?",
+      "answer": "Les modèles cloud fonctionnent sur le matériel du fournisseur et nécessitent une connexion à ce service. Les modèles locaux pris en charge fonctionnent sur votre ordinateur de bureau et nécessitent assez de mémoire et de stockage. L'installation des modèles locaux et les contrôles d'exécution sont disponibles sur ordinateur ; sur mobile, utilisez un fournisseur connecté."
+    },
+    "whatIsCharacter": {
+      "question": "Qu'est-ce qu'un personnage ? Puis-je créer le mien ?",
+      "answer": "Un personnage a un nom, une image et une description qui façonnent sa façon de parler. Utilisez le bouton de création pour en créer un, ou importez une carte de personnage dans la Bibliothèque. Modifiez sa description et les paramètres de modèle pour changer la manière dont ses futures réponses sont générées."
+    },
+    "whatIsPersona": {
+      "question": "Qu'est-ce qu'un persona ?",
+      "answer": "Un persona décrit votre côté de la conversation : votre nom et les détails que le personnage doit connaître à votre sujet. Créez ou importez des personas dans la Bibliothèque, puis choisissez celui que vous voulez utiliser pour une discussion."
+    },
+    "charactersPrivate": {
+      "question": "Les personnages que je crée sont-ils privés ?",
+      "answer": "Les personnages que vous créez sont stockés sur votre appareil. Exporter et partager une carte de personnage permet à d'autres de la lire. Lorsque vous discutez avec un modèle cloud, les détails du personnage utilisés dans son prompt sont aussi envoyés au fournisseur choisi."
+    },
+    "backupMove": {
+      "question": "Comment sauvegarder ou changer d'appareil ?",
+      "answer": "Ouvrez Paramètres > Sauvegarde et restauration pour créer un fichier de sauvegarde. Conservez-le en lieu sûr. Pour changer d'appareil, installez LettuceAI sur l'autre appareil et restaurez-y ce fichier. Tenez compte des avertissements de l'écran de restauration avant de remplacer les données existantes."
+    }
+  }
+}

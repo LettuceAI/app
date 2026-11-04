@@ -1,0 +1,1185 @@
+{
+  "sceneImage": {
+    "title": "Gumawa ng larawan ng eksena",
+    "regenerate": "I-regenerate ang larawan ng eksena",
+    "hint": "Iguhit ang sandaling ito mula sa chat",
+    "write": "Magsulat ng prompt",
+    "writeHint": "Ikaw ang maglalarawan ng larawan",
+    "askAi": "Hilingin sa AI na magsulat ng prompt",
+    "askAiHint": "Gamitin ang chat at mga design reference",
+    "rewrite": "Isulat muli gamit ang AI",
+    "prompt": "Scene prompt",
+    "promptHint": "Suriin o i-edit ang prompt bago gawin ang larawan.",
+    "cast": "Nasa larawan",
+    "castHint": "Piliin kung sino ang lalabas sa eksena.",
+    "castPersona": "Ang persona mo",
+    "castEmpty": "Pumili ng hindi bababa sa isang tao para sa eksena.",
+    "placeholder": "Ilarawan ang mga karakter, tagpuan at sandali…",
+    "generate": "Gumawa ng larawan",
+    "review": "Suriin ang larawan ng eksena",
+    "requested": "Handa nang suriin ang larawan ng eksena",
+    "requestedHint": "Tingnan ang prompt bago gawin ang larawan.",
+    "retry": "Subukan muli",
+    "dismiss": "Isara",
+    "disabled": "Naka-off ang paggawa ng eksena",
+    "noModel": "Walang compatible na scene image model",
+    "noWriter": "Pumili ng compatible na prompt writer sa image settings",
+    "setupHint": "I-enable ang scene generation at pumili ng image model sa settings.",
+    "settings": "Buksan ang image settings",
+    "writing": "Isinusulat ang scene prompt",
+    "thinking": "Nag-iisip tungkol sa eksena",
+    "generating": "Ginagawa ang larawan ng eksena",
+    "attaching": "Idinadagdag ang larawan ng eksena sa mensahe",
+    "progress": "{{current}} sa {{total}}",
+    "queuePosition": "Posisyon sa pila {{position}}",
+    "phase": {
+      "starting": "Sinisimulan ang image engine",
+      "loading": "Naglo-load ng image model",
+      "sampling": "Ginagawa ang larawan ng eksena",
+      "queued": "Naghihintay gumawa ng larawan ng eksena",
+      "generating": "Ginagawa ang larawan ng eksena",
+      "retrying": "Sinusubukang muli ang paggawa ng eksena",
+      "cancelled": "Kinakansela ang paggawa ng eksena"
+    },
+    "failed": "Hindi magawa ang larawan ng eksena",
+    "promptFailed": "Hindi maisulat ang scene prompt",
+    "writerError": {
+      "scene_prompt_disabled": "Naka-off ang scene generation sa image settings.",
+      "scene_prompt_no_model": "Pumili ng compatible na scene prompt writer sa image settings.",
+      "scene_prompt_no_reply": "Walang text na ibinalik ang prompt writer. Subukan muli o magsulat ng sarili mong prompt.",
+      "cancelled": "Kinansela ang pagsulat ng prompt.",
+      "failed": "Subukan muli o magsulat ng sarili mong prompt."
+    },
+    "error": {
+      "media_unavailable": "Hindi available ang image storage.",
+      "disabled": "Naka-off ang scene generation sa image settings.",
+      "no_model": "Pumili ng compatible na scene image model sa image settings.",
+      "no_image": "Walang larawang ibinalik ang modelo.",
+      "message_unavailable": "Nagbago ang tugon bago maidagdag ang larawan nito.",
+      "interrupted": "Napatid ang paggawa. Puwede mong subukan muli.",
+      "failed": "Suriin ang prompt at subukan muli."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "I-branch sa group chat",
+    "characterTitle": "I-branch sa ibang karakter",
+    "history": "Kinokopya ang chat na ito hanggang sa napiling mensahe, kasama ang mga memory nito.",
+    "sourceLocked": "Mananatili ang kasalukuyang karakter sa grupo. Pumili ng hindi bababa sa isa pa.",
+    "characters": "Mga Karakter",
+    "defaultName": "Branch ng {{name}}",
+    "search": "Maghanap ng karakter",
+    "empty": "Walang nahanap na karakter",
+    "create": "Gumawa ng branch",
+    "memberCount_one": "{{count}} karakter ang napili",
+    "memberCount_other": "{{count}} karakter ang napili",
+    "changed": "Nagbago ang chat na ito. Pumili muli ng branch point.",
+    "chooseAgain": "Pumili muli"
+  },
+  "historyPage": {
+    "archivedCharacter": "I-restore ang karakter na ito sa library mo para makapagsimula ng bagong chat."
+  },
+  "header": {
+    "back": "Bumalik",
+    "memories": "Mga Memory, {{count}}",
+    "memoriesBusy": "Mga Memory, binabasa ang pinakabagong tugon",
+    "search": "Maghanap ng mensahe",
+    "options": "Mga opsyon sa chat",
+    "onDevice": "Sa device",
+    "untitled": "Chat"
+  },
+  "search": {
+    "placeholder": "Maghanap sa chat na ito",
+    "done": "Tapos na",
+    "previous": "Nakaraang tugma",
+    "next": "Susunod na tugma",
+    "position": "{{index}} sa {{total}}",
+    "none": "Walang tugma"
+  },
+  "timeline": {
+    "today": "Ngayong araw",
+    "yesterday": "Kahapon",
+    "loadingOlder": "Naglo-load ng mga lumang mensahe",
+    "empty": "Wala pang mensahe",
+    "jumpToLatest": "Lumipat sa pinakabago",
+    "selectingSpeaker": "Pumipili ng karakter…"
+  },
+  "composer": {
+    "placeholder": "I-message si {{name}}…",
+    "systemSend": {
+      "title": "Ipadala bilang system message?",
+      "description": "Ipinapadala ang nilalaman ng composer bilang nakikitang system message. Hindi ito nagti-trigger ng generation.",
+      "send": "Ipadala"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "Magdagdag ng karakter",
+      "title": "Magdagdag ng karakter",
+      "body": "Sasali sila sa chat na ito mula ngayon.",
+      "search": "Maghanap ng karakter",
+      "empty": "Nasa chat na ito na ang lahat ng karakter",
+      "noMatch": "Walang tugmang karakter"
+    },
+    "remove": {
+      "label": "Alisin si {{name}}",
+      "title": "Alisin si {{name}}?",
+      "body": "Hihinto silang sumagot sa chat na ito. Mananatili ang mga nauna nilang mensahe.",
+      "confirm": "Alisin"
+    },
+    "followGroup": "Sundin ang mga kasapi ng grupo",
+    "followGroupHint": "I-reset ang mga kasapi at naka-mute na karakter sa settings ng grupo",
+    "models": "Mga modelo ng karakter sa chat na ito",
+    "followModels": "Sundin ang mga modelo ng grupo",
+    "followModelsHint": "Alisin ang lahat ng override ng modelo ng karakter sa chat na ito",
+    "characterModel": "Modelo ng karakter",
+    "characterModelHint": "Gamitin ang sariling model setting ng karakter"
+  },
+  "mention": {
+    "title": "I-mention ang isang karakter",
+    "select": "para pumili",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "I-mention si {{name}}",
+    "unmention": "Alisin ang mention kay {{name}}",
+    "muted": "Naka-mute si {{name}}. Long-press o right-click para i-unmute",
+    "speak": "Ipasagot si {{name}}"
+  },
+  "director": {
+    "hint": "I-tap ang karakter para piliin kung sino ang sasagot",
+    "selectedHint": "Sasagot si {{name}} kapag nagpadala ka",
+    "actionHint": "Nagdadagdag lang ng mensahe mo ang Send. I-tap ang karakter para ipasagot sila",
+    "respondingHint": "Sumasagot si {{name}}",
+    "addMessage": "Magdagdag ng mensahe nang walang tugon",
+    "noAttachments": "Hindi makakadala ng attachment ang mga mensahe sa director mode"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Sino ang susunod na magsasalita",
+      "body": "Pumili ng kasaping sasagot, o hayaang magpasya ang grupo."
+    },
+    "branch": {
+      "title": "Ituloy nang one-on-one",
+      "body": "Magbubukas ng bagong chat kasama ang isang kasapi at ang kuwento hanggang sa mensaheng ito."
+    },
+    "regenerate": {
+      "title": "Pumili ng karakter",
+      "body": "Para lang sa tugon na ito. Puwede ring piliin ang mga naka-mute na kasapi.",
+      "same": "Parehong karakter",
+      "search": "Maghanap ng karakter",
+      "noMatches": "Walang karakter na tumutugma sa hinahanap mo"
+    },
+    "auto": "Hayaang magpasya ang grupo",
+    "autoBody": "Ginagamit ang speaker selection ng chat na ito",
+    "muted": "Nilalaktawan maliban kung pinangalanan"
+  },
+  "message": {
+    "image": "Nakalakip na larawan",
+    "imagePrompt": "Image prompt",
+    "copyImagePrompt": "Kopyahin ang prompt",
+    "titleAssistant": "Mensahe ni {{name}}",
+    "titleUser": "Mensahe mo",
+    "titleScene": "Eksena",
+    "titleSystem": "System message",
+    "audio": "Audio clip",
+    "video": "Video file",
+    "document": "Dokumento"
+  },
+  "menu": {
+    "selection": {
+      "title": "Bakit ito ang sumagot na karakter",
+      "fallback": "Hindi available ang LLM selection. Pinili base sa partisipasyon at kamakailang mga tugon."
+    },
+    "copy": "Kopyahin ang text",
+    "edit": "I-edit",
+    "regenerate": "I-regenerate",
+    "regenerateHint": "Itinatabi ang version na ito, mag-swipe para ihambing",
+    "regenerateBusy": "Hintayin matapos ang kasalukuyang tugon",
+    "pin": "I-pin",
+    "pinHint": "Lagi itong natatandaan ng karakter",
+    "unpin": "I-unpin",
+    "rewind": "I-rewind hanggang dito",
+    "rewindHint_one": "Tinatanggal ang {{count}} mensahe pagkatapos nito",
+    "rewindHint_other": "Tinatanggal ang {{count}} mensahe pagkatapos nito",
+    "delete": "Tanggalin ang mensahe",
+    "deleteHint": "I-unpin muna ito",
+    "branch": "Mag-branch mula dito",
+    "branchHint": "Magbubukas ng bagong chat na may kuwento hanggang dito",
+    "branchGroup": "Ituloy nang one-on-one",
+    "branchGroupHint": "Magbubukas ng chat kasama ang isang kasapi at ang kuwento hanggang dito",
+    "details": {
+      "title": "Mga detalye ng prompt",
+      "hint": "Ang ipinadala para sa tugon na ito",
+      "unavailable": "Hindi available ang na-record na prompt para sa tugon na ito",
+      "noBreakdown": "Na-record ang tugon na ito bago pa umiral ang breakdown",
+      "tokens": "{{count}} token",
+      "character": "Karakter at persona",
+      "lorebook": "Lorebook",
+      "memories": "Mga Memory",
+      "history": "Kasaysayan ng chat",
+      "other": "Iba pa",
+      "entries": "Mga entry ng lorebook",
+      "untitled": "Entry na walang pamagat",
+      "partsLabel": "Bahagi ng prompt ayon sa source"
+    },
+    "stats": {
+      "prompt": "Mga prompt token",
+      "reply": "Mga reply token",
+      "total": "kabuuan",
+      "firstToken": "Oras bago ang unang token",
+      "firstTokenValue": "TTFT {{value}}ms",
+      "speed": "Bilis ng tugon",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "Multi-token prediction: mga token kada round at pagtanggap ng draft",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Mga entry ng lorebook na ginamit",
+      "memories": "Mga memory na ginamit",
+      "memory": "Memory",
+      "match": "Tugma {{score}}",
+      "noLorebooks": "Walang entry ng lorebook na ginamit para sa tugon na ito.",
+      "noMemories": "Walang memory item na ginamit para sa tugon na ito.",
+      "notRecorded": "Hindi na-record ang mga detalyeng ito para sa tugon na ito.",
+      "searchEntries": "Hanapin sa mga ginamit na entry",
+      "searchMemories": "Hanapin sa mga ginamit na memory",
+      "noMatches": "Walang tumutugma sa hinahanap mo.",
+      "showing": "{{shown}} sa {{total}}",
+      "more": "Ipakita pa"
+    }
+  },
+  "regeneration": {
+    "title": "Mga opsyon sa regeneration",
+    "hint": "Direksyon at modelo",
+    "groupHint": "Direksyon, modelo at karakter",
+    "oneReply": "Para lang sa tugon na ito",
+    "direction": "Direksyon",
+    "directionHint": "Opsyonal. Ilarawan kung ano ang babaguhin sa bagong tugon.",
+    "placeholder": "Paikliin, palitan ang tono, o gumamit ng ibang paraan",
+    "model": "Modelo ng tugon",
+    "usualModel": "Gamitin ang karaniwang modelo",
+    "modelUnavailable": "Hindi na available ang modelong ito. Pumili ng iba.",
+    "character": "Karakter",
+    "sameCharacter": "Parehong karakter: {{name}}",
+    "characterUnavailable": "Hindi na kasapi ang karakter na ito. Pumili ng iba."
+  },
+  "edit": {
+    "title": "I-edit ang mensahe",
+    "assistantHint": "Mga salita ni {{name}}, gaya ng matatandaan ng kuwento",
+    "field": "Text ng mensahe",
+    "save": "I-save"
+  },
+  "confirm": {
+    "cancel": "Kanselahin",
+    "rewindTitle": "I-rewind sa mensaheng ito?",
+    "rewindBody_one": "Tatanggalin ang {{count}} mensahe pagkatapos nito, at magpapatuloy ang kuwento mula dito.",
+    "rewindBody_other": "Tatanggalin ang {{count}} mensahe pagkatapos nito, at magpapatuloy ang kuwento mula dito.",
+    "rewind": "I-rewind",
+    "deleteTitle": "Tanggalin ang mensaheng ito?",
+    "deleteBodyVersions": "Tatanggalin sa chat ang lahat ng {{count}} version nito.",
+    "deleteBody": "Tatanggalin ito sa chat at sa natatandaan ng karakter.",
+    "delete": "Tanggalin"
+  },
+  "banner": {
+    "modelRequired": "Kailangan ng chat na ito ng modelong hindi pa naka-install.",
+    "modelNamed": "Kailangan ng chat na ito ang {{model}} model, na hindi pa naka-install.",
+    "modelsMissing": "Kailangan ng chat na ito ng modelong hindi pa naka-install: {{models}}.",
+    "openModels": "Buksan ang mga modelo",
+    "memoryBlocked": "Naka-pause ang memory dahil may naunang rewind na hindi natapos.",
+    "memoryRetry": "Subukan muli",
+    "memoryRetryStill": "Hindi pa rin natapos.",
+    "memoryRetried": "Bumalik na sa ayos ang memory",
+    "swapActive": "Naka-on ang swap places",
+    "endSwap": "Tapusin ang swap"
+  },
+  "requiredModel": {
+    "embedding": "embedding",
+    "emotion": "emotion"
+  },
+  "failure": {
+    "title": "Hindi natapos ang tugon",
+    "retry": "Subukan muli",
+    "code": {
+      "invalid_conversation": "Hindi maisusulat sa usapang ito ngayon.",
+      "missing_model": "Walang naka-set na modelo para sa chat na ito. Pumili sa mga opsyon ng chat o magdagdag sa Models.",
+      "context_unavailable": "Hindi maihanda ang usapan para sa modelo.",
+      "speaker_unavailable": "Walang available na sasagot.",
+      "provider_unavailable": "Hindi maabot ang modelo. Tingnan ang koneksyon at ang provider.",
+      "provider_rejected": "Tinanggihan ng provider ang request. Subukan ang ibang modelo o tingnan ang account mo.",
+      "empty_output": "Walang ibinalik ang modelo.",
+      "timed_out": "Masyadong natagalan ang modelo sa pagsagot.",
+      "recovery_unavailable": "Napatid ang tugon at hindi na ma-recover.",
+      "embedding_unavailable": "Hindi available ang embedding model na kailangan para sa memory.",
+      "internal": "Nagkaroon ng internal na error ang app.",
+      "database_write_fenced": "Abala ang app sa pag-save ng data. Subukan muli mamaya."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "Naglo-load ng modelo",
+      "retrying": "Sinusubukang muli ang pag-load ng modelo"
+    },
+    "loading": "Naglo-load ng {{model}}, {{percent}}%",
+    "retrying": "Sinusubukan ang ibang paraan para i-load ang {{model}}, {{percent}}%",
+    "loaded": "Handa na ang {{model}}",
+    "failed": "Hindi ma-load ang {{model}}"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "Naka-off ang faster decoding habang may mga larawan sa chat.",
+    "kv_cache_moved_to_ram": "Hindi kasya ang context cache sa video memory at lumipat sa system memory."
+  },
+  "toast": {
+    "copied": "Nakopya",
+    "copyFailed": "Hindi maabot ang clipboard",
+    "pinned": "Naka-pin. Mananatili ito sa memory ng karakter",
+    "unpinned": "Na-unpin",
+    "edited": "Na-update ang mensahe",
+    "deleted": "Tinanggal ang mensahe",
+    "branched": "Nagbukas ng bagong chat mula dito",
+    "rewound_one": "Ni-rewind ang {{count}} mensahe",
+    "rewound_other": "Ni-rewind ang {{count}} mensahe",
+    "launchFailed": "Hindi masimulan ang chat",
+    "mediaImageUnsupported": "Hindi makabasa ng larawan ang modelo ng chat na ito. Alisin ang mga ito o pumili ng ibang modelo.",
+    "mediaAudioUnsupported": "Hindi makikinig sa audio ang modelo ng chat na ito. Alisin ito o pumili ng ibang modelo."
+  },
+  "crisp": {
+    "composerPlaceholder": "Mensahe…",
+    "composerMessage": "Mensahe",
+    "composerStop": "Ihinto ang paggawa",
+    "composerSend": "Ipadala ang mensahe",
+    "composerSendAsSystem": "Long-press o right-click para ipadala bilang system",
+    "composerSending": "Ipinapadala",
+    "composerContinue": "Hayaang magpatuloy ang karakter",
+    "messageScene": "Eksena",
+    "messageSystem": "System",
+    "messagePinned": "Naka-pin",
+    "messageMenuTitle": "Mensahe",
+    "messageReasoning": "Proseso ng pag-iisip",
+    "messageTyping": "Nagta-type",
+    "sheetClose": "Isara",
+    "bannerDismiss": "Isara",
+    "alertDismiss": "Isara",
+    "composerAddAttachment": "Magdagdag ng content",
+    "composerCancelRecording": "Kanselahin ang recording",
+    "composerRecordVoice": "Mag-record ng boses",
+    "composerStopAndTranscribe": "Itigil at i-transcribe",
+    "composerTranscribing": "Nagta-transcribe",
+    "composerRecording": "Nagre-record {{elapsed}}",
+    "composerAttachment": "Attachment",
+    "composerFile": "File",
+    "composerAttachmentRemove": "Alisin ang {{name}}"
+  },
+  "streaming": {
+    "imagePrompt": "Isinusulat ang image prompt"
+  },
+  "tools": {
+    "title": "Magdagdag ng content",
+    "helpMeReply": "Tulungan akong sumagot",
+    "helpMeReplyHint": "Hayaang magmungkahi ang modelo ng sasabihin",
+    "persona": "Persona",
+    "background": "Background ng chat",
+    "backgroundHidden": "Nakatago",
+    "backgroundOwn": "Naka-set para sa chat na ito",
+    "backgroundDefault": "Ginagamit ang default",
+    "backgroundNone": "Walang background",
+    "note": "Author's note",
+    "noteActive": "Aktibo para sa chat na ito",
+    "noteInactive": "Pribadong direksyon para sa mga tugon",
+    "dice": "Dice",
+    "diceHint": "Mag-roll ng dice at idagdag ang resulta sa mensahe mo",
+    "swap": "Swap places",
+    "swapHint": "Mag-chat bilang karakter at hayaang sumagot ang modelo bilang persona mo",
+    "swapOn": "Swap places (naka-on)",
+    "swapOnHint": "Nagcha-chat ka bilang karakter. I-tap para i-off",
+    "uploadImage": "Mag-upload ng larawan",
+    "uploadImageHint": "Maglakip ng larawan sa mensahe mo",
+    "uploadAudio": "Mag-upload ng audio",
+    "uploadAudioHint": "Maglakip ng audio clip sa mensahe mo"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "Walang persona",
+    "default": "Default",
+    "search": "Maghanap ng persona",
+    "noMatch": "Walang tugmang persona",
+    "emptyTitle": "Wala pang persona",
+    "emptyBody": "Gumawa ng isa sa library para magsalita bilang isang partikular na tao.",
+    "loading": "Naglo-load ng mga persona",
+    "loadFailed": "Hindi ma-load ang mga persona",
+    "retry": "Subukan muli"
+  },
+  "background": {
+    "title": "Background ng chat",
+    "current": "Kasalukuyang background",
+    "currentOwn": "Naka-set para sa chat na ito",
+    "currentDefault": "Ang default na background",
+    "choose": "Pumili ng larawan",
+    "replace": "Palitan ang larawan",
+    "chooseHint": "Para sa chat na ito lang",
+    "useDefault": "Gamitin ang default",
+    "useDefaultHint": "Bumalik sa background ng eksena o karakter"
+  },
+  "note": {
+    "title": "Author's note",
+    "inlineTitle": "Inline editor",
+    "inlineHint": "Ipakita ang author's note sa itaas ng message box para sa mabilisang edit",
+    "inlineToggle": "Ipakita ang inline author note editor",
+    "inlineField": "Inline author's note",
+    "inlineEdit": "I-edit ang inline author's note",
+    "inlinePlaceholder": "Magdagdag ng author's note",
+    "saving": "Sine-save...",
+    "hint": "Pribadong direksyon na sinusunod ng modelo sa chat na ito",
+    "placeholder": "Magsulat ng author's note na gumagabay sa modelo",
+    "save": "I-save",
+    "clear": "Alisin",
+    "count_one": "{{count}} karakter",
+    "count_other": "{{count}} karakter",
+    "willRemove": "Tatanggalin ang note sa pag-save",
+    "none": "Walang naka-save na note"
+  },
+  "dice": {
+    "title": "Dice",
+    "hint": "Mag-roll ng dice at idagdag ang resulta sa mensahe mo",
+    "notation": "Notasyon ng dice",
+    "roll": "I-roll",
+    "invalid": "Gumamit ng notasyong tulad ng 1d20 o 2d6+3",
+    "tapToRoll": "I-roll para makita ang resulta",
+    "insert": "Isingit sa mensahe",
+    "recent": "Kamakailan",
+    "clear": "Burahin"
+  },
+  "help": {
+    "title": "Tulungan akong sumagot",
+    "draftPrompt": "May draft kang mensahe. Paano mo gustong magpatuloy?",
+    "useMyText": "Gamitin ang text ko bilang base",
+    "useMyTextHint": "Palawakin at pahusayin ang draft mo",
+    "writeNew": "Magsulat ng bago",
+    "writeNewHint": "Gumawa ng bagong tugon",
+    "resultTitle": "Mungkahing tugon",
+    "regenerate": "Subukan muli",
+    "use": "Gamitin ito",
+    "writing": "Isinusulat ang tugon mo...",
+    "thinking": "Nag-iisip bago magsulat...",
+    "callError": {
+      "model_required": "Pumili ng modelo para sa Help me reply sa settings.",
+      "model_unavailable": "Hindi ma-load ang Help me reply model.",
+      "busy": "Abala ang app. Subukan muli mamaya.",
+      "unavailable": "Hindi ito available ngayon."
+    },
+    "error": {
+      "failed": "Nabigo ang Help me reply.",
+      "help_me_reply_disabled": "Naka-off ang Help me reply sa settings.",
+      "help_me_reply_no_history": "Wala pang nasasagot.",
+      "help_me_reply_no_model": "Pumili ng modelo para sa Help me reply sa settings.",
+      "help_me_reply_no_reply": "Walang isinulat na tugon ang modelo."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "Matutunan ang correction?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "Matutunan",
+      "ignore": "Balewalain"
+    },
+    "error": {
+      "noModel": "Mag-install ng speech recognition model para makapag-dictate.",
+      "permission": "Payagan ang access sa microphone para mag-record.",
+      "noMicrophone": "Walang nahanap na microphone.",
+      "noAudio": "Walang na-record.",
+      "busy": "May isa pang recording na nagaganap.",
+      "unsupported": "Hindi makapag-record mula sa microphone ang device na ito.",
+      "failed": "Hindi na-transcribe ang recording."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Mga setting ng chat",
+      "persona": "Persona",
+      "model": "Modelo",
+      "lorebooks": "Mga Lorebook",
+      "background": "Background ng chat",
+      "note": "Author's note",
+      "history": "Kasaysayan ng chat",
+      "notes": "Mga naka-iskedyul na tala",
+      "starters": "Bagong chat",
+      "advanced": "Mga setting ng modelo",
+      "appearance": "Appearance"
+    },
+    "back": "Bumalik",
+    "reset": "I-reset",
+    "loading": "Naglo-load",
+    "loadFailed": "Hindi ma-load",
+    "source": {
+      "conversation": "Chat na ito lang",
+      "group": "Mula sa grupo",
+      "character": "Mula sa karakter",
+      "launch": "Mula sa kung paano nagsimula ang chat",
+      "app_default": "Default ng app"
+    },
+    "meta": {
+      "messages_one": "{{count}} mensahe",
+      "messages_other": "{{count}} mensahe",
+      "active": "Aktibo {{date}}"
+    },
+    "sections": {
+      "chat": "Chat na ito",
+      "memory": "Memory",
+      "time": "Oras",
+      "actions": "Chat",
+      "generation": "Generation",
+      "lorebooks": "Mga Lorebook",
+      "members": "Mga Kasapi",
+      "speaker": "Pagpili ng speaker"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Ginagamit ang default mong modelo para piliin kung sino ang magsasalita (kumakain ng token)",
+      "heuristic": "Heuristic",
+      "heuristicHint": "Gumagamit ng balanse ng partisipasyon at context clues (libre)",
+      "round_robin": "Round Robin",
+      "round_robinHint": "Naghahalinhinan ang mga karakter ayon sa pagkakasunod-sunod (libre)",
+      "director": "Director",
+      "directorHint": "Ikaw ang pumipili kung aling karakter ang sasagot sa bawat mensahe",
+      "style": "Estilo ng director",
+      "cue": "Cue",
+      "action": "Aksyon",
+      "cueHint": "I-tap ang karakter para piliin kung sino ang sasagot. Ipapadala ng Send ang mensahe mo at mag-uudyok ng tugon nila.",
+      "actionHint": "Nagdadagdag lang ng mensahe mo ang Send. I-tap ang avatar ng karakter para agad silang tumugon.",
+      "own": "May sariling pagpili ang chat na ito"
+    },
+    "members": {
+      "replies_one": "{{count}} tugon, {{percent}}",
+      "replies_other": "{{count}} tugon, {{percent}}",
+      "muted": "Nilalaktawan maliban kung pinangalanan",
+      "last": "Kailangang may sumagot na hindi bababa sa isang kasapi",
+      "answers": "Sumasagot si {{name}} sa chat na ito"
+    },
+    "model": {
+      "title": "Modelo",
+      "none": "Walang naka-set na modelo",
+      "search": "Maghanap ng modelo",
+      "useDefault": "Gamitin ang default ng karakter",
+      "useDefaultHint": "Sundin ang karakter, tapos ang default ng app",
+      "remoteTitle": "Gumamit ng remote model?",
+      "remoteBody": "Ipapadala ang chat na ito sa {{provider}} para sa bawat tugon.",
+      "use": "Gamitin ang modelong ito",
+      "unknown": "Hindi kilalang modelo"
+    },
+    "lorebooks": {
+      "title": "Mga Lorebook",
+      "count_one": "{{count}} lorebook",
+      "count_other": "{{count}} lorebook",
+      "useDefault": "Gamitin ang mga default na lorebook",
+      "useDefaultHint": "Sundin ang mga lorebook ng karakter",
+      "useCharacter": "Gamitin ang mga lorebook ng karakter"
+    },
+    "background": {
+      "set": "Naka-set ang larawan"
+    },
+    "memory": {
+      "mode": "Mode ng memory",
+      "modes": {
+        "manual": "Manual",
+        "dynamic": "Dynamic",
+        "disabled": "Naka-off"
+      },
+      "open": "Buksan ang mga memory",
+      "items_one": "{{count}} memory",
+      "items_other": "{{count}} memory",
+      "summaryTokens_one": "{{count}} summary token",
+      "summaryTokens_other": "{{count}} summary token",
+      "off": "Naka-off ang memory para sa chat na ito"
+    },
+    "notes": {
+      "title": "Mga naka-iskedyul na tala",
+      "rowHint": "Mga paalala na nakikita ng karakter sa takdang oras",
+      "groupRowHint": "Mga paalala na nakikita ng grupo at mga kasapi nito sa takdang oras",
+      "hint": "Pag-aari ng karakter ang mga tala at lumalabas sa bawat chat kasama nila.",
+      "groupHint": "Pag-aari ng grupo ang mga tala at lumalabas sa bawat chat ng grupong ito.",
+      "empty": "Wala pang naka-iskedyul na tala.",
+      "add": "Magdagdag ng tala",
+      "untitled": "Tala na walang pamagat",
+      "label": "Label",
+      "labelPlaceholder": "Label (opsyonal)",
+      "content": "Tala",
+      "contentPlaceholder": "Ano ang dapat malaman ng karakter?",
+      "groupContentPlaceholder": "Ano ang dapat malaman ng grupo?",
+      "startsOn": "Nagsisimula sa",
+      "stopsOn": "Hihinto sa (opsyonal)",
+      "repeats": "Umuulit",
+      "windowHours": "Nakikita nang (oras)",
+      "enabled": "Naka-enable",
+      "enabledHint": "I-off ang tala nang hindi ito tinatanggal",
+      "deleteTitle": "Tanggalin ang talang ito?",
+      "deleteBody": "Hindi na ito maibabalik.",
+      "recurrence": {
+        "none": "Isang beses",
+        "daily": "Araw-araw",
+        "weekly": "Linggu-linggo",
+        "monthly": "Bwan-bwan",
+        "yearly": "Taun-taon"
+      },
+      "whoSees": "Sino ang makakakita",
+      "whoSeesHint": "Ang mga karakter na pipiliin mo lang ang makakabasa ng talang ito.",
+      "everyone": "Binabasa ng bawat kasapi ang talang ito. Pumili ng karakter para limitahan ito.",
+      "useCharacter": "Gamitin ang mga tala ng karakter"
+    },
+    "history": {
+      "filter": "I-filter ang mga chat",
+      "filters": {
+        "all": "Lahat",
+        "active": "Aktibo",
+        "archived": "Naka-archive"
+      },
+      "sort": "I-sort ang mga chat",
+      "sorts": {
+        "recent": "Huling ginamit",
+        "oldest": "Pinakaluma muna"
+      },
+      "results_one": "{{formattedCount}} chat",
+      "results_other": "{{formattedCount}} chat",
+      "untitled": "Chat na walang pamagat",
+      "search": "Maghanap ng chat",
+      "noMatch": "Walang tugmang chat",
+      "empty": "Wala pang chat",
+      "meta_one": "{{count}} mensahe · {{date}}",
+      "meta_other": "{{count}} mensahe · {{date}}",
+      "current": "Kasalukuyan",
+      "archived": "Naka-archive",
+      "actions": "Mga aksyon para sa {{title}}",
+      "rename": "Palitan ang pangalan",
+      "export": "I-export",
+      "archive": "I-archive",
+      "restore": "I-restore",
+      "delete": "Tanggalin"
+    },
+    "starters": {
+      "hint": "Magsimula sa isa sa mga chat template ng karakter.",
+      "none": "Magsimula nang walang template"
+    },
+    "rename": {
+      "field": "Pamagat ng chat",
+      "save": "I-save ang pamagat",
+      "open": "Palitan ang pangalan ng chat"
+    },
+    "delete": {
+      "title": "Tanggalin ang chat na ito?",
+      "body": "Tatanggalin ang {{title}} at lahat ng mensahe nito. Hindi na ito maibabalik.",
+      "confirm": "Tanggalin"
+    },
+    "export": {
+      "done": "Na-export ang chat"
+    },
+    "duplicate": {
+      "done": "Na-duplicate ang chat"
+    },
+    "actions": {
+      "newChat": "Bagong chat",
+      "newChatHint": "Magsimula ng ibang usapan sa karakter na ito",
+      "newGroupChatHint": "Magsimula ng ibang usapan sa grupong ito",
+      "history": "Kasaysayan ng chat",
+      "historyHint": "Buksan, palitan ang pangalan o tanggalin ang mga naunang chat",
+      "branches": "Mga Branch",
+      "branchesHint": "Lumipat sa pagitan ng mga direksyong tinahak ng chat na ito",
+      "duplicate": "I-duplicate ang chat",
+      "duplicateHint": "Gumawa ng kopya kasama ang lahat ng mensahe nito",
+      "export": "I-export ang chat",
+      "exportHint": "I-save ang usapan bilang file",
+      "import": "Mag-import ng chat log",
+      "importHint": "Magdala ng usapan mula sa file",
+      "importGroupHint": "Hindi pa available para sa mga group chat",
+      "archive": "I-archive ang chat",
+      "archiveHint": "Itago ito sa listahan, panatilihin ang lahat",
+      "restore": "I-restore ang chat",
+      "restoreHint": "Ibalik ito sa listahan",
+      "delete": "Tanggalin ang chat",
+      "deleteHint": "Alisin ito at ang mga mensahe nito nang tuluyan"
+    },
+    "generation": {
+      "title": "Mga setting ng modelo",
+      "scope": "Para sa chat na ito lang",
+      "hint": "Ang mga value na hindi naka-set ay sumusunod sa modelo, tapos sa mga default ng app.",
+      "noModel": "Walang modelo ang chat na ito, kaya mga default lang ng app ang umiiral.",
+      "resetAll": "I-reset lahat",
+      "discard": "Itapon",
+      "inherited": "Sumusunod sa mga setting ng modelo at app",
+      "count_one": "{{count}} value ang binago para sa chat na ito",
+      "count_other": "{{count}} value ang binago para sa chat na ito"
+    },
+    "time": {
+      "title": "Orasan ng chat",
+      "awareness": "Kamalayan sa oras",
+      "awarenessHint": "Bigyan ang modelo ng petsa at oras at markahan ang bawat mensahe nito",
+      "live": "Totoong oras",
+      "frozen": "Nakatigil",
+      "ticking": "Tumatakbo",
+      "stoppedAt": "Nakatigil sa {{when}}",
+      "runningFrom": "Tumatakbo mula {{when}}",
+      "mode": "Orasan",
+      "anchor": "Petsa at oras",
+      "apply": "I-apply",
+      "reset": "I-reset",
+      "cancel": "Kanselahin",
+      "chooseAnchor": "Pumili ng petsa at oras",
+      "previousMonth": "Nakaraang buwan",
+      "nextMonth": "Susunod na buwan",
+      "chooseMonth": "Pumili ng buwan at taon",
+      "previousYear": "Nakaraang taon",
+      "nextYear": "Susunod na taon",
+      "year": "Taon",
+      "time": "Oras"
+    },
+    "groupAppearanceHint": "Appearance para sa lahat ng chat sa grupong ito",
+    "characterAppearanceHint": "Appearance para sa lahat ng chat sa karakter na ito"
+  },
+  "appearance": {
+    "forGroup": "Para sa bawat chat sa grupong ito",
+    "forCharacter": "Para kay {{name}}",
+    "moveLeft": "Ilipat sa kaliwa",
+    "moveRight": "Ilipat sa kanan",
+    "close": "Isara ang appearance",
+    "unsaved": "Hindi pa na-save na mga pagbabago",
+    "saved": "Walang pagbabago",
+    "discard": "Itapon",
+    "save": "I-save",
+    "discardTitle": "Itapon ang mga pagbabago mo?",
+    "discardBody": "Hindi pa na-save ang mga pagbabagong ginawa mo sa appearance.",
+    "discardConfirm": "Itapon ang mga pagbabago",
+    "keepEditing": "Magpatuloy sa pag-edit"
+  },
+  "memory": {
+    "title": "Memory",
+    "back": "Chat",
+    "tabs": {
+      "memories": "Mga Memory",
+      "activity": "Activity",
+      "pinned": "Naka-pin"
+    },
+    "loading": "Naglo-load ng memory",
+    "off": {
+      "title": "Naka-off ang memory para sa chat na ito",
+      "description": "Walang natatandaan o ipinapadala kasama ng mga tugon sa chat na ito.",
+      "action": "Buksan ang settings ng chat"
+    },
+    "search": "Maghanap ng memory",
+    "add": "Idagdag",
+    "all": "Lahat",
+    "categories": {
+      "character_trait": "Katangian ng karakter",
+      "relationship": "Relasyon",
+      "plot_event": "Pangyayari sa plot",
+      "world_detail": "Detalye ng mundo",
+      "preference": "Kagustuhan",
+      "other": "Iba pa",
+      "milestone": "Milestone",
+      "boundary": "Hangganan",
+      "profile": "Profile",
+      "routine": "Routine",
+      "episodic": "Episode",
+      "emotional_snapshot": "Emotional snapshot"
+    },
+    "origins": {
+      "model": "Modelo",
+      "user": "Ikaw",
+      "import": "Na-import"
+    },
+    "temperature": {
+      "hot": "Mainit",
+      "cold": "Malamig"
+    },
+    "tokens_one": "{{count}} token",
+    "tokens_other": "{{count}} token",
+    "window": "Mga mensahe {{from}} hanggang {{to}}",
+    "pinnedMark": "Naka-pin",
+    "list": {
+      "found_one": "{{count}} ang nahanap",
+      "found_other": "{{count}} ang nahanap",
+      "total_one": "{{count}} memory",
+      "total_other": "{{count}} memory",
+      "byModel": "{{count}} mula sa modelo",
+      "byUser": "{{count}} mula sa iyo",
+      "imported": "{{count}} ang na-import",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "Wala pang memory",
+      "dynamic": "Lumalabas dito ang mga memory habang lumalago ang chat. Puwede ka ring magdagdag ng sarili mo.",
+      "manual": "Idagdag ang dapat laging tandaan ng karakter.",
+      "action": "Magdagdag ng memory",
+      "noMatch": "Walang tugma sa \"{{query}}\"",
+      "noMatchBody": "Subukan ang isang salita mula sa memory mismo.",
+      "noCategory": "Walang laman ang kategoryang ito"
+    },
+    "sheet": {
+      "addTitle": "Magdagdag ng memory",
+      "editTitle": "Memory",
+      "byModel": "Sinulat ng modelo",
+      "byModelIn": "Sinulat ng modelo sa {{window}}",
+      "byUser": "Sinulat mo",
+      "imported": "Na-import",
+      "text": "Memory",
+      "textPlaceholder": "Ano ang dapat tandaan ng karakter?",
+      "category": "Kategorya",
+      "noCategory": "Walang kategorya",
+      "when": "Kailan nangyari",
+      "whenHint": "Opsyonal. Nagbibigay-daan sa karakter na mailagay ito sa tamang panahon.",
+      "whenPlaceholder": "Hindi naka-set",
+      "whenClear": "Burahin",
+      "temperature": "Temperatura",
+      "hotBody": "Nananatiling malapit ang mga hot memory",
+      "coldBody": "Naaalala lang ang mga cold memory kapag malapit ang tugma",
+      "pin": "Naka-pin",
+      "pinBody": "Hindi kailanman tinatanggal o ina-archive ng modelo ang naka-pin na memory",
+      "delete": "Tanggalin",
+      "cancel": "Kanselahin",
+      "add": "Idagdag",
+      "save": "I-save",
+      "deleteTitle": "Tanggalin ang memory na ito?",
+      "deleteBody": "Hindi na ito maaalala sa chat na ito.",
+      "keep": "Panatilihin",
+      "added": "Naidagdag ang memory",
+      "saved": "Na-save ang memory",
+      "deleted": "Tinanggal ang memory"
+    },
+    "summary": {
+      "title": "Summary ng context",
+      "empty": "Magdagdag ng maikling summary para mapanatili ng karakter ang takbo ng kuwento.",
+      "description": "Maikling recap na kasama sa bawat tugon",
+      "field": "Summary",
+      "dynamicHint": "Isinusulat muli ito ng modelo sa bawat update. Naitatabi ang mga edit mo hanggang doon.",
+      "clear": "Burahin",
+      "cancel": "Kanselahin",
+      "save": "I-save",
+      "saved": "Na-save ang summary",
+      "cleared": "Nabura ang summary"
+    },
+    "status": {
+      "approvalTitle": "I-update ang memory?",
+      "approvalBody_one": "{{count}} bagong mensahe ang handa nang i-summarize sa memory.",
+      "approvalBody_other": "{{count}} bagong mensahe ang handa nang i-summarize sa memory.",
+      "update": "I-update",
+      "notNow": "Mamaya na",
+      "skipped_one": "Nilaktawan. Magtatanong muli pagkatapos ng susunod na {{count}} mensahe",
+      "skipped_other": "Nilaktawan. Magtatanong muli pagkatapos ng susunod na {{count}} mensahe",
+      "runningTitle": "Ina-update ang memory",
+      "runningBody": "Binabasa ang pinakabagong mga mensahe",
+      "stop": "Itigil",
+      "failedTitle": "Nabigo ang pag-update ng memory",
+      "tryAgain": "Subukan muli",
+      "otherModel": "Gumamit ng ibang modelo",
+      "pausedTitle": "Napatid ang huling pag-update ng memory",
+      "pausedBody": "May ibang prosesong pumalit bago ito matapos.",
+      "nextIn_one": "Susunod na update sa {{count}} mensahe",
+      "nextIn_other": "Susunod na update sa {{count}} mensahe",
+      "since_one": "{{count}} mensahe mula sa huling update",
+      "since_other": "{{count}} mensahe mula sa huling update",
+      "modes": {
+        "auto": "Awtomatiko",
+        "ask_first": "Itanong muna",
+        "manual": "Manual"
+      },
+      "every_one": "{{mode}} · kada {{count}} mensahe",
+      "every_other": "{{mode}} · kada {{count}} mensahe",
+      "manualOnly": "{{mode}} · tumatakbo lang ang update kapag sinimulan mo dito",
+      "progress": "{{current}} sa {{total}}",
+      "updateNow": "I-update ngayon"
+    },
+    "failure": {
+      "embedding_unavailable": "Hindi available ang embedding model.",
+      "model_missing": "Hindi pa naka-install ang memory model.",
+      "model_invalid": "Hindi magamit ang memory model.",
+      "prompt_missing": "Wala ang memory prompt.",
+      "settings_invalid": "Hindi valid ang memory settings.",
+      "provider_unavailable": "Hindi sumagot ang provider.",
+      "provider_rejected": "Tinanggihan ng provider ang request.",
+      "invalid_response": "Hindi maproseso ang memory response ng modelo. Subukan muli ang cycle.",
+      "empty_response": "Walang laman ang ibinalik na tugon ng modelo.",
+      "timed_out": "Masyadong natagalan ang modelo sa pagsagot.",
+      "round_limit": "Masyadong maraming hakbang ang ginamit ng modelo.",
+      "tool_failed": "Nabigo ang isa sa mga pagbabago sa memory.",
+      "storage_failure": "Hindi na-save ang memory.",
+      "lease_lost": "May ibang update na pumalit.",
+      "internal": "Nagkaroon ng internal na error ang app."
+    },
+    "gate": {
+      "not_dynamic": "Hindi gumagamit ng dynamic memory ang chat na ito.",
+      "disabled": "Naka-off ang dynamic memory sa settings.",
+      "nothing_to_summarise": "Wala pang mai-summarize.",
+      "cycle_running": "May update nang tumatakbo."
+    },
+    "activity": {
+      "empty": "Wala pang update",
+      "emptyBody": "Nakalista dito ang bawat pag-update ng memory na pinapatakbo ng modelo.",
+      "badgeUndone": "Na-undo",
+      "badgeFailed": "Nabigo",
+      "badgeStopped": "Napigil",
+      "badgeInterrupted": "Napatid",
+      "badgeRunning": "Tumatakbo",
+      "noDetails": "Walang na-record na detalye.",
+      "stopped": "Napigil ang update na ito bago matapos.",
+      "running": "Tumatakbo pa ang update na ito.",
+      "actions": {
+        "created": "Naidagdag",
+        "duplicate_skipped": "Alam na",
+        "deleted": "Tinanggal",
+        "soft_deleted": "Inilipat sa cold",
+        "pinned": "Naka-pin",
+        "unpinned": "Na-unpin",
+        "target_not_found": "Hindi nahanap",
+        "done": "Tapos na",
+        "rejected": "Tinanggihan",
+        "skipped": "Nilaktawan",
+        "stopped_after_done": "Napigil pagkatapos ng tapos"
+      },
+      "undo": "I-undo ang update na ito",
+      "blocked": "Hindi ma-undo: may susunod na update na nakabatay dito.",
+      "blockedBy": "Hindi ma-undo: nakabatay dito ang update para sa {{window}}.",
+      "dependent": "May susunod na update na nakabatay dito, kaya hindi ito ma-undo.",
+      "userEdited": "Binago mo ang isang memory na isinulat nito, kaya hindi ito ma-undo.",
+      "undoTitle": "I-undo ang update para sa {{window}}?",
+      "undoBody": "Tatanggalin ang mga memory na idinagdag nito at ibabalik ang mga binago nito. Naitatabi ang sarili mong mga edit.",
+      "undoConfirm": "I-undo ang update",
+      "keep": "Panatilihin",
+      "undone": "Na-undo ang update",
+      "loadMore": "Ipakita ang mga lumang update"
+    },
+    "pinnedTab": {
+      "empty": "Walang naka-pin na mensahe",
+      "emptyBody": "I-pin ang mensahe mula sa chat at lagi itong kasama sa susunod na tugon.",
+      "label": "Laging ipinapadala kasama ng tugon",
+      "unpin": "I-unpin",
+      "unpinned": "Na-unpin",
+      "noText": "Attachment",
+      "loadMore": "Ipakita pa",
+      "you": "Ikaw"
+    }
+  },
+  "branches": {
+    "title": "Mga Branch",
+    "meta_one": "{{count}} mensahe · {{date}}",
+    "meta_other": "{{count}} mensahe · {{date}}",
+    "current": "Kasalukuyan",
+    "actions": "Mga aksyon para sa {{title}}",
+    "rename": "Palitan ang pangalan",
+    "renameField": "Pangalan ng branch",
+    "delete": "Tanggalin",
+    "deleteRoot": "Hindi matatanggal ang orihinal na branch",
+    "deleteActive": "Lumipat muna sa ibang branch",
+    "deleteTitle": "Tanggalin ang branch na ito?",
+    "deleteBody": "Tatanggalin ang {{name}} at ang mga mensahe nito. Mananatili ang ibang branch.",
+    "deleted": "Tinanggal ang branch",
+    "untitled": "Branch na walang pamagat",
+    "thisChat": "Chat na ito",
+    "renameSave": "I-save ang pangalan",
+    "original": "Orihinal",
+    "untitledChat": "Chat na walang pamagat"
+  },
+  "companion": {
+    "title": "Companion",
+    "back": "Chat",
+    "tabs": {
+      "relationship": "Relasyon",
+      "bond": "Bond",
+      "memories": "Mga Memory",
+      "soul": "Soul",
+      "activity": "Activity"
+    },
+    "bond": "Bond",
+    "lastTalked": "Huling nag-usap {{when}}",
+    "updated": "Na-update {{when}}",
+    "messages": "Mga Mensahe",
+    "togetherSince": "Magkasama mula {{date}}",
+    "engine": "Emotional engine",
+    "nothingTitle": "Wala pang maipapakita",
+    "nothingBody": "Nagsisimulang gumalaw ang bond at damdamin ni {{name}} pagkatapos ng ilang mensahe. Nagsisimula sila sa mga default sa companion settings nila.",
+    "missingTitle": "Hindi sinusubaybayan ang mga damdamin",
+    "missingBody": "I-install ang emotion model para magalaw ng bawat tugon ang nararamdaman nila.",
+    "install": "I-install",
+    "nothingNow": "Wala ngayon",
+    "drivers": "Mga aktibong driver",
+    "timeline": "Kamakailang timeline",
+    "events_one": "{{count}} event",
+    "events_other": "{{count}} event",
+    "currentState": "Kasalukuyang estado",
+    "defaultMark": "Default ng karakter",
+    "aboveDefault_one": "{{count}} point sa itaas ng default ng karakter",
+    "aboveDefault_other": "{{count}} point sa itaas ng default ng karakter",
+    "belowDefault_one": "{{count}} point sa ibaba ng default ng karakter",
+    "belowDefault_other": "{{count}} point sa ibaba ng default ng karakter",
+    "axes": {
+      "closeness": {
+        "label": "Lapit",
+        "low": "Nakasara",
+        "mid": "Magkakilala",
+        "high": "Malapit"
+      },
+      "trust": {
+        "label": "Tiwala",
+        "low": "Walang tiwala",
+        "mid": "Neutral",
+        "high": "Mapagtiwala"
+      },
+      "affection": {
+        "label": "Pagmamahal",
+        "low": "Poot",
+        "mid": "Neutral",
+        "high": "Mapagmahal"
+      },
+      "tension": {
+        "label": "Tensyon",
+        "low": "Magaan",
+        "mid": "",
+        "high": "Maalab"
+      },
+      "stability": {
+        "label": "Katatagan",
+        "low": "Pabagu-bago",
+        "mid": "",
+        "high": "Matatag"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Nararamdaman",
+        "hint": "Ang nararamdaman nila sa loob"
+      },
+      "expressed": {
+        "title": "Ipinapakita",
+        "hint": "Ang lumalabas sa mga tugon nila"
+      },
+      "blocked": {
+        "title": "Pinipigilan",
+        "hint": "Ang itinatago ng personalidad nila"
+      },
+      "momentum": {
+        "title": "Umuusbong",
+        "hint": "Saan papunta ang huling ilang turn"
+      }
+    },
+    "emotions": {
+      "warmth": "Init ng loob",
+      "trust": "Tiwala",
+      "calm": "Kalmado",
+      "vulnerability": "Kahinaan",
+      "longing": "Pagnanasa",
+      "hurt": "Sakit ng loob",
+      "tension": "Tensyon",
+      "irritation": "Inis",
+      "affection_intensity": "Pagmamahal",
+      "reassurance_need": "Kailangan ng katiyakan"
+    },
+    "memories": {
+      "total_one": "{{count}} memory",
+      "total_other": "{{count}} memory",
+      "found_one": "{{count}} ang nahanap",
+      "found_other": "{{count}} ang nahanap",
+      "kind": "Uri",
+      "field": "Memory",
+      "placeholder": "Ano ang dapat tandaan ni {{name}}?",
+      "emptyTitle": "Wala pang memory dito",
+      "emptyBody": "Lumalabas ang mga memory habang nag-uusap kayo. Puwede ka ring magdagdag ng sarili mo.",
+      "noMatch": "Walang tugma sa \"{{query}}\"",
+      "noMatchBody": "Subukan ang isang salita mula sa memory mismo."
+    },
+    "soul": {
+      "title": "Soul",
+      "edit": "I-edit",
+      "core": "Core ng pagkakakilanlan. Hindi ito binabago ng paglago",
+      "notWritten": "Hindi pa naisusulat",
+      "growth": "Paglago ng Soul",
+      "clear": "Burahin ang paglago",
+      "intro": "Paano lumago ang mga nababagong katangian nila mula sa mga memory mo. Hindi nagbabago dito ang esensya, mga katangian at backstory.",
+      "empty": "Wala pang paglago. Habang nabubuo ang mga memory, lumalabas dito ang mga katangiang nagbabago kasama mo.",
+      "zero": "0 pagbabago",
+      "added": "Idinagdag",
+      "adjusted": "Inayos",
+      "confidence": "Kumpiyansa",
+      "locked": "Naka-lock",
+      "lock": "I-lock",
+      "unlock": "I-unlock",
+      "lockHint": "I-lock ang fact na ito",
+      "unlockHint": "I-unlock ang fact na ito",
+      "historicalHint": "Laging itinatabi ang mga historical fact",
+      "remove": "Alisin ang paglagong ito",
+      "sources_one": "mula sa {{count}} memory",
+      "sources_other": "mula sa {{count}} memory",
+      "retired_one": "{{count}} lumang version ang inalis.",
+      "retired_other": "{{count}} lumang version ang inalis.",
+      "categories": {
+        "essence": "Esensya",
+        "traits": "Mga Katangian",
+        "backstory": "Backstory",
+        "appearance": "Itsura",
+        "goals": "Mga Layunin",
+        "likes": "Mga Gusto",
+        "voice": "Boses",
+        "relational_style": "Estilo ng pakikipag-ugnayan",
+        "vulnerabilities": "Mga Kahinaan",
+        "fears": "Mga Kinatatakutan",
+        "habits": "Mga Gawi",
+        "boundaries": "Mga Hangganan"
+      },
+      "policy": {
+        "current": {
+          "label": "Kasalukuyan",
+          "hint": "Pinapalitan ang dati"
+        },
+        "adaptive": {
+          "label": "Naaangkop",
+          "hint": "Puwedeng patuloy na magbago habang nag-uusap kayo"
+        },
+        "historical": {
+          "label": "Makasaysayan",
+          "hint": "Isang bagay na nangyari. Laging itinatabi"
+        }
+      },
+      "removeTitle": "Alisin ito?",
+      "removeBody": "Aalis ito sa mga natutunan nila. Mananatiling pareho ang nakasulat nilang soul.",
+      "clearTitle": "Burahin ang lahat ng natutunan nila?",
+      "clearBody": "Mawawala ang lahat ng paglago, kasama ang napalitang kasaysayan. Mananatiling pareho ang nakasulat nilang soul.",
+      "keep": "Panatilihin",
+      "removeConfirm": "Alisin",
+      "clearConfirm": "Burahin lahat",
+      "removed": "Inalis",
+      "cleared": "Nabura ang paglago",
+      "sourcesTitle": "Saan ito galing",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "Hindi na available ang mga source memory.",
+      "sourcesMissing_one": "{{count}} source memory ang hindi na available.",
+      "sourcesMissing_other": "{{count}} source memory ang hindi na available."
+    },
+    "effect": {
+      "title": "Ano ang binago ng tugon na ito",
+      "feels": "Ang nararamdaman nila",
+      "pickedUp": "Napulot",
+      "letGo": "Binitawan",
+      "remembered": "Naalala",
+      "processing": "Tinitingnan ang binago",
+      "failed": "Hindi masuri ang mga pagbabago sa tugon.",
+      "invalidated": "Hindi na naaangkop ang mga pagbabagong ito sa tugon na ito.",
+      "memoryCount_one": "{{count}} memory",
+      "memoryCount_other": "{{count}} memory",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "Walang pagbabagong maipapakita",
+      "quote": "“{{text}}”"
+    },
+    "activity": {
+      "undo": "I-undo ang update na ito",
+      "undoTitle": "I-undo ang {{window}}?",
+      "undoBody": "Tatanggalin ang mga memory na idinagdag nito at ibabalik ang mga binago nito. Naitatabi ang sarili mong mga edit.",
+      "undoConfirm": "I-undo ang update",
+      "blockedBy": "Hindi ma-undo: nakabatay dito ang {{window}}.",
+      "blocked": "Hindi ma-undo: may susunod na update na nakabatay dito."
+    },
+    "unavailable": "Walang companion ang chat na ito",
+    "unavailableBody": "Buksan ang companion chat para makita ang bond, mga memory at soul nito.",
+    "crisp": {
+      "close": "Isara",
+      "clearSearch": "Burahin ang paghahanap"
+    },
+    "lastReply": "Huling tugon",
+    "replyHint": "Binubuksan ito ng bawat mensahe sa chat mula sa menu nito"
+  }
+}

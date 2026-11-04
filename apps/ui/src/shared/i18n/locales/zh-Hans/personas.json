@@ -1,0 +1,71 @@
+{
+  "create": {
+    "title": "新人设",
+    "back": "返回",
+    "create": "创建人设",
+    "created": "{{name}} 已创建",
+    "imported": "人设已导入",
+    "unattached_other": "{{count}} 个知识库未能关联。请在人设设置中手动关联。",
+    "defaultFailed": "{{name}} 已创建，但无法设为默认。",
+    "discardTitle": "丢弃这个人设？",
+    "discardBody": "你目前填写的内容会丢失。",
+    "discard": "丢弃",
+    "keepEditing": "继续编辑",
+    "continueTo": "继续前往{{step}}"
+  },
+  "edit": {
+    "title": "编辑人设",
+    "back": "返回",
+    "backToLibrary": "返回资源库",
+    "more": "更多操作",
+    "export": "导出",
+    "delete": "删除人设",
+    "exported": "人设已导出",
+    "exportWarnings_other": "导出完成，有 {{count}} 条警告",
+    "deleteTitle": "删除 {{name}}？",
+    "deleteBody": "使用此人设的聊天将不再使用它。",
+    "deleteConfirm": "删除",
+    "deleteCancel": "取消",
+    "deleted": "{{name}} 已删除",
+    "unsaved": "有未保存的更改",
+    "discard": "丢弃",
+    "save": "保存",
+    "saved": "更改已保存",
+    "lorebooksFailed": "已保存，但知识库未能更新。请再次保存。",
+    "leaveTitle": "丢弃更改？",
+    "leaveBody": "未保存的更改会丢失。",
+    "leaveDiscard": "丢弃",
+    "leaveKeep": "继续编辑"
+  },
+  "steps": {
+    "identity": "身份",
+    "extras": "更多"
+  },
+  "identity": {
+    "chooseAvatar": "选择图片",
+    "removeAvatar": "移除",
+    "name": "名称",
+    "namePlaceholder": "职业作家",
+    "nameHint": "你在聊天中的身份",
+    "nickname": "昵称",
+    "nicknamePlaceholder": "角色怎么称呼你",
+    "nicknameHint": "可选。聊天中会代替名称使用。",
+    "default": "设为默认",
+    "defaultBody": "新聊天默认使用此人设",
+    "import": "从文件导入",
+    "importBody": "导入从 LettuceAI 导出的人设。",
+    "chooseFile": "选择文件"
+  },
+  "about": {
+    "description": "描述",
+    "descriptionPlaceholder": "角色该如何称呼你、你的背景、偏好和风格",
+    "descriptionHint": "使用 {{user}} 代表人设，使用 {{char}} 代表角色。",
+    "words_other": "{{count}} 个词"
+  },
+  "extras": {
+    "body": "这里的内容都是可选的。",
+    "lorebooks": "知识库",
+    "lorebooksNone": "无",
+    "lorebooksCount_other": "{{count}} 个知识库"
+  }
+}
