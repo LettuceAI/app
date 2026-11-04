@@ -1,7 +1,6 @@
 use crate::descriptor::ProviderDescriptor;
 
-/// Every remote chat provider this crate can execute, in catalog order.
-/// Local llama.cpp and image-only providers live in their own crates.
+/// Remote connection kinds this crate supports, including image servers.
 pub fn provider_descriptors() -> &'static [&'static ProviderDescriptor] {
     &[
         &crate::providers::chutes::DESCRIPTOR,
@@ -29,6 +28,8 @@ pub fn provider_descriptors() -> &'static [&'static ProviderDescriptor] {
         &crate::providers::intenserp::DESCRIPTOR,
         &crate::providers::custom::DESCRIPTOR,
         &crate::providers::custom_anthropic::DESCRIPTOR,
+        &crate::images::local::COMFYUI,
+        &crate::images::local::AUTOMATIC1111,
     ]
 }
 
@@ -66,7 +67,7 @@ mod tests {
                 Some(descriptor.kind)
             );
         }
-        assert_eq!(provider_descriptors().len(), 25);
+        assert_eq!(provider_descriptors().len(), 27);
         assert!(provider_descriptor("lettuce-host").is_none());
         assert!(provider_descriptor("lettuce-engine").is_none());
         assert!(provider_descriptor("").is_none());

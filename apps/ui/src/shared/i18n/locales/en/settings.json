@@ -552,6 +552,16 @@
     "refresh": "Refresh"
   },
   "providers": {
+    "models": "Chat and image models",
+    "optionalKey": "API key (optional)",
+    "webUiCredentials": "username:password or proxy token",
+    "comfyTxt2img": "Text-to-image workflow (API JSON)",
+    "comfyImg2img": "Image-to-image workflow (API JSON, optional)",
+    "comfyWorkflowHint": "Export the workflow in API format from ComfyUI. Replace changing inputs with the tokens below.",
+    "comfyInvalidWorkflow": "Use an API-format JSON object with class_type and inputs for each node (up to 4 MiB).",
+    "comfyTokens": "Text: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% or %IMAGE0%. Numbers: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Keep text tokens in JSON quotes.",
+    "webUiHint": "Start WebUI with --api. After saving, add an image model from the server’s checkpoint list in Models.",
+    "imageModelHint": "After saving, add an image model from the server’s checkpoint list in Models.",
     "type": "Provider type",
     "language": "Language models",
     "audio": "Audio",
@@ -675,6 +685,21 @@
     "mobileDownloads": "Local GGUF downloads are available on desktop."
   },
   "customProvider": {
+    "imageRoutes": "Custom image routes",
+    "imageRoutesHint": "Uses the same authentication as chat. Defaults to the OpenAI image API.",
+    "imageGenerationPath": "Image generation path",
+    "imageEditPath": "Image editing path",
+    "imageEditHint": "Leave empty to disable image editing.",
+    "imageEditFormat": "Image editing request format",
+    "imageMultipart": "Multipart files (OpenAI)",
+    "imageJson": "JSON data URLs (NanoGPT)",
+    "imageListPath": "Image list response path",
+    "imageListHint": "Dotted JSON path. Leave empty to read the response root.",
+    "imageUrlPath": "Image URL path per item",
+    "imageB64Path": "Base64 image path per item",
+    "imageExtraBody": "Extra image parameters (JSON)",
+    "imageExtraBodyHint": "Provider-specific values, such as quality or output_format. Model, prompt and image inputs keep their current values.",
+    "imageExtraBodyInvalid": "Enter a JSON object, up to 64 KiB.",
     "chatPath": "Chat endpoint",
     "auth": "Authentication",
     "authModes": {
@@ -715,6 +740,9 @@
     "urlRequired": "Required. The base URL of your custom server."
   },
   "modelEditor": {
+    "modelType": "Model type",
+    "chatModel": "Chat",
+    "imageModel": "Image generation",
     "fields": {
       "temperature": "Temperature",
       "topP": "Top P",

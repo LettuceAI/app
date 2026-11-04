@@ -367,7 +367,7 @@ mod tests {
     #[test]
     fn catalog_is_complete_and_transport_owned() {
         let catalog = runtime().catalog();
-        assert_eq!(catalog.providers.len(), 25);
+        assert_eq!(catalog.providers.len(), 27);
         let openrouter = catalog
             .providers
             .iter()

@@ -1,5 +1,13 @@
 export interface CustomProviderDraft {
   chatPath: string;
+  imageConfigured: boolean;
+  imageGenerationPath: string;
+  imageEditPath: string;
+  imageEditFormat: "multipart" | "json_data_urls";
+  imageListPath: string;
+  imageUrlPath: string;
+  imageB64Path: string;
+  imageExtraBody: string;
   fetchModels: boolean;
   modelsPath: string;
   listPath: string;
@@ -32,9 +40,18 @@ export function customProviderDraft(kind: string, config: Record<string, unknown
   const auth = record(config.auth);
   const list = record(config.model_list);
   const roles = record(config.roles);
+  const image = record(config.image);
   const mode = config.auth === "bearer" || config.auth === "none" ? config.auth : "header" in auth ? "header" : "query" in auth ? "query" : kind === "custom-anthropic" ? "header" : "bearer";
   const tool = config.tool_choice_mode;
   return {
+    imageConfigured: config.image !== undefined,
+    imageGenerationPath: text(image.generation_path, "/v1/images/generations"),
+    imageEditPath: optional(image.edit_path, "/v1/images/edits"),
+    imageEditFormat: image.edit_format === "json_data_urls" ? "json_data_urls" : "multipart",
+    imageListPath: optional(image.list_path, "data"),
+    imageUrlPath: optional(image.url_path, "url"),
+    imageB64Path: optional(image.b64_path, "b64_json"),
+    imageExtraBody: JSON.stringify(record(image.extra_body), null, 2),
     chatPath: text(config.chat_path, kind === "custom-anthropic" ? "/v1/messages" : "/v1/chat/completions"),
     fetchModels: typeof config.models_path === "string",
     modelsPath: text(config.models_path, "/v1/models"),
@@ -57,6 +74,12 @@ export function customProviderDraft(kind: string, config: Record<string, unknown
 }
 export function customProviderConfig(draft: CustomProviderDraft): Record<string, unknown> {
   return {
+    ...(draft.imageConfigured ? { image: {
+      generation_path: draft.imageGenerationPath.trim(), edit_path: draft.imageEditPath.trim() || null,
+      edit_format: draft.imageEditFormat, list_path: draft.imageListPath.trim() || null,
+      url_path: draft.imageUrlPath.trim() || null, b64_path: draft.imageB64Path.trim() || null,
+      extra_body: parseImageExtraBody(draft.imageExtraBody) ?? {},
+    } } : {}),
     kind: "custom",
     chat_path: draft.chatPath.trim(),
     models_path: draft.fetchModels ? draft.modelsPath.trim() : null,
@@ -73,4 +96,11 @@ export function customProviderConfig(draft: CustomProviderDraft): Record<string,
     send_chat_template_kwargs: draft.templateKwargs,
     tool_choice_mode: draft.toolChoice,
   };
+}
+
+export function parseImageExtraBody(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value.trim() || "{}");
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length <= 128 && new TextEncoder().encode(value).length <= 64 * 1024 ? parsed as Record<string, unknown> : null;
+  } catch { return null; }
 }

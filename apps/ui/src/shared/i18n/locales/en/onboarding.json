@@ -343,7 +343,7 @@
     "languageTitle": "Language",
     "warning": {
       "title": "Chats need an AI before they can reply",
-      "body": "Without a connected AI, characters cannot answer. You can connect one later in the settings.",
+      "body": "Choose a chat model to finish setup. You can add image generation later in Settings.",
       "connect": "Connect an AI",
       "skipAnyway": "Skip anyway"
     }

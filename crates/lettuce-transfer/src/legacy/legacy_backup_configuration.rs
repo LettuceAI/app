@@ -3486,6 +3486,7 @@ fn legacy_provider_config(
     };
     Ok((
         ProviderConfig::Custom(CustomProviderConfig {
+            image: Default::default(),
             chat_path,
             models_path,
             model_list: CustomModelList {

@@ -8,6 +8,8 @@ import type {
 import { createMockTransport, mockAppStatus } from "@/api/mock-transport";
 import {
   accountView,
+  catalog,
+  descriptor,
   failure,
   modelView,
   remoteModel,
@@ -47,6 +49,14 @@ function settingsWith(enabled: boolean, modelId: string | null = null): Settings
 }
 
 describe("gate", () => {
+  it("keeps image servers out of onboarding", async () => {
+    await renderApp({ calls: { providerCatalog: () => ({ status: "ok", data: { providers: [...catalog, descriptor({ kind: "comfyui", protocol: "stable_diffusion" }), descriptor({ kind: "automatic1111", protocol: "stable_diffusion" })] } }) } });
+    await click("Get started");
+    expect(await screen.findByRole("button", { name: /OpenRouter/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /comfyui/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /automatic1111/i })).toBeNull();
+  });
+
   it("does not treat a replay query as completed onboarding on a fresh install", async () => {
     await renderApp({ path: "/welcome?setup=true" });
     expect(await screen.findByRole("button", { name: "Get started" })).toBeTruthy();
@@ -199,6 +209,13 @@ async function reachModel(options: HarnessOptions & { provider?: RegExp; kind?: 
   await screen.findByText("Choose a model");
   return saves;
 }
+
+it("excludes image-only models from a shared cloud catalog during onboarding", async () => {
+  await reachModel({ calls: { providerModels: () => ({ status: "ok", data: [remoteModel({ id: "text-model", display_name: "Text model" }), remoteModel({ id: "image-model", display_name: "Image model", output_modalities: ["image"] })] }) } });
+  fireEvent.click(await screen.findByRole("button", { name: /Choose from 1 model/ }));
+  expect(await screen.findByRole("button", { name: /Text model/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Image model/ })).toBeNull();
+});
 
 const pricedModels = [
   remoteModel({
@@ -427,6 +444,18 @@ describe("memory", () => {
 });
 
 describe("completion and skip", () => {
+  it.each([false, true])("requires a chat model before setup can finish (only image model: %s)", async (imageOnly) => {
+    const finish = vi.fn();
+    await renderApp({ calls: {
+      modelsList: () => ({ status: "ok", data: { models: imageOnly ? [modelView({ kind: "image", output_scopes: ["image"] })] : [], default_model_id: null, revision: 1 } }),
+      appUiStateUpdate: (request) => { finish(); return { status: "ok", data: { state: request.patch } }; },
+    } });
+    await click("Other options");
+    await click(/Skip setup/);
+    expect(await screen.findByRole("button", { name: "Connect an AI" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Skip anyway" })).toBeNull();
+    expect(finish).not.toHaveBeenCalled();
+  });
   it("writes the completion state once and refreshes app status", async () => {
     const ui = vi.fn((request: { patch: Record<string, unknown> }) => ({
       status: "ok" as const,
@@ -502,7 +531,7 @@ describe("completion and skip", () => {
     await waitFor(() => expect(screen.queryByText("Skip setup")).toBeNull());
   });
 
-  it("warns first when no model exists", async () => {
+  it("returns to provider setup when no chat model exists", async () => {
     const ui = vi.fn((request: { patch: Record<string, unknown> }) => ({
       status: "ok" as const,
       data: { state: request.patch },
@@ -512,8 +541,9 @@ describe("completion and skip", () => {
     await click(/Skip setup/);
     expect(await screen.findByText("Chats need an AI before they can reply")).toBeTruthy();
     expect(ui).not.toHaveBeenCalled();
-    await click("Skip anyway");
-    await waitFor(() => expect(ui).toHaveBeenCalledTimes(1));
+    await click("Connect an AI");
+    expect(await screen.findByRole("button", { name: /OpenRouter/ })).toBeTruthy();
+    expect(ui).not.toHaveBeenCalled();
   });
 });
 

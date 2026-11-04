@@ -22,6 +22,7 @@ export interface SaveModelInput {
 export async function saveChosenModel({ api, queryClient, flow }: SaveModelInput): Promise<SavedModel> {
   const account = flow.account;
   if (!account) throw new Error("no connected account");
+  if (["comfyui", "automatic1111", "sdcpp", "diffusers"].includes(account.kind) || (flow.model?.output_modalities && !flow.model.output_modalities.includes("text"))) throw new Error("a chat model is required");
   const externalId = externalModelId(flow);
   const inputScopes: ModelModality[] = flow.model && acceptsImages(flow.model) ? ["text", "image"] : ["text"];
   const view = await api.call("modelSave", {

@@ -28,6 +28,31 @@ fn save(
 }
 
 #[tokio::test]
+async fn self_hosted_image_accounts_save_reload_and_validate_workflows() {
+    let harness = harness(Reply::Text("Hello."));
+    for kind in ["comfyui", "automatic1111"] {
+        let mut request = save(None, None, false, None, kind);
+        request.account.provider_kind = kind.into();
+        request.account.streaming_enabled = false;
+        request.account.config = if kind == "comfyui" {
+            serde_json::json!({"kind":"comfyui","txt2img_workflow":"{\"3\":{\"class_type\":\"KSampler\",\"inputs\":{\"seed\":%SEED%,\"text\":\"%PROMPT%\"}}}","img2img_workflow":null})
+        } else { serde_json::json!({}) };
+        let saved = crate::api::provider_account_save(&harness.context, request.clone()).await.expect("save");
+        assert_eq!(saved.protocol, dto::ProviderProtocolContract::StableDiffusion);
+        assert!(!saved.api_key_set);
+        let reloaded = crate::api::provider_accounts_list(&harness.context).await.expect("accounts").into_iter().find(|account| account.id == saved.id).expect("saved account");
+        assert_eq!(saved, reloaded);
+        if kind == "comfyui" {
+            request.account.id = Some(saved.id);
+            request.expected_revision = Some(saved.revision);
+            request.client_operation_id = "invalid-workflow".into();
+            request.account.config["txt2img_workflow"] = serde_json::json!("{\"nodes\":[],\"links\":[]}");
+            assert_eq!(crate::api::provider_account_save(&harness.context, request).await.expect_err("invalid workflow").code, ApiErrorCode::InvalidInput);
+        }
+    }
+}
+
+#[tokio::test]
 async fn account_save_replays_conflicts_and_preserves_or_clears_the_key() {
     let harness = harness(Reply::Text("Hello."));
     let request = save(None, Some("secret-canary"), false, None, "create-provider");

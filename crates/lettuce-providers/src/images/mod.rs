@@ -4,8 +4,12 @@
 //! messages.
 
 mod adapters;
+mod workflow;
+pub use workflow::valid_comfyui_workflow;
 mod body_error;
 mod comfyui;
+mod custom;
+pub(crate) mod local;
 #[cfg(test)]
 mod tests;
 mod usage;
@@ -73,6 +77,11 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
         &self,
         request: &ProviderImageRequest,
     ) -> Result<Option<SecretValue>, ImageProviderError> {
+        if request.account.provider_kind.eq_ignore_ascii_case("custom")
+            && crate::common::custom_config(&request.account.config).is_ok_and(|config| matches!(config.auth, lettuce_models::CustomAuth::None))
+        {
+            return Ok(None);
+        }
         let Some(reference) = request.account.api_key_ref else {
             return Ok(None);
         };
@@ -126,7 +135,7 @@ fn base_url(request: &ProviderImageRequest, kind: &str) -> Result<String, ImageP
 /// The invalid-TLS opt-in is allowed for the editable-endpoint text
 /// providers and for Automatic1111.
 fn allow_invalid_tls(request: &ProviderImageRequest, kind: &str) -> bool {
-    request.account.allow_invalid_tls && (tls_opt_in_allowed(kind) || kind == "automatic1111")
+    request.account.allow_invalid_tls && (tls_opt_in_allowed(kind) || matches!(kind, "automatic1111" | "comfyui"))
 }
 
 fn api_error(response: &JsonResponse) -> ImageProviderError {
@@ -293,7 +302,7 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
         }
         let adapter =
             adapter_for(&kind).ok_or_else(|| ImageProviderError::Unsupported(kind.clone()))?;
-        if key_is_required(&kind) && api_key.is_none() {
+        if key_is_required(&kind) && !(kind == "custom" && crate::common::custom_config(&request.account.config).is_ok_and(|config| matches!(config.auth, lettuce_models::CustomAuth::None))) && api_key.is_none() {
             return Err(ImageProviderError::Failed(MISSING_API_KEY.to_owned()));
         }
         drop(api_key);
@@ -386,7 +395,10 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
                 }
                 return Err(ImageProviderError::Failed(body_error.describe()));
             }
-            let items = adapter.parse(json).map_err(ImageProviderError::Failed)?;
+            let items = if request.account.provider_kind == "custom" {
+                let config = crate::common::custom_config(&request.account.config).map_err(|_| ImageProviderError::Failed("Invalid custom image configuration".into()))?;
+                custom::parse(&config.image, &json)
+            } else { adapter.parse(json) }.map_err(ImageProviderError::Failed)?;
             return Ok(RemoteAttempt::Completed(ProviderImageOutput {
                 images: collect_images(&self.http, items).await?,
                 usage,
@@ -404,14 +416,16 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
     ) -> Result<(bool, JsonResponse), ImageProviderError> {
         let api_key = self.api_key(request).await?;
         let secret_headers = self.secret_headers(request).await?;
-        let call = adapter
-            .call(base, request)
-            .map_err(ImageProviderError::Failed)?;
-        let auth = match (call.auth, api_key) {
+        let is_custom = request.account.provider_kind == "custom";
+        let call = if is_custom { custom::call(base, request) } else { adapter.call(base, request) }.map_err(ImageProviderError::Failed)?;
+        let auth = if is_custom {
+            let config = crate::common::custom_config(&request.account.config).map_err(|_| ImageProviderError::Failed("Invalid custom image configuration".into()))?;
+            crate::common::load_auth(crate::common::custom_auth_plan(&config.auth), &*self.secret_store, &Credentials::from(&request.account)).await
+                .map_err(|_| ImageProviderError::Failed("Provider authentication is unavailable".into()))?
+        } else { match (call.auth, api_key) {
             (ImageAuth::Bearer, Some(key)) => JsonAuth::Bearer(key),
-            (ImageAuth::OptionalBearer, Some(key)) if !key.with(str::is_empty) => {
-                JsonAuth::Bearer(key)
-            }
+            (ImageAuth::OptionalBearer, key) => local::auth(&request.account.provider_kind, key)
+                .map_err(|_| ImageProviderError::Failed("Provider authentication is invalid".to_owned()))?,
             (ImageAuth::GoogleApiKeyHeader, Some(key)) => JsonAuth::Header {
                 name: HeaderName::new("x-goog-api-key").expect("static header name"),
                 value: key,
@@ -421,7 +435,7 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
                 value: key,
             },
             _ => JsonAuth::None,
-        };
+        }};
         let accept = [JsonStaticHeader {
             name: "accept",
             value: "application/json",

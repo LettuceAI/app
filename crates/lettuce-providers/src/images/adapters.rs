@@ -19,8 +19,8 @@ pub(crate) enum ImageAuth {
     OptionalBearer,
     GoogleApiKeyHeader,
     QueryKey,
-    None,
 }
+
 
 /// One HTTP call: `endpoint` is the base URL, `path` what follows it.
 pub(crate) struct ImageCall {
@@ -340,15 +340,15 @@ impl Adapter {
                 json_call(path, ImageAuth::Bearer, Value::Object(body))
             }
             Self::NanoGpt => {
-                let normalized = base.trim_end_matches("/api");
+                let normalized = base;
                 let mut body = Map::new();
                 body.insert("model".into(), json!(request.external_model_id));
                 body.insert("prompt".into(), json!(request.prompt));
                 body.insert("n".into(), json!(request.count));
-                if let Some(size) = &request.size {
+                if let Some(size) = size_or_sd_size(request) {
                     body.insert("size".into(), json!(size));
                 }
-                body.insert("responseFormat".into(), json!("b64_json"));
+                body.insert("response_format".into(), json!("b64_json"));
                 match request.input_images.as_slice() {
                     [image] => {
                         body.insert("imageDataUrl".into(), json!(data_url(image)));
@@ -363,9 +363,17 @@ impl Adapter {
                         );
                     }
                 }
+                for (name, value) in [
+                    ("seed", request.settings.seed.map(|value| json!(value))),
+                    ("strength", request.settings.denoising_strength.map(|value| json!(value))),
+                    ("guidance_scale", request.settings.cfg_scale.map(|value| json!(value))),
+                    ("num_inference_steps", request.settings.steps.map(|value| json!(value))),
+                    ("quality", request.quality.as_ref().map(|value| json!(value))),
+                    ("maskDataUrl", request.mask_image.as_ref().map(|image| json!(data_url(image)))),
+                ] { if let Some(value) = value { body.insert(name.into(), value); } }
                 ImageCall {
                     endpoint: normalized.to_owned(),
-                    path: v1_path(normalized, "/images/generations"),
+                    path: v1_path(normalized, if has_images { "/images/edits" } else { "/images/generations" }),
                     auth: ImageAuth::Bearer,
                     accept_json: false,
                     payload: ImagePayload::Json(Value::Object(body)),
@@ -373,7 +381,7 @@ impl Adapter {
                 }
             }
             Self::Automatic1111 => {
-                let normalized = base.trim_end_matches("/sdapi/v1");
+                let normalized = base.strip_suffix("/sdapi/v1").unwrap_or(base);
                 let settings = &request.settings;
                 let (width, height) = parse_size_dimensions(size_or_sd_size(request), 1024, 1024);
                 let mut body = Map::new();
@@ -384,10 +392,18 @@ impl Adapter {
                 body.insert("n_iter".into(), json!(1));
                 body.insert("steps".into(), json!(settings.steps.unwrap_or(28)));
                 body.insert("cfg_scale".into(), json!(settings.cfg_scale.unwrap_or(6.5)));
-                body.insert(
-                    "sampler_index".into(),
-                    json!(settings.sampler.as_deref().unwrap_or("DPM++ 2M Karras")),
-                );
+                let sampler = settings.sampler.as_deref().unwrap_or("Euler");
+                let (sampler, legacy_scheduler) = sampler.strip_suffix(" Karras")
+                    .map_or((sampler, None), |sampler| (sampler, Some("Karras")));
+                let sampler = match sampler {
+                    "euler" => "Euler", "euler_a" => "Euler a", "heun" => "Heun",
+                    "dpm++2m" => "DPM++ 2M", "dpm++2s_a" => "DPM++ 2S a", "lcm" => "LCM",
+                    sampler => sampler,
+                };
+                body.insert("sampler_name".into(), json!(sampler));
+                if let Some(scheduler) = settings.scheduler.as_deref().or(legacy_scheduler) {
+                    body.insert("scheduler".into(), json!(scheduler));
+                }
                 body.insert(
                     "override_settings".into(),
                     json!({"sd_model_checkpoint": request.external_model_id}),
@@ -427,7 +443,7 @@ impl Adapter {
                         "/sdapi/v1/txt2img"
                     }
                     .to_owned(),
-                    auth: ImageAuth::None,
+                    auth: ImageAuth::OptionalBearer,
                     accept_json: false,
                     payload: ImagePayload::Json(Value::Object(body)),
                     binary_response: false,

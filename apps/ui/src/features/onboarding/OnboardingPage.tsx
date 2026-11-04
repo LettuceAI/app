@@ -88,7 +88,7 @@ export function OnboardingPage() {
   const install = useEmbeddingInstall(api);
   const services = useMemo(() => ({ api, queryClient }), [api, queryClient]);
 
-  const catalog = useQuery(catalogQuery(api));
+  const catalog = useQuery({ ...catalogQuery(api), select: (providers) => providers.filter((provider) => provider.protocol !== "stable_diffusion") });
   const guides = useMemo(
     () => ({
       gemini: guideContent[phone ? "geminiMobile" : "geminiDesktop"].length,
@@ -157,15 +157,13 @@ export function OnboardingPage() {
   const skip = useAction(async () => {
     const models = await api.call("modelsList");
     if (!mounted.current) return;
-    if (models.models.length > 0) {
+    if (models.models.some((model) => model.kind === "chat" && model.output_scopes.includes("text"))) {
       await finishApp();
       return;
     }
     setOther(false);
     setSkipWarning(true);
   });
-
-  const skipAnyway = useAction(finishApp);
 
   const changeLanguage = async (locale: string) => {
     await api.call("appUiStateUpdate", { patch: { locale } });
@@ -471,9 +469,6 @@ export function OnboardingPage() {
             setSkipWarning(false);
             dispatch({ type: "go", step: "connect" });
           }}
-          onSkip={skipAnyway.run}
-          skipping={skipAnyway.busy}
-          error={skipAnyway.error}
         />
         <MemoryDownloadSheet
           open={memorySheet}

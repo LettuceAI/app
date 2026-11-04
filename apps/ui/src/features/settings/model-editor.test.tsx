@@ -33,6 +33,39 @@ async function click(name: string | RegExp) { fireEvent.click(await screen.findB
 afterEach(cleanup);
 
 describe("model editor page", () => {
+  it("keeps a custom image model's type when discovery has no modality metadata", async () => {
+    let saved: ModelSaveRequest | undefined;
+    await mount("/settings/models/new", {
+      providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: "custom" }] }),
+      providerModels: () => ({ status: "ok", data: [{ id: "draw", display_name: "Custom image model", description: null, context_length: null, input_modalities: null, output_modalities: null, supported_endpoints: null, input_price: null, cache_read_price: null, output_price: null }] }),
+      modelSave: (request) => { saved = request; return { status: "ok", data: { ...model, ...request.model, id: "custom-image", config: request.model.config } }; },
+    });
+    fireEvent.click(await screen.findByRole("combobox", { name: "Model type" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Image generation" }));
+    await click("Choose a model");
+    await click(/Custom image model/);
+    await click("Add model");
+    await waitFor(() => expect(saved?.model).toMatchObject({ kind: "image", output_scopes: ["image"] }));
+  });
+
+  it.each(["comfyui", "automatic1111", "nanogpt"])("creates a remote %s image model without probing local files", async (providerKind) => {
+    let saved: ModelSaveRequest | undefined;
+    const files = vi.fn<NonNullable<MockCallHandlers["sdDetectModelFile"]>>(() => { throw new Error("remote checkpoints are not local files"); });
+    const remote = { id: "server-model.safetensors", display_name: "Server checkpoint", description: null, context_length: null, input_modalities: ["text", "image"], output_modalities: ["image"], supported_endpoints: null, input_price: null, cache_read_price: null, output_price: null };
+    await mount("/settings/models/new", {
+      providerAccountsList: () => ({ status: "ok", data: [{ ...account, provider_kind: providerKind, protocol: providerKind === "nanogpt" ? "open_ai_compatible" : "stable_diffusion" }] }),
+      providerModels: () => ({ status: "ok", data: [remote] }),
+      sdDetectModelFile: files,
+      modelSave: (request) => { saved = request; return { status: "ok", data: { ...model, ...request.model, id: "image-model", config: request.model.config } }; },
+    });
+    await click("Choose a model");
+    await click(/Server checkpoint/);
+    await click("Add model");
+    await waitFor(() => expect(saved).toBeDefined());
+    expect(saved?.model).toMatchObject({ kind: "image", external_model_id: remote.id, input_scopes: ["text", "image"], output_scopes: ["image"] });
+    expect(files).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("saves top-n-sigma, its order, and an explicit disabled threshold (phone: %s)", async (phone) => {
     let saved: ModelSaveRequest | undefined;
     await mount(undefined, {

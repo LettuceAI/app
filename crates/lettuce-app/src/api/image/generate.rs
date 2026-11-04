@@ -193,7 +193,7 @@ pub async fn image_capabilities(
     context: &ApiContext,
     request: dto::ImageCapabilitiesRequest,
 ) -> Result<dto::ImageCapabilities, ApiError> {
-    context
+    let (mut capabilities, model) = context
         .blocking(move |context| {
             let (provider_kind, model, default_size) = match request.target {
                 dto::ImageCapabilityTarget::Provider {
@@ -236,7 +236,7 @@ pub async fn image_capabilities(
                 }
             };
             let values = image_capability_catalog().values(&provider_kind, model.as_deref());
-            Ok(dto::ImageCapabilities {
+            Ok((dto::ImageCapabilities {
                 local: provider_kind
                     .eq_ignore_ascii_case(lettuce_image_generation::LOCAL_DIFFUSION_PROVIDER_KIND),
                 provider_kind,
@@ -248,9 +248,19 @@ pub async fn image_capabilities(
                 quality: values.quality,
                 styles: values.styles,
                 max_count: values.max_count,
-            })
+            }, model))
         })
-        .await
+        .await?;
+    if capabilities.provider_kind.eq_ignore_ascii_case("nanogpt")
+        && let Some(model) = model.as_deref().filter(|model| !model.trim().is_empty())
+    {
+        let values = super::super::models::ollama::remote_providers(context)?
+            .nanogpt_image_capabilities(model).await.map_err(super::super::providers::request_error)?;
+        capabilities.sizes = values.sizes;
+        capabilities.quality = values.quality;
+        if let Some(max_count) = values.max_count { capabilities.max_count = max_count.min(lettuce_image_generation::MAX_IMAGE_COUNT); }
+    }
+    Ok(capabilities)
 }
 
 fn status(status: &str) -> dto::PlaygroundStatus {

@@ -206,7 +206,15 @@ The request flow:
 3. An HTTP 5xx, or a transient `error` in a 2xx body (500, 502, 503, 504, 529), is retried once after 1.5 s. Other body errors fail as `Provider error {code}: {message}`, and a 413 gets a readable hint about reference image size.
 4. Linked results are downloaded, data URLs and raw base64 decoded, and usage read from the response.
 
-ComfyUI uses the account's `ProviderConfig::ComfyUi` workflows: upload the inputs, substitute `%TOKEN%` placeholders, post to `/prompt`, poll `/history` every 1.5 s up to 400 times, and fetch the result from `/view`.
+ComfyUI and Automatic1111 are connection catalog entries with optional credentials, checkpoint discovery, and connection verification. Add their accounts in Settings, then choose a server checkpoint in Models. ComfyUI lists `CheckpointLoaderSimple` checkpoints; WebUI lists `/sdapi/v1/sd-models`. WebUI must run with `--api`; its optional `user:password` credential uses HTTP Basic auth, while plain proxy tokens use bearer auth.
+
+NanoGPT discovery merges its detailed text catalog with `/api/v1/image-models?detailed=true`, preserving image modalities so the editor saves image profiles. Its image requests retain the `/api` base prefix, use `response_format`, and send JSON edits through `/images/edits`, including reference images and masks. Model size, quality and count controls read current image catalog metadata. See the [NanoGPT image API documentation](https://docs.nano-gpt.com/api-reference/endpoint/image-generation-openai) and [model catalog](https://docs.nano-gpt.com/api-reference/endpoint/image-models).
+
+Custom OpenAI accounts expose `CustomProviderConfig::image`: generation/edit paths (relative or absolute), multipart or JSON data URL edits, dotted response-list/URL/base64 paths, and bounded JSON extra parameters. They reuse the account's selected auth mode and secret headers, including no-auth servers. Extra parameters cannot replace the current model, prompt, count or input images. An absent image config keeps the standard OpenAI image routes and response mapping. Choose Image generation as the custom model's type when entering an ID manually.
+
+Onboarding excludes image servers and image-only cloud models and requires a saved chat model before completion.
+
+ComfyUI uses the account's `ProviderConfig::ComfyUi` workflows: upload the inputs, substitute `%TOKEN%` placeholders (including `%BATCH_SIZE%` for a workflow batch input), post to `/prompt`, poll `/history` every 1.5 s up to 400 times, and fetch the result from `/view`.
 
 The local llama observer preserves the inference attempt id on load progress, heartbeat and notice envelopes; runtime report changes remain model-path signals raised after storage. The application owns delivery to generation and job streams.
 

@@ -12,7 +12,8 @@ mod media;
 mod verify;
 
 pub use catalog::{provider_descriptor, provider_descriptors};
-pub use images::RemoteImageProviders;
+pub use images::{RemoteImageProviders, valid_comfyui_workflow};
+pub use providers::nanogpt::NanoGptImageCapabilities;
 pub use descriptor::{
     ApiKeyRequirement, KeyVerification, ParameterFlags, PromptCachingSupport, ProviderDescriptor,
     ProviderRequestError, ReasoningSupport, RemoteModel,
@@ -62,6 +63,12 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         }
         let store = &*self.secret_store;
         let result = match account.protocol {
+            ProviderProtocol::StableDiffusion if matches!(kind, "comfyui" | "automatic1111") => {
+                images::local::list_models(store, &self.network, account).await
+            }
+            ProviderProtocol::OpenAiCompatible if kind.eq_ignore_ascii_case("nanogpt") => {
+                providers::nanogpt::list_models(store, &self.network, account).await
+            }
             ProviderProtocol::OpenAiCompatible => {
                 let provider = provider_for(kind).ok_or(ProviderRequestError::Unsupported {
                     reason: "no OpenAI-compatible provider is registered for the kind",
@@ -92,6 +99,15 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
             }
         };
         result.map_err(Into::into)
+    }
+
+    /// Public, current image options instead of a bundled NanoGPT model table.
+    pub async fn nanogpt_image_capabilities(&self, model: &str) -> Result<NanoGptImageCapabilities, ProviderRequestError> {
+        let response = self.network.get_json("https://nano-gpt.com/api", "/v1/image-models?detailed=true", &common::ACCEPT_ONLY,
+            lettuce_network::JsonAuth::None, Vec::new(), lettuce_network::RequestPolicy { timeout: lettuce_network::RequestTimeout::Probe, allow_invalid_tls: false }).await
+            .map_err(common::AdapterError::from)?;
+        let body = common::decode_json(&response)?;
+        providers::nanogpt::image_capabilities(&body, model).map_err(Into::into)
     }
 
     /// The models an Ollama account's server has.

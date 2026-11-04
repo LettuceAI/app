@@ -41,7 +41,8 @@ export function ModelEditorPage() {
 
 interface Draft { accountId: string; externalId: string; name: string; inputs: ModelModality[]; outputs: ModelModality[]; config: ModelConfig; remote: RemoteModelContract | null }
 function initialDraft(model: ModelView | null, accounts: ProviderAccountView[]): Draft {
-  return { accountId: model?.provider_account_id ?? accounts[0]?.id ?? "", externalId: model?.external_model_id ?? "", name: model?.display_name ?? "", inputs: model?.input_scopes ?? ["text"], outputs: model?.output_scopes ?? ["text"], config: parseModelConfig(model?.config ?? minimalModelConfig), remote: null };
+  const image = accounts[0]?.protocol === "stable_diffusion";
+  return { accountId: model?.provider_account_id ?? accounts[0]?.id ?? "", externalId: model?.external_model_id ?? "", name: model?.display_name ?? "", inputs: model?.input_scopes ?? (image ? ["text", "image"] : ["text"]), outputs: model?.output_scopes ?? (image ? ["image"] : ["text"]), config: parseModelConfig(model?.config ?? minimalModelConfig), remote: null };
 }
 
 function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryDefaults }: { model: ModelView | null; accounts: ProviderAccountView[]; catalog: ProviderDescriptorContract[]; defaults: SettingsModelSettingsLayer | undefined; defaultsError: unknown; retryDefaults: () => void }) {
@@ -67,7 +68,7 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
   const [pickingField, setPickingField] = useState<FieldId | null>(null);
   const account = accounts.find((entry) => entry.id === draft.accountId);
   const descriptor = catalog.find((entry) => entry.kind === account?.provider_kind);
-  const kind: EditorKind = account?.provider_kind === "llamacpp" ? "local" : account?.provider_kind === "sdcpp" || (savedModel?.kind === "image" && savedModel.provider_account_id === draft.accountId) ? "image" : account?.provider_kind === "ollama" ? "ollama" : "cloud";
+  const kind: EditorKind = account?.provider_kind === "llamacpp" ? "local" : account?.protocol === "stable_diffusion" || account?.provider_kind === "sdcpp" || (draft.outputs.includes("image") && !draft.outputs.includes("text")) ? "image" : account?.provider_kind === "ollama" ? "ollama" : "cloud";
   const localFile = kind === "local" || (kind === "image" && account?.provider_kind === "sdcpp");
   const externalLabel = localFile ? draft.externalId.split(/[\\/]/).at(-1) ?? draft.externalId : draft.externalId;
   const headerMeta = localFile ? account?.label : [account?.label, draft.externalId].filter(Boolean).join(" · ");
@@ -79,12 +80,13 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
   const sections = editorSections(kind, account?.provider_kind === "openrouter").filter((item) => {
     if (kind === "cloud" && descriptor && item.id === "reasoning") return descriptor.reasoning !== "none" && draft.config.capabilities.reasoning !== "unsupported";
     if (kind === "cloud" && descriptor && item.id === "caching") return descriptor.prompt_caching !== "none" && draft.config.capabilities.prompt_cache !== "unsupported";
+    if (kind === "image" && !localFile && ["loras", "hires", "speed"].includes(item.id)) return false;
     if (kind === "image" && item.id === "loras") return draft.config.stable_diffusion.cpp?.supports_lora !== false;
     return true;
   });
   const imageOptions = useQuery({ queryKey: ["image", "capabilities", draft.accountId, draft.externalId], queryFn: () => api.call("imageCapabilities", { target: { type: "provider", provider_kind: account!.provider_kind, model: draft.externalId || null } }), enabled: kind === "image" && Boolean(account) });
   const upscalers = useQuery({ queryKey: ["sd", "upscalers"], queryFn: () => api.call("sdUpscalersList"), enabled: kind === "image" && section === "hires" });
-  const imageProfiles = useQuery({ queryKey: ["image", "profiles"], queryFn: () => api.call("hfImageBundleProfiles"), enabled: kind === "image" });
+  const imageProfiles = useQuery({ queryKey: ["image", "profiles"], queryFn: () => api.call("hfImageBundleProfiles"), enabled: kind === "image" && localFile });
   const imageProfile = imageProfiles.data?.profiles.find((profile) => profile.id === draft.config.stable_diffusion.cpp?.profile_id);
   const current = sections.find((item) => item.id === section);
   const hasDeviceOverview = kind === "local" && Boolean(draft.externalId);
@@ -119,7 +121,7 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
     let config = structuredClone(draft.config);
     let inputs = draft.inputs; let outputs = draft.outputs;
     try {
-      if (kind === "image") {
+      if (kind === "image" && localFile) {
         const detected = await api.call("sdDetectModelFile", { source: { uri: picked.id } });
         if (!detected.exists) throw new Error(t("modelEditor.pickError"));
         const profile = detected.profile;
@@ -131,8 +133,10 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
         };
         inputs = profile?.supports_image_edit ? ["text", "image"] : ["text"]; outputs = ["image"];
       } else if (picked.remote) {
-        inputs = (picked.remote.input_modalities ?? ["text"]).filter((v): v is ModelModality => ["text", "image", "audio"].includes(v));
-        outputs = (picked.remote.output_modalities ?? ["text"]).filter((v): v is ModelModality => ["text", "image", "audio"].includes(v));
+        inputs = (picked.remote.input_modalities ?? (kind === "image" ? ["text", "image"] : ["text"])).filter((v): v is ModelModality => ["text", "image", "audio"].includes(v));
+        outputs = (picked.remote.output_modalities ?? (kind === "image" ? ["image"] : ["text"])).filter((v): v is ModelModality => ["text", "image", "audio"].includes(v));
+      } else if (kind === "image") {
+        inputs = ["text", "image"]; outputs = ["image"];
       }
       update({ externalId: picked.id, name: draft.name || defaultModelName(picked.name, picked.id), remote: picked.remote ?? null, config, inputs, outputs });
     } catch (error) { setFileError(error); }
@@ -162,6 +166,12 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
   const supports = (id: FieldId) => {
     if (id === "llamaKvTypeK" || id === "llamaKvTypeV") return effectiveField(draft.config, defaults, "chat", editorFields.llamaKvType) === "split";
     if (kind === "image") {
+      if (!localFile) {
+        const fields = ["sdSize", "sdExtraPrompt", "sdPromptWriterInstructions"];
+        if (["comfyui", "automatic1111", "nanogpt"].includes(account?.provider_kind ?? "")) fields.push("sdSteps", "sdCfgScale", "sdSeed", "sdDenoisingStrength");
+        if (["comfyui", "automatic1111"].includes(account?.provider_kind ?? "")) fields.push("sdSampler", "sdNegativePrompt");
+        if (!fields.includes(id)) return false;
+      }
       if (id === "sdNegativePrompt" && imageOptions.data?.negative_prompt === false) return false;
       if (["sdImageCfgScale", "sdDenoisingStrength", "sdAutoResizeRefImages", "sdIncreaseRefIndex"].includes(id) && draft.config.stable_diffusion.cpp?.supports_image_edit === false) return false;
     }
@@ -179,13 +189,14 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
         const entryDescriptor = catalog.find((item) => item.kind === entry.provider_kind);
         const group = ["llamacpp", "sdcpp"].includes(entry.provider_kind) ? "device" : entryDescriptor && providerGroup(entryDescriptor) === "cloud" ? "cloud" : "servers";
         return { id: entry.id, name: entry.label, kind: entry.provider_kind, group: t(`modelEditor.${group}`) };
-      })} onChange={(id) => { if (id && id !== draft.accountId) { update({ accountId: id, externalId: "", remote: null }); setSection("overview"); } }} /></EditorRow>
-      <EditorRow label={t(kind === "local" || kind === "image" ? "modelEditor.modelFile" : "modelEditor.model")} hint={externalLabel}>
+      })} onChange={(id) => { if (id && id !== draft.accountId) { const image = accounts.find((entry) => entry.id === id)?.protocol === "stable_diffusion"; update({ accountId: id, externalId: "", remote: null, inputs: image ? ["text", "image"] : ["text"], outputs: image ? ["image"] : ["text"] }); setSection("overview"); } }} /></EditorRow>
+      {account?.provider_kind === "custom" && <EditorRow label={t("modelEditor.modelType")}><SelectMenuField aria-label={t("modelEditor.modelType")} value={kind === "image" ? "image" : "chat"} options={[{ value: "chat", label: t("modelEditor.chatModel") }, { value: "image", label: t("modelEditor.imageModel") }]} onChange={(value) => update({ inputs: value === "image" ? ["text", "image"] : ["text"], outputs: value === "image" ? ["image"] : ["text"], remote: null })} /></EditorRow>}
+      <EditorRow label={t(localFile ? "modelEditor.modelFile" : "modelEditor.model")} hint={externalLabel}>
         <button type="button" className={`${inputSurface} flex h-10 w-full items-center gap-2 px-3.5 text-left text-sm`} aria-busy={picking || undefined} disabled={!draft.accountId || picking} onClick={() => setPicker(true)}><span className="min-w-0 flex-1 truncate">{draft.externalId ? localFile ? externalLabel : draft.remote?.display_name ?? defaultModelName(null, draft.externalId) : t("modelEditor.chooseModel")}</span>{picking ? <LoaderCircle size={icon.sm} className="shrink-0 animate-spin text-fg-3" /> : <ChevronDown size={icon.sm} className="shrink-0 text-fg-3" />}</button>
       </EditorRow>
       <EditorRow label={t("modelEditor.name")} hint={t("modelEditor.nameHint")}><Input aria-label={t("modelEditor.name")} value={draft.name} placeholder={draft.externalId ? defaultModelName(null, draft.externalId) : t("modelEditor.name")} onChange={(event) => update({ name: event.target.value })} /></EditorRow>
     </ListGroup>
-    {kind === "image" ? <ListGroup label={t("modelEditor.components")}><EditorRow label={t("modelEditor.componentProfile")} hint={t("modelEditor.detectedFile")}><SelectMenuField aria-label={t("modelEditor.componentProfile")} value={draft.config.stable_diffusion.cpp?.profile_id ?? ""} options={[{ value: "", label: t("modelEditor.customProfile") }, ...(imageProfiles.data?.profiles ?? []).map((profile) => ({ value: profile.id, label: profile.display_name })), ...(!imageProfile && draft.config.stable_diffusion.cpp?.profile_id ? [{ value: draft.config.stable_diffusion.cpp.profile_id, label: draft.config.stable_diffusion.cpp.profile_id }] : [])]} onChange={(id) => {
+    {kind === "image" && localFile ? <ListGroup label={t("modelEditor.components")}><EditorRow label={t("modelEditor.componentProfile")} hint={t("modelEditor.detectedFile")}><SelectMenuField aria-label={t("modelEditor.componentProfile")} value={draft.config.stable_diffusion.cpp?.profile_id ?? ""} options={[{ value: "", label: t("modelEditor.customProfile") }, ...(imageProfiles.data?.profiles ?? []).map((profile) => ({ value: profile.id, label: profile.display_name })), ...(!imageProfile && draft.config.stable_diffusion.cpp?.profile_id ? [{ value: draft.config.stable_diffusion.cpp.profile_id, label: draft.config.stable_diffusion.cpp.profile_id }] : [])]} onChange={(id) => {
       const profile = imageProfiles.data?.profiles.find((entry) => entry.id === id);
       const cpp = { ...draft.config.stable_diffusion.cpp, profile_id: id || null };
       if (profile) Object.assign(cpp, { supports_text_to_image: profile.supports_text_to_image, supports_image_edit: profile.supports_image_edit, max_reference_images: profile.max_reference_images, requires_reference_image: profile.requires_reference_image, recommended_for_scenes: profile.recommended_for_scenes });

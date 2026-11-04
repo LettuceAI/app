@@ -322,7 +322,7 @@ async fn automatic1111_needs_no_key_and_reads_the_images_array() {
     assert_eq!(recorded[0].header("authorization"), None);
     let body = recorded[0].json();
     assert_eq!(body["steps"], json!(28));
-    assert_eq!(body["sampler_index"], json!("DPM++ 2M Karras"));
+    assert_eq!(body["sampler_name"], json!("Euler"));
     assert_eq!(
         body["override_settings"],
         json!({"sd_model_checkpoint": "image-model"})
@@ -497,6 +497,163 @@ fn comfy_account(base: &str, config: ComfyUiConfig) -> ProviderAccount {
     ProviderAccount {
         config: ProviderConfig::ComfyUi(config),
         ..account("comfyui", base, None, SecretOwnerId::new())
+    }
+}
+
+#[tokio::test]
+async fn local_image_servers_list_checkpoints_and_verify_without_keys() {
+    for (kind, path, body) in [
+        ("comfyui", "/object_info/CheckpointLoaderSimple", json!({"CheckpointLoaderSimple":{"input":{"required":{"ckpt_name":[["model.safetensors"],{}]}}}})),
+        ("automatic1111", "/sdapi/v1/sd-models", json!([{"title":"model.safetensors","model_name":"model"}])),
+    ] {
+        let (base, recorded) = server(vec![json_response(&body), json_response(&body)]).await;
+        let mut account = account(kind, &base, None, SecretOwnerId::new());
+        account.protocol = ProviderProtocol::StableDiffusion;
+        let remote = crate::RemoteProviders::new(Arc::new(InMemorySecretStore::new()), Arc::new(lettuce_network::JsonClient::new().expect("client")));
+        let models = remote.list_models(&account).await.expect("models");
+        assert_eq!(models[0].id, "model.safetensors");
+        assert_eq!(models[0].output_modalities, Some(vec!["image".into()]));
+        assert!(remote.verify_api_key(&account).await.expect("verify").valid);
+        for request in recorded.await.expect("requests") {
+            assert_eq!(request.request_line(), format!("GET {path} HTTP/1.1"));
+            assert_eq!(request.header("authorization"), None);
+        }
+    }
+}
+
+#[tokio::test]
+async fn automatic1111_uses_api_auth_for_discovery_and_image_edits() {
+    let store = Arc::new(InMemorySecretStore::new());
+    let owner = SecretOwnerId::new();
+    let key = SecretRef::new();
+    store.put(SecretRecord::new(key, SecretPurpose::ProviderApiKey { owner }), SecretValue::new("user:password").expect("key"), None).await.expect("store");
+    let (base, recorded) = server(vec![json_response(&json!([])), json_response(&json!({"images":[encoded(PNG)]}))]).await;
+    let mut account = account("automatic1111", &format!("{base}/sdapi/v1/"), Some(key), owner);
+    account.protocol = ProviderProtocol::StableDiffusion;
+    let remote = crate::RemoteProviders::new(store.clone(), Arc::new(lettuce_network::JsonClient::new().expect("client")));
+    assert!(remote.list_models(&account).await.expect("models").is_empty());
+    let mut edit = request(account);
+    edit.input_images = vec![ImageInput { bytes: PNG.to_vec(), mime_type: "image/png".into() }];
+    edit.settings.seed = Some(7);
+    edit.settings.sampler = Some("Euler".into());
+    edit.settings.scheduler = Some("Karras".into());
+    edit.settings.denoising_strength = Some(0.5);
+    providers(store).generate(edit).await.expect("image");
+    let recorded = recorded.await.expect("requests");
+    for request in &recorded { assert_eq!(request.header("authorization"), Some(format!("Basic {}", encoded(b"user:password")))); }
+    assert_eq!(recorded[1].request_line(), "POST /sdapi/v1/img2img HTTP/1.1");
+    let body = recorded[1].json();
+    assert_eq!(body["seed"], 7);
+    assert_eq!(body["sampler_name"], "Euler");
+    assert_eq!(body["scheduler"], "Karras");
+    assert_eq!(body["denoising_strength"], 0.5);
+    assert_eq!(body["init_images"].as_array().expect("images").len(), 1);
+}
+
+#[tokio::test]
+async fn comfyui_history_failures_and_empty_completed_workflows_fail_immediately() {
+    for reply in [response("401 Unauthorized", "application/json", b"{}"), json_response(&json!({"p":{"status":{"completed":true,"status_str":"success"},"outputs":{}}}))] {
+        let (base, recorded) = server(vec![json_response(&json!({"prompt_id":"p"})), reply]).await;
+        let edit = request(comfy_account(&base, ComfyUiConfig { txt2img_workflow: Some("{}".into()), img2img_workflow: None }));
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), providers(Arc::new(InMemorySecretStore::new())).generate(edit)).await.expect("no polling delay");
+        assert!(result.is_err());
+        assert_eq!(recorded.await.expect("requests").len(), 2);
+    }
+}
+
+#[test]
+fn comfyui_substitution_preserves_token_text_in_user_input() {
+    let mut request = request(comfy_account("http://x", ComfyUiConfig::default()));
+    request.prompt = "literal %SEED% and %CKPT%".into();
+    request.settings.seed = Some(42);
+    request.count = 3;
+    let graph: Value = serde_json::from_str(&substitute_tokens(r#"{"prompt":"%PROMPT%","seed":%SEED%,"batch_size":%BATCH_SIZE%}"#, &request, &[], || 0)).expect("graph");
+    assert_eq!(graph["prompt"], request.prompt);
+    assert_eq!(graph["seed"], 42);
+    assert_eq!(graph["batch_size"], 3);
+}
+
+#[tokio::test]
+async fn nanogpt_preserves_api_prefix_and_sends_documented_image_fields() {
+    for editing in [false, true] {
+        let (store, owner, key) = keyed().await;
+        let (base, recorded) = server(vec![json_response(&json!({"data":[{"b64_json":encoded(PNG)}]}))]).await;
+        let mut input = request(account("nanogpt", &format!("{base}/api"), Some(key), owner));
+        input.settings.seed = Some(42);
+        input.settings.steps = Some(30);
+        input.settings.cfg_scale = Some(7.5);
+        if editing {
+            input.input_images = vec![ImageInput { mime_type: "image/png".into(), bytes: PNG.to_vec() }; 2];
+            input.mask_image = Some(ImageInput { mime_type: "image/png".into(), bytes: PNG.to_vec() });
+        }
+        let output = providers(store).generate(input).await.expect("generate");
+        assert_eq!(output.images[0].bytes, PNG);
+        let recorded = recorded.await.expect("requests");
+        assert_eq!(recorded[0].request_line(), if editing { "POST /api/v1/images/edits HTTP/1.1" } else { "POST /api/v1/images/generations HTTP/1.1" });
+        let body = recorded[0].json();
+        assert_eq!(body["response_format"], "b64_json");
+        assert!(body.get("responseFormat").is_none());
+        assert_eq!(body["seed"], 42);
+        assert_eq!(body["num_inference_steps"], 30);
+        assert_eq!(body["guidance_scale"], 7.5);
+        if editing {
+            assert_eq!(body["imageDataUrls"].as_array().expect("refs").len(), 2);
+            assert!(body["maskDataUrl"].as_str().expect("mask").starts_with("data:image/png;base64,"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn nanogpt_model_discovery_merges_text_and_image_catalogs() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![
+        json_response(&json!({"data":[{"id":"chat","architecture":{"output_modalities":["text"]}}]})),
+        json_response(&json!({"data":[{"id":"draw","name":"Image model","architecture":{"input_modalities":["text","image"],"output_modalities":["image"]}}]})),
+    ]).await;
+    let account = account("nanogpt", &format!("{base}/api"), Some(key), owner);
+    let remote = crate::RemoteProviders::new(store, Arc::new(lettuce_network::JsonClient::new().expect("client")));
+    let models = remote.list_models(&account).await.expect("models");
+    assert_eq!(models.len(), 2);
+    assert_eq!(models[1].output_modalities, Some(vec!["image".into()]));
+    let recorded = recorded.await.expect("requests");
+    assert_eq!(recorded[0].request_line(), "GET /api/v1/models?detailed=true HTTP/1.1");
+    assert_eq!(recorded[1].request_line(), "GET /api/v1/image-models?detailed=true HTTP/1.1");
+}
+
+#[test]
+fn nanogpt_image_options_use_the_selected_models_live_metadata() {
+    let body = json!({"data":[{"id":"image-model","supported_parameters":{"resolutions":["auto","1536x1024"],"quality":["low","high"],"max_images":4,"fixed_image_count":2}}]});
+    let values = crate::providers::nanogpt::image_capabilities(&body, "image-model").expect("options");
+    assert_eq!(values.sizes, vec!["auto", "1536x1024"]);
+    assert_eq!(values.quality, vec!["low", "high"]);
+    assert_eq!(values.max_count, Some(2));
+    assert!(crate::providers::nanogpt::image_capabilities(&body, "missing").is_err());
+}
+
+#[tokio::test]
+async fn custom_images_use_configured_routes_auth_format_and_response_mapping() {
+    for editing in [false, true] {
+        let (base, recorded) = server(vec![json_response(&json!({"result":{"pictures":[{"payload":{"bytes":encoded(PNG)}}]}}))]).await;
+        let mut input = request(account("custom", &base, None, SecretOwnerId::new()));
+        input.account.config = ProviderConfig::Custom(lettuce_models::CustomProviderConfig {
+            auth: lettuce_models::CustomAuth::None,
+            image: lettuce_models::CustomImageConfig {
+                generation_path: "/render".into(), edit_path: Some("/edit".into()),
+                edit_format: lettuce_models::CustomImageEditFormat::JsonDataUrls,
+                list_path: Some(lettuce_models::JsonPath::new("result.pictures").expect("path")),
+                url_path: None, b64_path: Some(lettuce_models::JsonPath::new("payload.bytes").expect("path")),
+                extra_body: [("quality".into(), json!("high")), ("prompt".into(), json!("must not replace the user prompt"))].into_iter().collect(),
+            }, ..Default::default()
+        });
+        if editing { input.input_images = vec![ImageInput { bytes: PNG.to_vec(), mime_type: "image/png".into() }]; }
+        let output = providers(Arc::new(InMemorySecretStore::new())).generate(input).await.expect("image");
+        assert_eq!(output.images[0].bytes, PNG);
+        let recorded = recorded.await.expect("requests");
+        assert_eq!(recorded[0].request_line(), if editing { "POST /edit HTTP/1.1" } else { "POST /render HTTP/1.1" });
+        assert_eq!(recorded[0].header("authorization"), None);
+        assert_eq!(recorded[0].json()["quality"], "high");
+        assert_eq!(recorded[0].json()["prompt"], "a \"quiet\" harbor");
+        if editing { assert!(recorded[0].json()["imageDataUrl"].is_string()); }
     }
 }
 
@@ -731,7 +888,7 @@ fn automatic1111_keeps_the_legacy_invalid_tls_opt_in() {
     opted_in.account.allow_invalid_tls = true;
     assert!(super::allow_invalid_tls(&opted_in, "automatic1111"));
     assert!(super::allow_invalid_tls(&opted_in, "custom"));
-    assert!(!super::allow_invalid_tls(&opted_in, "comfyui"));
+    assert!(super::allow_invalid_tls(&opted_in, "comfyui"));
     assert!(!super::allow_invalid_tls(&opted_in, "diffusers"));
     opted_in.account.allow_invalid_tls = false;
     assert!(!super::allow_invalid_tls(&opted_in, "automatic1111"));

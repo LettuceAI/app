@@ -380,7 +380,9 @@ pub(in crate::api) fn provider_config(
 
 fn default_provider_config(kind: &str) -> ProviderConfig {
     use lettuce_models::{CustomAuth, CustomProviderConfig, OllamaConfig};
-    if kind.eq_ignore_ascii_case("ollama") {
+    if kind.eq_ignore_ascii_case("comfyui") {
+        ProviderConfig::ComfyUi(lettuce_models::ComfyUiConfig::default())
+    } else if kind.eq_ignore_ascii_case("ollama") {
         ProviderConfig::Ollama(OllamaConfig::default())
     } else if kind.eq_ignore_ascii_case("custom") {
         ProviderConfig::Custom(CustomProviderConfig {

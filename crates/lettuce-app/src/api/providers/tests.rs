@@ -14,7 +14,7 @@ async fn catalog_and_accounts_are_read_only_and_never_expose_keys() {
         .provider_accounts()
         .expect("accounts");
     let catalog = provider_catalog(&harness.context).await.expect("catalog");
-    assert_eq!(catalog.providers.len(), 25);
+    assert_eq!(catalog.providers.len(), 27);
     assert!(
         catalog
             .providers

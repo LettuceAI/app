@@ -343,7 +343,7 @@
     "languageTitle": "Dil",
     "warning": {
       "title": "Sohbetlerin yanıt verebilmesi için bir yapay zekâ gerekir",
-      "body": "Bağlı bir yapay zekâ olmadan karakterler yanıt veremez. Daha sonra ayarlardan birini bağlayabilirsiniz.",
+      "body": "Kurulumu tamamlamak için bir sohbet modeli seçin. Görsel üretimini daha sonra Ayarlar’dan ekleyebilirsiniz.",
       "connect": "Bir yapay zekâ bağlayın",
       "skipAnyway": "Yine de atla"
     }

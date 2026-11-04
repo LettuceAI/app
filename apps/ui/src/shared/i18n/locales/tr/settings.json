@@ -552,6 +552,16 @@
     "refresh": "Yenile"
   },
   "providers": {
+    "models": "Sohbet ve görsel modelleri",
+    "optionalKey": "API anahtarı (isteğe bağlı)",
+    "webUiCredentials": "kullanıcı:parola veya proxy anahtarı",
+    "comfyTxt2img": "Metinden görsele iş akışı (API JSON)",
+    "comfyImg2img": "Görselden görsele iş akışı (API JSON, isteğe bağlı)",
+    "comfyWorkflowHint": "ComfyUI iş akışını API biçiminde dışa aktarın. Değişken girdileri aşağıdaki belirteçlerle değiştirin.",
+    "comfyInvalidWorkflow": "Her düğümünde class_type ve inputs bulunan API biçiminde bir JSON nesnesi kullanın (en fazla 4 MiB).",
+    "comfyTokens": "Metin: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% veya %IMAGE0%. Sayı: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Metin belirteçlerini JSON tırnakları içinde tutun.",
+    "webUiHint": "WebUI uygulamasını --api ile başlatın. Kaydettikten sonra Modeller bölümünden sunucudaki bir checkpoint ile görsel modeli ekleyin.",
+    "imageModelHint": "Kaydettikten sonra Modeller bölümünden sunucudaki bir checkpoint ile görsel modeli ekleyin.",
     "type": "Sağlayıcı türü",
     "language": "Dil modelleri",
     "audio": "Ses",
@@ -674,6 +684,21 @@
     "mobileDownloads": "Yerel GGUF indirmeleri masaüstünde kullanılabilir."
   },
   "customProvider": {
+    "imageRoutes": "Özel görsel yolları",
+    "imageRoutesHint": "Sohbet ile aynı kimlik doğrulamasını kullanır. Varsayılan OpenAI görsel API biçimidir.",
+    "imageGenerationPath": "Görsel üretim yolu",
+    "imageEditPath": "Görsel düzenleme yolu",
+    "imageEditHint": "Görsel düzenlemeyi kapatmak için boş bırakın.",
+    "imageEditFormat": "Görsel düzenleme istek biçimi",
+    "imageMultipart": "Multipart dosyalar (OpenAI)",
+    "imageJson": "JSON veri URL’leri (NanoGPT)",
+    "imageListPath": "Yanıtta görsel listesi yolu",
+    "imageListHint": "Noktalı JSON yolu. Yanıtın kökünü okumak için boş bırakın.",
+    "imageUrlPath": "Öğe başına görsel URL yolu",
+    "imageB64Path": "Öğe başına Base64 görsel yolu",
+    "imageExtraBody": "Ek görsel parametreleri (JSON)",
+    "imageExtraBodyHint": "quality veya output_format gibi sağlayıcı değerleri. Model, istem ve görsel girdileri mevcut değerlerini korur.",
+    "imageExtraBodyInvalid": "En fazla 64 KiB boyutunda bir JSON nesnesi girin.",
     "chatPath": "Sohbet uç noktası",
     "auth": "Kimlik doğrulama",
     "authModes": {
@@ -714,6 +739,9 @@
     "urlRequired": "Gerekli. Özel sunucunuzun temel URL'si."
   },
   "modelEditor": {
+    "modelType": "Model türü",
+    "chatModel": "Sohbet",
+    "imageModel": "Görsel üretimi",
     "fields": {
       "temperature": "Sıcaklık",
       "topP": "Top P",

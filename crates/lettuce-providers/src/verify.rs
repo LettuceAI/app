@@ -34,6 +34,10 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
     account: &ProviderAccount,
 ) -> Result<KeyVerification, AdapterError> {
     let kind = account.provider_kind.to_ascii_lowercase();
+    if matches!(kind.as_str(), "comfyui" | "automatic1111") {
+        crate::images::local::list_models(secret_store, network, account).await?;
+        return Ok(KeyVerification { valid: true, status: Some(200), error: None });
+    }
     let credentials = Credentials::from(account);
     let descriptor = crate::catalog::provider_descriptor(&kind).ok_or(AdapterError::Rejected)?;
     let endpoint = account

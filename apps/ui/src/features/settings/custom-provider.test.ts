@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { customProviderConfig, customProviderDraft } from "./custom-provider";
+import { customProviderConfig, customProviderDraft, parseImageExtraBody } from "./custom-provider";
 
 describe("custom provider config mapping", () => {
+  it("round trips custom image routes, JSON edits, response paths and extra parameters", () => {
+    const image = { generation_path: "/render", edit_path: null, edit_format: "json_data_urls", list_path: "result.pictures", url_path: null, b64_path: "payload.bytes", extra_body: { quality: "high", output_format: "webp" } };
+    const draft = customProviderDraft("custom", { image });
+    expect(customProviderConfig(draft).image).toEqual(image);
+    expect(customProviderConfig({ ...draft, imageConfigured: false }).image).toBeUndefined();
+    expect(parseImageExtraBody("[]")).toBeNull();
+    expect(parseImageExtraBody("invalid")).toBeNull();
+    expect(parseImageExtraBody('{"quality":"high"}')).toEqual({ quality: "high" });
+  });
   it("keeps custom Anthropic defaults separate from the OpenAI format", () => {
     expect(customProviderConfig(customProviderDraft("custom"))).toMatchObject({ kind: "custom", chat_path: "/v1/chat/completions", auth: "bearer" });
     expect(customProviderConfig(customProviderDraft("custom-anthropic"))).toMatchObject({ kind: "custom", chat_path: "/v1/messages", auth: { header: { name: "x-api-key" } } });

@@ -127,6 +127,44 @@ pub struct CustomProviderConfig {
     pub send_chat_template_kwargs: bool,
     #[serde(default)]
     pub tool_choice_mode: CustomToolChoiceMode,
+    #[serde(default)]
+    pub image: CustomImageConfig,
+}
+
+/// OpenAI-style image routes, with configurable JSON response paths and
+/// provider-specific request parameters. Authentication is shared with chat.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CustomImageConfig {
+    pub generation_path: String,
+    pub edit_path: Option<String>,
+    pub edit_format: CustomImageEditFormat,
+    pub list_path: Option<JsonPath>,
+    pub url_path: Option<JsonPath>,
+    pub b64_path: Option<JsonPath>,
+    pub extra_body: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CustomImageEditFormat {
+    #[default]
+    Multipart,
+    JsonDataUrls,
+}
+
+impl Default for CustomImageConfig {
+    fn default() -> Self {
+        Self {
+            generation_path: "/v1/images/generations".into(),
+            edit_path: Some("/v1/images/edits".into()),
+            edit_format: CustomImageEditFormat::Multipart,
+            list_path: Some(JsonPath::new("data").expect("static path")),
+            url_path: Some(JsonPath::new("url").expect("static path")),
+            b64_path: Some(JsonPath::new("b64_json").expect("static path")),
+            extra_body: Default::default(),
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -147,6 +185,7 @@ impl Default for CustomProviderConfig {
             merge_same_role_messages: true,
             send_chat_template_kwargs: false,
             tool_choice_mode: CustomToolChoiceMode::Auto,
+            image: CustomImageConfig::default(),
         }
     }
 }
@@ -402,6 +441,7 @@ pub fn validate_provider_connection(
         chat_path,
         models_path,
         auth,
+        image,
         ..
     }) = &account.config
     {
@@ -409,6 +449,16 @@ pub fn validate_provider_connection(
             return Err(ProviderConnectionValidationError::Endpoint);
         }
         validate_path(chat_path)?;
+        validate_path(&image.generation_path)?;
+        if let Some(path) = &image.edit_path { validate_path(path)?; }
+        if image.url_path.is_none() && image.b64_path.is_none() {
+            return Err(ProviderConnectionValidationError::Path);
+        }
+        if image.extra_body.len() > 128 || serde_json::to_vec(&image.extra_body)
+            .map_or(true, |bytes| bytes.len() > 64 * 1024)
+        {
+            return Err(ProviderConnectionValidationError::Path);
+        }
         if let Some(models_path) = models_path {
             validate_path(models_path)?;
         }

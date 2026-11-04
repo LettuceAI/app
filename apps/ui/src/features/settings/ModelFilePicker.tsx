@@ -28,10 +28,10 @@ export function ModelFilePicker({ open, accountId, kind, providerKind, providerN
   const [filtersKey, setFiltersKey] = useState(0);
   const [error, setError] = useState<unknown>(null);
   const [picking, setPicking] = useState(false);
-  const remoteKind = kind === "cloud" || kind === "ollama";
+  const remoteKind = kind === "cloud" || kind === "ollama" || (kind === "image" && providerKind !== "sdcpp");
   const remote = useQuery({ queryKey: queryKeys.providers.models(accountId), queryFn: () => api.call("providerModels", { account_id: accountId }), enabled: remoteKind && Boolean(accountId) });
   const local = useQuery({ queryKey: queryKeys.localModels.all, queryFn: () => api.call("localModelsList"), enabled: open && kind === "local" });
-  const images = useQuery({ queryKey: ["sd", "installed"], queryFn: () => api.call("sdModelsInstalled"), enabled: open && kind === "image" });
+  const images = useQuery({ queryKey: ["sd", "installed"], queryFn: () => api.call("sdModelsInstalled"), enabled: open && kind === "image" && !remoteKind });
   const result = remoteKind ? remote : kind === "local" ? local : images;
   const choose = (value: PickedModel) => { onPick(value); onClose(); };
   const entries = remoteKind ? (remote.data ?? []).map((entry) => ({ id: entry.id, name: entry.display_name, remote: entry, detail: entry.id }))

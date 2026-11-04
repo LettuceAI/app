@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { Field, Input, ListGroup, ListRow, Select, Switch } from "@lettuceai/crisp";
-import type { CustomProviderDraft } from "./custom-provider";
+import { Field, Input, ListGroup, ListRow, Select, Switch, Textarea } from "@lettuceai/crisp";
+import { parseImageExtraBody, type CustomProviderDraft } from "./custom-provider";
 
 export function CustomProviderFields({ draft, onChange, anthropic, allowInvalidTls, onTlsChange }: {
   draft: CustomProviderDraft;
@@ -17,6 +17,18 @@ export function CustomProviderFields({ draft, onChange, anthropic, allowInvalidT
     <Field label={t("customProvider.auth")}><Select value={draft.auth} options={(["bearer", "header", "query", "none"] as const).map((value) => ({ value, label: t(`customProvider.authModes.${value}`) }))} onChange={(e) => update("auth", e.target.value as CustomProviderDraft["auth"])} /></Field>
     {draft.auth === "header" && <Field label={t("customProvider.headerName")}><Input value={draft.headerName} onChange={(e) => update("headerName", e.target.value)} /></Field>}
     {draft.auth === "query" && <Field label={t("customProvider.queryName")}><Input value={draft.queryName} onChange={(e) => update("queryName", e.target.value)} /></Field>}
+    {!anthropic && <>
+      <ListGroup><ListRow title={t("customProvider.imageRoutes")} description={t("customProvider.imageRoutesHint")} trailing={<Switch checked={draft.imageConfigured} onChange={(value) => update("imageConfigured", value)} aria-label={t("customProvider.imageRoutes")} />} /></ListGroup>
+      {draft.imageConfigured && <>
+        <Field label={t("customProvider.imageGenerationPath")}><Input value={draft.imageGenerationPath} onChange={(e) => update("imageGenerationPath", e.target.value)} /></Field>
+        <Field label={t("customProvider.imageEditPath")} hint={t("customProvider.imageEditHint")}><Input value={draft.imageEditPath} onChange={(e) => update("imageEditPath", e.target.value)} /></Field>
+        <Field label={t("customProvider.imageEditFormat")}><Select value={draft.imageEditFormat} options={[{ value: "multipart", label: t("customProvider.imageMultipart") }, { value: "json_data_urls", label: t("customProvider.imageJson") }]} onChange={(e) => update("imageEditFormat", e.target.value as CustomProviderDraft["imageEditFormat"])} /></Field>
+        <Field label={t("customProvider.imageListPath")} hint={t("customProvider.imageListHint")}><Input value={draft.imageListPath} onChange={(e) => update("imageListPath", e.target.value)} /></Field>
+        <Field label={t("customProvider.imageUrlPath")}><Input value={draft.imageUrlPath} onChange={(e) => update("imageUrlPath", e.target.value)} /></Field>
+        <Field label={t("customProvider.imageB64Path")}><Input value={draft.imageB64Path} onChange={(e) => update("imageB64Path", e.target.value)} /></Field>
+        <Field label={t("customProvider.imageExtraBody")} hint={t("customProvider.imageExtraBodyHint")} error={parseImageExtraBody(draft.imageExtraBody) ? undefined : t("customProvider.imageExtraBodyInvalid")}><Textarea rows={4} spellCheck={false} value={draft.imageExtraBody} onChange={(e) => update("imageExtraBody", e.target.value)} /></Field>
+      </>}
+    </>}
     {!anthropic && <Field label={t("customProvider.toolChoice")}><Select value={draft.toolChoice} options={(["auto", "required", "none", "omit", "passthrough"] as const).map((value) => ({ value, label: t(`customProvider.toolModes.${value}`) }))} onChange={(e) => update("toolChoice", e.target.value as CustomProviderDraft["toolChoice"])} /></Field>}
     <ListGroup><ListRow title={t("customProvider.fetchModels")} description={t("customProvider.fetchHint")} trailing={<Switch checked={draft.fetchModels} onChange={(value) => update("fetchModels", value)} aria-label={t("customProvider.fetchModels")} />} /></ListGroup>
     {draft.fetchModels && <>

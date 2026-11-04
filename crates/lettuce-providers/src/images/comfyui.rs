@@ -85,26 +85,40 @@ pub(super) fn substitute_tokens(
         .filter(|value| !value.is_empty())
         .unwrap_or("");
     let seed = settings.seed.map_or_else(random_seed, u64::from);
-    let mut output = template.to_owned();
+    let mut tokens = std::collections::HashMap::new();
     for (index, name) in uploaded.iter().enumerate() {
-        output = output.replace(&format!("%IMAGE{index}%"), &escape(name));
+        tokens.insert(format!("IMAGE{index}"), escape(name));
     }
     for index in uploaded.len()..uploaded.len().max(16) {
-        output = output.replace(&format!("%IMAGE{index}%"), "");
+        tokens.insert(format!("IMAGE{index}"), String::new());
     }
-    let first_image = uploaded.first().map_or("", String::as_str);
-    output = output.replace("%IMAGE_COUNT%", &uploaded.len().to_string());
-    output = output.replace("%IMAGE%", &escape(first_image));
-    output = output.replace("%PROMPT%", &escape(&request.prompt));
-    output = output.replace("%NEGATIVE%", &escape(negative));
-    output = output.replace("%SAMPLER%", &escape(sampler));
-    output = output.replace("%CKPT%", &escape(&request.external_model_id));
-    output = output.replace("%WIDTH%", &width.to_string());
-    output = output.replace("%HEIGHT%", &height.to_string());
-    output = output.replace("%STEPS%", &steps.to_string());
-    output = output.replace("%CFG%", &cfg.to_string());
-    output = output.replace("%SEED%", &seed.to_string());
-    output = output.replace("%DENOISE%", &denoise.to_string());
+    for (name, value) in [
+        ("IMAGE_COUNT", uploaded.len().to_string()),
+        ("BATCH_SIZE", request.count.to_string()),
+        ("IMAGE", escape(uploaded.first().map_or("", String::as_str))),
+        ("PROMPT", escape(&request.prompt)), ("NEGATIVE", escape(negative)),
+        ("SAMPLER", escape(sampler)), ("CKPT", escape(&request.external_model_id)),
+        ("WIDTH", width.to_string()), ("HEIGHT", height.to_string()),
+        ("STEPS", steps.to_string()), ("CFG", cfg.to_string()),
+        ("SEED", seed.to_string()), ("DENOISE", denoise.to_string()),
+    ] { tokens.insert(name.to_owned(), value); }
+    // Scan only the template so user text containing tokens stays literal.
+    let mut output = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find('%') {
+        output.push_str(&rest[..start]);
+        let tail = &rest[start + 1..];
+        if let Some(end) = tail.find('%')
+            && let Some(value) = tokens.get(&tail[..end])
+        {
+            output.push_str(value);
+            rest = &tail[end + 1..];
+        } else {
+            output.push('%');
+            rest = tail;
+        }
+    }
+    output.push_str(rest);
     output
 }
 
@@ -250,7 +264,10 @@ async fn poll_outputs(
             .get(base, &path, &[], &[], auth(api_key), Vec::new(), insecure)
             .await
             .map_err(|error| failed(format!("ComfyUI history request failed: {error}")))?;
-        if (200..300).contains(&response.status) {
+        if !(200..300).contains(&response.status) {
+            return Err(failed(format!("ComfyUI history error {}", lettuce_network::status_text(response.status))));
+        }
+        {
             let body = serde_json::from_slice::<Value>(&response.body)
                 .map_err(|error| failed(format!("Failed to parse ComfyUI history: {error}")))?;
             if let Some(entry) = body.get(prompt_id) {
@@ -272,6 +289,11 @@ async fn poll_outputs(
                     if !images.is_empty() {
                         return Ok(images);
                     }
+                }
+                if entry.pointer("/status/completed").and_then(Value::as_bool) == Some(true)
+                    || entry.pointer("/status/status_str").and_then(Value::as_str) == Some("success")
+                {
+                    return Err(failed("ComfyUI returned no images"));
                 }
             }
         }

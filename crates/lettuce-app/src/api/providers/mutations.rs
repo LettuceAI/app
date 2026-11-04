@@ -192,6 +192,15 @@ pub async fn provider_account_save(
         .ok_or_else(|| invalid_field("account.provider_kind", "unknown provider kind"))?;
     let config = super::provider_config(&request.account.provider_kind, request.account.config)
         .map_err(|_| invalid_field("account.config", "invalid provider configuration"))?;
+    if let ProviderConfig::ComfyUi(workflows) = &config {
+        for (field, workflow) in [("account.config.txt2img_workflow", &workflows.txt2img_workflow), ("account.config.img2img_workflow", &workflows.img2img_workflow)] {
+            if let Some(workflow) = workflow.as_deref().filter(|value| !value.trim().is_empty())
+                && !lettuce_providers::valid_comfyui_workflow(workflow)
+            {
+                return Err(invalid_field(field, "expected an API-format ComfyUI workflow"));
+            }
+        }
+    }
     let old = match &request.account.id {
         Some(id) => Some(super::account(context, id.clone()).await?),
         None => None,

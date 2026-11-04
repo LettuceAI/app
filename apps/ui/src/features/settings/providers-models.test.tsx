@@ -131,6 +131,50 @@ afterEach(() => {
 });
 
 describe("provider settings", () => {
+  it.each(["comfyui", "automatic1111"])("adds %s without a required key and preserves its workflows on edit", async (kind) => {
+    const imageDescriptor: ProviderDescriptorContract = { ...descriptor, kind, display_name: kind === "comfyui" ? "ComfyUI (Self-hosted)" : "Automatic1111 (Self-hosted)", protocol: "stable_diffusion", api_key: "optional", default_endpoint: kind === "comfyui" ? "http://127.0.0.1:8188" : "http://127.0.0.1:7860", streaming: false, tools: false };
+    const workflow = '{"3":{"class_type":"KSampler","inputs":{"seed":%SEED%,"batch_size":%BATCH_SIZE%,"text":"%PROMPT%"}}}';
+    const edited = '{"4":{"class_type":"LoadImage","inputs":{"image":"%IMAGE%"}}}';
+    let saved: ProviderAccountSaveRequest | undefined;
+    const imageAccount = { ...account, provider_kind: kind, protocol: "stable_diffusion" as const, label: imageDescriptor.display_name, api_key_set: false, config: kind === "comfyui" ? { kind, txt2img_workflow: workflow, img2img_workflow: edited } : { kind: "standard" } };
+    const verify = vi.fn<NonNullable<MockCallHandlers["providerVerify"]>>(() => ({ status: "ok", data: { valid: true, status: 200 } }));
+    await mount("providers", {
+      providerCatalog: () => ({ status: "ok", data: { providers: [imageDescriptor] } }),
+      providerAccountsList: () => ({ status: "ok", data: [] }),
+      providerVerify: verify,
+      providerAccountSave: (request) => { saved = request; return { status: "ok", data: imageAccount }; },
+    });
+    await click("Add");
+    expect(screen.queryByRole("switch", { name: "Stream responses" })).toBeNull();
+    const add = screen.getByRole("button", { name: "Add provider" });
+    if (kind === "comfyui") {
+      expect(add.hasAttribute("disabled")).toBe(true);
+      fireEvent.change(screen.getByLabelText("Text-to-image workflow (API JSON)"), { target: { value: '{"nodes":[],"links":[]}' } });
+      expect(add.hasAttribute("disabled")).toBe(true);
+      expect(screen.getByText(/Use an API-format JSON/)).toBeTruthy();
+      fireEvent.change(screen.getByLabelText("Text-to-image workflow (API JSON)"), { target: { value: workflow } });
+      fireEvent.change(screen.getByLabelText("Image-to-image workflow (API JSON, optional)"), { target: { value: edited } });
+    }
+    await click("Verify connection");
+    await waitFor(() => expect(verify).toHaveBeenCalledOnce());
+    expect(verify.mock.calls[0]?.[0]).toMatchObject({ type: "draft", draft: { provider_kind: kind, api_key: null } });
+    await click("Add provider");
+    await waitFor(() => expect(saved).toBeDefined());
+    expect(saved).toMatchObject({ account: { provider_kind: kind, streaming_enabled: false }, api_key: null });
+    if (kind === "comfyui") expect(saved?.account.config).toEqual({ kind, txt2img_workflow: workflow, img2img_workflow: edited });
+    cleanup();
+    await mount("providers", {
+      providerCatalog: () => ({ status: "ok", data: { providers: [imageDescriptor] } }),
+      providerAccountsList: () => ({ status: "ok", data: [imageAccount] }),
+      providerAccountSave: (request) => { saved = request; return { status: "ok", data: imageAccount }; },
+    });
+    await click(new RegExp(imageDescriptor.display_name.split(" (")[0]!));
+    fireEvent.change(screen.getByLabelText("Label"), { target: { value: "Renamed image server" } });
+    await click("Save");
+    await waitFor(() => expect(saved?.account.label).toBe("Renamed image server"));
+    expect(saved?.account.config).toEqual(imageAccount.config);
+  });
+
   it("preserves the saved secret and unedited account fields", async () => {
     let saved: ProviderAccountSaveRequest | undefined;
     await mount("providers", {

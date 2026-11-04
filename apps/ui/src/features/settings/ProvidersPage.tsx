@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Cpu, EthernetPort, Plus, Volume2 } from "lucide-react";
-import { Button, confirm, Field, Input, ListGroup, ListRow, ListRowButton, LoadingState, Page, Sheet, Switch, Tab, TabList, Tabs, Text, icon } from "@lettuceai/crisp";
+import { Button, confirm, Field, Input, ListGroup, ListRow, ListRowButton, LoadingState, Page, Sheet, Switch, Tab, TabList, Tabs, Text, Textarea, icon } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
 import type { AudioProviderConfiguration, AudioProviderView, ProviderAccountView, ProviderDescriptorContract } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
@@ -10,7 +10,8 @@ import { ProviderMark, ProviderSelect, providerGroup, providerGroups, providerLo
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import { CustomProviderFields } from "./CustomProviderFields";
-import { customProviderDraft, customProviderConfig } from "./custom-provider";
+import { comfyWorkflowError, imageProviderDraft } from "./image-provider";
+import { customProviderDraft, customProviderConfig, parseImageExtraBody } from "./custom-provider";
 import { useProviderData, useSettingsAction, useSettingsApi, useSettingsLayout } from "./data";
 
 const audioKinds = ["elevenlabs", "gemini", "fish_tts", "fish_speech", "open_ai_compatible", "kokoro"] as const;
@@ -77,7 +78,7 @@ export function ProvidersPage() {
       >
         <Tabs value={tab} onChange={setTab}>
           <TabList aria-label={t("providers.type")}>
-            <Tab value="llm" count={accounts.data?.length ?? 0}>{t("providers.language")}</Tab>
+            <Tab value="llm" count={accounts.data?.length ?? 0}>{t("providers.models")}</Tab>
             <Tab value="audio" count={audio.data?.length ?? 0}>{t("providers.audio")}</Tab>
           </TabList>
         </Tabs>
@@ -186,7 +187,11 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
   const isCustom = !audio && (kind === "custom" || kind === "custom-anthropic");
   const [custom, setCustom] = useState(() => customProviderDraft(kind, account?.config));
   const [allowInvalidTls, setAllowInvalidTls] = useState(account?.allow_invalid_tls ?? false);
-  const config = isCustom ? customProviderConfig(custom) : account?.config ?? {};
+  const [workflows, setWorkflows] = useState(() => imageProviderDraft(account?.config));
+  const isComfy = !audio && kind === "comfyui";
+  const isImage = !audio && catalog.find((entry) => entry.kind === kind)?.protocol === "stable_diffusion";
+  const config = isCustom ? customProviderConfig(custom) : isComfy ? { kind: "comfyui", txt2img_workflow: workflows.txt2img.trim() || null, img2img_workflow: workflows.img2img.trim() || null } : account?.config ?? {};
+  const workflowError = isComfy ? comfyWorkflowError(workflows.txt2img, true) ?? comfyWorkflowError(workflows.img2img, false) : null;
   const [label, setLabel] = useState(account?.label ?? voice?.label ?? "");
   const [key, setKey] = useState("");
   const [host, setHost] = useState(account?.base_url ?? (voice && "base_url" in voice.configuration ? voice.configuration.base_url : "") ?? "");
@@ -218,7 +223,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
         await api.call("audioProviderUpdate", { provider_id: voice.id, expected_revision: voice.revision, label: name, configuration: configuration() });
       } else await api.call("audioProviderCreate", { label: name, draft: { configuration: configuration(), api_key: key.trim() || null }, client_operation_id: crypto.randomUUID() });
     } else await api.call("providerAccountSave", {
-      account: { id: account?.id ?? null, provider_kind: kind, label: name, base_url: host.trim() || null, enabled: account?.enabled ?? true, streaming_enabled: isCustom ? custom.supportsStreaming : streaming, allow_invalid_tls: allowInvalidTls, config },
+      account: { id: account?.id ?? null, provider_kind: kind, label: name, base_url: host.trim() || null, enabled: account?.enabled ?? true, streaming_enabled: isImage ? false : isCustom ? custom.supportsStreaming : streaming, allow_invalid_tls: allowInvalidTls, config },
       api_key: isCustom && custom.auth === "none" ? null : key.trim() || null, clear_api_key: false, expected_revision: account?.revision ?? null, client_operation_id: crypto.randomUUID(),
     });
     onClose();
@@ -248,7 +253,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
     onClose();
   });
   const changedEndpoint = Boolean(account && (host.trim() !== (account.base_url ?? "") || allowInvalidTls !== account.allow_invalid_tls || (isCustom && JSON.stringify(custom) !== JSON.stringify(customProviderDraft(kind, account.config)))));
-  const customIncomplete = isCustom && (!host.trim() || !custom.chatPath.trim() || (custom.fetchModels && (!custom.modelsPath.trim() || !custom.listPath.trim() || !custom.idPath.trim())) || (custom.auth === "header" && !custom.headerName.trim()) || (custom.auth === "query" && !custom.queryName.trim()));
+  const customIncomplete = isCustom && ((custom.imageConfigured && (!custom.imageGenerationPath.trim() || (!custom.imageUrlPath.trim() && !custom.imageB64Path.trim()) || !parseImageExtraBody(custom.imageExtraBody))) || !host.trim() || !custom.chatPath.trim() || (custom.fetchModels && (!custom.modelsPath.trim() || !custom.listPath.trim() || !custom.idPath.trim())) || (custom.auth === "header" && !custom.headerName.trim()) || (custom.auth === "query" && !custom.queryName.trim()));
   const verify = () => action.mutate(async () => {
     if (audio) {
       const valid = await api.call("audioProviderVerify", voice && !key.trim() ? { type: "saved", provider_id: voice.id } : { type: "draft", draft: { configuration: configuration(), api_key: key.trim() || null } });
@@ -277,7 +282,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
       ...(!audio && provider ? { group: common(`providerSelect.groups.${providerGroup(provider)}`) } : {}),
     };
   });
-  const showKey = (!audio || kind !== "kokoro") && (!isCustom || custom.auth !== "none");
+  const showKey = (audio ? kind !== "kokoro" : descriptor?.api_key !== "not_used") && (!isCustom || custom.auth !== "none");
   const showUrl = !audio || kind === "fish_speech" || kind === "open_ai_compatible";
   return (
     <Sheet
@@ -291,7 +296,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
           <Button
             variant="primary"
             loading={action.isPending}
-            disabled={!kind || (needsKey && !key.trim()) || customIncomplete}
+            disabled={!kind || (needsKey && !key.trim()) || customIncomplete || Boolean(workflowError)}
             onClick={save}
           >
             {t(account || voice ? "manage.save" : "providers.add")}
@@ -312,6 +317,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
               if (value) {
                 setKind(value);
                 setCustom(customProviderDraft(value));
+                setWorkflows(imageProviderDraft());
                 setVerified(null);
               }
             }}
@@ -321,13 +327,13 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
           <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={options.find((p) => p.value === kind)?.label} />
         </Field>
         {showKey && (
-          <Field label={t("providers.key")} hint={account?.api_key_set || voice?.has_api_key ? t("providers.keepKey") : undefined}>
+          <Field label={t(isImage ? "providers.optionalKey" : "providers.key")} hint={account?.api_key_set || voice?.has_api_key ? t("providers.keepKey") : undefined}>
             <Input
               type="password"
               autoComplete="new-password"
               value={key}
               onChange={(e) => { setKey(e.target.value); setVerified(null); }}
-              placeholder={t("providers.keyPlaceholder")}
+              placeholder={t(kind === "automatic1111" ? "providers.webUiCredentials" : "providers.keyPlaceholder")}
             />
           </Field>
         )}
@@ -356,7 +362,19 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
             onTlsChange={setAllowInvalidTls}
           />
         )}
-        {!audio && !isCustom && (
+        {isComfy && (
+          <>
+            <Field label={t("providers.comfyTxt2img")} hint={t("providers.comfyWorkflowHint")} error={workflows.txt2img.trim() && comfyWorkflowError(workflows.txt2img, true) ? t("providers.comfyInvalidWorkflow") : undefined}>
+              <Textarea rows={8} spellCheck={false} value={workflows.txt2img} onChange={(event) => setWorkflows({ ...workflows, txt2img: event.target.value })} />
+            </Field>
+            <Field label={t("providers.comfyImg2img")} error={comfyWorkflowError(workflows.img2img, false) ? t("providers.comfyInvalidWorkflow") : undefined}>
+              <Textarea rows={8} spellCheck={false} value={workflows.img2img} onChange={(event) => setWorkflows({ ...workflows, img2img: event.target.value })} />
+            </Field>
+            <Text variant="hint">{t("providers.comfyTokens")}</Text>
+          </>
+        )}
+        {isImage && <Text variant="hint">{t(kind === "automatic1111" ? "providers.webUiHint" : "providers.imageModelHint")}</Text>}
+        {!audio && !isCustom && !isImage && (
           <ListGroup>
             <ListRow
               title={t("providers.stream")}

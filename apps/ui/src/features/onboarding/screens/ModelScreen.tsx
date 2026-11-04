@@ -41,6 +41,7 @@ export function ModelScreen() {
   const modelsQuery = useQuery({
     ...providerModelsQuery(api, accountId ?? ""),
     enabled: lists && accountId !== null,
+    select: (models) => models.filter((model) => !model.output_modalities || model.output_modalities.includes("text")),
   });
   const models = modelsQuery.data ?? noModels;
 
