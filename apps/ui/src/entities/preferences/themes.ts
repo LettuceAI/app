@@ -81,6 +81,34 @@ export const appThemes: readonly Theme[] = [
     },
   },
   {
+    id: "carbon-blue",
+    name: "Carbon Blue",
+    colors: {
+      surface: "#181818",
+      nav: "#202020",
+      fg: "#ededed",
+      accent: "#5294e0",
+      danger: "#f08080",
+      warning: "#d9b86f",
+      info: "#5294e0",
+      secondary: "#b89bd4",
+    },
+  },
+  {
+    id: "carbon-red",
+    name: "Carbon Red",
+    colors: {
+      surface: "#181818",
+      nav: "#202020",
+      fg: "#ededed",
+      accent: "#c74646",
+      danger: "#f08080",
+      warning: "#d9b86f",
+      info: "#5294e0",
+      secondary: "#b89bd4",
+    },
+  },
+  {
     id: "graphite",
     name: "Graphite",
     colors: {
