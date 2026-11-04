@@ -380,6 +380,26 @@ describe("customization settings", () => {
     );
   });
 
+  it.each([
+    { group: false, phone: false },
+    { group: true, phone: false },
+    { group: false, phone: true },
+    { group: true, phone: true },
+  ])("persists AM/PM time format with group=$group and phone=$phone", async ({ group, phone }) => {
+    const page = await mount({ tab: "chat", phone, mobile: phone });
+    if (group) fireEvent.click(await screen.findByRole("radio", { name: "Group chats" }));
+    const picker = await screen.findByRole("combobox", { name: "Time format" });
+    if (picker instanceof HTMLSelectElement) {
+      fireEvent.change(picker, { target: { value: "time12" } });
+    } else {
+      fireEvent.click(picker);
+      fireEvent.click(await screen.findByRole("option", { name: "AM/PM" }));
+    }
+    await waitFor(() => expect(page.current()[group ? "groupChatAppearance" : "chatAppearance"]).toMatchObject({ timestampFormat: "time12" }));
+    if (phone) fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findAllByText("7:04 PM")).not.toHaveLength(0);
+  });
+
   it("persists the new composer text size without dropping hidden appearance fields", async () => {
     const slots = { left: [], right: [] };
     const page = await mount({

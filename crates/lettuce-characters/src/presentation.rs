@@ -491,6 +491,7 @@ pub enum BubblePadding {
 pub enum TimestampFormat {
     Relative,
     Time,
+    Time12,
     Datetime,
 }
 

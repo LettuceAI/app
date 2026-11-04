@@ -16,6 +16,7 @@ import { ReplyDetails } from "./ReplyDetails";
 import { SceneImageStatus } from "../scene-images/SceneImageStatus";
 import { MessageImageViewer } from "./MessageImageViewer";
 import { useOverlayBack } from "../companion/use-overlay-back";
+import { formatMessageTime } from "@/shared/formatting/messageTime";
 
 function EmbeddedImageViewer({ image, onClose }: { image: { src: string; alt: string }; onClose: () => void }) {
   useOverlayBack(true, onClose);
@@ -117,12 +118,7 @@ function Row({
         timestamp={
           look.timestampFormat === "relative"
             ? relativeTime(message.created_at, undefined, locale)
-            : new Intl.DateTimeFormat(
-                locale,
-                look.timestampFormat === "time"
-                  ? { hour: "numeric", minute: "2-digit" }
-                  : { dateStyle: "medium", timeStyle: "short" },
-              ).format(message.created_at)
+            : formatMessageTime(message.created_at, look.timestampFormat, locale)
         }
         group={group}
         pinned={message.pinned}

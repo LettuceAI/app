@@ -5092,7 +5092,7 @@ export type LibraryStarterRole = "user" | "assistant";
 
 export type LibraryTextMode = "auto" | "light" | "dark";
 
-export type LibraryTimestampFormat = "relative" | "time" | "datetime";
+export type LibraryTimestampFormat = "relative" | "time" | "time12" | "datetime";
 
 export type LibraryUserBubbleColor = "accent" | "info" | "secondary" | "warning";
 
@@ -8884,7 +8884,7 @@ export type SettingsUiChatAppearanceSettingsParticipantsBarHintPosition = "top" 
 
 export type SettingsUiChatAppearanceSettingsTextMode = "auto" | "light" | "dark";
 
-export type SettingsUiChatAppearanceSettingsTimestampFormat = "relative" | "time" | "datetime";
+export type SettingsUiChatAppearanceSettingsTimestampFormat = "relative" | "time" | "time12" | "datetime";
 
 export type SettingsUiChatAppearanceSettingsUserBubbleColor = "custom" | "accent" | "info" | "secondary" | "warning";
 

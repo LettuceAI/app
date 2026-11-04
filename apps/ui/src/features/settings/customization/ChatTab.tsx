@@ -52,6 +52,7 @@ import { ChatAppearanceProvider } from "@/entities/preferences";
 import { ParticipantsBar } from "@/features/conversations";
 import { DETAILS, opts, type ChatLook, type Detail, type Opt } from "./options";
 import { SettingsControlRow as Row } from "@/shared/ui/SettingsControlRow";
+import { formatMessageTime } from "@/shared/formatting/messageTime";
 export { SettingsControlRow as Row } from "@/shared/ui/SettingsControlRow";
 
 export function Pick<T extends string>({
@@ -153,9 +154,12 @@ export function ChatPreview({
     { id: "hunter", name: t("hunter"), avatar: hunterAvatar, characterId: "hunter", muted: muted.includes("hunter") },
   ];
   const appearance = chatAppearance(look);
-  const time = { relative: t("previewRelativeTime"), time: "19:04", datetime: t("oct241904") }[
-    look.timestampFormat
-  ];
+  const time = {
+    relative: t("previewRelativeTime"),
+    time: "19:04",
+    time12: formatMessageTime(new Date(2026, 9, 24, 19, 4), "time12", i18n.language),
+    datetime: t("oct241904"),
+  }[look.timestampFormat];
   const format = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 1 });
   const samples = {
     model: "Gemma 4 31B",
@@ -516,6 +520,7 @@ export function ChatSettings({
             opts([
               ["relative", "2m ago"],
               ["time", "19:04"],
+              ["time12", t("amPm")],
               ["datetime", t("oct241904")],
             ] as const),
           )}

@@ -8,7 +8,7 @@ export interface ChatLook {
   bubblePadding: "compact" | "normal" | "spacious";
   showMessageAuthor: boolean;
   showMessageTimestamp: boolean;
-  timestampFormat: "relative" | "time" | "datetime";
+  timestampFormat: "relative" | "time" | "time12" | "datetime";
   messageHeaderPlacement: "inside" | "above" | "below";
   details: Detail[];
   messageInfoPlacement: "belowHeader" | "belowHeaderOutside" | "insideBubble" | "belowBubble";

@@ -289,6 +289,8 @@ pub enum SettingsUiChatAppearanceSettingsTimestampFormat {
     Relative,
     #[serde(rename = "time")]
     Time,
+    #[serde(rename = "time12")]
+    Time12,
     #[serde(rename = "datetime")]
     Datetime,
 }

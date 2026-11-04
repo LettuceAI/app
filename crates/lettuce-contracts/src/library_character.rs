@@ -390,6 +390,7 @@ pub enum LibraryBubblePadding {
 pub enum LibraryTimestampFormat {
     Relative,
     Time,
+    Time12,
     Datetime,
 }
 

@@ -182,6 +182,23 @@ describe("chat appearance drawer", () => {
     });
   });
 
+  it.each([false, true])("renders AM/PM timestamps and saves the presentation for group=%s", async (group) => {
+    const characterSave = vi.fn<NonNullable<MockCallHandlers["characterSave"]>>((request) => ({ status: "ok", data: { ...characterView(), draft: request.draft as CharacterDraft_Serialize, revision: 2 } }));
+    const groupSave = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => ({ status: "ok", data: { ...groupView(), draft: request.draft as GroupView_Serialize["draft"], revision: 2 } }));
+    const drawer = await openDrawer({ group, calls: { characterSave, groupSave } });
+    fireEvent.click(within(drawer).getByRole("combobox", { name: "Time format" }));
+    fireEvent.click(await screen.findByRole("option", { name: "AM/PM" }));
+    expect(await screen.findByText(/^\d{1,2}:\d{2}\s[AP]M$/)).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
+    if (group) {
+      await waitFor(() => expect(groupSave).toHaveBeenCalledTimes(1));
+      expect(groupSave.mock.calls[0]![0].draft).toMatchObject({ presentation: { timestamp_format: "time12" }, presentation_overrides: ["timestamp_format"] });
+    } else {
+      await waitFor(() => expect(characterSave).toHaveBeenCalledTimes(1));
+      expect(characterSave.mock.calls[0]![0].draft).toMatchObject({ presentation: { chat_appearance: { timestamp_format: "time12" }, chat_appearance_overrides: ["timestamp_format"] } });
+    }
+  });
+
   it("asks before closing with unsaved changes and closes straight away when clean", async () => {
     const drawer = await openDrawer();
     fireEvent.click(within(drawer).getByRole("button", { name: "Close appearance" }));
