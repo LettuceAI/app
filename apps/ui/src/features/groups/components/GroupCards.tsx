@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { AvatarGroup, CardButton, cn, icon, InlineMarkdown, MediaCard, relativeTime, useLongPress } from "@lettuceai/crisp";
+import { AvatarGroup, cn, InlineMarkdown, MediaCard, relativeTime, useLongPress } from "@lettuceai/crisp";
+import { faces } from "../data/faces";
 import type { CharacterSummary, ConversationSummary, GroupView_Serialize } from "@/api/generated/bindings";
 
-import { faces } from "../data/faces";
 
 export interface GroupEntry {
   group: GroupView_Serialize;
@@ -72,10 +71,17 @@ export function GroupCard({ entry, layout, compact, held, onOpen, onMenu }: { en
   const latest = entry.chats[0];
   const count = (value: number) => new Intl.NumberFormat(i18n.language).format(value);
   const summary = [t("memberCount", { count: entry.members.length, formatted: count(entry.members.length) }), ...(entry.chats.length ? [t("chatCount", { count: entry.chats.length, formatted: count(entry.chats.length) })] : [])].join(" · ");
-  if (layout === "gallery") return <MediaCard title={entry.group.draft.name} description={summary} image={cover} meta={latest ? relativeTime(latest.updated_at, undefined, i18n.language) : undefined} aria-haspopup="dialog" {...press.handlers} onClick={press.guardClick(onOpen)} className={cn(held && "ring-2 ring-inset ring-fg/40")} />;
-  return <CardButton padding="none" aria-haspopup="dialog" {...press.handlers} onClick={press.guardClick(onOpen)} className={cn("flex items-center gap-3.5 p-3.5 @3xl:gap-4 @3xl:p-4", held && "ring-2 ring-inset ring-fg/30")}>
-    <span className={cn("flex shrink-0", compact ? "w-19" : "w-24")}><AvatarGroup people={faces(entry.members)} max={entry.members.length > 3 ? 2 : 3} size={compact ? "sm" : "md"} /></span>
-    <span className="min-w-0 flex-1"><span className="flex min-w-0 items-baseline gap-2"><span className="min-w-0 flex-1 truncate text-base font-semibold text-fg">{entry.group.draft.name}</span>{latest && <span className="shrink-0 text-2xs tabular-nums text-fg-3">{relativeTime(latest.updated_at, undefined, i18n.language)}</span>}</span><span className="mt-0.5 line-clamp-2 wrap-anywhere text-sm leading-snug text-fg-3">{latest ? latest.last_message_preview ? <InlineMarkdown>{latest.last_message_preview}</InlineMarkdown> : t("noMessages") : t("noChats")}</span><span className="mt-1 block truncate text-2xs text-fg-3">{summary}</span></span>
-    <ChevronRight size={icon.md} className="shrink-0 text-fg-4" />
-  </CardButton>;
+  const when = latest ? relativeTime(latest.updated_at, undefined, i18n.language) : undefined;
+  if (layout === "gallery") return <MediaCard title={entry.group.draft.name} description={summary} image={cover} meta={when} aria-haspopup="dialog" {...press.handlers} onClick={press.guardClick(onOpen)} className={cn(held && "ring-2 ring-inset ring-fg/40")} />;
+  return <button type="button" aria-haspopup="dialog" {...press.handlers} onClick={press.guardClick(onOpen)} className={cn("flex w-full items-center gap-4 rounded-2xl border border-line bg-surface-1 p-3.5 text-left transition-colors motion-instant hover:bg-fill @xl:p-4", held && "ring-2 ring-inset ring-fg/30")}>
+    <AvatarGroup people={faces(entry.members)} max={3} size={compact ? "md" : "lg"} />
+    <span className="min-w-0 flex-1">
+      <span className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-base font-semibold text-fg">{entry.group.draft.name}</span>
+        {when && <span className="shrink-0 text-xs tabular-nums text-fg-3">{when}</span>}
+      </span>
+      <span className="block truncate text-sm text-fg-3">{entry.members.length ? entry.members.map((member) => member.name).join(", ") : summary}</span>
+      <span className="mt-1 line-clamp-1 wrap-anywhere text-sm text-fg-2">{latest ? latest.last_message_preview ? <InlineMarkdown>{latest.last_message_preview}</InlineMarkdown> : t("noMessages") : t("noChats")}</span>
+    </span>
+  </button>;
 }

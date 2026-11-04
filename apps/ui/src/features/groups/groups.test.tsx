@@ -61,7 +61,8 @@ describe("group home and creator", () => {
     expect(await screen.findByText("Harbor crew")).toBeTruthy();
     fireEvent.change(screen.getByPlaceholderText("Search groups"), { target: { value: "Aria" } });
     expect(screen.getByText("1 of 1")).toBeTruthy();
-    fireEvent.click(screen.getByRole("radio", { name: "Recent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Layout: List" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Recent" }));
     expect(await screen.findByText("New voyage")).toBeTruthy();
     expect(screen.getByText("Old voyage")).toBeTruthy();
     expect(screen.getByText("2 of 2")).toBeTruthy();
