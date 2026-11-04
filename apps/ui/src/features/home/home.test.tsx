@@ -83,6 +83,30 @@ describe("home characters", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("offers the chat's settings and its character from a chat's right-click menu", async () => {
+    const direct = { id: "c1", title: "Harbour talk", updated_at: Date.now(), archived: false, avatars: [], last_message_preview: null, source: { type: "direct", character_id: "ch1" } } as unknown as ConversationSummary;
+    const runtime = await createAppRuntime({
+      transport: createMockTransport({
+        calls: {
+          appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true }, homeDesktopView: "list" } } }),
+          charactersList: () => ({ status: "ok", data: { items: [character("ch1", "Cassian")], next_cursor: null } }),
+          conversationsList: () => ({ status: "ok", data: { items: [direct], next_cursor: null } }),
+          conversationsLatestByCharacter: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
+        },
+      }),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      i18n: await createTestI18n("en"),
+    });
+    await act(async () => {
+      render(<App runtime={runtime} />);
+    });
+    fireEvent.contextMenu((await screen.findByText("Harbour talk")).closest("button")!);
+    expect(await screen.findByRole("button", { name: /^Edit chat/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Edit group/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Edit character/ }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/ch1/edit"));
+  });
+
   it("puts the most recently active character first: its newest chat, else its own last change", () => {
     const sorted = sortByActivity(
       [character("a", "Old chat", { updated_at: 50 }), character("b", "Edited", { updated_at: 40 }), character("c", "Recent chat", { updated_at: 1 })],

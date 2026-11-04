@@ -80,6 +80,9 @@
     }
   },
   "chatMenu": {
+    "editChat": "Edit chat",
+    "editCharacter": "Edit character",
+    "editGroup": "Edit group",
     "rename": "Rename",
     "renameTitle": "Rename chat",
     "save": "Save",

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Pencil, Trash2 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Pencil, Settings2, Trash2, UserPen, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, Button, confirm, icon, Input, ListGroup, ListRowButton, relativeTime, Sheet, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
@@ -13,11 +14,12 @@ export interface ChatMenuTarget {
   character: CharacterSummary | null;
 }
 
-/** The menu a long press or right-click opens on a chat: rename it or delete it. */
+/** The menu a long press or right-click opens on a chat: open its settings or its character or group, rename it or delete it. */
 export function ChatMenu({ api, target, onClose }: { api: ApiClient; target: ChatMenuTarget | null; onClose: () => void }) {
   const { t, i18n } = useTranslation("home");
   const { t: common } = useTranslation("common");
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const services = { api, queryClient };
   const [shown, setShown] = useState<ChatMenuTarget | null>(target);
   const [renaming, setRenaming] = useState<ChatMenuTarget | null>(null);
@@ -59,6 +61,37 @@ export function ChatMenu({ api, target, onClose }: { api: ApiClient; target: Cha
       >
         {shown && (
           <div className="space-y-4 pb-1">
+            <ListGroup>
+              <ListRowButton
+                icon={<Settings2 size={icon.lg} />}
+                title={t("chatMenu.editChat")}
+                onClick={() => {
+                  onClose();
+                  void navigate({ to: "/chat/$conversationId", params: { conversationId: shown.chat.id }, search: { panel: "settings" } });
+                }}
+              />
+              {shown.chat.source.type === "direct" ? (
+                <ListRowButton
+                  icon={<UserPen size={icon.lg} />}
+                  title={t("chatMenu.editCharacter")}
+                  onClick={() => {
+                    const source = shown.chat.source;
+                    onClose();
+                    if (source.type === "direct") void navigate({ to: "/characters/$characterId/edit", params: { characterId: source.character_id } });
+                  }}
+                />
+              ) : (
+                <ListRowButton
+                  icon={<Users size={icon.lg} />}
+                  title={t("chatMenu.editGroup")}
+                  onClick={() => {
+                    const source = shown.chat.source;
+                    onClose();
+                    if (source.type === "group") void navigate({ to: "/groups/$groupId/edit", params: { groupId: source.group_id } });
+                  }}
+                />
+              )}
+            </ListGroup>
             <ListGroup>
               <ListRowButton
                 icon={<Pencil size={icon.lg} />}
