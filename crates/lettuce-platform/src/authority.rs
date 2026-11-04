@@ -133,6 +133,7 @@ pub(crate) fn open_or_create_ambient_root(path: &Path) -> Result<Dir, PlatformEr
     // open is explicitly no-follow; all subsequent operations use this handle.
     let mut options = OpenOptions::new();
     options.read(true);
+    options._cap_fs_ext_maybe_dir(true);
     options._cap_fs_ext_follow(FollowSymlinks::No);
     let file = open_ambient(path, &options, ambient_authority()).map_err(map_symlink_error)?;
     if !file.metadata().map_err(PlatformError::from)?.is_dir() {
@@ -163,13 +164,28 @@ pub(crate) fn open_dir_nofollow_from(parent: &Dir, name: &Path) -> io::Result<Di
     Ok(Dir::from_std_file(child))
 }
 
+/// cap-std reports a path that escapes its base as a `PermissionDenied` error
+/// without an OS code; an OS-level access denial carries one and stays `Denied`.
 pub(crate) fn map_symlink_error(error: io::Error) -> PlatformError {
-    if matches!(
-        error.kind(),
-        io::ErrorKind::InvalidInput | io::ErrorKind::PermissionDenied
-    ) {
+    let escape = match error.kind() {
+        io::ErrorKind::InvalidInput => true,
+        io::ErrorKind::PermissionDenied => error.raw_os_error().is_none(),
+        _ => stopped_on_symlink(&error),
+    };
+    if escape {
         PlatformError::SymlinkEscape
     } else {
         PlatformError::from(error)
     }
+}
+
+#[cfg(windows)]
+fn stopped_on_symlink(error: &io::Error) -> bool {
+    error.raw_os_error()
+        == Some(windows_sys::Win32::Foundation::ERROR_STOPPED_ON_SYMLINK as i32)
+}
+
+#[cfg(not(windows))]
+fn stopped_on_symlink(_: &io::Error) -> bool {
+    false
 }
