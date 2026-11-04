@@ -614,7 +614,7 @@ describe("soul generation", () => {
     await renderEdit(view);
     fireEvent.click(tab("Soul"));
     expect((await screen.findByRole("button", { name: "Generate" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Add a definition first")).toBeTruthy();
+    expect(screen.getByText("Add a description first")).toBeTruthy();
   });
 
   it("cancels the job once its id arrives when stopped before the run was accepted", async () => {

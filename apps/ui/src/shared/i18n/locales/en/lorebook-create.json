@@ -33,7 +33,7 @@
   "sourceMissing": "Source no longer available",
   "characterSource": "Character: {{name}}",
   "personaSource": "Persona: {{name}}",
-  "librarySourceHint": "Their description and definition are read as source material.",
+  "librarySourceHint": "Their intro and description are read as source material.",
   "notesAndFiles": "Notes and files",
   "pasteText": "Paste text",
   "pastedText": "Pasted text",

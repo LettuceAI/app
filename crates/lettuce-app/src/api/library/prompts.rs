@@ -1023,8 +1023,13 @@ fn sample_context(
         .unwrap_or_default();
     let character_description = character
         .as_ref()
-        .and_then(|character| character.character.profile.description.clone())
-        .unwrap_or_default();
+        .and_then(|character| {
+            let profile = &character.character.profile;
+            profile.definition.as_deref().or(profile.description.as_deref())
+        })
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_owned();
     let persona_name = persona
         .as_ref()
         .map(|persona| persona.title.clone())

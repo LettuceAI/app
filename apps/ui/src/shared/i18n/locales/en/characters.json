@@ -14,7 +14,7 @@
     "discard": "Discard",
     "keepEditing": "Keep editing",
     "nameFirst": "Add a name to continue",
-    "definitionFirst": "Add a definition to continue",
+    "definitionFirst": "Add a description to continue",
     "continueTo": "Continue to {{step}}",
     "skip": "Skip"
   },
@@ -51,7 +51,7 @@
     "gradientBody": "Choose how the card is tinted",
     "chooseImage": "Choose an image",
     "previewName": "Your character",
-    "previewDescription": "The first sentence of the definition shows here.",
+    "previewDescription": "The first sentence of the description shows here.",
     "import": "Import from a file",
     "importBody": "Import a PNG, UEC or JSON character card.",
     "chooseFile": "Choose file",
@@ -71,15 +71,15 @@
   },
   "details": {
     "title": "Who they are",
-    "body": "The definition is what the model reads. Be specific about personality, voice and background.",
-    "definition": "Definition",
+    "body": "The description is what the model reads. Be specific about personality, voice and background.",
+    "definition": "Description",
     "definitionPlaceholder": "Personality, speaking style, background, what they know",
     "definitionHint": "Use {{char}} for the character and {{user}} for your persona.",
     "words_one": "{{count}} word",
     "words_other": "{{count}} words",
-    "description": "Description",
+    "description": "Intro",
     "descriptionPlaceholder": "A short line for cards and lists",
-    "descriptionHint": "Optional. Not sent to the model.",
+    "descriptionHint": "Optional. Shown on cards and lists.",
     "chat": "Chat defaults",
     "model": "Model",
     "modelDefault": "App default",
@@ -215,7 +215,7 @@
     "fields": {
       "essence": {
         "label": "Essence",
-        "placeholder": "Who they are underneath the card definition"
+        "placeholder": "Who they are underneath the character description"
       },
       "traits": {
         "label": "Traits",
@@ -308,9 +308,9 @@
   },
   "generateSoul": {
     "title": "Generate from character",
-    "body": "Drafts a soul from the name, definition and scenes. You review it before anything changes.",
+    "body": "Drafts a soul from the name, description and scenes. You review it before anything changes.",
     "addName": "Add a name first",
-    "addDefinition": "Add a definition first",
+    "addDefinition": "Add a description first",
     "generate": "Generate",
     "direction": "Direction",
     "directionHint": "Optional steering for the model",

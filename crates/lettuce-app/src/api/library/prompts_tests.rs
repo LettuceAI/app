@@ -45,6 +45,7 @@ async fn prompt_preview_renders_an_unsaved_draft_without_writes_or_events() {
     })).expect("draft preview request");
     let preview = prompt_preview(&harness.context, request).await.expect("draft preview");
     assert!(preview.entries.iter().any(|entry| entry.text.contains("Draft marker")));
+    assert!(preview.entries.iter().any(|entry| entry.text.contains("A meticulous engineer")));
     assert_eq!(prompt_get(&harness.context, dto::PromptGetRequest { prompt_id: id }).await.expect_err("not stored").code, ApiErrorCode::NotFound);
     assert_eq!(harness.context.backend().database().read_provider_backup_graph().expect("after"), before);
     assert_eq!(harness.events.events().len(), events);
@@ -586,6 +587,28 @@ async fn delete_resets_selections_keeps_history_and_refuses_protected_prompts() 
 #[tokio::test(flavor = "multi_thread")]
 async fn preview_renders_live_conversation_values_samples_and_group_values() {
     let harness = harness(Reply::Text("A reply."));
+    let character = character_get(
+        &harness.context,
+        dto::CharacterGetRequest {
+            character_id: harness.character_id.to_string(),
+        },
+    )
+    .await
+    .expect("character");
+    let mut draft = character.draft;
+    draft.profile.description = Some("A short card intro".into());
+    draft.profile.definition = Some("  Patient and precise with every answer  ".into());
+    character_save(
+        &harness.context,
+        dto::CharacterSaveRequest {
+            character_id: Some(character.id),
+            draft,
+            expected_revision: Some(character.revision),
+            client_operation_id: "preview-character-definition".into(),
+        },
+    )
+    .await
+    .expect("save character description and intro");
     let mut preview_input = input(
         "Preview",
         "{{char.name}} is {{char.desc}}. {{persona.name}}: {{persona.desc}}. {{context_summary}} {{key_memories}}",
@@ -616,6 +639,8 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
     .await
     .expect("sample preview");
     let text = &sample.entries[0].text;
+    assert!(text.contains(" is Patient and precise with every answer. "), "{text}");
+    assert!(!text.contains("A short card intro"), "{text}");
     assert!(text.contains("This is a placeholder for the context summary"));
     assert!(text.contains("Memory 1 (Preview)"));
 
@@ -650,6 +675,8 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
             .profile
             .name;
     assert!(live.entries[0].text.contains(&character_name));
+    assert!(live.entries[0].text.contains(" is Patient and precise with every answer. "));
+    assert!(!live.entries[0].text.contains("A short card intro"));
     assert!(!live.entries[0].text.contains("Memory 1 (Preview)"));
 
     let cast = crate::api::conversations::turns_tests::group_cast(&harness, "preview-group").await;
