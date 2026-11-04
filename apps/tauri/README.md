@@ -67,6 +67,8 @@ Images and other media never cross IPC as bytes, base64 or data URLs, in either 
 
 ## Builds
 
+The desktop executable is `lettuceai` (`lettuceai.exe` on Windows), selected by the Cargo binary target and `default-run`. The package stays `lettuce-tauri`, the library stays `lettuce_tauri`, and the shell remains in `apps/tauri`.
+
 The product ships two desktop builds; the GPU features select how llama.cpp and whisper are compiled. They forward to `lettuce-app`'s `llama-*` and `asr-*` features, and none is on by default.
 
 | Build | Platforms | Features | Command |

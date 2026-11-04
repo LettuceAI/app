@@ -9,7 +9,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-default-run = "lettuce-tauri"
+default-run = "lettuceai"
 
 [lints]
 workspace = true
@@ -20,7 +20,7 @@ path = "src/lib.rs"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "lettuce-tauri"
+name = "lettuceai"
 path = "src/main.rs"
 
 [[bin]]
