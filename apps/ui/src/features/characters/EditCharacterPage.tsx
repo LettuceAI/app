@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBlocker, useCanGoBack, useNavigate, useParams, useRouteContext, useRouter, useSearch } from "@tanstack/react-router";
+import { useBlocker, useCanGoBack, useLocation, useNavigate, useParams, useRouteContext, useRouter, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { confirm, LoadingState, motion as m, Page, Tab, TabList, Tabs, toast, useCompactLayout } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
@@ -9,6 +9,8 @@ import { isApiFailure } from "@/api/client";
 import type { CharacterView_Serialize } from "@/api/generated/bindings";
 import { startDirectChat } from "@/features/conversations";
 import { AvatarOwnerProvider, staysOnPage, useAvatarDraft, type AvatarDraft } from "@/entities/image-input";
+import { usePreferences } from "@/entities/preferences";
+import { AppearanceEditor, appearanceLook, AppearancePreviewOverlay, AppearancePreviewPanel, characterAppearance, useAppearancePreviewChrome, withCharacterAppearance } from "@/features/groups";
 import { exportEntry, refreshLibrary } from "@/features/library";
 import { EditSaveBar } from "@/shared/ui/EditSaveBar";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -22,6 +24,8 @@ import { ChatTab } from "./edit/ChatTab";
 import { LookTab } from "./edit/LookTab";
 import { ProfileTab } from "./edit/ProfileTab";
 import { SoulTab } from "./edit/SoulTab";
+
+const characterKind = "character" as const;
 
 interface Stored extends EditBaseline {
   archived: boolean;
@@ -56,7 +60,9 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   const [saving, setSaving] = useState(false);
   const [acting, setActing] = useState(false);
   const [changingMode, setChangingMode] = useState(false);
-  const mainRef = useRef<HTMLElement>(null);
+  const [previewImage, setPreviewImage] = useState(false);
+  const preferences = usePreferences();
+  const pushed = useLocation({ select: (location) => location.state.appearancePreviewPushed });
   const attempt = useRef<{ payload: string; id: string } | null>(null);
   const latest = useRef(stored);
   const busy = useRef(false);
@@ -68,6 +74,9 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   const dirty = useMemo(() => isDirty(draft, stored.form), [draft, stored.form]);
   const canSave = !saving && !changingMode && draft.draft.profile.name.trim().length > 0 && wordCount(draft.draft.profile.definition ?? "") > 0;
   const name = draft.draft.profile.name.trim();
+  const look = preferences.ready ? appearanceLook(characterAppearance(draft.draft.presentation), preferences.value, false) : null;
+  const previewOpen = phone && tab === "appearance" && search.preview === true && look !== null;
+  const mainRef = useAppearancePreviewChrome(previewOpen);
 
   const live = useRef({ dirty, mobileSceneEditor });
   useLayoutEffect(() => {
@@ -105,6 +114,12 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
     setSceneEditorOpen(false);
     setTab(next);
     mainRef.current?.scrollTo({ top: 0 });
+  };
+
+  const openPreview = () => void navigate({ to: "/characters/$characterId/edit", params: { characterId }, search: { tab: "appearance", preview: true }, state: { appearancePreviewPushed: true }, resetScroll: false });
+  const closePreview = () => {
+    if (pushed) router.history.back();
+    else void navigate({ to: "/characters/$characterId/edit", params: { characterId }, search: { tab: "appearance" }, replace: true, resetScroll: false });
   };
 
   const leave = () => {
@@ -215,6 +230,7 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   }} />;
   else if (tab === "chat") body = <ChatTab {...props} characterId={characterId} />;
   else if (tab === "look") body = <LookTab {...props} />;
+  else if (tab === "appearance") body = <AppearanceEditor kind={characterKind} phone={phone} draft={characterAppearance(draft.draft.presentation)} onChange={(next) => update((current) => ({ ...current, draft: { ...current.draft, presentation: withCharacterAppearance(current.draft.presentation, next) } }))} preview={!phone && look ? <AppearancePreviewPanel group={false} look={look} image={previewImage} onImage={setPreviewImage} /> : undefined} />;
   else body = <SoulTab {...props} />;
 
   const tabs = mobileSceneEditor ? undefined : (
@@ -249,7 +265,7 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
       mainRef={mainRef}
       padding="none"
       contentClassName={phone ? "px-4 pb-10 pt-5" : "px-8 pb-10 pt-5"}
-      {...(mobileSceneEditor ? {} : { actions: <CharacterActions phone={phone} archived={stored.archived} busy={acting || saving} onStartChat={startChat} onExport={exportCharacter} onDuplicate={duplicate} onToggleArchive={toggleArchive} />, filters: tabs })}
+      {...(mobileSceneEditor ? {} : { actions: <CharacterActions phone={phone} {...(phone && tab === "appearance" ? { onPreview: openPreview } : {})} archived={stored.archived} busy={acting || saving} onStartChat={startChat} onExport={exportCharacter} onDuplicate={duplicate} onToggleArchive={toggleArchive} />, filters: tabs })}
       footer={saveBar}
     >
       <fieldset disabled={saving} className="@container min-w-0">
@@ -258,6 +274,7 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
         </AnimatePresence>
       </fieldset>
     </Page>
+    {previewOpen && look && <AppearancePreviewOverlay group={false} look={look} image={previewImage} onImage={setPreviewImage} onClose={closePreview} />}
     </AvatarOwnerProvider>
   );
 }

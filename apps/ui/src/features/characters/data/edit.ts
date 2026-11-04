@@ -1,9 +1,9 @@
 import type { AssetRef, CharacterView_Serialize, LibraryCharacterMediaSlot, LibraryLorebookBinding } from "@/api/generated/bindings";
 import { draftToSave, enteredDraft, type CharacterForm } from "./form";
 
-export type EditTab = "profile" | "scenes" | "chat" | "look" | "soul";
+export type EditTab = "profile" | "scenes" | "chat" | "look" | "appearance" | "soul";
 
-export const editTabs: readonly EditTab[] = ["profile", "scenes", "chat", "look", "soul"];
+export const editTabs: readonly EditTab[] = ["profile", "scenes", "chat", "look", "appearance", "soul"];
 
 export function lorebookIds(bindings: LibraryLorebookBinding[]): string[] {
   return [...bindings].sort((a, b) => a.ordinal - b.ordinal).map((binding) => binding.lorebook_id);

@@ -235,7 +235,8 @@
     "own": "Set for this group",
     "characterBody": "Applies to every chat with this character. Fields without an override follow your app appearance.",
     "characterOwn": "Set for this character",
-    "resetField": "Reset {{title}} to the app appearance"
+    "resetField": "Reset {{title}} to the app appearance",
+    "preview": "Preview"
   },
   "sceneEditor": {
     "characters": "Characters",

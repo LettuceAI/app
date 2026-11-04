@@ -1,12 +1,13 @@
-import { Archive, ArchiveRestore, Copy, Download, MessageSquare, MoreHorizontal } from "lucide-react";
+import { Archive, ArchiveRestore, Copy, Download, Eye, MessageSquare, MoreHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, icon, IconButton, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@lettuceai/crisp";
 
-export function CharacterActions({ phone, archived, busy, onStartChat, onExport, onDuplicate, onToggleArchive }: {
-  phone: boolean; archived: boolean; busy: boolean; onStartChat: () => void; onExport: () => void; onDuplicate: () => void; onToggleArchive: () => void;
+export function CharacterActions({ phone, archived, busy, onPreview, onStartChat, onExport, onDuplicate, onToggleArchive }: {
+  phone: boolean; archived: boolean; busy: boolean; onPreview?: () => void; onStartChat: () => void; onExport: () => void; onDuplicate: () => void; onToggleArchive: () => void;
 }) {
   const { t } = useTranslation("characters");
   return <div className="flex items-center gap-1.5">
+    {onPreview && <IconButton label={t("edit.preview")} onClick={onPreview}><Eye size={icon.lg} /></IconButton>}
     {!phone && <Button variant="secondary" size="sm" disabled={busy} leading={<MessageSquare size={icon.sm} />} onClick={onStartChat}>{t("edit.startChat")}</Button>}
     <Menu>
       <MenuTrigger><IconButton label={t("edit.more")} disabled={busy}><MoreHorizontal size={icon.lg} /></IconButton></MenuTrigger>

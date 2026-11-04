@@ -174,6 +174,38 @@ describe("group editor", () => {
     expect(save.mock.calls[1]![0].draft.presentation_overrides).toEqual([]);
   });
 
+  it("shows the preview in a side panel next to the settings on desktop and restyles it as settings change", async () => {
+    await renderGroups("/groups/g1/edit?section=appearance");
+    const names = await screen.findByRole("switch", { name: "Show names" });
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    const panel = composer.closest("aside")!;
+    expect(within(panel).getByRole("radio", { name: "Background image" })).toBeTruthy();
+    expect(panel.contains(names)).toBe(false);
+    expect(panel.className).toContain("w-130");
+    const before = within(panel).queryAllByText("Seraphine").length;
+    fireEvent.click(names);
+    await waitFor(() => expect(within(composer.closest("aside")!).queryAllByText("Seraphine").length).not.toBe(before));
+  });
+
+  it("opens the full-screen preview from the phone header and closes it with Back", async () => {
+    const { runtime } = await renderGroups("/groups/g1/edit?section=appearance", { appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "android", ui_state: { onboarding: { completed: true } } } }) });
+    await screen.findByRole("switch", { name: "Show names" });
+    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("textbox", { name: "Message" })).toBeTruthy();
+    expect(within(dialog).getByRole("radio", { name: "Background image" })).toBeTruthy();
+    expect(runtime.router.state.location.search.preview).toBe(true);
+    await act(async () => runtime.router.history.back());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(runtime.router.state.location.search.preview).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(runtime.router.state.location.search.section).toBe("appearance");
+  });
+
   it("inserts a scene image at the caret and completes character placeholders", async () => {
     const initial = { ...savedGroup, draft: { ...savedGroup.draft, chat_mode: "roleplay" as const, starting_scene: sceneFromText("Start End", "scene") } };
     const save = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => ({ status: "ok", data: group(request.draft) }));

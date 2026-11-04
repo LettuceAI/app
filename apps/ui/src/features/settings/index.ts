@@ -14,4 +14,4 @@ export { ModelEditorPage } from "./ModelEditorPage";
 
 export { ModelBrowserPage, type BrowserSearch } from "./model-browser/ModelBrowserPage";
 
-export { ChatPreview, ChatSettings } from "./customization/ChatTab";
+export { ChatPreview, ChatSettings, PreviewBackground } from "./customization/ChatTab";

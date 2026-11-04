@@ -109,9 +109,10 @@ const groupsRoute = createRoute({
 });
 const newGroupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups/new", component: CreateGroupPage });
 const editGroupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/groups/$groupId/edit", component: EditGroupPage,
-  validateSearch: (search: Record<string, unknown>): { section?: "group" | "members" | "scene" | "chat" | "appearance" } => (
-    ["group", "members", "scene", "chat", "appearance"].includes(String(search.section)) ? { section: search.section as "group" | "members" | "scene" | "chat" | "appearance" } : {}
-  ), });
+  validateSearch: (search: Record<string, unknown>): { section?: "group" | "members" | "scene" | "chat" | "appearance"; preview?: true } => ({
+    ...(["group", "members", "scene", "chat", "appearance"].includes(String(search.section)) ? { section: search.section as "group" | "members" | "scene" | "chat" | "appearance" } : {}),
+    ...(search.preview === true || search.preview === "true" ? { preview: true as const } : {}),
+  }), });
 const discoverRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/discover",
@@ -192,7 +193,7 @@ const editCharacterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/characters/$characterId/edit",
   component: EditCharacterPage,
-  validateSearch: (search: Record<string, unknown>): { tab?: "soul"; avatarPanel?: true; avatarCrop?: true } => ({ ...(search.tab === "soul" ? { tab: "soul" as const } : {}), ...validateAvatarPanel(search) }),
+  validateSearch: (search: Record<string, unknown>): { tab?: "soul" | "appearance"; preview?: true; avatarPanel?: true; avatarCrop?: true } => ({ ...(search.tab === "soul" || search.tab === "appearance" ? { tab: search.tab } : {}), ...(search.preview === true || search.preview === "true" ? { preview: true as const } : {}), ...validateAvatarPanel(search) }),
 });
 const characterHistoryRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -517,6 +518,7 @@ declare module "@tanstack/history" {
     speechPanelPushed?: boolean;
     replyPickerPushed?: boolean;
     customizationPushed?: boolean;
+    appearancePreviewPushed?: boolean;
     usagePushed?: boolean;
     logPanelPushed?: boolean;
     lorebookPanelPushed?: boolean;

@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useBlocker, useCanGoBack, useNavigate, useParams, useRouteContext, useRouter, useSearch } from "@tanstack/react-router";
-import { MessageSquarePlus, MoreHorizontal, Trash2 } from "lucide-react";
+import { useBlocker, useCanGoBack, useLocation, useNavigate, useParams, useRouteContext, useRouter, useSearch } from "@tanstack/react-router";
+import { Eye, MessageSquarePlus, MoreHorizontal, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Alert, Button, confirm, dismissTopLayer, Field, icon, IconButton, Input, Menu, MenuContent,
@@ -12,15 +12,20 @@ import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure } from "@/api/client";
 import { queryKeys } from "@/api/query-keys";
 import type { GroupChatMode } from "@/api/generated/bindings";
+import { staysOnPage } from "@/entities/image-input";
+import { usePreferences } from "@/entities/preferences";
 import { EditSaveBar } from "@/shared/ui/EditSaveBar";
 import { FailureState } from "@/shared/ui/FailureState";
 import { BackgroundGroup, MemoryGroup, SpeakerGroup } from "./components/GroupFields";
 import { EditMembersTab, type EditorMember } from "./components/EditMembersTab";
 import { SceneStep } from "./components/SceneStep";
 import { AppearanceEditor } from "./components/AppearanceEditor";
+import { AppearancePreviewOverlay, AppearancePreviewPanel } from "./components/AppearancePreview";
+import { useAppearancePreviewChrome } from "./components/use-appearance-preview-chrome";
 import { ExtrasStep } from "./components/ExtrasStep";
 import { launchGroup, refreshGroups, saveGroup, type SaveAttempt } from "./data/actions";
 import { editSections, formFromGroup, rebaseGroup, same, type EditSection, type GroupBaseline } from "./data/edit";
+import { appearanceLook } from "./data/appearance";
 import { draftToSave, validStep } from "./data/form";
 import { castQuery, groupEditQuery, loadGroupEdit } from "./data/queries";
 
@@ -46,15 +51,19 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
   const [conflict, setConflict] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
   const [partial, setPartial] = useState(false);
+  const [previewImage, setPreviewImage] = useState(false);
+  const preferences = usePreferences();
   const attempt = useRef<SaveAttempt | null>(null);
   const launchAttempt = useRef<string | null>(null);
   const working = useRef(false);
   const leaving = useRef(false);
-  const mainRef = useRef<HTMLElement>(null);
   const dirty = !same(form, stored.form);
   const live = useRef({ dirty, busy });
   useLayoutEffect(() => { live.current = { dirty, busy }; }, [dirty, busy]);
   const roleplay = form.draft.chat_mode === "roleplay";
+  const look = preferences.ready ? appearanceLook(form.draft, preferences.value, true) : null;
+  const previewOpen = phone && section === "appearance" && search.preview === true && look !== null;
+  const pushed = useLocation({ select: (location) => location.state.appearancePreviewPushed });
   if (section === "scene" && !roleplay) setSection("group");
   const memberViews = new Map(loaded.members.map((member) => [member.id, member]));
   const allCast: EditorMember[] = [...(cast.data ?? []).map((member) => ({ ...member, archived: memberViews.get(member.id)?.archived ?? false }))];
@@ -71,15 +80,22 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
   const fail = (error: unknown) => toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`));
   const discardPrompt = () => confirm({ title: t("edit.leaveTitle"), message: t("edit.leaveBody"), confirmLabel: t("create.discard"), cancelLabel: t("create.keep"), destructive: true });
   useBlocker({
-    shouldBlockFn: async ({ action }) => {
+    shouldBlockFn: async ({ action, current, next }) => {
       if (leaving.current) return false;
       if (working.current) return true;
       if (action === "BACK" && dismissTopLayer()) return true;
+      if (staysOnPage(current, next)) return false;
       return live.current.dirty && !await discardPrompt();
     },
     enableBeforeUnload: () => !leaving.current && live.current.dirty,
   });
   const leave = () => { if (canGoBack) router.history.back(); else void navigate({ to: "/groups" }); };
+  const openPreview = () => void navigate({ to: "/groups/$groupId/edit", params: { groupId: stored.id }, search: { section: "appearance", preview: true }, state: { appearancePreviewPushed: true }, resetScroll: false });
+  const closePreview = () => {
+    if (pushed) router.history.back();
+    else void navigate({ to: "/groups/$groupId/edit", params: { groupId: stored.id }, search: { section: "appearance" }, replace: true, resetScroll: false });
+  };
+  const mainRef = useAppearancePreviewChrome(previewOpen);
   const go = (next: EditSection) => { setSection(next); mainRef.current?.scrollTo({ top: 0 }); };
   const applyLoaded = (next: LoadedGroup) => {
     queryClient.setQueryData(groupEditQuery(api, next.view.id).queryKey, next);
@@ -144,12 +160,14 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
     {editSections.filter((entry) => entry !== "scene" || roleplay).map((entry) => <Tab key={entry} value={entry} {...(entry === "members" ? { count: form.draft.members.length } : {})}>{t(`edit.tabs.${entry}`)}</Tab>)}
   </TabList></Tabs>;
   const actions = <div className="flex items-center gap-1.5">
+    {phone && section === "appearance" && <IconButton label={t("appearance.preview")} onClick={openPreview}><Eye size={icon.lg} /></IconButton>}
     {!phone && <Button variant="secondary" size="sm" disabled={busy !== null} leading={<MessageSquarePlus size={icon.sm} />} onClick={() => void newChat()}>{t("menu.newChat")}</Button>}
     <Menu><MenuTrigger><IconButton label={t("edit.more")} disabled={busy !== null}><MoreHorizontal size={icon.lg} /></IconButton></MenuTrigger>
       <MenuContent align="end">{phone && <MenuItem icon={<MessageSquarePlus size={icon.md} />} onSelect={() => void newChat()}>{t("menu.newChat")}</MenuItem>}{phone && <MenuSeparator />}<MenuItem icon={<Trash2 size={icon.md} />} danger onSelect={() => void deleteGroup()}>{t("menu.delete")}</MenuItem></MenuContent>
     </Menu>
   </div>;
-  return <Page title={<span className="block truncate">{form.draft.name.trim() || fallbackName}</span>} onBack={leave} backLabel={t("create.back")} mainRef={mainRef} padding="none" contentClassName={phone ? "space-y-5 px-4 pb-10 pt-5" : "space-y-5 px-8 pb-10 pt-5"} actions={actions} filters={tabs} footer={<>
+  return <>
+  <Page title={<span className="block truncate">{form.draft.name.trim() || fallbackName}</span>} onBack={leave} backLabel={t("create.back")} mainRef={mainRef} padding="none" contentClassName={phone ? "space-y-5 px-4 pb-10 pt-5" : "space-y-5 px-8 pb-10 pt-5"} actions={actions} filters={tabs} footer={<>
     {phone && dirty && blocker && <p className="px-4 pt-3 text-sm text-fg-3" role="status">{blocker}</p>}
     <EditSaveBar visible={dirty} phone={phone} saving={busy === "save"} canSave={dirty && busy === null && !blocker} discardDisabled={busy !== null} status={blocker ?? t(busy === "save" ? "edit.saving" : "edit.unsaved")} discardLabel={t("create.discard")} saveLabel={t("edit.save")} onDiscard={discard} onSave={() => void save()} />
   </>}>
@@ -162,13 +180,15 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
           <Field label={t("setup.mode")} hint={modeHint}><Segmented<GroupChatMode> block aria-label={t("setup.mode")} value={form.draft.chat_mode} onChange={(chat_mode) => setForm((current) => ({ ...current, draft: { ...current.draft, chat_mode } }))} options={[{ value: "conversation", label: t("setup.conversation") }, { value: "roleplay", label: t("setup.roleplay") }]} /></Field>
         </div>
         <div className="min-w-0 space-y-6"><BackgroundGroup {...props} /></div>
-      </div> : section === "members" ? <EditMembersTab {...props} cast={allCast} phone={phone} /> : section === "scene" ? <SceneStep {...props} autoFocus={false} /> : section === "appearance" ? <AppearanceEditor draft={form.draft} onChange={(draft) => setForm((current) => ({ ...current, draft }))} phone={phone} /> : <div className="space-y-6">
+      </div> : section === "members" ? <EditMembersTab {...props} cast={allCast} phone={phone} /> : section === "scene" ? <SceneStep {...props} autoFocus={false} /> : section === "appearance" ? <AppearanceEditor draft={form.draft} onChange={(draft) => setForm((current) => ({ ...current, draft }))} phone={phone} preview={!phone && look ? <AppearancePreviewPanel look={look} image={previewImage} onImage={setPreviewImage} /> : undefined} /> : <div className="space-y-6">
         <p className="text-base text-fg-2">{t("edit.chatFollow")}</p>
         <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10"><div className="min-w-0 space-y-6"><SpeakerGroup {...props} /><MemoryGroup {...props} dynamicMemory={dynamicMemory} /></div><div className="min-w-0 space-y-6"><ExtrasStep {...props} libraryOnly saved={{ id: stored.id, memberIds: stored.form.draft.members.map((member) => member.character_id) }} /></div></div>
       </div>}
       </motion.div>
     </fieldset>
-  </Page>;
+  </Page>
+  {previewOpen && look && <AppearancePreviewOverlay look={look} image={previewImage} onImage={setPreviewImage} onClose={closePreview} />}
+  </>;
 }
 
 export function EditGroupPage() {

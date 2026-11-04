@@ -190,6 +190,50 @@ describe("character edit page", () => {
     expect(nameInput().value).toBe("Cassian");
   });
 
+  it("shows the appearance preview in a side panel next to the settings on desktop", async () => {
+    await renderEdit(roleplay());
+    fireEvent.click(tab("Appearance"));
+    const names = await screen.findByRole("switch", { name: "Show names" });
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+    expect(screen.getByText("Applies to every chat with this character. Fields without an override follow your app appearance.")).toBeTruthy();
+    const panel = screen.getByRole("textbox", { name: "Message" }).closest("aside")!;
+    expect(panel.className).toContain("w-130");
+    expect(panel.contains(names)).toBe(false);
+    expect(within(panel).getByRole("radio", { name: "Background image" })).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: /Seraphine/ })).toBeNull();
+  });
+
+  it("opens the appearance preview full screen on a phone and closes it with Back", async () => {
+    const { runtime } = await renderEdit(roleplay(), { appStatus: () => ok({ ...mockAppStatus, platform: "android", ui_state: { onboarding: { completed: true } } }) });
+    fireEvent.click(tab("Appearance"));
+    await screen.findByRole("switch", { name: "Show names" });
+    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("textbox", { name: "Message" })).toBeTruthy();
+    expect(within(dialog).getByRole("radio", { name: "Background image" })).toBeTruthy();
+    await act(async () => runtime.router.history.back());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("saves appearance edits into the character presentation with a per-field override", async () => {
+    const save = vi.fn((request: CharacterSaveRequest_Deserialize) => ok(saved(request)));
+    await renderEdit(roleplay(), { characterSave: save });
+    fireEvent.click(tab("Appearance"));
+    fireEvent.click(await screen.findByRole("switch", { name: "Show names" }));
+    expect(screen.getAllByRole("img", { name: "Set for this character" })).toHaveLength(1);
+    fireEvent.click(saveButton()!);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    const draft = save.mock.calls[0]![0].draft;
+    expect(draft.presentation.chat_appearance.show_message_author).toBe(false);
+    expect(draft.presentation.chat_appearance_overrides).toEqual(["show_message_author"]);
+    await waitFor(() => expect(saveButton()).toBeNull());
+  });
+
   it("saves against the loaded revision and keeps the operation id until the payload changes", async () => {
     let fail = true;
     const save = vi.fn((request: CharacterSaveRequest_Deserialize) => fail ? { status: "error" as const, error: { code: "unavailable" as const, message: "down", details: null } } : ok(saved(request)));

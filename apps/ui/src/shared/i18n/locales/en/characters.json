@@ -168,8 +168,10 @@
       "scenes": "Scenes",
       "chat": "Chat",
       "look": "Look",
+      "appearance": "Appearance",
       "soul": "Soul"
     },
+    "preview": "Preview",
     "startChat": "Start chat",
     "more": "More actions",
     "export": "Export",
