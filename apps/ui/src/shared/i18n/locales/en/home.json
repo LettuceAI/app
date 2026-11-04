@@ -21,7 +21,6 @@
   },
   "view": {
     "label": "View",
-    "detailSidebar": "Show sidebar on other pages",
     "current": "View: {{view}}",
     "home": "Home",
     "list": "List",

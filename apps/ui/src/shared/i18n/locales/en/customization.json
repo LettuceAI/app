@@ -104,6 +104,8 @@
   "dark": "Dark",
   "onlyAppliesWhenACharacterHasABackgroundImage": "Only applies when a character has a background image.",
   "groupChats": "Group chats",
+  "detailSidebar": "Show sidebar on other pages",
+  "detailSidebarBody": "Keep the sidebar beside chats, editors and settings. Off, those pages open full width on their own.",
   "normalChat": "Normal chat",
   "chatType": "Chat type",
   "normalAppearanceHint": "Appearance for normal chats. Group chats match it until you change them separately.",

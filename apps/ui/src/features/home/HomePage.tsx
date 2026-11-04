@@ -15,7 +15,6 @@ import {
   Menu,
   MenuContent,
   MenuItem,
-  MenuSeparator,
   MenuTrigger,
   motion as m,
   Page,
@@ -26,7 +25,6 @@ import { useChatNavigation } from "@/features/conversations";
 import { appStatusQuery } from "@/api/app-status-query";
 import { FailureState } from "@/shared/ui/FailureState";
 import { MobileSettingsButton } from "@/shared/ui/MobileSettingsButton";
-import { useSidebarOnDetailPages } from "@/shared/hooks/useSidebarOnDetailPages";
 import { ContinueCard, GalleryCard, HeroCard } from "./components/cards";
 import { CharacterMenu } from "./components/CharacterMenu";
 import { ChatMenu, type ChatMenuTarget } from "./components/ChatMenu";
@@ -78,7 +76,6 @@ export function HomePage() {
   const [chatMenu, setChatMenu] = useState<ChatMenuTarget | null>(null);
   const chats = useChatNavigation();
   const [desktopView, setDesktopView] = useDesktopView(api);
-  const detailSidebar = useSidebarOnDetailPages(api);
   const [phoneLayout, setPhoneLayout] = usePhoneLayout(api);
   const characters = useQuery(homeCharactersQuery(api));
   const all = characters.data;
@@ -176,10 +173,6 @@ export function HomePage() {
             {t(`view.${view}`)}
           </MenuItem>
         ))}
-        <MenuSeparator />
-        <MenuItem selected={detailSidebar.enabled} disabled={detailSidebar.pending} onSelect={() => detailSidebar.set(!detailSidebar.enabled)}>
-          {t("view.detailSidebar")}
-        </MenuItem>
       </MenuContent>
     </Menu>
   );

@@ -95,35 +95,10 @@ describe("primary navigation", () => {
     expect(await screen.findByRole("button", { name: "Home" })).toBeTruthy();
   });
 
-  it("saves the optional desktop detail sidebar choice from the view menu", async () => {
-    let state: Record<string, unknown> = { ...ui_state };
-    const update = vi.fn((request: { patch: Record<string, unknown> }) => {
-      state = { ...state, ...request.patch };
-      return { status: "ok" as const, data: { state } };
-    });
-    const runtime = await renderShell({ calls: {
-      appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: state } }),
-      appUiStateUpdate: update,
-    } });
-    fireEvent.click(await screen.findByRole("button", { name: "View: Home" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Show sidebar on other pages" }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith({ patch: { sidebarOnDetailPages: false } }));
-    await waitFor(() => expect(runtime.queryClient.getQueryData<{ ui_state: Record<string, unknown> }>(["app", "status"])?.ui_state.sidebarOnDetailPages).toBe(false));
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  it("opens settings on their own when the detail sidebar is off", async () => {
+    await renderShell({}, { ...ui_state, sidebarOnDetailPages: false }, "/settings");
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
     expect(screen.queryByRole("navigation", { name: "Main navigation" })).toBeNull();
-  });
-
-  it("keeps the desktop sidebar choice when saving fails", async () => {
-    const runtime = await renderShell({ calls: {
-      appUiStateUpdate: () => ({ status: "error", error: { code: "unavailable", message: "storage unavailable", details: null } }),
-    } });
-    fireEvent.click(await screen.findByRole("button", { name: "View: Home" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Show sidebar on other pages" }));
-    expect(await screen.findByText("It isn't available right now.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/settings/about"));
-    expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeTruthy();
   });
 
   it("also hides detail navigation in a narrow desktop window", async () => {

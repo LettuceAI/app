@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { CircleCheck, CircleX, Globe, Send, Sparkles, Vibrate } from "lucide-react";
+import { CircleCheck, CircleX, Globe, PanelLeft, Send, Sparkles, Vibrate } from "lucide-react";
 import {
   Button,
   Field,
@@ -26,6 +26,7 @@ import {
   type SoundKey,
 } from "@/entities/preferences";
 import { FailureState } from "@/shared/ui/FailureState";
+import { useSidebarOnDetailPages } from "@/shared/hooks/useSidebarOnDetailPages";
 import { useSettingsApi } from "../data";
 import { Row } from "./ChatTab";
 
@@ -60,6 +61,7 @@ const soundIcons = {
 export function GeneralTab({ phone }: { phone: boolean }) {
   const { t, i18n } = useTranslation("customization");
   const api = useSettingsApi();
+  const detailSidebar = useSidebarOnDetailPages(api);
   const client = useQueryClient();
   const status = useQuery(appStatusQuery(api));
   const preferences = usePreferences();
@@ -152,6 +154,23 @@ export function GeneralTab({ phone }: { phone: boolean }) {
           }
         />
       </ListGroup>
+      {!phone && (
+        <ListGroup label={t("layout")}>
+          <ListRow
+            icon={<PanelLeft size={icon.lg} />}
+            title={t("detailSidebar")}
+            description={t("detailSidebarBody")}
+            trailing={
+              <Switch
+                checked={detailSidebar.enabled}
+                disabled={detailSidebar.pending}
+                onChange={(on) => detailSidebar.set(on)}
+                aria-label={t("detailSidebar")}
+              />
+            }
+          />
+        </ListGroup>
+      )}
       <section className="space-y-2">
         <ListGroup label={t("soundCues")}>
           {(["send", "success", "failure"] as const).map((key) => {

@@ -90,6 +90,25 @@ async function mount(
 }
 
 describe("customization settings", () => {
+  it("saves the detail sidebar choice on desktop and keeps it when saving fails", async () => {
+    const save = vi.fn(() => ok({ state: { onboarding: { completed: true }, locale: "en", sidebarOnDetailPages: false } }));
+    await mount({ mobile: false, calls: { appUiStateUpdate: save } });
+    fireEvent.click(await screen.findByRole("switch", { name: "Show sidebar on other pages" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ patch: { sidebarOnDetailPages: false } }));
+    cleanup();
+    await mount({ mobile: false, calls: { appUiStateUpdate: () => ({ status: "error", error: { code: "unavailable", message: "storage unavailable", details: null } }) } });
+    const toggle = await screen.findByRole("switch", { name: "Show sidebar on other pages" });
+    fireEvent.click(toggle);
+    expect(await screen.findByText("It isn't available right now.")).toBeTruthy();
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("leaves the detail sidebar choice out on a phone", async () => {
+    await mount({});
+    expect(await screen.findByRole("combobox", { name: "App language" })).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: "Show sidebar on other pages" })).toBeNull();
+  });
+
   it("makes group chats follow normal chat until their first edit and keeps them independent after it", async () => {
     const page = await mount({ tab: "chat", value: { chatAppearance: { fontSize: "large", bubbleRadius: "pill" } } });
     expect(await screen.findByRole("combobox", { name: "Text size" })).toHaveProperty("value", "large");
