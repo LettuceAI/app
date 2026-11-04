@@ -1355,9 +1355,6 @@ fn map_help_me_reply(
         result.streaming,
         LegacyBackupDocumentKind::Settings,
     )?;
-    if let Some(max_tokens) = optional_u32(advanced, "helpMeReplyMaxTokens")? {
-        result.max_output_tokens = max_tokens;
-    }
     if let Some(history_count) = optional_u32(advanced, "helpMeReplyHistoryCount")? {
         if history_count == 0 {
             notices.push(notice(
@@ -5001,7 +4998,12 @@ mod tests {
         );
         let help_me_reply = &plan.settings.value.help_me_reply;
         assert!(!help_me_reply.enabled && !help_me_reply.streaming);
-        assert_eq!(help_me_reply.max_output_tokens, 220);
+        assert!(
+            serde_json::to_value(help_me_reply)
+                .expect("reply helper settings")
+                .get("max_output_tokens")
+                .is_none()
+        );
         assert_eq!(help_me_reply.history_count(), 10);
         assert_eq!(help_me_reply.style, HelpMeReplyStyle::Conversational);
         assert_eq!(plan.settings.help_me_reply_model_profile_id, Some(model_id));

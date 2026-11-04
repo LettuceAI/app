@@ -52,7 +52,7 @@ pub struct GlobalSettings {
     pub dynamic_memory_prompts: DynamicMemoryPromptSelection,
     #[serde(default = "default_true")]
     pub dynamic_memory_llama_sampler_overwrite_enabled: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_help_me_reply_settings")]
     pub help_me_reply: HelpMeReplySettings,
     #[serde(default)]
     pub embedding: EmbeddingSettings,
@@ -409,8 +409,8 @@ pub enum HelpMeReplyStyle {
     Conversational,
 }
 
-/// Help-me-reply settings: the feature toggle, its model, streaming, output
-/// cap, history window, style and the per-style prompt overrides; unset ids
+/// Help-me-reply settings: the feature toggle, its model, streaming,
+/// history window, style and the per-style prompt overrides; unset ids
 /// mean the default model and the built-in documents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -418,7 +418,6 @@ pub struct HelpMeReplySettings {
     pub enabled: bool,
     pub model_profile_id: Option<ModelProfileId>,
     pub streaming: bool,
-    pub max_output_tokens: u32,
     pub history_count: u32,
     pub style: HelpMeReplyStyle,
     pub roleplay_prompt_id: Option<PromptDocumentId>,
@@ -431,13 +430,23 @@ impl Default for HelpMeReplySettings {
             enabled: true,
             model_profile_id: None,
             streaming: true,
-            max_output_tokens: 150,
             history_count: 10,
             style: HelpMeReplyStyle::Roleplay,
             roleplay_prompt_id: None,
             conversational_prompt_id: None,
         }
     }
+}
+
+fn deserialize_help_me_reply_settings<'de, D>(deserializer: D) -> Result<HelpMeReplySettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut value = serde_json::Value::deserialize(deserializer)?;
+    if let Some(settings) = value.as_object_mut() {
+        settings.remove("max_output_tokens");
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
 impl HelpMeReplySettings {
@@ -749,6 +758,20 @@ mod tests {
     }
 
     #[test]
+    fn retired_reply_helper_token_cap_is_ignored_in_stored_settings() {
+        let expected = GlobalSettings::default();
+        let mut document = serde_json::to_value(&expected).expect("settings document");
+        document["help_me_reply"]["max_output_tokens"] = serde_json::json!(8192);
+        let restored: GlobalSettings =
+            serde_json::from_value(document.clone()).expect("old helper token setting");
+        assert_eq!(restored, expected);
+        let saved = serde_json::to_value(restored).expect("updated settings document");
+        assert!(saved["help_me_reply"].get("max_output_tokens").is_none());
+        document["help_me_reply"]["unexpected_setting"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<GlobalSettings>(document).is_err());
+    }
+
+    #[test]
     fn legacy_generator_defaults_and_selection_precedence() {
         let legacy =
             r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true}"#;
@@ -766,7 +789,6 @@ mod tests {
         assert!(settings.dynamic_memory_llama_sampler_overwrite_enabled);
         assert_eq!(settings.help_me_reply, HelpMeReplySettings::default());
         assert!(settings.help_me_reply.enabled && settings.help_me_reply.streaming);
-        assert_eq!(settings.help_me_reply.max_output_tokens, 150);
         assert_eq!(settings.help_me_reply.history_count(), 10);
         assert_eq!(settings.help_me_reply.style, HelpMeReplyStyle::Roleplay);
         assert_eq!(

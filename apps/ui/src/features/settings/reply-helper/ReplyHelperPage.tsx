@@ -6,7 +6,6 @@ import {
   Cpu,
   FileText,
   Globe,
-  Hash,
   History,
   MessageCircle,
   PenLine,
@@ -289,20 +288,6 @@ export function ReplyHelperPage() {
                   />
                 )}
                 <ListGroup label={t("replyHelper.lengthGroup")}>
-                  <ListRow
-                    icon={<Hash size={icon.lg} />}
-                    title={t("replyHelper.maxLength")}
-                    description={t("replyHelper.maxLengthBody")}
-                    trailing={
-                      <ReplyHelperNumber
-                        value={value.max_output_tokens}
-                        label={t("replyHelper.maxLength")}
-                        min={1}
-                        step={50}
-                        onCommit={(next) => change({ max_output_tokens: next })}
-                      />
-                    }
-                  />
                   <ListRow
                     icon={<History size={icon.lg} />}
                     title={t("replyHelper.history")}

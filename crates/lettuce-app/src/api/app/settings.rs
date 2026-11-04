@@ -236,12 +236,6 @@ fn apply(
             "dynamic_memory_sampler"
         }
         dto::SettingsPatch::HelpMeReply { value } => {
-            if value.max_output_tokens == 0 {
-                return Err(invalid_field(
-                    "help_me_reply.max_output_tokens",
-                    "output cap must be positive",
-                ));
-            }
             settings.help_me_reply = convert(value, "help_me_reply")?;
             "help_me_reply"
         }

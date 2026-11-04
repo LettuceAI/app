@@ -19,7 +19,7 @@ use lettuce_jobs::{
 };
 use lettuce_models::{
     ChatParameterResolutionInput, ChatRequirements, ExpectedModelIdentity, ModelProfileRepository,
-    ParameterOverride, ProviderAccountRepository,
+    ProviderAccountRepository,
 };
 use lettuce_settings::{GlobalSettingsStore, HelpMeReplyStyle};
 use lettuce_types::{
@@ -34,32 +34,26 @@ use crate::{BuiltInPromptId, cleanup_outcome_replays};
 
 const HELP_ME_REPLY_STAGE: &str = "reply-helper";
 
-/// `HELP_ME_REPLY_DEFAULTS` over the model's help-me-reply slot; the
-/// settings' output cap applies where the slot sets none. Only the direct
-/// helper passes top_k, the penalties and prompt caching.
+/// `HELP_ME_REPLY_DEFAULTS` over the model's help-me-reply slot. Only the
+/// direct helper passes top_k, the penalties and prompt caching.
 fn help_me_reply_parameters(
     slot: &lettuce_models::FeatureGenerationParameters,
     group: bool,
     protocol: lettuce_models::ProviderProtocol,
     global: &lettuce_models::ModelSettingsLayer,
-    max_output_tokens: u32,
 ) -> ChatParameterResolutionInput {
     let fields = if group {
         crate::FeatureRequestFields::Sampling
     } else {
         crate::FeatureRequestFields::Full
     };
-    let mut input = crate::feature_parameter_input(
+    crate::feature_parameter_input(
         slot,
         crate::HELP_ME_REPLY_DEFAULTS,
         fields,
         protocol,
         global,
-    );
-    if !matches!(input.operation.max_output_tokens, ParameterOverride::Set(_)) {
-        input.operation.max_output_tokens = ParameterOverride::Set(max_output_tokens);
-    }
-    input
+    )
 }
 
 /// One "help me reply" request.
@@ -515,7 +509,6 @@ where
                     reason: error.to_string(),
                 })?
                 .0,
-                settings.max_output_tokens,
             ),
             &ChatRequirements::default(),
         )
@@ -908,19 +901,18 @@ mod tests {
     use super::{clean_reply, help_me_reply_parameters, speakers};
 
     #[test]
-    fn the_slot_wins_over_the_defaults_and_the_settings_cap() {
+    fn the_slot_controls_output_tokens_and_inherits_when_unset() {
         let input = help_me_reply_parameters(
             &Default::default(),
             false,
             ProviderProtocol::OpenAiCompatible,
             &Default::default(),
-            150,
         );
         assert_eq!(input.operation.temperature, ParameterOverride::Set(0.8));
         assert_eq!(input.operation.top_p, ParameterOverride::Set(1.0));
         assert_eq!(
             input.operation.max_output_tokens,
-            ParameterOverride::Set(150)
+            ParameterOverride::Inherit
         );
         let mut slot = lettuce_models::FeatureGenerationParameters::default();
         slot.parameters.temperature = ParameterOverride::Set(0.35);
@@ -931,7 +923,6 @@ mod tests {
             false,
             ProviderProtocol::OpenAiCompatible,
             &Default::default(),
-            150,
         );
         assert_eq!(direct.operation.temperature, ParameterOverride::Set(0.35));
         assert_eq!(
@@ -944,10 +935,22 @@ mod tests {
             true,
             ProviderProtocol::OpenAiCompatible,
             &Default::default(),
-            150,
         );
         assert_eq!(group.operation.top_k, ParameterOverride::Clear);
         assert_eq!(group.operation.prompt_caching, ParameterOverride::Clear);
+        assert_eq!(group.operation.max_output_tokens, ParameterOverride::Set(64));
+        for group in [false, true] {
+            for value in [ParameterOverride::Inherit, ParameterOverride::Clear] {
+                slot.parameters.max_output_tokens = value.clone();
+                let input = help_me_reply_parameters(
+                    &slot,
+                    group,
+                    ProviderProtocol::OpenAiCompatible,
+                    &Default::default(),
+                );
+                assert_eq!(input.operation.max_output_tokens, value);
+            }
+        }
     }
 
     #[test]

@@ -8533,7 +8533,6 @@ export type SettingsHelpMeReplySettings = {
 	enabled: boolean,
 	model_profile_id: string | null,
 	streaming: boolean,
-	max_output_tokens: number,
 	history_count: number,
 	style: SettingsHelpMeReplyStyle,
 	roleplay_prompt_id: string | null,

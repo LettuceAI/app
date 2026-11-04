@@ -46,7 +46,7 @@ Scores are integer basis points (0 to 10 000) so a stored policy compares and ro
 
 ### Helper job settings
 
-- `HelpMeReplySettings`: enabled, streaming, 150 output tokens, ten history messages (`history_count()` reads zero as ten), `Roleplay` style (or `Conversational`), and optional model and per-style prompt overrides.
+- `HelpMeReplySettings`: enabled, streaming, ten history messages (`history_count()` reads zero as ten), `Roleplay` style (or `Conversational`), and optional model and per-style prompt overrides. Output tokens come from the model’s help-me-reply feature parameters, inheriting its chat parameters when unset. Older stored `help_me_reply.max_output_tokens` values are ignored on read and omitted on subsequent saves.
 - `LorebookGeneratorSettings`: a model and four prompts (planner, writer, refine, coherence) plus the target entry count (default 12, clamped to 5..50) and output tokens (default 4096, clamped to 256..32768). `select` resolves each choice as explicit override, then the generator setting, then the default model or built-in prompt. Whether the chosen model or prompt still exists is checked when the consumer resolves it, not when the document is saved.
 - `LorebookEntryGeneratorSettings`: model (unset means the first text model), entry and keyword prompts, JSON fallback format by default.
 - `CreationHelperSettings`: model (unset means the default model), streaming on, `enabled_tools` (unset means all), tool fallback `Native`, `Json` or `Xml`.

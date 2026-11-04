@@ -33,7 +33,6 @@ const defaults: SettingsHelpMeReplySettings = {
   enabled: true,
   model_profile_id: null,
   streaming: true,
-  max_output_tokens: 150,
   history_count: 10,
   style: "roleplay",
   roleplay_prompt_id: null,
@@ -199,20 +198,29 @@ describe("reply helper settings", () => {
     },
   );
 
+  it("keeps token limits in model parameters instead of helper settings", async () => {
+    const store = await mount();
+    expect(await screen.findByLabelText("Messages sent")).toBeTruthy();
+    expect(screen.queryByLabelText("Max length")).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Stream suggestions" }));
+    await waitFor(() => expect(store.requests).toHaveLength(1));
+    expect(store.requests[0]?.patch).toMatchObject({ section: "help_me_reply" });
+    expect(store.current().global.help_me_reply).not.toHaveProperty("max_output_tokens");
+  });
+
   it("preserves all settings when disabling and enabling the feature", async () => {
     const value = {
       model_profile_id: "Local chat",
       style: "conversational" as const,
       history_count: 32,
-      max_output_tokens: 300,
       roleplay_prompt_id: "My roleplay",
       conversational_prompt_id: "My conversation",
     };
     const store = await mount({ value });
     fireEvent.click(await screen.findByRole("switch", { name: "Reply helper" }));
-    await waitFor(() => expect(screen.queryByText("Length and context")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Context")).toBeNull());
     fireEvent.click(screen.getByRole("switch", { name: "Reply helper" }));
-    expect(await screen.findByText("Length and context")).toBeTruthy();
+    expect(await screen.findByText("Context")).toBeTruthy();
     expect(store.current().global.help_me_reply).toEqual({ ...defaults, ...value });
     expect(store.current().global.creation_helper.model_profile_id).toBe("keep");
     expect(store.requests.map((request) => request.expected_revision)).toEqual([7, 8]);
@@ -247,7 +255,7 @@ describe("reply helper settings", () => {
   it("keeps numeric drafts on failure and retries without losing other changes", async () => {
     let fail = true;
     const store = await mount({ failure: () => fail });
-    const number = (await screen.findByLabelText("Max length")) as HTMLInputElement;
+    const number = (await screen.findByLabelText("Messages sent")) as HTMLInputElement;
     fireEvent.change(number, { target: { value: "8200" } });
     fireEvent.blur(number);
     expect(await screen.findByText("Not saved")).toBeTruthy();
@@ -255,13 +263,12 @@ describe("reply helper settings", () => {
     expect(screen.queryByText("private diagnostic")).toBeNull();
     fail = false;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await waitFor(() => expect(store.current().global.help_me_reply.max_output_tokens).toBe(8200));
+    await waitFor(() => expect(store.current().global.help_me_reply.history_count).toBe(8200));
     expect(screen.queryByText("Not saved")).toBeNull();
     fireEvent.change(screen.getByLabelText("Messages sent"), { target: { value: "500" } });
     fireEvent.keyDown(screen.getByLabelText("Messages sent"), { key: "Enter" });
     await waitFor(() => expect(store.current().global.help_me_reply.history_count).toBe(500));
     expect(store.current().global.help_me_reply).toMatchObject({
-      max_output_tokens: 8200,
       history_count: 500,
       roleplay_prompt_id: null,
     });
@@ -280,12 +287,12 @@ describe("reply helper settings", () => {
         settingsUpdate: () => error("conflict"),
       },
     });
-    const number = (await screen.findByLabelText("Max length")) as HTMLInputElement;
+    const number = (await screen.findByLabelText("Messages sent")) as HTMLInputElement;
     fireEvent.change(number, { target: { value: "8200" } });
     fireEvent.blur(number);
     expect(await screen.findByText("It isn't available right now.")).toBeTruthy();
     expect(await screen.findByText("Not saved")).toBeTruthy();
-    expect((screen.getByLabelText("Max length") as HTMLInputElement).value).toBe("8200");
+    expect((screen.getByLabelText("Messages sent") as HTMLInputElement).value).toBe("8200");
   });
 
   it("retains a newer numeric edit while an older value is still saving", async () => {
@@ -294,18 +301,18 @@ describe("reply helper settings", () => {
       release = resolve;
     });
     const store = await mount({ gate });
-    const number = await screen.findByLabelText("Max length");
+    const number = await screen.findByLabelText("Messages sent");
     fireEvent.change(number, { target: { value: "200" } });
     fireEvent.blur(number);
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
-    fireEvent.change(number, { target: { value: "150" } });
+    fireEvent.change(number, { target: { value: "10" } });
     fireEvent.blur(number);
     await act(async () => {
       release();
     });
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(2));
     expect(store.requests.map((request) => request.expected_revision)).toEqual([7, 8]);
-    expect(store.current().global.help_me_reply.max_output_tokens).toBe(150);
+    expect(store.current().global.help_me_reply.history_count).toBe(10);
   });
 
   it("filters model choices, identifies the default and clears an unavailable selection", async () => {

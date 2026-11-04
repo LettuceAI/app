@@ -187,7 +187,6 @@ pub struct SettingsHelpMeReplySettings {
     pub enabled: bool,
     pub model_profile_id: Option<String>,
     pub streaming: bool,
-    pub max_output_tokens: u32,
     pub history_count: u32,
     pub style: SettingsHelpMeReplyStyle,
     pub roleplay_prompt_id: Option<String>,

@@ -6350,6 +6350,12 @@ async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
         )
         .await
         .expect("finalize the turn");
+    let mut model = ModelProfileRepository::get(database, scenario.model.source_id)
+        .expect("model")
+        .expect("model exists");
+    let revision = model.revision;
+    model.config.chat_parameters.max_output_tokens = Some(2048);
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("model output tokens");
     let inference = scripted(vec![text_outcome(
         "reply-helper-draft",
         "\"user: Sounds lovely, pour me a cup.\"",
@@ -6390,7 +6396,7 @@ async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
             .chat_profile
             .parameters
             .visible_max_output_tokens,
-        Some(150)
+        Some(2048)
     );
     let texts = sent
         .context

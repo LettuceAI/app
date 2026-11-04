@@ -11,7 +11,7 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 - The post-turn cycle settings follow legacy's schema defaults: disabled until enabled, a 20-message summary interval, `auto` run mode (`ask_first` and `manual` also exist), 0.08 per-cycle decay, recursive memory loops off with a hard cap of 20 rounds, and the `xml` structured fallback format (legacy `dynamicMemoryStructuredFallbackFormat`, `json` the other value).
 - `dynamic_memory_prompts` is legacy `dynamicMemorySummarizerPromptTemplateId` / `dynamicMemoryManagerPromptTemplateId`, shared by direct and group chats.
 - `dynamic_memory_llama_sampler_overwrite_enabled` is legacy `dynamicMemoryLlamaSamplerOverwriteEnabled` (default true).
-- `help_me_reply` carries legacy's `helpMeReply*` advanced settings with their defaults (enabled, streaming, 150 output tokens, ten history messages, `roleplay` style, no model or prompt overrides). A zero history count reads as ten because legacy ignored it.
+- `help_me_reply` carries legacy's `helpMeReply*` advanced settings with their defaults (enabled, streaming, ten history messages, `roleplay` style, no model or prompt overrides). A zero history count reads as ten because legacy ignored it.
 - `embedding.dimensions` is legacy's `embeddingDimensions` preference.
 - `manual_mode_context_window` is legacy `manualModeContextWindow` (default 50).
 - `image_generation` carries legacy `avatarGeneration*`, `sceneGeneration*`, `sceneWriterModelId` and `creationHelperImageModelId` (avatar on, scenes off, `auto` mode, no models). `scene_default_size` is legacy `sdDefaultSize` (portable, used by scene generation only).
@@ -72,3 +72,5 @@ Developer mode retains the release debug-feature switch (`old-code/src/ui/pages/
 UI preferences have no aggregate byte cap, so growing sampler presets and widgets cannot turn valid settings into an unreadable document. Legacy color presets were unbounded, while sampler presets had a 64-entry schema cap (`old-code/src/core/storage/schemas.ts:3045,3344`); that sampler cap is deliberately omitted under the no-count-cap rule.
 
 Dynamic memory defaults to the Balanced profile values (200 memories, 6,144-token hot budget, summary every 20 messages, retrieval limit 5, smart retrieval, decay 0.08, cold storage 0.30), so a new setup reads as Balanced in Settings > Memory. Legacy defaulted to 50 memories and a 2,000-token budget (old-code/src/core/storage/schemas.ts:2674-2690), which matched none of its own profiles (old-code/src/ui/pages/settings/DynamicMemoryPage.tsx:144-185). The relevance threshold stays unset by default, meaning the embedding model's own calibrated threshold; legacy defaulted to 0.32 raw cosine.
+
+- Reply-helper output tokens now follow the model’s help-me-reply feature parameters and inherit its chat parameters when unset. The legacy helper-specific token cap is retired; old stored values are accepted and ignored.
