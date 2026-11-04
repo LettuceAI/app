@@ -43,7 +43,7 @@ import { WelcomeBackPage } from "@/features/welcome-back";
 import { RouteErrorState } from "../error-boundaries/RouteErrorState";
 import { RouteNotFound } from "../error-boundaries/RouteNotFound";
 import { AppShell } from "../shell/AppShell";
-import { NavigationPage } from "../shell/NavigationPage";
+import { DiscoverPage } from "@/features/discover";
 import { PendingScreen } from "../shell/PendingScreen";
 import {
   legacyMigrationOffered,
@@ -115,7 +115,7 @@ const editGroupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/gr
 const discoverRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/discover",
-  component: NavigationPage,
+  component: DiscoverPage,
 });
 const libraryRoute = createRoute({
   getParentRoute: () => rootRoute,

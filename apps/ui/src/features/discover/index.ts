@@ -1,0 +1,1 @@
+export { DiscoverPage } from "./DiscoverPage";
