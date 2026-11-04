@@ -1,0 +1,10 @@
+services:
+  cuda: &selected-gpus
+    deploy:
+      resources:
+        reservations:
+          devices: !override
+            - driver: nvidia
+              device_ids: ['0', '1']
+              capabilities: [gpu]
+  vulkan-nvidia: *selected-gpus

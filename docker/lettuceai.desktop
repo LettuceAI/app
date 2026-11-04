@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=LettuceAI
+Exec=/usr/local/bin/lettuceai %F
+Icon=/usr/share/icons/lettuceai.png
+Terminal=false
+Categories=Utility;
+MimeType=application/vnd.lettuceai.backup;application/vnd.lettuceai.uec+json;

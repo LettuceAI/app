@@ -1,0 +1,14 @@
+services:
+  cpu: &keyring
+    environment:
+      LETTUCE_KEYRING_PASSWORD_FILE: /run/secrets/lettuceai-keyring
+      LETTUCE_KEYRING_PROVIDER: gnome
+    volumes:
+      - type: bind
+        source: ${LETTUCE_KEYRING_SECRET:?Set LETTUCE_KEYRING_SECRET to a password file readable by UID 1000}
+        target: /run/secrets/lettuceai-keyring
+        read_only: true
+        bind: {create_host_path: false}
+  vulkan: *keyring
+  cuda: *keyring
+  vulkan-nvidia: *keyring

@@ -1,0 +1,85 @@
+x-app: &app
+  platform: linux/amd64
+  shm_size: 2gb
+  cap_add: [IPC_LOCK]
+  ulimits:
+    memlock: {soft: -1, hard: -1}
+  ports:
+    - "${LETTUCE_BIND_ADDRESS:-127.0.0.1}:${LETTUCE_PORT:-6901}:6901"
+  volumes:
+    - lettuceai-home:/home/kasm-user
+  environment: &environment
+    VNC_PW: ${VNC_PW:?Set VNC_PW in docker/.env}
+    LETTUCE_AUTOSTART: ${LETTUCE_AUTOSTART:-1}
+    NVIDIA_VISIBLE_DEVICES: void
+    LETTUCE_KEYRING_PROVIDER: ${LETTUCE_KEYRING_PROVIDER:-auto}
+    LETTUCE_KEYRING_TIMEOUT: ${LETTUCE_KEYRING_TIMEOUT:-120}
+
+x-build: &build
+  context: ..
+  dockerfile: Dockerfile
+  target: ${BUILD_TARGET:-prebuilt}
+  args: &args
+    KASM_IMAGE: ${KASM_IMAGE:-kasmweb/core-ubuntu-noble:1.17.0}
+    CUDA_VERSION: ${CUDA_VERSION:-13.1.0}
+    BINARY_PATH: ${BINARY_PATH:-docker/artifacts/lettuceai.deb}
+    KEYRING_PROVIDER: ${KEYRING_PROVIDER:-gnome}
+    APP_VERSION: ${APP_VERSION:-auto}
+    SOURCE_REVISION: ${SOURCE_REVISION:-unknown}
+    BUILD_JOBS: ${BUILD_JOBS:-2}
+    CUDA_ARCHITECTURES: ${CUDA_ARCHITECTURES:-75-virtual;80-virtual;86-real;89-real;90-virtual;120a-real}
+
+services:
+  cpu:
+    <<: *app
+    profiles: [cpu]
+    image: lettuceai:kasm-cpu
+    build:
+      <<: *build
+      args: {<<: *args, ACCELERATOR: cpu}
+
+  vulkan:
+    <<: *app
+    profiles: [vulkan]
+    image: lettuceai:kasm-vulkan
+    build:
+      <<: *build
+      args: {<<: *args, ACCELERATOR: vulkan}
+    devices:
+      - /dev/dri:/dev/dri
+    group_add: ["${RENDER_GID:-0}", "${VIDEO_GID:-44}"]
+
+  cuda:
+    <<: *app
+    profiles: [cuda]
+    image: lettuceai:kasm-cuda
+    build:
+      <<: *build
+      args: {<<: *args, ACCELERATOR: cuda}
+    environment:
+      <<: *environment
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
+      NVIDIA_VISIBLE_DEVICES: all
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
+
+  vulkan-nvidia:
+    <<: *app
+    profiles: [vulkan-nvidia]
+    image: lettuceai:kasm-vulkan-nvidia
+    build:
+      <<: *build
+      args: {<<: *args, ACCELERATOR: vulkan}
+    environment:
+      <<: *environment
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
+      NVIDIA_VISIBLE_DEVICES: all
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
+
+volumes:
+  lettuceai-home:
