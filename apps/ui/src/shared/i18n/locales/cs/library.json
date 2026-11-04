@@ -1,0 +1,127 @@
+{
+  "triggerPreview": "Náhled spouštění",
+  "title": "Knihovna",
+  "loadMore": "Načíst další",
+  "search": "Hledat v knihovně",
+  "show": "Zobrazit",
+  "filters": {
+    "all": "Vše",
+    "characters": "Postavy",
+    "personas": "Persony",
+    "lorebooks": "Lorebooky",
+    "images": "Obrázky",
+    "audio": "Zvuk"
+  },
+  "kinds": {
+    "character": "Postava",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "Ty",
+  "entries_one": "{{count}} záznam",
+  "entries_few": "{{count}} záznamy",
+  "entries_many": "{{count}} záznamu",
+  "entries_other": "{{count}} záznamů",
+  "defaultPersona": "Persona · tvoje výchozí",
+  "menu": {
+    "start": "Začít chat",
+    "edit_character": "Upravit postavu",
+    "edit_persona": "Upravit personu",
+    "edit_lorebook": "Upravit lorebook",
+    "default": "Používat jako výchozí personu",
+    "defaultHint": "Pro chaty, které si nevyberou jinou",
+    "export": "Exportovat",
+    "export_character": "Jako kartu postavy",
+    "export_persona": "Jako soubor UEC",
+    "export_lorebook": "Jako soubor UEC nebo JSON",
+    "delete_character": "Smazat postavu",
+    "delete_persona": "Smazat personu",
+    "delete_lorebook": "Smazat lorebook",
+    "save": "Uložit do zařízení",
+    "deleteImage": "Smazat obrázek",
+    "deleteAudio": "Smazat nahrávku",
+    "avatar": "Nastavit jako avatar pro {{name}}",
+    "more": "Více pro {{name}}",
+    "background": "Pozadí",
+    "generated": "Vygenerováno",
+    "uploaded": "Nahráno"
+  },
+  "create": {
+    "title": "Vytvořit",
+    "description": "Přidej do knihovny něco nového.",
+    "character": "Někdo na povídání",
+    "persona": "Kdo jsi v chatu",
+    "lorebook": "Reálie světa, o které se postava může opřít",
+    "import": "Importovat soubor",
+    "importHint": "Karta postavy, persona nebo lorebook",
+    "new_character": "Nová postava",
+    "new_lorebook": "Nový lorebook",
+    "button_character": "Vytvořit postavu",
+    "button_persona": "Vytvořit personu",
+    "button_lorebook": "Vytvořit lorebook"
+  },
+  "edit": {
+    "name": "Jméno",
+    "hint_character": "Zobrazuje se na kartě a v záhlaví chatu.",
+    "placeholder_character": "např. Cassian",
+    "placeholder_lorebook": "např. Severní brána",
+    "create": "Vytvořit",
+    "cancel": "Zrušit"
+  },
+  "delete": {
+    "title": "Smazat {{name}}?",
+    "confirm": "Smazat",
+    "character": "Smažou se s ní i její chaty a paměti.",
+    "persona": "Persona se odebere z chatů, které ji používají.",
+    "lorebook": "Postavy a chaty, které ho používají, ztratí přístup k jeho záznamům.",
+    "image": "Obrázek se odebere z tohoto zařízení. Obrázky, které se pořád používají, smazat nejde.",
+    "audio": "Nahrávka se odebere z tohoto zařízení. Nahrávky, které se pořád používají, smazat nejde."
+  },
+  "empty": {
+    "all": {
+      "title": "Tvoje knihovna je prázdná",
+      "description": "Postavy, persony a lorebooky, které vytvoříš nebo importuješ, se ukládají sem."
+    },
+    "characters": {
+      "title": "Zatím žádné postavy",
+      "description": "Postava je ten, s kým mluvíš: jméno, minulost, způsob řeči."
+    },
+    "personas": {
+      "title": "Zatím žádné persony",
+      "description": "Persona je to, kým jsi v chatu. Postavy vidí její jméno a popis."
+    },
+    "lorebooks": {
+      "title": "Zatím žádné lorebooky",
+      "description": "Reálie světa, o které se postava může opřít, když na ně v konverzaci dojde."
+    },
+    "images": {
+      "title": "Zatím žádné obrázky",
+      "description": "Obrázky, které vygeneruješ v chatu, se ukládají sem."
+    },
+    "audio": {
+      "title": "Zatím žádný zvuk",
+      "description": "Hlasové nahrávky, které vygeneruješ nebo nahraješ, se ukládají sem."
+    },
+    "matches": "Nic neodpovídá „{{query}}“",
+    "searchAll": "Zkus jiné jméno nebo část popisu.",
+    "searchSection": "V této části nic není. Zbytek knihovny možná ano.",
+    "clear": "Vymazat hledání",
+    "everything": "Hledat ve všem",
+    "import": "Importovat"
+  },
+  "toast": {
+    "created": "Přidáno: {{name}}",
+    "deleted": "Smazáno: {{name}}",
+    "default": "{{name}} je tvoje výchozí persona",
+    "exported": "Soubor exportován",
+    "imported": "Soubor importován",
+    "warnings_one": "Soubor přenesen s {{count}} upozorněním",
+    "warnings_few": "Soubor přenesen s {{count}} upozorněními",
+    "warnings_many": "Soubor přenesen s {{count}} upozorněním",
+    "warnings_other": "Soubor přenesen s {{count}} upozorněními",
+    "mediaSaved": "Uloženo do zařízení",
+    "avatar": "Avatar aktualizován"
+  },
+  "draft": "Koncept",
+  "untitledDraft": "Nepojmenovaný koncept lorebooku"
+}

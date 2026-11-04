@@ -1,0 +1,103 @@
+{
+  "title": "Nápověda a časté otázky",
+  "subtitle": "Základy, API klíče, soukromí a běžné otázky",
+  "sections": {
+    "gettingStarted": "Začínáme",
+    "privacySafety": "Soukromí a bezpečnost",
+    "modelsProviders": "Modely a poskytovatelé",
+    "charactersChats": "Postavy a chaty"
+  },
+  "stillStuck": {
+    "title": "Pořád se zasekáváš?",
+    "docsTitle": "Úplná dokumentace",
+    "docsDescription": "Průvodci a referenční materiály pro LettuceAI",
+    "discordTitle": "Přidej se na Discord",
+    "discordDescription": "Zeptej se komunity nebo nahlas chybu"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Co je LettuceAI?",
+      "answer": "LettuceAI je chatovací aplikace pro AI postavy. Ty si vybíráš poskytovatele a model, které píšou odpovědi, a tvoje chaty i postavy zůstávají v tvém zařízení. Cloudoví poskytovatelé používají tvůj účet; podporované lokální modely běží na tvém počítači."
+    },
+    "whatIsApiKey": {
+      "question": "Co je API klíč a proč ho potřebuju? (vysvětlení BYOK)",
+      "answer": "BYOK znamená Bring Your Own Key, tedy přines si vlastní klíč. API klíč umožňuje LettuceAI posílat požadavky poskytovateli pod tvým účtem. Vytvoř klíč u poskytovatele a pak ho přidej v Nastavení > Poskytovatelé. Požadavky jdou z tvého zařízení k danému poskytovateli, který uplatňuje vlastní účtování a limity. Podporované lokální modely cloudový API klíč nepotřebují. Zacházej s klíčem jako s heslem a nikomu ho nedávej."
+    },
+    "cheapestStart": {
+      "question": "Jaký je nejlevnější nebo nejjednodušší začátek?",
+      "answer": "Pomocí Průvodce nastavením připoj poskytovatele a vyber model. Než dobiješ kredit, porovnej aktuální ceny poskytovatele, bezplatné tarify a limity požadavků. Začni s malým rozpočtem a při chatování sleduj Nastavení > Přehled využití. Na počítači jsou další možností podporované lokální modely, pokud máš dost paměti a úložiště."
+    },
+    "alternative": {
+      "question": "Je to alternativa k jiným AI chatovacím aplikacím?",
+      "answer": "Ano. LettuceAI ti dává na výběr poskytovatele, model a uspořádání postav, místo aby každý chat visel na jedné službě. Spravuješ si vlastní účet u poskytovatele a data máš ve svém zařízení. Krátké nastavení propojí model, který chceš používat."
+    },
+    "cost": {
+      "question": "Kolik to stojí?",
+      "answer": "LettuceAI je zdarma. Cloudový poskytovatel ti ale může účtovat požadavky nebo nabízet bezplatný tarif. Jeho sazby závisí na modelu, množství odeslaného a vygenerovaného textu a na tom, jestli používáš obrázky nebo zvuk. Než si vybereš model, zkontroluj ceník poskytovatele. Přehled využití ukazuje nahlášené tokeny a známé náklady; chybějící ceny neznamenají, že jsou požadavky zdarma."
+    },
+    "apiKeySafe": {
+      "question": "Je můj API klíč v bezpečí?",
+      "answer": "Přihlašovací údaje poskytovatele se ukládají lokálně a používají se k připojení k poskytovateli, kterého nastavíš. LettuceAI neposílá tvoje požadavky přes vlastní chatovací server. Zadávej klíče jen službám, kterým důvěřuješ, pečlivě kontroluj URL vlastních poskytovatelů a chraň své zařízení i záložní soubory."
+    },
+    "chatsStored": {
+      "question": "Kde se ukládají moje chaty? Může je někdo číst?",
+      "answer": "Chaty se ukládají do lokální databáze aplikace. Když odpovídá cloudový model, prompt a příslušný kontext konverzace se odešlou vybranému poskytovateli. Ten požadavek zpracuje podle vlastních zásad ochrany soukromí. Kdokoli s přístupem k tvému zařízení nebo k exportovaným zálohám může tvoje data také číst."
+    },
+    "chatsDeleted": {
+      "question": "Můžou se moje chaty samy smazat?",
+      "answer": "LettuceAI neuchovává serverovou kopii, ze které by šly chaty obnovit. Smazání chatu, reset aplikace, odinstalace, vymazání úložiště aplikace nebo ztráta zařízení můžou lokální data odstranit. Všechno, co si chceš nechat, si zálohuj."
+    },
+    "editRemotely": {
+      "question": "Může mi někdo upravit data na dálku?",
+      "answer": "LettuceAI nemá žádnou službu vzdálené správy tvých lokálních chatů a postav. Vybraný poskytovatel generuje odpovědi, ale databázi aplikace nespravuje. Chraň své zařízení i všechny soubory, které importuješ nebo sdílíš."
+    },
+    "shutdown": {
+      "question": "Co se stane s mými daty, když LettuceAI skončí?",
+      "answer": "Uložené chaty a postavy zůstanou v tvém zařízení a půjdou číst i bez účtu v LettuceAI. Cloudové odpovědi ale pořád závisí na dostupnosti poskytovatele a funkčnosti tvého účtu. Kopii dat si udělej v Nastavení > Zálohování a obnovení."
+    },
+    "training": {
+      "question": "Budou poskytovatelé trénovat na mých konverzacích?",
+      "answer": "To závisí na poskytovateli, typu tvého účtu a jeho aktuálních zásadách pro data. LettuceAI tyto podmínky nemůže změnit. Než pošleš citlivé informace, přečti si nastavení soukromí a uchovávání dat u poskytovatele. Podporované lokální modely zpracovávají svoje prompty na tvém počítači."
+    },
+    "whatIsModel": {
+      "question": "Co je „model“? Který si mám vybrat?",
+      "answer": "Model je AI, která píše odpovědi. Modely se liší stylem psaní, rychlostí, délkou kontextu, nároky na hardware a cenou. Přidej poskytovatele v Nastavení > Poskytovatelé a pak nastav model v Nastavení > Modely. Můžeš nastavit výchozí model pro aplikaci nebo vybrat model pro konkrétní postavu či chat."
+    },
+    "freeProviders": {
+      "question": "Existují bezplatní poskytovatelé?",
+      "answer": "Někteří poskytovatelé nabízejí modely zdarma nebo bezplatné tarify s vlastními požadavky na účet a limity. Dostupnost se může měnit, tak si ověř aktuální podmínky poskytovatele. Bezplatný tarif může i tak vyžadovat API klíč. Podporované lokální modely neúčtují za požadavek, ale využívají hardware, úložiště a energii tvého počítače."
+    },
+    "freeVsPaid": {
+      "question": "Jaký je rozdíl mezi bezplatnými a placenými poskytovateli?",
+      "answer": "Bezplatné a placené tarify se můžou lišit dostupnými modely, limity požadavků, rychlostí odpovědí, zásadami soukromí a podporou. Podrobnosti patří každému poskytovateli; placený tarif automaticky neznamená určité zásady soukromí. Můžeš připojit víc poskytovatelů a vybrat model, který sedne každému chatu."
+    },
+    "whatIsToken": {
+      "question": "Co je token?",
+      "answer": "Token je malý kousek textu, třeba slovo nebo část slova. Přesné dělení závisí na modelu a jazyce. Požadavek zahrnuje vstupní tokeny z promptu a kontextu konverzace a výstupní tokeny z odpovědi. Poskytovatelé je můžou účtovat různě. Dlouhá historie a dlouhé odpovědi zvyšují využití."
+    },
+    "noDefaultModel": {
+      "question": "Vidím „není nastavený výchozí model“",
+      "answer": "Otevři Nastavení > Modely a přidej model od nastaveného poskytovatele. Pak nastav výchozí model pro aplikaci nebo vyber model v nastavení postavy. Postava nebo chat může výchozí model přepsat, tak zkontroluj jejich výběr modelu, pokud odpovědi pořád nezačínají."
+    },
+    "cloudVsLocal": {
+      "question": "Jaký je rozdíl mezi cloudovými a lokálními modely?",
+      "answer": "Cloudové modely běží na hardwaru poskytovatele a potřebují připojení k jeho službě. Podporované lokální modely běží na tvém počítači a potřebují dost paměti a úložiště. Instalace lokálních modelů a ovládání běhu jsou dostupné na počítači; na mobilu použij připojeného poskytovatele."
+    },
+    "whatIsCharacter": {
+      "question": "Co je postava? Můžu si vytvořit vlastní?",
+      "answer": "Postava má jméno, obrázek a popis, které určují, jak mluví. Vytvoř ji tlačítkem pro vytvoření nebo importuj kartu postavy v Knihovně. Uprav její popis a nastavení modelu, abys změnil, jak se generují budoucí odpovědi."
+    },
+    "whatIsPersona": {
+      "question": "Co je persona?",
+      "answer": "Persona popisuje tvoji stranu konverzace: tvoje jméno a podrobnosti, které o tobě má postava vědět. Persony vytvářej nebo importuj v Knihovně a pak vyber tu, kterou chceš v chatu použít."
+    },
+    "charactersPrivate": {
+      "question": "Jsou postavy, které vytvořím, soukromé?",
+      "answer": "Postavy, které vytvoříš, se ukládají do tvého zařízení. Exportem a sdílením karty postavy ji ale ostatní můžou číst. Když chatuješ s cloudovým modelem, podrobnosti postavy použité v promptu se odešlou i vybranému poskytovateli."
+    },
+    "backupMove": {
+      "question": "Jak zálohovat nebo přejít na jiné zařízení?",
+      "answer": "Otevři Nastavení > Zálohování a obnovení a vytvoř záložní soubor. Ulož ho na bezpečné místo. Pro přechod na jiné zařízení nainstaluj LettuceAI tam a obnov z něj soubor. Než nahradíš existující data, přečti si varování na obrazovce obnovení."
+    }
+  }
+}

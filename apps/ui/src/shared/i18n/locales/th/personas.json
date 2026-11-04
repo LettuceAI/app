@@ -1,0 +1,71 @@
+{
+  "create": {
+    "title": "เพอร์โซนาใหม่",
+    "back": "กลับ",
+    "create": "สร้างเพอร์โซนา",
+    "created": "สร้าง {{name}} แล้ว",
+    "imported": "นำเข้าเพอร์โซนาแล้ว",
+    "unattached_other": "แนบ Lorebook {{count}} รายการไม่ได้ แนบได้จากการตั้งค่าเพอร์โซนา",
+    "defaultFailed": "สร้าง {{name}} แล้ว แต่ตั้งเป็นค่าเริ่มต้นไม่ได้",
+    "discardTitle": "ทิ้งเพอร์โซนานี้?",
+    "discardBody": "ข้อมูลที่กรอกไว้จะหายไป",
+    "discard": "ทิ้ง",
+    "keepEditing": "แก้ไขต่อ",
+    "continueTo": "ต่อไปที่ {{step}}"
+  },
+  "edit": {
+    "title": "แก้ไขเพอร์โซนา",
+    "back": "กลับ",
+    "backToLibrary": "กลับไปที่คลัง",
+    "more": "การกระทำเพิ่มเติม",
+    "export": "ส่งออก",
+    "delete": "ลบเพอร์โซนา",
+    "exported": "ส่งออกเพอร์โซนาแล้ว",
+    "exportWarnings_other": "ส่งออกพร้อมคำเตือน {{count}} รายการ",
+    "deleteTitle": "ลบ {{name}}?",
+    "deleteBody": "เพอร์โซนาจะถูกนำออกจากแชทที่ใช้งานอยู่",
+    "deleteConfirm": "ลบ",
+    "deleteCancel": "ยกเลิก",
+    "deleted": "ลบ {{name}} แล้ว",
+    "unsaved": "การเปลี่ยนแปลงที่ยังไม่ได้บันทึก",
+    "discard": "ทิ้ง",
+    "save": "บันทึก",
+    "saved": "บันทึกการเปลี่ยนแปลงแล้ว",
+    "lorebooksFailed": "บันทึกแล้ว แต่ไม่สามารถอัปเดต Lorebook ได้ ลองบันทึกอีกครั้ง",
+    "leaveTitle": "ทิ้งการเปลี่ยนแปลง?",
+    "leaveBody": "การเปลี่ยนแปลงที่ยังไม่ได้บันทึกจะหายไป",
+    "leaveDiscard": "ทิ้ง",
+    "leaveKeep": "แก้ไขต่อ"
+  },
+  "steps": {
+    "identity": "ตัวตน",
+    "extras": "เพิ่มเติม"
+  },
+  "identity": {
+    "chooseAvatar": "เลือกรูป",
+    "removeAvatar": "ลบ",
+    "name": "ชื่อ",
+    "namePlaceholder": "นักเขียนมืออาชีพ",
+    "nameHint": "ตัวตนของคุณในแชท",
+    "nickname": "ชื่อเล่น",
+    "nicknamePlaceholder": "สิ่งที่ตัวละครเรียกคุณ",
+    "nicknameHint": "ไม่บังคับ ใช้ในแชทแทนชื่อ",
+    "default": "ใช้เป็นค่าเริ่มต้น",
+    "defaultBody": "แชทใหม่เริ่มต้นด้วยเพอร์โซนานี้",
+    "import": "นำเข้าจากไฟล์",
+    "importBody": "นำเข้าเพอร์โซนาที่ส่งออกจาก LettuceAI",
+    "chooseFile": "เลือกไฟล์"
+  },
+  "about": {
+    "description": "คำอธิบาย",
+    "descriptionPlaceholder": "ตัวละครควรเรียกคุณอย่างไร ภูมิหลัง ความชอบ และสไตล์ของคุณ",
+    "descriptionHint": "ใช้ {{user}} แทนเพอร์โซนานี้ และ {{char}} แทนตัวละคร",
+    "words_other": "{{count}} คำ"
+  },
+  "extras": {
+    "body": "ทุกอย่างที่นี่ไม่บังคับ",
+    "lorebooks": "Lorebook",
+    "lorebooksNone": "ไม่มี",
+    "lorebooksCount_other": "Lorebook {{count}} รายการ"
+  }
+}

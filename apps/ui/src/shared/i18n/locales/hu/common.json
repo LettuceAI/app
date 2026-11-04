@@ -1,0 +1,175 @@
+{
+  "onnxModelsUnloaded": "A tétlen modellek memóriája felszabadult: {{models}}. Szükség esetén újra betöltődnek.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Kapcsolódás az alkalmazáshoz…"
+  },
+  "navigation": {
+    "primary": "Fő navigáció",
+    "chats": "Beszélgetések",
+    "groups": "Csoportok",
+    "discover": "Felfedezés",
+    "library": "Könyvtár",
+    "settings": "Beállítások",
+    "home": "Kezdőlap",
+    "create": "Létrehozás",
+    "collapse": "Összecsukás",
+    "collapseSidebar": "Oldalsáv összecsukása",
+    "expandSidebar": "Oldalsáv kinyitása",
+    "backToApp": "Vissza az alkalmazáshoz"
+  },
+  "downloads": {
+    "loading": "Letöltések betöltése",
+    "title": "Letöltések",
+    "titleActive_one": "Letöltések, egy aktív",
+    "titleActive_other": "Letöltések, {{count}} aktív",
+    "empty": "Nincs folyamatban lévő letöltés.",
+    "emptyBody": "A telepítések és frissítések itt jelennek meg.",
+    "generic": "Letöltés",
+    "done": "{{name}} kész",
+    "failed": "{{name}} letöltése nem sikerült"
+  },
+  "window": {
+    "minimize": "Kis méret",
+    "maximize": "Teljes méret",
+    "close": "Ablak bezárása",
+    "failed": "Az ablakművelet nem sikerült. Próbáld újra."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Egyéb"
+  },
+  "actions": {
+    "retry": "Újra",
+    "cancel": "Mégse",
+    "reload": "Újratöltés"
+  },
+  "errors": {
+    "fatalTitle": "Hiba történt",
+    "fatalDescription": "Az alkalmazás váratlan problémába futott. Az újratöltés általában megoldja.",
+    "loadTitle": "Nem sikerült betölteni",
+    "notFoundTitle": "Nincs itt semmi",
+    "notFoundDescription": "Ez az oldal nem létezik az alkalmazásban.",
+    "code": {
+      "not_found": "Már nem létezik.",
+      "in_use": "Még használatban van. Távolítsd el a hivatkozásokat, és próbáld újra.",
+      "malformed": "A szolgáltató olvashatatlan választ adott.",
+      "conflict": "Valahol máshol megváltozott. Töltsd újra, és próbáld újra.",
+      "invalid_input": "Valami a kérésben érvénytelen.",
+      "unsupported": "Ez itt nem támogatott.",
+      "unavailable": "Most nem elérhető.",
+      "cancelled": "Megszakítva.",
+      "busy": "Az alkalmazás elfoglalt. Próbáld újra egy pillanat múlva.",
+      "internal": "Az alkalmazás belső hibába futott.",
+      "model_required": "Egy szükséges modell nincs telepítve.",
+      "model_unavailable": "Egy szükséges modellt nem sikerült betölteni.",
+      "transport": "Az alkalmazás háttere nem érhető el."
+    }
+  },
+  "create": {
+    "group": "Csoport létrehozása",
+    "groupBody": "Tegyél karaktereket egy közös beszélgetésbe",
+    "title": "Létrehozás",
+    "description": "Valaki, akivel beszélhetsz, vagy egy világ neki.",
+    "character": "Karakter létrehozása",
+    "characterBody": "Név, kinézet, személyiség és nyitójelenetek",
+    "persona": "Persona létrehozása",
+    "personaBody": "Ki vagy te a beszélgetésekben",
+    "lorebook": "Lorebook létrehozása",
+    "lorebookBody": "Világtények saját kézzel, fájlból vagy AI-val",
+    "import": "Kártya importálása",
+    "importBody": "PNG- vagy JSON-karakterkártya",
+    "imported": "Karakter importálva",
+    "discover": "Felfedezés böngészése",
+    "discoverBody": "Mások által megosztott karakterek"
+  },
+  "providerSelect": {
+    "placeholder": "Válassz szolgáltatót",
+    "title": "Szolgáltató",
+    "empty": "Nincs elérhető szolgáltató.",
+    "groups": {
+      "cloud": "Felhő",
+      "local": "Helyi",
+      "custom": "Egyéni"
+    }
+  },
+  "designReferences": {
+    "note": "Designjegyzet",
+    "notePlaceholder": "Rövid haj, kerek szemüveg, hosszú szürke kabát",
+    "noteHint": "Kinézet pár szóban. A generált jelenetképekhez használjuk.",
+    "images": "Referenciaképek",
+    "imagesHint": "Néhány kép, ami megmutatja a kinézetet.",
+    "add": "Kép hozzáadása",
+    "remove": "Kép eltávolítása"
+  },
+  "memoryDownload": {
+    "title": "A memóriamodell letöltése",
+    "titleDone": "A memória kész",
+    "body": "Az automatikus memóriához egy kis modell kell ezen az eszközön. Egyszer letöltődik, aztán offline fut.",
+    "bodyDone": "A karaktereid mostantól észben tartják, ami számít, még hosszú beszélgetésekben is. Beszélgetésenként kikapcsolhatod.",
+    "modelName": "Lettuce Eidos memóriamodell",
+    "keepOpen": "Tartsd nyitva az alkalmazást, amíg be nem fejeződik.",
+    "download": "Letöltés és befejezés",
+    "downloading": "Letöltés",
+    "checking": "A modell ellenőrzése",
+    "useManual": "Inkább manuális memória",
+    "doneDetail": "Telepítve és tesztelve · offline fut",
+    "failedOffline": "Megszakadt a kapcsolat. Próbáld újra a folytatáshoz.",
+    "failedOther": "A letöltés nem fejeződött be. Próbáld újra a folytatáshoz.",
+    "downloadOnly": "Letöltés",
+    "bodyInstall": "A dinamikus memóriához egy kis modell kell ezen az eszközön. Egyszer letöltődik, aztán offline fut.",
+    "failureCode": {
+      "integrity_failure": "A letöltés sérült. Próbáld újra a folytatáshoz.",
+      "resource_unavailable": "A modellszerver most nem elérhető. Próbáld újra a folytatáshoz.",
+      "storage_failure": "A modellt nem sikerült elmenteni ezen az eszközön. Ellenőrizd a szabad helyet, és próbáld újra.",
+      "timed_out": "A letöltés túl sokáig tartott. Próbáld újra a folytatáshoz."
+    }
+  },
+  "emotionDownload": {
+    "title": "Az érzelemmodell letöltése",
+    "titleDone": "Az érzések készen állnak",
+    "body": "A társ mód egy kis modellel olvassa ki az egyes üzenetek mögötti érzést ezen az eszközön. Egyszer letöltődik, aztán offline fut.",
+    "bodyDone": "Mostantól minden válasz befolyásolhatja, hogyan éreznek a társaid, és milyen közel vagytok egymáshoz.",
+    "download": "Letöltés",
+    "close": "Most nem",
+    "finish": "Kész"
+  },
+  "structuredFallback": {
+    "title": "Amikor a modell nem tud eszközöket használni",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Kompakt. A legtöbb modellel működik."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Olyan modellekhez, amelyek megbízhatóbban írnak XML-t, mint JSON-t."
+      }
+    },
+    "hint": "Először az eszközhívásokat próbáljuk. Ezt a formátumot csak akkor használjuk, ha a modell nem támogatja őket."
+  },
+  "promptPicker": {
+    "builtIn": "Beépített",
+    "builtInBody": "Az alkalmazás saját promptja",
+    "builtInMissing": "A beépített prompt nem elérhető",
+    "search": "Promptok keresése",
+    "clearSearch": "Keresés törlése",
+    "noMatches": "Nincs egyező prompt",
+    "manage": "Rendszerpromptok",
+    "manageBody": "Prompt létrehozása vagy szerkesztése",
+    "close": "Bezárás"
+  },
+  "lorebookPicker": {
+    "title": "Lorebookok",
+    "done": "Kész",
+    "empty": "Még nincs lorebook",
+    "emptyBody": "Az általad létrehozott vagy importált lorebookok itt jelennek meg.",
+    "edit": "{{name}} szerkesztése"
+  }
+}

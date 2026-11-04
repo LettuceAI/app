@@ -1,0 +1,28 @@
+{
+  "title": "Újdonságok",
+  "installed": "Telepített verzió: {{version}}",
+  "releaseMismatch": "Ezek a jegyzetek a {{version}} verzióhoz tartoznak. Nálad {{installed}} fut.",
+  "fullChangelog": "Teljes változásnapló",
+  "continue": "Tovább",
+  "markFailed": "Nem sikerült elmenteni a megtekintett verziót",
+  "types": {
+    "feature": "Új",
+    "improvement": "Fejlesztve",
+    "bugfix": "Javítva",
+    "breaking": "Törő változások"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Kontextushasználat részletezése és karcsúbb dinamikus memória",
+    "description": "Minden asszisztensüzenet mostantól megmutatja, hogy a promptja mennyit használt a kontextusablakból, és mi töltötte ki, az egyéni és a csoportos beszélgetésekben egyaránt. Az egyéni beszélgetések dinamikus memóriája már nem küldi el a teljes memóriabankot minden körben, és az embeddingek macOS-en is újra elindulnak.",
+    "changes": {
+      "contextUsage": "Az asszisztensválaszok üzenetműveletei között megjelenő Kontextushasználat panel a kontextusablakot foglalt, a válasznak fenntartott és szabad részre bontja, valamint részletezi, mi tölti ki a promptot: rendszer, karakter, persona, memóriák, lorebook, szerzői megjegyzés, társállapot és beszélgetési előzmények. Az arányokat tiktokennal becsüljük, és a szolgáltató által ténylegesen jelentett prompttokenekre skálázzuk.",
+      "groupContextUsage": "A csoportos beszélgetések üzenetei ugyanezt a panelt kapják, a tárolt üzenetből újraépítve, a lekérdezés újrafuttatása nélkül, egy Csoport szereplői kategóriával, amely a többi résztvevő profilját is számolja.",
+      "responseBudget": "llama.cpp és Ollama esetén a fenntartott válaszköltségvetés (válasz plusz gondolkodás) a tényleges kérésből olvasódik, és figyelmeztetés jelenik meg, ha a prompt és ez a fenntartás együtt meghaladja a kontextusablakot, így csökkentheted a max tokent vagy rövidítheted a kontextust, mielőtt a prompt levágásra kerül vagy a válasz félbeszakad.",
+      "developerBreakdown": "A fejlesztői üzenet hibakereső oldala ugyanezt a kategóriánkénti tokenbontást tartalmazza, összesítésekkel és a kontextusablak használatával.",
+      "memoryRetrieval": "Az egyéni beszélgetések dinamikus memóriája már nem tölti meg a {{key_memories}} elemet a teljes forró memóriabankkal minden promptnál a visszakeresett memóriák mellett. Csak az adott körben visszakeresett memóriák kerülnek elküldésre, mind a szerepjátékos karakterek, mind a társak esetében, új válaszoknál, újragenerálásoknál és folytatásoknál.",
+      "macEmbeddings": "Az embeddingek macOS-en már nem állnak le „different Team IDs” hibával. A futásidőben letöltött ONNX Runtime Microsoft által aláírt, amit a macOS nem engedett betölteni az alkalmazásba, most pedig a betöltés előtt helyben újraaláírjuk."
+    }
+  }
+}

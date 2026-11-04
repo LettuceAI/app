@@ -1,0 +1,103 @@
+{
+  "title": "Chaty",
+  "homeTitle": "Domů",
+  "characters": "Postavy",
+  "search": "Hledat chaty",
+  "searchCharacters": "Hledat postavy",
+  "count": "{{shown}} z {{total}}",
+  "noDescription": "Zatím bez popisu",
+  "lastChat": "Poslední chat {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Pokračovat v chatu",
+  "empty": {
+    "title": "Zatím žádné postavy",
+    "body": "Vytvoř si někoho na povídání, nebo importuj kartu postavy z disku.",
+    "create": "Vytvořit postavu"
+  },
+  "noMatch": {
+    "title": "Nic neodpovídá „{{query}}“",
+    "body": "Zkus jméno nebo slovo z popisu postavy.",
+    "clear": "Vymazat hledání"
+  },
+  "view": {
+    "label": "Zobrazení",
+    "current": "Zobrazení: {{view}}",
+    "home": "Domů",
+    "list": "Seznam",
+    "hero": "Velké"
+  },
+  "layout": {
+    "title": "Rozvržení",
+    "body": "Jak Chaty zobrazují tvoje postavy.",
+    "current": "Rozvržení: {{layout}}",
+    "list": {
+      "title": "Seznam",
+      "body": "Každá postava jako karta, tak jak vypadá dnes"
+    },
+    "recent": {
+      "title": "Nedávné",
+      "body": "Všechny chaty, nejnovější první, s řádkem, u kterého se zastavily"
+    }
+  },
+  "recent": {
+    "today": "Dnes",
+    "week": "Tento týden",
+    "earlier": "Dříve",
+    "empty": "Zatím žádné chaty"
+  },
+  "menu": {
+    "history": "Historie chatů",
+    "historyBody": "Dřívější chaty s touto postavou",
+    "edit": "Upravit postavu",
+    "cardStyle": "Styl karty",
+    "cardRow": "Řádek, přepnout na banner",
+    "cardBanner": "Banner, přepnout na řádek",
+    "export": "Exportovat",
+    "exportBody": "Jako kartu postavy",
+    "hide": "Skrýt z Chatů",
+    "hideBody": "Zůstane v knihovně",
+    "delete": "Smazat postavu",
+    "deleteTitle": "Smazat {{name}}?",
+    "deleteBody": "Postava a její chaty jedna na jednoho se smažou. Tohle nejde vrátit.",
+    "noChats": "Zatím žádné chaty"
+  },
+  "export": {
+    "title": "Formát exportu",
+    "body": "Vyber formát",
+    "done": "Uloženo jako {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Formát Unified Entity Card (.uec) (doporučeno)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (nejnovější specifikace)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (specifikace Tavern)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Upravit chat",
+    "editCharacter": "Upravit postavu",
+    "editGroup": "Upravit skupinu",
+    "rename": "Přejmenovat",
+    "renameTitle": "Přejmenovat chat",
+    "save": "Uložit",
+    "delete": "Smazat chat",
+    "deleteTitle": "Smazat {{title}}?",
+    "deleteBody": "Postava zůstane, tenhle příběh zmizí."
+  },
+  "sidebar": {
+    "label": "Nedávné chaty",
+    "empty": "Chaty, které začneš, se objeví tady."
+  },
+  "discover": {
+    "title": "Objevit",
+    "soonTitle": "Objevit už je na cestě",
+    "soonBody": "Místo, kde najdeš a sdílíš postavy od komunity. Stavíme ho na vlastních serverech, s moderováním od prvního dne.",
+    "create": "Vytvořit postavu",
+    "discord": "Sleduj nás na Discordu"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "create": {
+    "title": "Új persona",
+    "back": "Vissza",
+    "create": "Persona létrehozása",
+    "created": "{{name}} létrehozva",
+    "imported": "Persona importálva",
+    "unattached_one": "{{count}} lorebookot nem sikerült csatolni. Csatold a persona beállításaiban.",
+    "unattached_other": "{{count}} lorebookot nem sikerült csatolni. Csatold őket a persona beállításaiban.",
+    "defaultFailed": "{{name}} létrejött, de nem sikerült alapértelmezetté tenni.",
+    "discardTitle": "Elveted ezt a personát?",
+    "discardBody": "Az eddig megadott adatok elvesznek.",
+    "discard": "Elvetés",
+    "keepEditing": "Szerkesztés folytatása",
+    "continueTo": "Tovább: {{step}}"
+  },
+  "edit": {
+    "title": "Persona szerkesztése",
+    "back": "Vissza",
+    "backToLibrary": "Vissza a könyvtárba",
+    "more": "További műveletek",
+    "export": "Exportálás",
+    "delete": "Persona törlése",
+    "exported": "Persona exportálva",
+    "exportWarnings_one": "Exportálva {{count}} figyelmeztetéssel",
+    "exportWarnings_other": "Exportálva {{count}} figyelmeztetéssel",
+    "deleteTitle": "Törlöd: {{name}}?",
+    "deleteBody": "A persona eltávolításra kerül a használó beszélgetésekből.",
+    "deleteConfirm": "Törlés",
+    "deleteCancel": "Mégse",
+    "deleted": "{{name}} törölve",
+    "unsaved": "Nem mentett módosítások",
+    "discard": "Elvetés",
+    "save": "Mentés",
+    "saved": "Módosítások mentve",
+    "lorebooksFailed": "Mentve, de a lorebookokat nem sikerült frissíteni. Próbálj újra menteni.",
+    "leaveTitle": "Elveted a módosításaidat?",
+    "leaveBody": "A nem mentett módosítások elvesznek.",
+    "leaveDiscard": "Elvetés",
+    "leaveKeep": "Szerkesztés folytatása"
+  },
+  "steps": {
+    "identity": "Identitás",
+    "extras": "Extrák"
+  },
+  "identity": {
+    "chooseAvatar": "Kép választása",
+    "removeAvatar": "Eltávolítás",
+    "name": "Név",
+    "namePlaceholder": "Hivatásos író",
+    "nameHint": "Ki vagy te a beszélgetésekben",
+    "nickname": "Becenév",
+    "nicknamePlaceholder": "Ahogy a karakterek szólítanak",
+    "nicknameHint": "Opcionális. A név helyett használjuk a beszélgetésekben.",
+    "default": "Beállítás alapértelmezettként",
+    "defaultBody": "Az új beszélgetések ezzel a personával indulnak",
+    "import": "Importálás fájlból",
+    "importBody": "LettuceAI-ból exportált persona importálása.",
+    "chooseFile": "Fájl választása"
+  },
+  "about": {
+    "description": "Leírás",
+    "descriptionPlaceholder": "Hogyan szólítsanak a karakterek, a háttered, preferenciáid és stílusod",
+    "descriptionHint": "Használd a {{user}} elemet ehhez a personához, és a {{char}} elemet a karakterhez.",
+    "words_one": "{{count}} szó",
+    "words_other": "{{count}} szó"
+  },
+  "extras": {
+    "body": "Itt minden opcionális.",
+    "lorebooks": "Lorebookok",
+    "lorebooksNone": "Nincs",
+    "lorebooksCount_one": "{{count}} lorebook",
+    "lorebooksCount_other": "{{count}} lorebook"
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "cancel": "Zrušit",
+  "retry": "Zkusit znovu",
+  "notRecognized": "Tenhle soubor není karta ani záloha LettuceAI.",
+  "import": {
+    "title": {
+      "character": "Importovat postavu",
+      "persona": "Importovat personu",
+      "lorebook": "Importovat lorebook"
+    },
+    "kind": {
+      "character": "Postava",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_one": "{{count}} záznam",
+    "entries_few": "{{count}} záznamy",
+    "entries_many": "{{count}} záznamu",
+    "entries_other": "{{count}} záznamů",
+    "confirm": "Importovat",
+    "open": "Otevřít",
+    "done": "{{name}} importováno",
+    "started": "Import zahájen",
+    "warnings_one": "Importováno s {{count}} upozorněním",
+    "warnings_few": "Importováno s {{count}} upozorněními",
+    "warnings_many": "Importováno s {{count}} upozorněním",
+    "warnings_other": "Importováno s {{count}} upozorněními"
+  },
+  "restore": {
+    "title": "Obnovit zálohu",
+    "created": "Vytvořeno",
+    "version": "Verze aplikace",
+    "password": "Heslo",
+    "warning": "Obnovením nahradíš všechny chaty, postavy a nastavení v tomto zařízení obsahem zálohy. Tvoje současná data zůstanou jako samostatný soubor.",
+    "action": "Obnovit",
+    "stop": "Zastavit",
+    "running": "Obnovování",
+    "starting": "Spouštění obnovení",
+    "waiting": "Čekání na spuštění obnovení",
+    "step": "Krok {{step}} z {{total}}",
+    "keepOpen": "Velké zálohy mohou trvat několik minut. Nech aplikaci otevřenou, dokud se to nedokončí.",
+    "stages": {
+      "decode": "Otevírání zálohy",
+      "stage": "Příprava souborů",
+      "write": "Zapisování tvých dat",
+      "verify": "Kontrola obnovených dat",
+      "switch": "Přepnutí na obnovená data"
+    },
+    "failed": "Obnovení se zastavilo",
+    "failedAt": "Obnovení se zastavilo u kroku {{step}} z {{total}}: {{stage}}",
+    "confirmTitle": "Nahradit všechno v tomto zařízení?",
+    "confirmBody": "Všechny chaty, postavy a nastavení se nahradí obsahem této zálohy. Tvoje současná data zůstanou jako samostatný soubor.",
+    "confirm": "Obnovit",
+    "done": "Záloha obnovena",
+    "notBackup": "Tenhle soubor není záloha LettuceAI.",
+    "models": {
+      "title": "Stáhnout modely, které tvoje data potřebují",
+      "required": "Bez nich tyto funkce přestanou fungovat, takže je musíš stáhnout, než budeš pokračovat."
+    },
+    "warnings_one": "Záloha obnovena s {{count}} upozorněním",
+    "warnings_few": "Záloha obnovena s {{count}} upozorněními",
+    "warnings_many": "Záloha obnovena s {{count}} upozorněním",
+    "warnings_other": "Záloha obnovena s {{count}} upozorněními",
+    "failure": {
+      "unknown": "Zálohu se nepodařilo obnovit.",
+      "backup_authentication": "Heslo je špatné nebo je záloha poškozená.",
+      "backup_invalid_envelope": "Tenhle soubor není platná záloha.",
+      "backup_limit_exceeded": "Tahle záloha je větší, než aplikace dokáže obnovit.",
+      "backup_unavailable": "Zálohy teď nejsou dostupné.",
+      "backup_file_not_found": "Záložní soubor se nepodařilo najít.",
+      "backup_permission_denied": "Aplikace nemá oprávnění tento soubor číst.",
+      "backup_file_busy": "Soubor používá jiná aplikace.",
+      "backup_file_unavailable": "Záložní soubor se nepodařilo přečíst.",
+      "backup_file_unsupported": "Tuhle zálohu vytvořila verze, kterou aplikace neumí přečíst.",
+      "backup_source_is_target": "Záloha je soubor, který aplikace právě používá.",
+      "backup_cancelled": "Obnovení bylo zrušeno.",
+      "backup_retry_required": "Obnovení se nedokončilo. Zkus to znovu.",
+      "backup_recovery_required": "Obnovení vyžaduje znovuotevření aplikace.",
+      "backup_verification_failed": "Záloha neprošla ověřením."
+    }
+  }
+}

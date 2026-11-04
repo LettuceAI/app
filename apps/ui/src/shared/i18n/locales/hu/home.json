@@ -1,0 +1,103 @@
+{
+  "title": "Beszélgetések",
+  "homeTitle": "Kezdőlap",
+  "characters": "Karakterek",
+  "search": "Beszélgetések keresése",
+  "searchCharacters": "Karakterek keresése",
+  "count": "{{shown}} / {{total}}",
+  "noDescription": "Még nincs leírás",
+  "lastChat": "Utolsó beszélgetés: {{when}}",
+  "continueMeta": "{{name}} · {{when}}",
+  "continueChat": "Beszélgetés folytatása",
+  "empty": {
+    "title": "Még nincsenek karakterek",
+    "body": "Hozz létre valakit, akivel beszélhetsz, vagy importálj karakterkártyát az eszközödről.",
+    "create": "Karakter létrehozása"
+  },
+  "noMatch": {
+    "title": "Semmi sem egyezik ezzel: „{{query}}”",
+    "body": "Próbálj egy nevet vagy egy szót a karakter leírásából.",
+    "clear": "Keresés törlése"
+  },
+  "view": {
+    "label": "Nézet",
+    "current": "Nézet: {{view}}",
+    "home": "Kezdőlap",
+    "list": "Lista",
+    "hero": "Kiemelt"
+  },
+  "layout": {
+    "title": "Elrendezés",
+    "body": "Hogyan mutatja a Beszélgetések a karaktereidet.",
+    "current": "Elrendezés: {{layout}}",
+    "list": {
+      "title": "Lista",
+      "body": "Minden karakter kártyaként, ahogy ma kinéznek"
+    },
+    "recent": {
+      "title": "Legutóbbiak",
+      "body": "Minden beszélgetés, a legújabb elöl, azzal a sorral, ahol abbamaradt"
+    }
+  },
+  "recent": {
+    "today": "Ma",
+    "week": "Ezen a héten",
+    "earlier": "Korábban",
+    "empty": "Még nincs beszélgetés"
+  },
+  "menu": {
+    "history": "Beszélgetési előzmények",
+    "historyBody": "Korábbi beszélgetések ezzel a karakterrel",
+    "edit": "Karakter szerkesztése",
+    "cardStyle": "Kártyastílus",
+    "cardRow": "Sor, váltás bannerre",
+    "cardBanner": "Banner, váltás sorra",
+    "export": "Exportálás",
+    "exportBody": "Karakterkártyaként",
+    "hide": "Elrejtés a Beszélgetésekből",
+    "hideBody": "A könyvtáradban marad",
+    "delete": "Karakter törlése",
+    "deleteTitle": "Törlöd: {{name}}?",
+    "deleteBody": "A karakter és az egyéni beszélgetései törlődnek. Ez nem vonható vissza.",
+    "noChats": "Még nincs beszélgetés"
+  },
+  "export": {
+    "title": "Exportformátum",
+    "body": "Válassz formátumot",
+    "done": "Mentve: {{name}}",
+    "uec": {
+      "title": "UEC",
+      "body": "Unified Entity Card (.uec) formátum (ajánlott)."
+    },
+    "v3": {
+      "title": "Character Card V3",
+      "body": "Character Card V3 JSON (legújabb specifikáció)."
+    },
+    "v2": {
+      "title": "Character Card V2",
+      "body": "Character Card V2 JSON (Tavern specifikáció)."
+    }
+  },
+  "chatMenu": {
+    "editChat": "Beszélgetés szerkesztése",
+    "editCharacter": "Karakter szerkesztése",
+    "editGroup": "Csoport szerkesztése",
+    "rename": "Átnevezés",
+    "renameTitle": "Beszélgetés átnevezése",
+    "save": "Mentés",
+    "delete": "Beszélgetés törlése",
+    "deleteTitle": "Törlöd: {{title}}?",
+    "deleteBody": "A karakter megmarad; ez a történet véget ér."
+  },
+  "sidebar": {
+    "label": "Legutóbbi beszélgetések",
+    "empty": "Az általad indított beszélgetések itt jelennek meg."
+  },
+  "discover": {
+    "title": "Felfedezés",
+    "soonTitle": "A Felfedezés hamarosan érkezik",
+    "soonBody": "Hely, ahol a közösség által készített karaktereket találhatsz és oszthatsz meg. A saját szervereinken építjük, a moderálással az első naptól.",
+    "create": "Karakter létrehozása",
+    "discord": "Kövess minket Discordon"
+  }
+}

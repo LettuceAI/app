@@ -1,0 +1,28 @@
+{
+  "title": "Co je nového",
+  "installed": "Nainstalovaná verze: {{version}}",
+  "releaseMismatch": "Tyhle poznámky jsou pro verzi {{version}}. Ty používáš {{installed}}.",
+  "fullChangelog": "Úplný seznam změn",
+  "continue": "Pokračovat",
+  "markFailed": "Prohlédnutou verzi se nepodařilo uložit",
+  "types": {
+    "feature": "Přidáno",
+    "improvement": "Vylepšeno",
+    "bugfix": "Opraveno",
+    "breaking": "Nekompatibilní změny"
+  },
+  "release": {
+    "version": "2.2.5",
+    "date": "2026-09-10",
+    "title": "2.2.5: Rozpis využití kontextu a úspornější dynamická paměť",
+    "description": "Každá zpráva asistenta teď ukazuje, kolik kontextového okna zabral její prompt a co ho naplnilo, a to i v chatech jedna na jednoho i ve skupinách. Dynamická paměť v chatech jedna na jednoho už neposílá celou banku pamětí při každém tahu a embeddingy se na macOS zase spouštějí.",
+    "changes": {
+      "contextUsage": "Panel Využití kontextu v akcích u odpovědí asistenta ukazuje kontextové okno rozdělené na obsazené, rezervované pro odpověď a volné, plus rozpis toho, co naplňuje prompt: systém, postava, persona, paměti, lorebook, poznámka autora, stav společníka a historie chatu. Podíly se odhadují pomocí tiktoken a přepočítávají se na tokeny promptu, které poskytovatel skutečně nahlásil.",
+      "groupContextUsage": "Zprávy ve skupinovém chatu dostávají stejný panel, sestavený z uložené zprávy bez opětovného načítání, s kategorií Obsazení skupiny, která počítá profily ostatních účastníků.",
+      "responseBudget": "Na llama.cpp a Ollama se rezervovaný rozpočet na odpověď (odpověď plus uvažování) čte ze skutečného požadavku a objeví se varování, když prompt a tato rezervace společně přesáhnou kontextové okno, takže můžeš snížit maximální počet tokenů nebo zkrátit kontext dřív, než se prompt ořízne nebo odpověď zkrátí.",
+      "developerBreakdown": "Ladicí stránka zprávy vývojáře obsahuje stejný rozpis tokenů po kategoriích, s celkovými součty a využitím kontextového okna.",
+      "memoryRetrieval": "Dynamická paměť v chatech jedna na jednoho už neplní {{key_memories}} celou horkou bankou pamětí při každém promptu nad rámec načtených pamětí. Posílají se jen paměti načtené pro daný tah, a to jak u postav pro hraní rolí, tak u společníků, při nových odpovědích, regeneracích i pokračováních.",
+      "macEmbeddings": "Embeddingy se už na macOS nespouštějí s chybou „different Team IDs“. ONNX Runtime stahovaný za běhu je podepsaný Microsoftem, který macOS odmítal načíst do aplikace, a teď se před načtením podepisuje znovu lokálně."
+    }
+  }
+}

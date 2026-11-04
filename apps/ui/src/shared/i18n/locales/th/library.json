@@ -1,0 +1,121 @@
+{
+  "triggerPreview": "ตัวอย่างทริกเกอร์",
+  "title": "คลัง",
+  "loadMore": "โหลดเพิ่ม",
+  "search": "ค้นหาคลัง",
+  "show": "แสดง",
+  "filters": {
+    "all": "ทั้งหมด",
+    "characters": "ตัวละคร",
+    "personas": "เพอร์โซนา",
+    "lorebooks": "Lorebook",
+    "images": "รูปภาพ",
+    "audio": "เสียง"
+  },
+  "kinds": {
+    "character": "ตัวละคร",
+    "persona": "เพอร์โซนา",
+    "lorebook": "Lorebook"
+  },
+  "you": "คุณ",
+  "entries_other": "{{count}} รายการ",
+  "defaultPersona": "เพอร์โซนา · ค่าเริ่มต้นของคุณ",
+  "menu": {
+    "start": "เริ่มแชท",
+    "edit_character": "แก้ไขตัวละคร",
+    "edit_persona": "แก้ไขเพอร์โซนา",
+    "edit_lorebook": "แก้ไข Lorebook",
+    "default": "ใช้เป็นเพอร์โซนาเริ่มต้น",
+    "defaultHint": "สำหรับแชทที่ไม่ได้เลือกเพอร์โซนาอื่น",
+    "export": "ส่งออก",
+    "export_character": "เป็นการ์ดตัวละคร",
+    "export_persona": "เป็นไฟล์ UEC",
+    "export_lorebook": "เป็นไฟล์ UEC หรือ JSON",
+    "delete_character": "ลบตัวละคร",
+    "delete_persona": "ลบเพอร์โซนา",
+    "delete_lorebook": "ลบ Lorebook",
+    "save": "บันทึกลงอุปกรณ์",
+    "deleteImage": "ลบรูปภาพ",
+    "deleteAudio": "ลบการบันทึกเสียง",
+    "avatar": "ใช้เป็นรูปโปรไฟล์ของ {{name}}",
+    "more": "เพิ่มเติมสำหรับ {{name}}",
+    "background": "พื้นหลัง",
+    "generated": "สร้างแล้ว",
+    "uploaded": "อัปโหลดแล้ว"
+  },
+  "create": {
+    "title": "สร้าง",
+    "description": "เพิ่มบางอย่างลงในคลังของคุณ",
+    "character": "ใครสักคนให้คุยด้วย",
+    "persona": "ตัวตนของคุณในแชท",
+    "lorebook": "ข้อมูลโลกที่ตัวละครสามารถอ้างอิงได้",
+    "import": "นำเข้าไฟล์",
+    "importHint": "การ์ดตัวละคร เพอร์โซนา หรือ Lorebook",
+    "new_character": "ตัวละครใหม่",
+    "new_lorebook": "Lorebook ใหม่",
+    "button_character": "สร้างตัวละคร",
+    "button_persona": "สร้างเพอร์โซนา",
+    "button_lorebook": "สร้าง Lorebook"
+  },
+  "edit": {
+    "name": "ชื่อ",
+    "hint_character": "แสดงบนการ์ดและส่วนหัวแชท",
+    "placeholder_character": "เช่น Cassian",
+    "placeholder_lorebook": "เช่น ประตูทางเหนือ",
+    "create": "สร้าง",
+    "cancel": "ยกเลิก"
+  },
+  "delete": {
+    "title": "ลบ {{name}}?",
+    "confirm": "ลบ",
+    "character": "แชทและความจำจะถูกลบไปด้วย",
+    "persona": "เพอร์โซนาจะถูกนำออกจากแชทที่ใช้งานอยู่",
+    "lorebook": "ตัวละครและแชทที่ใช้งานจะไม่สามารถเข้าถึงรายการภายในได้",
+    "image": "รูปภาพจะถูกลบออกจากอุปกรณ์นี้ รูปที่ยังใช้งานอยู่จะลบไม่ได้",
+    "audio": "การบันทึกเสียงจะถูกลบออกจากอุปกรณ์นี้ รายการที่ยังใช้งานอยู่จะลบไม่ได้"
+  },
+  "empty": {
+    "all": {
+      "title": "คลังของคุณว่างเปล่า",
+      "description": "ตัวละคร เพอร์โซนา และ Lorebook ที่สร้างหรือนำเข้าจะถูกเก็บไว้ที่นี่"
+    },
+    "characters": {
+      "title": "ยังไม่มีตัวละคร",
+      "description": "ตัวละครคือคนที่คุณคุยด้วย: ชื่อ ประวัติ และวิธีพูด"
+    },
+    "personas": {
+      "title": "ยังไม่มีเพอร์โซนา",
+      "description": "เพอร์โซนาคือตัวตนของคุณในแชท ตัวละครจะเห็นชื่อและคำอธิบายของเพอร์โซนา"
+    },
+    "lorebooks": {
+      "title": "ยังไม่มี Lorebook",
+      "description": "ข้อมูลโลกที่ตัวละครสามารถอ้างอิงได้เมื่อถูกกล่าวถึงในบทสนทนา"
+    },
+    "images": {
+      "title": "ยังไม่มีรูปภาพ",
+      "description": "รูปภาพที่คุณสร้างในแชทจะถูกเก็บไว้ที่นี่"
+    },
+    "audio": {
+      "title": "ยังไม่มีเสียง",
+      "description": "เสียงพูดที่คุณสร้างหรือบันทึกจะถูกเก็บไว้ที่นี่"
+    },
+    "matches": "ไม่พบสิ่งที่ตรงกับ “{{query}}”",
+    "searchAll": "ลองชื่ออื่น หรือบางส่วนของคำอธิบาย",
+    "searchSection": "ไม่มีอะไรในส่วนนี้ที่ตรง ส่วนอื่นของคลังอาจมี",
+    "clear": "ล้างการค้นหา",
+    "everything": "ค้นหาทั้งหมด",
+    "import": "นำเข้า"
+  },
+  "toast": {
+    "created": "เพิ่ม {{name}} แล้ว",
+    "deleted": "ลบ {{name}} แล้ว",
+    "default": "{{name}} เป็นเพอร์โซนาเริ่มต้นของคุณ",
+    "exported": "ส่งออกไฟล์แล้ว",
+    "imported": "นำเข้าไฟล์แล้ว",
+    "warnings_other": "ถ่ายโอนไฟล์พร้อมคำเตือน {{count}} รายการ",
+    "mediaSaved": "บันทึกลงอุปกรณ์แล้ว",
+    "avatar": "อัปเดตรูปโปรไฟล์แล้ว"
+  },
+  "draft": "ฉบับร่าง",
+  "untitledDraft": "ฉบับร่าง Lorebook ไม่มีชื่อ"
+}

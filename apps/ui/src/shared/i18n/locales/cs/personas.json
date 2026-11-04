@@ -1,0 +1,83 @@
+{
+  "create": {
+    "title": "Nová persona",
+    "back": "Zpět",
+    "create": "Vytvořit personu",
+    "created": "{{name}} vytvořena",
+    "imported": "Persona importována",
+    "unattached_one": "{{count}} lorebook nešel připojit. Připoj ho v nastavení persony.",
+    "unattached_few": "{{count}} lorebooky nešly připojit. Připoj je v nastavení persony.",
+    "unattached_many": "{{count}} lorebooku nešlo připojit. Připoj je v nastavení persony.",
+    "unattached_other": "{{count}} lorebooků nešlo připojit. Připoj je v nastavení persony.",
+    "defaultFailed": "{{name}} byla vytvořena, ale nepodařilo se ji nastavit jako výchozí.",
+    "discardTitle": "Zahodit tuhle personu?",
+    "discardBody": "Co jsi zatím zadal, se ztratí.",
+    "discard": "Zahodit",
+    "keepEditing": "Pokračovat v úpravách",
+    "continueTo": "Pokračovat: {{step}}"
+  },
+  "edit": {
+    "title": "Upravit personu",
+    "back": "Zpět",
+    "backToLibrary": "Zpět do knihovny",
+    "more": "Další akce",
+    "export": "Exportovat",
+    "delete": "Smazat personu",
+    "exported": "Persona exportována",
+    "exportWarnings_one": "Exportováno s {{count}} upozorněním",
+    "exportWarnings_few": "Exportováno s {{count}} upozorněními",
+    "exportWarnings_many": "Exportováno s {{count}} upozorněním",
+    "exportWarnings_other": "Exportováno s {{count}} upozorněními",
+    "deleteTitle": "Smazat {{name}}?",
+    "deleteBody": "Persona se odebere z chatů, které ji používají.",
+    "deleteConfirm": "Smazat",
+    "deleteCancel": "Zrušit",
+    "deleted": "{{name}} smazána",
+    "unsaved": "Neuložené změny",
+    "discard": "Zahodit",
+    "save": "Uložit",
+    "saved": "Změny uloženy",
+    "lorebooksFailed": "Uloženo, ale lorebooky se nepodařilo aktualizovat. Zkus uložit znovu.",
+    "leaveTitle": "Zahodit změny?",
+    "leaveBody": "Neuložené změny se ztratí.",
+    "leaveDiscard": "Zahodit",
+    "leaveKeep": "Pokračovat v úpravách"
+  },
+  "steps": {
+    "identity": "Identita",
+    "extras": "Doplňky"
+  },
+  "identity": {
+    "chooseAvatar": "Vybrat obrázek",
+    "removeAvatar": "Odebrat",
+    "name": "Jméno",
+    "namePlaceholder": "Profesionální spisovatel",
+    "nameHint": "Kdo jsi v chatech",
+    "nickname": "Přezdívka",
+    "nicknamePlaceholder": "Jak ti postavy říkají",
+    "nicknameHint": "Nepovinné. V chatech se používá místo jména.",
+    "default": "Používat jako výchozí",
+    "defaultBody": "Nové chaty začnou s touto personou",
+    "import": "Importovat ze souboru",
+    "importBody": "Importuj personu exportovanou z LettuceAI.",
+    "chooseFile": "Vybrat soubor"
+  },
+  "about": {
+    "description": "Popis",
+    "descriptionPlaceholder": "Jak se na tebe mají postavy obracet, tvůj původ, preference a styl",
+    "descriptionHint": "Použij {{user}} pro tuhle personu a {{char}} pro postavu.",
+    "words_one": "{{count}} slovo",
+    "words_few": "{{count}} slova",
+    "words_many": "{{count}} slova",
+    "words_other": "{{count}} slov"
+  },
+  "extras": {
+    "body": "Všechno tady je nepovinné.",
+    "lorebooks": "Lorebooky",
+    "lorebooksNone": "Žádné",
+    "lorebooksCount_one": "{{count}} lorebook",
+    "lorebooksCount_few": "{{count}} lorebooky",
+    "lorebooksCount_many": "{{count}} lorebooku",
+    "lorebooksCount_other": "{{count}} lorebooků"
+  }
+}

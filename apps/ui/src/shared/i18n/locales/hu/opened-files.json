@@ -1,0 +1,76 @@
+{
+  "cancel": "Mégse",
+  "retry": "Újra",
+  "notRecognized": "Ez a fájl nem LettuceAI-kártya vagy biztonsági mentés.",
+  "import": {
+    "title": {
+      "character": "Karakter importálása",
+      "persona": "Persona importálása",
+      "lorebook": "Lorebook importálása"
+    },
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "lorebook": "Lorebook"
+    },
+    "entries_one": "{{count}} bejegyzés",
+    "entries_other": "{{count}} bejegyzés",
+    "confirm": "Importálás",
+    "open": "Megnyitás",
+    "done": "{{name}} importálva",
+    "started": "Importálás elindult",
+    "warnings_one": "Importálva {{count}} figyelmeztetéssel",
+    "warnings_other": "Importálva {{count}} figyelmeztetéssel"
+  },
+  "restore": {
+    "title": "Biztonsági mentés visszaállítása",
+    "created": "Létrehozva",
+    "version": "Alkalmazásverzió",
+    "password": "Jelszó",
+    "warning": "A visszaállítás minden beszélgetést, karaktert és beállítást lecserél ezen az eszközön a biztonsági mentésre. A jelenlegi adataid külön fájlként megmaradnak.",
+    "action": "Visszaállítás",
+    "stop": "Leállítás",
+    "running": "Visszaállítás",
+    "starting": "Visszaállítás indítása",
+    "waiting": "Várakozás a visszaállítás elindulására",
+    "step": "{{step}}. lépés / {{total}}",
+    "keepOpen": "A nagy biztonsági mentések több percig is eltarthatnak. Tartsd nyitva az alkalmazást, amíg be nem fejeződik.",
+    "stages": {
+      "decode": "A biztonsági mentés megnyitása",
+      "stage": "Fájlok előkészítése",
+      "write": "Adataid írása",
+      "verify": "A visszaállított adatok ellenőrzése",
+      "switch": "Átváltás a visszaállított adatokra"
+    },
+    "failed": "A visszaállítás leállt",
+    "failedAt": "A visszaállítás a {{step}}. lépésnél állt le ({{total}}): {{stage}}",
+    "confirmTitle": "Lecseréled mindent ezen az eszközön?",
+    "confirmBody": "Minden beszélgetés, karakter és beállítás lecserélődik erre a biztonsági mentésre. A jelenlegi adataid külön fájlként megmaradnak.",
+    "confirm": "Visszaállítás",
+    "done": "Biztonsági mentés visszaállítva",
+    "notBackup": "Az a fájl nem LettuceAI biztonsági mentés.",
+    "models": {
+      "title": "Töltsd le az adataidhoz szükséges modelleket",
+      "required": "Ezek a funkciók nélkülük nem működnek, ezért a folytatás előtt le kell tölteni őket."
+    },
+    "warnings_one": "Biztonsági mentés visszaállítva {{count}} figyelmeztetéssel",
+    "warnings_other": "Biztonsági mentés visszaállítva {{count}} figyelmeztetéssel",
+    "failure": {
+      "unknown": "A biztonsági mentést nem sikerült visszaállítani.",
+      "backup_authentication": "A jelszó hibás, vagy a biztonsági mentés sérült.",
+      "backup_invalid_envelope": "Ez a fájl nem érvényes biztonsági mentés.",
+      "backup_limit_exceeded": "Ez a biztonsági mentés nagyobb, mint amit az alkalmazás vissza tud állítani.",
+      "backup_unavailable": "A biztonsági mentések most nem elérhetők.",
+      "backup_file_not_found": "A biztonsági mentés fájlja nem található.",
+      "backup_permission_denied": "Az alkalmazásnak nincs engedélye a fájl olvasására.",
+      "backup_file_busy": "A fájlt egy másik alkalmazás használja.",
+      "backup_file_unavailable": "A biztonsági mentés fájlját nem sikerült beolvasni.",
+      "backup_file_unsupported": "Ezt a biztonsági mentést egy olyan verzió készítette, amelyet az alkalmazás nem tud beolvasni.",
+      "backup_source_is_target": "A biztonsági mentés az a fájl, amelyet az alkalmazás használ.",
+      "backup_cancelled": "A visszaállítás megszakítva.",
+      "backup_retry_required": "A visszaállítás nem fejeződött be. Próbáld újra.",
+      "backup_recovery_required": "A visszaállításhoz újra kell nyitni az alkalmazást.",
+      "backup_verification_failed": "A biztonsági mentés nem ment át az ellenőrzésen."
+    }
+  }
+}

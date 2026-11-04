@@ -1,0 +1,1185 @@
+{
+  "sceneImage": {
+    "title": "Jelenetkép generálása",
+    "regenerate": "Jelenetkép újragenerálása",
+    "hint": "Rajzold meg ezt a pillanatot a beszélgetésből",
+    "write": "Prompt írása",
+    "writeHint": "Írd le te a képet",
+    "askAi": "Kérj AI-tól promptot",
+    "askAiHint": "Használd a beszélgetést és a designreferenciákat",
+    "rewrite": "Újraírás AI-val",
+    "prompt": "Jelenetprompt",
+    "promptHint": "A kép generálása előtt nézd át vagy szerkeszd a promptot.",
+    "cast": "A képen",
+    "castHint": "Válaszd ki, ki jelenjen meg a jelenetben.",
+    "castPersona": "A personád",
+    "castEmpty": "Válassz legalább egy személyt a jelenethez.",
+    "placeholder": "Írd le a karaktereket, a helyszínt és a pillanatot…",
+    "generate": "Kép generálása",
+    "review": "Jelenetkép áttekintése",
+    "requested": "Egy jelenetkép átnézésre kész",
+    "requestedHint": "A kép elkészítése előtt ellenőrizd a promptot.",
+    "retry": "Újra",
+    "dismiss": "Bezárás",
+    "disabled": "A jelenetgenerálás ki van kapcsolva",
+    "noModel": "Nincs kompatibilis jelenetkép-modell",
+    "noWriter": "Válassz kompatibilis promptírót a képbeállításokban",
+    "setupHint": "Kapcsold be a jelenetgenerálást, és válassz képmodellt a beállításokban.",
+    "settings": "Képbeállítások megnyitása",
+    "writing": "A jelenetprompt írása",
+    "thinking": "Gondolkodás a jeleneten",
+    "generating": "A jelenetkép generálása",
+    "attaching": "A jelenetkép hozzáadása az üzenethez",
+    "progress": "{{current}} / {{total}}",
+    "queuePosition": "Sorszám: {{position}}",
+    "phase": {
+      "starting": "A képmotor indítása",
+      "loading": "A képmodell betöltése",
+      "sampling": "A jelenetkép generálása",
+      "queued": "Várakozás a jelenetkép generálására",
+      "generating": "A jelenetkép generálása",
+      "retrying": "Jelenetgenerálás újrapróbálása",
+      "cancelled": "Jelenetgenerálás megszakítása"
+    },
+    "failed": "Nem sikerült generálni a jelenetképet",
+    "promptFailed": "Nem sikerült megírni a jelenetpromptot",
+    "writerError": {
+      "scene_prompt_disabled": "A jelenetgenerálás ki van kapcsolva a képbeállításokban.",
+      "scene_prompt_no_model": "Válassz kompatibilis jelenetprompt-írót a képbeállításokban.",
+      "scene_prompt_no_reply": "A promptíró nem adott szöveget. Próbáld újra, vagy írd meg te a promptot.",
+      "cancelled": "A prompt írása megszakítva.",
+      "failed": "Próbáld újra, vagy írd meg te a promptot."
+    },
+    "error": {
+      "media_unavailable": "A képtárhely nem elérhető.",
+      "disabled": "A jelenetgenerálás ki van kapcsolva a képbeállításokban.",
+      "no_model": "Válassz kompatibilis jelenetkép-modellt a képbeállításokban.",
+      "no_image": "A modell nem adott vissza képet.",
+      "message_unavailable": "A válasz megváltozott, mielőtt a képe hozzáadható lett volna.",
+      "interrupted": "A generálás megszakadt. Próbáld újra.",
+      "failed": "Nézd át a promptot, és próbáld újra."
+    }
+  },
+  "branchSetup": {
+    "groupTitle": "Elágazás csoportos beszélgetésbe",
+    "characterTitle": "Elágazás másik karakterhez",
+    "history": "A beszélgetést a kijelölt üzenetig másolja, a memóriáival együtt.",
+    "sourceLocked": "A jelenlegi karakter a csoportban marad. Válassz legalább még egyet.",
+    "characters": "Karakterek",
+    "defaultName": "{{name}} ág",
+    "search": "Karakterek keresése",
+    "empty": "Nem található karakter",
+    "create": "Elágazás létrehozása",
+    "memberCount_one": "{{count}} karakter kiválasztva",
+    "memberCount_other": "{{count}} karakter kiválasztva",
+    "changed": "Ez a beszélgetés megváltozott. Válaszd ki újra az elágazás pontját.",
+    "chooseAgain": "Újraválasztás"
+  },
+  "historyPage": {
+    "archivedCharacter": "Állítsd vissza ezt a karaktert a könyvtáradban egy új beszélgetés indításához."
+  },
+  "header": {
+    "back": "Vissza",
+    "memories": "Memóriák, {{count}}",
+    "memoriesBusy": "Memóriák, a legutóbbi válasz olvasása",
+    "search": "Üzenetek keresése",
+    "options": "Beszélgetés beállításai",
+    "onDevice": "Eszközön",
+    "untitled": "Beszélgetés"
+  },
+  "search": {
+    "placeholder": "Keresés ebben a beszélgetésben",
+    "done": "Kész",
+    "previous": "Előző találat",
+    "next": "Következő találat",
+    "position": "{{index}} / {{total}}",
+    "none": "Nincs találat"
+  },
+  "timeline": {
+    "today": "Ma",
+    "yesterday": "Tegnap",
+    "loadingOlder": "Korábbi üzenetek betöltése",
+    "empty": "Még nincsenek üzenetek",
+    "jumpToLatest": "Ugrás a legutóbbihoz",
+    "selectingSpeaker": "Karakter kiválasztása…"
+  },
+  "composer": {
+    "placeholder": "Üzenet {{name}} karakternek…",
+    "systemSend": {
+      "title": "Küldés rendszerüzenetként?",
+      "description": "A beviteli mező tartalmát látható rendszerüzenetként küldi el. Nem indít generálást.",
+      "send": "Küldés"
+    }
+  },
+  "members": {
+    "add": {
+      "row": "Karakter hozzáadása",
+      "title": "Karakter hozzáadása",
+      "body": "Mostantól csatlakozik ehhez a beszélgetéshez.",
+      "search": "Karakterek keresése",
+      "empty": "Minden karakter már ebben a beszélgetésben van",
+      "noMatch": "Nincs egyező karakter"
+    },
+    "remove": {
+      "label": "{{name}} eltávolítása",
+      "title": "Eltávolítod {{name}} karaktert?",
+      "body": "Nem válaszol többé ebben a beszélgetésben. A korábbi üzenetei megmaradnak.",
+      "confirm": "Eltávolítás"
+    },
+    "followGroup": "Csoporttagok követése",
+    "followGroupHint": "Tagok és némított karakterek visszaállítása a csoportbeállításokra",
+    "models": "Karaktermodellek ebben a beszélgetésben",
+    "followModels": "Csoportmodellek követése",
+    "followModelsHint": "Minden karaktermodell-felülírás eltávolítása ebből a beszélgetésből",
+    "characterModel": "Karakter modellje",
+    "characterModelHint": "A karakter saját modellbeállításának használata"
+  },
+  "mention": {
+    "title": "Karakter említése",
+    "select": "kiválasztáshoz",
+    "key": "Tab"
+  },
+  "participants": {
+    "mention": "{{name}} említése",
+    "unmention": "{{name}} említésének eltávolítása",
+    "muted": "{{name}} némítva van. Tartsd nyomva vagy jobb klikkelj a némítás feloldásához",
+    "speak": "{{name}} válaszoljon"
+  },
+  "director": {
+    "hint": "Koppints egy karakterre a válaszoló kiválasztásához",
+    "selectedHint": "{{name}} fog válaszolni, amikor küldesz",
+    "actionHint": "A Küldés hozzáadja az üzeneted. Koppints egy karakterre, hogy válaszoljon",
+    "respondingHint": "{{name}} válaszol",
+    "addMessage": "Üzenet hozzáadása válasz nélkül",
+    "noAttachments": "A rendező módban lévő üzenetek nem tartalmazhatnak mellékletet"
+  },
+  "speaker": {
+    "speak": {
+      "title": "Ki beszél következőként",
+      "body": "Válassz egy tagot a válaszadásra, vagy hagyd a csoportra a döntést."
+    },
+    "branch": {
+      "title": "Folytatás egyénileg",
+      "body": "Új beszélgetést nyit egy taggal, a történettel eddig az üzenetig."
+    },
+    "regenerate": {
+      "title": "Karakter választása",
+      "body": "Csak erre a válaszra. Némított tagok is választhatók.",
+      "same": "Ugyanaz a karakter",
+      "search": "Karakterek keresése",
+      "noMatches": "Nincs a keresésnek megfelelő karakter"
+    },
+    "auto": "Hagyd a csoportra a döntést",
+    "autoBody": "A beszélgetés beszélőválasztását használja",
+    "muted": "Kimarad, hacsak meg nem nevezik"
+  },
+  "message": {
+    "image": "Csatolt kép",
+    "imagePrompt": "Képprompt",
+    "copyImagePrompt": "Prompt másolása",
+    "titleAssistant": "{{name}} üzenete",
+    "titleUser": "Az üzeneted",
+    "titleScene": "Jelenet",
+    "titleSystem": "Rendszerüzenet",
+    "audio": "Hangklip",
+    "video": "Videófájl",
+    "document": "Dokumentum"
+  },
+  "menu": {
+    "selection": {
+      "title": "Miért ez a karakter válaszolt",
+      "fallback": "Az LLM-választás nem volt elérhető. Részvétel és legutóbbi válaszok alapján választva."
+    },
+    "copy": "Szöveg másolása",
+    "edit": "Szerkesztés",
+    "regenerate": "Újragenerálás",
+    "regenerateHint": "Megtartja ezt a verziót, húzd az összehasonlításhoz",
+    "regenerateBusy": "Várd meg, amíg a jelenlegi válasz befejeződik",
+    "pin": "Rögzítés",
+    "pinHint": "A karakter mindig észben tartja",
+    "unpin": "Rögzítés feloldása",
+    "rewind": "Visszatekerés ide",
+    "rewindHint_one": "Eltávolítja az utána lévő {{count}} üzenetet",
+    "rewindHint_other": "Eltávolítja az utána lévő {{count}} üzenetet",
+    "delete": "Üzenet törlése",
+    "deleteHint": "Előbb oldd fel a rögzítést",
+    "branch": "Elágazás innen",
+    "branchHint": "Új beszélgetést nyit a történettel eddig",
+    "branchGroup": "Folytatás egyénileg",
+    "branchGroupHint": "Beszélgetést nyit egy taggal, a történettel eddig",
+    "details": {
+      "title": "Prompt részletei",
+      "hint": "Mit küldtünk ehhez a válaszhoz",
+      "unavailable": "A rögzített prompt nem elérhető ehhez a válaszhoz",
+      "noBreakdown": "Ezt a választ a bontás létezése előtt rögzítették",
+      "tokens": "{{count}} token",
+      "character": "Karakter és persona",
+      "lorebook": "Lorebook",
+      "memories": "Memóriák",
+      "history": "Beszélgetési előzmények",
+      "other": "Egyéb",
+      "entries": "Lorebook-bejegyzések",
+      "untitled": "Névtelen bejegyzés",
+      "partsLabel": "A prompt megoszlása forrás szerint"
+    },
+    "stats": {
+      "prompt": "Prompttokenek",
+      "reply": "Választokenek",
+      "total": "összesen",
+      "firstToken": "Idő az első tokenig",
+      "firstTokenValue": "TTFT {{value}} ms",
+      "speed": "Válaszsebesség",
+      "speedValue": "{{value}} tok/s",
+      "mtp": "Többtokenes előrejelzés: tokenek körönként és piszkozat-elfogadás",
+      "mtpValue": "MTP {{value}}×",
+      "promptValue": "↓{{value}}",
+      "replyValue": "↑{{value}}"
+    },
+    "sources": {
+      "lorebooks": "Használt lorebook-bejegyzések",
+      "memories": "Használt memóriák",
+      "memory": "Memória",
+      "match": "Egyezés: {{score}}",
+      "noLorebooks": "Ehhez a válaszhoz nem használtunk lorebook-bejegyzést.",
+      "noMemories": "Ehhez a válaszhoz nem használtunk memóriaelemet.",
+      "notRecorded": "Ezeket a részleteket nem rögzítették ehhez a válaszhoz.",
+      "searchEntries": "Használt bejegyzések keresése",
+      "searchMemories": "Használt memóriák keresése",
+      "noMatches": "Semmi sem egyezik a kereséseddel.",
+      "showing": "{{shown}} / {{total}}",
+      "more": "Továbbiak mutatása"
+    }
+  },
+  "regeneration": {
+    "title": "Újragenerálási beállítások",
+    "hint": "Irány és modell",
+    "groupHint": "Irány, modell és karakter",
+    "oneReply": "Csak erre a válaszra",
+    "direction": "Irány",
+    "directionHint": "Opcionális. Írd le, mit változtassunk az új válaszban.",
+    "placeholder": "Legyen rövidebb, változtass a hangnemen, vagy közelíts másképp",
+    "model": "Válaszmodell",
+    "usualModel": "A szokásos modell használata",
+    "modelUnavailable": "Ez a modell már nem elérhető. Válassz másikat.",
+    "character": "Karakter",
+    "sameCharacter": "Ugyanaz a karakter: {{name}}",
+    "characterUnavailable": "Ez a karakter már nem tag. Válassz másikat."
+  },
+  "edit": {
+    "title": "Üzenet szerkesztése",
+    "assistantHint": "{{name}} szavai, ahogy a történet emlékezni fog rájuk",
+    "field": "Üzenetszöveg",
+    "save": "Mentés"
+  },
+  "confirm": {
+    "cancel": "Mégse",
+    "rewindTitle": "Visszatekered ehhez az üzenethez?",
+    "rewindBody_one": "Az utána lévő {{count}} üzenet eltávolításra kerül, és a történet innen folytatódik.",
+    "rewindBody_other": "Az utána lévő {{count}} üzenet eltávolításra kerül, és a történet innen folytatódik.",
+    "rewind": "Visszatekerés",
+    "deleteTitle": "Törlöd ezt az üzenetet?",
+    "deleteBodyVersions": "Az összes {{count}} verziója eltávolításra kerül a beszélgetésből.",
+    "deleteBody": "Eltávolításra kerül a beszélgetésből és abból, amire a karakter emlékszik.",
+    "delete": "Törlés"
+  },
+  "banner": {
+    "modelRequired": "Ennek a beszélgetésnek olyan modell kell, amely nincs telepítve.",
+    "modelNamed": "Ennek a beszélgetésnek a(z) {{model}} modell kell, amely nincs telepítve.",
+    "modelsMissing": "Ennek a beszélgetésnek olyan modellek kellenek, amelyek nincsenek telepítve: {{models}}.",
+    "openModels": "Modellek megnyitása",
+    "memoryBlocked": "A memória szünetel, mert egy korábbi visszatekerést nem sikerült befejezni.",
+    "memoryRetry": "Újra",
+    "memoryRetryStill": "Még mindig nem sikerült befejezni.",
+    "memoryRetried": "A memória újra a helyén",
+    "swapActive": "A helycsere be van kapcsolva",
+    "endSwap": "Helycsere befejezése"
+  },
+  "requiredModel": {
+    "embedding": "embedding",
+    "emotion": "érzelem"
+  },
+  "failure": {
+    "title": "A válasz nem fejeződött be",
+    "retry": "Újra",
+    "code": {
+      "invalid_conversation": "Ebbe a beszélgetésbe most nem lehet írni.",
+      "missing_model": "Nincs modell beállítva ehhez a beszélgetéshez. Válassz egyet a beszélgetés beállításaiban, vagy adj hozzá egyet a Modelleknél.",
+      "context_unavailable": "A beszélgetést nem sikerült előkészíteni a modellnek.",
+      "speaker_unavailable": "Nincs senki, aki válaszolhatna.",
+      "provider_unavailable": "A modellt nem sikerült elérni. Ellenőrizd a kapcsolatot és a szolgáltatót.",
+      "provider_rejected": "A szolgáltató elutasította a kérést. Próbálj másik modellt, vagy ellenőrizd a fiókodat.",
+      "empty_output": "A modell semmit nem küldött vissza.",
+      "timed_out": "A modell túl sokáig tartott a válaszadáshoz.",
+      "recovery_unavailable": "A válasz megszakadt, és nem sikerült helyreállítani.",
+      "embedding_unavailable": "A memóriához szükséges embeddingmodell nem elérhető.",
+      "internal": "Az alkalmazás belső hibába futott.",
+      "database_write_fenced": "Az alkalmazás éppen adatokat ment. Próbáld újra egy pillanat múlva."
+    }
+  },
+  "loading": {
+    "toast": {
+      "loading": "Modell betöltése",
+      "retrying": "Modellbetöltés újrapróbálása"
+    },
+    "loading": "{{model}} betöltése, {{percent}}%",
+    "retrying": "Másik mód {{model}} betöltésére, {{percent}}%",
+    "loaded": "{{model}} kész",
+    "failed": "Nem sikerült betölteni: {{model}}"
+  },
+  "notice": {
+    "mtp_disabled_for_vision": "A gyorsabb dekódolás ki van kapcsolva, amíg képek vannak a beszélgetésben.",
+    "kv_cache_moved_to_ram": "A kontextus-gyorsítótár nem fért el a videomemóriában, ezért a rendszermemóriába került."
+  },
+  "toast": {
+    "copied": "Másolva",
+    "copyFailed": "A vágólap nem érhető el",
+    "pinned": "Rögzítve. A karakter memóriájában marad",
+    "unpinned": "Rögzítés feloldva",
+    "edited": "Üzenet frissítve",
+    "deleted": "Üzenet törölve",
+    "branched": "Új beszélgetés nyitva innen",
+    "rewound_one": "{{count}} üzenet visszatekerve",
+    "rewound_other": "{{count}} üzenet visszatekerve",
+    "launchFailed": "Nem sikerült elindítani a beszélgetést",
+    "mediaImageUnsupported": "A beszélgetés modellje nem tud képeket olvasni. Távolítsd el őket, vagy válassz másik modellt.",
+    "mediaAudioUnsupported": "A beszélgetés modellje nem tud hangot hallgatni. Távolítsd el, vagy válassz másik modellt."
+  },
+  "crisp": {
+    "composerPlaceholder": "Üzenet…",
+    "composerMessage": "Üzenet",
+    "composerStop": "Generálás leállítása",
+    "composerSend": "Üzenet küldése",
+    "composerSendAsSystem": "Tartsd nyomva vagy jobb klikkelj a rendszerüzenetként küldéshez",
+    "composerSending": "Küldés",
+    "composerContinue": "Hagyd a karaktert folytatni",
+    "messageScene": "Jelenet",
+    "messageSystem": "Rendszer",
+    "messagePinned": "Rögzítve",
+    "messageMenuTitle": "Üzenet",
+    "messageReasoning": "Gondolatmenet",
+    "messageTyping": "Gépelés",
+    "sheetClose": "Bezárás",
+    "bannerDismiss": "Bezárás",
+    "alertDismiss": "Bezárás",
+    "composerAddAttachment": "Tartalom hozzáadása",
+    "composerCancelRecording": "Felvétel megszakítása",
+    "composerRecordVoice": "Hang rögzítése",
+    "composerStopAndTranscribe": "Leállítás és átírás",
+    "composerTranscribing": "Átírás",
+    "composerRecording": "Felvétel: {{elapsed}}",
+    "composerAttachment": "Melléklet",
+    "composerFile": "Fájl",
+    "composerAttachmentRemove": "{{name}} eltávolítása"
+  },
+  "streaming": {
+    "imagePrompt": "A képprompt írása"
+  },
+  "tools": {
+    "title": "Tartalom hozzáadása",
+    "helpMeReply": "Segíts válaszolni",
+    "helpMeReplyHint": "Hagyd, hogy a modell javasolja, mit mondj",
+    "persona": "Persona",
+    "background": "Beszélgetési háttér",
+    "backgroundHidden": "Rejtett",
+    "backgroundOwn": "Ehhez a beszélgetéshez beállítva",
+    "backgroundDefault": "Az alapértelmezett használatban",
+    "backgroundNone": "Nincs háttér",
+    "note": "Szerzői megjegyzés",
+    "noteActive": "Aktív ehhez a beszélgetéshez",
+    "noteInactive": "Privát irányítás a válaszokhoz",
+    "dice": "Kocka",
+    "diceHint": "Dobj kockával, és add az eredményt az üzenetedhez",
+    "swap": "Helycsere",
+    "swapHint": "Beszélj karakterként, és hagyd, hogy a modell a personádként válaszoljon",
+    "swapOn": "Helycsere (be)",
+    "swapOnHint": "Karakterként beszélgetsz. Koppints a kikapcsoláshoz",
+    "uploadImage": "Kép feltöltése",
+    "uploadImageHint": "Kép csatolása az üzenetedhez",
+    "uploadAudio": "Hang feltöltése",
+    "uploadAudioHint": "Hangklip csatolása az üzenetedhez"
+  },
+  "persona": {
+    "title": "Persona",
+    "none": "Nincs persona",
+    "default": "Alapértelmezett",
+    "search": "Personák keresése",
+    "noMatch": "Nincs egyező persona",
+    "emptyTitle": "Még nincsenek personák",
+    "emptyBody": "Hozz létre egyet a könyvtárban, hogy valaki konkrétként beszélhess.",
+    "loading": "Personák betöltése",
+    "loadFailed": "Nem sikerült betölteni a personákat",
+    "retry": "Újra"
+  },
+  "background": {
+    "title": "Beszélgetési háttér",
+    "current": "Jelenlegi háttér",
+    "currentOwn": "Ehhez a beszélgetéshez beállítva",
+    "currentDefault": "Az alapértelmezett háttér",
+    "choose": "Válassz egy képet",
+    "replace": "Kép cseréje",
+    "chooseHint": "Csak ehhez a beszélgetéshez",
+    "useDefault": "Az alapértelmezett használata",
+    "useDefaultHint": "Vissza a jelenet vagy karakter hátteréhez"
+  },
+  "note": {
+    "title": "Szerzői megjegyzés",
+    "inlineTitle": "Beágyazott szerkesztő",
+    "inlineHint": "A szerzői megjegyzés megjelenítése az üzenetmező fölött a gyors szerkesztéshez",
+    "inlineToggle": "Beágyazott szerzői megjegyzés szerkesztőjének mutatása",
+    "inlineField": "Beágyazott szerzői megjegyzés",
+    "inlineEdit": "Beágyazott szerzői megjegyzés szerkesztése",
+    "inlinePlaceholder": "Szerzői megjegyzés hozzáadása",
+    "saving": "Mentés...",
+    "hint": "Egy privát irányítás, amelyet a modell ebben a beszélgetésben követ",
+    "placeholder": "Írj egy szerzői megjegyzést, amely irányítja a modellt",
+    "save": "Mentés",
+    "clear": "Eltávolítás",
+    "count_one": "{{count}} karakter",
+    "count_other": "{{count}} karakter",
+    "willRemove": "A jegyzet mentéskor eltávolításra kerül",
+    "none": "Nincs mentett jegyzet"
+  },
+  "dice": {
+    "title": "Kocka",
+    "hint": "Dobj kockával, és add az eredményt az üzenetedhez",
+    "notation": "Kockajelölés",
+    "roll": "Dobás",
+    "invalid": "Használj például ilyen jelölést: 1d20 vagy 2d6+3",
+    "tapToRoll": "Dobj az eredmény megtekintéséhez",
+    "insert": "Beszúrás az üzenetbe",
+    "recent": "Legutóbbi",
+    "clear": "Törlés"
+  },
+  "help": {
+    "title": "Segíts válaszolni",
+    "draftPrompt": "Van egy piszkozatod. Hogyan folytatnád?",
+    "useMyText": "A szövegem alapul vétele",
+    "useMyTextHint": "Piszkozatod bővítése és javítása",
+    "writeNew": "Valami új írása",
+    "writeNewHint": "Teljesen új válasz generálása",
+    "resultTitle": "Javasolt válasz",
+    "regenerate": "Újra",
+    "use": "Ezt használom",
+    "writing": "A válaszod írása...",
+    "thinking": "Gondolkodás írás előtt...",
+    "callError": {
+      "model_required": "Válassz modellt a Segíts válaszolni funkcióhoz a beállításokban.",
+      "model_unavailable": "A Segíts válaszolni modelljét nem sikerült betölteni.",
+      "busy": "Az alkalmazás elfoglalt. Próbáld újra egy pillanat múlva.",
+      "unavailable": "Most nem elérhető."
+    },
+    "error": {
+      "failed": "A Segíts válaszolni nem sikerült.",
+      "help_me_reply_disabled": "A Segíts válaszolni ki van kapcsolva a beállításokban.",
+      "help_me_reply_no_history": "Még nincs mire válaszolni.",
+      "help_me_reply_no_model": "Válassz modellt a Segíts válaszolni funkcióhoz a beállításokban.",
+      "help_me_reply_no_reply": "A modell nem írt választ."
+    }
+  },
+  "mic": {
+    "learning": {
+      "question": "Megtanuljuk a javítást?",
+      "pair": "<wrong>{{wrong}}</wrong> → <correct>{{correct}}</correct>",
+      "save": "Megtanulás",
+      "ignore": "Mellőzés"
+    },
+    "error": {
+      "noModel": "Telepíts beszédfelismerő modellt a diktáláshoz.",
+      "permission": "Engedélyezd a mikrofonhozzáférést a felvételhez.",
+      "noMicrophone": "Nem található mikrofon.",
+      "noAudio": "Nem rögzítettünk semmit.",
+      "busy": "Már folyamatban van egy másik felvétel.",
+      "unsupported": "Ez az eszköz nem tud mikrofonról rögzíteni.",
+      "failed": "A felvételt nem sikerült átírni."
+    }
+  },
+  "settings": {
+    "views": {
+      "root": "Beszélgetés beállításai",
+      "persona": "Persona",
+      "model": "Modell",
+      "lorebooks": "Lorebookok",
+      "background": "Beszélgetési háttér",
+      "note": "Szerzői megjegyzés",
+      "history": "Beszélgetési előzmények",
+      "notes": "Időzített jegyzetek",
+      "starters": "Új beszélgetés",
+      "advanced": "Modellbeállítások",
+      "appearance": "Megjelenés"
+    },
+    "back": "Vissza",
+    "reset": "Visszaállítás",
+    "loading": "Betöltés",
+    "loadFailed": "Nem sikerült betölteni",
+    "source": {
+      "conversation": "Csak ez a beszélgetés",
+      "group": "A csoportból",
+      "character": "A karaktertől",
+      "launch": "A beszélgetés indításából",
+      "app_default": "Alkalmazás alapértelmezése"
+    },
+    "meta": {
+      "messages_one": "{{count}} üzenet",
+      "messages_other": "{{count}} üzenet",
+      "active": "Aktív: {{date}}"
+    },
+    "sections": {
+      "chat": "Ez a beszélgetés",
+      "memory": "Memória",
+      "time": "Idő",
+      "actions": "Beszélgetés",
+      "generation": "Generálás",
+      "lorebooks": "Lorebookok",
+      "members": "Tagok",
+      "speaker": "Beszélő kiválasztása"
+    },
+    "speaker": {
+      "llm": "LLM",
+      "llmHint": "Az alapértelmezett modelled használja a beszélő kiválasztásához (tokenekbe kerül)",
+      "heuristic": "Heurisztika",
+      "heuristicHint": "Részvételi egyensúlyt és kontextusjeleket használ (ingyenes)",
+      "round_robin": "Körbeosztás",
+      "round_robinHint": "A karakterek sorrendben kerülnek sorra (ingyenes)",
+      "director": "Rendező",
+      "directorHint": "Te választod ki, melyik karakter válaszol az egyes üzenetekre",
+      "style": "Rendezői stílus",
+      "cue": "Jelzés",
+      "action": "Művelet",
+      "cueHint": "Koppints egy karakterre a válaszoló kiválasztásához. A Küldés elküldi az üzeneted, és kiváltja a válaszát.",
+      "actionHint": "A Küldés csak hozzáadja az üzeneted. Koppints egy karakter avatarjára, hogy azonnal válaszoljon.",
+      "own": "Ez a beszélgetés saját választással rendelkezik"
+    },
+    "members": {
+      "replies_one": "{{count}} válasz, {{percent}}",
+      "replies_other": "{{count}} válasz, {{percent}}",
+      "muted": "Kimarad, hacsak meg nem nevezik",
+      "last": "Legalább egy tagnak válaszolnia kell",
+      "answers": "{{name}} válaszol ebben a beszélgetésben"
+    },
+    "model": {
+      "title": "Modell",
+      "none": "Nincs beállított modell",
+      "search": "Modellek keresése",
+      "useDefault": "A karakter alapértelmezésének használata",
+      "useDefaultHint": "A karaktert, majd az alkalmazás alapértelmezését követi",
+      "remoteTitle": "Távoli modellt használsz?",
+      "remoteBody": "Ez a beszélgetés minden válasznál elküldésre kerül a(z) {{provider}} szolgáltatónak.",
+      "use": "Modell használata",
+      "unknown": "Ismeretlen modell"
+    },
+    "lorebooks": {
+      "title": "Lorebookok",
+      "count_one": "{{count}} lorebook",
+      "count_other": "{{count}} lorebook",
+      "useDefault": "Az alapértelmezett lorebookok használata",
+      "useDefaultHint": "A karakter lorebookjait követi",
+      "useCharacter": "A karakter lorebookjainak használata"
+    },
+    "background": {
+      "set": "Kép beállítva"
+    },
+    "memory": {
+      "mode": "Memóriamód",
+      "modes": {
+        "manual": "Manuális",
+        "dynamic": "Dinamikus",
+        "disabled": "Ki"
+      },
+      "open": "Memóriák megnyitása",
+      "items_one": "{{count}} memória",
+      "items_other": "{{count}} memória",
+      "summaryTokens_one": "{{count}} összefoglaló-token",
+      "summaryTokens_other": "{{count}} összefoglaló-token",
+      "off": "A memória ki van kapcsolva ennél a beszélgetésnél"
+    },
+    "notes": {
+      "title": "Időzített jegyzetek",
+      "rowHint": "Emlékeztetők, amelyeket a karakter adott időpontokban lát",
+      "groupRowHint": "Emlékeztetők, amelyeket a csoport és tagjai adott időpontokban látnak",
+      "hint": "A jegyzetek a karakterhez tartoznak, és minden vele folytatott beszélgetésben megjelennek.",
+      "groupHint": "A jegyzetek a csoporthoz tartoznak, és a csoport minden beszélgetésében megjelennek.",
+      "empty": "Még nincsenek időzített jegyzetek.",
+      "add": "Jegyzet hozzáadása",
+      "untitled": "Névtelen jegyzet",
+      "label": "Címke",
+      "labelPlaceholder": "Címke (opcionális)",
+      "content": "Jegyzet",
+      "contentPlaceholder": "Mit kell tudnia a karakternek?",
+      "groupContentPlaceholder": "Mit kell tudnia a csoportnak?",
+      "startsOn": "Kezdés",
+      "stopsOn": "Befejezés (opcionális)",
+      "repeats": "Ismétlődés",
+      "windowHours": "Látható ennyi órán át",
+      "enabled": "Engedélyezve",
+      "enabledHint": "Kapcsolj ki egy jegyzetet a törlés nélkül",
+      "deleteTitle": "Törlöd ezt a jegyzetet?",
+      "deleteBody": "Nem vonható vissza.",
+      "recurrence": {
+        "none": "Egyszer",
+        "daily": "Naponta",
+        "weekly": "Hetente",
+        "monthly": "Havonta",
+        "yearly": "Évente"
+      },
+      "whoSees": "Ki látja",
+      "whoSeesHint": "Csak az általad kiválasztott karakterek olvassák el ezt a jegyzetet.",
+      "everyone": "Minden tag elolvassa ezt a jegyzetet. Válassz karaktereket a korlátozáshoz.",
+      "useCharacter": "Karakterjegyzetek használata"
+    },
+    "history": {
+      "filter": "Beszélgetések szűrése",
+      "filters": {
+        "all": "Mind",
+        "active": "Aktív",
+        "archived": "Archivált"
+      },
+      "sort": "Beszélgetések rendezése",
+      "sorts": {
+        "recent": "Legutóbb használt",
+        "oldest": "Legrégebbi elöl"
+      },
+      "results_one": "{{formattedCount}} beszélgetés",
+      "results_other": "{{formattedCount}} beszélgetés",
+      "untitled": "Névtelen beszélgetés",
+      "search": "Beszélgetések keresése",
+      "noMatch": "Nincs egyező beszélgetés",
+      "empty": "Még nincs beszélgetés",
+      "meta_one": "{{count}} üzenet · {{date}}",
+      "meta_other": "{{count}} üzenet · {{date}}",
+      "current": "Jelenlegi",
+      "archived": "Archivált",
+      "actions": "{{title}} műveletei",
+      "rename": "Átnevezés",
+      "export": "Exportálás",
+      "archive": "Archiválás",
+      "restore": "Visszaállítás",
+      "delete": "Törlés"
+    },
+    "starters": {
+      "hint": "Indíts a karakter egyik beszélgetéssablonjából.",
+      "none": "Indítás sablon nélkül"
+    },
+    "rename": {
+      "field": "Beszélgetés címe",
+      "save": "Cím mentése",
+      "open": "Beszélgetés átnevezése"
+    },
+    "delete": {
+      "title": "Törlöd ezt a beszélgetést?",
+      "body": "{{title}} és minden üzenete eltávolításra kerül. Ez nem vonható vissza.",
+      "confirm": "Törlés"
+    },
+    "export": {
+      "done": "Beszélgetés exportálva"
+    },
+    "duplicate": {
+      "done": "Beszélgetés duplikálva"
+    },
+    "actions": {
+      "newChat": "Új beszélgetés",
+      "newChatHint": "Indíts másik beszélgetést ezzel a karakterrel",
+      "newGroupChatHint": "Indíts másik beszélgetést ezzel a csoporttal",
+      "history": "Beszélgetési előzmények",
+      "historyHint": "Korábbi beszélgetések megnyitása, átnevezése vagy törlése",
+      "branches": "Elágazások",
+      "branchesHint": "Váltás a beszélgetés irányai között",
+      "duplicate": "Beszélgetés duplikálása",
+      "duplicateHint": "Másolat készítése az összes üzenetével",
+      "export": "Beszélgetés exportálása",
+      "exportHint": "A beszélgetés mentése fájlként",
+      "import": "Beszélgetésnapló importálása",
+      "importHint": "Beszélgetés behozása fájlból",
+      "importGroupHint": "Csoportos beszélgetésekhez még nem elérhető",
+      "archive": "Beszélgetés archiválása",
+      "archiveHint": "Elrejtés a listából, mindent megtartva",
+      "restore": "Beszélgetés visszaállítása",
+      "restoreHint": "Visszahozás a listára",
+      "delete": "Beszélgetés törlése",
+      "deleteHint": "Végleges eltávolítás az üzeneteivel együtt"
+    },
+    "generation": {
+      "title": "Modellbeállítások",
+      "scope": "Csak ehhez a beszélgetéshez",
+      "hint": "A be nem állított értékek a modellt, majd az alkalmazás alapértelmezéseit követik.",
+      "noModel": "Ennek a beszélgetésnek nincs modellje, ezért csak az alkalmazás alapértelmezései érvényesek.",
+      "resetAll": "Összes visszaállítása",
+      "discard": "Elvetés",
+      "inherited": "A modell- és alkalmazásbeállításokat követi",
+      "count_one": "{{count}} érték módosítva ehhez a beszélgetéshez",
+      "count_other": "{{count}} érték módosítva ehhez a beszélgetéshez"
+    },
+    "time": {
+      "title": "Beszélgetési óra",
+      "awareness": "Időtudatosság",
+      "awarenessHint": "Add meg a modellnek a dátumot és az időt, és bélyegzd meg vele minden üzenetet",
+      "live": "Valós idő",
+      "frozen": "Leállítva",
+      "ticking": "Fut",
+      "stoppedAt": "Megállt ekkor: {{when}}",
+      "runningFrom": "Fut ettől: {{when}}",
+      "mode": "Óra",
+      "anchor": "Dátum és idő",
+      "apply": "Alkalmazás",
+      "reset": "Visszaállítás",
+      "cancel": "Mégse",
+      "chooseAnchor": "Válassz dátumot és időt",
+      "previousMonth": "Előző hónap",
+      "nextMonth": "Következő hónap",
+      "chooseMonth": "Hónap és év választása",
+      "previousYear": "Előző év",
+      "nextYear": "Következő év",
+      "year": "Év",
+      "time": "Idő"
+    },
+    "groupAppearanceHint": "A csoport minden beszélgetésének megjelenése",
+    "characterAppearanceHint": "A karakter minden beszélgetésének megjelenése"
+  },
+  "appearance": {
+    "forGroup": "A csoport minden beszélgetéséhez",
+    "forCharacter": "{{name}} számára",
+    "moveLeft": "Mozgatás balra",
+    "moveRight": "Mozgatás jobbra",
+    "close": "Megjelenés bezárása",
+    "unsaved": "Nem mentett módosítások",
+    "saved": "Nincs módosítás",
+    "discard": "Elvetés",
+    "save": "Mentés",
+    "discardTitle": "Elveted a módosításaidat?",
+    "discardBody": "A megjelenésben tett módosításaid nem lettek elmentve.",
+    "discardConfirm": "Módosítások elvetése",
+    "keepEditing": "Szerkesztés folytatása"
+  },
+  "memory": {
+    "title": "Memória",
+    "back": "Beszélgetés",
+    "tabs": {
+      "memories": "Memóriák",
+      "activity": "Tevékenység",
+      "pinned": "Rögzítve"
+    },
+    "loading": "Memória betöltése",
+    "off": {
+      "title": "A memória ki van kapcsolva ennél a beszélgetésnél",
+      "description": "Ebben a beszélgetésben semmire nem emlékszünk, és semmit nem küldünk a válaszokkal.",
+      "action": "Beszélgetés beállításainak megnyitása"
+    },
+    "search": "Memóriák keresése",
+    "add": "Hozzáadás",
+    "all": "Mind",
+    "categories": {
+      "character_trait": "Karaktervonás",
+      "relationship": "Kapcsolat",
+      "plot_event": "Cselekményesemény",
+      "world_detail": "Világrészlet",
+      "preference": "Preferencia",
+      "other": "Egyéb",
+      "milestone": "Mérföldkő",
+      "boundary": "Határ",
+      "profile": "Profil",
+      "routine": "Rutin",
+      "episodic": "Epizód",
+      "emotional_snapshot": "Érzelmi pillanatkép"
+    },
+    "origins": {
+      "model": "Modell",
+      "user": "Te",
+      "import": "Importált"
+    },
+    "temperature": {
+      "hot": "Forró",
+      "cold": "Hideg"
+    },
+    "tokens_one": "{{count}} token",
+    "tokens_other": "{{count}} token",
+    "window": "Üzenetek {{from}}–{{to}}",
+    "pinnedMark": "Rögzítve",
+    "list": {
+      "found_one": "{{count}} találat",
+      "found_other": "{{count}} találat",
+      "total_one": "{{count}} memória",
+      "total_other": "{{count}} memória",
+      "byModel": "{{count}} a modelltől",
+      "byUser": "{{count}} tőled",
+      "imported": "{{count}} importálva",
+      "summary": "{{total}} · {{origins}}"
+    },
+    "empty": {
+      "title": "Még nincsenek memóriák",
+      "dynamic": "A memóriák itt jelennek meg, ahogy a beszélgetés nő. Sajátot is hozzáadhatsz.",
+      "manual": "Add hozzá, amire a karakternek mindig emlékeznie kell.",
+      "action": "Memória hozzáadása",
+      "noMatch": "Semmi sem egyezik ezzel: „{{query}}”",
+      "noMatchBody": "Próbálj egy szót magából a memóriából.",
+      "noCategory": "Ebben a kategóriában nincs semmi"
+    },
+    "sheet": {
+      "addTitle": "Memória hozzáadása",
+      "editTitle": "Memória",
+      "byModel": "A modell írta",
+      "byModelIn": "A modell írta ekkor: {{window}}",
+      "byUser": "Te írtad",
+      "imported": "Importált",
+      "text": "Memória",
+      "textPlaceholder": "Mire emlékezzen a karakter?",
+      "category": "Kategória",
+      "noCategory": "Nincs kategória",
+      "when": "Mikor történt",
+      "whenHint": "Opcionális. Segít a karakternek időben elhelyezni.",
+      "whenPlaceholder": "Nincs beállítva",
+      "whenClear": "Törlés",
+      "temperature": "Hőmérséklet",
+      "hotBody": "A forró memóriák kéznél maradnak",
+      "coldBody": "A hideg memóriák csak szoros egyezésnél idéződnek fel",
+      "pin": "Rögzítve",
+      "pinBody": "A modell soha nem törli vagy archiválja a rögzített memóriát",
+      "delete": "Törlés",
+      "cancel": "Mégse",
+      "add": "Hozzáadás",
+      "save": "Mentés",
+      "deleteTitle": "Törlöd ezt a memóriát?",
+      "deleteBody": "Többé nem idéződik fel ebben a beszélgetésben.",
+      "keep": "Megtartás",
+      "added": "Memória hozzáadva",
+      "saved": "Memória mentve",
+      "deleted": "Memória törölve"
+    },
+    "summary": {
+      "title": "Kontextus-összefoglaló",
+      "empty": "Adj hozzá rövid összefoglalót, hogy a karakter tartsa a történet fonalát.",
+      "description": "Rövid összefoglaló, amely minden válasszal együtt megy",
+      "field": "Összefoglaló",
+      "dynamicHint": "A modell minden frissítésnél újraírja. A szerkesztéseid addig megmaradnak.",
+      "clear": "Törlés",
+      "cancel": "Mégse",
+      "save": "Mentés",
+      "saved": "Összefoglaló mentve",
+      "cleared": "Összefoglaló törölve"
+    },
+    "status": {
+      "approvalTitle": "Frissítsük a memóriát?",
+      "approvalBody_one": "{{count}} új üzenet készen áll a memóriába való összegzésre.",
+      "approvalBody_other": "{{count}} új üzenet készen áll a memóriába való összegzésre.",
+      "update": "Frissítés",
+      "notNow": "Most nem",
+      "skipped_one": "Kihagyva. A következő {{count}} üzenet után kérdezi újra.",
+      "skipped_other": "Kihagyva. A következő {{count}} üzenet után kérdezi újra.",
+      "runningTitle": "Memória frissítése",
+      "runningBody": "A legutóbbi üzenetek olvasása",
+      "stop": "Leállítás",
+      "failedTitle": "A memória frissítése sikertelen",
+      "tryAgain": "Újra",
+      "otherModel": "Másik modell használata",
+      "pausedTitle": "Az utolsó memóriafrissítés megszakadt",
+      "pausedBody": "Egy másik folyamat átvette, mielőtt befejeződött volna.",
+      "nextIn_one": "Következő frissítés {{count}} üzenet múlva",
+      "nextIn_other": "Következő frissítés {{count}} üzenet múlva",
+      "since_one": "{{count}} üzenet az utolsó frissítés óta",
+      "since_other": "{{count}} üzenet az utolsó frissítés óta",
+      "modes": {
+        "auto": "Automatikus",
+        "ask_first": "Kérdezzen előbb",
+        "manual": "Manuális"
+      },
+      "every_one": "{{mode}} · minden {{count}} üzenetben",
+      "every_other": "{{mode}} · minden {{count}} üzenetben",
+      "manualOnly": "{{mode}} · a frissítések csak akkor futnak, ha itt elindítod őket",
+      "progress": "{{current}} / {{total}}",
+      "updateNow": "Frissítés most"
+    },
+    "failure": {
+      "embedding_unavailable": "Az embeddingmodell nem elérhető.",
+      "model_missing": "A memóriamodell nincs telepítve.",
+      "model_invalid": "A memóriamodell nem használható.",
+      "prompt_missing": "A memóriaprompt hiányzik.",
+      "settings_invalid": "A memóriabeállítások érvénytelenek.",
+      "provider_unavailable": "A szolgáltató nem válaszolt.",
+      "provider_rejected": "A szolgáltató elutasította a kérést.",
+      "invalid_response": "A modell memóriaválaszát nem sikerült feldolgozni. Próbáld újra a ciklust.",
+      "empty_response": "A modell üres választ adott vissza.",
+      "timed_out": "A modell túl sokáig tartott a válaszadáshoz.",
+      "round_limit": "A modell túl sok lépést használt.",
+      "tool_failed": "Az egyik memóriamódosítás meghiúsult.",
+      "storage_failure": "A memóriát nem sikerült menteni.",
+      "lease_lost": "Egy másik frissítés átvette.",
+      "internal": "Az alkalmazás belső hibába futott."
+    },
+    "gate": {
+      "not_dynamic": "Ez a beszélgetés nem használ dinamikus memóriát.",
+      "disabled": "A dinamikus memória ki van kapcsolva a beállításokban.",
+      "nothing_to_summarise": "Még nincs mit összefoglalni.",
+      "cycle_running": "Már fut egy frissítés."
+    },
+    "activity": {
+      "empty": "Még nincsenek frissítések",
+      "emptyBody": "Minden memóriafrissítés, amelyet a modell futtat, itt jelenik meg.",
+      "badgeUndone": "Visszavonva",
+      "badgeFailed": "Sikertelen",
+      "badgeStopped": "Leállítva",
+      "badgeInterrupted": "Megszakítva",
+      "badgeRunning": "Fut",
+      "noDetails": "Nem rögzítettek részleteket.",
+      "stopped": "Ezt a frissítést leállították, mielőtt befejeződött volna.",
+      "running": "Ez a frissítés még fut.",
+      "actions": {
+        "created": "Hozzáadva",
+        "duplicate_skipped": "Már ismert",
+        "deleted": "Törölve",
+        "soft_deleted": "Hidegre helyezve",
+        "pinned": "Rögzítve",
+        "unpinned": "Rögzítés feloldva",
+        "target_not_found": "Nem található",
+        "done": "Kész",
+        "rejected": "Elutasítva",
+        "skipped": "Kihagyva",
+        "stopped_after_done": "Befejezés után leállítva"
+      },
+      "undo": "Frissítés visszavonása",
+      "blocked": "Nem vonható vissza: egy későbbi frissítés erre épül.",
+      "blockedBy": "Nem vonható vissza: a(z) {{window}} frissítése erre épül.",
+      "dependent": "Egy későbbi frissítés erre épül, ezért nem vonható vissza.",
+      "userEdited": "Szerkesztettél egy általa írt memóriát, ezért nem vonható vissza.",
+      "undoTitle": "Visszavonod a(z) {{window}} frissítését?",
+      "undoBody": "Az általa hozzáadott memóriák eltávolításra kerülnek, a módosítottak visszaállnak. A saját szerkesztéseid megmaradnak.",
+      "undoConfirm": "Frissítés visszavonása",
+      "keep": "Megtartás",
+      "undone": "Frissítés visszavonva",
+      "loadMore": "Régebbi frissítések mutatása"
+    },
+    "pinnedTab": {
+      "empty": "Nincsenek rögzített üzenetek",
+      "emptyBody": "Rögzíts egy üzenetet a beszélgetésből, és mindig a következő válasszal megy.",
+      "label": "Mindig a válasszal küldve",
+      "unpin": "Rögzítés feloldása",
+      "unpinned": "Rögzítés feloldva",
+      "noText": "Melléklet",
+      "loadMore": "Továbbiak mutatása",
+      "you": "Te"
+    }
+  },
+  "branches": {
+    "title": "Elágazások",
+    "meta_one": "{{count}} üzenet · {{date}}",
+    "meta_other": "{{count}} üzenet · {{date}}",
+    "current": "Jelenlegi",
+    "actions": "{{title}} műveletei",
+    "rename": "Átnevezés",
+    "renameField": "Elágazás neve",
+    "delete": "Törlés",
+    "deleteRoot": "Az eredeti elágazás nem törölhető",
+    "deleteActive": "Előbb válts másik elágazásra",
+    "deleteTitle": "Törlöd ezt az elágazást?",
+    "deleteBody": "{{name}} és az üzenetei eltávolításra kerülnek. A többi elágazás megmarad.",
+    "deleted": "Elágazás törölve",
+    "untitled": "Névtelen elágazás",
+    "thisChat": "Ez a beszélgetés",
+    "renameSave": "Név mentése",
+    "original": "Eredeti",
+    "untitledChat": "Névtelen beszélgetés"
+  },
+  "companion": {
+    "title": "Társ",
+    "back": "Beszélgetés",
+    "tabs": {
+      "relationship": "Kapcsolat",
+      "bond": "Kötelék",
+      "memories": "Memóriák",
+      "soul": "Lélek",
+      "activity": "Tevékenység"
+    },
+    "bond": "Kötelék",
+    "lastTalked": "Utolsó beszélgetés: {{when}}",
+    "updated": "Frissítve: {{when}}",
+    "messages": "Üzenetek",
+    "togetherSince": "Együtt ekkortól: {{date}}",
+    "engine": "Érzelmi motor",
+    "nothingTitle": "Még nincs mit mutatni",
+    "nothingBody": "{{name}} köteléke és érzései néhány üzenet után mozdulnak meg. A társbeállításaiban megadott alapértékekről indulnak.",
+    "missingTitle": "Az érzések nyomon követése nem működik",
+    "missingBody": "Telepítsd az érzelemmodellt, hogy minden válasz befolyásolhassa, hogyan éreznek.",
+    "install": "Telepítés",
+    "nothingNow": "Most nincs semmi",
+    "drivers": "Aktív hajtóerők",
+    "timeline": "Legutóbbi idővonal",
+    "events_one": "{{count}} esemény",
+    "events_other": "{{count}} esemény",
+    "currentState": "Jelenlegi állapot",
+    "defaultMark": "Karakter alapértelmezése",
+    "aboveDefault_one": "{{count}} ponttal a karakter alapértelmezése fölött",
+    "aboveDefault_other": "{{count}} ponttal a karakter alapértelmezése fölött",
+    "belowDefault_one": "{{count}} ponttal a karakter alapértelmezése alatt",
+    "belowDefault_other": "{{count}} ponttal a karakter alapértelmezése alatt",
+    "axes": {
+      "closeness": {
+        "label": "Közelség",
+        "low": "Zárkózott",
+        "mid": "Ismerős",
+        "high": "Bensőséges"
+      },
+      "trust": {
+        "label": "Bizalom",
+        "low": "Bizalmatlan",
+        "mid": "Semleges",
+        "high": "Bizakodó"
+      },
+      "affection": {
+        "label": "Szeretet",
+        "low": "Ellenséges",
+        "mid": "Semleges",
+        "high": "Szeretetteljes"
+      },
+      "tension": {
+        "label": "Feszültség",
+        "low": "Laza",
+        "mid": "",
+        "high": "Feszült"
+      },
+      "stability": {
+        "label": "Stabilitás",
+        "low": "Ingadozó",
+        "mid": "",
+        "high": "Stabil"
+      }
+    },
+    "groups": {
+      "felt": {
+        "title": "Érez",
+        "hint": "Amit belül érez"
+      },
+      "expressed": {
+        "title": "Mutat",
+        "hint": "Ami a válaszaiban átjön"
+      },
+      "blocked": {
+        "title": "Visszatart",
+        "hint": "Amit a személyisége bent tart"
+      },
+      "momentum": {
+        "title": "Erősödik",
+        "hint": "Amerre az utolsó néhány kör tart"
+      }
+    },
+    "emotions": {
+      "warmth": "Melegség",
+      "trust": "Bizalom",
+      "calm": "Nyugalom",
+      "vulnerability": "Sebezhetőség",
+      "longing": "Vágyakozás",
+      "hurt": "Sértettség",
+      "tension": "Feszültség",
+      "irritation": "Irritáció",
+      "affection_intensity": "Szeretet",
+      "reassurance_need": "Megerősítés igénye"
+    },
+    "memories": {
+      "total_one": "{{count}} memória",
+      "total_other": "{{count}} memória",
+      "found_one": "{{count}} találat",
+      "found_other": "{{count}} találat",
+      "kind": "Fajta",
+      "field": "Memória",
+      "placeholder": "Mire emlékezzen {{name}}?",
+      "emptyTitle": "Itt nincsenek memóriák",
+      "emptyBody": "A memóriák megjelennek, ahogy beszélgettek. Sajátot is hozzáadhatsz.",
+      "noMatch": "Semmi sem egyezik ezzel: „{{query}}”",
+      "noMatchBody": "Próbálj egy szót magából a memóriából."
+    },
+    "soul": {
+      "title": "Lélek",
+      "edit": "Szerkesztés",
+      "core": "Identitásmag. A növekedés soha nem változtatja meg",
+      "notWritten": "Még nincs megírva",
+      "growth": "Lélek növekedése",
+      "clear": "Növekedés törlése",
+      "intro": "Hogyan nőttek a változtatható vonásai a memóriáidból. A lényeg, a vonások és a háttértörténet itt soha nem változnak.",
+      "empty": "Még nincs növekedés. Ahogy memóriák képződnek, itt jelennek meg a veled változó vonások.",
+      "zero": "0 változás",
+      "added": "Hozzáadva",
+      "adjusted": "Módosítva",
+      "confidence": "Bizonyosság",
+      "locked": "Zárolt",
+      "lock": "Zárolás",
+      "unlock": "Feloldás",
+      "lockHint": "Tény zárolása",
+      "unlockHint": "Tény feloldása",
+      "historicalHint": "A történelmi tények mindig megmaradnak",
+      "remove": "Növekedés eltávolítása",
+      "sources_one": "{{count}} memóriából",
+      "sources_other": "{{count}} memóriából",
+      "retired_one": "{{count}} korábbi verzió kivonva.",
+      "retired_other": "{{count}} korábbi verzió kivonva.",
+      "categories": {
+        "essence": "Lényeg",
+        "traits": "Vonások",
+        "backstory": "Háttértörténet",
+        "appearance": "Kinézet",
+        "goals": "Célok",
+        "likes": "Kedvel",
+        "voice": "Hang",
+        "relational_style": "Kapcsolati stílus",
+        "vulnerabilities": "Sebezhetőségek",
+        "fears": "Félelmek",
+        "habits": "Szokások",
+        "boundaries": "Határok"
+      },
+      "policy": {
+        "current": {
+          "label": "Jelenlegi",
+          "hint": "Lecseréli, ami korábban ott volt"
+        },
+        "adaptive": {
+          "label": "Adaptív",
+          "hint": "Beszélgetés közben tovább változhat"
+        },
+        "historical": {
+          "label": "Történelmi",
+          "hint": "Valami, ami megtörtént. Mindig megmarad"
+        }
+      },
+      "removeTitle": "Eltávolítod?",
+      "removeBody": "Kikerül abból, amit megtanult. A megírt lelke ugyanaz marad.",
+      "clearTitle": "Törlöd mindent, amit megtanult?",
+      "clearBody": "Minden növekedés eltűnik, a lecserélt előzményekkel együtt. A megírt lelke ugyanaz marad.",
+      "keep": "Megtartás",
+      "removeConfirm": "Eltávolítás",
+      "clearConfirm": "Összes törlése",
+      "removed": "Eltávolítva",
+      "cleared": "Növekedés törölve",
+      "sourcesTitle": "Honnan származik",
+      "sourceDescription": "{{category}}: {{text}}",
+      "sourcesEmpty": "A forrásmemóriák már nem elérhetők.",
+      "sourcesMissing_one": "{{count}} forrásmemória már nem elérhető.",
+      "sourcesMissing_other": "{{count}} forrásmemória már nem elérhető."
+    },
+    "effect": {
+      "title": "Mit változtatott ez a válasz",
+      "feels": "Amit érez",
+      "pickedUp": "Felvett",
+      "letGo": "Elengedett",
+      "remembered": "Megjegyzett",
+      "processing": "A változások vizsgálata",
+      "failed": "A válasz változásait nem sikerült elemezni.",
+      "invalidated": "Ezek a változások már nem érvényesek erre a válaszra.",
+      "memoryCount_one": "{{count}} memória",
+      "memoryCount_other": "{{count}} memória",
+      "axisSummary": "{{value}} {{axis}}",
+      "none": "Nincs megjeleníthető változás",
+      "quote": "„{{text}}”"
+    },
+    "activity": {
+      "undo": "Frissítés visszavonása",
+      "undoTitle": "Visszavonod ezt: {{window}}?",
+      "undoBody": "Az általa hozzáadott memóriák eltávolításra kerülnek, a módosítottak visszaállnak. A saját szerkesztéseid megmaradnak.",
+      "undoConfirm": "Frissítés visszavonása",
+      "blockedBy": "Nem vonható vissza: a(z) {{window}} erre épül.",
+      "blocked": "Nem vonható vissza: egy későbbi frissítés erre épül."
+    },
+    "unavailable": "Ennek a beszélgetésnek nincs társi módja",
+    "unavailableBody": "Nyiss meg egy társ-beszélgetést a köteléke, memóriái és lelke megtekintéséhez.",
+    "crisp": {
+      "close": "Bezárás",
+      "clearSearch": "Keresés törlése"
+    },
+    "lastReply": "Utolsó válasz",
+    "replyHint": "A beszélgetés minden üzenete a menüjéből nyitja meg ezt"
+  }
+}

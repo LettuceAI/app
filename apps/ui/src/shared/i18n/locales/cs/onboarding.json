@@ -1,0 +1,358 @@
+{
+  "header": {
+    "back": "Zpět",
+    "learn": "Průvodce nastavením · Základy, {{current}} z {{total}}",
+    "path": "Průvodce nastavením · Zdarma, nebo placeně",
+    "guided": "Průvodce nastavením · {{name}}, {{current}} z {{total}}",
+    "connect": "Nastavení · 1 ze 3",
+    "model": "Nastavení · 2 ze 3",
+    "memory": "Nastavení · 3 ze 3"
+  },
+  "welcome": {
+    "line1": "Tvoje <brand>příběhy</brand>,",
+    "line2": "tvoje <brand>postavy</brand>.",
+    "pitch": "Chaty a postavy zůstávají v tvém zařízení. Ty si vybíráš, která AI píše odpovědi.",
+    "start": "Začít",
+    "other": "Další možnosti"
+  },
+  "actions": {
+    "exitSetup": "Zpět do nastavení",
+    "next": "Další",
+    "gotIt": "Rozumím",
+    "haveKey": "Mám svůj klíč",
+    "connect": "Připojit",
+    "checking": "Kontrola klíče",
+    "useModel": "Použít tento model",
+    "saving": "Ukládání modelu",
+    "finish": "Dokončit nastavení",
+    "finishing": "Dokončování nastavení",
+    "openApp": "Otevřít LettuceAI"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Vítej",
+      "title": "Vítej v LettuceAI",
+      "body": "Čeká tě nastavení prvního AI roleplaye. Další kroky vysvětlí základy lidskou řečí a pak ti pomůžeme všechno propojit. Zabere to jen pár minut."
+    },
+    "car": {
+      "tag": "Jak to funguje",
+      "title": "Aplikace je auto, ne motor",
+      "body": "Představ si tuhle aplikaci jako auto, které ještě nemá motor. Má palubní desku, sedačky i tvoje postavy, ale samo neodjede. Přidáš motor a těchto pár kroků ti ukáže jak.",
+      "plain": "Tahle aplikace je obrazovka a postavy. AI, která skutečně píše odpovědi, běží online a ty k ní aplikaci připojíš."
+    },
+    "provider": {
+      "tag": "Krok 1 ze 3",
+      "title": "Vyber, odkud bude motor",
+      "body": "Poskytovatel je firma, která dodává a provozuje motor, třeba Google nebo OpenRouter. Založíš si u ní bezplatný nebo placený účet a aplikace si půjčí její motor pro tvoje chaty.",
+      "plain": "Poskytovatel je firma, která provozuje AI modely. Založíš si u ní účet a aplikace jí posílá tvoje zprávy, aby dostala odpovědi."
+    },
+    "key": {
+      "tag": "Krok 2 ze 3",
+      "title": "Tvůj klíč nastartuje motor",
+      "body": "API klíč funguje stejně jako klíč od auta. Poskytovatel ti ho dá, ty ho vložíš do aplikace a ona nastartuje motor. Nech si ho pro sebe. Zůstává v tvém zařízení, jako klíč v kapse.",
+      "plain": "API klíč je tajný kód od poskytovatele, který aplikaci umožní používat tvůj účet. Vložíš ho jednou a uloží se jen v tvém zařízení."
+    },
+    "engine": {
+      "tag": "Krok 3 ze 3",
+      "title": "Vyber svůj motor",
+      "body": "Model je samotný motor. Poskytovatelé nabízejí malé a úsporné motory i velké a výkonné. Větší motory jezdí lépe, ale spálí víc paliva, takže stojí víc. Motor můžeš kdykoli vyměnit.",
+      "plain": "Model je konkrétní AI, která píše odpovědi. Větší modely jsou chytřejší, ale dražší, a kdykoli mezi nimi můžeš přepínat."
+    },
+    "cost": {
+      "tag": "Cena",
+      "title": "Zdarma, nebo placeně, jak chceš",
+      "body": "Některé modely jsou úplně zdarma, s denním limitem, kolik si popovídáš. Placené modely účtují za každou zprávu malou částku, často méně než cent.",
+      "plain": "Platíš vždycky jen poskytovateli, nikdy téhle aplikaci. Můžeš začít zdarma a později přejít na placené, kdyby sis chtěl."
+    },
+    "inOtherWords": "Jinými slovy"
+  },
+  "path": {
+    "gemini": {
+      "title": "Zdarma",
+      "subtitle": "Google Gemini",
+      "cta": "Začít zdarma",
+      "pro1": "Nestojí nic a nikdy nechce kartu",
+      "pro2": "Štědrý denní limit na běžné povídání",
+      "pro3": "Dobrá kvalita pro roleplay a konverzaci",
+      "con1": "Jen modely přímo od Google",
+      "con2": "Zralý nebo explicitní obsah je blokovaný"
+    },
+    "openrouter": {
+      "title": "Platíš podle spotřeby",
+      "subtitle": "OpenRouter",
+      "cta": "Použít OpenRouter",
+      "pro1": "Téměř všechny AI modely, včetně těch nejsilnějších",
+      "pro2": "Žádné denní stropy, platíš jen za to, co použiješ",
+      "pro3": "Kdykoli přepneš na levnější modely",
+      "con1": "Cena závisí na modelu a na tom, kolik si popovídáš",
+      "con2": "Potřebuje kartu nebo předplacený kredit"
+    },
+    "title": "Zdarma, nebo placeně?",
+    "lead": "Obě možnosti připojí aplikaci k AI. Rozdíl je v tom, jestli platíš a z kolika modelů si můžeš vybírat.",
+    "footer": "Nevíš? Začni zdarma. Placenou službu můžeš přidat později, aniž bys o něco přišel."
+  },
+  "connect": {
+    "title": "Připojit AI",
+    "lead": "LettuceAI je aplikace; odpovědi píše AI služba. Připoj tu, ke které máš klíč.",
+    "guidedLink": "Jsi v AI aplikacích nový? Projdi si průvodce nastavením",
+    "search": "Hledat mezi {{count}} službami",
+    "chooseAnother": "Vybrat jinou službu",
+    "pickTitle": "Vyber službu ze seznamu",
+    "pickBody": "Potřebuješ účet a API klíč od ní.",
+    "groups": {
+      "cloud": "Cloudové služby",
+      "local": "Na tvém počítači nebo síti",
+      "custom": "Jiná služba"
+    },
+    "subtitle": {
+      "custom": "Tvůj vlastní endpoint",
+      "local": "Běží na tvém počítači"
+    },
+    "form": {
+      "address": "Adresa",
+      "addressHintLocal": "Kde server běží",
+      "addressHintCustom": "Základní URL API",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API klíč",
+      "apiKeyOptional": "API klíč (nepovinný)",
+      "apiKeyHint": "Uloženo šifrovaně v tomto zařízení",
+      "apiKeyPlaceholder": "Vlož svůj klíč",
+      "name": "Název",
+      "nameHint": "Jak se zobrazuje v menu",
+      "namePlaceholder": "Můj {{name}}"
+    },
+    "error": {
+      "rejected": "Tenhle klíč nebyl přijat",
+      "unreachable": "Nepodařilo se spojit s {{name}}. Zkontroluj připojení."
+    }
+  },
+  "guide": {
+    "previousPicture": "Předchozí obrázek",
+    "nextPicture": "Další obrázek",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Snímek obrazovky",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Vlož svůj klíč",
+      "geminiBody": "Vlož klíč, který jsi právě zkopíroval z Google AI Studio. Zkontrolujeme ho u Google a pak ti ukážeme modely, které odemkne.",
+      "openrouterBody": "Vlož klíč, který jsi zkopíroval z OpenRouteru. Začíná na sk-or. Zkontrolujeme ho a pak ti ukážeme modely, které můžeš použít.",
+      "geminiPlaceholder": "Vlož svůj API klíč",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Uloženo šifrovaně v tomto zařízení. Odesílá se jen {{name}}, když chatuješ."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Otevři Google AI Studio",
+        "body": "Google AI Studio je oficiální stránka Google, kde vzniká tvůj bezplatný klíč Gemini. Otevři ji v prohlížeči tlačítkem níž. Až se stránka načte, přihlas se běžným účtem Google kliknutím na Get started v pravém horním rohu. Pokud už přihlášený jsi, proveď tě rovnou dál.",
+        "open": "Otevřít Google AI Studio",
+        "slide1": "Klikni na Get started v pravém horním rohu."
+      },
+      "find": {
+        "title": "Najdi API klíče",
+        "body": "Teď bys měl vidět hlavní pracovní plochu Google AI Studio. API klíče nejsou na hlavní obrazovce, najdeš je v postranním panelu po levé straně stránky. Podívej se k jeho spodní části na malou ikonu klíče a klikni na ni, otevře se stránka pro správu klíčů.",
+        "slide1": "Klikni na ikonu klíče v levém dolním rohu panelu."
+      },
+      "create": {
+        "title": "Vytvoř svůj klíč",
+        "body": "Vytvoření klíče je krátká série kliknutí a obrázky je ukazují popořadě. Nejdřív otevři dialog nového klíče v pravém horním rohu, pak vytvoř projekt, ve kterém má klíč žít, dej mu libovolný název a nakonec vytvoř samotný klíč. Mezi jednotlivými obrazovkami se posouvej šipkami vpravo.",
+        "slide1": "Klikni na Create API key v pravém horním rohu.",
+        "slide2": "Otevři rozbalovací nabídku a klikni na Create project.",
+        "slide3": "Dej mu libovolný název a pak klikni na Create project.",
+        "slide4": "S vybraným projektem klikni na Create key."
+      },
+      "copy": {
+        "title": "Zkopíruj svůj klíč",
+        "body": "Tvůj klíč je vytvořený a teď se zobrazuje celý. Klikni na ikonu kopírování vedle něj a zkopíruj celý klíč do schránky. Google ukazuje kompletní klíč jen tentokrát, tak si ho zkopíruj hned, než dialog zavřeš, a pak se sem vrať a vlož ho.",
+        "slide1": "Klikni na ikonu kopírování a zkopíruj svůj API klíč."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Otevři Google AI Studio",
+        "body": "Google AI Studio je oficiální stránka Google, kde vzniká tvůj bezplatný klíč Gemini. Otevři ji v prohlížeči tlačítkem níž a společnými silami se dostaneme ke klíči. Dva obrázky ukazují přesně, kam po načtení stránky klepnout, tak mezi nimi přejeď, pokud nevíš, kam se podívat.",
+        "open": "Otevřít Google AI Studio",
+        "slide1": "Klepni na menu v pravém horním rohu.",
+        "slide2": "Pak klepni na Get started dole."
+      },
+      "find": {
+        "title": "Najdi API klíče",
+        "body": "Teď bys měl být přihlášený a vidět hlavní stránku Google AI Studio. Potřebná část je schovaná v postranním menu, ne na hlavní obrazovce. Otevři to menu a pak se podívej úplně dolů na malou ikonu klíče. Klepnutím na ni se dostaneš přímo na stránku, kde se klíče vytvářejí.",
+        "slide1": "Otevři menu v levém horním rohu.",
+        "slide2": "Klepni na ikonu klíče dole v menu."
+      },
+      "start": {
+        "title": "Začni nový klíč",
+        "body": "Tohle je tvoje stránka API klíčů a je zatím prázdná, protože jsi žádný nevytvořil. To je úplně normální. Tlačítko, které proces spustí, je v pravém horním rohu obrazovky, tak na něj klepni a začni vytvářet první klíč.",
+        "slide1": "Klepni na Create API key v pravém horním rohu."
+      },
+      "project": {
+        "title": "Nejdřív vytvoř projekt",
+        "body": "Než ti Google dá klíč, zeptá se, do kterého projektu má patřit. Projekt je vlastně složka, kterou Google používá pro pořádek, a ty zatím žádnou nemáš. Vytvoř nový projekt a dej mu libovolný název, třeba LettuceAI. Název nic neovlivní, vyber si, co je nejjednodušší.",
+        "slide1": "Otevři rozbalovací nabídku a klepni na Create project.",
+        "slide2": "Dej mu libovolný název a pak klepni na Create project."
+      },
+      "create": {
+        "title": "Vytvoř a zkopíruj svůj klíč",
+        "body": "S vybraným novým projektem vytvoř samotný klíč. Jakmile se objeví, hned ho zkopíruj ikonou kopírování. Google ukazuje celý klíč jen tentokrát, tak je důležité zkopírovat ho teď, než okno zavřeš. Do aplikace ho vložíš v dalším kroku.",
+        "slide1": "S vybraným projektem klepni na Create key.",
+        "slide2": "Klepni na ikonu kopírování a zkopíruj svůj klíč."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Vytvoř si účet",
+        "body": "OpenRouter je jedna služba, která tě propojí se stovkami AI modelů od mnoha různých firem, přes jeden účet a jeden klíč. Otevři ji v prohlížeči tlačítkem níž a vytvoř si bezplatný účet. Tlačítko Sign Up je v pravém horním rohu stránky.",
+        "open": "Otevřít OpenRouter",
+        "slide1": "Klikni na Sign Up v pravém horním rohu."
+      },
+      "key": {
+        "title": "Získej svůj API klíč",
+        "body": "Po registraci se OpenRouter zeptá, jak ho plánuješ používat. Vyber Individual, což je správná volba pro osobní použití. Jakmile to uděláš, vytvoří tvůj úplně první API klíč a ukáže ho na obrazovce. Teď ho zkopíruj. Začíná na sk-or a za chvíli ho vložíš do aplikace.",
+        "slide1": "Na dotaz vyber Individual.",
+        "slide2": "Zkopíruj svůj nový API klíč (začíná na sk-or)."
+      },
+      "payment": {
+        "title": "Přidej platební metodu",
+        "body": "Placené modely účtují za každou zprávu velmi malou částku, takže OpenRouter potřebuje mít uloženou kartu, než je spustí. Přidej teď platební údaje a odemkni modely. V tomto kroku se nic neúčtuje, jen se potvrdí, kdo jsi, a později můžeš utrácet kredit.",
+        "slide1": "Vyplň platební údaje.",
+        "slide2": "Jakmile je přidáš, máš hotovo."
+      },
+      "credits": {
+        "title": "Přidej nějaké kredity",
+        "body": "Kredit je zůstatek, ze kterého se skutečně platí tvoje zprávy při chatování. Otevři stránku Credits v postranním panelu a dobij malou částku, ať můžeš začít. I pár dolarů vydrží u většiny modelů dlouho a kdykoli později můžeš přidat další, když ti dojdou.",
+        "slide1": "Otevři Credits v postranním panelu.",
+        "slide2": "Klikni na Add Credits a vyber částku."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Vytvoř si účet",
+        "body": "OpenRouter je jedna služba, která tě propojí se stovkami AI modelů od mnoha různých firem, přes jeden účet a jeden klíč. Otevři ji v prohlížeči tlačítkem níž a vytvoř si bezplatný účet. Tlačítko Sign Up je v pravém horním rohu stránky.",
+        "open": "Otevřít OpenRouter",
+        "slide1": "Klepni na Sign Up v pravém horním rohu."
+      },
+      "key": {
+        "title": "Získej svůj API klíč",
+        "body": "Po registraci se OpenRouter zeptá, jak ho plánuješ používat. Vyber Individual, což je správná volba pro osobní použití. Jakmile to uděláš, vytvoří tvůj úplně první API klíč a ukáže ho na obrazovce. Teď ho zkopíruj. Začíná na sk-or a za chvíli ho vložíš do aplikace.",
+        "slide1": "Na dotaz vyber Individual.",
+        "slide2": "Zkopíruj svůj nový API klíč (začíná na sk-or)."
+      },
+      "payment": {
+        "title": "Přidej platební metodu",
+        "body": "Placené modely účtují za každou zprávu velmi malou částku, takže OpenRouter potřebuje mít uloženou kartu, než je spustí. Přidej teď platební údaje a odemkni modely. V tomto kroku se nic neúčtuje, jen se potvrdí, kdo jsi, a později můžeš utrácet kredit.",
+        "slide1": "Vyplň platební údaje.",
+        "slide2": "Jakmile je přidáš, máš hotovo."
+      },
+      "credits": {
+        "title": "Přidej nějaké kredity",
+        "body": "Kredit je zůstatek, ze kterého se skutečně platí tvoje zprávy při chatování. Otevři menu, přejdi na stránku Credits a dobij malou částku, ať můžeš začít. I pár dolarů vydrží u většiny modelů dlouho a kdykoli později můžeš přidat další, když ti dojdou.",
+        "slide1": "Otevři menu a přejdi na Credits.",
+        "slide2": "Klepni na Add Credits a vyber částku."
+      }
+    }
+  },
+  "model": {
+    "title": "Vybrat model",
+    "lead": "Vyber model {{name}}, který píše odpovědi. Můžeš ho kdykoli změnit nebo přidat další.",
+    "model": "Model",
+    "modelId": "ID modelu",
+    "modelIdHint": "Přesné ID, které služba očekává",
+    "modelIdPlaceholder": "model-name",
+    "choose": "Vybrat z {{count}} modelů",
+    "customId": "Vlastní ID",
+    "displayName": "Zobrazovaný název",
+    "displayNameHint": "Co vidíš v aplikaci",
+    "displayNamePlaceholder": "Můj model",
+    "connected": "Připojeno",
+    "context": "Kontext",
+    "contextTokens": "{{value}} tokenů",
+    "contextSuffix": "kontext {{value}}",
+    "images": "Rozumí obrázkům",
+    "yes": "Ano",
+    "no": "Ne",
+    "inputPerMillion": "Vstup za milion",
+    "outputPerMillion": "Výstup za milion",
+    "emptyTitle": "Zatím není vybraný model",
+    "emptyBody": "Tady se zobrazí jeho velikost kontextu a ceny.",
+    "free": "Zdarma",
+    "priceIn": "vstup",
+    "priceOut": "výstup",
+    "picker": {
+      "title": "Modely {{name}}",
+      "search": "Hledat mezi {{count}} modely",
+      "filter": "Filtrovat modely",
+      "layout": "Rozvržení",
+      "list": "Seznam",
+      "twoPerRow": "Dva v řadě",
+      "onlyFree": "Jen modely zdarma",
+      "none": "Žádné modely neodpovídají filtrům.",
+      "useId": "Použít <mono>{{id}}</mono>",
+      "useIdBody": "Není v seznamu: použij tohle přesné ID",
+      "priceNote": "Ceny za milion tokenů, od {{name}}.",
+      "loading": "Načítání modelů"
+    },
+    "filters": {
+      "title": "Filtrovat modely",
+      "madeBy": "Vytvořil",
+      "capabilities": "Možnosti",
+      "imagesTitle": "Rozumí obrázkům",
+      "imagesBody": "Umí číst obrázky, které pošleš v chatu",
+      "sortBy": "Seřadit podle",
+      "sortName": "Název",
+      "sortPrice": "Nejlevnější",
+      "sortContext": "Nejdelší kontext",
+      "clear": "Vymazat",
+      "show_one": "Zobrazit {{count}} model",
+      "show_few": "Zobrazit {{count}} modely",
+      "show_many": "Zobrazit {{count}} modelu",
+      "show_other": "Zobrazit {{count}} modelů"
+    }
+  },
+  "memory": {
+    "title": "Jak si mají postavy pamatovat?",
+    "lead": "Postavy zapomínají, co zůstane mimo nedávné zprávy. Vyber, jak se důležité věci vracejí. Později to můžeš změnit u každého chatu.",
+    "group": "Paměť",
+    "recommended": "Doporučeno",
+    "classic": "Klasická",
+    "detailTitle": "Paměť: {{title}}",
+    "automatic": {
+      "title": "Automatická",
+      "point1": "Malý model v tvém zařízení vybírá, co je důležité, a vrací to, když je potřeba",
+      "point2": "Dlouhé chaty zůstanou konzistentní",
+      "point3": "Posílá se méně tokenů, takže odpovědi stojí méně",
+      "note": "Vyžaduje jednorázové stažení. Potom běží offline."
+    },
+    "manual": {
+      "title": "Ruční",
+      "point1": "Připínáš zprávy a fakta píšeš sám",
+      "point2": "Plná kontrola nad tím, co se pamatuje",
+      "point3": "Nic neběží na pozadí",
+      "note": "Nic se nestahuje."
+    }
+  },
+  "other": {
+    "title": "Další možnosti",
+    "language": "Jazyk",
+    "skip": "Přeskočit nastavení",
+    "skipBody": "Nejdřív se rozhlédni. Chaty potřebují AI, aby mohly odpovídat.",
+    "restore": "Obnovit zálohu",
+    "restoreBody": "Vrať chaty, postavy a nastavení ze souboru .lettuce",
+    "languageTitle": "Jazyk",
+    "warning": {
+      "title": "Chaty potřebují AI, aby mohly odpovídat",
+      "body": "Bez připojené AI postavy nemůžou odpovídat. Připojit ji můžeš později v nastavení.",
+      "connect": "Připojit AI",
+      "skipAnyway": "Přesto přeskočit"
+    }
+  },
+  "failure": {
+    "finish": "Nastavení se nepodařilo dokončit.",
+    "models": "Modely se nepodařilo načíst.",
+    "save": "Nepodařilo se uložit."
+  }
+}

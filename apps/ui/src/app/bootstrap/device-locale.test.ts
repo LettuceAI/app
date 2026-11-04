@@ -14,6 +14,14 @@ describe("device locale import", () => {
       }),
     ).toBe("zh-Hant");
   });
+  it("maps regional and legacy language codes to the app's locales", () => {
+    vi.stubGlobal("navigator", { language: "nb-NO", languages: ["nb-NO"] });
+    expect(selectDeviceLocale({}, () => null)).toBe("no");
+    vi.stubGlobal("navigator", { language: "in", languages: ["in"] });
+    expect(selectDeviceLocale({}, () => null)).toBe("id");
+    vi.stubGlobal("navigator", { language: "hu-HU", languages: ["hu-HU"] });
+    expect(selectDeviceLocale({}, () => null)).toBe("hu");
+  });
   it("keeps the device choice ahead of readable legacy storage", () => {
     expect(selectDeviceLocale({ locale: "tr" }, () => "de")).toBe("tr");
   });

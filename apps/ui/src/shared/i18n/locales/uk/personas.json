@@ -1,0 +1,83 @@
+{
+  "create": {
+    "title": "Нова персона",
+    "back": "Назад",
+    "create": "Створити персону",
+    "created": "{{name}} створено",
+    "imported": "Персону імпортовано",
+    "unattached_one": "Не вдалося прикріпити {{count}} лорбук. Прикріпіть його в налаштуваннях персони.",
+    "unattached_few": "Не вдалося прикріпити {{count}} лорбуки. Прикріпіть їх у налаштуваннях персони.",
+    "unattached_many": "Не вдалося прикріпити {{count}} лорбуків. Прикріпіть їх у налаштуваннях персони.",
+    "unattached_other": "Не вдалося прикріпити {{count}} лорбука. Прикріпіть їх у налаштуваннях персони.",
+    "defaultFailed": "{{name}} створено, але не вдалося зробити її типовою.",
+    "discardTitle": "Відкинути цю персону?",
+    "discardBody": "Усе, що ви ввели досі, буде втрачено.",
+    "discard": "Відкинути",
+    "keepEditing": "Продовжити редагування",
+    "continueTo": "Перейти до {{step}}"
+  },
+  "edit": {
+    "title": "Редагувати персону",
+    "back": "Назад",
+    "backToLibrary": "Назад до бібліотеки",
+    "more": "Більше дій",
+    "export": "Експортувати",
+    "delete": "Видалити персону",
+    "exported": "Персону експортовано",
+    "exportWarnings_one": "Експортовано з {{count}} попередженням",
+    "exportWarnings_few": "Експортовано з {{count}} попередженнями",
+    "exportWarnings_many": "Експортовано з {{count}} попередженнями",
+    "exportWarnings_other": "Експортовано з {{count}} попередженням",
+    "deleteTitle": "Видалити {{name}}?",
+    "deleteBody": "Персону буде прибрано з чатів, які її використовують.",
+    "deleteConfirm": "Видалити",
+    "deleteCancel": "Скасувати",
+    "deleted": "{{name}} видалено",
+    "unsaved": "Незбережені зміни",
+    "discard": "Відкинути",
+    "save": "Зберегти",
+    "saved": "Зміни збережено",
+    "lorebooksFailed": "Збережено, але не вдалося оновити лорбуки. Спробуйте зберегти ще раз.",
+    "leaveTitle": "Відкинути зміни?",
+    "leaveBody": "Незбережені зміни буде втрачено.",
+    "leaveDiscard": "Відкинути",
+    "leaveKeep": "Продовжити редагування"
+  },
+  "steps": {
+    "identity": "Особистість",
+    "extras": "Додатково"
+  },
+  "identity": {
+    "chooseAvatar": "Вибрати зображення",
+    "removeAvatar": "Прибрати",
+    "name": "Ім'я",
+    "namePlaceholder": "Професійний письменник",
+    "nameHint": "Хто ви в чатах",
+    "nickname": "Прізвисько",
+    "nicknamePlaceholder": "Як персонажі вас називають",
+    "nicknameHint": "Необов'язково. Використовується в чатах замість імені.",
+    "default": "Використовувати як типову",
+    "defaultBody": "Нові чати починаються з цією персоною",
+    "import": "Імпортувати з файлу",
+    "importBody": "Імпортуйте персону, експортовану з LettuceAI.",
+    "chooseFile": "Вибрати файл"
+  },
+  "about": {
+    "description": "Опис",
+    "descriptionPlaceholder": "Як персонажі мають до вас звертатися, ваша передісторія, уподобання й стиль",
+    "descriptionHint": "Використовуйте {{user}} для цієї персони й {{char}} для персонажа.",
+    "words_one": "{{count}} слово",
+    "words_few": "{{count}} слова",
+    "words_many": "{{count}} слів",
+    "words_other": "{{count}} слова"
+  },
+  "extras": {
+    "body": "Усе тут необов'язкове.",
+    "lorebooks": "Лорбуки",
+    "lorebooksNone": "Немає",
+    "lorebooksCount_one": "{{count}} лорбук",
+    "lorebooksCount_few": "{{count}} лорбуки",
+    "lorebooksCount_many": "{{count}} лорбуків",
+    "lorebooksCount_other": "{{count}} лорбука"
+  }
+}

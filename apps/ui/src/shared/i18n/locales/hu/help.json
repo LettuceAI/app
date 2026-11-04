@@ -1,0 +1,103 @@
+{
+  "title": "Súgó és GYIK",
+  "subtitle": "Az alapok, API-kulcsok, adatvédelem és gyakori kérdések",
+  "sections": {
+    "gettingStarted": "Első lépések",
+    "privacySafety": "Adatvédelem és biztonság",
+    "modelsProviders": "Modellek és szolgáltatók",
+    "charactersChats": "Karakterek és beszélgetések"
+  },
+  "stillStuck": {
+    "title": "Egyéb kérdésed van?",
+    "docsTitle": "Teljes dokumentáció",
+    "docsDescription": "Útmutatók és referenciák a LettuceAI-hoz",
+    "discordTitle": "Csatlakozz a Discordhoz",
+    "discordDescription": "Kérdezz a közösségtől, vagy jelents hibát"
+  },
+  "faq": {
+    "whatIsLettuceai": {
+      "question": "Mi az a LettuceAI?",
+      "answer": "A LettuceAI AI-karakterekkel folytatott beszélgetésekhez készült alkalmazás. Te választod ki a szolgáltatót és a modellt, amely a válaszokat írja, a beszélgetéseid és karaktereid pedig az eszközödön maradnak. A felhőszolgáltatók a saját fiókodat használják; a támogatott helyi modellek a számítógépeden futnak."
+    },
+    "whatIsApiKey": {
+      "question": "Mi az API-kulcs, és miért van rá szükségem? (A BYOK magyarázata)",
+      "answer": "A BYOK a Bring Your Own Key rövidítése, vagyis hozd a saját kulcsodat. Az API-kulcs segítségével a LettuceAI a te fiókodat használva küld kéréseket a szolgáltatónak. Hozz létre kulcsot a szolgáltatónál, majd add hozzá a Beállítások > Szolgáltatók alatt. A kérések az eszközödről mennek a szolgáltatóhoz, amely a saját számlázását és korlátait alkalmazza. A támogatott helyi modellekhez nincs szükség felhőalapú API-kulcsra. Kezeld a kulcsot jelszóként, és ne oszd meg senkivel."
+    },
+    "cheapestStart": {
+      "question": "Mi a legolcsóbb vagy legegyszerűbb kezdés?",
+      "answer": "A Beállítási útmutatóval csatlakoztass szolgáltatót, és válassz modellt. Egyenleg feltöltése előtt vesd össze a szolgáltató aktuális árait, ingyenes csomagjait és kérési korlátait. Kezdj kis költségvetéssel, és beszélgetés közben nézd a Beállítások > Használati statisztikák oldalt. Asztali gépen a támogatott helyi modellek is szóba jönnek, ha a számítógépedben elég memória és tárhely van."
+    },
+    "alternative": {
+      "question": "Ez alternatíva más AI-csevegőalkalmazásokhoz?",
+      "answer": "Igen. A LettuceAIban te választod ki a szolgáltatót, a modellt és a karakterbeállításokat, ahelyett hogy minden beszélgetést egyetlen szolgáltatáshoz kötnél. A saját szolgáltatói fiókodat kezeled, és az adataid az eszközödön maradnak. Egy rövid beállítás összeköti a használni kívánt modellt."
+    },
+    "cost": {
+      "question": "Mennyibe kerül?",
+      "answer": "A LettuceAI ingyenes. A felhőszolgáltató díjat számíthat fel a fiókodnak a kérésekért, vagy kínálhat ingyenes csomagot. Az árak a modelltől, az elküldött és generált szöveg mennyiségétől, valamint az igénybe vett kép- vagy hangfunkcióktól függenek. Modellválasztás előtt nézd meg a szolgáltató árazását. A használati statisztikák a jelentett tokeneket és az ismert költségeket mutatják; a hiányzó ár nem jelenti azt, hogy a kérés ingyenes."
+    },
+    "apiKeySafe": {
+      "question": "Biztonságban van az API-kulcsom?",
+      "answer": "A szolgáltatói hitelesítő adatokat helyben tároljuk, és a beállított szolgáltatóhoz való kapcsolódásra használjuk. A LettuceAI nem továbbítja a kéréseidet a saját csevegőszerverén. Csak olyan szolgáltatásokhoz adj meg kulcsot, amelyekben megbízol, óvatosan ellenőrizd az egyéni szolgáltatók URL-jeit, és védd az eszközödet és a biztonsági mentéseidet."
+    },
+    "chatsStored": {
+      "question": "Hol tárolódnak a beszélgetéseim? Olvashatja őket bárki?",
+      "answer": "A beszélgetések az alkalmazás helyi adatbázisában tárolódnak. Amikor egy felhőmodell válaszol, a prompt és a releváns beszélgetési kontextus elküldésre kerül a választott szolgáltatónak. A szolgáltató a saját adatvédelmi szabályzata szerint dolgozza fel a kérést. Az eszközödhöz vagy az exportált biztonsági mentésekhez hozzáférő bárki szintén olvashatja az adataidat."
+    },
+    "chatsDeleted": {
+      "question": "Törlődhetnek a beszélgetéseim maguktól?",
+      "answer": "A LettuceAI nem tart fenn szerveroldali másolatot, amelyből visszaállíthatná a beszélgetéseidet. Egy beszélgetés törlése, az alkalmazás visszaállítása, eltávolítása, az alkalmazástárhely törlése vagy az eszköz elvesztése helyi adatok törlését eredményezheti. Készíts biztonsági mentést mindenről, amit meg akarsz őrizni."
+    },
+    "editRemotely": {
+      "question": "Szerkesztheti valaki távolról az adataimat?",
+      "answer": "A LettuceAI-nek nincs távoli adminisztrációs szolgáltatása a helyi beszélgetésekhez és karakterekhez. A választott szolgáltató állítja elő a válaszokat, de nem kezeli az alkalmazás adatbázisát. Tartsd biztonságban az eszközödet és az importált vagy megosztott fájljaidat."
+    },
+    "shutdown": {
+      "question": "Mi történik az adataimmal, ha a LettuceAI megszűnik?",
+      "answer": "A mentett beszélgetéseid és karaktereid az eszközödön maradnak, és LettuceAI-fiók nélkül is olvashatók. A felhőválaszok továbbra is attól függnek, hogy a szolgáltatód elérhető-e, és a fiókod működik-e. Őrizz másolatot az adataidról a Beállítások > Biztonsági mentés és visszaállítás alatt."
+    },
+    "training": {
+      "question": "Tanítanak a szolgáltatók a beszélgetéseimen?",
+      "answer": "Ez a szolgáltatótól, a fiókod típusától és az aktuális adatkezelési irányelvétől függ. A LettuceAI nem tudja megváltoztatni ezeket a feltételeket. Érzékeny információ küldése előtt olvasd el a szolgáltató adatvédelmi és megőrzési beállításait. A támogatott helyi modellek a számítógépeden dolgozzák fel a promptjaikat."
+    },
+    "whatIsModel": {
+      "question": "Mi az a „modell”? Melyiket válasszam?",
+      "answer": "A modell az az AI, amely a válaszokat írja. A modellek írásstílusban, sebességben, kontextushosszban, hardverigényben és árban különböznek. Adj hozzá szolgáltatót a Beállítások > Szolgáltatók alatt, majd állíts be modellt a Beállítások > Modellek alatt. Beállíthatsz alkalmazásszintű alapértelmezést, vagy választhatsz modellt egy adott karakterhez vagy beszélgetéshez."
+    },
+    "freeProviders": {
+      "question": "Vannak ingyenes szolgáltatók?",
+      "answer": "Néhány szolgáltató kínál ingyenes modelleket vagy ingyenes használati csomagokat, saját fiókkövetelményekkel és aránykorlátokkal. Az elérhetőség változhat, ezért nézd meg a szolgáltató aktuális feltételeit. Egy ingyenes csomaghoz is szükség lehet API-kulcsra. A támogatott helyi modellek nem számítanak fel díjat kérésenként, de igénybe veszik a számítógéped hardverét, tárhelyét és áramát."
+    },
+    "freeVsPaid": {
+      "question": "Mi a különbség az ingyenes és a fizetős szolgáltatók között?",
+      "answer": "Az ingyenes és fizetős csomagok eltérhetnek az elérhető modellekben, kérési korlátokban, válaszsebességben, adatvédelmi feltételekben és támogatásban. A részletek minden szolgáltatónál sajátok; egy fizetős csomag nem jelent automatikusan egy adott adatvédelmi szabályzatot. Több szolgáltatót is csatlakoztathatsz, és minden beszélgetéshez választhatsz megfelelő modellt."
+    },
+    "whatIsToken": {
+      "question": "Mi az a token?",
+      "answer": "A token egy kis szövegrész, például egy szó vagy egy szó része. A pontos felosztás a modelltől és a nyelvtől függ. Egy kérés bemeneti tokeneket tartalmaz a promptból és a beszélgetési kontextusból, valamint kimeneti tokeneket a válaszból. A szolgáltatók ezeket eltérően árazhatják. A hosszú előzmények és hosszú válaszok növelhetik a használatot."
+    },
+    "noDefaultModel": {
+      "question": "Azt látom, hogy „nincs beállított alapértelmezett modell”",
+      "answer": "Nyisd meg a Beállítások > Modellek oldalt, és adj hozzá modellt egy beállított szolgáltatótól. Ezután állíts be alkalmazásszintű alapértelmezést, vagy válassz modellt a karakter beállításaiban. Egy karakter vagy beszélgetés felülírhatja az alapértelmezést, ezért nézd meg a modellválasztását, ha a válaszok továbbra sem indulnak el."
+    },
+    "cloudVsLocal": {
+      "question": "Mi a különbség a felhőalapú és a helyi modellek között?",
+      "answer": "A felhőmodellek a szolgáltató hardverén futnak, és kapcsolatot igényelnek a szolgáltatáshoz. A támogatott helyi modellek az asztali számítógépeden futnak, és elegendő memóriát és tárhelyet igényelnek. A helyi modellek telepítése és futtatási beállításai asztali gépen érhetők el; mobilon használj csatlakoztatott szolgáltatót."
+    },
+    "whatIsCharacter": {
+      "question": "Mi az a karakter? Készíthetek sajátot?",
+      "answer": "A karakternek van neve, képe és leírása, amelyek meghatározzák, hogyan beszél. A létrehozás gombbal készíthetsz egyet, vagy importálhatsz karakterkártyát a Könyvtárban. Szerkeszd a leírását és a modellbeállításait, hogy megváltoztasd a jövőbeli válaszok előállítását."
+    },
+    "whatIsPersona": {
+      "question": "Mi az a persona?",
+      "answer": "A persona a beszélgetés te oldaladat írja le: a nevedet és azokat a részleteket, amelyeket a karakternek tudnod kell rólad. A Könyvtárban hozhatsz létre vagy importálhatsz personákat, majd kiválaszthatod, melyiket használod egy beszélgetéshez."
+    },
+    "charactersPrivate": {
+      "question": "Bizalmasak az általam létrehozott karakterek?",
+      "answer": "Az általad létrehozott karakterek az eszközödön tárolódnak. Egy karakterkártya exportálása és megosztása lehetővé teszi, hogy mások is elolvassák. Amikor felhőmodellel beszélgetsz, a promptjában használt karakterrészletek szintén elküldésre kerülnek a választott szolgáltatónak."
+    },
+    "backupMove": {
+      "question": "Hogyan készíthetek biztonsági mentést, vagy hogyan költözhetek át másik eszközre?",
+      "answer": "Nyisd meg a Beállítások > Biztonsági mentés és visszaállítás oldalt egy mentési fájl létrehozásához. Tartsd biztonságos helyen. Eszközváltáshoz telepítsd a LettuceAI-t a másik eszközre, és állítsd vissza ott ezt a fájlt. A meglévő adatok lecserélése előtt olvasd el a visszaállítási képernyő figyelmeztetéseit."
+    }
+  }
+}

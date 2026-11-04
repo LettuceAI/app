@@ -1,0 +1,177 @@
+{
+  "onnxModelsUnloaded": "Bezčinné modely byly uvolněny z paměti: {{models}}. Až je bude potřeba, znovu se načtou.",
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Připojování k aplikaci…"
+  },
+  "navigation": {
+    "primary": "Hlavní navigace",
+    "chats": "Chaty",
+    "groups": "Skupiny",
+    "discover": "Objevit",
+    "library": "Knihovna",
+    "settings": "Nastavení",
+    "home": "Domů",
+    "create": "Vytvořit",
+    "collapse": "Sbalit",
+    "collapseSidebar": "Sbalit postranní panel",
+    "expandSidebar": "Rozbalit postranní panel",
+    "backToApp": "Zpět do aplikace"
+  },
+  "downloads": {
+    "loading": "Načítání stahování",
+    "title": "Stahování",
+    "titleActive_one": "Stahování, {{count}} aktivní",
+    "titleActive_few": "Stahování, {{count}} aktivní",
+    "titleActive_many": "Stahování, {{count}} aktivního",
+    "titleActive_other": "Stahování, {{count}} aktivních",
+    "empty": "Nic se nestahuje.",
+    "emptyBody": "Instalace a aktualizace se objeví tady.",
+    "generic": "Stáhnout",
+    "done": "{{name}} je připraven",
+    "failed": "{{name}} se nepodařilo stáhnout"
+  },
+  "window": {
+    "minimize": "Minimalizovat",
+    "maximize": "Maximalizovat",
+    "close": "Zavřít okno",
+    "failed": "Akci s oknem se nepodařilo dokončit. Zkus to znovu."
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Ostatní"
+  },
+  "actions": {
+    "retry": "Zkusit znovu",
+    "cancel": "Zrušit",
+    "reload": "Znovu načíst"
+  },
+  "errors": {
+    "fatalTitle": "Něco se pokazilo",
+    "fatalDescription": "V aplikaci došlo k neočekávanému problému. Obvykle to vyřeší znovunačtení.",
+    "loadTitle": "Tohle se nepodařilo načíst",
+    "notFoundTitle": "Tady nic není",
+    "notFoundDescription": "Tahle stránka v aplikaci neexistuje.",
+    "code": {
+      "not_found": "Už neexistuje.",
+      "in_use": "Pořád se používá. Odstraň odkazy na něj a zkus to znovu.",
+      "malformed": "Poskytovatel vrátil nečitelnou odpověď.",
+      "conflict": "Někde jinde se to změnilo. Načti to znovu a zkus to.",
+      "invalid_input": "Něco v požadavku není platné.",
+      "unsupported": "Tady to není podporované.",
+      "unavailable": "Teď to není dostupné.",
+      "cancelled": "Bylo to zrušeno.",
+      "busy": "Aplikace je zaneprázdněná. Zkus to za chvíli.",
+      "internal": "V aplikaci došlo k interní chybě.",
+      "model_required": "Požadovaný model není nainstalovaný.",
+      "model_unavailable": "Požadovaný model se nepodařilo načíst.",
+      "transport": "Nepodařilo se spojit s backendem aplikace."
+    }
+  },
+  "create": {
+    "group": "Vytvořit skupinu",
+    "groupBody": "Dej postavy do jednoho chatu",
+    "title": "Vytvořit",
+    "description": "Někdo na povídání, nebo svět pro ně.",
+    "character": "Vytvořit postavu",
+    "characterBody": "Jméno, vzhled, povaha a úvodní scény",
+    "persona": "Vytvořit personu",
+    "personaBody": "Kdo jsi v chatech",
+    "lorebook": "Vytvořit lorebook",
+    "lorebookBody": "Reálie světa: napiš je sám, načti ze souboru nebo nech na AI",
+    "import": "Importovat kartu",
+    "importBody": "Karta postavy ve formátu PNG nebo JSON",
+    "imported": "Postava importována",
+    "discover": "Projít Objevit",
+    "discoverBody": "Postavy, které sdíleli ostatní"
+  },
+  "providerSelect": {
+    "placeholder": "Vyber poskytovatele",
+    "title": "Poskytovatel",
+    "empty": "Nejsou dostupní žádní poskytovatelé.",
+    "groups": {
+      "cloud": "Cloud",
+      "local": "Lokální",
+      "custom": "Vlastní"
+    }
+  },
+  "designReferences": {
+    "note": "Poznámka ke vzhledu",
+    "notePlaceholder": "Krátké vlasy, kulaté brýle, dlouhý šedý kabát",
+    "noteHint": "Vzhled několika slovy. Používá se pro generované obrázky scén.",
+    "images": "Referenční obrázky",
+    "imagesHint": "Několik obrázků, které ukazují vzhled.",
+    "add": "Přidat obrázek",
+    "remove": "Odebrat obrázek"
+  },
+  "memoryDownload": {
+    "title": "Stáhnout model paměti",
+    "titleDone": "Paměť je připravena",
+    "body": "Automatická paměť potřebuje v tomto zařízení malý model. Stáhne se jednou a pak běží offline.",
+    "bodyDone": "Tvoje postavy si teď budou pamatovat, co je důležité, i v dlouhých chatech. Pro každý chat to můžeš vypnout.",
+    "modelName": "Model paměti Lettuce Eidos",
+    "keepOpen": "Nech aplikaci otevřenou, dokud se to nedokončí.",
+    "download": "Stáhnout a dokončit",
+    "downloading": "Stahování",
+    "checking": "Kontrola modelu",
+    "useManual": "Použít ruční paměť",
+    "doneDetail": "Nainstalováno a otestováno · běží offline",
+    "failedOffline": "Spojení bylo ztraceno. Zkus to znovu a pokračuj.",
+    "failedOther": "Stahování se nedokončilo. Zkus to znovu a pokračuj.",
+    "downloadOnly": "Stáhnout",
+    "bodyInstall": "Dynamická paměť potřebuje v tomto zařízení malý model. Stáhne se jednou a pak běží offline.",
+    "failureCode": {
+      "integrity_failure": "Stažený soubor je poškozený. Zkus to znovu a pokračuj.",
+      "resource_unavailable": "Server s modely teď není dostupný. Zkus to znovu a pokračuj.",
+      "storage_failure": "Model se nepodařilo uložit do tohoto zařízení. Zkontroluj volné místo a zkus to znovu.",
+      "timed_out": "Stahování trvalo příliš dlouho. Zkus to znovu a pokračuj."
+    }
+  },
+  "emotionDownload": {
+    "title": "Stáhnout model emocí",
+    "titleDone": "Pocity jsou připraveny",
+    "body": "Režim společníka čte s pomocí malého modelu v tomto zařízení pocit za každou zprávou. Stáhne se jednou a pak běží offline.",
+    "bodyDone": "Každá odpověď teď může měnit, jak se tvoji společníci cítí a jak blízko si jste.",
+    "download": "Stáhnout",
+    "close": "Teď ne",
+    "finish": "Hotovo"
+  },
+  "structuredFallback": {
+    "title": "Když model neumí pracovat s nástroji",
+    "formats": {
+      "json": {
+        "title": "JSON",
+        "body": "Kompaktní. Funguje s většinou modelů."
+      },
+      "xml": {
+        "title": "XML",
+        "body": "Pro modely, které píšou XML spolehlivěji než JSON."
+      }
+    },
+    "hint": "Nejdřív se zkoušejí volání nástrojů. Tento formát se použije jen tehdy, když je model nepodporuje."
+  },
+  "promptPicker": {
+    "builtIn": "Vestavěný",
+    "builtInBody": "Prompt přímo z aplikace",
+    "builtInMissing": "Vestavěný prompt není dostupný",
+    "search": "Hledat prompty",
+    "clearSearch": "Vymazat hledání",
+    "noMatches": "Žádné odpovídající prompty",
+    "manage": "Systémové prompty",
+    "manageBody": "Vytvořit nebo upravit prompt",
+    "close": "Zavřít"
+  },
+  "lorebookPicker": {
+    "title": "Lorebooky",
+    "done": "Hotovo",
+    "empty": "Zatím žádné lorebooky",
+    "emptyBody": "Lorebooky, které vytvoříš nebo importuješ, se objeví tady.",
+    "edit": "Upravit {{name}}"
+  }
+}

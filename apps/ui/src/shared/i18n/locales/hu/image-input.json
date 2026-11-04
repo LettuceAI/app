@@ -1,0 +1,133 @@
+{
+  "generate": "Avatar generálása",
+  "title": "Avatar generálása",
+  "bannerCrop": {
+    "title": "Banner pozicionálása",
+    "description": "Keretezd be a borítót. Húzd a mozgatáshoz, csippentsd vagy görgess a nagyításhoz.",
+    "saveFailed": "Nem sikerült menteni a bannert"
+  },
+  "crop": {
+    "title": "Avatar pozicionálása",
+    "description": "Húzd a mozgatáshoz. Csippentsd vagy görgess a nagyításhoz.",
+    "zoom": "Nagyítás",
+    "zoomIn": "Nagyítás",
+    "zoomOut": "Kicsinyítés",
+    "center": "Közép",
+    "area": "Keretező terület",
+    "keyboard": "A nyílbillentyűk mozgatják a képet. A plusz és mínusz nagyít, a C középre állít, a 0 visszaállít.",
+    "reset": "Visszaállítás",
+    "apply": "Pozíció használata",
+    "loadFailed": "Nem sikerült betölteni a képet",
+    "saveFailed": "Nem sikerült menteni az avatart"
+  },
+  "preview": {
+    "empty": "Még nincs kép",
+    "emptyBody": "Írd le az avatart alább, vagy indulj ki a saját képedből.",
+    "alt": "Avatar előnézete",
+    "unchanged": "Az űrlapon már szereplő avatar",
+    "editedFrom": "Ebből: {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Verziók",
+    "count_one": "{{count}} verzió",
+    "count_other": "{{count}} verzió",
+    "current": "Jelenlegi avatar",
+    "upload": "Feltöltött kép {{number}}",
+    "generation": "Generált kép {{number}}",
+    "edit": "Szerkesztett kép {{number}}",
+    "short": {
+      "current": "Jelenlegi",
+      "upload": "Feltöltés {{number}}",
+      "generation": "Kép {{number}}",
+      "edit": "Szerkesztés {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Kép feltöltése"
+  },
+  "mode": {
+    "label": "Mit tegyünk",
+    "generate": "Új kép",
+    "edit": "Kijelölt szerkesztése",
+    "generateHint": "Csak a leírásból indul újra",
+    "editHint": "A(z) {{version}} másolatát módosítja"
+  },
+  "prompt": {
+    "label": "Avatar leírása",
+    "placeholder": "Mosolygó róka kötött sálban, lágy világítás"
+  },
+  "instruction": {
+    "label": "Mit változtassunk",
+    "placeholder": "Legyen kék a sál"
+  },
+  "actions": {
+    "generate": "Generálás",
+    "edit": "Szerkesztés alkalmazása",
+    "cancel": "Mégse",
+    "use": "Avatar használata",
+    "retry": "Újra"
+  },
+  "busy": {
+    "uploading": "Kép hozzáadása",
+    "generating": "Kép generálása",
+    "editing": "Kép szerkesztése",
+    "cancelling": "Megszakítás"
+  },
+  "job": {
+    "progress": "{{current}} / {{total}}",
+    "rejected_one": "{{count}} eredmény félre lett téve",
+    "rejected_other": "{{count}} eredmény félre lett téve",
+    "cancelled": "Generálás megszakítva"
+  },
+  "settings": {
+    "open": "Képbeállítások megnyitása"
+  },
+  "notice": {
+    "options": {
+      "title": "Nem sikerült ellenőrizni az avatar modelljét",
+      "body": "A feltöltés továbbra is működik."
+    },
+    "disabled": {
+      "title": "Az avatar generálása ki van kapcsolva",
+      "body": "Kapcsold be a képbeállításokban a generáláshoz. A feltöltés továbbra is működik."
+    },
+    "noModel": {
+      "title": "Nincs kiválasztva avatar modell",
+      "body": "Válassz olyan modellt, amely képeket fogad és ad vissza. A feltöltés továbbra is működik."
+    },
+    "incompatible": {
+      "title": "Ez a modell nem tud avatart készíteni",
+      "body": "Az avatarokhoz olyan modell kell, amely képeket fogad és ad vissza. A feltöltés továbbra is működik."
+    },
+    "upload": {
+      "title": "Nem sikerült hozzáadni a képet"
+    },
+    "generation": {
+      "title": "Nem sikerült elkészíteni a képet"
+    },
+    "cancellation": {
+      "title": "Nem sikerült megszakítani",
+      "body": "A kérés talán még fut. Próbáld újra megszakítani."
+    },
+    "uncertain": {
+      "title": "Várakozás az eredményre",
+      "body": "A kapcsolat megszakadt, mielőtt az eredmény megérkezett. Próbálj újra kapcsolódni, vagy szakítsd meg a kérést."
+    }
+  },
+  "failure": {
+    "cancelled": "A generálás megszakítva.",
+    "setup": "A képmodell nincs megfelelően beállítva. Ellenőrizd a képbeállításokban.",
+    "invalidRequest": "A kérést nem fogadták el. Módosítsd a leírást, és próbáld újra.",
+    "engine": "A képmotor leállt, mielőtt befejezte volna.",
+    "timedOut": "A kép elkészítése túl sokáig tartott.",
+    "memory": "A képmodell kifogyott a memóriából.",
+    "storage": "A képet nem sikerült elmenteni.",
+    "provider": "A szolgáltató nem tudta elkészíteni a képet.",
+    "empty": "Nem jött vissza kép.",
+    "rejected": "Az eredményt félretették, és semmi sem érkezett vissza.",
+    "refused": "A modell elutasította ennek a képnek az elkészítését. Módosítsd a leírást, és próbáld újra.",
+    "authentication": "A szolgáltató elutasította a hitelesítő adatokat. Ellenőrizd a szolgáltatót a beállításokban.",
+    "unavailable": "A képmodell most nem elérhető.",
+    "unknown": "Hiba történt a kép készítése közben."
+  }
+}

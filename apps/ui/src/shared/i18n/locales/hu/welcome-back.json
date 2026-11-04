@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Üdv újra itt.",
+    "bodyBefore": "Ez a ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Teljesen újratervezve, és minden, amit alkottál, jön veled.",
+    "migrate": "Adatok átköltöztetése",
+    "notNow": "Most nem"
+  },
+  "migrate": {
+    "title": "Adataid átköltöztetése",
+    "body": "A beszélgetéseid, karaktereid és médiáid átkerülnek.",
+    "note": "Tartsd nyitva az alkalmazást, amíg be nem fejeződik.",
+    "stages": {
+      "read": "Adataid beolvasása",
+      "write": "Beszélgetések, karakterek és média átköltöztetése",
+      "verify": "Minden ellenőrzése",
+      "switch": "Befejezés"
+    },
+    "failed": "Az átköltöztetés nem fejeződött be.",
+    "retry": "Újra"
+  },
+  "models": {
+    "titlePending": "Funkcióid visszahozása",
+    "titleReady": "Funkcióid visszatértek",
+    "checking": "Annak ellenőrzése, mely funkciókat használják a beszélgetéseid",
+    "bodyPending_memory": "Néhány beszélgetésed dinamikus memóriát használ. A modellje egyszer letöltődik, aztán offline fut.",
+    "bodyPending_emotion": "Néhány beszélgetésed társérzelmeket használ. A modellje egyszer letöltődik, aztán offline fut.",
+    "bodyPending_both": "Néhány beszélgetésed dinamikus memóriát és társérzelmeket használ. A modelljeik egyszer letöltődnek, aztán offline futnak.",
+    "bodyReady_memory": "A dinamikus memória kész, és offline fut.",
+    "bodyReady_emotion": "A társérzelmek készen állnak, és offline futnak.",
+    "bodyReady_both": "A dinamikus memória és a társérzelmek készen állnak, és offline futnak.",
+    "names": {
+      "embedding": "Lettuce Eidos memóriamodell",
+      "emotion": "Thymos érzelemmodell"
+    },
+    "why": {
+      "embedding": "A dinamikus memóriához",
+      "emotion": "A társérzelmekhez"
+    },
+    "ready": "Kész",
+    "waiting": "Várakozás",
+    "checkingFiles": "Fájlok ellenőrzése",
+    "progress": "{{done}} / {{total}}",
+    "failed": "A letöltés nem fejeződött be",
+    "download": "Letöltés",
+    "notNow": "Most nem",
+    "continue": "Tovább",
+    "retry": "Újra",
+    "notNowNote": "A modelleket igénylő beszélgetések kérni fogják őket. Később a Beállításokban is letöltheted őket.",
+    "keepOpen": "Tartsd nyitva az alkalmazást, amíg be nem fejeződik."
+  },
+  "done": {
+    "title": "Minden készen áll.",
+    "body": "Minden ott van, ahol hagytad.",
+    "open": "LettuceAI megnyitása"
+  },
+  "upgrade": {
+    "title": "Előbb egy lépés",
+    "body": "Az adataid egy régebbi LettuceAI-ból származnak. Nyisd meg egyszer a {{version}} verzióval, hogy frissülhessenek, aztán gyere vissza ide.",
+    "copy": "Letöltési link másolása",
+    "copied": "Link másolva",
+    "fresh": "Inkább tiszta lappal"
+  }
+}

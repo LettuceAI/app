@@ -1,0 +1,123 @@
+{
+  "triggerPreview": "Kiváltás előnézete",
+  "title": "Könyvtár",
+  "loadMore": "Továbbiak betöltése",
+  "search": "Könyvtár keresése",
+  "show": "Mutat",
+  "filters": {
+    "all": "Mind",
+    "characters": "Karakterek",
+    "personas": "Personák",
+    "lorebooks": "Lorebookok",
+    "images": "Képek",
+    "audio": "Hangok"
+  },
+  "kinds": {
+    "character": "Karakter",
+    "persona": "Persona",
+    "lorebook": "Lorebook"
+  },
+  "you": "Te",
+  "entries_one": "{{count}} bejegyzés",
+  "entries_other": "{{count}} bejegyzés",
+  "defaultPersona": "Persona · az alapértelmezésed",
+  "menu": {
+    "start": "Beszélgetés indítása",
+    "edit_character": "Karakter szerkesztése",
+    "edit_persona": "Persona szerkesztése",
+    "edit_lorebook": "Lorebook szerkesztése",
+    "default": "Beállítás alapértelmezett personaként",
+    "defaultHint": "Azokhoz a beszélgetésekhez, amelyek nem választanak másikat",
+    "export": "Exportálás",
+    "export_character": "Karakterkártyaként",
+    "export_persona": "UEC-fájlként",
+    "export_lorebook": "UEC- vagy JSON-fájlként",
+    "delete_character": "Karakter törlése",
+    "delete_persona": "Persona törlése",
+    "delete_lorebook": "Lorebook törlése",
+    "save": "Mentés az eszközre",
+    "deleteImage": "Kép törlése",
+    "deleteAudio": "Felvétel törlése",
+    "avatar": "Beállítás {{name}} avatarjaként",
+    "more": "Továbbiak: {{name}}",
+    "background": "Háttér",
+    "generated": "Generált",
+    "uploaded": "Feltöltött"
+  },
+  "create": {
+    "title": "Létrehozás",
+    "description": "Adj hozzá valamit a könyvtáradhoz.",
+    "character": "Valaki, akivel beszélhetsz",
+    "persona": "Ki vagy te egy beszélgetésben",
+    "lorebook": "Világtények, amelyekre egy karakter támaszkodhat",
+    "import": "Fájl importálása",
+    "importHint": "Karakterkártya, persona vagy lorebook",
+    "new_character": "Új karakter",
+    "new_lorebook": "Új lorebook",
+    "button_character": "Karakter létrehozása",
+    "button_persona": "Persona létrehozása",
+    "button_lorebook": "Lorebook létrehozása"
+  },
+  "edit": {
+    "name": "Név",
+    "hint_character": "A kártyán és a beszélgetés fejlécében jelenik meg.",
+    "placeholder_character": "pl. Cassian",
+    "placeholder_lorebook": "pl. Az északi kapu",
+    "create": "Létrehozás",
+    "cancel": "Mégse"
+  },
+  "delete": {
+    "title": "Törlöd: {{name}}?",
+    "confirm": "Törlés",
+    "character": "A beszélgetései és memóriái is törlődnek vele.",
+    "persona": "A persona eltávolításra kerül a használó beszélgetésekből.",
+    "lorebook": "A használó karakterek és beszélgetések elveszítik a hozzáférésüket a bejegyzéseihez.",
+    "image": "A kép eltávolításra kerül erről az eszközről. A használatban lévő képek nem törölhetők.",
+    "audio": "A felvétel eltávolításra kerül erről az eszközről. A használatban lévő felvételek nem törölhetők."
+  },
+  "empty": {
+    "all": {
+      "title": "A könyvtárad üres",
+      "description": "Az általad létrehozott vagy importált karakterek, personák és lorebookok itt tárolódnak."
+    },
+    "characters": {
+      "title": "Még nincsenek karakterek",
+      "description": "A karakter az, akivel beszélsz: név, történet, beszédmód."
+    },
+    "personas": {
+      "title": "Még nincsenek personák",
+      "description": "A persona az, aki te vagy egy beszélgetésben. A karakterek látják a nevét és leírását."
+    },
+    "lorebooks": {
+      "title": "Még nincsenek lorebookok",
+      "description": "Világtények, amelyekre egy karakter támaszkodhat, amikor szóba kerülnek a beszélgetésben."
+    },
+    "images": {
+      "title": "Még nincsenek képek",
+      "description": "A beszélgetésben generált képek itt tárolódnak."
+    },
+    "audio": {
+      "title": "Még nincs hang",
+      "description": "Az általad generált vagy felvett hangfelvételek itt tárolódnak."
+    },
+    "matches": "Semmi sem egyezik ezzel: „{{query}}”",
+    "searchAll": "Próbálj egy másik nevet vagy egy leírás egy részletét.",
+    "searchSection": "Ebben a szakaszban nincs találat. A könyvtár többi részében lehet.",
+    "clear": "Keresés törlése",
+    "everything": "Keresés mindenben",
+    "import": "Importálás"
+  },
+  "toast": {
+    "created": "Hozzáadva: {{name}}",
+    "deleted": "Törölve: {{name}}",
+    "default": "{{name}} az alapértelmezett personád",
+    "exported": "Fájl exportálva",
+    "imported": "Fájl importálva",
+    "warnings_one": "A fájl átvitele {{count}} figyelmeztetéssel sikerült",
+    "warnings_other": "A fájl átvitele {{count}} figyelmeztetéssel sikerült",
+    "mediaSaved": "Mentve az eszközre",
+    "avatar": "Avatar frissítve"
+  },
+  "draft": "Piszkozat",
+  "untitledDraft": "Névtelen lorebook-piszkozat"
+}

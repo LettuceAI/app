@@ -1,0 +1,137 @@
+{
+  "generate": "Vygenerovat avatar",
+  "title": "Vygenerovat avatar",
+  "bannerCrop": {
+    "title": "Umístění banneru",
+    "description": "Zarámuj obal. Tažením posuneš, špetkou nebo kolečkem přiblížíš.",
+    "saveFailed": "Banner se nepodařilo uložit"
+  },
+  "crop": {
+    "title": "Umístění avataru",
+    "description": "Tažením posuneš. Špetkou nebo kolečkem přiblížíš.",
+    "zoom": "Přiblížení",
+    "zoomIn": "Přiblížit",
+    "zoomOut": "Oddálit",
+    "center": "Vycentrovat",
+    "area": "Oblast výřezu",
+    "keyboard": "Šipky posouvají obrázek. Plus a mínus přibližují, C vycentruje, 0 obnoví.",
+    "reset": "Obnovit",
+    "apply": "Použít tuto pozici",
+    "loadFailed": "Obrázek se nepodařilo načíst",
+    "saveFailed": "Avatar se nepodařilo uložit"
+  },
+  "preview": {
+    "empty": "Zatím žádný obrázek",
+    "emptyBody": "Popiš avatar níž, nebo začni z vlastního obrázku.",
+    "alt": "Náhled avataru",
+    "unchanged": "Avatar, který už je ve formuláři",
+    "editedFrom": "Z {{version}}: {{request}}"
+  },
+  "versions": {
+    "label": "Verze",
+    "count_one": "{{count}} verze",
+    "count_few": "{{count}} verze",
+    "count_many": "{{count}} verze",
+    "count_other": "{{count}} verzí",
+    "current": "Aktuální avatar",
+    "upload": "Nahraný obrázek {{number}}",
+    "generation": "Vygenerovaný obrázek {{number}}",
+    "edit": "Upravený obrázek {{number}}",
+    "short": {
+      "current": "Aktuální",
+      "upload": "Nahráno {{number}}",
+      "generation": "Obrázek {{number}}",
+      "edit": "Úprava {{number}}"
+    }
+  },
+  "upload": {
+    "action": "Nahrát obrázek"
+  },
+  "mode": {
+    "label": "Co udělat",
+    "generate": "Nový obrázek",
+    "edit": "Upravit vybraný",
+    "generateHint": "Začne znovu jen z popisu",
+    "editHint": "Vytvoří upravenou kopii: {{version}}"
+  },
+  "prompt": {
+    "label": "Popiš avatar",
+    "placeholder": "Usmívající se liška v pletené šále, jemné světlo"
+  },
+  "instruction": {
+    "label": "Co změnit",
+    "placeholder": "Udělej šálu modrou"
+  },
+  "actions": {
+    "generate": "Vygenerovat",
+    "edit": "Použít úpravu",
+    "cancel": "Zrušit",
+    "use": "Použít tento avatar",
+    "retry": "Zkusit znovu"
+  },
+  "busy": {
+    "uploading": "Přidávání obrázku",
+    "generating": "Generování obrázku",
+    "editing": "Úprava obrázku",
+    "cancelling": "Rušení"
+  },
+  "job": {
+    "progress": "{{current}} z {{total}}",
+    "rejected_one": "{{count}} výsledek byl odložen",
+    "rejected_few": "{{count}} výsledky byly odloženy",
+    "rejected_many": "{{count}} výsledku bylo odloženo",
+    "rejected_other": "{{count}} výsledků bylo odloženo",
+    "cancelled": "Generování zrušeno"
+  },
+  "settings": {
+    "open": "Otevřít nastavení obrázků"
+  },
+  "notice": {
+    "options": {
+      "title": "Avatar model se nepodařilo zkontrolovat",
+      "body": "Nahrávání pořád funguje."
+    },
+    "disabled": {
+      "title": "Generování avatarů je vypnuté",
+      "body": "Zapni ho v nastavení obrázků, abys mohl generovat. Nahrávání pořád funguje."
+    },
+    "noModel": {
+      "title": "Není vybraný žádný avatar model",
+      "body": "Vyber model, který přijímá a vrací obrázky. Nahrávání pořád funguje."
+    },
+    "incompatible": {
+      "title": "Tento model neumí vytvářet avatary",
+      "body": "Avatary potřebují model, který přijímá a vrací obrázky. Nahrávání pořád funguje."
+    },
+    "upload": {
+      "title": "Obrázek se nepodařilo přidat"
+    },
+    "generation": {
+      "title": "Obrázek se nepodařilo vytvořit"
+    },
+    "cancellation": {
+      "title": "Zrušení se nepodařilo",
+      "body": "Požadavek možná pořád běží. Zkus ho zrušit znovu."
+    },
+    "uncertain": {
+      "title": "Čekání na výsledek",
+      "body": "Připojení spadlo, než dorazil výsledek. Zkus se znovu připojit, nebo požadavek zruš."
+    }
+  },
+  "failure": {
+    "cancelled": "Generování bylo zrušeno.",
+    "setup": "Model obrázků není správně nastavený. Zkontroluj ho v nastavení obrázků.",
+    "invalidRequest": "Požadavek nebyl přijat. Změň popis a zkus to znovu.",
+    "engine": "Generátor obrázků se zastavil, než dokončil práci.",
+    "timedOut": "Vytváření obrázku trvalo příliš dlouho.",
+    "memory": "Modelu obrázků došla paměť.",
+    "storage": "Obrázek se nepodařilo uložit.",
+    "provider": "Poskytovatel obrázek nedokázal vytvořit.",
+    "empty": "Nevrátil se žádný obrázek.",
+    "rejected": "Výsledek byl odložen a nic se nevrátilo.",
+    "refused": "Model odmítl tento obrázek vytvořit. Změň popis a zkus to znovu.",
+    "authentication": "Poskytovatel odmítl přihlašovací údaje. Zkontroluj poskytovatele v nastavení.",
+    "unavailable": "Model obrázků teď není dostupný.",
+    "unknown": "Při vytváření obrázku se něco pokazilo."
+  }
+}

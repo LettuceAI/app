@@ -15,7 +15,7 @@ import {
 } from "@lettuceai/crisp";
 import { typingHaptic } from "@/api/haptics";
 import { appStatusQuery } from "@/api/app-status-query";
-import { matchRequestedLocale } from "@/shared/i18n/device-locale";
+import { matchRequestedLocale, supportedLocales } from "@/shared/i18n/device-locale";
 import type { SettingsUiAccessibilitySettingsHapticIntensity } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import {
@@ -30,28 +30,6 @@ import { useSidebarOnDetailPages } from "@/shared/hooks/useSidebarOnDetailPages"
 import { useSettingsApi } from "../data";
 import { Row } from "./ChatTab";
 
-const languages = [
-  "en",
-  "tr",
-  "de",
-  "fr",
-  "es",
-  "pt",
-  "it",
-  "pl",
-  "ru",
-  "ja",
-  "ko",
-  "zh-Hans",
-  "zh-Hant",
-  "id",
-  "vi",
-  "nl",
-  "no",
-  "fil",
-  "el",
-  "hi",
-];
 const soundIcons = {
   send: <Send size={icon.lg} />,
   success: <CircleCheck size={icon.lg} />,
@@ -141,7 +119,7 @@ export function GeneralTab({ phone }: { phone: boolean }) {
                 value={language}
                 options={[
                   { value: "system", label: t("sameAsSystem") },
-                  ...languages.map((value) => ({
+                  ...supportedLocales.map((value) => ({
                     value,
                     label: new Intl.DisplayNames([value], { type: "language" }).of(value) ?? value,
                   })),

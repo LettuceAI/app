@@ -1,0 +1,356 @@
+{
+  "header": {
+    "back": "Vissza",
+    "learn": "Vezetett beállítás · Az alapok, {{current}} / {{total}}",
+    "path": "Vezetett beállítás · Ingyenes vagy fizetős",
+    "guided": "Vezetett beállítás · {{name}}, {{current}} / {{total}}",
+    "connect": "Beállítás · 1 / 3",
+    "model": "Beállítás · 2 / 3",
+    "memory": "Beállítás · 3 / 3"
+  },
+  "welcome": {
+    "line1": "A te <brand>történeteid</brand>,",
+    "line2": "a te <brand>karaktereid</brand>.",
+    "pitch": "A beszélgetések és karakterek az eszközödön maradnak. Te választod ki, melyik AI írja a válaszokat.",
+    "start": "Kezdjük",
+    "other": "További lehetőségek"
+  },
+  "actions": {
+    "exitSetup": "Vissza a beállításokhoz",
+    "next": "Tovább",
+    "gotIt": "Értem",
+    "haveKey": "Megvan a kulcsom",
+    "connect": "Csatlakoztatás",
+    "checking": "Kulcs ellenőrzése",
+    "useModel": "Modell használata",
+    "saving": "Modell mentése",
+    "finish": "Beállítás befejezése",
+    "finishing": "Beállítás befejezése",
+    "openApp": "LettuceAI megnyitása"
+  },
+  "learn": {
+    "welcome": {
+      "tag": "Üdvözlünk",
+      "title": "Üdv a LettuceAI-ban",
+      "body": "Mindjárt beállítod az első AI-szerepjátékodat. A következő néhány lépés közérthetően elmagyarázza az alapokat, majd segítünk mindent összekötni. Csak pár percet vesz igénybe."
+    },
+    "car": {
+      "tag": "Hogyan működik",
+      "title": "Az alkalmazás az autó, nem a motor",
+      "body": "Képzeld el ezt az alkalmazást egy autóként, ami még motortalan. Megvan a műszerfala, az ülései és a karaktereid, de magától nem tud vezetni. Adsz hozzá egy motort, és ez a néhány lépés megmutatja, hogyan.",
+      "plain": "Ez az alkalmazás a képernyő és a karakterek. Az AI, amely ténylegesen megírja a válaszokat, online fut, és te csatlakoztatod hozzá az alkalmazást."
+    },
+    "provider": {
+      "tag": "1. lépés / 3",
+      "title": "Válaszd ki, honnan jön a motor",
+      "body": "A szolgáltató az a cég, amely szállítja és futtatja a motort, például a Google vagy az OpenRouter. Nyitsz nála egy ingyenes vagy fizetős fiókot, és az alkalmazás kölcsönveszi a motorjukat a beszélgetéseidhez.",
+      "plain": "A szolgáltató egy cég, amely AI-modelleket futtat. Nyitsz nála egy fiókot, és az alkalmazás elküldi neki az üzeneteidet, hogy válaszokat kapjon."
+    },
+    "key": {
+      "tag": "2. lépés / 3",
+      "title": "A kulcsod indítja be a motort",
+      "body": "Az API-kulcs pont úgy működik, mint egy autókulcs. A szolgáltató ad neked egyet, te beilleszted az alkalmazásba, és az beindítja a motort. Tartsd magadnál. Az eszközödön marad, mint egy kulcs a zsebedben.",
+      "plain": "Az API-kulcs egy titkos kód a szolgáltatótól, amely lehetővé teszi az alkalmazásnak a fiókod használatát. Egyszer illeszted be, és csak az eszközödön mentődik."
+    },
+    "engine": {
+      "tag": "3. lépés / 3",
+      "title": "Válaszd ki a motort",
+      "body": "A modell maga a motor. A szolgáltatók kicsi, hatékony és nagy, erős motorokat kínálnak. A nagyobb motorok jobban vezetnek, de több üzemanyagot égetnek, ezért többe kerülnek. Bármikor cserélhetsz motort.",
+      "plain": "A modell az a konkrét AI, amely megírja a válaszokat. A nagyobb modellek okosabbak, de többe kerülnek, és bármikor válthatsz köztük."
+    },
+    "cost": {
+      "tag": "A költség",
+      "title": "Ingyenes vagy fizetős, te döntesz",
+      "body": "Néhány modell teljesen ingyenesen használható, napi korláttal arra, mennyit beszélgetsz. A fizetős modellek kis összeget számítanak fel minden üzenetért, gyakran kevesebbet egy centnél.",
+      "plain": "Mindig csak a szolgáltatónak fizetsz, soha nem ennek az alkalmazásnak. Kezdheted ingyen, és később válthatsz fizetősre, ha szeretnél."
+    },
+    "inOtherWords": "Más szóval"
+  },
+  "path": {
+    "gemini": {
+      "title": "Ingyenes",
+      "subtitle": "Google Gemini",
+      "cta": "Kezdés ingyen",
+      "pro1": "Semmibe nem kerül, és soha nem kér kártyát",
+      "pro2": "Bőséges napi keret a mindennapi beszélgetéshez",
+      "pro3": "Jó minőség szerepjátékhoz és beszélgetéshez",
+      "con1": "Csak a Google saját modelljei",
+      "con2": "A felnőtt vagy explicit tartalom blokkolva van"
+    },
+    "openrouter": {
+      "title": "Használat szerinti fizetés",
+      "subtitle": "OpenRouter",
+      "cta": "OpenRouter használata",
+      "pro1": "Szinte minden AI-modell, a legerősebbeket is beleértve",
+      "pro2": "Nincs napi korlát, csak a használatért fizetsz",
+      "pro3": "Bármikor válthatsz olcsóbb modellekre",
+      "con1": "A költség a modelltől és a beszélgetés mennyiségétől függ",
+      "con2": "Kártya vagy előre feltöltött egyenleg kell"
+    },
+    "title": "Ingyenes vagy fizetős?",
+    "lead": "Mindkettő összeköti az alkalmazást egy AI-val. A különbség, hogy fizetsz-e, és hány modell közül választhatsz.",
+    "footer": "Nem tudod? Kezdd ingyen. Később hozzáadhatsz fizetős szolgáltatást anélkül, hogy bármit elveszítenél."
+  },
+  "connect": {
+    "title": "AI csatlakoztatása",
+    "lead": "A LettuceAI az alkalmazás; egy AI-szolgáltatás írja a válaszokat. Csatlakoztasd azt, amelyikhez van kulcsod.",
+    "guidedLink": "Új vagy az AI-alkalmazásokban? Vezetett beállítás",
+    "search": "{{count}} szolgáltatás keresése",
+    "chooseAnother": "Másik szolgáltatás választása",
+    "pickTitle": "Válassz egy szolgáltatást a listából",
+    "pickBody": "Fiókra és API-kulcsra lesz szükséged hozzá.",
+    "groups": {
+      "cloud": "Felhőszolgáltatások",
+      "local": "A számítógépeden vagy hálózatodon",
+      "custom": "Bármilyen más szolgáltatás"
+    },
+    "subtitle": {
+      "custom": "Saját végpont",
+      "local": "A számítógépeden fut"
+    },
+    "form": {
+      "address": "Cím",
+      "addressHintLocal": "Hol fut a szerver",
+      "addressHintCustom": "Az API alap URL-je",
+      "addressPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API-kulcs",
+      "apiKeyOptional": "API-kulcs (opcionális)",
+      "apiKeyHint": "Titkosítva tárolódik ezen az eszközön",
+      "apiKeyPlaceholder": "Illeszd be a kulcsod",
+      "name": "Név",
+      "nameHint": "Ahogy a menüidben megjelenik",
+      "namePlaceholder": "Saját {{name}}"
+    },
+    "error": {
+      "rejected": "Ezt a kulcsot nem fogadták el",
+      "unreachable": "Nem sikerült elérni: {{name}}. Ellenőrizd a kapcsolatot."
+    }
+  },
+  "guide": {
+    "previousPicture": "Előző kép",
+    "nextPicture": "Következő kép",
+    "pictureCount": "{{current}} / {{total}}",
+    "screenshot": "Képernyőkép",
+    "routes": {
+      "gemini": "Google Gemini",
+      "openrouter": "OpenRouter"
+    },
+    "key": {
+      "title": "Illeszd be a kulcsod",
+      "geminiBody": "Illeszd be a kulcsot, amelyet most másoltál a Google AI Studióból. Ellenőrizzük a Google-lel, majd megmutatjuk a modelleket, amelyeket felold.",
+      "openrouterBody": "Illeszd be a kulcsot, amelyet az OpenRouterről másoltál. sk-or-rel kezdődik. Ellenőrizzük, majd megmutatjuk a használható modelleket.",
+      "geminiPlaceholder": "Illeszd be az API-kulcsod",
+      "openrouterPlaceholder": "sk-or-...",
+      "hint": "Titkosítva tárolódik ezen az eszközön. Csak beszélgetéskor küldjük el a(z) {{name}} szolgáltatónak."
+    }
+  },
+  "guides": {
+    "geminiDesktop": {
+      "open": {
+        "title": "Google AI Studio megnyitása",
+        "body": "A Google AI Studio a hivatalos Google-oldal, ahol az ingyenes Gemini-kulcsod létrejön. Nyisd meg a böngésződben az alábbi gombbal. Amikor az oldal betölt, jelentkezz be a szokásos Google-fiókoddal a jobb felső sarokban található Kezdés gombbal. Ha már be vagy jelentkezve, egyenesen továbbvisz.",
+        "open": "Google AI Studio megnyitása",
+        "slide1": "Kattints a jobb felső sarokban a Kezdés gombra."
+      },
+      "find": {
+        "title": "Keresd meg az API-kulcsokat",
+        "body": "Most a Google AI Studio fő munkaterületét látod. Az API-kulcsok nincsenek a fő képernyőn, hanem az oldal bal szélén futó oldalsávban vannak. Keresd az oldalsáv alja felé egy kis kulcsikont, és kattints rá a kulcsok kezelésére szolgáló oldal megnyitásához.",
+        "slide1": "Kattints az oldalsáv bal alsó sarkában a kulcsikonra."
+      },
+      "create": {
+        "title": "Hozd létre a kulcsod",
+        "body": "A kulcs létrehozása néhány kattintásból áll, a képek pedig sorrendben végigvezetnek mindegyiken. Először nyisd meg az új kulcs párbeszédablakát a jobb felső sarokból, majd hozz létre egy projektet, amelyben a kulcs lakni fog, adj neki tetszőleges nevet, végül hozd létre magát a kulcsot. A jobb oldali nyilakkal lépkedhetsz a képernyők között.",
+        "slide1": "Kattints a jobb felső sarokban az API-kulcs létrehozása elemre.",
+        "slide2": "Nyisd meg a legördülő menüt, és kattints a Projekt létrehozása elemre.",
+        "slide3": "Adj neki tetszőleges nevet, majd kattints a Projekt létrehozása elemre.",
+        "slide4": "A kiválasztott projekttel kattints a Kulcs létrehozása elemre."
+      },
+      "copy": {
+        "title": "Másold ki a kulcsod",
+        "body": "A kulcsod létrejött, és most teljes egészében látható. Kattints mellette a másolás ikonra, hogy az egész kulcs a vágólapra kerüljön. A Google csak most mutatja meg a teljes kulcsot, ezért másold ki most, mielőtt bezárod a párbeszédablakot, majd gyere vissza ide beilleszteni.",
+        "slide1": "Kattints a másolás ikonra az API-kulcsod kimásolásához."
+      }
+    },
+    "geminiMobile": {
+      "open": {
+        "title": "Google AI Studio megnyitása",
+        "body": "A Google AI Studio a hivatalos Google-oldal, ahol az ingyenes Gemini-kulcsod létrejön. Nyisd meg a böngésződben az alábbi gombbal, és együtt végigvesszük a kulcs megszerzését. A két kép pontosan megmutatja, hova koppints az oldal betöltése után, ezért lapozz köztük, ha nem vagy biztos benne, hova nézz.",
+        "open": "Google AI Studio megnyitása",
+        "slide1": "Koppints a jobb felső sarokban a menüre.",
+        "slide2": "Ezután koppints alul a Kezdés gombra."
+      },
+      "find": {
+        "title": "Keresd meg az API-kulcsokat",
+        "body": "Most már be vagy jelentkezve, és a Google AI Studio fő oldalát látod. A szükséges rész az oldalmenüben van elrejtve, nem a fő képernyőn. Nyisd meg a menüt, majd keresd a legalján a kis kulcsikont. Rákopintva egyenesen a kulcsok létrehozására szolgáló oldalra jutsz.",
+        "slide1": "Nyisd meg a bal felső sarokban a menüt.",
+        "slide2": "Koppints a menü alján a kulcsikonra."
+      },
+      "start": {
+        "title": "Kezdj új kulcsot",
+        "body": "Ez az API-kulcsok oldala, és most üres, mert még nem hoztál létre egyet sem. Ez teljesen normális. A folyamatot indító gomb a képernyő jobb felső sarkában van, koppints rá az első kulcsod létrehozásának elkezdéséhez.",
+        "slide1": "Koppints a jobb felső sarokban az API-kulcs létrehozása elemre."
+      },
+      "project": {
+        "title": "Előbb hozz létre egy projektet",
+        "body": "Mielőtt a Google kulcsot ad, megkérdezi, melyik projekthez tartozzon. A projekt csak egy mappa, amelyet a Google a rendszerezésre használ, és még nincs ilyened. Hozz létre egy új projektet, és adj neki tetszőleges nevet, például LettuceAI. A név semmit nem befolyásol, ezért válaszd a legegyszerűbbet.",
+        "slide1": "Nyisd meg a legördülő menüt, és koppints a Projekt létrehozása elemre.",
+        "slide2": "Adj neki tetszőleges nevet, majd koppints a Projekt létrehozása elemre."
+      },
+      "create": {
+        "title": "Kulcs létrehozása és másolása",
+        "body": "A kiválasztott új projekttel hozd létre magát a kulcsot. Amikor megjelenik, azonnal másold ki a másolás ikonnal. A Google csak most mutatja meg a teljes kulcsot, ezért fontos, hogy még az ablak bezárása előtt kimásold. A következő lépésben illeszted be az alkalmazásba.",
+        "slide1": "A kiválasztott projekttel koppints a Kulcs létrehozása elemre.",
+        "slide2": "Koppints a másolás ikonra a kulcs kimásolásához."
+      }
+    },
+    "openrouterDesktop": {
+      "account": {
+        "title": "Hozd létre a fiókod",
+        "body": "Az OpenRouter egyetlen szolgáltatás, amely több száz AI-modellhez kapcsol össze sok különböző cégtől, egyetlen fiókon és kulcson keresztül. Nyisd meg a böngésződben az alábbi gombbal, és hozz létre egy ingyenes fiókot. A Regisztráció gomb az oldal jobb felső sarkában van.",
+        "open": "OpenRouter megnyitása",
+        "slide1": "Kattints a jobb felső sarokban a Regisztráció elemre."
+      },
+      "key": {
+        "title": "Szerezd meg az API-kulcsod",
+        "body": "Regisztráció után az OpenRouter megkérdezi, hogyan tervezed használni. Válaszd az Egyéni lehetőséget, amely a személyes használathoz megfelelő. Amint megteszed, létrehozza az első API-kulcsodat, és megmutatja a képernyőn. Másold ki most. sk-or-rel kezdődik, és mindjárt beilleszted az alkalmazásba.",
+        "slide1": "Amikor kérdezi, válaszd az Egyéni lehetőséget.",
+        "slide2": "Másold ki az új API-kulcsodat (sk-or-rel kezdődik)."
+      },
+      "payment": {
+        "title": "Adj hozzá fizetési módot",
+        "body": "A fizetős modellek nagyon kis összeget számítanak fel minden üzenetért, ezért az OpenRouternek kártyára van szüksége a futtatásukhoz. Add meg most a számlázási adataidat a modellek feloldásához. Ebben a lépésben semmit nem számítanak fel, csak megerősíti, ki vagy, és lehetővé teszi, hogy később egyenleget használj.",
+        "slide1": "Töltsd ki a számlázási adataidat.",
+        "slide2": "Minden kész, amint hozzáadtad."
+      },
+      "credits": {
+        "title": "Tölts fel egy kis egyenleget",
+        "body": "Az egyenleg az a keret, amely ténylegesen fizet az üzeneteidért, ahogy beszélgetsz. Nyisd meg az oldalsávból az Egyenleg oldalt, és tölts fel egy kis összeget a kezdéshez. Még néhány dollár is sokáig kitart a legtöbb modellnél, és bármikor feltölthetsz többet, ha elfogy.",
+        "slide1": "Nyisd meg az oldalsávból az Egyenleg oldalt.",
+        "slide2": "Kattints az Egyenleg feltöltése elemre, és válassz egy összeget."
+      }
+    },
+    "openrouterMobile": {
+      "account": {
+        "title": "Hozd létre a fiókod",
+        "body": "Az OpenRouter egyetlen szolgáltatás, amely több száz AI-modellhez kapcsol össze sok különböző cégtől, egyetlen fiókon és kulcson keresztül. Nyisd meg a böngésződben az alábbi gombbal, és hozz létre egy ingyenes fiókot. A Regisztráció gomb az oldal jobb felső sarkában van.",
+        "open": "OpenRouter megnyitása",
+        "slide1": "Koppints a jobb felső sarokban a Regisztráció elemre."
+      },
+      "key": {
+        "title": "Szerezd meg az API-kulcsod",
+        "body": "Regisztráció után az OpenRouter megkérdezi, hogyan tervezed használni. Válaszd az Egyéni lehetőséget, amely a személyes használathoz megfelelő. Amint megteszed, létrehozza az első API-kulcsodat, és megmutatja a képernyőn. Másold ki most. sk-or-rel kezdődik, és mindjárt beilleszted az alkalmazásba.",
+        "slide1": "Amikor kérdezi, válaszd az Egyéni lehetőséget.",
+        "slide2": "Másold ki az új API-kulcsodat (sk-or-rel kezdődik)."
+      },
+      "payment": {
+        "title": "Adj hozzá fizetési módot",
+        "body": "A fizetős modellek nagyon kis összeget számítanak fel minden üzenetért, ezért az OpenRouternek kártyára van szüksége a futtatásukhoz. Add meg most a számlázási adataidat a modellek feloldásához. Ebben a lépésben semmit nem számítanak fel, csak megerősíti, ki vagy, és lehetővé teszi, hogy később egyenleget használj.",
+        "slide1": "Töltsd ki a számlázási adataidat.",
+        "slide2": "Minden kész, amint hozzáadtad."
+      },
+      "credits": {
+        "title": "Tölts fel egy kis egyenleget",
+        "body": "Az egyenleg az a keret, amely ténylegesen fizet az üzeneteidért, ahogy beszélgetsz. Nyisd meg a menüt, menj az Egyenleg oldalra, és tölts fel egy kis összeget a kezdéshez. Még néhány dollár is sokáig kitart a legtöbb modellnél, és bármikor feltölthetsz többet, ha elfogy.",
+        "slide1": "Nyisd meg a menüt, és menj az Egyenleg oldalra.",
+        "slide2": "Koppints az Egyenleg feltöltése elemre, és válassz egy összeget."
+      }
+    }
+  },
+  "model": {
+    "title": "Válassz modellt",
+    "lead": "Válaszd ki a(z) {{name}} modellt, amely a válaszokat írja. Bármikor módosíthatod, vagy hozzáadhatsz többet.",
+    "model": "Modell",
+    "modelId": "Modellazonosító",
+    "modelIdHint": "A pontos azonosító, amelyet a szolgáltatás elvár",
+    "modelIdPlaceholder": "model-name",
+    "choose": "Választás {{count}} modellből",
+    "customId": "Egyéni azonosító",
+    "displayName": "Megjelenített név",
+    "displayNameHint": "Amit az alkalmazásban látsz",
+    "displayNamePlaceholder": "Saját modell",
+    "connected": "Csatlakoztatva",
+    "context": "Kontextus",
+    "contextTokens": "{{value}} token",
+    "contextSuffix": "{{value}} kontextus",
+    "images": "Érti a képeket",
+    "yes": "Igen",
+    "no": "Nem",
+    "inputPerMillion": "Bemenet, millióként",
+    "outputPerMillion": "Kimenet, millióként",
+    "emptyTitle": "Még nincs kiválasztott modell",
+    "emptyBody": "A kontextusmérete és az árai itt jelennek meg.",
+    "free": "Ingyenes",
+    "priceIn": "be",
+    "priceOut": "ki",
+    "picker": {
+      "title": "{{name}} modellek",
+      "search": "{{count}} modell keresése",
+      "filter": "Modellek szűrése",
+      "layout": "Elrendezés",
+      "list": "Lista",
+      "twoPerRow": "Kettő egy sorban",
+      "onlyFree": "Csak ingyenes modellek",
+      "none": "Nincs a szűrőknek megfelelő modell.",
+      "useId": "<mono>{{id}}</mono> használata",
+      "useIdBody": "Nincs a listán: használd ezt a pontos azonosítót",
+      "priceNote": "Árak millió tokenenként, innen: {{name}}.",
+      "loading": "Modellek betöltése"
+    },
+    "filters": {
+      "title": "Modellek szűrése",
+      "madeBy": "Készítő",
+      "capabilities": "Képességek",
+      "imagesTitle": "Érti a képeket",
+      "imagesBody": "Olvasni tudja a beszélgetésben küldött képeket",
+      "sortBy": "Rendezés",
+      "sortName": "Név",
+      "sortPrice": "Legolcsóbb",
+      "sortContext": "Leghosszabb kontextus",
+      "clear": "Törlés",
+      "show_one": "{{count}} modell mutatása",
+      "show_other": "{{count}} modell mutatása"
+    }
+  },
+  "memory": {
+    "title": "Hogyan emlékezzenek a karakterek?",
+    "lead": "A karakterek elfelejtik, ami a legutóbbi üzeneteken kívül esik. Válaszd ki, hogyan jöjjenek vissza a fontos részek. Később beszélgetésenként módosíthatod.",
+    "group": "Memória",
+    "recommended": "Ajánlott",
+    "classic": "Klasszikus",
+    "detailTitle": "{{title}} memória",
+    "automatic": {
+      "title": "Automatikus",
+      "point1": "Egy kis modell az eszközödön kiválasztja, mi számít, és szükség esetén visszahozza",
+      "point2": "A hosszú beszélgetések konzisztensek maradnak",
+      "point3": "Kevesebb token megy el, így a válaszok olcsóbbak",
+      "note": "Egyszeri letöltést igényel. Utána offline fut."
+    },
+    "manual": {
+      "title": "Manuális",
+      "point1": "Te tűzöd ki az üzeneteket, és írod a tényeket",
+      "point2": "Teljes kontroll afölött, mire emlékszik",
+      "point3": "Semmi sem fut a háttérben",
+      "note": "Nincs mit letölteni."
+    }
+  },
+  "other": {
+    "title": "További lehetőségek",
+    "language": "Nyelv",
+    "skip": "Beállítás kihagyása",
+    "skipBody": "Előbb nézz körül. A beszélgetésekhez AI kell a válaszokhoz.",
+    "restore": "Biztonsági mentés visszaállítása",
+    "restoreBody": "Hozd vissza a beszélgetéseket, karaktereket és beállításokat egy .lettuce fájlból",
+    "languageTitle": "Nyelv",
+    "warning": {
+      "title": "A beszélgetésekhez AI kell a válaszokhoz",
+      "body": "Csatlakoztatott AI nélkül a karakterek nem tudnak válaszolni. Később a beállításokban csatlakoztathatsz egyet.",
+      "connect": "AI csatlakoztatása",
+      "skipAnyway": "Kihagyás mindenképp"
+    }
+  },
+  "failure": {
+    "finish": "Nem sikerült befejezni a beállítást.",
+    "models": "Nem sikerült betölteni a modelleket.",
+    "save": "Nem sikerült menteni."
+  }
+}

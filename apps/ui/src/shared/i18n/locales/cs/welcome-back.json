@@ -1,0 +1,65 @@
+{
+  "welcome": {
+    "title": "Vítej zpět.",
+    "bodyBefore": "Tohle je ",
+    "product": "LettuceAI Next",
+    "bodyAfter": ". Postavené od základu znovu, a všechno, co jsi vytvořil, jde s tebou.",
+    "migrate": "Migrovat data",
+    "notNow": "Teď ne"
+  },
+  "migrate": {
+    "title": "Přesouvání dat",
+    "body": "Tvoje chaty, postavy a média se přesouvají.",
+    "note": "Nech aplikaci otevřenou, dokud se to nedokončí.",
+    "stages": {
+      "read": "Čtení tvých dat",
+      "write": "Přesouvání chatů, postav a médií",
+      "verify": "Kontrola všeho",
+      "switch": "Dokončování"
+    },
+    "failed": "Přesun se nedokončil.",
+    "retry": "Zkusit znovu"
+  },
+  "models": {
+    "titlePending": "Vracíme tvoje funkce",
+    "titleReady": "Tvoje funkce jsou zpět",
+    "checking": "Kontrola, které funkce tvoje chaty používají",
+    "bodyPending_memory": "Některé tvoje chaty používají dynamickou paměť. Její model se stáhne jednou a pak běží offline.",
+    "bodyPending_emotion": "Některé tvoje chaty používají emoce společníka. Jejich model se stáhne jednou a pak běží offline.",
+    "bodyPending_both": "Některé tvoje chaty používají dynamickou paměť a emoce společníka. Jejich modely se stáhnou jednou a pak běží offline.",
+    "bodyReady_memory": "Dynamická paměť je připravena a běží offline.",
+    "bodyReady_emotion": "Emoce společníka jsou připraveny a běží offline.",
+    "bodyReady_both": "Dynamická paměť a emoce společníka jsou připraveny a běží offline.",
+    "names": {
+      "embedding": "Model paměti Lettuce Eidos",
+      "emotion": "Model emocí Thymos"
+    },
+    "why": {
+      "embedding": "Pro dynamickou paměť",
+      "emotion": "Pro emoce společníka"
+    },
+    "ready": "Připraveno",
+    "waiting": "Čeká",
+    "checkingFiles": "Kontrola souborů",
+    "progress": "{{done}} z {{total}}",
+    "failed": "Stahování se nedokončilo",
+    "download": "Stáhnout",
+    "notNow": "Teď ne",
+    "continue": "Pokračovat",
+    "retry": "Zkusit znovu",
+    "notNowNote": "Chaty, které tyto modely potřebují, si o ně řeknou. Můžeš si je stáhnout později v Nastavení.",
+    "keepOpen": "Nech aplikaci otevřenou, dokud se to nedokončí."
+  },
+  "done": {
+    "title": "Vše je připraveno.",
+    "body": "Všechno je tam, kde jsi to nechal.",
+    "open": "Otevřít LettuceAI"
+  },
+  "upgrade": {
+    "title": "Ještě jeden krok",
+    "body": "Tvoje data pocházejí ze starší verze LettuceAI. Otevři je jednou ve verzi {{version}}, aby se mohla aktualizovat, a pak se sem vrať.",
+    "copy": "Kopírovat odkaz ke stažení",
+    "copied": "Odkaz zkopírován",
+    "fresh": "Radši začít od nuly"
+  }
+}
