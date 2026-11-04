@@ -390,6 +390,12 @@ fn time_view(
 
 pub(crate) fn resolved_group_appearance(global: &lettuce_settings::GlobalSettings, group: Option<&GroupProfile>) -> Result<serde_json::Value, ApiError> {
     let mut global = global.clone();
+    if let Some(group_appearance) = global.ui_preferences.0.get("groupChatAppearance").filter(|value| value.is_object()).cloned() {
+        let preferences = &mut global.ui_preferences.0;
+        let normal = preferences.get("chatAppearance").cloned().unwrap_or_else(|| serde_json::json!({}));
+        preferences.entry("appearanceInheritanceBaseline".to_owned()).or_insert(normal);
+        preferences.insert("chatAppearance".to_owned(), group_appearance);
+    }
     for key in ["chatAppearance", "appearanceInheritanceBaseline"] {
         if let Some(placement) = global.ui_preferences.0.get_mut(key).and_then(|value| value.get_mut("messageInfoPlacement"))
             && let Some(value) = placement.as_str() {
@@ -434,7 +440,11 @@ pub(crate) fn resolved_appearance(global: &lettuce_settings::GlobalSettings, pre
     for (key, field) in defaults.as_object().into_iter().flatten() {
         if key != "format_version" { value.insert(camel(key), field.clone()); }
     }
-    let mut baseline = value.clone();
+    let historical = serde_json::to_value(lettuce_characters::ChatAppearanceV1::historical_default()).map_err(source_error)?;
+    let mut baseline = serde_json::Map::new();
+    for (key, field) in historical.as_object().into_iter().flatten() {
+        if key != "format_version" { baseline.insert(camel(key), field.clone()); }
+    }
     let preferences = &global.ui_preferences.0;
     let previous = preferences.get("appearanceInheritanceBaseline").or_else(|| preferences.get("chatAppearance"));
     if let Some(previous) = previous.and_then(serde_json::Value::as_object) { baseline.extend(previous.clone()); }

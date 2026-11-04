@@ -1,5 +1,24 @@
 import type { MessageAppearance } from "@lettuceai/crisp";
 import type { ChatLook } from "./chat";
+import { object } from "./context";
+
+export const groupAppearanceStarted = (preferences: Record<string, unknown>) =>
+  preferences.groupChatAppearance !== null &&
+  typeof preferences.groupChatAppearance === "object" &&
+  !Array.isArray(preferences.groupChatAppearance);
+
+/**
+ * Group chats use `groupChatAppearance` wholesale once that key exists, even as an empty
+ * object (app defaults). Until then they follow normal chat; there is no field-by-field merge.
+ */
+export function appAppearancePreferences(preferences: Record<string, unknown>, group = false): Record<string, unknown> {
+  if (!group) return { ...object(preferences.chatAppearance) };
+  return {
+    participantsBarBackground: "fading",
+    ...object(groupAppearanceStarted(preferences) ? preferences.groupChatAppearance : preferences.chatAppearance),
+  };
+}
+
 const BUBBLE_TOKENS: Record<string, string> = {
   neutral: "var(--color-fill-2)",
   accent: "var(--color-accent)",

@@ -3,12 +3,27 @@ import { describe, expect, it } from "vitest";
 import { appThemes } from "./themes";
 import { themeFromPreferences } from "./context";
 import { readChatLook } from "./chat";
-import { chatAppearance } from "./appearance";
+import { appAppearancePreferences, chatAppearance } from "./appearance";
 
-it("defaults to filled bubbles, normal spacing and a bottom byline while keeping saved choices", () => {
+it("makes group chats follow normal chat until their own appearance exists, then uses it wholesale", () => {
+  const preferences = {
+    chatAppearance: { userBubbleColor: "custom", userBubbleColorHex: "#123456", fontSize: "large" },
+  };
+  expect(readChatLook(appAppearancePreferences(preferences, true))).toMatchObject({ userBubbleColor: "custom", userBubbleColorHex: "#123456", fontSize: "large" });
+  const own = { ...preferences, groupChatAppearance: { userBubbleColor: "info", fontSize: "small" } };
+  expect(readChatLook(appAppearancePreferences(own, true))).toMatchObject({ userBubbleColor: "info", userBubbleColorHex: null, fontSize: "small", bubbleRadius: "rounded" });
+  expect(readChatLook(appAppearancePreferences(own))).toMatchObject({ userBubbleColor: "custom", userBubbleColorHex: "#123456", fontSize: "large" });
+  expect(readChatLook(appAppearancePreferences({ ...preferences, groupChatAppearance: {} }, true))).toMatchObject({ userBubbleColor: "accent", fontSize: "medium" });
+});
+
+it("defaults to the design lab look while keeping saved choices", () => {
   const defaults = readChatLook({});
   expect(defaults).toMatchObject({
-    lineSpacing: "normal",
+    lineSpacing: "relaxed",
+    showMessageAuthor: true,
+    showMessageTimestamp: true,
+    chatColumnWidth: "normal",
+    bubbleBlur: "medium",
     bubbleStyle: "filled",
     messageHeaderPlacement: "below",
     fontSize: "medium",

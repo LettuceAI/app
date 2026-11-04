@@ -27,7 +27,7 @@ export function GroupAppearanceEditor({ draft, onChange, phone }: { draft: Group
   const reset = (keys: string[]) => onChange({ ...draft, presentation_overrides: [...fields].filter((field) => !keys.includes(field)) });
   return <div className="space-y-6">
     <p className="text-sm text-fg-3">{t("appearance.body")}</p>
-    <ChatPreview look={look} />
+    <ChatPreview look={look} group />
     {fields.size > 0 && <ListGroup label={t("appearance.overrides")}>{[...fields].map((field) => <ListRow key={field} title={label(labels[field as keyof typeof labels])} description={t("appearance.own")} trailing={<Button size="sm" variant="ghost" onClick={() => reset([field])}>{t("appearance.reset")}</Button>} />)}</ListGroup>}
     <ChatSettings group look={look} phone={phone} set={(key, value) => onChange(changeGroupAppearance(draft, preferences.value, key, value, theme.colors.accent))} source={(key) => t(own(key) ? "appearance.own" : "appearance.inherited")} overridden={own} resetField={(key) => reset(appearanceFieldKeys(key))} onReset={() => onChange({ ...draft, presentation_overrides: [] })} />
   </div>;

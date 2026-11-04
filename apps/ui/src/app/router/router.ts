@@ -258,6 +258,7 @@ const settingsSectionRoute = createRoute({
     compTab?: "writer" | "emotions";
     compPicker?: "primary" | "fallback" | "prompt";
     custTab?: "general" | "theme" | "chat";
+    custChat?: "normal" | "group";
     custPanel?: "preview" | "theme";
     custTheme?: string;
   } => ({
@@ -323,6 +324,9 @@ const settingsSectionRoute = createRoute({
       : {}),
     ...(search.custPanel === "preview" || search.custPanel === "theme"
       ? { custPanel: search.custPanel }
+      : {}),
+    ...(search.custChat === "normal" || search.custChat === "group"
+      ? { custChat: search.custChat }
       : {}),
     ...(typeof search.custTheme === "string" ? { custTheme: search.custTheme } : {}),
     ...(["model", "vocabulary", "corrections", "examples"].includes(String(search.speechTab))

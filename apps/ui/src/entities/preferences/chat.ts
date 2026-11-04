@@ -56,14 +56,14 @@ export const DETAILS: readonly { value: Detail }[] = (
 
 export const CHAT_DEFAULTS: ChatLook = {
   fontSize: "medium",
-  lineSpacing: "normal",
+  lineSpacing: "relaxed",
   composerFontSize: "medium",
   bubbleStyle: "filled",
   bubbleRadius: "rounded",
   bubbleMaxWidth: "normal",
   bubblePadding: "normal",
-  showMessageAuthor: false,
-  showMessageTimestamp: false,
+  showMessageAuthor: true,
+  showMessageTimestamp: true,
   timestampFormat: "relative",
   messageHeaderPlacement: "below",
   details: [],
@@ -72,7 +72,7 @@ export const CHAT_DEFAULTS: ChatLook = {
   messageGap: "relaxed",
   avatarShape: "circle",
   avatarSize: "medium",
-  chatColumnWidth: "full",
+  chatColumnWidth: "normal",
   chatColumnWidthPx: 960,
   chatColumnAlign: "center",
   chatHeaderMoves: false,
@@ -99,9 +99,19 @@ export const CHAT_DEFAULTS: ChatLook = {
   transparentHeader: false,
   backgroundDim: 0,
   backgroundBlur: 0,
-  bubbleBlur: "none",
+  bubbleBlur: "medium",
   bubbleOpacity: 35,
   textMode: "auto",
+};
+
+/** The defaults older presentations were saved against. A presentation stored without an override list has its overrides inferred by comparing to these, so changing `CHAT_DEFAULTS` never turns old stored values into overrides. */
+export const HISTORICAL_CHAT_DEFAULTS: ChatLook = {
+  ...CHAT_DEFAULTS,
+  lineSpacing: "normal",
+  showMessageAuthor: false,
+  showMessageTimestamp: false,
+  chatColumnWidth: "full",
+  bubbleBlur: "none",
 };
 
 export const detailFields = {

@@ -5,18 +5,23 @@ import {
   Bold,
   Clock,
   Columns3,
-  Eye,
+  Copy,
   Image,
   Info,
   Layers,
   MessageSquare,
+  MoveHorizontal,
   Palette,
   RotateCcw,
+  Space,
+  SquareRoundCorner,
   Type,
   User,
   Users,
 } from "lucide-react";
 import {
+  Avatar,
+  AvatarGroup,
   Button,
   ColorPicker,
   Collapsible,
@@ -29,6 +34,7 @@ import {
   Message,
   NumberInput,
   Segmented,
+  Select,
   SelectMenu,
   Slider,
   Surface,
@@ -42,6 +48,8 @@ import { useTheme, themeToVars } from "@lettuceai/crisp";
 import backdropImage from "@/shared/assets/customization/throne-room.webp";
 import seraAvatar from "@/shared/assets/customization/sera-face.webp";
 import hunterAvatar from "@/shared/assets/customization/hunter-face.webp";
+import { ChatAppearanceProvider } from "@/entities/preferences";
+import { ParticipantsBar } from "@/features/conversations";
 import { DETAILS, opts, type ChatLook, type Detail, type Opt } from "./options";
 import { SettingsControlRow as Row } from "@/shared/ui/SettingsControlRow";
 export { SettingsControlRow as Row } from "@/shared/ui/SettingsControlRow";
@@ -53,6 +61,7 @@ export function Pick<T extends string>({
   label,
   menu,
   block,
+  native,
 }: {
   value: T;
   options: Opt<T>;
@@ -60,7 +69,20 @@ export function Pick<T extends string>({
   label: string;
   menu?: boolean;
   block?: boolean;
+  native?: boolean;
 }) {
+  if (native) {
+    return (
+      <Field label={<span className="sr-only">{label}</span>} className="w-32 space-y-0">
+        <Select
+          className="min-h-11 w-full text-ellipsis"
+          value={value}
+          options={options}
+          onChange={(event) => onChange(event.target.value as T)}
+        />
+      </Field>
+    );
+  }
   if (menu || options.length > 3) {
     return (
       <Field label={<span className="sr-only">{label}</span>} className="space-y-0">
@@ -89,9 +111,47 @@ type Set = <K extends keyof ChatLook>(key: K, value: ChatLook[K]) => void;
 
 import { chatAppearance } from "@/entities/preferences";
 
-export function ChatPreview({ look, className }: { look: ChatLook; className?: string }) {
+export function PreviewBackground({ image, onChange }: { image: boolean; onChange: (image: boolean) => void }) {
+  const { t } = useTranslation("customization");
+  return (
+    <Segmented<"plain" | "image">
+      size="sm"
+      aria-label={t("previewBackground")}
+      value={image ? "image" : "plain"}
+      onChange={(v) => onChange(v === "image")}
+      options={[
+        { value: "plain", label: t("plain") },
+        { value: "image", label: t("backgroundImage") },
+      ]}
+    />
+  );
+}
+
+/**
+ * Without `image` the preview owns its background switch and sits above the chat; with it,
+ * the caller renders the switch (a panel or screen header) and controls the background.
+ */
+export function ChatPreview({
+  look,
+  className,
+  group = false,
+  image,
+}: {
+  look: ChatLook;
+  className?: string;
+  group?: boolean;
+  image?: boolean;
+}) {
   const { t, i18n } = useTranslation("customization");
-  const [backdropOn, setBackdropOn] = useState(false);
+  const [ownImage, setOwnImage] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [selected, setSelected] = useState<string | null>("sera");
+  const [muted, setMuted] = useState<string[]>([]);
+  const backdropOn = image ?? ownImage;
+  const members = [
+    { id: "sera", name: t("seraphine"), avatar: seraAvatar, characterId: "sera", muted: muted.includes("sera") },
+    { id: "hunter", name: t("hunter"), avatar: hunterAvatar, characterId: "hunter", muted: muted.includes("hunter") },
+  ];
   const appearance = chatAppearance(look);
   const time = { relative: t("previewRelativeTime"), time: "19:04", datetime: t("oct241904") }[
     look.timestampFormat
@@ -112,20 +172,30 @@ export function ChatPreview({ look, className }: { look: ChatLook; className?: s
           <span key={d.value}>{samples[d.value]}</span>
         ))
       : undefined;
+  const sera = { name: t("seraphine"), avatar: seraAvatar };
+  const hunter = { name: t("hunter"), avatar: hunterAvatar };
+  const message = (
+    key: string,
+    role: "assistant" | "user",
+    author: { name: string; avatar?: string },
+    text: string,
+    extra?: ReactNode,
+  ) => (
+    <Message
+      key={key}
+      role={role}
+      author={author}
+      timestamp={time}
+      appearance={appearance}
+      details={extra}
+    >
+      <InlineMarkdown quotes>{text}</InlineMarkdown>
+    </Message>
+  );
 
   return (
-    <div className={cn("space-y-2", className)}>
-      <Segmented<"plain" | "image">
-        size="sm"
-        block
-        aria-label={t("previewBackground")}
-        value={backdropOn ? "image" : "plain"}
-        onChange={(v) => setBackdropOn(v === "image")}
-        options={[
-          { value: "plain", label: t("plain") },
-          { value: "image", label: t("backgroundImage") },
-        ]}
-      />
+    <div className={cn("flex min-h-0 flex-col gap-2", className)}>
+      {image === undefined && <PreviewBackground image={ownImage} onChange={setOwnImage} />}
       <Surface
         image={backdropOn ? backdropImage : null}
         dim={look.backgroundDim}
@@ -133,42 +203,48 @@ export function ChatPreview({ look, className }: { look: ChatLook; className?: s
         {...(look.textMode !== "auto"
           ? { tone: look.textMode === "light" ? ("dark" as const) : ("light" as const) }
           : {})}
-        className="overflow-hidden rounded-xl border border-line bg-surface"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface"
       >
         <div
           className={cn(
-            "px-3 py-2 text-sm font-medium text-fg",
+            "flex shrink-0 items-center gap-2 px-3 py-2 text-sm font-medium text-fg",
             !(backdropOn && look.transparentHeader) && "border-b border-line bg-surface-1",
           )}
         >
-          {t("seraphine")}
+          {group ? (
+            <AvatarGroup people={[{ name: sera.name, src: sera.avatar }, { name: hunter.name, src: hunter.avatar }]} size="sm" />
+          ) : (
+            <Avatar name={sera.name} src={sera.avatar} size="sm" />
+          )}
+          <span className="truncate">{group ? t("previewGroupName") : sera.name}</span>
         </div>
-        <div className="p-3">
-          <Message
-            role="assistant"
-            author={{ name: t("seraphine"), avatar: seraAvatar }}
-            timestamp={time}
-            appearance={appearance}
-            details={details}
-          >
-            <InlineMarkdown quotes>
-              {t("sheSetsTheLanternDownYouHeardThatTooRightTheOldKeyIsStillWarm")}
-            </InlineMarkdown>
-          </Message>
-          <Message
-            role="user"
-            author={{ name: t("hunter"), avatar: hunterAvatar }}
-            timestamp={time}
-            appearance={appearance}
-          >
-            <InlineMarkdown quotes>{t("iNodSlowlyThenWeGoNow")}</InlineMarkdown>
-          </Message>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {message("a1", "assistant", sera, t("sheSetsTheLanternDownYouHeardThatTooRightTheOldKeyIsStillWarm"), details)}
+          {group
+            ? message("a2", "assistant", hunter, t("iNodSlowlyThenWeGoNow"))
+            : message("u1", "user", hunter, t("iNodSlowlyThenWeGoNow"))}
+          {group && message("u1", "user", { name: t("previewYou") }, t("previewGroupReply"))}
+          {message("a3", "assistant", sera, t("previewFollowUp"))}
+        </div>
+        <div className="shrink-0 p-3">
+          {group && look.participantsBarEnabled && (
+            <ChatAppearanceProvider value={look}>
+              <ParticipantsBar
+                members={members}
+                draft={draft}
+                setDraft={setDraft}
+                disabled={false}
+                director={{ behavior: "cue", selectedId: selected, wiggle: 0 }}
+                onSelect={(member) => setSelected(member.id)}
+                onToggleMute={(member, value) => setMuted((current) => value ? [...current, member.id] : current.filter((id) => id !== member.id))}
+              />
+            </ChatAppearanceProvider>
+          )}
           <Composer
-            className="mt-4"
-            value=""
-            onChange={() => {}}
+            value={draft}
+            onChange={setDraft}
             onSend={() => {}}
-            placeholder={t("messageSeraphine")}
+            placeholder={t(group ? "messageGroup" : "messageSeraphine")}
             fontSize={look.composerFontSize}
             {...(look.footerInputColorHex ? { color: look.footerInputColorHex } : {})}
           />
@@ -231,22 +307,26 @@ export function ChatSettings({
   phone,
   onReset,
   group = false,
+  groupView = group,
   source,
   resetField,
   overridden,
+  onCopy,
 }: {
   look: ChatLook;
   set: Set;
   phone: boolean;
   onReset: () => void;
+  onCopy?: () => void;
   group?: boolean;
+  groupView?: boolean;
   source?: (key: keyof ChatLook) => string;
   resetField?: (key: keyof ChatLook) => void;
   overridden?: (key: keyof ChatLook) => boolean;
 }) {
   const { t } = useTranslation("customization");
   const { theme } = useTheme();
-  const control = (key: keyof ChatLook, content: ReactNode) => <span className={cn("flex min-w-0 flex-wrap items-center gap-2", phone && "w-full")}>{overridden?.(key) && <Button size="sm" variant="ghost" onClick={() => resetField?.(key)}>{t("controls.reset")}</Button>}{content}</span>;
+  const control = (key: keyof ChatLook, content: ReactNode, compact = false) => <span className={cn("flex min-w-0 flex-wrap items-center gap-2", phone && (compact ? "w-32" : "w-full"))}>{overridden?.(key) && <Button size="sm" variant="ghost" onClick={() => resetField?.(key)}>{t("controls.reset")}</Button>}{content}</span>;
   const colorInheritance = (key: keyof ChatLook) => source ? { inheritance: { source: source(key), ...(overridden?.(key) ? { reset: () => resetField?.(key) } : {}) } } : {};
   const SIZE3 = opts([
     ["small", t("small")],
@@ -272,18 +352,20 @@ export function ChatSettings({
   ) => (
     <Row
       phone={phone}
+      inline={phone}
       icon={rowIcon}
       title={title}
       description={source?.(key) ?? description}
       control={control(key,
         <Pick
           label={title}
-          block={phone}
+          native={phone}
           menu={options.length > 3}
           value={look[key] as Extract<ChatLook[K], string>}
           options={options}
           onChange={(v) => set(key, v as ChatLook[K])}
-        />
+        />,
+        phone,
       )}
     />
   );
@@ -355,6 +437,7 @@ export function ChatSettings({
             ["rounded", t("rounded")],
             ["pill", t("round")],
           ] as const),
+          <SquareRoundCorner size={icon.lg} />,
         )}
         {row(
           "bubbleMaxWidth",
@@ -364,6 +447,7 @@ export function ChatSettings({
             ["normal", t("normal")],
             ["wide", t("wide")],
           ] as const),
+          <MoveHorizontal size={icon.lg} />,
         )}
         {row(
           "bubblePadding",
@@ -373,6 +457,7 @@ export function ChatSettings({
             ["normal", t("normal")],
             ["spacious", t("roomy")],
           ] as const),
+          <Space size={icon.lg} />,
         )}
       </ListGroup>
 
@@ -452,11 +537,11 @@ export function ChatSettings({
         {look.avatarShape !== "hidden" && row("avatarSize", t("avatarSize"), SIZE3)}
       </ListGroup>
 
-      <ListGroup label={t("participantsBar")}>
+      {groupView && <ListGroup label={t("participantsBar")}>
         {toggle("participantsBarEnabled", t("showParticipantsBar"), t("showParticipantsBarHint"), <Users size={icon.lg} />)}
         {look.participantsBarEnabled && (
           <>
-            {row("participantsBarAvatarSize", t("avatarSize"), SIZE3)}
+            {row("participantsBarAvatarSize", t("avatarSize"), SIZE3, <User size={icon.lg} />)}
             {row(
               "participantsBarAvatarShape",
               t("barAvatarShape"),
@@ -465,6 +550,7 @@ export function ChatSettings({
                 ["boxed", t("barBoxed")],
                 ["rounded_box", t("barRoundedBox")],
               ] as const),
+              <SquareRoundCorner size={icon.lg} />,
             )}
             {row(
               "participantsBarBackground",
@@ -474,9 +560,10 @@ export function ChatSettings({
                 ["fading", t("barFading")],
                 ["transparent", t("barTransparent")],
               ] as const),
+              <Image size={icon.lg} />,
             )}
-            {row("participantsBarGap", t("barSpacing"), SPACING3)}
-            {row("participantsBarAlign", t("alignment"), ALIGN3)}
+            {row("participantsBarGap", t("barSpacing"), SPACING3, <Space size={icon.lg} />)}
+            {row("participantsBarAlign", t("alignment"), ALIGN3, <AlignCenter size={icon.lg} />)}
             {row(
               "participantsBarHintPosition",
               t("barHint"),
@@ -485,10 +572,11 @@ export function ChatSettings({
                 ["bottom", t("barHintBottom")],
                 ["hidden", t("hidden")],
               ] as const),
+              <Info size={icon.lg} />,
             )}
           </>
         )}
-      </ListGroup>
+      </ListGroup>}
 
       {!phone && (
         <ListGroup label={t("chatColumn")}>
@@ -546,6 +634,7 @@ export function ChatSettings({
         <ListGroup label={t("colors")}>
           <Row
             phone={phone}
+            inline={phone}
             icon={<Palette size={icon.lg} />}
             title={t("yourMessages")}
             description={source?.("userBubbleColor")}
@@ -553,7 +642,7 @@ export function ChatSettings({
               <Pick
                 label={t("yourMessages")}
                 menu
-                block={phone}
+                native={phone}
                 value={look.userBubbleColor}
                 options={opts([
                   ["accent", t("accent")],
@@ -563,7 +652,8 @@ export function ChatSettings({
                   ["custom", t("custom")],
                 ] as const)}
                 onChange={(v) => set("userBubbleColor", v)}
-              />
+              />,
+              phone,
             )}
           />
           {look.userBubbleColor === "custom" && (
@@ -578,6 +668,7 @@ export function ChatSettings({
           )}
           <Row
             phone={phone}
+            inline={phone}
             icon={<Palette size={icon.lg} />}
             title={t("characterMessages")}
             description={source?.("assistantBubbleColor")}
@@ -585,7 +676,7 @@ export function ChatSettings({
               <Pick
                 label={t("characterMessages")}
                 menu
-                block={phone}
+                native={phone}
                 value={look.assistantBubbleColor}
                 options={opts([
                   ["neutral", t("neutral")],
@@ -595,7 +686,8 @@ export function ChatSettings({
                   ["custom", t("custom")],
                 ] as const)}
                 onChange={(v) => set("assistantBubbleColor", v)}
-              />
+              />,
+              phone,
             )}
           />
           {look.assistantBubbleColor === "custom" && (
@@ -740,64 +832,20 @@ export function ChatSettings({
         </Text>
       </section>
 
-      {!group && <Collapsible
-        title={t("groupChats")}
-        description={t("futureGroup")}
-        variant="panel"
-        trailing={
-          <Switch
-            checked={look.participantsBarEnabled}
-            onChange={(v) => set("participantsBarEnabled", v)}
-            aria-label={t("showParticipantsBar")}
-          />
-        }
-      >
-        {look.participantsBarEnabled ? (
-          <ListGroup>
-            {row("participantsBarAvatarSize", t("avatarSize"), SIZE3, <Users size={icon.lg} />)}
-            {row(
-              "participantsBarAvatarShape",
-              t("avatarShape"),
-              opts([
-                ["round", t("circle")],
-                ["rounded_box", t("rounded")],
-                ["boxed", t("square")],
-              ] as const),
-            )}
-            {row(
-              "participantsBarBackground",
-              t("background"),
-              opts([
-                ["solid", t("solid")],
-                ["fading", t("fade")],
-                ["transparent", t("none")],
-              ] as const),
-            )}
-            {row("participantsBarGap", t("spacing"), SPACING3)}
-            {row("participantsBarAlign", t("alignment"), ALIGN3)}
-            {row(
-              "participantsBarHintPosition",
-              t("hint"),
-              opts([
-                ["top", t("above")],
-                ["bottom", t("below")],
-                ["hidden", t("hidden")],
-              ] as const),
-              <Eye size={icon.lg} />,
-            )}
-          </ListGroup>
-        ) : (
-          <Text variant="hint">{t("theBarIsHiddenInGroupChats")}</Text>
-        )}
-      </Collapsible>}
-
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <Text variant="hint" className="max-w-md">
           {t("inheritanceHint")}
         </Text>
-        <Button variant="ghost" size="sm" leading={<RotateCcw size={icon.sm} />} onClick={onReset}>
-          {t("resetChatLook")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-1">
+          {onCopy && (
+            <Button variant="ghost" size="sm" leading={<Copy size={icon.sm} />} onClick={onCopy}>
+              {t("copyFromNormalChat")}
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" leading={<RotateCcw size={icon.sm} />} onClick={onReset}>
+            {t("resetChatLook")}
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -47,7 +47,7 @@ export function PreferencesProvider({ api, children }: { api: ApiClient; childre
             failedRequest.current = null;
             setFailure(null);
           }
-          if (changes.some((change) => change.key === "chatAppearance"))
+          if (changes.some((change) => change.key === "chatAppearance" || change.key === "groupChatAppearance"))
             void client.invalidateQueries({ queryKey: queryKeys.conversations.all });
           return true;
         } catch (error) {

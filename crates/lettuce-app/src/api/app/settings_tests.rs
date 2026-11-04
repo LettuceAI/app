@@ -899,6 +899,30 @@ async fn onnx_settings_patch_uses_device_revision_and_preserves_other_choices() 
 }
 
 #[tokio::test]
+async fn customization_group_defaults_are_validated_and_saved_separately() {
+    let h = harness(Reply::Text("Hello."));
+    let before = settings_get(&h.context).await.expect("settings");
+    let request = |revision, value| serde_json::from_value::<dto::SettingsUpdateRequest>(serde_json::json!({
+        "expected_revision": revision,
+        "patch": { "section": "ui_preferences", "changes": [{ "key": "groupChatAppearance", "value": value }] }
+    })).expect("request");
+    let saved = settings_update(&h.context, request(before.revision, serde_json::json!({
+        "fontSize": "small", "composerFontSize": "large", "participantsBarAvatarShape": "boxed", "bubbleOpacity": 70
+    }))).await.expect("save group defaults");
+    assert_eq!(saved.global.ui_preferences["groupChatAppearance"]["fontSize"], "small");
+    assert_eq!(saved.global.ui_preferences["groupChatAppearance"]["participantsBarAvatarShape"], "boxed");
+    assert_eq!(saved.global.ui_preferences.get("chatAppearance"), before.global.ui_preferences.get("chatAppearance"));
+    assert_eq!(saved.global.ui_preferences["appearanceInheritanceBaseline"], serde_json::json!({}));
+    let invalid = settings_update(&h.context, request(saved.revision, serde_json::json!({ "bubbleOpacity": 101 }))).await.expect_err("invalid opacity");
+    assert_eq!(invalid.code, ApiErrorCode::InvalidInput);
+    assert_eq!(settings_get(&h.context).await.expect("unchanged"), saved);
+    let stale = settings_update(&h.context, request(before.revision, serde_json::Value::Null)).await.expect_err("stale revision");
+    assert_eq!(stale.code, ApiErrorCode::Conflict);
+    let cleared = settings_update(&h.context, request(saved.revision, serde_json::Value::Null)).await.expect("clear group defaults");
+    assert!(cleared.global.ui_preferences.get("groupChatAppearance").is_none());
+}
+
+#[tokio::test]
 async fn customization_appearance_baseline_is_captured_once_with_revision_fencing() {
     let h = harness(Reply::Text("Hello."));
     let before = settings_get(&h.context).await.expect("settings");

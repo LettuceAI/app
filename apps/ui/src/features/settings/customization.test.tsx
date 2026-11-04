@@ -21,12 +21,20 @@ async function mount(
   options: {
     tab?: string;
     mobile?: boolean;
+    phone?: boolean;
     value?: Record<string, unknown>;
     calls?: MockCallHandlers;
     fail?: () => boolean;
     gate?: Promise<void>;
   } = {},
 ) {
+  if (options.phone) {
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      matches: query.includes("max-width"), media: query, onchange: null,
+      addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {},
+      dispatchEvent: () => false,
+    }));
+  }
   let current = { global: { ui_preferences: { ...options.value } }, revision: 7 } as SettingsView;
   const requests: SettingsUpdateRequest_Deserialize[] = [];
   const update = vi.fn(async (request: SettingsUpdateRequest_Deserialize) => {
@@ -82,9 +90,103 @@ async function mount(
 }
 
 describe("customization settings", () => {
+  it("makes group chats follow normal chat until their first edit and keeps them independent after it", async () => {
+    const page = await mount({ tab: "chat", value: { chatAppearance: { fontSize: "large", bubbleRadius: "pill" } } });
+    expect(await screen.findByRole("combobox", { name: "Text size" })).toHaveProperty("value", "large");
+    expect(screen.queryByRole("switch", { name: "Show participants bar" })).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Group chats" }));
+    expect(await screen.findAllByRole("switch", { name: "Show participants bar" })).toHaveLength(1);
+    expect(screen.getByRole("combobox", { name: "Text size" })).toHaveProperty("value", "large");
+    expect(page.current().groupChatAppearance).toBeUndefined();
+    fireEvent.change(screen.getByRole("combobox", { name: "Text size" }), { target: { value: "small" } });
+    await waitFor(() => expect(page.current().groupChatAppearance).toEqual({ fontSize: "small", bubbleRadius: "pill" }));
+    expect(page.current().chatAppearance).toEqual({ fontSize: "large", bubbleRadius: "pill" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Face shape" }), { target: { value: "boxed" } });
+    await waitFor(() => expect(page.current().groupChatAppearance).toMatchObject({ participantsBarAvatarShape: "boxed" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Normal chat" }));
+    expect(await screen.findByRole("combobox", { name: "Text size" })).toHaveProperty("value", "large");
+    fireEvent.change(screen.getByRole("combobox", { name: "Corners" }), { target: { value: "sharp" } });
+    await waitFor(() => expect(page.current().chatAppearance).toEqual({ fontSize: "large", bubbleRadius: "sharp" }));
+    expect(page.current().groupChatAppearance).toMatchObject({ bubbleRadius: "pill" });
+    fireEvent.click(screen.getByRole("radio", { name: "Group chats" }));
+    expect(await screen.findByRole("combobox", { name: "Corners" })).toHaveProperty("value", "pill");
+  });
+
+  it("resets the group look to app defaults with an empty group appearance", async () => {
+    const page = await mount({
+      tab: "chat",
+      value: { chatAppearance: { fontSize: "large" }, groupChatAppearance: { fontSize: "small" } },
+    });
+    fireEvent.click(await screen.findByRole("radio", { name: "Group chats" }));
+    expect(await screen.findByRole("combobox", { name: "Text size" })).toHaveProperty("value", "small");
+    fireEvent.click(screen.getByRole("button", { name: "Reset chat look" }));
+    await waitFor(() => expect(page.current().groupChatAppearance).toEqual({}));
+    expect(screen.getByRole("combobox", { name: "Text size" })).toHaveProperty("value", "medium");
+    expect(page.current().chatAppearance).toEqual({ fontSize: "large" });
+  });
+
+  it("copies the normal chat look into the group look", async () => {
+    const page = await mount({
+      tab: "chat",
+      value: { chatAppearance: { fontSize: "large", showMessageAuthor: true }, groupChatAppearance: { fontSize: "small" } },
+    });
+    expect(screen.queryByRole("button", { name: "Copy from normal chat" })).toBeNull();
+    fireEvent.click(await screen.findByRole("radio", { name: "Group chats" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Copy from normal chat" }));
+    await waitFor(() =>
+      expect(page.current().groupChatAppearance).toEqual({ fontSize: "large", showMessageAuthor: true }),
+    );
+    expect(page.current().chatAppearance).toEqual({ fontSize: "large", showMessageAuthor: true });
+    expect(screen.getByRole("combobox", { name: "Text size" })).toHaveProperty("value", "large");
+  });
+
+  it("opens the phone preview full screen for the selected chat type and closes it with Back", async () => {
+    const page = await mount({ tab: "chat", value: { chatAppearance: { fontSize: "large" } } });
+    fireEvent.click(await screen.findByRole("radio", { name: "Group chats" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Preview" }));
+    const preview = await screen.findByRole("dialog");
+    expect(within(preview).getByRole("textbox", { name: "Message" })).toBeTruthy();
+    expect(within(preview).getByRole("button", { name: /Seraphine/ })).toBeTruthy();
+    expect(within(preview).getByRole("radio", { name: "Background image" })).toBeTruthy();
+    await act(async () => page.runtime.router.history.back());
+    await waitFor(() => expect(page.runtime.router.state.location.search.custPanel).toBeUndefined());
+    expect(page.runtime.router.state.location.search.custChat).toBe("group");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(await within(await screen.findByRole("dialog")).findByRole("button", { name: "Back" }));
+    await waitFor(() => expect(page.runtime.router.state.location.search.custPanel).toBeUndefined());
+  });
+
+  it("shows the preview panel beside the settings on desktop without a preview button", async () => {
+    await mount({ tab: "chat", mobile: false });
+    expect(await screen.findByRole("textbox", { name: "Message" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+    expect(screen.getByRole("radio", { name: "Background image" })).toBeTruthy();
+  });
+
+  it("saves mobile text and bubble choices through native pickers", async () => {
+    const page = await mount({ tab: "chat", phone: true });
+    fireEvent.change(await screen.findByRole("combobox", { name: "Text size" }), {
+      target: { value: "large" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Style" }), {
+      target: { value: "bordered" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Corners" }), {
+      target: { value: "sharp" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Composer text size" }), {
+      target: { value: "xlarge" },
+    });
+    await waitFor(() => expect(page.current().chatAppearance).toMatchObject({
+      fontSize: "large", bubbleStyle: "bordered", bubbleRadius: "sharp", composerFontSize: "xlarge",
+    }));
+  });
+
   it("offers Bottom as the default byline placement and persists a switch back to it", async () => {
     const page = await mount({
       tab: "chat",
+      mobile: false,
       value: { chatAppearance: { showMessageAuthor: true } },
     });
     const bottom = await screen.findByRole("radio", { name: "Bottom" });
@@ -269,8 +371,9 @@ describe("customization settings", () => {
       tab: "chat",
       value: { chatAppearance: { chatWidgetSlots: slots } },
     });
-    fireEvent.click(await screen.findByRole("combobox", { name: "Composer text size" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Extra large" }));
+    fireEvent.change(await screen.findByRole("combobox", { name: "Composer text size" }), {
+      target: { value: "xlarge" },
+    });
     await waitFor(() =>
       expect(page.current().chatAppearance).toMatchObject({
         composerFontSize: "xlarge",

@@ -3,13 +3,14 @@ export { object, themeFromPreferences, type PreferenceEdit, type Preferences } f
 export { usePreferences, useChatLook, useMessageAppearance } from "./hooks";
 export {
   CHAT_DEFAULTS,
+  HISTORICAL_CHAT_DEFAULTS,
   DETAILS,
   detailFields,
   readChatLook,
   type ChatLook,
   type Detail,
 } from "./chat";
-export { chatAppearance } from "./appearance";
+export { appAppearancePreferences, chatAppearance, groupAppearanceStarted } from "./appearance";
 export { playSound, soundSettings, type SoundKey } from "./feedback";
 export { ChatAppearanceProvider } from "./ChatAppearanceProvider";
 export { appThemes } from "./themes";

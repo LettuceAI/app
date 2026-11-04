@@ -1,7 +1,7 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { Eye } from "lucide-react";
+import { ArrowLeft, Eye } from "lucide-react";
 import {
   CrispStringsProvider,
   icon,
@@ -9,6 +9,7 @@ import {
   ListGroup,
   ListRow,
   Page,
+  Segmented,
   Sheet,
   Skeleton,
   Tab,
@@ -19,7 +20,9 @@ import {
 import type { SettingsUiChatAppearanceSettings_Deserialize } from "@/api/generated/bindings";
 import {
   CHAT_DEFAULTS,
+  appAppearancePreferences,
   detailFields,
+  groupAppearanceStarted,
   object,
   readChatLook,
   usePreferences,
@@ -27,7 +30,7 @@ import {
 } from "@/entities/preferences";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsLayout } from "../data";
-import { ChatPreview, ChatSettings } from "./ChatTab";
+import { ChatPreview, ChatSettings, PreviewBackground } from "./ChatTab";
 import { GeneralTab } from "./GeneralTab";
 import { RenameTheme, ThemeTab } from "./ThemeTab";
 
@@ -39,18 +42,23 @@ export function CustomizationPage() {
   const router = useRouter();
   const search = useSearch({ strict: false });
   const tab = search.custTab ?? "general";
+  const chatMode = search.custChat ?? "normal";
+  const groupChat = chatMode === "group";
+  const appearanceKey = groupChat ? "groupChatAppearance" : "chatAppearance";
   const panel = search.custPanel;
   const themeId = search.custTheme;
   const pushed = useLocation({ select: (location) => location.state.customizationPushed });
   const scroller = useRef<HTMLElement | null>(null);
-  const look = readChatLook(object(preferences.value.chatAppearance));
+  const look = readChatLook(appAppearancePreferences(preferences.value, groupChat));
+  const [previewImage, setPreviewImage] = useState(false);
+  const previewOpen = phone && tab === "chat" && panel === "preview";
   const close = () => {
     if (pushed) router.history.back();
     else
       void navigate({
         to: "/settings/$section",
         params: { section: "customization" },
-        search: { custTab: tab },
+        search: { custTab: tab, custChat: chatMode },
         replace: true,
         resetScroll: false,
       });
@@ -59,7 +67,7 @@ export function CustomizationPage() {
     void navigate({
       to: "/settings/$section",
       params: { section: "customization" },
-      search: { custTab: tab, custPanel, ...(custTheme ? { custTheme } : {}) },
+      search: { custTab: tab, custChat: chatMode, custPanel, ...(custTheme ? { custTheme } : {}) },
       state: { customizationPushed: true },
       resetScroll: false,
     });
@@ -67,7 +75,9 @@ export function CustomizationPage() {
     <K extends keyof ChatLook>(key: K, value: ChatLook[K]) => {
       void preferences.update((latest) => {
         const next: SettingsUiChatAppearanceSettings_Deserialize = {
-          ...object(latest.chatAppearance),
+          ...object(
+            groupChat && !groupAppearanceStarted(latest) ? latest.chatAppearance : latest[appearanceKey],
+          ),
         };
         if (key === "details") {
           for (const [detail, field] of Object.entries(detailFields))
@@ -79,28 +89,42 @@ export function CustomizationPage() {
         if (key === "userBubbleColor" && value !== "custom") delete next.userBubbleColorHex;
         if (key === "assistantBubbleColor" && value !== "custom")
           delete next.assistantBubbleColorHex;
-        return [{ key: "chatAppearance", value: next }];
-      }, `chat:${key}`);
+        return [{ key: appearanceKey, value: next }];
+      }, `${appearanceKey}:${key}`);
     },
-    [preferences],
+    [preferences, appearanceKey, groupChat],
   );
   const reset = () =>
     void preferences.update((latest) => {
+      if (groupChat) return [{ key: "groupChatAppearance", value: {} }];
       const next = { ...object(latest.chatAppearance) };
       for (const key of [...Object.keys(CHAT_DEFAULTS), ...Object.values(detailFields)])
         delete next[key];
       return [{ key: "chatAppearance", value: next }];
     });
+  const copyFromNormal = () =>
+    void preferences.update((latest) => [
+      { key: "groupChatAppearance", value: { ...object(latest.chatAppearance) } },
+    ]);
   const changeTab = (next: string) => {
     void navigate({
       to: "/settings/$section",
       params: { section: "customization" },
-      search: { custTab: next as typeof tab },
+      search: { custTab: next as typeof tab, custChat: chatMode },
       replace: true,
       resetScroll: false,
     });
     scroller.current?.scrollTo({ top: 0 });
   };
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const sync = () => element.style.setProperty("--scroller-height", `${element.clientHeight}px`);
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   return (
     <CrispStringsProvider
       locale={i18n.language}
@@ -121,79 +145,120 @@ export function CustomizationPage() {
         messageMenuTitle: t("controls.messageActions"),
       }}
     >
-      <Page
-        mainRef={scroller}
-        title={t("title")}
-        meta={phone ? undefined : t("meta")}
-        {...back}
-        actions={
-          phone && tab === "chat" ? (
-            <IconButton label={t("preview")} onClick={() => open("preview")}>
-              <Eye size={icon.lg} />
-            </IconButton>
-          ) : undefined
-        }
-        filters={
-          <Tabs value={tab} onChange={changeTab}>
-            <TabList aria-label={t("sections")}>
-              <Tab value="general">{t("general")}</Tab>
-              <Tab value="theme">{t("theme")}</Tab>
-              <Tab value="chat">{t("chat")}</Tab>
-            </TabList>
-          </Tabs>
-        }
-        contentClassName={tab === "chat" ? "max-w-6xl" : "max-w-3xl"}
-      >
-        {preferences.error !== null && (
-          <FailureState error={preferences.error} onRetry={preferences.retry} size="sm" />
-        )}
-        {!preferences.ready ? (
-          preferences.error === null && (
-            <div className="space-y-7" role="status" aria-label={t("loading")}>
-              {[1, 3, 1].map((count, index) => (
-                <ListGroup key={index} label={<Skeleton className="h-4 w-24" />}>
-                  {Array.from({ length: count }, (_, row) => (
-                    <ListRow
-                      key={row}
-                      title={<Skeleton className="h-5 w-32" />}
-                      description={<Skeleton className="h-4 w-48" />}
-                      trailing={<Skeleton className="h-6 w-10" />}
-                    />
+      <div className="relative flex h-full min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col" inert={previewOpen}>
+          <Page
+            mainRef={scroller}
+            title={t("title")}
+            meta={phone ? undefined : t("meta")}
+            {...back}
+            actions={
+              phone && tab === "chat" ? (
+                <IconButton label={t("preview")} onClick={() => open("preview")}>
+                  <Eye size={icon.lg} />
+                </IconButton>
+              ) : undefined
+            }
+            filters={
+              <Tabs value={tab} onChange={changeTab}>
+                <TabList aria-label={t("sections")}>
+                  <Tab value="general">{t("general")}</Tab>
+                  <Tab value="theme">{t("theme")}</Tab>
+                  <Tab value="chat">{t("chat")}</Tab>
+                </TabList>
+              </Tabs>
+            }
+            contentClassName={tab === "chat" ? "max-w-6xl" : "max-w-3xl"}
+          >
+            {preferences.error !== null && (
+              <FailureState error={preferences.error} onRetry={preferences.retry} size="sm" />
+            )}
+            {!preferences.ready ? (
+              preferences.error === null && (
+                <div className="space-y-7" role="status" aria-label={t("loading")}>
+                  {[1, 3, 1].map((count, index) => (
+                    <ListGroup key={index} label={<Skeleton className="h-4 w-24" />}>
+                      {Array.from({ length: count }, (_, row) => (
+                        <ListRow
+                          key={row}
+                          title={<Skeleton className="h-5 w-32" />}
+                          description={<Skeleton className="h-4 w-48" />}
+                          trailing={<Skeleton className="h-6 w-10" />}
+                        />
+                      ))}
+                    </ListGroup>
                   ))}
-                </ListGroup>
-              ))}
+                </div>
+              )
+            ) : tab === "general" ? (
+              <GeneralTab phone={phone} />
+            ) : tab === "theme" ? (
+              <ThemeTab phone={phone} onRename={(id) => open("theme", id)} />
+            ) : (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Segmented
+                    block={phone}
+                    aria-label={t("chatType")}
+                    value={chatMode}
+                    onChange={(custChat) => void navigate({ to: "/settings/$section", params: { section: "customization" }, search: { custTab: "chat", custChat }, replace: true, resetScroll: false })}
+                    options={[
+                      { value: "normal", label: t("normalChat") },
+                      { value: "group", label: t("groupChats") },
+                    ]}
+                  />
+                  <Text variant="hint" className="px-1">{t(groupChat ? "groupAppearanceHint" : "normalAppearanceHint")}</Text>
+                </div>
+                <div className={phone ? undefined : "flex items-start gap-8"}>
+                  <div className="min-w-0 flex-1">
+                    <ChatSettings
+                      look={look}
+                      set={set}
+                      phone={phone}
+                      onReset={reset}
+                      groupView={groupChat}
+                      {...(groupChat ? { onCopy: copyFromNormal } : {})}
+                    />
+                  </div>
+                  {!phone && (
+                    <aside className="sticky top-[var(--page-bar-height)] flex h-[calc(var(--scroller-height)-var(--page-bar-height))] w-130 shrink-0 flex-col gap-2 pb-4">
+                      <div className="flex items-center justify-between gap-3 px-1">
+                        <Text variant="label">{t("preview")}</Text>
+                        <PreviewBackground image={previewImage} onChange={setPreviewImage} />
+                      </div>
+                      <ChatPreview className="flex-1" look={look} group={groupChat} image={previewImage} />
+                    </aside>
+                  )}
+                </div>
+              </div>
+            )}
+          </Page>
+        </div>
+        {previewOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("preview")}
+            className="absolute inset-0 z-40 flex flex-col bg-surface pt-[var(--safe-top)]"
+          >
+            <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
+              <IconButton label={t("controls.back")} shape="round" onClick={close}>
+                <ArrowLeft size={icon.lg} />
+              </IconButton>
+              <Text variant="title" className="min-w-0 flex-1 truncate">{t("preview")}</Text>
+              <PreviewBackground image={previewImage} onChange={setPreviewImage} />
             </div>
-          )
-        ) : tab === "general" ? (
-          <GeneralTab phone={phone} />
-        ) : tab === "theme" ? (
-          <ThemeTab phone={phone} onRename={(id) => open("theme", id)} />
-        ) : phone ? (
-          <ChatSettings look={look} set={set} phone onReset={reset} />
-        ) : (
-          <div className="grid grid-cols-[minmax(0,1fr)_340px] items-start gap-8">
-            <ChatSettings look={look} set={set} phone={false} onReset={reset} />
-            <div className="sticky top-4 space-y-2">
-              <Text variant="label" className="px-1">
-                {t("preview")}
-              </Text>
-              <ChatPreview look={look} />
-            </div>
+            <ChatPreview className="min-h-0 flex-1 p-4" look={look} group={groupChat} image={previewImage} />
           </div>
         )}
-      </Page>
+      </div>
       <Sheet
-        open={panel !== undefined}
+        open={panel === "theme"}
         onClose={close}
-        title={t(panel === "theme" ? "renameTheme" : "preview")}
-        description={panel === "preview" ? t("previewDescription") : undefined}
+        title={t("renameTheme")}
         placement={phone ? "bottom" : "side"}
       >
-        {panel === "theme" && themeId ? (
-          <RenameTheme key={themeId} id={themeId} onDone={close} />
-        ) : (
-          <ChatPreview look={look} />
-        )}
+        {panel === "theme" && themeId && <RenameTheme key={themeId} id={themeId} onDone={close} />}
       </Sheet>
     </CrispStringsProvider>
   );

@@ -1618,6 +1618,27 @@ fn group_appearance_preserves_explicit_defaults_and_follows_unselected_fields() 
     group.presentation_overrides = None;
     let value = super::settings::resolved_group_appearance(&global, Some(&group)).expect("historical inheritance");
     assert_eq!(value["messageInfoPlacement"], "insideBubble");
+    global.ui_preferences.0.get_mut("chatAppearance").expect("normal preferences")["userBubbleColorHex"] = serde_json::json!("#123456");
+    global.ui_preferences.0.insert("groupChatAppearance".into(), serde_json::json!({"fontSize":"small","composerFontSize":"large","bubbleRadius":"sharp","messageInfoPlacement":"belowHeaderOutside","participantsBarAvatarShape":"boxed","userBubbleColor":"info"}));
+    group.presentation_overrides = Some(["bubble_radius".to_owned()].into_iter().collect());
+    let value = super::settings::resolved_group_appearance(&global, Some(&group)).expect("group defaults");
+    assert_eq!(value["fontSize"], "small");
+    assert_eq!(value["composerFontSize"], "large");
+    assert_eq!(value["bubbleRadius"], "rounded");
+    assert_eq!(value["messageInfoPlacement"], "belowHeaderOutside");
+    assert_eq!(value["participantsBarAvatarShape"], "boxed");
+    assert_eq!(value["userBubbleColor"], "info");
+    assert!(value["userBubbleColorHex"].is_null());
+    let normal = super::settings::resolved_appearance(&global, None).expect("normal defaults");
+    assert_eq!(normal["messageInfoPlacement"], "insideBubble");
+    group.presentation_overrides = Some(Default::default());
+    let inherited = super::settings::resolved_group_appearance(&global, Some(&group)).expect("reset group overrides");
+    assert_eq!(inherited["bubbleRadius"], "sharp");
+    assert_eq!(inherited["fontSize"], "small");
+    global.ui_preferences.0.insert("groupChatAppearance".into(), serde_json::json!({}));
+    let defaults = super::settings::resolved_group_appearance(&global, Some(&group)).expect("empty group appearance");
+    assert_ne!(defaults["messageInfoPlacement"], "insideBubble");
+    assert!(defaults["userBubbleColorHex"].is_null());
 }
 
 #[test]

@@ -1,12 +1,12 @@
 import type { GroupDraft_Serialize } from "@/api/generated/bindings";
-import { CHAT_DEFAULTS, detailFields, object, readChatLook, type ChatLook } from "@/entities/preferences";
+import { appAppearancePreferences, HISTORICAL_CHAT_DEFAULTS, detailFields, object, readChatLook, type ChatLook } from "@/entities/preferences";
 
 export const appearanceKey = (key: string) => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 export const appearanceName = (key: string) => key.replace(/_([a-z])/g, (_match, letter: string) => letter.toUpperCase());
 
 export function appearanceFields(draft: GroupDraft_Serialize, preferences: Record<string, unknown>): Set<string> {
   if (draft.presentation_overrides !== null && draft.presentation_overrides !== undefined) return new Set(draft.presentation_overrides);
-  const baseline = { ...CHAT_DEFAULTS, messageInfoPlacement: "below_bubble", participantsBarBackground: "fading", chatColumnWidthPx: null, chatWidgetSlots: { left: [], right: [] }, ...object(preferences.appearanceInheritanceBaseline ?? preferences.chatAppearance) } as Record<string, unknown>;
+  const baseline = { ...HISTORICAL_CHAT_DEFAULTS, messageInfoPlacement: "below_bubble", participantsBarBackground: "fading", chatColumnWidthPx: null, chatWidgetSlots: { left: [], right: [] }, ...object(preferences.appearanceInheritanceBaseline ?? preferences.chatAppearance) } as Record<string, unknown>;
   baseline.messageInfoPlacement = appearanceKey(String(baseline.messageInfoPlacement));
   for (const field of Object.values(detailFields)) baseline[field] ??= false;
   return new Set(Object.entries(draft.presentation).filter(([key, value]) => key !== "format_version" && JSON.stringify(value) !== JSON.stringify(baseline[appearanceName(key)])).map(([key]) => key));
@@ -14,7 +14,7 @@ export function appearanceFields(draft: GroupDraft_Serialize, preferences: Recor
 
 export function groupAppearance(draft: GroupDraft_Serialize, preferences: Record<string, unknown>): ChatLook {
   const fields = appearanceFields(draft, preferences);
-  const values: Record<string, unknown> = { participantsBarBackground: "fading", ...object(preferences.chatAppearance) };
+  const values = appAppearancePreferences(preferences, true);
   for (const [key, value] of Object.entries(draft.presentation)) if (fields.has(key)) values[appearanceName(key)] = key === "message_info_placement" && typeof value === "string" ? appearanceName(value) : value;
   return readChatLook(values);
 }

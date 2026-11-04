@@ -1118,6 +1118,10 @@ pub enum UiPreferenceChange {
     ChatAppearance {
         value: Option<SettingsUiChatAppearanceSettings>,
     },
+    #[serde(rename = "groupChatAppearance")]
+    GroupChatAppearance {
+        value: Option<SettingsUiChatAppearanceSettings>,
+    },
     #[serde(rename = "llamaSamplerPresets")]
     LlamaSamplerPresets {
         value: Option<Vec<SettingsUiLlamaSamplerPreset>>,

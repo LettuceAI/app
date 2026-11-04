@@ -7,6 +7,16 @@ import { appearanceFields, changeGroupAppearance, groupAppearance } from "./appe
 const make = () => newGroupForm((defaultCharacter as CharacterDraft_Serialize).presentation.chat_appearance, false).draft;
 
 describe("group appearance inheritance", () => {
+  it("inherits group defaults before applying the individual group's overrides", () => {
+    const preferences = {
+      chatAppearance: { fontSize: "large", bubbleRadius: "pill" },
+      groupChatAppearance: { fontSize: "small", bubbleRadius: "pill", participantsBarAvatarShape: "boxed" },
+    };
+    const own = changeGroupAppearance(make(), preferences, "bubbleRadius", "sharp", "#123456");
+    expect(groupAppearance(own, preferences)).toMatchObject({ fontSize: "small", bubbleRadius: "sharp", participantsBarAvatarShape: "boxed" });
+    expect(groupAppearance({ ...own, presentation_overrides: [] }, preferences)).toMatchObject({ fontSize: "small", bubbleRadius: "pill" });
+  });
+
   it("keeps an explicit default while unrelated fields follow app changes", () => {
     const preferences = { chatAppearance: { fontSize: "large", bubbleRadius: "pill" } };
     const own = changeGroupAppearance(make(), preferences, "bubbleRadius", "rounded", "#123456");

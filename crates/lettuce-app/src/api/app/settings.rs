@@ -330,7 +330,7 @@ fn apply(
             "local_runtime"
         }
         dto::SettingsPatch::UiPreferences { changes } => {
-            if changes.iter().any(|change| matches!(change, dto::UiPreferenceChange::ChatAppearance { .. }))
+            if changes.iter().any(|change| matches!(change, dto::UiPreferenceChange::ChatAppearance { .. } | dto::UiPreferenceChange::GroupChatAppearance { .. }))
                 && !settings.ui_preferences.0.contains_key("appearanceInheritanceBaseline")
             {
                 let baseline = settings.ui_preferences.0.get("chatAppearance").cloned().unwrap_or_else(|| serde_json::json!({}));
@@ -626,7 +626,8 @@ fn validate_ui_change(change: &dto::UiPreferenceChange) -> Result<(), ApiError> 
                 }
             }
         }
-        UiPreferenceChange::ChatAppearance { value: Some(value) } => {
+        UiPreferenceChange::ChatAppearance { value: Some(value) }
+        | UiPreferenceChange::GroupChatAppearance { value: Some(value) } => {
             for (field, value, low, high) in [
                 (
                     "chatColumnWidthPx",

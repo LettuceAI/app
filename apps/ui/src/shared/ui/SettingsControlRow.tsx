@@ -8,6 +8,7 @@ export function SettingsControlRow({
   description,
   control,
   tone,
+  inline = false,
 }: {
   phone: boolean;
   icon?: ReactNode;
@@ -15,12 +16,13 @@ export function SettingsControlRow({
   description?: ReactNode;
   control: ReactNode;
   tone?: "warning";
+  inline?: boolean;
 }) {
-  if (!phone)
+  if (!phone || inline)
     return (
       <ListRow
         icon={rowIcon}
-        title={title}
+        title={inline ? <span className="whitespace-normal">{title}</span> : title}
         description={description}
         {...(tone ? { tone } : {})}
         trailing={control}

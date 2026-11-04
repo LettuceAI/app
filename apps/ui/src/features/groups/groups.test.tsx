@@ -165,7 +165,7 @@ describe("group editor", () => {
     expect(screen.getAllByText("Set for this group").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    expect(save.mock.calls[0]![0]).toMatchObject({ expected_revision: 1, draft: { presentation: { show_message_author: true }, presentation_overrides: ["show_message_author"] } });
+    expect(save.mock.calls[0]![0]).toMatchObject({ expected_revision: 1, draft: { presentation: { show_message_author: false }, presentation_overrides: ["show_message_author"] } });
     await waitFor(() => expect(screen.queryByRole("button", { name: "Save" })).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Follow app" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

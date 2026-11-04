@@ -27,6 +27,7 @@ import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import {
   ChatAppearanceProvider,
+  appAppearancePreferences,
   object,
   readChatLook,
   usePreferences,
@@ -152,12 +153,12 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const look = useMemo(
     () =>
       readChatLook({
-        ...object(preferences.value.chatAppearance),
+        ...appAppearancePreferences(preferences.value, view?.kind === "group"),
         ...object(
           settings.data && "appearance" in settings.data ? settings.data.appearance : undefined,
         ),
       }),
-    [preferences.value.chatAppearance, settings.data],
+    [preferences.value, view?.kind, settings.data],
   );
   const columnStyle = useMemo(() => {
     if (phone || look.chatColumnWidth === "full") return {};
