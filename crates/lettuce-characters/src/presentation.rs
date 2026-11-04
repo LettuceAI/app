@@ -705,7 +705,6 @@ impl ChatAppearanceV1 {
             line_spacing: LineSpacing::Normal,
             show_message_author: false,
             show_message_timestamp: false,
-            chat_column_width: ChatColumnWidth::Full,
             bubble_blur: BubbleBlur::None,
             ..Self::default()
         }
@@ -738,7 +737,7 @@ impl Default for ChatAppearanceV1 {
             message_gap: MessageGap::Relaxed,
             avatar_shape: AvatarShape::Circle,
             avatar_size: AvatarSize::Medium,
-            chat_column_width: ChatColumnWidth::Normal,
+            chat_column_width: ChatColumnWidth::Full,
             chat_column_width_px: None,
             chat_column_align: Alignment::Center,
             chat_header_moves: false,
@@ -1028,7 +1027,7 @@ mod customization_tests {
         let appearance = ChatAppearanceV1::default();
         assert_eq!(appearance.line_spacing, LineSpacing::Relaxed);
         assert!(appearance.show_message_author && appearance.show_message_timestamp);
-        assert_eq!(appearance.chat_column_width, ChatColumnWidth::Normal);
+        assert_eq!(appearance.chat_column_width, ChatColumnWidth::Full);
         assert_eq!(appearance.bubble_blur, BubbleBlur::Medium);
         assert_eq!(appearance.bubble_style, BubbleStyle::Filled);
         assert_eq!(appearance.message_header_placement, MessageHeaderPlacement::Below);

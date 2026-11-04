@@ -22,7 +22,7 @@ it("defaults to the design lab look while keeping saved choices", () => {
     lineSpacing: "relaxed",
     showMessageAuthor: true,
     showMessageTimestamp: true,
-    chatColumnWidth: "normal",
+    chatColumnWidth: "full",
     bubbleBlur: "medium",
     bubbleStyle: "filled",
     messageHeaderPlacement: "below",

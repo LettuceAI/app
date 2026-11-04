@@ -72,7 +72,7 @@ export const CHAT_DEFAULTS: ChatLook = {
   messageGap: "relaxed",
   avatarShape: "circle",
   avatarSize: "medium",
-  chatColumnWidth: "normal",
+  chatColumnWidth: "full",
   chatColumnWidthPx: 960,
   chatColumnAlign: "center",
   chatHeaderMoves: false,
@@ -110,7 +110,6 @@ export const HISTORICAL_CHAT_DEFAULTS: ChatLook = {
   lineSpacing: "normal",
   showMessageAuthor: false,
   showMessageTimestamp: false,
-  chatColumnWidth: "full",
   bubbleBlur: "none",
 };
 
