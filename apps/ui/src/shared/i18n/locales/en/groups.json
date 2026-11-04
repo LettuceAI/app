@@ -232,10 +232,10 @@
   },
   "appearance": {
     "body": "Applies to every chat in this group. Fields without an override follow your app appearance.",
-    "overrides": "Group overrides",
     "own": "Set for this group",
-    "inherited": "Follows app appearance",
-    "reset": "Follow app"
+    "characterBody": "Applies to every chat with this character. Fields without an override follow your app appearance.",
+    "characterOwn": "Set for this character",
+    "resetField": "Reset {{title}} to the app appearance"
   },
   "sceneEditor": {
     "characters": "Characters",

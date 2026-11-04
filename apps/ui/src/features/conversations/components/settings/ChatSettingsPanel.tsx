@@ -36,6 +36,7 @@ export interface ChatSettingsPanelProps {
   onBranches: () => void;
   onBranchTarget?: (kind: "character" | "group") => void;
   onModels: () => void;
+  onAppearance: () => void;
 }
 
 export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
@@ -88,15 +89,20 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
     setDirection(-1);
     setStack((previous) => (previous.length > 1 ? previous.slice(0, -1) : previous));
   }, []);
-  const { onClose, onOpenChat } = props;
+  const { onClose, onOpenChat, onAppearance } = props;
   const close = useCallback(() => {
     setStack(["root"]);
     setSheet(null);
     onClose();
   }, [onClose]);
 
+  const openAppearance = useCallback(() => {
+    close();
+    onAppearance();
+  }, [close, onAppearance]);
+
   const ctx: PanelCtx = {
-    api, queryClient, services, conversationId, view, settings: settings.data, characterId: props.characterId, busy, activeSheet: sheet, footerTarget, save, run, open, openSheet, closeSheet, back, close, home: props.onHome,
+    api, queryClient, services, conversationId, view, settings: settings.data, characterId: props.characterId, busy, activeSheet: sheet, footerTarget, save, run, open, openSheet, openAppearance, closeSheet, back, close, home: props.onHome,
     goTo: (id, replace) => {
       setStack(["root"]);
       onOpenChat(id, replace);
@@ -121,7 +127,7 @@ export function ChatSettingsPanel(props: ChatSettingsPanelProps) {
       onClose={close}
       dismissible={sheet === null}
       scrollRef={scrollRef}
-      footer={current === "advanced" || current === "appearance" ? <div ref={setFooterTarget} className="@container" /> : undefined}
+      footer={current === "advanced" ? <div ref={setFooterTarget} className="@container" /> : undefined}
       title={t(`settings.views.${current}`)}
       size="lg"
       placement="side"

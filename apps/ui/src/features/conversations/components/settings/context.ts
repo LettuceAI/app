@@ -4,7 +4,7 @@ import type { ConversationSettingsPatch_Deserialize, ConversationSettingsView, C
 import type { ConversationServices } from "../../data/actions";
 
 export type PanelView =
-  | "root" | "history" | "notes" | "starters" | "advanced" | "appearance";
+  | "root" | "history" | "notes" | "starters" | "advanced";
 
 export type PanelSheet = "persona" | "model" | "background" | "note" | "lorebooks" | "history_actions" | "time" | "member_model";
 
@@ -23,6 +23,7 @@ export interface PanelCtx {
   run: <T>(task: () => Promise<T>) => Promise<T | undefined>;
   open: (view: PanelView) => void;
   openSheet: (sheet: PanelSheet) => void;
+  openAppearance: () => void;
   closeSheet: () => void;
   back: () => void;
   close: () => void;

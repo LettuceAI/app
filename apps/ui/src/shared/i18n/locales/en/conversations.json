@@ -505,7 +505,7 @@
       "notes": "Scheduled notes",
       "starters": "New chat",
       "advanced": "Model settings",
-      "appearance": "Group appearance"
+      "appearance": "Appearance"
     },
     "back": "Back",
     "reset": "Reset",
@@ -731,7 +731,23 @@
       "year": "Year",
       "time": "Time"
     },
-    "groupAppearanceHint": "Appearance for all chats in this group"
+    "groupAppearanceHint": "Appearance for all chats in this group",
+    "characterAppearanceHint": "Appearance for all chats with this character"
+  },
+  "appearance": {
+    "forGroup": "For every chat in this group",
+    "forCharacter": "For {{name}}",
+    "moveLeft": "Move to the left",
+    "moveRight": "Move to the right",
+    "close": "Close appearance",
+    "unsaved": "Unsaved changes",
+    "saved": "No changes",
+    "discard": "Discard",
+    "save": "Save",
+    "discardTitle": "Discard your changes?",
+    "discardBody": "The appearance changes you made have not been saved.",
+    "discardConfirm": "Discard changes",
+    "keepEditing": "Keep editing"
   },
   "memory": {
     "title": "Memory",

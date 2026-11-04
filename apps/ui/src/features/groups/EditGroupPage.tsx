@@ -17,7 +17,7 @@ import { FailureState } from "@/shared/ui/FailureState";
 import { BackgroundGroup, MemoryGroup, SpeakerGroup } from "./components/GroupFields";
 import { EditMembersTab, type EditorMember } from "./components/EditMembersTab";
 import { SceneStep } from "./components/SceneStep";
-import { GroupAppearanceEditor } from "./components/GroupAppearanceEditor";
+import { AppearanceEditor } from "./components/AppearanceEditor";
 import { ExtrasStep } from "./components/ExtrasStep";
 import { launchGroup, refreshGroups, saveGroup, type SaveAttempt } from "./data/actions";
 import { editSections, formFromGroup, rebaseGroup, same, type EditSection, type GroupBaseline } from "./data/edit";
@@ -162,7 +162,7 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
           <Field label={t("setup.mode")} hint={modeHint}><Segmented<GroupChatMode> block aria-label={t("setup.mode")} value={form.draft.chat_mode} onChange={(chat_mode) => setForm((current) => ({ ...current, draft: { ...current.draft, chat_mode } }))} options={[{ value: "conversation", label: t("setup.conversation") }, { value: "roleplay", label: t("setup.roleplay") }]} /></Field>
         </div>
         <div className="min-w-0 space-y-6"><BackgroundGroup {...props} /></div>
-      </div> : section === "members" ? <EditMembersTab {...props} cast={allCast} phone={phone} /> : section === "scene" ? <SceneStep {...props} autoFocus={false} /> : section === "appearance" ? <GroupAppearanceEditor draft={form.draft} onChange={(draft) => setForm((current) => ({ ...current, draft }))} phone={phone} /> : <div className="space-y-6">
+      </div> : section === "members" ? <EditMembersTab {...props} cast={allCast} phone={phone} /> : section === "scene" ? <SceneStep {...props} autoFocus={false} /> : section === "appearance" ? <AppearanceEditor draft={form.draft} onChange={(draft) => setForm((current) => ({ ...current, draft }))} phone={phone} /> : <div className="space-y-6">
         <p className="text-base text-fg-2">{t("edit.chatFollow")}</p>
         <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10"><div className="min-w-0 space-y-6"><SpeakerGroup {...props} /><MemoryGroup {...props} dynamicMemory={dynamicMemory} /></div><div className="min-w-0 space-y-6"><ExtrasStep {...props} libraryOnly saved={{ id: stored.id, memberIds: stored.form.draft.members.map((member) => member.character_id) }} /></div></div>
       </div>}

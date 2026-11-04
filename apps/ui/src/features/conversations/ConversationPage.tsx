@@ -31,6 +31,7 @@ import {
   object,
   readChatLook,
   usePreferences,
+  type ChatLook,
 } from "@/entities/preferences";
 import { ChatBanners, ChatComposer, type ComposerHandle } from "./components/ChatComposer";
 import { ChatTools, type ToolPanel } from "./components/ChatTools";
@@ -39,6 +40,7 @@ import { InlineAuthorNoteBar } from "./components/InlineAuthorNoteBar";
 import { GenerationProgressToast } from "./components/GenerationProgressToast";
 import { BeetrootRain } from "./components/BeetrootRain";
 import { ChatSettingsPanel } from "./components/settings/ChatSettingsPanel";
+import { ChatAppearanceDrawer } from "./components/appearance/ChatAppearanceDrawer";
 import { EditSheet } from "./components/EditSheet";
 import { MessageMenu } from "./components/MessageMenu";
 import { RegenerationSheet } from "./components/RegenerationSheet";
@@ -150,7 +152,9 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const { view, messages } = timeline;
   const settings = useQuery(settingsQuery(api, conversationId));
   const preferences = usePreferences();
-  const look = useMemo(
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [draftLook, setDraftLook] = useState<ChatLook | null>(null);
+  const savedLook = useMemo(
     () =>
       readChatLook({
         ...appAppearancePreferences(preferences.value, view?.kind === "group"),
@@ -160,6 +164,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
       }),
     [preferences.value, view?.kind, settings.data],
   );
+  const look = draftLook ?? savedLook;
   const columnStyle = useMemo(() => {
     if (phone || look.chatColumnWidth === "full") return {};
     const widths = {
@@ -899,6 +904,19 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
             onModels={() =>
               void navigate({ to: "/settings/$section", params: { section: "models" } })
             }
+            onAppearance={() => setAppearanceOpen(true)}
+          />
+        )}
+
+        {view && (
+          <ChatAppearanceDrawer
+            open={appearanceOpen && !panelOpen}
+            api={api}
+            characterId={view.source.type === "direct" ? view.source.character_id : null}
+            groupId={view.source.type === "group" ? view.source.group_id : null}
+            name={name}
+            onClose={() => setAppearanceOpen(false)}
+            onDraft={setDraftLook}
           />
         )}
 

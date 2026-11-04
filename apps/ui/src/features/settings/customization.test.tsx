@@ -101,15 +101,15 @@ describe("customization settings", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Text size" }), { target: { value: "small" } });
     await waitFor(() => expect(page.current().groupChatAppearance).toEqual({ fontSize: "small", bubbleRadius: "pill" }));
     expect(page.current().chatAppearance).toEqual({ fontSize: "large", bubbleRadius: "pill" });
-    fireEvent.change(screen.getByRole("combobox", { name: "Face shape" }), { target: { value: "boxed" } });
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Face shape" })).getByRole("radio", { name: "Square" }));
     await waitFor(() => expect(page.current().groupChatAppearance).toMatchObject({ participantsBarAvatarShape: "boxed" }));
     fireEvent.click(screen.getByRole("radio", { name: "Normal chat" }));
     expect(await screen.findByRole("combobox", { name: "Text size" })).toHaveProperty("value", "large");
-    fireEvent.change(screen.getByRole("combobox", { name: "Corners" }), { target: { value: "sharp" } });
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Corners" })).getByRole("radio", { name: "Sharp" }));
     await waitFor(() => expect(page.current().chatAppearance).toEqual({ fontSize: "large", bubbleRadius: "sharp" }));
     expect(page.current().groupChatAppearance).toMatchObject({ bubbleRadius: "pill" });
     fireEvent.click(screen.getByRole("radio", { name: "Group chats" }));
-    expect(await screen.findByRole("combobox", { name: "Corners" })).toHaveProperty("value", "pill");
+    expect((await within(await screen.findByRole("radiogroup", { name: "Corners" })).findByRole("radio", { name: "Round" })).getAttribute("aria-checked")).toBe("true");
   });
 
   it("resets the group look to app defaults with an empty group appearance", async () => {
@@ -164,17 +164,13 @@ describe("customization settings", () => {
     expect(screen.getByRole("radio", { name: "Background image" })).toBeTruthy();
   });
 
-  it("saves mobile text and bubble choices through native pickers", async () => {
+  it("saves mobile text choices through native pickers and bubble choices through segmented controls", async () => {
     const page = await mount({ tab: "chat", phone: true });
     fireEvent.change(await screen.findByRole("combobox", { name: "Text size" }), {
       target: { value: "large" },
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "Style" }), {
-      target: { value: "bordered" },
-    });
-    fireEvent.change(screen.getByRole("combobox", { name: "Corners" }), {
-      target: { value: "sharp" },
-    });
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Style" })).getByRole("radio", { name: "Outline" }));
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Corners" })).getByRole("radio", { name: "Sharp" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Composer text size" }), {
       target: { value: "xlarge" },
     });
@@ -390,7 +386,8 @@ describe("customization settings", () => {
     const label = (await screen.findAllByText("Composer")).find((element) =>
       element.closest(".row-py"),
     );
-    fireEvent.click(within(label!.closest(".row-py") as HTMLElement).getByRole("button"));
+    const row = label!.closest(".row-py") as HTMLElement;
+    fireEvent.click(within(row.parentElement as HTMLElement).getByRole("button", { name: /color/i }));
     const hex = await screen.findByRole("textbox", { name: "Hex color" });
     fireEvent.change(hex, { target: { value: "#123456" } });
     fireEvent.keyDown(hex, { key: "Enter" });

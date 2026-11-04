@@ -170,7 +170,7 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
       {groupId && <SpeakerSelectionGroup ctx={ctx} />}
 
       <ListGroup label={t("settings.sections.chat")}>
-        {groupId && <ListRowButton icon={<Paintbrush size={icon.lg} />} title={t("settings.views.appearance")} description={t("settings.groupAppearanceHint")} onClick={() => ctx.open("appearance")} />}
+        <ListRowButton icon={<Paintbrush size={icon.lg} />} title={t("settings.views.appearance")} description={t(groupId ? "settings.groupAppearanceHint" : "settings.characterAppearanceHint")} disabled={!groupId && !ctx.characterId} onClick={ctx.openAppearance} />
         <SettingRow icon={<User size={icon.lg} />} title={t("tools.persona")} value={personaValue} source={settings.persona.source} disabled={ctx.busy} onOpen={() => ctx.openSheet("persona")} onReset={() => void ctx.save({ persona: { type: "reset" } })} />
         {!groupId && (
           <SettingRow
