@@ -5,6 +5,7 @@
 
 mod active_work;
 mod app;
+mod character_notes;
 mod library;
 pub use app::content_filter::{content_filter_clear, content_filter_log};
 pub use app::settings::{settings_get, settings_sampler_defaults_update, settings_update};
@@ -39,11 +40,13 @@ pub use app::startup::{ApiWorkers, StartupStep, startup};
 pub use app::{
     app_status, app_ui_state_update, app_usage_days, purge_notice_dismiss, purge_notices_list,
 };
+pub use character_notes::{
+    character_notes_active_preview, character_notes_delete, character_notes_list,
+    character_notes_upsert,
+};
 pub use companion::{
-    companion_notes_active_preview, companion_notes_delete, companion_notes_list,
-    companion_notes_upsert, companion_soul_get, companion_soul_growth_clear,
-    companion_soul_growth_lock, companion_soul_growth_remove, companion_soul_writer_run,
-    companion_state_get,
+    companion_soul_get, companion_soul_growth_clear, companion_soul_growth_lock,
+    companion_soul_growth_remove, companion_soul_writer_run, companion_state_get,
 };
 pub use context::{ApiContext, ApiContextParts, ApiDatabaseFiles, ApiMediaStore};
 pub use conversations::branches::{

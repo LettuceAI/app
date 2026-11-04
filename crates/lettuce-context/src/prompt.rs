@@ -959,7 +959,7 @@ pub fn built_in_update(
 }
 
 /// Immutable facts used to evaluate all condition variants, including the
-/// companion-only scheduled-note rule and the lorebook keyword matcher.
+/// scheduled-note rule and the lorebook keyword matcher.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PromptConditionContext {
     pub chat_mode: PromptEntryChatMode,
@@ -1057,7 +1057,8 @@ pub fn matches_condition(
             *value == context.does_author_note_exists
         }
         PromptEntryCondition::HasActiveScheduledNote { value } => {
-            context.companion_mode_enabled && *value == context.has_active_scheduled_note
+            (context.companion_mode_enabled || context.has_active_scheduled_note)
+                && *value == context.has_active_scheduled_note
         }
         PromptEntryCondition::HasSubjectDescription { value } => {
             *value == context.has_subject_description
@@ -2702,6 +2703,28 @@ mod tests {
         };
         assert!(matches_condition(&condition, &context));
         assert!(condition.validate().is_ok());
+    }
+
+    #[test]
+    fn the_active_scheduled_note_condition_follows_notes_and_keeps_the_companion_rule() {
+        let matches = |companion: bool, active: bool, value: bool| {
+            matches_condition(
+                &PromptEntryCondition::HasActiveScheduledNote { value },
+                &PromptConditionContext {
+                    companion_mode_enabled: companion,
+                    has_active_scheduled_note: active,
+                    ..PromptConditionContext::default()
+                },
+            )
+        };
+        assert!(matches(false, true, true));
+        assert!(!matches(false, true, false));
+        assert!(!matches(false, false, true));
+        assert!(!matches(false, false, false));
+        assert!(matches(true, true, true));
+        assert!(!matches(true, true, false));
+        assert!(!matches(true, false, true));
+        assert!(matches(true, false, false));
     }
 
     #[test]

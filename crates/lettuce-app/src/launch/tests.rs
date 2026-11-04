@@ -4355,6 +4355,124 @@ async fn companion_context_renders_defaults_when_state_is_missing() {
     assert!(!text.contains("this chat is episode"));
 }
 
+async fn assembled_text_of_a_new_direct_chat(
+    database: &Database,
+    character_id: CharacterId,
+    operation_key: &str,
+) -> (Vec<lettuce_conversations::ProviderNeutralMessage>, String) {
+    let prepared = ConversationLaunchPlanner::new(database)
+        .prepare_direct(&request(character_id, operation_key))
+        .expect("prepare launch");
+    let launched = ConversationCreator::create(database, prepared, NOW).expect("create chat");
+    let sent = ConversationRepository::begin_send(
+        database,
+        &direct_send_command(
+            &launched.value.conversation,
+            &format!("{operation_key}-send"),
+            "Hello.",
+        ),
+        TimestampMillis::new(NOW.get() + 1),
+    )
+    .expect("send");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let request = context_request_for(database, launched.value.conversation.id, source_message_id);
+    let context = crate::ConversationContextAssembler::new(database)
+        .assemble(request)
+        .await
+        .expect("assemble");
+    let text = context
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    (context.messages, text)
+}
+
+fn reunion_note(character_id: CharacterId, available_at: i64) -> lettuce_companions::CompanionScheduledNote {
+    lettuce_companions::CompanionScheduledNote {
+        id: uuid::Uuid::new_v4(),
+        character_id,
+        label: "Reunion".into(),
+        content: "Remember the station reunion.".into(),
+        available_at: TimestampMillis::new(available_at),
+        expires_at: None,
+        recurrence: lettuce_companions::ScheduledNoteRecurrence::None,
+        recurrence_window_ms: None,
+        enabled: true,
+        created_at: TimestampMillis::new(NOW.get() + 9),
+        updated_at: TimestampMillis::new(NOW.get() + 9),
+    }
+}
+
+#[tokio::test]
+async fn a_roleplay_chat_renders_active_scheduled_notes_and_is_unchanged_without_them() {
+    let database = database_with_builtins();
+    let character_id = plain_character(&database);
+    let (baseline, baseline_text) =
+        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-roleplay-baseline").await;
+    assert!(!baseline_text.contains("Background context you currently hold in mind"));
+
+    database
+        .upsert_scheduled_note(reunion_note(character_id, NOW.get() + 1_000_000))
+        .expect("store a note that is not due");
+    let (not_due, _) =
+        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-roleplay-not-due").await;
+    assert_eq!(not_due, baseline);
+
+    database
+        .upsert_scheduled_note(reunion_note(character_id, 0))
+        .expect("store a due note");
+    let (_, with_note) =
+        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-roleplay-due").await;
+    assert!(with_note.contains(
+        "[Background context you currently hold in mind]\n- Remember the station reunion."
+    ));
+}
+
+#[tokio::test]
+async fn a_companion_switched_to_roleplay_keeps_its_scheduled_notes() {
+    let database = database_with_builtins();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    database
+        .upsert_scheduled_note(reunion_note(character_id, 0))
+        .expect("store a note");
+    let (_, as_companion) =
+        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-switch-companion").await;
+    assert!(as_companion.contains("- Remember the station reunion."));
+
+    let details = CharacterRepository::get(&database, character_id)
+        .expect("read character")
+        .expect("character exists");
+    CharacterRepository::update_defaults(
+        &database,
+        character_id,
+        details.character.revision,
+        CharacterDefaults {
+            interaction_mode: InteractionMode::Roleplay,
+            companion_soul: None,
+            ..details.character.defaults.clone()
+        },
+        TimestampMillis::new(NOW.get() + 20),
+    )
+    .expect("switch to roleplay");
+    let (_, as_roleplay) =
+        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-switch-roleplay").await;
+    assert!(as_roleplay.contains(
+        "[Background context you currently hold in mind]\n- Remember the station reunion."
+    ));
+}
+
 fn enable_time_awareness(
     database: &Database,
     conversation_id: lettuce_types::ConversationId,

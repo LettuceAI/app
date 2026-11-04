@@ -158,7 +158,10 @@ pub struct Companion {
     pub time_awareness: Option<bool>,
     pub share_memory_across_chats: bool,
     pub share_soul_growth_across_chats: bool,
-    pub scheduled_notes: Vec<ScheduledNote>,
+    /// Present only in files written before scheduled notes became a
+    /// character-level list (`Character::scheduled_notes`); exports never set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_notes: Option<Vec<ScheduledNote>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

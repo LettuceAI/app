@@ -226,6 +226,24 @@ describe("chat settings panel", () => {
     expect(await screen.findByRole("button", { name: /^Chat clock/ })).toBeTruthy();
   });
 
+  it("offers the scheduled notes row in the Time group of a direct chat and not of a group chat", async () => {
+    await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
+    const timeGroup = (await screen.findByRole("heading", { name: "Time" })).closest("section")!;
+    expect(within(timeGroup).getByRole("button", { name: /^Scheduled notes/ })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /^Scheduled notes/ })).toHaveLength(1);
+    cleanup();
+    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, roleplay_prompt: { id: null, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
+    await open({ path: "/chat/c1?panel=settings", calls: {
+      ...panelCalls,
+      conversationOpen: () => ({ status: "ok", data: view([], { kind: "group", source: { type: "group", group_id: "g1" } }) }),
+      conversationSettingsGet: () => ({ status: "ok", data: groupSettings }),
+      conversationParticipationStats: () => ({ status: "ok", data: { total_messages: 0, items: [] } }),
+    } });
+    const groupTime = (await screen.findByRole("heading", { name: "Time" })).closest("section")!;
+    expect(within(groupTime).getByRole("switch", { name: "Time awareness" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Scheduled notes/ })).toBeNull();
+  });
+
   it("navigates branches to its own page and omits scene and prompt controls", async () => {
     const runtime = await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
     expect(screen.queryByRole("button", { name: /^Scene/ })).toBeNull();

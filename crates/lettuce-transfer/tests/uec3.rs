@@ -380,6 +380,60 @@ fn time_awareness_is_written_at_character_level_and_an_old_companion_key_is_stil
 }
 
 #[test]
+fn scheduled_notes_are_character_level_and_an_old_companion_list_is_still_read() {
+    let note = json!({"key":"n1","label":"Anniversary","content":"Remember","availableAt":1,"expiresAt":20,"recurrence":"yearly","recurrenceWindowMs":1000,"enabled":true});
+    let round_trip = |source: &Value| {
+        let read = uec3::read(&source.to_string(), |_, _, _| Ok(())).expect("file");
+        assert!(read.warnings.is_empty());
+        let mut output = Vec::new();
+        uec3::write(&mut output, &read.document, |_, sink| {
+            std::io::Write::write_all(sink, b"image")?;
+            Ok(())
+        })
+        .expect("write");
+        (
+            read,
+            serde_json::from_slice::<Value>(&output).expect("JSON"),
+        )
+    };
+
+    let mut roleplay = character();
+    roleplay["entity"]["scheduledNotes"] = json!([note]);
+    let (read, output) = round_trip(&roleplay);
+    let Entity::Character(card) = &read.document.entity else {
+        panic!("character entity");
+    };
+    assert!(card.companion.is_none());
+    assert_eq!(card.scheduled_notes.as_ref().map(Vec::len), Some(1));
+    assert_eq!(output, roleplay);
+
+    let mut old = character();
+    old["entity"]["behavior"]["interactionMode"] = json!("companion");
+    old["entity"]["companion"] = json!({
+        "soul":{"essence":"","traits":"","backstory":"","appearance":"","goals":"","likes":"","voice":"","relationalStyle":"","vulnerabilities":"","fears":"","habits":"","boundaries":""},
+        "baselineAffect":{"warmth":0.1,"trust":0.2,"calm":0.3,"vulnerability":0.4,"longing":0.5,"hurt":0.6,"tension":0.7,"irritation":0.8,"affectionIntensity":0.9,"reassuranceNeed":1.0},
+        "regulationStyle":{"suppression":0.1,"volatility":0.2,"recoverySpeed":0.3,"conflictAvoidance":0.4,"reassuranceSeeking":0.5,"protestBehavior":0.6,"emotionalTransparency":0.7,"attachmentActivation":0.8,"pride":0.9},
+        "relationshipDefaults":{"closeness":0.1,"trust":0.2,"affection":0.3,"tension":0.4},
+        "authoredFacts":[],"prompting":{"prompt":null,"styleNotes":""},
+        "shareMemoryAcrossChats":true,"shareSoulGrowthAcrossChats":true,
+        "scheduledNotes":[note]
+    });
+    let (read, output) = round_trip(&old);
+    let Entity::Character(card) = &read.document.entity else {
+        panic!("character entity");
+    };
+    assert!(card.scheduled_notes.is_none());
+    assert_eq!(
+        card.companion
+            .as_ref()
+            .and_then(|companion| companion.scheduled_notes.as_ref())
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(output, old);
+}
+
+#[test]
 fn companion_identity_notes_and_optional_learned_state_round_trip_without_conversation_data() {
     let mut source = character();
     source["entity"]["behavior"]["interactionMode"] = json!("companion");
@@ -391,9 +445,9 @@ fn companion_identity_notes_and_optional_learned_state_round_trip_without_conver
         "relationshipDefaults":{"closeness":0.1,"trust":0.2,"affection":0.3,"tension":0.4},
         "authoredFacts":[{"key":"f1","category":"likes","value":"Sea","policy":"adaptive","slot":"likes.sea","locked":true,"weight":0.8,"confidence":0.82,"evidenceCount":3,"validFrom":1,"validUntil":20}],
         "prompting":{"prompt":"builtin:prompt_app_companion","styleNotes":"Calm"},
-        "shareMemoryAcrossChats":true,"shareSoulGrowthAcrossChats":false,
-        "scheduledNotes":[{"key":"n1","label":"Anniversary","content":"Remember","availableAt":1,"expiresAt":20,"recurrence":"yearly","recurrenceWindowMs":1000,"enabled":false}]
+        "shareMemoryAcrossChats":true,"shareSoulGrowthAcrossChats":false
     });
+    source["entity"]["scheduledNotes"] = json!([{"key":"n1","label":"Anniversary","content":"Remember","availableAt":1,"expiresAt":20,"recurrence":"yearly","recurrenceWindowMs":1000,"enabled":false}]);
     source["state"] = json!({"companion":{
         "soul":[{"key":"f2","category":"likes","value":"Ships","kind":"adjust","policy":"adaptive","slot":"likes.ships","confidence":0.9,"evidenceCount":2,"weight":0.8,"validFrom":2,"validUntil":null,"locked":false,"createdAt":2,"supersedes":["f1"],"supersededBy":null,"supersededAt":null,"sourceMemories":["m1"]}],
         "memory":{"items":[{"key":"m1","text":"A memory","category":"preference","origin":"model","observedAt":2,"observedPrecision":"user","supersedes":[],"supersededBy":null,"supersededAt":null,"pinned":true,"cold":false,"importance":8000,"persistenceImportance":7000,"promptImportance":6000,"volatility":1000,"createdAt":2}]}

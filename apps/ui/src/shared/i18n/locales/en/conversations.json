@@ -525,7 +525,6 @@
     "sections": {
       "chat": "This chat",
       "memory": "Memory",
-      "companion": "Companion",
       "time": "Time",
       "actions": "Chat",
       "generation": "Generation",
@@ -594,7 +593,7 @@
     },
     "notes": {
       "title": "Scheduled notes",
-      "rowHint": "Reminders the companion sees at set times",
+      "rowHint": "Reminders the character sees at set times",
       "hint": "Notes belong to the character and show up in every chat with them.",
       "empty": "No scheduled notes yet.",
       "add": "Add a note",
@@ -602,7 +601,7 @@
       "label": "Label",
       "labelPlaceholder": "Label (optional)",
       "content": "Note",
-      "contentPlaceholder": "What should the companion know?",
+      "contentPlaceholder": "What should the character know?",
       "startsOn": "Starts on",
       "stopsOn": "Stops on (optional)",
       "repeats": "Repeats",

@@ -4,7 +4,7 @@ import { Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, confirm, DatePicker, Field, icon, Input, ListGroup, ListRow, Select, Sheet, Switch, Textarea, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
-import type { CompanionNoteRecurrence, CompanionNoteView } from "@/api/generated/bindings";
+import type { CharacterNoteRecurrence, CharacterNoteView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { attemptIds, defaultWindowHours, draftToUpsert, newNoteDraft, noteProblem, noteToDraft, recurrences } from "../data/notes";
 
@@ -16,7 +16,7 @@ const endOfDay = (date: Date) => {
 
 const pickedDayOnly = (date: Date) => date.getHours() === 0 && date.getMinutes() === 0;
 
-export function NoteSheet({ api, characterId, note, open, onClose }: { api: ApiClient; characterId: string; note: CompanionNoteView | null; open: boolean; onClose: () => void }) {
+export function NoteSheet({ api, characterId, note, open, onClose }: { api: ApiClient; characterId: string; note: CharacterNoteView | null; open: boolean; onClose: () => void }) {
   const { t } = useTranslation("characters");
   const { t: common } = useTranslation("common");
   const queryClient = useQueryClient();
@@ -26,7 +26,7 @@ export function NoteSheet({ api, characterId, note, open, onClose }: { api: ApiC
   const problem = noteProblem(draft);
   const set = (patch: Partial<typeof draft>) => setDraft((current) => ({ ...current, ...patch }));
   const finish = async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.companionNotes.list(characterId) });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.characterNotes.list(characterId) });
     onClose();
   };
   const fail = (error: unknown) => toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`));
@@ -34,7 +34,7 @@ export function NoteSheet({ api, characterId, note, open, onClose }: { api: ApiC
     mutationFn: async () => {
       const { client_operation_id: _ignored, ...payload } = draftToUpsert(characterId, note?.id ?? null, draft, "");
       void _ignored;
-      await api.call("companionNotesUpsert", { ...payload, client_operation_id: ids.idFor(payload) });
+      await api.call("characterNotesUpsert", { ...payload, client_operation_id: ids.idFor(payload) });
     },
     onSuccess: async () => {
       ids.settled();
@@ -44,7 +44,7 @@ export function NoteSheet({ api, characterId, note, open, onClose }: { api: ApiC
     onError: fail,
   });
   const remove = useMutation({
-    mutationFn: () => api.call("companionNotesDelete", { note_id: note!.id, client_operation_id: deleteId }),
+    mutationFn: () => api.call("characterNotesDelete", { note_id: note!.id, client_operation_id: deleteId }),
     onSuccess: async () => {
       toast.success(t("notes.deleted"));
       await finish();
@@ -78,7 +78,7 @@ export function NoteSheet({ api, characterId, note, open, onClose }: { api: ApiC
           <Textarea rows={4} autoGrow maxRows={10} value={draft.content} placeholder={t("notes.contentPlaceholder")} disabled={busy} onChange={(event) => set({ content: event.target.value })} />
         </Field>
         <Field label={t("notes.repeat")}>
-          <Select value={draft.recurrence} disabled={busy} options={recurrences.map((value) => ({ value, label: t(`notes.recurrence.${value}`) }))} onChange={(event) => set({ recurrence: event.target.value as CompanionNoteRecurrence })} />
+          <Select value={draft.recurrence} disabled={busy} options={recurrences.map((value) => ({ value, label: t(`notes.recurrence.${value}`) }))} onChange={(event) => set({ recurrence: event.target.value as CharacterNoteRecurrence })} />
         </Field>
         <Field label={t(draft.recurrence === "none" ? "notes.showOn" : "notes.startsOn")}>
           <DatePicker withTime value={draft.availableAt} disabled={busy} onChange={(availableAt) => set({ availableAt })} />

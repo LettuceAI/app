@@ -213,9 +213,9 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
     setSceneEditorOpen(id !== null);
     if (phone) mainRef.current?.scrollTo({ top: 0 });
   }} />;
-  else if (tab === "chat") body = <ChatTab {...props} />;
+  else if (tab === "chat") body = <ChatTab {...props} characterId={characterId} />;
   else if (tab === "look") body = <LookTab {...props} />;
-  else body = <SoulTab {...props} characterId={characterId} />;
+  else body = <SoulTab {...props} />;
 
   const tabs = mobileSceneEditor ? undefined : (
     <Tabs value={tab} onChange={(next) => go(next as EditTab)}>

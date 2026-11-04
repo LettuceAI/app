@@ -3704,18 +3704,18 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
         serde_json::from_slice(&std::fs::read(plain.uri).expect("file")).expect("JSON");
     assert!(plain["state"].is_null());
     assert_eq!(
-        plain["entity"]["companion"]["scheduledNotes"]
+        plain["entity"]["scheduledNotes"]
             .as_array()
             .expect("notes")
             .len(),
         1
     );
     assert_eq!(
-        plain["entity"]["companion"]["scheduledNotes"][0]["availableAt"],
+        plain["entity"]["scheduledNotes"][0]["availableAt"],
         -2_520_000_000_000_i64
     );
     assert_eq!(
-        plain["entity"]["companion"]["scheduledNotes"][0]["expiresAt"],
+        plain["entity"]["scheduledNotes"][0]["expiresAt"],
         -2_510_000_000_000_i64
     );
     assert_eq!(
@@ -3834,6 +3834,12 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
         .expect("behavior")
         .remove("timeAwareness");
     old["entity"]["companion"]["timeAwareness"] = json!(true);
+    let character_notes = old["entity"]
+        .as_object_mut()
+        .expect("entity")
+        .remove("scheduledNotes")
+        .expect("character-level notes");
+    old["entity"]["companion"]["scheduledNotes"] = character_notes;
     let old_path = root.join("old-time-awareness.uec");
     std::fs::write(&old_path, old.to_string()).expect("write the old file");
     let old_source = dto::FileSource {
@@ -3856,6 +3862,32 @@ async fn uec3_companion_authored_and_learned_state_round_trip_without_conversati
         serde_json::from_slice(&std::fs::read(lifted.uri).expect("file")).expect("JSON");
     assert_eq!(lifted["entity"]["behavior"]["timeAwareness"], true);
     assert!(lifted["entity"]["companion"].get("timeAwareness").is_none());
+    assert_eq!(lifted["entity"]["scheduledNotes"], plain["entity"]["scheduledNotes"]);
+    assert!(lifted["entity"]["companion"].get("scheduledNotes").is_none());
+    let mut both = plain.clone();
+    both["entity"]["scheduledNotes"] = json!([]);
+    both["entity"]["companion"]["scheduledNotes"] = plain["entity"]["scheduledNotes"].clone();
+    let both_path = root.join("both-note-lists.uec");
+    std::fs::write(&both_path, both.to_string()).expect("write the file with both lists");
+    let both_source = dto::FileSource {
+        uri: both_path.display().to_string(),
+    };
+    let p = preview(context, both_source.clone()).await;
+    let result = crate::api::import_commit(
+        context,
+        commit_request(both_source, p.digest, json!({}), "companion-both-lists"),
+    )
+    .await
+    .expect("file with both lists");
+    let dto::ImportCommitResult::Imported { id, .. } = result else {
+        panic!("imported")
+    };
+    let preferred = crate::api::character_export(context, export(id, false, "preferred.uec"))
+        .await
+        .expect("preferred export");
+    let preferred: Value =
+        serde_json::from_slice(&std::fs::read(preferred.uri).expect("file")).expect("JSON");
+    assert_eq!(preferred["entity"]["scheduledNotes"], json!([]));
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
@@ -4240,6 +4272,71 @@ async fn uec3_learned_export_of_a_former_companion_writes_no_state() {
     let value: Value =
         serde_json::from_slice(&std::fs::read(exported.uri).expect("file")).expect("JSON");
     assert!(value["state"].is_null());
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn uec3_roleplay_character_notes_are_written_at_character_level_and_round_trip() {
+    let (root, harness) = setup();
+    let context = &harness.context;
+    let created = crate::api::character_notes_upsert(
+        context,
+        dto::CharacterNoteUpsertRequest {
+            character_id: harness.character_id.to_string(),
+            note_id: None,
+            label: "Birthday".into(),
+            content: "Her birthday is today.".into(),
+            available_at: 1_000,
+            expires_at: None,
+            recurrence: dto::CharacterNoteRecurrence::Yearly,
+            recurrence_window_ms: None,
+            enabled: true,
+            client_operation_id: "roleplay-note".into(),
+        },
+    )
+    .await
+    .expect("a roleplay character takes a note");
+    let export = |id: String, name: &str| dto::CharacterExportRequest {
+        id,
+        include_learned: false,
+        format: dto::CharacterExportFormat::Uec,
+        target: Some(dto::FileTarget {
+            uri: root.join(name).display().to_string(),
+        }),
+    };
+    let first = crate::api::character_export(
+        context,
+        export(harness.character_id.to_string(), "roleplay-notes.uec"),
+    )
+    .await
+    .expect("export");
+    let first_uri = first.uri.clone();
+    let first: Value =
+        serde_json::from_slice(&std::fs::read(first.uri).expect("file")).expect("JSON");
+    assert!(first["entity"]["companion"].is_null());
+    let notes = first["entity"]["scheduledNotes"].as_array().expect("notes");
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0]["content"], created.content);
+    assert_eq!(notes[0]["availableAt"], 1_000);
+    assert_eq!(notes[0]["recurrence"], "yearly");
+
+    let source = dto::FileSource { uri: first_uri };
+    let p = preview(context, source.clone()).await;
+    let result = crate::api::import_commit(
+        context,
+        commit_request(source, p.digest, json!({}), "roleplay-notes-import"),
+    )
+    .await
+    .expect("import");
+    let dto::ImportCommitResult::Imported { id, .. } = result else {
+        panic!("imported")
+    };
+    let again = crate::api::character_export(context, export(id, "roleplay-notes-again.uec"))
+        .await
+        .expect("re-export");
+    let again: Value =
+        serde_json::from_slice(&std::fs::read(again.uri).expect("file")).expect("JSON");
+    assert_eq!(again["entity"]["scheduledNotes"], first["entity"]["scheduledNotes"]);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 

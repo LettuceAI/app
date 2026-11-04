@@ -575,19 +575,17 @@ impl CharacterFilePlan {
             .collect::<Result<Vec<_>, CharacterPlanError>>()?;
         let mut skipped = Vec::new();
         let mut scheduled_notes = Vec::new();
-        if character.defaults.interaction_mode == InteractionMode::Companion {
-            for (index, note) in self.scheduled_notes.iter().enumerate() {
-                if note.content.trim().is_empty() {
-                    continue;
-                }
-                match scheduled_note(note, plan.character.id, now, new_id()) {
-                    Some(note) => scheduled_notes.push(note),
-                    None => skipped.push(crate::legacy_value_skip(
-                        "companion_scheduled_notes",
-                        note.id.as_deref().unwrap_or(&index.to_string()),
-                        crate::LegacyImportSkipReason::MalformedLegacyValue,
-                    )),
-                }
+        for (index, note) in self.scheduled_notes.iter().enumerate() {
+            if note.content.trim().is_empty() {
+                continue;
+            }
+            match scheduled_note(note, plan.character.id, now, new_id()) {
+                Some(note) => scheduled_notes.push(note),
+                None => skipped.push(crate::legacy_value_skip(
+                    "companion_scheduled_notes",
+                    note.id.as_deref().unwrap_or(&index.to_string()),
+                    crate::LegacyImportSkipReason::MalformedLegacyValue,
+                )),
             }
         }
         let mut notices = Vec::new();
@@ -943,6 +941,43 @@ mod tests {
             ),
             Err(CharacterFilePlanError::UnsupportedVersion(2))
         ));
+    }
+
+    #[test]
+    fn a_roleplay_package_keeps_its_scheduled_note() {
+        let package: CharacterPackage = serde_json::from_value(json!({
+            "version": 1,
+            "exportedAt": 5,
+            "character": {
+                "name": "Ada",
+                "scenes": [],
+                "disableAvatarGradient": false,
+                "mode": "roleplay",
+                "companionScheduledNotes": [{
+                    "content": "Her birthday is today.",
+                    "availableAt": 1000,
+                    "recurrence": "yearly",
+                    "createdAt": 5,
+                    "updatedAt": 6
+                }]
+            }
+        }))
+        .expect("package");
+        let references = CharacterFileReferences::default();
+        let plan = plan_character_file(&package, &references, 50, ids()).expect("plan");
+        let import = plan
+            .import(&references, &CharacterFileAssets::default(), 50, ids())
+            .expect("import");
+        assert_eq!(
+            import.character.character.defaults.interaction_mode,
+            lettuce_characters::InteractionMode::Roleplay
+        );
+        assert_eq!(import.scheduled_notes.len(), 1);
+        assert_eq!(import.scheduled_notes[0].content, "Her birthday is today.");
+        assert_eq!(
+            import.scheduled_notes[0].character_id,
+            import.character.character.id
+        );
     }
 
     fn card_package(data: &Value) -> CharacterPackage {

@@ -5,7 +5,6 @@ import { Accordion, AccordionItem, Button, Field, icon, ListGroup, ListRow, Slid
 import type { CompanionEmotionVector, CompanionRegulationStyle, CompanionRelationshipDefaults, CompanionSoulConfigView, CompanionSoulIdentity } from "@/api/generated/bindings";
 import type { StepProps } from "../components/step-props";
 import { GenerateSoulSheet } from "./GenerateSoulSheet";
-import { NotesGroup } from "./NotesGroup";
 
 type TextField = { [K in keyof CompanionSoulIdentity]: CompanionSoulIdentity[K] extends string ? K : never }[keyof CompanionSoulIdentity];
 
@@ -29,7 +28,7 @@ function Sliders<K extends string>({ label, keys, values, onChange }: { label: (
   </div>;
 }
 
-export function SoulTab({ api, form, update, characterId }: StepProps & { characterId: string }) {
+export function SoulTab({ api, form, update }: StepProps) {
   const { t } = useTranslation("characters");
   const [generating, setGenerating] = useState(false);
   const config = form.draft.defaults.companion_soul;
@@ -72,7 +71,6 @@ export function SoulTab({ api, form, update, characterId }: StepProps & { charac
         <Field label={t("soul.styleNotes")} hint={t("soul.styleNotesHint")}>
           <Textarea rows={4} autoGrow maxRows={12} value={config.prompting.style_notes} placeholder={t("soul.styleNotesPlaceholder")} onChange={(event) => { const style_notes = event.target.value; change((current) => ({ ...current, prompting: { ...current.prompting, style_notes } })); }} />
         </Field>
-        <NotesGroup api={api} characterId={characterId} />
       </div>
       <ListGroup label={t("soul.acrossChats")}>
         {sharing.map(({ key, label }) => <ListRow key={key} title={t(`soul.${label}`)} description={t(`soul.${label}Body`)} trailing={<Switch checked={config[key]} onChange={(value) => change((current) => ({ ...current, [key]: value }))} aria-label={t(`soul.${label}`)} />} />)}

@@ -75,9 +75,9 @@ export const queryKeys = {
     soul: (conversationId: string, characterId?: string) => ["companions", "soul", conversationId, ...(characterId ? [characterId] : [])] as const,
     effect: (conversationId: string, messageId: string) => ["companions", "effect", conversationId, messageId] as const,
   },
-  companionNotes: {
-    all: ["companion-notes"] as const,
-    list: (characterId: string) => ["companion-notes", "list", characterId] as const,
+  characterNotes: {
+    all: ["character-notes"] as const,
+    list: (characterId: string) => ["character-notes", "list", characterId] as const,
   },
   localModels: { all: ["local-models"] as const },
   loras: { all: ["loras"] as const },

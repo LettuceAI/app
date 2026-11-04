@@ -107,7 +107,7 @@ pub(crate) fn insert_note_in(
         .map_err(|error| { tracing::warn!(%error, "insert note in failed"); CompanionScheduledNoteError::Invalid {
             reason: "insert note in: a value could not be read or converted",
         } })?;
-    ensure_companion(tx, note.character_id)?;
+    ensure_character(tx, note.character_id)?;
     tx.execute(
         "INSERT INTO companion_scheduled_notes (
             id, character_id, label, content, available_at, expires_at, recurrence,
@@ -131,8 +131,7 @@ pub(crate) fn insert_note_in(
     Ok(())
 }
 
-/// Writes a backed-up note exactly, including notes of a character that is no
-/// longer a companion.
+/// Writes a backed-up note exactly, without checking that the character exists.
 pub(crate) fn insert_restored_note_in(
     tx: &Transaction<'_>,
     note: &CompanionScheduledNote,
@@ -165,23 +164,19 @@ pub(crate) fn insert_restored_note_in(
     Ok(())
 }
 
-fn ensure_companion(
+fn ensure_character(
     tx: &Transaction<'_>,
     character_id: CharacterId,
 ) -> Result<(), CompanionScheduledNoteError> {
-    let mode = tx
+    let exists = tx
         .query_row(
-            "SELECT interaction_mode FROM characters WHERE id = ?1",
+            "SELECT 1 FROM characters WHERE id = ?1",
             [character_id.to_string()],
-            |row| row.get::<_, String>(0),
+            |_| Ok(()),
         )
         .optional()
         .map_err(failure)?;
-    match mode.as_deref() {
-        Some("companion") => Ok(()),
-        Some(_) => Err(CompanionScheduledNoteError::NotCompanion),
-        None => Err(CompanionScheduledNoteError::CharacterNotFound),
-    }
+    exists.ok_or(CompanionScheduledNoteError::CharacterNotFound)
 }
 
 impl CompanionScheduledNoteRepository for Database {
@@ -193,7 +188,7 @@ impl CompanionScheduledNoteRepository for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(failure)?;
-        ensure_companion(&tx, character_id)?;
+        ensure_character(&tx, character_id)?;
         let notes = {
             let mut statement = tx
                 .prepare(
@@ -232,7 +227,7 @@ impl CompanionScheduledNoteRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(failure)?;
         if let Some(note) = load_in(&tx, id)? {
-            ensure_companion(&tx, note.character_id)?;
+            ensure_character(&tx, note.character_id)?;
             tx.execute(
                 "DELETE FROM companion_scheduled_notes WHERE id = ?1",
                 [id.to_string()],
@@ -252,7 +247,7 @@ pub(crate) fn upsert_in(
         .map_err(|error| { tracing::warn!(%error, "upsert in failed"); CompanionScheduledNoteError::Invalid {
             reason: "upsert in: a value could not be read or converted",
         } })?;
-    ensure_companion(tx, note.character_id)?;
+    ensure_character(tx, note.character_id)?;
     tx.execute(
         "INSERT INTO companion_scheduled_notes (
             id, character_id, label, content, available_at, expires_at, recurrence,
@@ -291,7 +286,7 @@ pub(crate) fn upsert_in(
 
 pub(crate) fn delete_in(tx: &Transaction<'_>, id: Uuid) -> Result<(), CompanionScheduledNoteError> {
     if let Some(note) = load_in(tx, id)? {
-        ensure_companion(tx, note.character_id)?;
+        ensure_character(tx, note.character_id)?;
         tx.execute("DELETE FROM companion_scheduled_notes WHERE id = ?1", [id.to_string()]).map_err(failure)?;
     }
     Ok(())

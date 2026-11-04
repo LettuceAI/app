@@ -608,9 +608,6 @@ mod tests {
             "companion_regulation_transparent",
             "companion_reassurance_open",
             "companion_reassurance_avoidant",
-            "scheduled_notes_block",
-            "scheduled_note_line",
-            "scheduled_note_truncated",
         ]
         .map(str::to_owned)
         .to_vec();
@@ -808,7 +805,30 @@ mod tests {
 
     #[test]
     fn scheduled_notes_render_the_legacy_block_and_honor_disabled_entries() {
-        let mut text = RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime);
+        let mut text = RuntimeText::from_seed(BuiltInPromptId::ChatRuntime);
+        for key in [
+            "scheduled_notes_block",
+            "scheduled_note_line",
+            "scheduled_note_truncated",
+        ] {
+            assert!(
+                text.document()
+                    .entries
+                    .iter()
+                    .any(|entry| entry.built_in_entry_key.as_deref() == Some(key)),
+                "{key}"
+            );
+        }
+        assert!(
+            !RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime)
+                .document()
+                .entries
+                .iter()
+                .any(|entry| entry
+                    .built_in_entry_key
+                    .as_deref()
+                    .is_some_and(|key| key.starts_with("scheduled_note")))
+        );
         let note = CompanionScheduledNote {
             id: uuid::Uuid::from_u128(1),
             character_id: CharacterId::new(),

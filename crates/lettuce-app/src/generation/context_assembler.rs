@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use async_trait::async_trait;
 use lettuce_characters::{CharacterRepository, GroupRepository, PersonaRepository};
 use lettuce_companions::{
-    CompanionPromptStateInput, CompanionScheduledNoteRepository, CompanionStateRepository,
-    SoulOwner, SoulRepository, active_scheduled_notes, prompt_state,
+    CompanionPromptStateInput, CompanionScheduledNoteError, CompanionScheduledNoteRepository,
+    CompanionStateRepository, SoulOwner, SoulRepository, active_scheduled_notes, prompt_state,
 };
 use lettuce_context::{
     CharacterLorebookBindingRepository, GroupLorebookBindingRepository, LorebookActivationSource,
@@ -257,7 +257,7 @@ where
             ensure_source_in_timeline(&request)?;
         }
         let companion_state = self.companion_prompt_state(&aggregate, request.reference_time)?;
-        let scheduled_notes = self.companion_scheduled_notes(&aggregate, request.reference_time)?;
+        let scheduled_notes = self.scheduled_notes(&aggregate, request.reference_time)?;
 
         let scan_depth = usize::from(
             lettuce_settings::GlobalSettingsStore::load(self.sources)
@@ -1408,7 +1408,7 @@ where
         .map_err(runtime_text_error)
     }
 
-    fn companion_scheduled_notes(
+    fn scheduled_notes(
         &self,
         aggregate: &ConversationAggregate,
         reference_time: TimestampMillis,
@@ -1416,29 +1416,25 @@ where
         let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
             return Ok(None);
         };
-        if !crate::companion::companion_clock::conversation_clock_context(
-            self.sources,
-            &aggregate.conversation,
-        )
-        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
-        .companion
-        {
-            return Ok(None);
-        }
-        let notes = self
-            .sources
-            .list_scheduled_notes(details.character.source_id)
-            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
+        let notes = match self.sources.list_scheduled_notes(details.character.source_id) {
+            Ok(notes) => notes,
+            Err(CompanionScheduledNoteError::CharacterNotFound) => return Ok(None),
+            Err(_) => return Err(ContextAssemblyError::ConversationUnavailable),
+        };
         let active = active_scheduled_notes(notes, reference_time)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
         if active.is_empty() {
             return Ok(None);
         }
-        crate::companion::companion_prompt_text::render_scheduled_notes(
-            &companion_runtime_text(self.sources)?,
-            &active,
+        let text = crate::generation::runtime_text::RuntimeText::load(
+            self.sources,
+            crate::BuiltInPromptId::ChatRuntime,
         )
-        .map_err(runtime_text_error)
+        .map_err(|_| ContextAssemblyError::RuntimeTextUnavailable {
+            reason: "chat runtime prompt text is unavailable",
+        })?;
+        crate::companion::companion_prompt_text::render_scheduled_notes(&text, &active)
+            .map_err(runtime_text_error)
     }
 }
 

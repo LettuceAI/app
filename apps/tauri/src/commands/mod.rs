@@ -1,6 +1,7 @@
 //! One-line Tauri wrappers over `lettuce_app::api`, one module per domain.
 
 pub mod app;
+pub mod character_notes;
 pub mod characters;
 pub mod library;
 pub mod companion;

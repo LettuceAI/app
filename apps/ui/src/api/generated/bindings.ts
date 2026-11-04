@@ -302,10 +302,10 @@ export const commands = {
 	companionSoulGrowthRemove: (request: CompanionSoulGrowthRemoveRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_remove", { request })),
 	companionSoulGrowthLock: (request: CompanionSoulGrowthLockRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_lock", { request })),
 	companionSoulWriterRun: (request: CompanionSoulWriterRunRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_writer_run", { request })),
-	companionNotesList: (request: CompanionNotesRequest) => typedError<CompanionNoteView[], ApiError_Serialize>(__TAURI_INVOKE("companion_notes_list", { request })),
-	companionNotesUpsert: (request: CompanionNoteUpsertRequest) => typedError<CompanionNoteView, ApiError_Serialize>(__TAURI_INVOKE("companion_notes_upsert", { request })),
-	companionNotesDelete: (request: CompanionNoteDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("companion_notes_delete", { request })),
-	companionNotesActivePreview: (request: CompanionNotesActivePreviewRequest) => typedError<CompanionNoteView[], ApiError_Serialize>(__TAURI_INVOKE("companion_notes_active_preview", { request })),
+	characterNotesList: (request: CharacterNotesRequest) => typedError<CharacterNoteView[], ApiError_Serialize>(__TAURI_INVOKE("character_notes_list", { request })),
+	characterNotesUpsert: (request: CharacterNoteUpsertRequest) => typedError<CharacterNoteView, ApiError_Serialize>(__TAURI_INVOKE("character_notes_upsert", { request })),
+	characterNotesDelete: (request: CharacterNoteDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("character_notes_delete", { request })),
+	characterNotesActivePreview: (request: CharacterNotesActivePreviewRequest) => typedError<CharacterNoteView[], ApiError_Serialize>(__TAURI_INVOKE("character_notes_active_preview", { request })),
 	embeddingInstall: (request: EmbeddingInstallRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("embedding_install", { request })),
 	companionEmotionInstall: () => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("companion_emotion_install")),
 	embeddingStatus: () => typedError<EmbeddingModelView[], ApiError_Serialize>(__TAURI_INVOKE("embedding_status")),
@@ -1177,6 +1177,54 @@ export type CharacterMediaSetRequest = {
 	client_operation_id: string,
 };
 
+export type CharacterNoteDeleteRequest = {
+	note_id: string,
+	client_operation_id: string,
+};
+
+export type CharacterNoteRecurrence = "none" | "daily" | "weekly" | "monthly" | "yearly";
+
+/**
+ *  Creates a note, or updates the note `note_id` names. The API assigns the
+ *  id and the timestamps.
+ */
+export type CharacterNoteUpsertRequest = {
+	character_id: string,
+	note_id: string | null,
+	label: string,
+	content: string,
+	available_at: number,
+	expires_at: number | null,
+	recurrence: CharacterNoteRecurrence,
+	recurrence_window_ms: number | null,
+	enabled: boolean,
+	client_operation_id: string,
+};
+
+export type CharacterNoteView = {
+	id: string,
+	character_id: string,
+	label: string,
+	content: string,
+	available_at: number,
+	expires_at: number | null,
+	recurrence: CharacterNoteRecurrence,
+	recurrence_window_ms: number | null,
+	enabled: boolean,
+	created_at: number,
+	updated_at: number,
+};
+
+/**  The notes that apply to the character at `as_of`, a time the user chose. */
+export type CharacterNotesActivePreviewRequest = {
+	character_id: string,
+	as_of: number,
+};
+
+export type CharacterNotesRequest = {
+	character_id: string,
+};
+
 export type CharacterPage = CharacterPage_Serialize | CharacterPage_Deserialize;
 
 export type CharacterPage_Deserialize = {
@@ -1422,54 +1470,6 @@ export type CompanionEmotionVector = {
 	irritation: number | null,
 	affection_intensity: number | null,
 	reassurance_need: number | null,
-};
-
-export type CompanionNoteDeleteRequest = {
-	note_id: string,
-	client_operation_id: string,
-};
-
-export type CompanionNoteRecurrence = "none" | "daily" | "weekly" | "monthly" | "yearly";
-
-/**
- *  Creates a note, or updates the note `note_id` names. The API assigns the
- *  id and the timestamps.
- */
-export type CompanionNoteUpsertRequest = {
-	character_id: string,
-	note_id: string | null,
-	label: string,
-	content: string,
-	available_at: number,
-	expires_at: number | null,
-	recurrence: CompanionNoteRecurrence,
-	recurrence_window_ms: number | null,
-	enabled: boolean,
-	client_operation_id: string,
-};
-
-export type CompanionNoteView = {
-	id: string,
-	character_id: string,
-	label: string,
-	content: string,
-	available_at: number,
-	expires_at: number | null,
-	recurrence: CompanionNoteRecurrence,
-	recurrence_window_ms: number | null,
-	enabled: boolean,
-	created_at: number,
-	updated_at: number,
-};
-
-/**  The notes that apply to the companion at `as_of`, a time the user chose. */
-export type CompanionNotesActivePreviewRequest = {
-	character_id: string,
-	as_of: number,
-};
-
-export type CompanionNotesRequest = {
-	character_id: string,
 };
 
 export type CompanionPrompting = {

@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
 import { pickExportTarget } from "@/api/export-target";
-import type { CompanionNoteUpsertRequest } from "@/api/generated/bindings";
+import type { CharacterNoteUpsertRequest } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { watchJob } from "@/entities/job/watch";
 
@@ -79,12 +79,12 @@ export async function importChatLog(api: ApiClient, queryClient: QueryClient, ch
   return conversationId;
 }
 
-export async function saveNote(api: ApiClient, queryClient: QueryClient, request: Omit<CompanionNoteUpsertRequest, "client_operation_id">): Promise<void> {
-  await api.call("companionNotesUpsert", { ...request, client_operation_id: crypto.randomUUID() });
-  await queryClient.invalidateQueries({ queryKey: [...queryKeys.characters.all, "notes", request.character_id] });
+export async function saveNote(api: ApiClient, queryClient: QueryClient, request: Omit<CharacterNoteUpsertRequest, "client_operation_id">): Promise<void> {
+  await api.call("characterNotesUpsert", { ...request, client_operation_id: crypto.randomUUID() });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.characterNotes.list(request.character_id) });
 }
 
 export async function deleteNote(api: ApiClient, queryClient: QueryClient, characterId: string, noteId: string): Promise<void> {
-  await api.call("companionNotesDelete", { note_id: noteId, client_operation_id: crypto.randomUUID() });
-  await queryClient.invalidateQueries({ queryKey: [...queryKeys.characters.all, "notes", characterId] });
+  await api.call("characterNotesDelete", { note_id: noteId, client_operation_id: crypto.randomUUID() });
+  await queryClient.invalidateQueries({ queryKey: queryKeys.characterNotes.list(characterId) });
 }

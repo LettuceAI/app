@@ -60,7 +60,6 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
         ? t("settings.loadFailed")
         : (model?.name ?? t("settings.model.unknown"));
   const overrides = overrideCount(settings.model_settings);
-  const companion = character.data?.draft.defaults.interaction_mode === "companion";
   const starters = character.data?.draft.starters.length ?? 0;
   const lastActive = chats.data?.find((entry) => entry.id === conversationId)?.updated_at;
   const meta = [count.data !== undefined ? t("settings.meta.messages", { count: count.data }) : null, lastActive ? t("settings.meta.active", { date: formatTime(lastActive, i18n.language) }) : null].filter(Boolean).join(" · ");
@@ -270,13 +269,8 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
           trailing={<Switch checked={settings.time.enabled} disabled={ctx.busy} aria-label={t("settings.time.awareness")} onChange={(on) => void ctx.save({ time_awareness: on })} />}
         />
         {settings.time.enabled && <ListRowButton icon={<Clock size={icon.lg} />} title={t("settings.time.title")} description={settings.time.mode === "live" ? t("settings.time.live") : t(settings.time.mode === "frozen" ? "settings.time.stoppedAt" : "settings.time.runningFrom", { when: new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(settings.time.mode === "frozen" ? settings.time.anchor_at ?? settings.time.effective_at : settings.time.effective_at) })} onClick={() => ctx.openSheet("time")} />}
+        {!groupId && <ListRowButton icon={<CalendarClock size={icon.lg} />} title={t("settings.notes.title")} description={t("settings.notes.rowHint")} onClick={() => ctx.open("notes")} />}
       </ListGroup>
-
-      {companion && (
-        <ListGroup label={t("settings.sections.companion")}>
-          <ListRowButton icon={<CalendarClock size={icon.lg} />} title={t("settings.notes.title")} description={t("settings.notes.rowHint")} onClick={() => ctx.open("notes")} />
-        </ListGroup>
-      )}
 
       <ListGroup label={t("settings.sections.actions")}>
         <ListRowButton icon={<MessageSquarePlus size={icon.lg} />} title={t("settings.actions.newChat")} description={t(groupId ? "settings.actions.newGroupChatHint" : "settings.actions.newChatHint")} disabled={ctx.busy || (!groupId && (!ctx.characterId || character.isPending))} onClick={() => void startChat()} />

@@ -25,6 +25,8 @@ pub struct Character {
     pub starters: Vec<Starter>,
     pub default_starter: Option<String>,
     pub behavior: CharacterBehavior,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_notes: Option<Vec<super::ScheduledNote>>,
     pub companion: Option<super::Companion>,
 }
 

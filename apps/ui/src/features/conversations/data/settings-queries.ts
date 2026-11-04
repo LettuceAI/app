@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import type { CompanionNoteView, ConversationSummary, SettingChoice } from "@/api/generated/bindings";
+import type { CharacterNoteView, ConversationSummary, SettingChoice } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 
 async function allPages<T>(fetchPage: (cursor: string | null) => Promise<{ items: T[]; next_cursor: string | null }>): Promise<T[]> {
@@ -63,8 +63,8 @@ export function characterChatsQuery(api: ApiClient, characterId: string | null) 
 
 export function notesQuery(api: ApiClient, characterId: string | null) {
   return queryOptions({
-    queryKey: [...queryKeys.characters.all, "notes", characterId] as const,
-    queryFn: (): Promise<CompanionNoteView[]> => api.call("companionNotesList", { character_id: characterId ?? "" }),
+    queryKey: queryKeys.characterNotes.list(characterId ?? ""),
+    queryFn: (): Promise<CharacterNoteView[]> => api.call("characterNotesList", { character_id: characterId ?? "" }),
     enabled: characterId !== null,
   });
 }

@@ -11,7 +11,7 @@ import { confirmAvatarCrop, mockAvatarCrop, mockAvatarCropImages } from "@/share
 import defaultDraft from "./fixtures/default-draft.json";
 import companionDraft from "./fixtures/default-companion-draft.json";
 import type { CharacterDraft } from "./data/form";
-import type { CompanionNoteView, CompanionSoulDraft, JobView } from "@/api/generated/bindings";
+import type { CharacterNoteView, CompanionSoulDraft, JobView } from "@/api/generated/bindings";
 import { draftToUpsert, newNoteDraft, noteProblem, noteToDraft } from "./data/notes";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
@@ -116,7 +116,7 @@ async function renderEdit(view: CharacterView_Serialize, calls: MockCallHandlers
         lorebooksList: () => ok({ items: books, next_cursor: null }),
         audioProvidersList: () => ok([]),
         characterDraftDefault: (mode) => ok((mode === "companion" ? companionDraft : defaultDraft) as CharacterDraft),
-        companionNotesList: () => ok([]),
+        characterNotesList: () => ok([]),
         ...calls,
       },
       streams,
@@ -687,15 +687,25 @@ describe("soul generation", () => {
   });
 });
 
-function noteOf(patch: Partial<CompanionNoteView> = {}): CompanionNoteView {
+function noteOf(patch: Partial<CharacterNoteView> = {}): CharacterNoteView {
   return { id: "n1", character_id: "c1", label: "Birthday", content: "It is your birthday.", available_at: Date.UTC(2030, 2, 14, 9, 0), expires_at: null, recurrence: "yearly", recurrence_window_ms: 24 * 3600 * 1000, enabled: true, created_at: 1, updated_at: 1, ...patch };
 }
 
 describe("scheduled notes", () => {
+  it("shows the Notes group in the Chat tab for a companion too, and not in the Soul tab", async () => {
+    await renderEdit(companion(), { characterNotesList: () => ok([noteOf()]) });
+    fireEvent.click(tab("Chat"));
+    expect(await screen.findByText("Birthday")).toBeTruthy();
+    fireEvent.click(tab("Soul"));
+    await screen.findByText("Across chats");
+    expect(screen.queryByText("Birthday")).toBeNull();
+    expect(screen.queryByText("Scheduled notes")).toBeNull();
+  });
+
   it("lists notes and toggling upserts immediately without dirtying the page", async () => {
     const upsert = vi.fn((request: { enabled: boolean }) => ok(noteOf({ enabled: request.enabled })));
-    await renderEdit(companion(), { companionNotesList: () => ok([noteOf()]), companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([noteOf()]), characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     expect(await screen.findByText("Birthday")).toBeTruthy();
     fireEvent.click(screen.getByRole("switch", { name: "Birthday enabled" }));
     await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
@@ -705,8 +715,8 @@ describe("scheduled notes", () => {
 
   it("rolls the switch back when the update fails", async () => {
     const upsert = vi.fn(() => ({ status: "error" as const, error: { code: "unavailable" as const, message: "down", details: null } }));
-    await renderEdit(companion(), { companionNotesList: () => ok([noteOf()]), companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([noteOf()]), characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     const toggle = await screen.findByRole("switch", { name: "Birthday enabled" });
     fireEvent.click(toggle);
     expect((await screen.findAllByText("It isn't available right now.")).length).toBeGreaterThan(0);
@@ -715,8 +725,8 @@ describe("scheduled notes", () => {
 
   it("creates a note with legacy defaults", async () => {
     const upsert = vi.fn((request: { content: string }) => ok(noteOf({ content: request.content })));
-    await renderEdit(companion(), { companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: /Add a note/ }));
     const sheet = within(await screen.findByRole("dialog"));
     expect((sheet.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
@@ -730,8 +740,8 @@ describe("scheduled notes", () => {
   it("edits a note and deletes it after confirming", async () => {
     const upsert = vi.fn(() => ok(noteOf()));
     const remove = vi.fn(() => ok(null));
-    await renderEdit(companion(), { companionNotesList: () => ok([noteOf()]), companionNotesUpsert: upsert, companionNotesDelete: remove });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([noteOf()]), characterNotesUpsert: upsert, characterNotesDelete: remove });
+    fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     let sheet = within(await screen.findByRole("dialog"));
     fireEvent.change(sheet.getByPlaceholderText("Birthday"), { target: { value: "Name day" } });
@@ -751,8 +761,8 @@ describe("scheduled notes", () => {
 
   it("blocks saving a note whose end is not after its start", async () => {
     const upsert = vi.fn();
-    await renderEdit(companion(), { companionNotesList: () => ok([noteOf({ expires_at: Date.UTC(2030, 2, 1) })]), companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([noteOf({ expires_at: Date.UTC(2030, 2, 1) })]), characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     const sheet = within(await screen.findByRole("dialog"));
     expect(sheet.getByText("The end must come after the start.")).toBeTruthy();
@@ -779,8 +789,8 @@ describe("scheduled notes", () => {
     const moment = new Date(1890, 2, 14, 10, 0).getTime();
     expect(moment).toBeLessThan(0);
     const upsert = vi.fn(() => ok(noteOf({ available_at: moment })));
-    await renderEdit(companion(), { companionNotesList: () => ok([noteOf({ available_at: moment, recurrence: "none", recurrence_window_ms: null })]), companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([noteOf({ available_at: moment, recurrence: "none", recurrence_window_ms: null })]), characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     expect((await screen.findByText(/Mar 14, 1890/)).textContent).toContain("10:00");
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     const sheet = within(await screen.findByRole("dialog"));
@@ -799,8 +809,8 @@ describe("scheduled notes", () => {
       calls += 1;
       return calls === 1 ? { status: "error" as const, error: { code: "unavailable" as const, message: "down", details: null } } : ok(noteOf());
     });
-    await renderEdit(companion(), { companionNotesList: () => ok([noteOf()]), companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([noteOf()]), characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     const toggle = () => screen.getByRole("switch", { name: "Birthday enabled" });
     fireEvent.click(await screen.findByRole("switch", { name: "Birthday enabled" }));
     await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
@@ -817,8 +827,8 @@ describe("scheduled notes", () => {
 
   it("picks 1890 through the calendar's year view and sends the exact negative milliseconds", async () => {
     const upsert = vi.fn(() => ok(noteOf()));
-    await renderEdit(companion(), { companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: /Add a note/ }));
     const sheet = within(await screen.findByRole("dialog"));
     fireEvent.change(sheet.getByPlaceholderText(/Today is your birthday/), { target: { value: "Founding day" } });
@@ -839,8 +849,8 @@ describe("scheduled notes", () => {
   it("ends a repeating note at 23:59 when a day is picked but keeps a typed time", async () => {
     const upsert = vi.fn(() => ok(noteOf()));
     const old = noteOf({ available_at: new Date(2020, 0, 1, 9, 0).getTime() });
-    await renderEdit(companion(), { companionNotesList: () => ok([old]), companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([old]), characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     const sheet = within(await screen.findByRole("dialog"));
     fireEvent.click(sheet.getByRole("button", { name: "Stops after" }));
@@ -854,8 +864,8 @@ describe("scheduled notes", () => {
   it("keeps a time typed before any day was picked", async () => {
     const upsert = vi.fn(() => ok(noteOf()));
     const old = noteOf({ available_at: new Date(2020, 0, 1, 9, 0).getTime() });
-    await renderEdit(companion(), { companionNotesList: () => ok([old]), companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([old]), characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     const sheet = within(await screen.findByRole("dialog"));
     fireEvent.click(sheet.getByRole("button", { name: "Stops after" }));
@@ -868,8 +878,8 @@ describe("scheduled notes", () => {
 
   it("asks for a valid repeat window instead of dropping it", async () => {
     const upsert = vi.fn();
-    await renderEdit(companion(), { companionNotesList: () => ok([noteOf()]), companionNotesUpsert: upsert });
-    fireEvent.click(tab("Soul"));
+    await renderEdit(roleplay(), { characterNotesList: () => ok([noteOf()]), characterNotesUpsert: upsert });
+    fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     const sheet = within(await screen.findByRole("dialog"));
     fireEvent.change(sheet.getByPlaceholderText("24"), { target: { value: "0" } });

@@ -271,8 +271,19 @@ pub(in crate::api) fn prepare(
             .map(|value| Ok(uec3_prompt_reference(context, value, prompts)?.id))
             .transpose()
     };
-    let (companion_soul, scheduled_notes) =
-        prepare_companion(card.companion.as_ref(), &prompt, id, now)?;
+    let companion_soul = prepare_companion(card.companion.as_ref(), &prompt, now)?;
+    let scheduled_notes = prepare_notes(
+        card.scheduled_notes
+            .as_deref()
+            .or_else(|| {
+                card.companion
+                    .as_ref()
+                    .and_then(|companion| companion.scheduled_notes.as_deref())
+            })
+            .unwrap_or_default(),
+        id,
+        now,
+    )?;
     let defaults = CharacterDefaults {
         interaction_mode: card.behavior.interaction_mode,
         memory_policy: card.behavior.memory,
@@ -469,11 +480,7 @@ pub(super) fn export(
         group_conversation: prompt(character.defaults.group_conversation_prompt_id)?,
         group_roleplay: prompt(character.defaults.group_roleplay_prompt_id)?,
     };
-    let companion = export_companion(
-        character.defaults.companion_soul.as_ref(),
-        &record.scheduled_notes,
-        &mut prompt,
-    )?;
+    let companion = export_companion(character.defaults.companion_soul.as_ref(), &mut prompt)?;
     let active_scenes = details
         .scenes
         .iter()
@@ -695,6 +702,7 @@ pub(super) fn export(
             image: export_uec3_image(context, character.image_recommendation.as_ref(), warnings)?,
             time_awareness: character.defaults.time_awareness,
         },
+        scheduled_notes: Some(export_notes(&record.scheduled_notes)),
         companion,
     };
     let state = if include_learned {
@@ -926,18 +934,11 @@ fn import_model_hint(
 fn prepare_companion(
     companion: Option<&wire::Companion>,
     prompt: &impl Fn(&Option<String>) -> Result<Option<PromptDocumentId>, ApiError>,
-    id: CharacterId,
     now: TimestampMillis,
-) -> Result<
-    (
-        Option<lettuce_companions::CompanionSoulConfig>,
-        Vec<lettuce_companions::CompanionScheduledNote>,
-    ),
-    ApiError,
-> {
+) -> Result<Option<lettuce_companions::CompanionSoulConfig>, ApiError> {
     use lettuce_companions::*;
     let Some(source) = companion else {
-        return Ok((None, Vec::new()));
+        return Ok(None);
     };
     let identity = &source.soul;
     let config = CompanionSoulConfig {
@@ -988,15 +989,22 @@ fn prepare_companion(
         share_memory_across_chats: source.share_memory_across_chats,
         share_soul_growth_across_chats: source.share_soul_growth_across_chats,
     };
+    Ok(Some(config))
+}
+
+fn prepare_notes(
+    source: &[wire::ScheduledNote],
+    id: CharacterId,
+    now: TimestampMillis,
+) -> Result<Vec<lettuce_companions::CompanionScheduledNote>, ApiError> {
     let mut note_keys = std::collections::BTreeSet::new();
-    let notes = source
-        .scheduled_notes
+    source
         .iter()
         .map(|note| {
             if note.key.is_empty() || !note_keys.insert(&note.key) {
                 return Err(format_error("duplicate or empty note key"));
             }
-            let value = CompanionScheduledNote {
+            let value = lettuce_companions::CompanionScheduledNote {
                 id: uuid::Uuid::new_v4(),
                 character_id: id,
                 label: note.label.clone(),
@@ -1012,13 +1020,28 @@ fn prepare_companion(
             value.validate().map_err(format_error)?;
             Ok(value)
         })
-        .collect::<Result<_, _>>()?;
-    Ok((Some(config), notes))
+        .collect()
+}
+
+fn export_notes(notes: &[lettuce_companions::CompanionScheduledNote]) -> Vec<wire::ScheduledNote> {
+    notes
+        .iter()
+        .enumerate()
+        .map(|(index, note)| wire::ScheduledNote {
+            key: format!("n{}", index + 1),
+            label: note.label.clone(),
+            content: note.content.clone(),
+            available_at: note.available_at.get(),
+            expires_at: note.expires_at.map(TimestampMillis::get),
+            recurrence: note.recurrence,
+            recurrence_window_ms: note.recurrence_window_ms,
+            enabled: note.enabled,
+        })
+        .collect()
 }
 
 fn export_companion(
     source: Option<&lettuce_companions::CompanionSoulConfig>,
-    notes: &[lettuce_companions::CompanionScheduledNote],
     prompt: &mut impl FnMut(Option<PromptDocumentId>) -> Result<Option<String>, ApiError>,
 ) -> Result<Option<wire::Companion>, ApiError> {
     let Some(source) = source else {
@@ -1068,20 +1091,7 @@ fn export_companion(
         time_awareness: None,
         share_memory_across_chats: source.share_memory_across_chats,
         share_soul_growth_across_chats: source.share_soul_growth_across_chats,
-        scheduled_notes: notes
-            .iter()
-            .enumerate()
-            .map(|(index, note)| wire::ScheduledNote {
-                key: format!("n{}", index + 1),
-                label: note.label.clone(),
-                content: note.content.clone(),
-                available_at: note.available_at.get(),
-                expires_at: note.expires_at.map(TimestampMillis::get),
-                recurrence: note.recurrence,
-                recurrence_window_ms: note.recurrence_window_ms,
-                enabled: note.enabled,
-            })
-            .collect(),
+        scheduled_notes: None,
     }))
 }
 

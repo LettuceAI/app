@@ -3,14 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge, Button, confirm, icon, Input, ListGroup, ListRow, ListRowButton, LoadingState, Segmented, Switch, Textarea } from "@lettuceai/crisp";
-import type { CompanionNoteRecurrence, CompanionNoteView } from "@/api/generated/bindings";
+import type { CharacterNoteRecurrence, CharacterNoteView } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 import { deleteNote, saveNote } from "../../data/chat-actions";
 import { notesQuery } from "../../data/settings-queries";
 import type { PanelCtx } from "./context";
 import { ControlRow } from "./SettingRow";
 
-const recurrences: readonly CompanionNoteRecurrence[] = ["none", "daily", "weekly", "monthly", "yearly"];
+const recurrences: readonly CharacterNoteRecurrence[] = ["none", "daily", "weekly", "monthly", "yearly"];
 const hour = 3_600_000;
 
 function toLocalInput(ms: number): string {
@@ -29,12 +29,12 @@ interface Draft {
   content: string;
   availableAt: string;
   expiresAt: string;
-  recurrence: CompanionNoteRecurrence;
+  recurrence: CharacterNoteRecurrence;
   windowHours: string;
   enabled: boolean;
 }
 
-function draftOf(note: CompanionNoteView | null): Draft {
+function draftOf(note: CharacterNoteView | null): Draft {
   if (!note) return { id: null, label: "", content: "", availableAt: toLocalInput(Date.now()), expiresAt: "", recurrence: "none", windowHours: "", enabled: true };
   return {
     id: note.id,
@@ -48,7 +48,7 @@ function draftOf(note: CompanionNoteView | null): Draft {
   };
 }
 
-function NoteForm({ ctx, characterId, initial, onDone }: { ctx: PanelCtx; characterId: string; initial: CompanionNoteView | null; onDone: () => void }) {
+function NoteForm({ ctx, characterId, initial, onDone }: { ctx: PanelCtx; characterId: string; initial: CharacterNoteView | null; onDone: () => void }) {
   const { t } = useTranslation("conversations");
   const [draft, setDraft] = useState(() => draftOf(initial));
   const patch = (change: Partial<Draft>) => setDraft((current) => ({ ...current, ...change }));
@@ -127,7 +127,7 @@ function NoteForm({ ctx, characterId, initial, onDone }: { ctx: PanelCtx; charac
 export function NotesView({ ctx }: { ctx: PanelCtx }) {
   const { t } = useTranslation("conversations");
   const notes = useQuery(notesQuery(ctx.api, ctx.characterId));
-  const [editing, setEditing] = useState<CompanionNoteView | "new" | null>(null);
+  const [editing, setEditing] = useState<CharacterNoteView | "new" | null>(null);
   if (!ctx.characterId) return null;
   if (notes.isPending) return <LoadingState />;
   if (notes.isError) return <FailureState error={notes.error} onRetry={() => void notes.refetch()} />;

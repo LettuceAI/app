@@ -4,6 +4,7 @@
 
 mod api;
 mod app;
+mod character_notes;
 mod companion;
 mod conversations;
 mod files;
@@ -34,6 +35,7 @@ pub use library::*;
 pub use library_character::*;
 pub use library_group::*;
 pub use app::*;
+pub use character_notes::*;
 pub use companion::*;
 pub use conversations::*;
 pub use files::*;

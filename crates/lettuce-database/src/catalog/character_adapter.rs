@@ -3971,6 +3971,72 @@ mod smoke_tests {
     }
 
     #[test]
+    fn scheduled_notes_belong_to_any_character_and_survive_a_mode_switch() {
+        use lettuce_companions::{
+            CompanionScheduledNote, CompanionScheduledNoteError, CompanionScheduledNoteRepository,
+            ScheduledNoteRecurrence,
+        };
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        let mut plan = companion_plan(character_id);
+        let companion_soul = plan.character.defaults.companion_soul.take();
+        plan.character.defaults.interaction_mode = lettuce_characters::InteractionMode::Roleplay;
+        let created = CharacterRepository::create(&database, plan).expect("create");
+        let note = |character_id| CompanionScheduledNote {
+            id: uuid::Uuid::new_v4(),
+            character_id,
+            label: "Birthday".into(),
+            content: "Her birthday is today.".into(),
+            available_at: TimestampMillis::new(100),
+            expires_at: None,
+            recurrence: ScheduledNoteRecurrence::Yearly,
+            recurrence_window_ms: None,
+            enabled: true,
+            created_at: TimestampMillis::new(8),
+            updated_at: TimestampMillis::new(8),
+        };
+        let stored = database
+            .upsert_scheduled_note(note(character_id))
+            .expect("a roleplay character takes notes");
+        let changed = database
+            .upsert_scheduled_note(CompanionScheduledNote {
+                content: "Updated".into(),
+                ..stored.clone()
+            })
+            .expect("update");
+        assert_eq!(changed.content, "Updated");
+        assert_eq!(database.list_scheduled_notes(character_id).expect("list"), [changed.clone()]);
+        let switched = CharacterRepository::update_defaults(
+            &database,
+            character_id,
+            created.character.revision,
+            CharacterDefaults {
+                interaction_mode: lettuce_characters::InteractionMode::Companion,
+                companion_soul,
+                ..created.character.defaults.clone()
+            },
+            TimestampMillis::new(9),
+        )
+        .expect("switch to companion");
+        assert_eq!(
+            switched.defaults.interaction_mode,
+            lettuce_characters::InteractionMode::Companion
+        );
+        assert_eq!(database.list_scheduled_notes(character_id).expect("list"), [changed.clone()]);
+        database.delete_scheduled_note(changed.id).expect("delete");
+        assert!(database.list_scheduled_notes(character_id).expect("list").is_empty());
+        let unknown = CharacterId::new();
+        assert_eq!(
+            database.list_scheduled_notes(unknown).expect_err("unknown character"),
+            CompanionScheduledNoteError::CharacterNotFound
+        );
+        assert_eq!(
+            database.upsert_scheduled_note(note(unknown)).expect_err("unknown character"),
+            CompanionScheduledNoteError::CharacterNotFound
+        );
+    }
+
+    #[test]
     fn character_provider_voice_waits_for_deferred_provider_and_clears_a_deleted_one() {
         use lettuce_speech::{AudioProvider, AudioProviderConfig, TtsConfigurationRepository};
         use lettuce_sync::{

@@ -341,7 +341,7 @@
   "notes": {
     "title": "Scheduled notes",
     "add": "Add a note",
-    "addBody": "Context the companion picks up on a date",
+    "addBody": "Context the character picks up on a date",
     "untitled": "Untitled note",
     "edit": "Edit",
     "ended": "Ended",
@@ -351,7 +351,7 @@
     "label": "Label",
     "labelPlaceholder": "Birthday",
     "content": "Content",
-    "contentHint": "The exact text the companion reads once the date arrives.",
+    "contentHint": "The exact text the character reads once the date arrives.",
     "contentPlaceholder": "Today is your birthday. You feel a little sentimental about it.",
     "repeat": "Repeats",
     "recurrence": {
@@ -378,7 +378,7 @@
     "deleted": "Scheduled note deleted",
     "delete": "Delete note",
     "deleteTitle": "Delete this note?",
-    "deleteBody": "{{label}} will no longer reach the companion.",
+    "deleteBody": "{{label}} will no longer reach the character.",
     "windowInvalid": "Enter a whole number of hours above zero, or leave it empty."
   }
 }

@@ -52,10 +52,10 @@ export function characterEditQuery(api: ApiClient, characterId: string) {
   });
 }
 
-export function companionNotesQuery(api: ApiClient, characterId: string) {
+export function characterNotesQuery(api: ApiClient, characterId: string) {
   return queryOptions({
-    queryKey: queryKeys.companionNotes.list(characterId),
-    queryFn: () => api.call("companionNotesList", { character_id: characterId }),
+    queryKey: queryKeys.characterNotes.list(characterId),
+    queryFn: () => api.call("characterNotesList", { character_id: characterId }),
   });
 }
 

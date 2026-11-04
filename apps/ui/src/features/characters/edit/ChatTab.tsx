@@ -7,8 +7,9 @@ import { ModelChoiceSheet, VoiceChoiceSheet } from "../components/Pickers";
 import { useModelName } from "../components/use-model-name";
 import { voiceLabel } from "../data/voice";
 import type { StepProps } from "../components/step-props";
+import { NotesGroup } from "./NotesGroup";
 
-export function ChatTab({ api, form, update }: StepProps) {
+export function ChatTab({ api, form, update, characterId }: StepProps & { characterId: string }) {
   const { t } = useTranslation("characters");
   const [sheet, setSheet] = useState<"model" | "voice" | null>(null);
   const { setDefaults } = draftSetters(update);
@@ -30,6 +31,7 @@ export function ChatTab({ api, form, update }: StepProps) {
       <ListGroup label={t("time.group")}>
         <ListRow title={t("time.awareness")} description={t("time.awarenessBody")} trailing={<Switch checked={defaults.time_awareness} onChange={(time_awareness) => setDefaults({ time_awareness })} aria-label={t("time.awareness")} />} />
       </ListGroup>
+      <NotesGroup api={api} characterId={characterId} />
       <LorebooksRow api={api} form={form} update={update} />
     </div>
     <ModelChoiceSheet api={api} open={sheet === "model"} value={defaults.model_profile_id} onChange={(model_profile_id) => setDefaults({ model_profile_id })} onClose={() => setSheet(null)} />

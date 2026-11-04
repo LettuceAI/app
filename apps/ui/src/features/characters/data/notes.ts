@@ -1,6 +1,6 @@
-import type { CompanionNoteRecurrence, CompanionNoteUpsertRequest, CompanionNoteView } from "@/api/generated/bindings";
+import type { CharacterNoteRecurrence, CharacterNoteUpsertRequest, CharacterNoteView } from "@/api/generated/bindings";
 
-export const recurrences: readonly CompanionNoteRecurrence[] = ["none", "daily", "weekly", "monthly", "yearly"];
+export const recurrences: readonly CharacterNoteRecurrence[] = ["none", "daily", "weekly", "monthly", "yearly"];
 
 export const defaultWindowHours = "24";
 
@@ -11,7 +11,7 @@ export interface NoteDraft {
   content: string;
   availableAt: Date;
   expiresAt: Date | null;
-  recurrence: CompanionNoteRecurrence;
+  recurrence: CharacterNoteRecurrence;
   windowHours: string;
   enabled: boolean;
 }
@@ -22,7 +22,7 @@ export function newNoteDraft(now: number): NoteDraft {
   return { label: "", content: "", availableAt: start, expiresAt: null, recurrence: "none", windowHours: defaultWindowHours, enabled: true };
 }
 
-export function noteToDraft(note: CompanionNoteView): NoteDraft {
+export function noteToDraft(note: CharacterNoteView): NoteDraft {
   return {
     label: note.label,
     content: note.content,
@@ -47,7 +47,7 @@ export function noteProblem(draft: NoteDraft): "content" | "end" | "window" | nu
   return null;
 }
 
-export function draftToUpsert(characterId: string, noteId: string | null, draft: NoteDraft, operationId: string): CompanionNoteUpsertRequest {
+export function draftToUpsert(characterId: string, noteId: string | null, draft: NoteDraft, operationId: string): CharacterNoteUpsertRequest {
   const hours = Number(draft.windowHours);
   return {
     character_id: characterId,
@@ -63,7 +63,7 @@ export function draftToUpsert(characterId: string, noteId: string | null, draft:
   };
 }
 
-export function noteToUpsert(note: CompanionNoteView, enabled: boolean, operationId: string): CompanionNoteUpsertRequest {
+export function noteToUpsert(note: CharacterNoteView, enabled: boolean, operationId: string): CharacterNoteUpsertRequest {
   return {
     character_id: note.character_id,
     note_id: note.id,

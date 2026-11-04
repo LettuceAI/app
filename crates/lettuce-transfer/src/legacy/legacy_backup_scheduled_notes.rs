@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use lettuce_characters::InteractionMode;
 use lettuce_companions::{CompanionScheduledNote, ScheduledNoteRecurrence};
 use lettuce_types::{CharacterId, TimestampMillis};
 use serde::Deserialize;
@@ -96,12 +95,6 @@ fn map_notes(
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupScheduledNote>, LegacyBackupScheduledNoteError> {
     let authored = &source.source.source.source.source.source.authored;
-    let companion_ids = authored
-        .characters
-        .iter()
-        .filter(|character| character.defaults.interaction_mode == InteractionMode::Companion)
-        .map(|character| character.id)
-        .collect::<BTreeSet<_>>();
     let all_character_ids = authored
         .characters
         .iter()
@@ -122,9 +115,6 @@ fn map_notes(
             .map_err(|_| malformed(format!("{path}.character_id")))?;
         if !all_character_ids.contains(&character_id) {
             return Err(orphan(format!("{path}.character_id")));
-        }
-        if !companion_ids.contains(&character_id) {
-            return Err(malformed(format!("{path}.character_id")));
         }
         validate_text(&row.label, &format!("{path}.label"))?;
         validate_text(&row.content, &format!("{path}.content"))?;
@@ -361,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn scheduled_notes_reject_duplicates_wrong_owners_and_invalid_windows() {
+    fn scheduled_notes_reject_duplicates_unknown_owners_and_invalid_windows() {
         let character_id = id(20);
         let note_id = id(21);
         let duplicate = json!([note(&note_id, &character_id), note(&note_id, &character_id)]);
@@ -371,10 +361,16 @@ mod tests {
                 if field == "[1].id"
         ));
 
-        let wrong_owner = json!([note(&note_id, &character_id)]);
+        let roleplay_owner = json!([note(&note_id, &character_id)]);
+        let plan =
+            plan_legacy_backup_scheduled_notes(source(Some(roleplay_owner), &character_id, false))
+                .expect("a note of a roleplay character is kept");
+        assert_eq!(plan.notes.len(), 1);
+
+        let unknown_owner = json!([note(&note_id, &id(99))]);
         assert!(matches!(
-            plan_legacy_backup_scheduled_notes(source(Some(wrong_owner), &character_id, false)),
-            Err(LegacyBackupScheduledNoteError::Malformed { ref field })
+            plan_legacy_backup_scheduled_notes(source(Some(unknown_owner), &character_id, true)),
+            Err(LegacyBackupScheduledNoteError::Orphan { ref field })
                 if field == "[0].character_id"
         ));
 

@@ -4,31 +4,31 @@ import { CalendarClock, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, icon, ListGroup, ListRow, ListRowButton, Skeleton, Switch, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
-import type { CompanionNoteView } from "@/api/generated/bindings";
+import type { CharacterNoteView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { attemptIds, noteToUpsert } from "../data/notes";
-import { companionNotesQuery } from "../data/queries";
+import { characterNotesQuery } from "../data/queries";
 import { NoteSheet } from "./NoteSheet";
 
 export function NotesGroup({ api, characterId }: { api: ApiClient; characterId: string }) {
   const { t, i18n } = useTranslation("characters");
   const { t: common } = useTranslation("common");
   const queryClient = useQueryClient();
-  const notes = useQuery(companionNotesQuery(api, characterId));
-  const [editing, setEditing] = useState<{ note: CompanionNoteView | null; key: number } | null>(null);
+  const notes = useQuery(characterNotesQuery(api, characterId));
+  const [editing, setEditing] = useState<{ note: CharacterNoteView | null; key: number } | null>(null);
   const [ids] = useState(attemptIds);
   const [now] = useState(Date.now);
-  const key = queryKeys.companionNotes.list(characterId);
+  const key = queryKeys.characterNotes.list(characterId);
   const toggle = useMutation({
-    mutationFn: ({ note, enabled }: { note: CompanionNoteView; enabled: boolean }) => {
+    mutationFn: ({ note, enabled }: { note: CharacterNoteView; enabled: boolean }) => {
       const { client_operation_id: _ignored, ...payload } = noteToUpsert(note, enabled, "");
       void _ignored;
-      return api.call("companionNotesUpsert", { ...payload, client_operation_id: ids.idFor(payload) });
+      return api.call("characterNotesUpsert", { ...payload, client_operation_id: ids.idFor(payload) });
     },
     onMutate: async ({ note, enabled }) => {
       await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<CompanionNoteView[]>(key);
-      queryClient.setQueryData<CompanionNoteView[]>(key, (current) => current?.map((entry) => (entry.id === note.id ? { ...entry, enabled } : entry)));
+      const previous = queryClient.getQueryData<CharacterNoteView[]>(key);
+      queryClient.setQueryData<CharacterNoteView[]>(key, (current) => current?.map((entry) => (entry.id === note.id ? { ...entry, enabled } : entry)));
       return { previous };
     },
     onError: (error, _variables, context) => {
@@ -39,7 +39,7 @@ export function NotesGroup({ api, characterId }: { api: ApiClient; characterId: 
     onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
   const formatter = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" });
-  const when = (note: CompanionNoteView) => [
+  const when = (note: CharacterNoteView) => [
     formatter.format(note.available_at),
     note.recurrence === "none" ? null : t(`notes.recurrence.${note.recurrence}`),
     note.expires_at !== null && note.expires_at <= now ? t("notes.ended") : null,
