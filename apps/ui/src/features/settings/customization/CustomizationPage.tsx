@@ -117,6 +117,14 @@ export function CustomizationPage() {
     scroller.current?.scrollTo({ top: 0 });
   };
   useEffect(() => {
+    const page = scroller.current?.parentElement;
+    if (!page) return;
+    page.inert = previewOpen;
+    return () => {
+      page.inert = false;
+    };
+  }, [previewOpen]);
+  useEffect(() => {
     const element = scroller.current;
     if (!element) return;
     const sync = () => element.style.setProperty("--scroller-height", `${element.clientHeight}px`);
@@ -145,8 +153,6 @@ export function CustomizationPage() {
         messageMenuTitle: t("controls.messageActions"),
       }}
     >
-      <div className="relative flex h-full min-h-0 flex-1 flex-col">
-        <div className="flex min-h-0 flex-1 flex-col" inert={previewOpen}>
           <Page
             mainRef={scroller}
             title={t("title")}
@@ -233,7 +239,6 @@ export function CustomizationPage() {
               </div>
             )}
           </Page>
-        </div>
         {previewOpen && (
           <div
             role="dialog"
@@ -251,7 +256,6 @@ export function CustomizationPage() {
             <ChatPreview className="min-h-0 flex-1 p-4" look={look} group={groupChat} image={previewImage} />
           </div>
         )}
-      </div>
       <Sheet
         open={panel === "theme"}
         onClose={close}
