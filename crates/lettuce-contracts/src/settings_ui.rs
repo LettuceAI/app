@@ -1066,6 +1066,14 @@ pub enum SettingsUiNavEdge {
 pub enum UiPreferenceChange {
     #[serde(rename = "themePreset")]
     ThemePreset { value: Option<String> },
+    #[serde(rename = "themeMode")]
+    ThemeMode { value: Option<SettingsUiThemeMode> },
+    #[serde(rename = "darkThemePreset")]
+    DarkThemePreset { value: Option<String> },
+    #[serde(rename = "lightThemePreset")]
+    LightThemePreset { value: Option<String> },
+    #[serde(rename = "themeAccent")]
+    ThemeAccent { value: Option<String> },
     #[serde(rename = "themeRadius")]
     ThemeRadius { value: Option<SettingsUiThemeRadius> },
     #[serde(rename = "themeDensity")]
@@ -1129,6 +1137,11 @@ pub enum UiPreferenceChange {
         value: Option<Vec<SettingsUiLlamaSamplerPreset>>,
     },
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsUiThemeMode { System, Dark, Light }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]

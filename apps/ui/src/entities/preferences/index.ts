@@ -1,6 +1,18 @@
 export { PreferencesProvider } from "./PreferencesProvider";
-export { object, themeFromPreferences, type PreferenceEdit, type Preferences } from "./context";
-export { usePreferences, useChatLook, useMessageAppearance } from "./hooks";
+export {
+  DEFAULT_PRESET_BY_KIND,
+  isHexColor,
+  kindOfMode,
+  object,
+  rememberedKey,
+  themeFromPreferences,
+  themeModeOf,
+  type PreferenceEdit,
+  type Preferences,
+  type ThemeKind,
+  type ThemeMode,
+} from "./context";
+export { usePreferences, useChatLook, useMessageAppearance, useSystemDark } from "./hooks";
 export {
   CHAT_DEFAULTS,
   HISTORICAL_CHAT_DEFAULTS,

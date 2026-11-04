@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SettingsUpdateRequest_Deserialize, SettingsView } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
+import { appThemes } from "@/entities/preferences";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
 
@@ -14,8 +15,41 @@ vi.mock("@/api/haptics", () => ({ typingHaptic: vi.fn().mockResolvedValue(undefi
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  window.sessionStorage.clear();
 });
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
+
+function mockSystemScheme(initial: boolean) {
+  let dark = initial;
+  const listeners = new Set<(event: { matches: boolean }) => void>();
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query) =>
+      ({
+        get matches() {
+          return query.includes("prefers-color-scheme") && dark;
+        },
+        media: query,
+        onchange: null,
+        addEventListener: (_: string, listener: (event: { matches: boolean }) => void) =>
+          listeners.add(listener),
+        removeEventListener: (_: string, listener: (event: { matches: boolean }) => void) =>
+          listeners.delete(listener),
+        addListener() {},
+        removeListener() {},
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList,
+  );
+  return {
+    set: (next: boolean) =>
+      act(() => {
+        dark = next;
+        listeners.forEach((listener) => listener({ matches: next }));
+      }),
+  };
+}
+const moreThemes = `More themes (${appThemes.length - 6})`;
+const surface = () => document.documentElement.style.getPropertyValue("--color-surface");
+const accentVar = () => document.documentElement.style.getPropertyValue("--color-accent");
 
 async function mount(
   options: {
@@ -369,7 +403,8 @@ describe("customization settings", () => {
 
   it("applies and saves the additional themes to the backend", async () => {
     const page = await mount({ tab: "theme", mobile: false });
-    fireEvent.click(await screen.findByRole("button", { name: /Forest/ }));
+    fireEvent.click(await screen.findByRole("button", { name: moreThemes }));
+    fireEvent.click(await screen.findByRole("button", { name: "Forest" }));
     await waitFor(() => expect(page.current().themePreset).toBe("forest"));
     expect(document.documentElement.style.getPropertyValue("--color-surface")).toBe("#0a1510");
     fireEvent.click(screen.getByRole("button", { name: "Save current" }));
@@ -378,6 +413,201 @@ describe("customization settings", () => {
         { name: "My theme 1", colors: { surface: "#0a1510" } },
       ]),
     );
+  });
+
+  it("follows the system scheme live in System mode", async () => {
+    const system = mockSystemScheme(true);
+    await mount({
+      tab: "theme",
+      value: { themeMode: "system", darkThemePreset: "nord", lightThemePreset: "paper" },
+    });
+    await screen.findByRole("radio", { name: "System" });
+    await waitFor(() => expect(surface()).toBe("#2e3440"));
+    await system.set(false);
+    await waitFor(() => expect(surface()).toBe("#f6f6f5"));
+    await system.set(true);
+    await waitFor(() => expect(surface()).toBe("#2e3440"));
+  });
+
+  it("applies the remembered preset when switching between Dark and Light", async () => {
+    mockSystemScheme(false);
+    const page = await mount({
+      tab: "theme",
+      value: { themeMode: "dark", darkThemePreset: "nord", lightThemePreset: "sand" },
+    });
+    await waitFor(() => expect(surface()).toBe("#2e3440"));
+    fireEvent.click(await screen.findByRole("radio", { name: "Light" }));
+    await waitFor(() => expect(page.current()).toMatchObject({ themeMode: "light", theme: "light" }));
+    expect(surface()).toBe("#f6efe3");
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    await waitFor(() => expect(page.current()).toMatchObject({ themeMode: "dark", theme: "dark" }));
+    expect(surface()).toBe("#2e3440");
+    expect(page.current()).toMatchObject({ darkThemePreset: "nord", lightThemePreset: "sand" });
+  });
+
+  it("keeps existing users on their stored preset until they touch the mode control", async () => {
+    mockSystemScheme(false);
+    const page = await mount({ tab: "theme", value: { themePreset: "forest", theme: "dark" } });
+    const dark = await screen.findByRole("radio", { name: "Dark" });
+    await waitFor(() => expect(surface()).toBe("#0a1510"));
+    expect(dark.getAttribute("aria-checked")).toBe("true");
+    expect(page.update).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Paper" }));
+    await waitFor(() => expect(page.current().themePreset).toBe("paper"));
+    expect(page.current().themeMode).toBeUndefined();
+    expect(page.current().darkThemePreset).toBeUndefined();
+    expect(page.current().theme).toBe("light");
+    cleanup();
+    const legacy = await mount({ tab: "theme", value: { theme: "light" } });
+    await waitFor(() => expect(surface()).toBe("#f6f6f5"));
+    expect(
+      (await screen.findByRole("radio", { name: "Light" })).getAttribute("aria-checked"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+    await waitFor(() =>
+      expect(legacy.current()).toMatchObject({
+        themeMode: "dark",
+        theme: "dark",
+        lightThemePreset: "paper",
+        darkThemePreset: "midnight",
+      }),
+    );
+  });
+
+  it("remembers a picked theme for its own kind and switches the opposite fixed mode", async () => {
+    mockSystemScheme(false);
+    const page = await mount({
+      tab: "theme",
+      value: { themeMode: "dark", darkThemePreset: "midnight", lightThemePreset: "paper" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Nord" }));
+    await waitFor(() => expect(page.current().darkThemePreset).toBe("nord"));
+    expect(page.current().themeMode).toBe("dark");
+    expect(surface()).toBe("#2e3440");
+    fireEvent.click(screen.getByRole("button", { name: moreThemes }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sage" }));
+    await waitFor(() => expect(page.current().themeMode).toBe("light"));
+    expect(page.current()).toMatchObject({
+      lightThemePreset: "sage",
+      darkThemePreset: "nord",
+      themePreset: "sage",
+      theme: "light",
+    });
+    expect(surface()).toBe("#eef3eb");
+    fireEvent.click(screen.getByRole("button", { name: "Ink" }));
+    await waitFor(() => expect(page.current().themeMode).toBe("dark"));
+    expect(page.current().darkThemePreset).toBe("ink");
+  });
+
+  it("keeps the mode and the screen when picking the other kind in System mode", async () => {
+    mockSystemScheme(false);
+    const page = await mount({
+      tab: "theme",
+      value: { themeMode: "system", darkThemePreset: "midnight", lightThemePreset: "paper" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Ink" }));
+    await waitFor(() => expect(page.current().darkThemePreset).toBe("ink"));
+    expect(page.current().themeMode).toBe("system");
+    expect(surface()).toBe("#f6f6f5");
+  });
+
+  it("shows six themes and reveals the rest inline, remembering it for the session", async () => {
+    await mount({ tab: "theme", mobile: false });
+    for (const name of ["Midnight", "Ink", "Paper", "Nord", "Rosé Pine", "OLED"])
+      expect(await screen.findByRole("button", { name })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Forest" })).toBeNull();
+    const more = screen.getByRole("button", { name: moreThemes });
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(more);
+    expect(await screen.findByRole("button", { name: "Forest" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fewer themes" }).getAttribute("aria-expanded")).toBe("true");
+    cleanup();
+    await mount({ tab: "theme", mobile: false });
+    expect(await screen.findByRole("button", { name: "Forest" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Fewer themes" }));
+    expect(screen.queryByRole("button", { name: "Forest" })).toBeNull();
+  });
+
+  it("marks the selected tile", async () => {
+    await mount({ tab: "theme", value: { themePreset: "nord" } });
+    expect(
+      (await screen.findByRole("button", { name: "Nord" })).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.getByRole("button", { name: "Ink" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("overrides the accent of the active theme and lets the swatch clear it", async () => {
+    const page = await mount({ tab: "theme", value: { themePreset: "nord" } });
+    const swatch = await screen.findByRole("button", { name: "Accent #bd93f9" });
+    expect(swatch.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Use theme accent" })).toBeNull();
+    fireEvent.click(swatch);
+    await waitFor(() => expect(page.current().themeAccent).toBe("#bd93f9"));
+    expect(accentVar()).toBe("#bd93f9");
+    expect(screen.getByRole("button", { name: "Accent #bd93f9" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Paper" }));
+    await waitFor(() => expect(page.current().themePreset).toBe("paper"));
+    expect(page.current().themeAccent).toBe("#bd93f9");
+    expect(accentVar()).toBe("#bd93f9");
+    expect(await screen.findByText("Some text will be hard to read")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Accent #bd93f9" }));
+    await waitFor(() => expect(page.current().themeAccent).toBeUndefined());
+    expect(accentVar()).toBe("#19874d");
+  });
+
+  it("clears the accent override when the accent is edited under Advanced colors", async () => {
+    const page = await mount({
+      tab: "theme",
+      value: {
+        themeMode: "dark",
+        darkThemePreset: "nord",
+        lightThemePreset: "paper",
+        themeAccent: "#bd93f9",
+      },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /^Advanced colors/ }));
+    const region = await screen.findByRole("region", { name: /^Advanced colors/ });
+    const row = within(region)
+      .getAllByText("Accent")
+      .find((element) => element.closest(".row-py"))!
+      .closest(".row-py") as HTMLElement;
+    fireEvent.click(within(row.parentElement as HTMLElement).getAllByRole("button", { name: /color/i })[2]!);
+    const hex = await screen.findByRole("textbox", { name: "Hex color" });
+    fireEvent.change(hex, { target: { value: "#123456" } });
+    fireEvent.keyDown(hex, { key: "Enter" });
+    await waitFor(() => expect(page.current().themeAccent).toBeUndefined());
+    expect(page.current()).toMatchObject({
+      themePreset: "custom",
+      darkThemePreset: "custom",
+      lightThemePreset: "paper",
+      customColors: { accent: "#123456", surface: "#2e3440" },
+    });
+    expect(accentVar()).toBe("#123456");
+    fireEvent.click(screen.getByRole("button", { name: "Accent #bd93f9" }));
+    await waitFor(() => expect(page.current().themeAccent).toBe("#bd93f9"));
+    expect(accentVar()).toBe("#bd93f9");
+  });
+
+  it("starts with Advanced colors closed and opens the color list", async () => {
+    await mount({ tab: "theme" });
+    const toggle = await screen.findByRole("button", { name: /^Advanced colors/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Background")).toBeNull();
+    fireEvent.click(toggle);
+    expect((await screen.findAllByText("Background")).length).toBeGreaterThan(0);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("lays the theme tiles out three per row on a phone", async () => {
+    await mount({ tab: "theme", phone: true });
+    const phoneGrid = (await screen.findByRole("button", { name: "Midnight" })).closest(".grid");
+    expect(phoneGrid?.className).toContain("grid-cols-3");
+  });
+
+  it("lays the theme tiles out six per row on desktop", async () => {
+    await mount({ tab: "theme", mobile: false });
+    const desktopGrid = (await screen.findByRole("button", { name: "Midnight" })).closest(".grid");
+    expect(desktopGrid?.className).toContain("grid-cols-6");
   });
 
   it.each([

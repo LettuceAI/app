@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Download, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import {
+  Accordion,
+  AccordionItem,
   Alert,
   Button,
-  ChoiceCard,
+  cn,
   ColorPicker,
   confirm,
   contrastRatio,
@@ -23,6 +25,7 @@ import {
   MenuSeparator,
   MenuTrigger,
   mixHex,
+  Segmented,
   Text,
   useTheme,
   themeToVars,
@@ -30,12 +33,26 @@ import {
   type ThemeColors,
 } from "@lettuceai/crisp";
 import type {
-  SettingsUiCustomColorPreset_Deserialize,
   SettingsThemeDocument,
+  SettingsUiCustomColorPreset_Deserialize,
+  UiPreferenceChange_Deserialize,
 } from "@/api/generated/bindings";
 import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure } from "@/api/client";
-import { appThemes, object, usePreferences } from "@/entities/preferences";
+import {
+  appThemes,
+  DEFAULT_PRESET_BY_KIND,
+  isHexColor,
+  kindOfMode,
+  rememberedKey,
+  themeFromPreferences,
+  themeModeOf,
+  usePreferences,
+  useSystemDark,
+  type Preferences,
+  type ThemeKind,
+  type ThemeMode,
+} from "@/entities/preferences";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi } from "../data";
 import { Pick, Row } from "./ChatTab";
@@ -54,35 +71,150 @@ const colorKeys = [
 const presetsOf = (value: unknown): SettingsUiCustomColorPreset_Deserialize[] =>
   Array.isArray(value) ? (value as SettingsUiCustomColorPreset_Deserialize[]) : [];
 
-function Swatches({ colors }: { colors: ThemeColors }) {
+const FEATURED_THEMES = ["midnight", "ink", "paper", "nord", "rose", "oled"] as const;
+const ACCENT_SOURCES = [
+  "midnight",
+  "slate",
+  "ember",
+  "nord",
+  "dracula",
+  "rose",
+  "plum",
+  "carbon-blue",
+  "carbon-red",
+  "gruvbox",
+] as const;
+const MORE_THEMES_KEY = "customization.moreThemes";
+const featured = FEATURED_THEMES.flatMap((id) => appThemes.filter((theme) => theme.id === id));
+const rest = appThemes.filter((theme) => !(FEATURED_THEMES as readonly string[]).includes(theme.id));
+const accentSwatches = [
+  ...new Set(
+    ACCENT_SOURCES.flatMap((id) =>
+      appThemes.filter((theme) => theme.id === id).map((theme) => theme.colors.accent.toLowerCase()),
+    ),
+  ),
+];
+
+const readMoreThemes = () => {
+  try {
+    return window.sessionStorage.getItem(MORE_THEMES_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const writeMoreThemes = (open: boolean) => {
+  try {
+    window.sessionStorage.setItem(MORE_THEMES_KEY, open ? "1" : "0");
+  } catch {
+    return;
+  }
+};
+
+function ThemeTile({
+  theme,
+  selected,
+  onSelect,
+  menu,
+}: {
+  theme: Theme;
+  selected: boolean;
+  onSelect: () => void;
+  menu?: ReactNode;
+}) {
+  const { surface, fg, accent, nav } = theme.colors;
   return (
-    <span aria-hidden="true" className="flex -space-x-1">
-      {[colors.surface, colors.fg, colors.accent].map((color, index) => (
+    <div className="relative min-w-0">
+      <button
+        type="button"
+        aria-pressed={selected}
+        onClick={onSelect}
+        className="group flex w-full min-w-0 flex-col gap-1.5 text-left"
+      >
         <span
-          key={index}
-          className="h-4 w-4 rounded-full ring-1 ring-line-3"
-          style={{ background: color }}
-        />
-      ))}
-    </span>
+          aria-hidden="true"
+          className={cn(
+            "flex aspect-[4/3] w-full flex-col overflow-hidden rounded-lg ring-1 ring-inset ring-line-3 transition-shadow group-hover:ring-line-2",
+            selected && "ring-2 ring-accent",
+          )}
+          style={{ background: surface }}
+        >
+          <span
+            className="h-2.5 w-full shrink-0"
+            style={nav ? { background: nav } : { background: fg, opacity: 0.1 }}
+          />
+          <span className="flex flex-1 flex-col justify-center gap-1.5 px-2.5">
+            <span className="h-1.5 w-3/4 rounded-full" style={{ background: fg, opacity: 0.85 }} />
+            <span className="h-1.5 w-1/2 rounded-full" style={{ background: fg, opacity: 0.4 }} />
+            <span className="h-2 w-8 rounded-full" style={{ background: accent }} />
+          </span>
+        </span>
+        <span className="block truncate px-0.5 text-sm text-fg-2">{theme.name}</span>
+      </button>
+      {menu && <span className="absolute right-1 top-1">{menu}</span>}
+    </div>
   );
 }
 
+/**
+ * Accent precedence: `themeAccent` overrides the accent of whichever theme is active,
+ * including a custom one, until it is cleared. Editing the accent under Advanced colors
+ * clears `themeAccent` and stores the color as a custom theme, so the two never disagree.
+ */
 export function ThemeTab({ phone, onRename }: { phone: boolean; onRename: (id: string) => void }) {
   const { t } = useTranslation("customization");
   const api = useSettingsApi();
   const status = useQuery(appStatusQuery(api));
   const preferences = usePreferences();
   const { theme } = useTheme();
+  const systemDark = useSystemDark();
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(readMoreThemes);
   const saved = presetsOf(preferences.value.customColorPresets);
+  const mode = themeModeOf(preferences.value) ?? (isLight(theme.colors.surface) ? "light" : "dark");
+  const appliedChanges = (
+    latest: Preferences,
+    id: string,
+    colors: ThemeColors,
+  ): UiPreferenceChange_Deserialize[] => {
+    const kind: ThemeKind = isLight(colors.surface) ? "light" : "dark";
+    const applied: UiPreferenceChange_Deserialize[] = [
+      { key: "themePreset", value: id },
+      { key: "theme", value: kind },
+      { key: "customColors", value: colors },
+    ];
+    const current = themeModeOf(latest);
+    if (!current) return applied;
+    const remembered = { key: rememberedKey(kind), value: id } as UiPreferenceChange_Deserialize;
+    const switchMode: UiPreferenceChange_Deserialize[] =
+      current !== "system" && current !== kind ? [{ key: "themeMode", value: kind }] : [];
+    const visible = current !== "system" || kindOfMode(current, systemDark) === kind;
+    return [remembered, ...switchMode, ...(visible ? applied : [])];
+  };
   const applyTheme = (next: Theme) =>
-    preferences.update(() => [
-      { key: "themePreset", value: next.id },
-      { key: "theme", value: isLight(next.colors.surface) ? "light" : "dark" },
-      { key: "customColors", value: next.colors },
-    ]);
+    preferences.update((latest) => appliedChanges(latest, next.id, next.colors));
+  const changeMode = (next: ThemeMode) =>
+    preferences.update((latest) => {
+      const kind = next === "system" ? kindOfMode(next, systemDark) : next;
+      const shown: UiPreferenceChange_Deserialize[] = [
+        { key: "themeMode", value: next },
+        { key: "theme", value: kind },
+      ];
+      if (themeModeOf(latest)) return shown;
+      const current = themeFromPreferences({ ...latest, themeAccent: null }, systemDark);
+      const currentKind: ThemeKind = isLight(current.colors.surface) ? "light" : "dark";
+      const otherKind: ThemeKind = currentKind === "light" ? "dark" : "light";
+      return [
+        ...shown,
+        { key: rememberedKey(currentKind), value: current.id } as UiPreferenceChange_Deserialize,
+        {
+          key: rememberedKey(otherKind),
+          value: DEFAULT_PRESET_BY_KIND[otherKind],
+        } as UiPreferenceChange_Deserialize,
+      ];
+    });
+  const setAccent = (accent: string | null) =>
+    void preferences.update(() => [{ key: "themeAccent", value: accent }], "themeAccent");
   const handleSave = async (
     name: string,
     colors: ThemeColors,
@@ -91,9 +223,7 @@ export function ThemeTab({ phone, onRename }: { phone: boolean; onRename: (id: s
     const preset = createThemePreset(name, colors);
     const success = await preferences.update((latest) => [
       { key: "customColorPresets", value: [...presetsOf(latest.customColorPresets), preset] },
-      { key: "themePreset", value: preset.id },
-      { key: "customColors", value: colors },
-      { key: "theme", value: isLight(colors.surface) ? "light" : "dark" },
+      ...appliedChanges(latest, preset.id, colors),
       ...(shape?.radius ? [{ key: "themeRadius" as const, value: shape.radius }] : []),
       ...(shape?.density ? [{ key: "themeDensity" as const, value: shape.density }] : []),
     ]);
@@ -122,6 +252,11 @@ export function ThemeTab({ phone, onRename }: { phone: boolean; onRename: (id: s
       ...(latest.themePreset === preset.id
         ? [{ key: "themePreset" as const, value: "custom" }]
         : []),
+      ...(["dark", "light"] as const).flatMap((kind) =>
+        latest[rememberedKey(kind)] === preset.id
+          ? [{ key: rememberedKey(kind), value: "custom" } as UiPreferenceChange_Deserialize]
+          : [],
+      ),
     ]);
   };
   const transfer = async (preset?: SettingsUiCustomColorPreset_Deserialize) => {
@@ -167,48 +302,39 @@ export function ThemeTab({ phone, onRename }: { phone: boolean; onRename: (id: s
       setBusy(false);
     }
   };
-  const card = (chosen: Theme, own?: SettingsUiCustomColorPreset_Deserialize) => (
-    <ChoiceCard
+  const tile = (chosen: Theme, own?: SettingsUiCustomColorPreset_Deserialize) => (
+    <ThemeTile
       key={chosen.id}
+      theme={chosen}
       selected={theme.id === chosen.id}
-      indicator="none"
-      title={chosen.name}
-      description={
-        <span className="flex items-center gap-2">
-          <Swatches colors={chosen.colors} />
-          {t(isLight(chosen.colors.surface) ? "light" : "dark")}
-        </span>
-      }
-      meta={
+      onSelect={() => void applyTheme(chosen)}
+      menu={
         own && (
-          <span onClick={(event) => event.stopPropagation()}>
-            <Menu>
-              <MenuTrigger>
-                <IconButton size="sm" label={t("themeActions", { name: chosen.name })}>
-                  <MoreHorizontal size={icon.sm} />
-                </IconButton>
-              </MenuTrigger>
-              <MenuContent align="end">
-                <MenuItem icon={<Pencil size={icon.md} />} onSelect={() => onRename(chosen.id)}>
-                  {t("rename")}
-                </MenuItem>
-                <MenuItem
-                  icon={<Download size={icon.md} />}
-                  disabled={busy}
-                  onSelect={() => void transfer(own)}
-                >
-                  {t("export")}
-                </MenuItem>
-                <MenuSeparator />
-                <MenuItem icon={<Trash2 size={icon.md} />} danger onSelect={() => void remove(own)}>
-                  {t("delete")}
-                </MenuItem>
-              </MenuContent>
-            </Menu>
-          </span>
+          <Menu>
+            <MenuTrigger>
+              <IconButton size="sm" label={t("themeActions", { name: chosen.name })}>
+                <MoreHorizontal size={icon.sm} />
+              </IconButton>
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem icon={<Pencil size={icon.md} />} onSelect={() => onRename(chosen.id)}>
+                {t("rename")}
+              </MenuItem>
+              <MenuItem
+                icon={<Download size={icon.md} />}
+                disabled={busy}
+                onSelect={() => void transfer(own)}
+              >
+                {t("export")}
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem icon={<Trash2 size={icon.md} />} danger onSelect={() => void remove(own)}>
+                {t("delete")}
+              </MenuItem>
+            </MenuContent>
+          </Menu>
         )
       }
-      onClick={() => void applyTheme(chosen)}
     />
   );
   const body = contrastRatio(theme.colors.fg, theme.colors.surface);
@@ -217,7 +343,10 @@ export function ThemeTab({ phone, onRename }: { phone: boolean; onRename: (id: s
     theme.colors.surface,
   );
   const accent = contrastRatio(theme.colors.accent, theme.colors.surface);
-  const grid = phone ? "grid grid-cols-2 gap-2" : "grid grid-cols-4 gap-2";
+  const grid = phone ? "grid grid-cols-3 gap-3" : "grid grid-cols-6 gap-3";
+  const accentNow = theme.colors.accent.toLowerCase();
+  const overridden = isHexColor(preferences.value.themeAccent);
+  const customAccent = overridden && !accentSwatches.includes(accentNow);
   return (
     <div className="space-y-7">
       {error !== null &&
@@ -226,13 +355,96 @@ export function ThemeTab({ phone, onRename }: { phone: boolean; onRename: (id: s
         ) : (
           <FailureState error={error} size="sm" />
         ))}
+      <ListGroup>
+        <Row
+          phone={phone}
+          title={t("appearance")}
+          description={t("appearanceBody")}
+          control={
+            <Segmented<ThemeMode>
+              size="sm"
+              block={phone}
+              aria-label={t("appearance")}
+              value={mode}
+              options={[
+                { value: "system", label: t("system") },
+                { value: "dark", label: t("dark") },
+                { value: "light", label: t("light") },
+              ]}
+              onChange={(next) => void changeMode(next)}
+            />
+          }
+        />
+      </ListGroup>
       <section className="space-y-2">
+        <div className="flex items-center justify-between gap-3 px-1">
+          <Text variant="label">{t("accent")}</Text>
+          {overridden && (
+            <Button size="sm" variant="ghost" onClick={() => setAccent(null)}>
+              {t("useThemeAccent")}
+            </Button>
+          )}
+        </div>
+        <div role="group" aria-label={t("accent")} className="flex flex-wrap items-center gap-3 px-1">
+          {accentSwatches.map((hex) => {
+            const selected = accentNow === hex;
+            return (
+              <button
+                key={hex}
+                type="button"
+                aria-pressed={selected}
+                aria-label={t("accentColor", { color: hex })}
+                onClick={() => setAccent(overridden && selected ? null : hex)}
+                className={cn(
+                  "h-8 w-8 rounded-full ring-1 ring-inset ring-line-3 transition-shadow",
+                  selected && "ring-2 ring-fg ring-offset-2 ring-offset-surface",
+                )}
+                style={{ background: hex }}
+              />
+            );
+          })}
+          <ColorPicker
+            value={theme.colors.accent}
+            swatches={accentSwatches}
+            className={cn(customAccent && "ring-2 ring-fg ring-offset-2 ring-offset-surface")}
+            onChange={(color) =>
+              void preferences.update(
+                () => [{ key: "themeAccent", value: color.toLowerCase() }],
+                "themeAccent",
+              )
+            }
+          />
+        </div>
+        {overridden && accent < 3 && (
+          <Alert
+            tone="warning"
+            title={t("hardToRead")}
+            description={t("accentContrast", { ratio: accent.toFixed(1) })}
+          />
+        )}
+      </section>
+      <section className="space-y-3">
         <Text variant="label" className="px-1">
           {t("themes")}
         </Text>
-        <div className={grid}>{appThemes.map((preset) => card(preset))}</div>
+        <div className={grid}>
+          {(moreOpen ? [...featured, ...rest] : featured)
+            .toSorted((a, b) => Number(isLight(a.colors.surface)) - Number(isLight(b.colors.surface)))
+            .map((preset) => tile(preset))}
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-expanded={moreOpen}
+          onClick={() => {
+            writeMoreThemes(!moreOpen);
+            setMoreOpen(!moreOpen);
+          }}
+        >
+          {moreOpen ? t("fewerThemes") : t("moreThemes", { count: rest.length })}
+        </Button>
       </section>
-      <section className="space-y-2">
+      <section className="space-y-3">
         <div className="flex items-center justify-between gap-3 px-1">
           <Text variant="label">{t("yourThemes")}</Text>
           <span className="flex gap-1">
@@ -258,66 +470,92 @@ export function ThemeTab({ phone, onRename }: { phone: boolean; onRename: (id: s
           </span>
         </div>
         {saved.length ? (
-          <div className={grid}>{saved.map((preset) => card(asTheme(preset), preset))}</div>
+          <div className={grid}>{saved.map((preset) => tile(asTheme(preset), preset))}</div>
         ) : (
           <Text variant="hint" className="px-1">
             {t("noSavedThemes")}
           </Text>
         )}
       </section>
-      <section className="space-y-2">
-        <ListGroup label={t("colors")}>
-          {colorKeys.map((key) => (
-            <ListRow
-              key={key}
-              title={t(`themeColors.${key}`)}
-              description={t(`themeColors.${key}Body`)}
-              trailing={
-                <Field
-                  label={<span className="sr-only">{t(`themeColors.${key}`)}</span>}
-                  className="space-y-0"
-                >
-                  <ColorPicker
-                    value={
-                      theme.colors[key] ?? themeToVars(theme)["--color-nav"] ?? theme.colors.surface
-                    }
-                    onChange={(color) =>
-                      void preferences.update(
-                        (latest) => [
-                          { key: "themePreset", value: "custom" },
-                          {
-                            key: "customColors",
-                            value: { ...object(latest.customColors), [key]: color },
-                          },
-                        ],
-                        `themeColor:${key}`,
-                      )
-                    }
-                  />
-                </Field>
-              }
-            />
-          ))}
-        </ListGroup>
-        {body < 4.5 || muted < 4.5 || accent < 3 ? (
-          <Alert
-            tone="warning"
-            title={t("hardToRead")}
-            description={t(
-              body < 4.5 ? "bodyContrast" : muted < 4.5 ? "mutedContrast" : "accentContrast",
-              { ratio: (body < 4.5 ? body : muted < 4.5 ? muted : accent).toFixed(1) },
+      <Accordion>
+        <AccordionItem
+          value="advanced"
+          title={t("advancedColors")}
+          description={t("advancedColorsBody")}
+        >
+          <div className="space-y-2">
+            <ListGroup>
+              {colorKeys.map((key) => (
+                <ListRow
+                  key={key}
+                  title={t(`themeColors.${key}`)}
+                  description={t(`themeColors.${key}Body`)}
+                  trailing={
+                    <Field
+                      label={<span className="sr-only">{t(`themeColors.${key}`)}</span>}
+                      className="space-y-0"
+                    >
+                      <ColorPicker
+                        value={
+                          theme.colors[key] ??
+                          themeToVars(theme)["--color-nav"] ??
+                          theme.colors.surface
+                        }
+                        onChange={(color) =>
+                          void preferences.update(
+                            (latest) => {
+                              const current = themeModeOf(latest);
+                              const colors = {
+                                ...themeFromPreferences({ ...latest, themeAccent: null }, systemDark)
+                                  .colors,
+                                [key]: color,
+                              };
+                              return [
+                                { key: "themePreset", value: "custom" },
+                                { key: "customColors", value: colors },
+                                ...(key === "accent"
+                                  ? [{ key: "themeAccent" as const, value: null }]
+                                  : []),
+                                ...(current
+                                  ? [
+                                      {
+                                        key: rememberedKey(kindOfMode(current, systemDark)),
+                                        value: "custom",
+                                      } as UiPreferenceChange_Deserialize,
+                                    ]
+                                  : []),
+                              ];
+                            },
+                            `themeColor:${key}`,
+                          )
+                        }
+                      />
+                    </Field>
+                  }
+                />
+              ))}
+            </ListGroup>
+            {body < 4.5 || muted < 4.5 || accent < 3 ? (
+              <Alert
+                tone="warning"
+                title={t("hardToRead")}
+                description={t(
+                  body < 4.5 ? "bodyContrast" : muted < 4.5 ? "mutedContrast" : "accentContrast",
+                  { ratio: (body < 4.5 ? body : muted < 4.5 ? muted : accent).toFixed(1) },
+                )}
+              />
+            ) : (
+              <Text variant="hint" className="px-1">
+                {t("readableContrast", {
+                  body: body.toFixed(1),
+                  muted: muted.toFixed(1),
+                  accent: accent.toFixed(1),
+                })}
+              </Text>
             )}
-          />
-        ) : (
-          <Text variant="hint" className="px-1">
-            {t("readableContrast", {
-              body: body.toFixed(1),
-              muted: muted.toFixed(1),
-              accent: accent.toFixed(1),
-            })}
-          </Text>
-        )}
-      </section>
+          </div>
+        </AccordionItem>
+      </Accordion>
       <ListGroup label={t("shape")}>
         <Row
           phone={phone}
@@ -366,6 +604,10 @@ export function ThemeTab({ phone, onRename }: { phone: boolean; onRename: (id: s
               { key: "customColors", value: null },
               { key: "themeRadius", value: null },
               { key: "themeDensity", value: null },
+              { key: "themeMode", value: null },
+              { key: "darkThemePreset", value: null },
+              { key: "lightThemePreset", value: null },
+              { key: "themeAccent", value: null },
             ])
           }
         >

@@ -1,4 +1,4 @@
-import { useContext, useMemo } from "react";
+import { useContext, useMemo, useSyncExternalStore } from "react";
 import { PreferencesContext, ChatAppearanceContext } from "./context";
 import { chatAppearance } from "./appearance";
 export function usePreferences() {
@@ -12,4 +12,15 @@ export function useChatLook() {
 export function useMessageAppearance() {
   const look = useChatLook();
   return useMemo(() => chatAppearance(look), [look]);
+}
+
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+const subscribeSystemDark = (notify: () => void) => {
+  const query = window.matchMedia(DARK_QUERY);
+  query.addEventListener("change", notify);
+  return () => query.removeEventListener("change", notify);
+};
+const readSystemDark = () => window.matchMedia(DARK_QUERY).matches;
+export function useSystemDark(): boolean {
+  return useSyncExternalStore(subscribeSystemDark, readSystemDark);
 }

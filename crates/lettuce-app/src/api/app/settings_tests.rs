@@ -952,3 +952,45 @@ async fn customization_theme_file_round_trip_and_legacy_import_use_native_files(
     assert!(imported.radius.is_none());
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[tokio::test]
+async fn customization_theme_mode_and_accent_are_validated_and_saved_separately() {
+    let h = harness(Reply::Text("Hello."));
+    let before = settings_get(&h.context).await.expect("settings");
+    let request = |revision, changes| serde_json::from_value::<dto::SettingsUpdateRequest>(serde_json::json!({
+        "expected_revision": revision,
+        "patch": { "section": "ui_preferences", "changes": changes }
+    }));
+    let saved = settings_update(&h.context, request(before.revision, serde_json::json!([
+        { "key": "themeMode", "value": "system" },
+        { "key": "darkThemePreset", "value": "nord" },
+        { "key": "lightThemePreset", "value": "paper" },
+        { "key": "themeAccent", "value": "#65c789" }
+    ])).expect("request")).await.expect("save theme choices");
+    assert_eq!(saved.global.ui_preferences["themeMode"], "system");
+    assert_eq!(saved.global.ui_preferences["darkThemePreset"], "nord");
+    assert_eq!(saved.global.ui_preferences["lightThemePreset"], "paper");
+    assert_eq!(saved.global.ui_preferences["themeAccent"], "#65c789");
+    assert_eq!(saved.global.ui_preferences.get("theme"), before.global.ui_preferences.get("theme"));
+    assert!(request(saved.revision, serde_json::json!([{ "key": "themeMode", "value": "auto" }])).is_err());
+    for accent in ["65c789", "#65c78", "#gggggg", "", "#"] {
+        let invalid = settings_update(&h.context, request(saved.revision, serde_json::json!([
+            { "key": "themeAccent", "value": accent }
+        ])).expect("request")).await.expect_err("invalid accent");
+        assert_eq!(invalid.code, ApiErrorCode::InvalidInput);
+    }
+    assert_eq!(settings_get(&h.context).await.expect("unchanged"), saved);
+    let short = settings_update(&h.context, request(saved.revision, serde_json::json!([
+        { "key": "themeAccent", "value": "#abc" }
+    ])).expect("request")).await.expect("short hex");
+    assert_eq!(short.global.ui_preferences["themeAccent"], "#abc");
+    let cleared = settings_update(&h.context, request(short.revision, serde_json::json!([
+        { "key": "themeMode", "value": null },
+        { "key": "darkThemePreset", "value": null },
+        { "key": "lightThemePreset", "value": null },
+        { "key": "themeAccent", "value": null }
+    ])).expect("request")).await.expect("clear theme choices");
+    for key in ["themeMode", "darkThemePreset", "lightThemePreset", "themeAccent"] {
+        assert!(cleared.global.ui_preferences.get(key).is_none());
+    }
+}

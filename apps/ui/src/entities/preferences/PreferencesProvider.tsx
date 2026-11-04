@@ -4,6 +4,7 @@ import { useTheme } from "@lettuceai/crisp";
 import { ApiFailure, type ApiClient } from "@/api/client";
 import type { SettingsView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { useSystemDark } from "./hooks";
 import { PreferencesContext, apply, themeFromPreferences, type PreferenceEdit } from "./context";
 
 export function PreferencesProvider({ api, children }: { api: ApiClient; children: ReactNode }) {
@@ -104,18 +105,42 @@ export function PreferencesProvider({ api, children }: { api: ApiClient; childre
     customColorPresets,
     themeRadius,
     themeDensity,
+    themeMode,
+    darkThemePreset,
+    lightThemePreset,
+    themeAccent,
   } = value;
+  const systemDark = useSystemDark();
   const theme = useMemo(
     () =>
-      themeFromPreferences({
-        themePreset,
-        theme: legacyTheme,
-        customColors,
-        customColorPresets,
-        themeRadius,
-        themeDensity,
-      }),
-    [themePreset, legacyTheme, customColors, customColorPresets, themeRadius, themeDensity],
+      themeFromPreferences(
+        {
+          themePreset,
+          theme: legacyTheme,
+          customColors,
+          customColorPresets,
+          themeRadius,
+          themeDensity,
+          themeMode,
+          darkThemePreset,
+          lightThemePreset,
+          themeAccent,
+        },
+        systemDark,
+      ),
+    [
+      themePreset,
+      legacyTheme,
+      customColors,
+      customColorPresets,
+      themeRadius,
+      themeDensity,
+      themeMode,
+      darkThemePreset,
+      lightThemePreset,
+      themeAccent,
+      systemDark,
+    ],
   );
   useEffect(() => {
     if (query.data?.global) setTheme(theme);

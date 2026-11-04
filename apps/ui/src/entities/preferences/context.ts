@@ -22,7 +22,60 @@ export function object(value: unknown): Record<string, unknown> {
     : {};
 }
 
-export function themeFromPreferences(value: Preferences): Theme {
+export type ThemeMode = "system" | "dark" | "light";
+export type ThemeKind = "dark" | "light";
+export const DEFAULT_PRESET_BY_KIND: Record<ThemeKind, string> = {
+  dark: "midnight",
+  light: "paper",
+};
+const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+export const isHexColor = (value: unknown): value is string =>
+  typeof value === "string" && HEX.test(value);
+
+/** `null` means `themeMode` was never set: the stored preset alone decides, as before modes existed. */
+export function themeModeOf(value: Preferences): ThemeMode | null {
+  return value.themeMode === "system" || value.themeMode === "dark" || value.themeMode === "light"
+    ? value.themeMode
+    : null;
+}
+
+export const kindOfMode = (mode: ThemeMode, systemDark: boolean): ThemeKind =>
+  mode === "system" ? (systemDark ? "dark" : "light") : mode;
+
+export const rememberedKey = (kind: ThemeKind) =>
+  kind === "dark" ? ("darkThemePreset" as const) : ("lightThemePreset" as const);
+
+/**
+ * With a `themeMode`, the preset comes from the remembered preset of the active kind
+ * (`darkThemePreset` or `lightThemePreset`), not from `themePreset`. The stored
+ * `themePreset` and `customColors` still win when they name that same preset, which keeps
+ * a "custom" theme and a saved theme's colors intact; otherwise the remembered preset is
+ * read from the built-in list or the saved themes, and an unknown id falls back to the
+ * kind's default. `themeAccent` is applied on top by `themeFromPreferences`.
+ */
+function appliedPreferences(value: Preferences, systemDark: boolean): Preferences {
+  const mode = themeModeOf(value);
+  if (!mode) return value;
+  const kind = kindOfMode(mode, systemDark);
+  const remembered = value[rememberedKey(kind)];
+  const fallback = DEFAULT_PRESET_BY_KIND[kind];
+  const id = typeof remembered === "string" ? remembered : fallback;
+  if (id === value.themePreset) return { ...value, theme: kind };
+  const saved = Array.isArray(value.customColorPresets)
+    ? value.customColorPresets.map(object).find((theme) => theme.id === id)
+    : undefined;
+  if (saved) return { ...value, themePreset: id, theme: kind, customColors: saved.colors };
+  const builtIn = { ...value };
+  delete builtIn.customColors;
+  return {
+    ...builtIn,
+    themePreset: appThemes.some((theme) => theme.id === id) ? id : fallback,
+    theme: kind,
+  };
+}
+
+export function themeFromPreferences(stored: Preferences, systemDark = false): Theme {
+  const value = appliedPreferences(stored, systemDark);
   const preset =
     appThemes.find((theme) => theme.id === value.themePreset) ??
     (value.theme === "light" ? appThemes.find((theme) => theme.id === "paper") : undefined) ??
@@ -40,9 +93,9 @@ export function themeFromPreferences(value: Preferences): Theme {
     "secondary",
   ] as const) {
     const color = custom[key];
-    if (typeof color === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color))
-      colors[key] = color;
+    if (isHexColor(color)) colors[key] = color;
   }
+  if (isHexColor(value.themeAccent)) colors.accent = value.themeAccent;
   const saved = Array.isArray(value.customColorPresets)
     ? value.customColorPresets.map(object).find((theme) => theme.id === value.themePreset)
     : undefined;

@@ -575,6 +575,15 @@ fn validate_ui_change(change: &dto::UiPreferenceChange) -> Result<(), ApiError> 
                 ));
             }
         }
+        UiPreferenceChange::ThemeAccent { value: Some(value) } => {
+            let digits = value.strip_prefix('#').unwrap_or_default();
+            if !matches!(digits.len(), 3 | 6) || !digits.chars().all(|digit| digit.is_ascii_hexdigit()) {
+                return Err(invalid_field(
+                    "themeAccent",
+                    "accent must be a hex color such as #65c789",
+                ));
+            }
+        }
         UiPreferenceChange::CustomColorPresets {
             value: Some(presets),
         } => {
