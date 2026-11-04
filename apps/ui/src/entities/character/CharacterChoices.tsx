@@ -1,4 +1,5 @@
 import { Avatar, ChoiceCard } from "@lettuceai/crisp";
+import { plainText } from "@/shared/formatting/plainText";
 
 export interface CharacterChoice {
   id: string;
@@ -22,7 +23,7 @@ export function CharacterChoices({ choices, selected, locked = [], disabled = fa
       disabled={disabled || locked.includes(character.id)}
       icon={<Avatar src={character.avatar?.url ?? null} name={character.name} size="md" />}
       title={<span className="block truncate">{character.name}</span>}
-      description={<span className="line-clamp-1">{character.description}</span>}
+      description={character.description ? <span className="line-clamp-1">{plainText(character.description)}</span> : undefined}
       className="p-3"
       onClick={() => onPick(character.id)}
     />)}

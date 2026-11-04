@@ -183,6 +183,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
 
   const [menuId, setMenuId] = useState<string | null>(null);
   const [branching, setBranching] = useState<BranchTarget | null>(null);
+  const { shown: shownBranch, session: branchSession } = useClosingValue(branching);
   const [selection, setSelection] = useState<{ behavior: "cue" | "action"; id: string } | null>(null);
   const [directorWiggle, setDirectorWiggle] = useState(0);
   const [effectMessage, setEffectMessage] = useState<TimelineMessage | null>(null);
@@ -850,8 +851,9 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           }}
         />}
 
-        {branching && view && <BranchSheet
-          services={services} view={view} target={branching}
+        {shownBranch && view && <BranchSheet
+          key={branchSession} open={branching !== null}
+          services={services} view={view} target={shownBranch}
           onClose={() => setBranching(null)}
           onCreated={(id) => {
             setBranching(null);

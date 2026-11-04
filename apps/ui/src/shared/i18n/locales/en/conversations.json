@@ -65,6 +65,7 @@
     "characterTitle": "Branch to another character",
     "history": "Copies this chat up to the selected message, including its memories.",
     "sourceLocked": "The current character stays in the group. Choose at least one more.",
+    "characters": "Characters",
     "defaultName": "{{name}} Branch",
     "search": "Search characters",
     "empty": "No characters found",

@@ -300,7 +300,7 @@ it("keeps the reading position when a new message arrives without a local send",
 });
 
 describe("conversation screen", () => {
-  it.each(["Conversation", "Roleplay"])("asks for additional characters and the %s group mode before branching", async (mode) => {
+  it.each(["Conversation", "Roleplay"])("asks for at least one more character and branches in the %s group mode", async (mode) => {
     const branch = vi.fn(() => ({ status: "ok" as const, data: { conversation_id: "group-copy", revision: 1 } }));
     const runtime = await open({ calls: {
       charactersList: () => ({ status: "ok", data: { items: [
@@ -314,10 +314,10 @@ describe("conversation screen", () => {
     const dialog = await screen.findByRole("dialog", { name: "Branch to group chat" });
     const create = within(dialog).getByRole("button", { name: "Create branch" });
     expect((create as HTMLButtonElement).disabled).toBe(true);
-    expect((await within(dialog).findByRole("button", { name: /Cassian/ }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(within(dialog).getByText("Mira"));
-    expect((create as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(within(dialog).getByText(mode));
+    expect((await within(dialog).findByRole("checkbox", { name: "Cassian" }) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Mira" }));
+    expect((create as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(within(dialog).getByRole("radio", { name: mode }));
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Group name" }), { target: { value: "Harbour friends" } });
     expect(branch).not.toHaveBeenCalled();
     fireEvent.click(create);
