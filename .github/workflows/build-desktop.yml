@@ -108,9 +108,15 @@ jobs:
           $clang = Join-Path $env:ProgramFiles 'LLVM/bin'
           if (!(Test-Path "$clang/libclang.dll")) { throw 'Runner libclang is missing' }
           "LIBCLANG_PATH=$clang" >> $env:GITHUB_ENV
-      - name: Ensure the macOS Metal compiler is available
+      - name: Configure macOS Xcode and Metal compiler
         if: runner.os == 'macOS'
+        env:
+          # Icon Composer needs Xcode 26; macOS 15 runners default to Xcode 16.
+          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
         run: |
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcrun actool --version --output-format human-readable-text
           if ! xcrun --sdk macosx metal --version; then
             xcodebuild -downloadComponent MetalToolchain
             xcrun --sdk macosx metal --version
@@ -313,6 +319,9 @@ jobs:
           if [[ "$RUNNER_OS" == macOS ]]; then
             apps=("$bundle"/macos/*.app)
             ((${#apps[@]} == 1))
+            # Fail packaging if Tauri skipped compiling the adaptive app icon.
+            test -s "${apps[0]}/Contents/Resources/Assets.car"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "${apps[0]}/Contents/Info.plist"
             tar -czf "dist-artifacts/$prefix.app.tar.gz" -C "$(dirname "${apps[0]}")" "$(basename "${apps[0]}")"
           fi
           printf '%s\n%s\n%s\n' "$SOURCE_SHA" "$APP_VERSION" "$BUILD_ID" > dist-artifacts/BUILD_INFO

@@ -8,6 +8,8 @@ For an isolated debug launch, pass a separate identifier and `app.appDirectories
 
 The macOS configuration passes `entitlements.plist` to code signing. Its `com.apple.security.cs.disable-library-validation` entitlement lets the hardened app load ONNX Runtime downloaded after installation, which does not share the app's signing Team ID. Keep this entitlement when signing and notarizing macOS releases.
 
+The macOS icon list also includes `icons/LettuceAI.icon`, an Icon Composer document built from the existing lettuce SVG as separate leaf and vein layers. The default and dark appearances retain the green artwork; the monochrome appearance uses separate gray fills so macOS 26 can apply the user's clear or tinted icon appearance. Tauri compiles it into `Assets.car` and sets `CFBundleIconName` during bundling with Xcode 26 or newer. The existing `.icns` remains the fallback for earlier macOS versions. The desktop release workflow selects Xcode 26.3 and requires the asset catalog and icon name in the finished bundle. Preview the document in Icon Composer and check the installed app under System Settings > Appearance on macOS 26; `tauri dev` uses the static development icon.
+
 The opener plugin handles About's project URLs with the system's default browser on desktop and mobile. Its main-window capability permits only the configured website, Discord invite and LettuceAI/app repository URLs; file opening and automatic link interception are disabled.
 
 The haptics plugin is registered, with impact-feedback permission on Android and iOS. Frontend completion-stream feedback and intensity controls are not connected yet.

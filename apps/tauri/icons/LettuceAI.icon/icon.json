@@ -1,0 +1,67 @@
+{
+  "fill": {
+    "solid": "srgb:0.96078,0.96863,0.94902,1.00000"
+  },
+  "fill-specializations": [
+    {
+      "appearance": "dark",
+      "value": "system-dark"
+    },
+    {
+      "appearance": "tinted",
+      "value": "automatic"
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "name": "Leaf",
+          "image-name": "leaf.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-gray:0.85000,1.00000"
+              }
+            }
+          ],
+          "position": {
+            "scale": 0.78,
+            "translation-in-points": [0, 0]
+          }
+        },
+        {
+          "name": "Veins",
+          "image-name": "veins.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "extended-gray:0.30000,1.00000"
+              }
+            }
+          ],
+          "position": {
+            "scale": 0.78,
+            "translation-in-points": [0, 0]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
