@@ -362,7 +362,6 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - After each sync session, run `collect_media_garbage`.
 - The embedding API admits a pinned install job, records its pin for queued restart recovery, chooses its completed model, then runs the legacy health checks. Dynamic-memory setup activation is an explicit install option and happens only after those checks pass (old-code/src/pages/settings/EmbeddingDownloadPage.tsx:69-110). Raw cosine comparison matches old-code/src-tauri/src/embedding/tests.rs:830-854. The frontend settings screen is wired in its later API migration slice.
 - Remote avatar URLs in character and persona files: legacy downloaded character avatars when `autoDownloadCharacterCardAvatars` was on and persona avatars always; today the URL is dropped. The download policy (the setting, the fetch through the shared network client, storing the bytes) belongs in the character and persona file use cases, not the Tauri shell.
-- The macOS bundle needs legacy's `entitlements.plist` with `com.apple.security.cs.disable-library-validation`, or the hardened app refuses the re-signed ONNX Runtime download.
 - Automatic staged lorebook host wiring.
 - The advanced `lorebook_scan_depth` setting (1 to 20 recent messages, default 10): no Tauri command or settings control reads or writes it yet.
 - The analytics exit event.
