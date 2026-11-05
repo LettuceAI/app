@@ -18,7 +18,7 @@ use tokenizers::{Encoding, PostProcessor, Tokenizer, TruncationDirection};
 
 use crate::SimilarityCalibration;
 
-const MAX_INPUT_BYTES: usize = 1024 * 1024;
+const MAX_INPUT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 const MAX_CALIBRATION_BYTES: u64 = 64 * 1024;
 const MIN_EMBEDDING_TOKENS: usize = 512;
 const MAX_EMBEDDING_TOKENS: usize = 4096;

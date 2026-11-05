@@ -16,9 +16,9 @@ use tokio::time::sleep;
 /// Chat request bodies inline base64 image and audio attachments, so they
 /// share the bulk bound.
 pub const MAX_REQUEST_BYTES: usize = MAX_BULK_REQUEST_BYTES;
-const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
-const MAX_BULK_REQUEST_BYTES: usize = 64 * 1024 * 1024;
-const MAX_BULK_RESPONSE_BYTES: usize = 256 * 1024 * 1024;
+const MAX_RESPONSE_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
+const MAX_BULK_REQUEST_BYTES: usize = lettuce_types::limits::MAX_DOCUMENT_BYTES;
+const MAX_BULK_RESPONSE_BYTES: usize = 512 * 1024 * 1024;
 const MAX_METADATA_BYTES: usize = 256;
 const MAX_ENDPOINT_BYTES: usize = 4096;
 const MAX_PATH_BYTES: usize = 1024;
@@ -2286,7 +2286,8 @@ mod tests {
         assert!(BulkHttpClient::with_tls(&policy).is_ok());
     }
 
-    async fn test_server(response: &'static str) -> (String, oneshot::Receiver<Vec<u8>>) {
+    async fn test_server(response: impl Into<String>) -> (String, oneshot::Receiver<Vec<u8>>) {
+        let response = response.into();
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind test server");
@@ -2966,7 +2967,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_raised_response_cap_admits_large_media() {
-        let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nContent-Length: 8388609\r\n\r\n").await;
+        let header = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_RESPONSE_BYTES + 1);
+        let (endpoint, _) = test_server(&header).await;
         let error = client()
             .with_max_response_bytes(16)
             .post_json(
@@ -3008,7 +3010,8 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_response_over_the_buffer_limit_and_redacts_debug() {
-        let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nContent-Length: 8388609\r\n\r\n").await;
+        let header = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_RESPONSE_BYTES + 1);
+        let (endpoint, _) = test_server(&header).await;
         let error = client()
             .post_json(
                 &endpoint,

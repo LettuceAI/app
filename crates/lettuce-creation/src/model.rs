@@ -4,9 +4,9 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const MAX_CREATION_TEXT_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_CREATION_USER_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_CREATION_DRAFT_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_CREATION_TEXT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
+pub const MAX_CREATION_USER_MESSAGE_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
+pub const MAX_CREATION_DRAFT_BYTES: usize = lettuce_types::limits::MAX_DOCUMENT_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

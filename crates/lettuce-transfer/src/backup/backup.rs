@@ -18,7 +18,7 @@ use zeroize::Zeroizing;
 
 pub const BACKUP_ENVELOPE_VERSION: u32 = 2;
 pub const MAX_BACKUP_ENTRIES: usize = 2_097_152;
-pub const MAX_BACKUP_ENTRY_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub const MAX_BACKUP_ENTRY_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 pub const MAX_BACKUP_TOTAL_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 pub const MAX_BACKUP_WRITE_CHUNK_BYTES: usize = 1024 * 1024;
 

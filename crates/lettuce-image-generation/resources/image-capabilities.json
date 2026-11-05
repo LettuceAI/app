@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "max_count": 8,
+  "max_count": 256,
   "negative_prompt_providers": ["sdcpp", "comfyui", "automatic1111", "diffusers"],
   "default_sizes": ["1024x1024"],
   "sizes": [

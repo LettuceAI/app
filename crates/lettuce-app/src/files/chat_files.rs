@@ -52,7 +52,7 @@ impl<'a, S: ?Sized> ChatFileCoordinator<'a, S> {
 /// The transcript's title, falling back past a blank header name, cut to the
 /// longest title a conversation takes.
 fn chat_title(chat: &lettuce_transfer::ChatJsonl, file_stem: Option<&str>) -> String {
-    const MAX_TITLE_BYTES: usize = 1024;
+    const MAX_TITLE_BYTES: usize = lettuce_types::limits::MAX_LABEL_BYTES;
     let mut title = [
         chat.metadata
             .as_ref()

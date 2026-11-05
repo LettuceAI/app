@@ -917,7 +917,7 @@ mod tests {
     }
 
     #[test]
-    fn oversized_preview_drafts_are_left_out_of_the_result() {
+    fn large_preview_drafts_are_kept_in_the_result() {
         use lettuce_conversations::ProposedToolCall;
         use lettuce_creation::{CreationOperation, CreationOperationOutcome};
         let text = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime);
@@ -950,7 +950,7 @@ mod tests {
         )
         .expect("render");
         output.validate().expect("bounded result");
-        assert!(output.value.get("draft").is_none());
+        assert!(output.value.get("draft").is_some());
         assert_eq!(output.value["action"], "show_preview");
     }
 }

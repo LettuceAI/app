@@ -11,7 +11,7 @@ use crate::{
 };
 
 const TOOL_VERSION: u32 = 1;
-const MAX_DONE_SUMMARY_BYTES: usize = 4096;
+const MAX_DONE_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_SUPERSEDED_MEMORIES: usize = 40;
 
 /// Runtime catalog keys for the text the memory tool contract sends to a model.

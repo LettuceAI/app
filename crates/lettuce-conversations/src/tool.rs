@@ -9,11 +9,11 @@ use crate::validation::{validate_text, validate_unique};
 use crate::{ReplayArtifactRef, ValidationError};
 
 pub const MAX_TOOL_NAME_BYTES: usize = 64;
-pub const MAX_TOOL_DESCRIPTION_BYTES: usize = 4096;
-pub const MAX_TOOL_SCHEMA_BYTES: usize = 64 * 1024;
-pub const MAX_TOOL_REQUEST_BYTES: usize = 1024 * 1024;
-pub const MAX_TOOL_ARGUMENT_BYTES: usize = 256 * 1024;
-pub const MAX_TOOL_RESULT_BYTES: usize = 1024 * 1024;
+pub const MAX_TOOL_DESCRIPTION_BYTES: usize = 1024 * 1024;
+pub const MAX_TOOL_SCHEMA_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_TOOL_REQUEST_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
+pub const MAX_TOOL_ARGUMENT_BYTES: usize = lettuce_types::limits::MAX_TOOL_ARGUMENT_BYTES;
+pub const MAX_TOOL_RESULT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 pub const MAX_PROVIDER_TOOL_CALL_ID_BYTES: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

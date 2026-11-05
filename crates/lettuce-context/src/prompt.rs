@@ -9,13 +9,12 @@ use std::collections::BTreeMap;
 
 use crate::lorebook::keyword_matches;
 
-pub const MAX_LABEL_BYTES: usize = 1024;
-pub const MAX_PROSE_BYTES: usize = 8 * 1024 * 1024;
-pub const MAX_AUTHORED_BYTES: usize = 64 * 1024 * 1024;
-pub const MAX_CHILDREN: usize = 10_000;
+pub const MAX_LABEL_BYTES: usize = lettuce_types::limits::MAX_LABEL_BYTES;
+pub const MAX_PROSE_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
+pub const MAX_AUTHORED_BYTES: usize = lettuce_types::limits::MAX_DOCUMENT_BYTES;
+pub const MAX_CHILDREN: usize = 50_000;
 pub const MAX_CONDITION_DEPTH: usize = 16;
 pub const MAX_CONDITION_NODES: usize = 256;
-const MAX_RENDER_VALUE_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -1990,7 +1989,6 @@ fn validate_render_values(
     purpose: PromptPurpose,
     values: &PromptRenderValues,
 ) -> Result<(), PromptRenderError> {
-    let mut total = 0_usize;
     for (variable, value) in &values.purpose_values {
         if value.is_empty() {
             continue;
@@ -2000,17 +1998,6 @@ fn validate_render_values(
                 variable: *variable,
                 purpose,
             });
-        }
-        if value.len() > MAX_RENDER_VALUE_BYTES {
-            return Err(PromptRenderError::RenderValueTooLarge {
-                variable: *variable,
-            });
-        }
-        total = total
-            .checked_add(value.len())
-            .ok_or(PromptRenderError::RenderValuesTooLarge)?;
-        if total > MAX_AUTHORED_BYTES {
-            return Err(PromptRenderError::RenderValuesTooLarge);
         }
     }
     Ok(())
@@ -2077,10 +2064,6 @@ pub enum PromptRenderError {
         variable: PromptVariable,
         purpose: PromptPurpose,
     },
-    #[error("prompt render value {variable:?} exceeds the 1 MiB limit")]
-    RenderValueTooLarge { variable: PromptVariable },
-    #[error("prompt render values exceed the 8 MiB limit")]
-    RenderValuesTooLarge,
 }
 
 pub fn render_prompt(
@@ -3080,6 +3063,21 @@ mod tests {
             .validate()
             .is_ok()
         );
+    }
+
+    #[test]
+    fn large_runtime_values_are_rendered_in_full() {
+        let mut document = document(PromptEntry {
+            name: "Scene context".into(),
+            content: "{{recent_messages}}".into(),
+            ..PromptEntry::default()
+        });
+        document.purpose = PromptPurpose::SceneGeneration;
+        let recent = "🌍".repeat(512 * 1024);
+        let mut context = PromptRenderContext::default();
+        context.values.purpose_values.insert(PromptVariable::RecentMessages, recent.clone());
+        let rendered = render_prompt(&document, &context).expect("render large context");
+        assert_eq!(rendered.relative[0].content, recent);
     }
 
     #[test]

@@ -183,6 +183,6 @@ mod tests {
         assert!(local.samplers.contains(&"euler_a".to_owned()));
         assert!(local.schedulers.contains(&"karras".to_owned()));
         assert!(local.quality.is_empty());
-        assert_eq!(local.max_count, 8);
+        assert_eq!(local.max_count, crate::MAX_IMAGE_COUNT);
     }
 }

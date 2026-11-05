@@ -312,7 +312,7 @@ impl<
                         request.initial_lorebook_name,
                         request
                             .target_count
-                            .map(|count| count.clamp(5, 50))
+                            .map(|count| count.clamp(lettuce_creation::MIN_STAGED_LOREBOOK_TARGET_COUNT, lettuce_creation::MAX_STAGED_LOREBOOK_TARGET_COUNT))
                             .unwrap_or(run.project.target_count),
                         request.excerpts,
                         request.now,
@@ -358,7 +358,7 @@ impl<
             initial_lorebook_name: request.initial_lorebook_name,
             target_count: request
                 .target_count
-                .map(|count| count.clamp(5, 50))
+                .map(|count| count.clamp(lettuce_creation::MIN_STAGED_LOREBOOK_TARGET_COUNT, lettuce_creation::MAX_STAGED_LOREBOOK_TARGET_COUNT))
                 .unwrap_or(target_count),
             excerpts: request.excerpts,
             planner_profile,

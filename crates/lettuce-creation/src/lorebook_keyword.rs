@@ -540,7 +540,7 @@ mod tests {
     #[test]
     fn first_writer_call_normalizes_and_caps_keywords() {
         let mut keywords = vec![json!(" Mira "), json!("mira"), json!(""), json!(7)];
-        keywords.extend((0..30).map(|index| json!(format!("key-{index}"))));
+        keywords.extend((0..MAX_GENERATED_LOREBOOK_KEYWORDS + 10).map(|index| json!(format!("key-{index}"))));
         let result = reduce_lorebook_keyword_calls(&[
             call("ignored", json!({})),
             call(

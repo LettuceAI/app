@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CreationDraft, CreationLorebookEntry, CreationScene, CreationStage};
 
-pub const MAX_CREATION_OPERATIONS: usize = 64;
-pub const MAX_CREATION_PROPOSAL_BYTES: usize = 128 * 1024 * 1024;
+pub const MAX_CREATION_OPERATIONS: usize = 1024;
+pub const MAX_CREATION_PROPOSAL_BYTES: usize = lettuce_types::limits::MAX_DOCUMENT_BYTES;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]

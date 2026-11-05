@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use lettuce_platform::{EspeakNgError, EspeakPhonemizer};
 use serde::Deserialize;
 
-const MAX_TEXT_BYTES: usize = 64 * 1024;
-const MAX_TOKENS: usize = 65_536;
+const MAX_TEXT_BYTES: usize = 1024 * 1024;
+const MAX_TOKENS: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KokoroPhonemizationInput {

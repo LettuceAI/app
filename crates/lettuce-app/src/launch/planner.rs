@@ -47,7 +47,7 @@ use super::request::{
 };
 use crate::BuiltInPromptId;
 
-const MAX_DISPLAY_BYTES: usize = 1024;
+const MAX_DISPLAY_BYTES: usize = lettuce_types::limits::MAX_LABEL_BYTES;
 
 pub(crate) fn dynamic_memory_policy_snapshot(
     mode: lettuce_conversations::MemoryModeSnapshot,

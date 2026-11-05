@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(excerpts[1].source_id, "src_02");
         assert_eq!(excerpts[1].asset_id, Some(text_id));
         assert_eq!(excerpts[1].content, "# World 🌍\nHarbour notes");
-        let body = "🌍".repeat(20_001);
+        let body = "🌍".repeat(lettuce_creation::MAX_STAGED_LOREBOOK_EXCERPT_CHARS + 1);
         let mixed = prepare_staged_lorebook_intake(
             &store,
             &[
@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(mixed[0].label, "Preface");
         assert_eq!(
             mixed[0].content,
-            format!("{}\n[…truncated]", "🌍".repeat(20_000))
+            format!("{}\n[…truncated]", "🌍".repeat(lettuce_creation::MAX_STAGED_LOREBOOK_EXCERPT_CHARS))
         );
         assert_eq!(mixed[1].content, excerpts[0].content);
         assert_eq!(mixed[2].content, "End notes");

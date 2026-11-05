@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-const MAX_NAME_BYTES: usize = 1024;
+const MAX_NAME_BYTES: usize = lettuce_types::limits::MAX_LABEL_BYTES;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ChatTemplateTransferError {
@@ -130,7 +130,7 @@ mod tests {
                 .name,
             long
         );
-        let json = serde_json::json!({ "name": "n".repeat(1025), "messages": [] }).to_string();
+        let json = serde_json::json!({ "name": "n".repeat(super::MAX_NAME_BYTES + 1), "messages": [] }).to_string();
         assert_eq!(
             parse_chat_template_import(&json),
             Err(ChatTemplateTransferError::NameTooLong)

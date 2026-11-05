@@ -382,7 +382,7 @@ export function LorebooksPage() {
                         <NumberInput
                           className="w-32"
                           min={256}
-                          max={32768}
+                          max={262144}
                           step={128}
                           value={
                             settings.lorebook_generator.max_output_tokens ??

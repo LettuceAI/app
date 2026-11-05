@@ -104,8 +104,8 @@ export const emptyBrief = (): BriefDraft => ({
   step: "start",
 });
 export const briefDraftKey = ["lorebook-brief"] as const;
-export const fileLimit = 50 * 1024 * 1024;
-export const totalSourceLimit = 200 * 1024 * 1024;
+export const fileLimit = 256 * 1024 * 1024;
+export const totalSourceLimit = 1024 * 1024 * 1024;
 export function sourceBytes(texts: PastedSource[], documents: DocumentSource[]) {
   return (
     texts.reduce((sum, value) => sum + new TextEncoder().encode(value.text).byteLength, 0) +

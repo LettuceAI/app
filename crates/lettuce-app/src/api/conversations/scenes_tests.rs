@@ -913,6 +913,24 @@ async fn group_scene_prompts_use_the_message_author_even_when_the_cast_changes()
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn scene_images_keep_large_generated_context_and_prompts() {
+    let scene = scene_harness(Reply::Text(TAGGED), vec![Outcome::Image], SceneGenerationMode::Manual);
+    let context = &scene.harness.context;
+    let prompt = "Scene detail. ".repeat(160_000);
+    let (_, reply) = reply_with_scene(&scene.harness, "large-scene").await;
+    let accepted = message_scene_image_generate(context, dto::MessageSceneImageGenerateRequest {
+        client_operation_id: uuid::Uuid::new_v4().to_string(), message_id: reply,
+        prompt: prompt.clone(), cast: None,
+    }).await.expect("large scene is admitted");
+    run_jobs(context).await;
+    let job = job_get(context, dto::JobGetRequest { job_id: accepted.job_id }).await.expect("job");
+    assert_eq!(job.state, dto::JobStateDto::Succeeded, "{job:?}");
+    let prompts = scene.images.prompts.lock().expect("prompts");
+    assert_eq!(prompts.len(), 1);
+    assert!(prompts[0].contains(prompt.trim()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn scene_images_use_the_selected_generation_prompt() {
     let scene = scene_harness(Reply::Text(TAGGED), vec![Outcome::Image], SceneGenerationMode::Manual);
     let context = &scene.harness.context;

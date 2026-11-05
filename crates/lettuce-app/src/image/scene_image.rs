@@ -22,7 +22,7 @@ use crate::image::scene_cast::{
 };
 use crate::{BuiltInPromptId, ImageFeature, ImageFeatureModelError, image_feature_model};
 
-const MAX_INPUT_IMAGES: usize = 16;
+const MAX_INPUT_IMAGES: usize = lettuce_image_generation::MAX_INPUT_IMAGES;
 const DEFAULT_SIZE: &str = "1024x1024";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -738,13 +738,13 @@ mod tests {
         let many = subject(
             "Mira",
             None,
-            (0..12).map(|_| AssetId::new()).collect(),
+            (0..MAX_INPUT_IMAGES / 2).map(|_| AssetId::new()).collect(),
             None,
         );
         let crowd = persona(subject(
             "Sol",
             None,
-            (0..12).map(|_| AssetId::new()).collect(),
+            (0..MAX_INPUT_IMAGES / 2).map(|_| AssetId::new()).collect(),
             None,
         ));
         let (prompt, inputs) = remote_scene_prompt(
@@ -754,7 +754,7 @@ mod tests {
             Some("the persona"),
         );
         assert_eq!(inputs.len(), MAX_INPUT_IMAGES);
-        assert!(prompt.contains("attached images 14-16 is the saved persona design reference"));
+        assert!(prompt.contains(&format!("attached images {}-{} is the saved persona design reference", MAX_INPUT_IMAGES / 2 + 2, MAX_INPUT_IMAGES)));
     }
 
     #[test]
@@ -762,7 +762,7 @@ mod tests {
         let text = RuntimeText::from_seed(BuiltInPromptId::ChatRuntime);
         let background = AssetId::new();
         let mira = subject("Mira", None, (0..8).map(|_| AssetId::new()).collect(), None);
-        let tom = subject("Tom", None, (0..8).map(|_| AssetId::new()).collect(), None);
+        let tom = subject("Tom", None, (0..MAX_INPUT_IMAGES).map(|_| AssetId::new()).collect(), None);
         let ada = subject("Ada", None, Vec::new(), None);
         let sol = persona(subject("Sol", None, vec![AssetId::new()], None));
         let (prompt, inputs) = remote_scene_prompt(
@@ -773,10 +773,10 @@ mod tests {
         );
         assert_eq!(inputs.len(), MAX_INPUT_IMAGES);
         assert_eq!(&inputs[..8], &mira.references[..]);
-        assert_eq!(inputs[15], background);
+        assert_eq!(inputs[MAX_INPUT_IMAGES - 1], background);
         assert!(prompt.contains("attached images 1-8 is the saved character design reference for Mira"));
-        assert!(prompt.contains("attached images 9-15 is the saved character design reference for Tom"));
-        assert!(prompt.contains("attached image 16 is the chat background"));
+        assert!(prompt.contains(&format!("attached images 9-{} is the saved character design reference for Tom", MAX_INPUT_IMAGES - 1)));
+        assert!(prompt.contains(&format!("attached image {} is the chat background", MAX_INPUT_IMAGES)));
         assert!(prompt.contains(
             "Only Mira and Tom have reference images attached. Do not invent Ada and Sol from their appearance."
         ));

@@ -242,10 +242,10 @@ fn apply(
         dto::SettingsPatch::LorebookGenerator { value } => {
             if value
                 .default_target_count
-                .is_some_and(|count| !(5..=50).contains(&count))
+                .is_some_and(|count| !(5..=500).contains(&count))
                 || value
                     .max_output_tokens
-                    .is_some_and(|count| !(256..=32768).contains(&count))
+                    .is_some_and(|count| !(256..=262144).contains(&count))
             {
                 return Err(invalid_field(
                     "lorebook_generator",

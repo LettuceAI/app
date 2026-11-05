@@ -11,8 +11,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub const MIN_STAGED_LOREBOOK_TARGET_COUNT: u32 = 5;
-pub const MAX_STAGED_LOREBOOK_TARGET_COUNT: u32 = 50;
-pub const MAX_STAGED_LOREBOOK_EXCERPT_CHARS: usize = 20_000;
+pub const MAX_STAGED_LOREBOOK_TARGET_COUNT: u32 = 500;
+pub const MAX_STAGED_LOREBOOK_EXCERPT_CHARS: usize = 200_000;
 pub const STAGED_LOREBOOK_DRAFT_BATCH_SIZE: usize = 3;
 pub const STAGED_LOREBOOK_PLANNER_TOOL_NAME: &str = "propose_lorebook_outline";
 /// Runtime catalog keys of the staged generator's model-facing text.

@@ -19,7 +19,7 @@ use tokenizers::Tokenizer;
 
 use crate::onnx::{OnnxRuntimeLink, initialize_onnx_runtime, spawn_canceller};
 
-const MAX_INPUT_BYTES: usize = 1024 * 1024;
+const MAX_INPUT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 const WINDOWS_PER_RUN: usize = 8;
 const PROBABILITIES_OUTPUT: &str = "probabilities";
 const BOS_TOKEN: &str = "<s>";

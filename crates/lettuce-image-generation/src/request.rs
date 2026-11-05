@@ -5,9 +5,8 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const MAX_IMAGE_COUNT: u32 = 10;
-pub const MAX_INPUT_IMAGES: usize = 16;
-pub const MAX_PROMPT_BYTES: usize = 64 * 1024;
+pub const MAX_IMAGE_COUNT: u32 = 256;
+pub const MAX_INPUT_IMAGES: usize = 256;
 const MAX_OPTION_BYTES: usize = 64;
 
 /// Which part of the app asked for the image, recorded as the usage source;
@@ -73,8 +72,6 @@ pub struct ImageGenerationRequest {
 pub enum ImageRequestValidationError {
     #[error("Prompt cannot be empty")]
     EmptyPrompt,
-    #[error("image prompt is too long")]
-    PromptTooLong,
     #[error("image count must be between 1 and {MAX_IMAGE_COUNT}")]
     Count,
     #[error("at most {MAX_INPUT_IMAGES} input images are allowed")]
@@ -91,9 +88,6 @@ impl ImageGenerationRequest {
     pub fn validate(&self) -> Result<(), ImageRequestValidationError> {
         if self.prompt.trim().is_empty() {
             return Err(ImageRequestValidationError::EmptyPrompt);
-        }
-        if self.prompt.len() > MAX_PROMPT_BYTES {
-            return Err(ImageRequestValidationError::PromptTooLong);
         }
         if !(1..=MAX_IMAGE_COUNT).contains(&self.count) {
             return Err(ImageRequestValidationError::Count);
@@ -273,6 +267,23 @@ mod tests {
             output_policy: ImageOutputPolicy::Retained,
             created_at: TimestampMillis::new(10),
         }
+    }
+
+    #[test]
+    fn large_prompts_and_256_images_are_accepted_without_truncation() {
+        let request = ImageGenerationRequest {
+            prompt: "🌍".repeat(512 * 1024),
+            input_images: (0..256).map(|_| AssetId::new()).collect(),
+            count: 256,
+            ..request()
+        };
+        assert_eq!(request.validate(), Ok(()));
+        assert_eq!(request.prompt.len(), 2 * 1024 * 1024);
+        let too_many = ImageGenerationRequest {
+            input_images: (0..257).map(|_| AssetId::new()).collect(),
+            ..request
+        };
+        assert_eq!(too_many.validate(), Err(ImageRequestValidationError::TooManyInputImages));
     }
 
     #[test]

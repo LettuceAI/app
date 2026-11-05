@@ -32,9 +32,9 @@ function Profile({ value, onChange }: { value: Value; onChange: Change }) {
         <AccordionItem value="tune" title={t("memory.profile.advanced")} description={t("memory.profile.advancedBody")}>
           <ListGroup>
             {whole(t("memory.profile.interval"), t("memory.profile.intervalBody"), "summary_message_interval", 5, 200, 1)}
-            {whole(t("memory.profile.maxEntries"), t("memory.profile.maxEntriesBody"), "max_entries", 10, 2000, 10)}
-            {whole(t("memory.profile.hotBudget"), t("memory.profile.hotBudgetBody"), "hot_memory_token_budget", 512, 32768, 512)}
-            {whole(t("memory.profile.retrievalLimit"), t("memory.profile.retrievalLimitBody"), "retrieval_limit", 1, 20, 1)}
+            {whole(t("memory.profile.maxEntries"), t("memory.profile.maxEntriesBody"), "max_entries", 10, 65536, 10)}
+            {whole(t("memory.profile.hotBudget"), t("memory.profile.hotBudgetBody"), "hot_memory_token_budget", 512, 262144, 512)}
+            {whole(t("memory.profile.retrievalLimit"), t("memory.profile.retrievalLimitBody"), "retrieval_limit", 1, 4096, 1)}
             <ListRow
               title={t("memory.profile.similarity")}
               description={similarity === null ? t("memory.profile.similarityDefault") : t("memory.profile.similarityBody")}

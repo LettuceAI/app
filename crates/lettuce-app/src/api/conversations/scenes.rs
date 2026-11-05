@@ -34,7 +34,8 @@ fn conversation_of(
     .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the message was not found"))
 }
 
-fn storage() -> ApiError {
+fn storage(error: impl std::fmt::Display) -> ApiError {
+    tracing::error!(%error, "scene image storage operation failed");
     api_error(
         ApiErrorCode::Internal,
         "the scene image follow-up could not be read",
@@ -81,7 +82,7 @@ fn view(
         .request_id
         .map(|request_id| {
             crate::job_of_scene_image_request(context.backend().database(), request_id)
-                .map_err(|_| storage())
+                .map_err(storage)
                 .map(|job| job.map(|job| job.id.to_string()))
         })
         .transpose()?
@@ -127,7 +128,7 @@ pub(super) fn views(
             .filter_map(|item| target_of(item))
             .collect::<Vec<_>>(),
     )
-    .map_err(|_| storage())?;
+    .map_err(storage)?;
     let mut views = HashMap::new();
     for follow_up in follow_ups {
         if let Some(view) = view(context, &follow_up)? {
@@ -174,7 +175,7 @@ fn image_error(error: SceneImageFollowUpError) -> ApiError {
         SceneImageFollowUpError::Image(error) => {
             api_error(ApiErrorCode::Internal, error.to_string())
         }
-        SceneImageFollowUpError::Storage { .. } => storage(),
+        SceneImageFollowUpError::Storage { reason } => storage(reason),
     }
 }
 
@@ -244,7 +245,7 @@ pub async fn message_scene_image_generate(
     let job_id = context
         .blocking(move |context| {
             let database = context.backend().database();
-            if let Some(prior) = database.job_operation(&key).map_err(|_| storage())? {
+            if let Some(prior) = database.job_operation(&key).map_err(storage)? {
                 if prior.request_digest != digest {
                     return Err(api_error(
                         ApiErrorCode::Conflict,
@@ -273,9 +274,15 @@ pub async fn message_scene_image_generate(
                 context.now(),
             )
             .map_err(|error| image_error(SceneImageFollowUpError::Image(error)))?;
+            let prompt_bytes = request.prompt.len();
+            let input_images = request.input_images.len();
+            let model_profile_id = request.model_profile_id;
             let (request, spec) = crate::ImageGenerationCoordinator::new(database, database)
                 .plan_admission(request, database)
-                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+                .map_err(|error| {
+                    tracing::warn!(%message_id, %conversation_id, %model_profile_id, prompt_bytes, input_images, %error, "scene image admission failed");
+                    crate::api::image::admission_error(error)
+                })?;
             database
                 .admit_manual_scene_image(lettuce_database::ManualSceneImageAdmission {
                     spec,
@@ -297,7 +304,7 @@ pub async fn message_scene_image_generate(
                     lettuce_jobs::StoreError::ResourceUnavailable => {
                         api_error(ApiErrorCode::Busy, "the scene image is being generated")
                     }
-                    _ => storage(),
+                    error => storage(error),
                 })
         })
         .await?;
@@ -345,7 +352,7 @@ pub async fn message_scene_image_approve(
                 )) => {
                     let follow_up = database
                         .get_follow_up(conversation_id, target)
-                        .map_err(|_| storage())?
+                        .map_err(storage)?
                         .and_then(|follow_up| follow_up.request_id);
                     let job = follow_up
                         .map(|request_id| follow_ups.job_of_request(request_id))
@@ -378,7 +385,7 @@ pub async fn message_scene_image_dismiss(
             let database = context.backend().database();
             let Some(follow_up) = database
                 .get_follow_up(conversation_id, target)
-                .map_err(|_| storage())?
+                .map_err(storage)?
             else {
                 return Ok(());
             };
@@ -402,7 +409,7 @@ pub async fn message_scene_image_dismiss(
                             },
                             context.now(),
                         )
-                        .map_err(|_| storage())?;
+                        .map_err(storage)?;
                     Ok(())
                 }
             }
@@ -448,7 +455,7 @@ pub async fn message_scene_cast(
                 .conversation;
             let stored = database
                 .get_follow_up(conversation_id, target)
-                .map_err(|_| storage())?
+                .map_err(storage)?
                 .and_then(|follow_up| follow_up.cast);
             let chosen = crate::image::scene_cast::scene_cast(
                 database,
@@ -518,7 +525,7 @@ pub(in crate::api) fn start_auto(
     let database = context.backend().database();
     let Some(follow_up) = database
         .get_follow_up(conversation_id, target)
-        .map_err(|_| storage())?
+        .map_err(storage)?
     else {
         return Ok(());
     };
@@ -582,7 +589,7 @@ pub(in crate::api) fn fail_follow_up(
             },
             now,
         )
-        .map_err(|_| storage())?;
+        .map_err(storage)?;
     Ok(())
 }
 
@@ -601,7 +608,7 @@ pub(in crate::api) fn recover(context: &ApiContext) -> Result<(), ApiError> {
                 SceneFollowUpState::Running,
                 SceneFollowUpState::Pending,
             ])
-            .map_err(|_| storage())?;
+            .map_err(storage)?;
         let mut failure = None;
         for follow_up in follow_ups {
             if follow_up.state == SceneFollowUpState::Pending

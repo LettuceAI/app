@@ -2,8 +2,8 @@ use lettuce_types::{Revision, TimestampMillis};
 
 use crate::ValidationError;
 
-pub(crate) const MAX_NAME_BYTES: usize = 1024;
-pub(crate) const MAX_TEXT_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_NAME_BYTES: usize = lettuce_types::limits::MAX_LABEL_BYTES;
+pub(crate) const MAX_TEXT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
 pub(crate) fn validate_revision_timestamps(
     field: &'static str,

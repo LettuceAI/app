@@ -8,7 +8,7 @@ export function NameField({ form, update, focus }: FormProps & { focus?: boolean
   const { t } = useTranslation("characters");
   const { setProfile } = draftSetters(update);
   return <Field label={t("identity.name")} required hint={t("identity.nameHint")}>
-    <Input value={form.draft.profile.name} maxLength={200} placeholder={t("identity.namePlaceholder")} onChange={(event) => setProfile({ name: event.target.value })} {...(focus ? { "data-autofocus": true } : {})} />
+    <Input value={form.draft.profile.name} placeholder={t("identity.namePlaceholder")} onChange={(event) => setProfile({ name: event.target.value })} {...(focus ? { "data-autofocus": true } : {})} />
   </Field>;
 }
 

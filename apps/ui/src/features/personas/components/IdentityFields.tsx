@@ -50,10 +50,10 @@ export function IdentityFields({ api, form, update, disabled = false, autoFocus 
       </div>
       <div className="w-full min-w-0 space-y-4 @xl:flex-1">
         <Field label={t("identity.name")} required hint={t("identity.nameHint")}>
-          <Input value={draft.title} maxLength={200} placeholder={t("identity.namePlaceholder")} onChange={(event) => setDraft({ title: event.target.value })} {...(autoFocus ? { "data-autofocus": true } : {})} />
+          <Input value={draft.title} placeholder={t("identity.namePlaceholder")} onChange={(event) => setDraft({ title: event.target.value })} {...(autoFocus ? { "data-autofocus": true } : {})} />
         </Field>
         <Field label={t("identity.nickname")} hint={t("identity.nicknameHint")}>
-          <Input value={draft.nickname ?? ""} maxLength={200} placeholder={t("identity.nicknamePlaceholder")} onChange={(event) => setDraft({ nickname: event.target.value })} />
+          <Input value={draft.nickname ?? ""} placeholder={t("identity.nicknamePlaceholder")} onChange={(event) => setDraft({ nickname: event.target.value })} />
         </Field>
       </div>
     </div>

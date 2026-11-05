@@ -2859,6 +2859,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
  "whoami",
@@ -3136,6 +3137,7 @@ name = "lettuce-network"
 version = "3.0.0"
 dependencies = [
  "lettuce-settings",
+ "lettuce-types",
  "reqwest 0.12.28",
  "thiserror 2.0.20",
  "tokio",

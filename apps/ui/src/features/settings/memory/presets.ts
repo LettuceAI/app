@@ -33,5 +33,5 @@ export const basisPointsToDecimal = (basisPoints: number) => basisPoints / 10000
 export const decimalToBasisPoints = (decimal: number) => Math.round(decimal * 10000);
 
 export const customThresholdBasisPoints = 3500;
-export const capacities = [1024, 2048, 4096] as const;
+export const capacities = [1024, 2048, 4096, 16384, 65536] as const;
 export const defaultCapacity = 4096;

@@ -1,7 +1,7 @@
 use crate::{MAX_STAGED_LOREBOOK_EXCERPT_CHARS, StagedLorebookSourceExcerpt};
 
-pub const MAX_STAGED_LOREBOOK_SOURCE_BYTES: usize = 50 * 1024 * 1024;
-pub const MAX_STAGED_LOREBOOK_TOTAL_SOURCE_BYTES: usize = 200 * 1024 * 1024;
+pub const MAX_STAGED_LOREBOOK_SOURCE_BYTES: usize = lettuce_types::limits::MAX_DOCUMENT_BYTES;
+pub const MAX_STAGED_LOREBOOK_TOTAL_SOURCE_BYTES: usize = 1024 * 1024 * 1024;
 pub const STAGED_LOREBOOK_TRUNCATION_MARKER: &str = "\n[…truncated]";
 
 pub enum StagedLorebookSourceInput<'a> {

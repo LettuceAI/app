@@ -2299,11 +2299,13 @@ mod tests {
         let handle = job_handle(&database);
         let profile = profile();
         let attempt_id = setup(&database, &handle, &profile);
+        let per_round = lettuce_creation::MAX_CREATION_OPERATIONS / 4 + 1;
+        let last_round = lettuce_creation::MAX_CREATION_OPERATIONS - 3 * per_round;
         let outcomes = (0..4)
             .map(|round| {
                 Ok(outcome(
                     Vec::new(),
-                    (0..20)
+                    (0..per_round)
                         .map(|index| {
                             tool_call(
                                 "set_name",
@@ -2339,11 +2341,11 @@ mod tests {
                 .iter()
                 .map(|round| round.calls.len())
                 .collect::<Vec<_>>(),
-            [20, 20, 20, 4]
+            [per_round, per_round, per_round, last_round]
         );
         assert!(matches!(
             result.proposal.as_ref().map(|proposal| &proposal.draft),
-            Some(CreationDraft::Persona { name, .. }) if name.as_deref() == Some("Navigator 3-3")
+            Some(CreationDraft::Persona { name, .. }) if name.as_deref() == Some(format!("Navigator 3-{}", last_round - 1).as_str())
         ));
     }
 

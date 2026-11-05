@@ -11,8 +11,8 @@ use crate::{
     LegacyBackupScheduledNotePlan,
 };
 
-const JSON_LIMIT: usize = 128 * 1024 * 1024;
-const TEXT_LIMIT: usize = 8 * 1024 * 1024;
+const JSON_LIMIT: usize = lettuce_types::limits::MAX_DOCUMENT_BYTES;
+const TEXT_LIMIT: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
 #[derive(Debug)]
 pub struct LegacyBackupCompanionSharedMemoryPlan {

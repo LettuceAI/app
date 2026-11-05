@@ -23,7 +23,7 @@ use lettuce_settings::SecretStore;
 /// The largest buffered provider reply read into memory. A non-streamed
 /// reply can carry base64 images, so the cap is far above the network
 /// default while staying under the largest blob the media store accepts.
-const MAX_PROVIDER_RESPONSE_BYTES: usize = 256 * 1024 * 1024;
+const MAX_PROVIDER_RESPONSE_BYTES: usize = 512 * 1024 * 1024;
 const _: () = assert!(MAX_PROVIDER_RESPONSE_BYTES as u64 <= lettuce_media::MAX_MEDIA_BLOB_BYTES);
 
 /// Application-facing provider operations. It owns one configured HTTP client

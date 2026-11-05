@@ -106,7 +106,7 @@ pub struct ComfyUiConfig {
     pub img2img_workflow: Option<String>,
 }
 
-const MAX_COMFYUI_WORKFLOW_BYTES: usize = 4 * 1024 * 1024;
+const MAX_COMFYUI_WORKFLOW_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
 /// The custom (OpenAI- or Anthropic-format) provider settings.
 /// `models_path` being `None` means model fetching is disabled.
@@ -454,8 +454,8 @@ pub fn validate_provider_connection(
         if image.url_path.is_none() && image.b64_path.is_none() {
             return Err(ProviderConnectionValidationError::Path);
         }
-        if image.extra_body.len() > 128 || serde_json::to_vec(&image.extra_body)
-            .map_or(true, |bytes| bytes.len() > 64 * 1024)
+        if image.extra_body.len() > 4096 || serde_json::to_vec(&image.extra_body)
+            .map_or(true, |bytes| bytes.len() > lettuce_types::limits::MAX_TEXT_BYTES)
         {
             return Err(ProviderConnectionValidationError::Path);
         }

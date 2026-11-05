@@ -20,7 +20,7 @@ use crate::{
 
 /// The largest file `read` buffers; it equals the media blob guard so any
 /// stored object can be read whole.
-pub const MAX_MANAGED_READ_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+pub const MAX_MANAGED_READ_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 pub(crate) const MAX_RECOVERY_ARTIFACTS: usize = 256;
 pub(crate) const MAX_RECOVERY_DEPTH: usize = 16;
 pub(crate) const MAX_LIST_ENTRIES: usize = 1024;

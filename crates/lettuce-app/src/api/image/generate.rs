@@ -61,12 +61,11 @@ pub(super) fn lora(value: &dto::ImageLora) -> StableDiffusionLora {
     }
 }
 
-fn admission_error(error: ImageGenerationError) -> ApiError {
+pub(crate) fn admission_error(error: ImageGenerationError) -> ApiError {
     match error {
         ImageGenerationError::Invalid(error) => {
             let field = match error {
-                ImageRequestValidationError::EmptyPrompt
-                | ImageRequestValidationError::PromptTooLong => "prompt",
+                ImageRequestValidationError::EmptyPrompt => "prompt",
                 ImageRequestValidationError::Count => "count",
                 ImageRequestValidationError::TooManyInputImages => "input_images",
                 ImageRequestValidationError::Field(field) => field,

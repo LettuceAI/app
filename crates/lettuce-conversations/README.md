@@ -96,7 +96,7 @@ Snapshot documents are structural copies of authored values: media is an `AssetI
 
 Launch snapshots and provider replay payloads are stored as immutable artifacts. Conversation rows hold only references: `ProtectedSnapshotRef` (source, source revision, artifact id, digest, schema version, size) and `ReplayArtifactRef` (id, digest, schema, codec, retention, size). No provider payload bytes appear in rows or public DTOs.
 
-The bytes travel as `ProtectedArtifactBytes`: bounded (128 MiB), redacted in `Debug`, not serializable and zeroized on drop. Three separate capabilities reach them:
+The bytes travel as `ProtectedArtifactBytes`: bounded (256 MiB), redacted in `Debug`, not serializable and zeroized on drop. Three separate capabilities reach them:
 
 - `ConversationArtifactStore`, reachable from the full repository, puts snapshot and replay payloads immutably by identity and digest (the same payload deduplicates, a different one conflicts) and offers verification and orphan cleanup. It is used for launch, replay finalization and retention work.
 - `ProviderReplayArtifactPort` lets a trusted provider adapter stage, verify and materialize exact provider-native replay bytes, for example signed reasoning that must be sent back verbatim.

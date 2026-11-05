@@ -3,6 +3,7 @@
 mod error;
 mod hash;
 mod id;
+pub mod limits;
 mod paging;
 mod revision;
 mod time;

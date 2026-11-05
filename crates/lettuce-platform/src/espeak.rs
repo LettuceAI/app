@@ -5,8 +5,8 @@ use std::{
     thread,
 };
 
-const MAX_ESPEAK_INPUT_BYTES: usize = 64 * 1024;
-pub(crate) const MAX_ESPEAK_OUTPUT_BYTES: usize = 1024 * 1024;
+const MAX_ESPEAK_INPUT_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_ESPEAK_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct EspeakNgProcess {

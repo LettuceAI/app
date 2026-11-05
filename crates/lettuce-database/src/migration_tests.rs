@@ -28,6 +28,51 @@ fn recorded_migrations(connection: &Connection) -> Vec<(u32, String, i64)> {
 }
 
 #[test]
+fn migration_26_preserves_existing_content_and_database_guards() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let old: Vec<_> = MIGRATIONS.iter().copied().filter(|migration| migration.id <= 25).collect();
+    apply_migrations(&mut connection, &old).expect("old schema");
+    connection.execute("INSERT INTO device_ui_state VALUES (1, '{\"theme\":\"dark\"}', 42)", []).expect("existing settings");
+    let history = recorded_migrations(&connection);
+    let objects = |connection: &Connection| -> Vec<(String, String)> {
+        connection.prepare("SELECT type,name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").expect("schema")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?))).expect("objects")
+            .collect::<Result<_, _>>().expect("schema objects")
+    };
+    let before = objects(&connection);
+    apply_migrations(&mut connection, MIGRATIONS).expect("upgrade");
+    assert_eq!(objects(&connection), before);
+    assert_eq!(&recorded_migrations(&connection)[..history.len()], history.as_slice());
+    let settings: (String, i64) = connection.query_row("SELECT state_json,updated_at FROM device_ui_state WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?))).expect("settings");
+    assert_eq!(settings, ("{\"theme\":\"dark\"}".into(), 42));
+    let large = serde_json::json!({"saved_presets": "x".repeat(512 * 1024)}).to_string();
+    connection.execute("UPDATE device_ui_state SET state_json=?1 WHERE id=1", [&large]).expect("preferences above the former limit");
+    assert!(connection.execute("UPDATE device_ui_state SET state_json='[]' WHERE id=1", []).is_err());
+    assert!(connection.execute("INSERT INTO user_voices(id,provider_id,name,model_id,voice_id,revision,created_at,updated_at) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','Voice','model','voice',1,0,0)", []).is_err());
+    assert_eq!(connection.query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0)).expect("enforcement"), 1);
+    assert!(connection.prepare("PRAGMA foreign_key_check").expect("check").query([]).expect("rows").next().expect("next").is_none());
+    assert_eq!(connection.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0)).expect("integrity"), "ok");
+    let upgraded = recorded_migrations(&connection);
+    apply_migrations(&mut connection, MIGRATIONS).expect("repeat startup");
+    assert_eq!(recorded_migrations(&connection), upgraded);
+}
+
+#[test]
+fn failed_table_rebuild_rolls_back_and_restores_foreign_keys() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let old: Vec<_> = MIGRATIONS.iter().copied().filter(|migration| migration.id <= 25).collect();
+    apply_migrations(&mut connection, &old).expect("old schema");
+    connection.execute("INSERT INTO device_ui_state VALUES (1, '{}', 42)", []).expect("settings");
+    let failed = super::Migration { id: 26, sql: "DROP TABLE device_ui_state; SELECT * FROM missing_table;" };
+    assert!(apply_migrations(&mut connection, &[failed]).is_err());
+    assert_eq!(connection.query_row("SELECT updated_at FROM device_ui_state WHERE id=1", [], |row| row.get::<_, i64>(0)).expect("rolled back row"), 42);
+    assert_eq!(connection.query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0)).expect("enforcement restored"), 1);
+    assert_eq!(recorded_migrations(&connection).len(), 25);
+}
+
+#[test]
 fn migration_23_upgrades_a_file_without_rewriting_existing_groups_or_checksums() {
     let path = std::env::temp_dir().join(format!("lettuce-migration-23-{}.db", GroupId::new()));
     let group_id = GroupId::new();

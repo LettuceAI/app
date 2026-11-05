@@ -437,9 +437,9 @@ pub struct DynamicMemoryPolicySnapshot {
 impl DynamicMemoryPolicySnapshot {
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.max_entries == 0
-            || self.max_entries > 4_096
+            || self.max_entries > 65_536
             || self.retrieval_limit == 0
-            || self.retrieval_limit > 256
+            || self.retrieval_limit > 4096
             || [
                 self.min_similarity_basis_points.unwrap_or(0),
                 self.cold_threshold_basis_points,

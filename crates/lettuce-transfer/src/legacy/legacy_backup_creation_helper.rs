@@ -11,7 +11,7 @@ use crate::{
 };
 
 const JSON_LIMIT: usize = 256 * 1024 * 1024;
-const TEXT_LIMIT: usize = 8 * 1024 * 1024;
+const TEXT_LIMIT: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 const INLINE_IMAGE_LIMIT: usize = 64 * 1024 * 1024;
 
 #[derive(Debug)]

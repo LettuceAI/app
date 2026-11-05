@@ -9,9 +9,9 @@ pub const MAX_TRANSCRIPTION_AUDIO_SAMPLES: usize = i32::MAX as usize;
 const MAX_MODEL_ID_SCALARS: usize = 128;
 const MAX_LANGUAGE_SCALARS: usize = 32;
 const MAX_SCOPE_SCALARS: usize = 64;
-const MAX_PROMPT_SCALARS: usize = 2_048;
-const MAX_RESULT_TEXT_SCALARS: usize = 1_000_000;
-pub(crate) const MAX_SEGMENTS: usize = 100_000;
+const MAX_PROMPT_SCALARS: usize = 1024 * 1024;
+const MAX_RESULT_TEXT_SCALARS: usize = lettuce_types::limits::MAX_TEXT_BYTES;
+pub(crate) const MAX_SEGMENTS: usize = 1_000_000;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]

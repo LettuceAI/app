@@ -15,7 +15,7 @@ use crate::prompt::{
     validate_prose,
 };
 
-pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -1494,7 +1494,7 @@ mod tests {
             .map(|ordinal| {
                 let mut entry = snapshot_entry(ordinal, "");
                 entry.always_active = true;
-                entry.content = "x".repeat(crate::MAX_PROSE_BYTES);
+                entry.content = "x".repeat(MAX_ACTIVE_LOREBOOK_CONTENT_BYTES / 4 + 1);
                 entry
             })
             .collect::<Vec<_>>();

@@ -11,7 +11,7 @@ use crate::{
     LegacyBackupGroupSessionPlan,
 };
 
-const TEXT_LIMIT: usize = 8 * 1024 * 1024;
+const TEXT_LIMIT: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
 #[derive(Debug)]
 pub struct LegacyBackupScheduledNotePlan {

@@ -11,10 +11,10 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-const MAX_LABEL_BYTES: usize = 1024;
+const MAX_LABEL_BYTES: usize = lettuce_types::limits::MAX_LABEL_BYTES;
 const MAX_VALUE_BYTES: usize = 4096;
-const MAX_PROMPT_BYTES: usize = 16_384;
-const MAX_SYNTHESIS_TEXT_BYTES: usize = 1_000_000;
+const MAX_PROMPT_BYTES: usize = 1024 * 1024;
+const MAX_SYNTHESIS_TEXT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

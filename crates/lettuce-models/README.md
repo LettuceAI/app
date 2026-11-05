@@ -20,7 +20,7 @@ A `ProviderAccount` is one connection: a stable id, a `secret_owner_id` that bin
 
 - `Standard` for most accounts.
 - `Custom(CustomProviderConfig)` for user-defined OpenAI- or Anthropic-format providers: chat path, optional models path (unset disables model fetching) with JSON paths into the model list response, streaming, `CustomAuth` (`None`, `Bearer`, a named header or a query parameter), role name remapping, whether to merge same-role messages, whether to send chat template kwargs, and the tool choice mode.
-- `ComfyUi(ComfyUiConfig)` with the API-format text-to-image and image-to-image workflows (at most 4 MiB each).
+- `ComfyUi(ComfyUiConfig)` with the API-format text-to-image and image-to-image workflows (at most 128 MiB each).
 - `Ollama(OllamaConfig)` with an optional Sprout hardware probe next to a remote Ollama server (`enabled`, `url`, `api_key_ref` to the account's `SproutApiKey` secret). `active_sprout` returns it only when it is switched on and has a URL. Anything that accepts a standard Ollama account accepts this one.
 
 `validate_provider_connection` checks the non-secret metadata shared by storage and resolution: endpoint shape, custom paths (a `/route` with an optional fixed query, or a whole http(s) URL), that `ComfyUi` and `Ollama` configs sit on the matching provider kind, that custom accounts have an endpoint, that no header is one the HTTP client owns (`host`, `content-type` and the like), and that header names and secret refs are unique and do not reuse the API key's reference.

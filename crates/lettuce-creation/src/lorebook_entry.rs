@@ -18,7 +18,7 @@ use serde_json::{Map, Value, json};
 
 pub const LOREBOOK_ENTRY_WRITE_TOOL_NAME: &str = "write_lorebook_entry";
 pub const LOREBOOK_ENTRY_NONE_TOOL_NAME: &str = "no_entry";
-pub const MAX_GENERATED_LOREBOOK_KEYWORDS: usize = 24;
+pub const MAX_GENERATED_LOREBOOK_KEYWORDS: usize = 256;
 pub const DEFAULT_NO_LOREBOOK_ENTRY_REASON: &str =
     "The selected messages do not establish durable lore.";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -875,7 +875,7 @@ mod tests {
 
     #[test]
     fn keyword_limit_and_none_defaults_are_exact() {
-        let keywords = (0..30)
+        let keywords = (0..MAX_GENERATED_LOREBOOK_KEYWORDS + 10)
             .map(|index| format!("key-{index}"))
             .collect::<Vec<_>>();
         let result = reduce_lorebook_entry_calls(

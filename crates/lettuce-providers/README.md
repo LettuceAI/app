@@ -159,7 +159,7 @@ Input media reaches a provider only from user messages, only when the model supp
 | Gemini | `inline_data` | `inline_data` |
 | Ollama | the native `images` array | not sent |
 
-Multimodal messages are never merged with their neighbours. Request bodies share the 64 MiB bulk bound so phone photos fit.
+Multimodal messages are never merged with their neighbours. Request bodies share the 256 MiB bulk bound so phone photos fit.
 
 Output media: images a chat model returns ride on the candidate as `GeneratedMedia` (MIME type and the provider's base64). OpenAI-style `delta.images` and `message.images` entries count when their `image_url.url` is a `data:image/...;base64,` URL; Gemini `inlineData` or `inline_data` parts count when their MIME type is `image/*` (`image/png` when missing), skipping thought parts and non-image data. Streamed images are kept whole per record with no cap of their own. Finalization in the application stores them as assets.
 

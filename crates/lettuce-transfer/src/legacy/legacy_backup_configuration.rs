@@ -680,14 +680,14 @@ fn map_settings(
     };
     let target_count = optional_u32(advanced, "lorebookGeneratorDefaultTargetCount")?;
     let max_output_tokens = optional_u32(advanced, "lorebookGeneratorMaxTokens")?;
-    if target_count.is_some_and(|value| !(5..=50).contains(&value)) {
+    if target_count.is_some_and(|value| !(5..=500).contains(&value)) {
         notices.push(notice(
             LegacyBackupConversionNoticeKind::Lossy,
             LegacyBackupDocumentKind::Settings,
             "advanced_settings.lorebookGeneratorDefaultTargetCount",
         ));
     }
-    if max_output_tokens.is_some_and(|value| !(256..=32_768).contains(&value)) {
+    if max_output_tokens.is_some_and(|value| !(256..=262_144).contains(&value)) {
         notices.push(notice(
             LegacyBackupConversionNoticeKind::Lossy,
             LegacyBackupDocumentKind::Settings,

@@ -32,7 +32,7 @@ pub use engine::{
 };
 #[cfg(test)]
 pub(crate) use generate::settings as settings_for_test;
-pub(crate) use generate::{generation_view, record_upscale};
+pub(crate) use generate::{admission_error, generation_view, record_upscale};
 pub use generate::{
     image_asset_prompt, image_capabilities, image_generate, image_upscale, playground_history_delete,
     playground_history_list,

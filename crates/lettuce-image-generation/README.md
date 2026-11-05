@@ -6,7 +6,7 @@ Remote image providers (the OpenAI-style, Gemini and other adapters and ComfyUI)
 
 ## Requests
 
-`ImageGenerationRequest` (`request.rs`) is one generation: the model profile, the prompt, per-request `StableDiffusionSettings` laid over the model's own (the stable-diffusion.cpp binding always stays the model's; an empty `base_loras` drops the model's base LoRAs), input and mask image assets, request LoRAs, size, quality, style, count, an `ImageGenerationSource` (direct, scene, playground, creation helper), an `ImageAttribution` (conversation or character, for usage), and an `ImageOutputPolicy` (`Retained`, or `Preview` with an expiry). Validation bounds it at 10 images, 16 input images and a 64 KiB prompt, and trims size, quality and style.
+`ImageGenerationRequest` (`request.rs`) is one generation: the model profile, the prompt, per-request `StableDiffusionSettings` laid over the model's own (the stable-diffusion.cpp binding always stays the model's; an empty `base_loras` drops the model's base LoRAs), input and mask image assets, request LoRAs, size, quality, style, count, an `ImageGenerationSource` (direct, scene, playground, creation helper), an `ImageAttribution` (conversation or character, for usage), and an `ImageOutputPolicy` (`Retained`, or `Preview` with an expiry). Validation accepts up to 256 generated images and 256 input images. Prompts have no separate byte cap; the provider context and transport limits apply. Size, quality and style must be trimmed.
 
 `ImageGenerationRecord` and `ImageGenerationRepository` hold the durable request and its terminal state.
 

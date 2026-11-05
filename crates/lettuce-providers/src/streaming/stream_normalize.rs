@@ -9,10 +9,10 @@ use serde_json::Value;
 
 use crate::streaming::stream_framing::StreamRecord;
 
-const MAX_THINKING_SIGNATURE_BYTES: usize = 256 * 1024;
+const MAX_THINKING_SIGNATURE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_ERROR_CODE_BYTES: usize = 128;
 const MAX_ERROR_MESSAGE_BYTES: usize = 2 * 1024;
-const MAX_PROVIDER_REPLAY_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PROVIDER_REPLAY_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StreamProtocol {

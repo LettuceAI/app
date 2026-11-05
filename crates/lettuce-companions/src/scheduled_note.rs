@@ -3,8 +3,8 @@ use lettuce_types::{CharacterId, GroupId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-const MAX_NOTE_CONTENT_CHARS: usize = 1000;
-const MAX_BLOCK_CHARS: usize = 4000;
+const MAX_NOTE_CONTENT_CHARS: usize = 100_000;
+const MAX_BLOCK_CHARS: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -526,23 +526,18 @@ mod tests {
             scheduled_note_lines(&[normalized.content.as_str()], "...", &line),
             vec!["- remember this".to_owned()]
         );
-        let long = format!("{} tail", "a".repeat(999));
+        let long = format!("{} tail", "a".repeat(MAX_NOTE_CONTENT_CHARS - 1));
         assert_eq!(
             scheduled_note_lines(&["   ", long.as_str()], "...", &line),
-            vec![format!("- {}...", "a".repeat(999))]
+            vec![format!("- {}...", "a".repeat(MAX_NOTE_CONTENT_CHARS - 1))]
         );
-        let filler = "b".repeat(1000);
+        let filler = "b".repeat(MAX_NOTE_CONTENT_CHARS);
         let lines = scheduled_note_lines(
-            &[
-                filler.as_str(),
-                filler.as_str(),
-                filler.as_str(),
-                filler.as_str(),
-            ],
+            &vec![filler.as_str(); MAX_BLOCK_CHARS / (MAX_NOTE_CONTENT_CHARS + 3) + 2],
             "...",
             &line,
         );
-        assert_eq!(lines.len(), 3);
+        assert_eq!(lines.len(), MAX_BLOCK_CHARS / (MAX_NOTE_CONTENT_CHARS + 3));
     }
 
     #[test]

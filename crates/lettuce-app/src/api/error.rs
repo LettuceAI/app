@@ -11,10 +11,16 @@ use crate::{
     ConversationLaunchError,
 };
 
+#[track_caller]
 pub(crate) fn api_error(code: ApiErrorCode, message: impl Into<String>) -> ApiError {
+    let message = message.into();
+    if code == ApiErrorCode::Internal {
+        let caller = std::panic::Location::caller();
+        tracing::error!(error = %message, source = %caller, "API operation failed");
+    }
     ApiError {
         code,
-        message: message.into(),
+        message,
         details: None,
     }
 }
@@ -372,5 +378,44 @@ pub(crate) fn missing_placeholders(placeholders: Vec<String>) -> ApiError {
             placeholders.join(", ")
         ),
         details: Some(ApiErrorDetails::PromptMissingPlaceholders { placeholders }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{io::{self, Write}, sync::{Arc, Mutex}};
+    use tracing_subscriber::{fmt::MakeWriter, layer::SubscriberExt};
+
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("capture").extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> { Ok(()) }
+    }
+
+    impl<'a> MakeWriter<'a> for Capture {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self::Writer { self.clone() }
+    }
+
+    #[test]
+    fn internal_api_errors_reach_sanitized_logs_with_their_source() {
+        let capture = Capture::default();
+        let subscriber = tracing_subscriber::registry()
+            .with(lettuce_observability::LineLayer::new(capture.clone()));
+        let error = tracing::subscriber::with_default(subscriber, || {
+            super::api_error(super::ApiErrorCode::Internal, "scene storage failed api_key=private-canary")
+        });
+        assert_eq!(error.code, super::ApiErrorCode::Internal);
+        let output = String::from_utf8(capture.0.lock().expect("capture").clone()).expect("UTF-8");
+        assert!(output.contains("API operation failed"));
+        assert!(output.contains("scene storage failed"));
+        assert!(output.contains("source=crates/lettuce-app/src/api/error.rs:"));
+        assert!(!output.contains("private-canary"));
     }
 }

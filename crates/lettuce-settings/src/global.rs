@@ -271,7 +271,7 @@ impl Default for ImageGenerationSettings {
 }
 
 /// The device UI-state import guard.
-pub const MAX_UI_PREFERENCES_BYTES: usize = 256 * 1024;
+pub const MAX_UI_PREFERENCES_BYTES: usize = 4 * 1024 * 1024;
 
 /// Preferences only the app shell reads (theme, colors, view modes,
 /// navigation, sounds and haptics, the base chat appearance, saved sampler
@@ -556,14 +556,14 @@ impl LorebookGeneratorSettings {
     #[must_use]
     pub fn target_count(&self) -> u32 {
         self.default_target_count
-            .map(|value| value.clamp(5, 50))
+            .map(|value| value.clamp(5, 500))
             .unwrap_or(12)
     }
 
     #[must_use]
     pub fn output_tokens(&self) -> u32 {
         self.max_output_tokens
-            .map(|value| value.clamp(256, 32768))
+            .map(|value| value.clamp(256, 262144))
             .unwrap_or(4096)
     }
 
@@ -807,10 +807,10 @@ mod tests {
         generator.default_target_count = Some(0);
         generator.max_output_tokens = Some(u32::MAX);
         assert_eq!(generator.target_count(), 5);
-        assert_eq!(generator.output_tokens(), 32768);
+        assert_eq!(generator.output_tokens(), 262144);
         generator.default_target_count = Some(100);
         generator.max_output_tokens = Some(0);
-        assert_eq!(generator.target_count(), 50);
+        assert_eq!(generator.target_count(), 100);
         assert_eq!(generator.output_tokens(), 256);
         let default_model = ModelProfileId::new();
         let configured_model = ModelProfileId::new();

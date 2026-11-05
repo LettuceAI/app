@@ -5,11 +5,11 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const MAX_MEMORY_TEXT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_MEMORY_TEXT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 /// The largest `max_entries` a dynamic memory policy may keep; a memory space
 /// itself holds any number of items.
-pub const MAX_MEMORY_ITEMS: usize = 4096;
-pub const MAX_MEMORY_SUMMARY_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_MEMORY_ITEMS: usize = 65_536;
+pub const MAX_MEMORY_SUMMARY_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
 #[must_use]
 pub fn memory_revision_id(space_id: MemorySpaceId, revision: Revision) -> MemoryRevisionId {

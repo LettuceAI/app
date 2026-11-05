@@ -193,6 +193,16 @@ const MIGRATION_25: Migration = Migration {
     sql: include_str!("../migrations/0025_group_notes.sql"),
 };
 
+const MIGRATION_26: Migration = Migration {
+    id: 26,
+    sql: include_str!("../migrations/0026_content_limits.sql"),
+};
+
+const MIGRATION_27: Migration = Migration {
+    id: 27,
+    sql: include_str!("../migrations/0027_creation_limits.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -219,6 +229,8 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_23,
     MIGRATION_24,
     MIGRATION_25,
+    MIGRATION_26,
+    MIGRATION_27,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -476,6 +488,41 @@ fn apply_migrations(
     connection: &mut Connection,
     migrations: &[Migration],
 ) -> Result<(), DatabaseError> {
+    let history_exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = 'schema_migrations')",
+        [], |row| row.get(0),
+    )?;
+    let mut rebuild = false;
+    for migration in migrations.iter().filter(|migration| matches!(migration.id, 26 | 27)) {
+        let applied = history_exists && connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE id = ?1)",
+            [migration.id], |row| row.get::<_, bool>(0),
+        )?;
+        rebuild |= !applied;
+    }
+    if !rebuild {
+        return apply_migration_transaction(connection, migrations, false);
+    }
+    // Rebuild tables using SQLite's create/copy/drop/rename procedure. Foreign
+    // keys must be disabled before the transaction to prevent cascade deletes;
+    // legacy rename keeps existing views and cross-table triggers intact.
+    connection.pragma_update(None, "foreign_keys", false)?;
+    let result = (|| {
+        connection.pragma_update(None, "legacy_alter_table", true)?;
+        apply_migration_transaction(connection, migrations, true)
+    })();
+    let restore_rename = connection.pragma_update(None, "legacy_alter_table", false);
+    let restore_foreign_keys = connection.pragma_update(None, "foreign_keys", true);
+    restore_rename?;
+    restore_foreign_keys?;
+    result
+}
+
+fn apply_migration_transaction(
+    connection: &mut Connection,
+    migrations: &[Migration],
+    rebuilt: bool,
+) -> Result<(), DatabaseError> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     transaction.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
@@ -502,6 +549,12 @@ fn apply_migrations(
             "INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?1, ?2, ?3)",
             params![migration.id, checksum, now()?.get()],
         )?;
+    }
+    if rebuilt {
+        let mut check = transaction.prepare("PRAGMA foreign_key_check")?;
+        if check.query([])?.next()?.is_some() {
+            return Err(rusqlite::Error::InvalidQuery.into());
+        }
     }
     transaction.commit()?;
     Ok(())
@@ -3701,7 +3754,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 25);
+        assert_eq!(count, u32::try_from(super::MIGRATIONS.len()).expect("migration count"));
 
         let changed = Migration {
             id: 1,
@@ -3772,7 +3825,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            24
+            i64::try_from(super::MIGRATIONS.len()).expect("migration count")
         );
         let conversation_tables: i64 = connection
             .query_row(
@@ -3995,7 +4048,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            25
+            i64::try_from(super::MIGRATIONS.len()).expect("migration count")
         );
         for column in [
             "target_kind",
@@ -5594,7 +5647,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            24
+            i64::try_from(super::MIGRATIONS.len()).expect("migration count")
         );
         drop(connection);
         drop(database);
@@ -5644,7 +5697,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            24
+            i64::try_from(super::MIGRATIONS.len()).expect("migration count")
         );
         drop(connection);
         drop(database);
@@ -5676,7 +5729,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(migration_count, 25);
+        assert_eq!(migration_count, i64::try_from(super::MIGRATIONS.len()).expect("migration count"));
         for table in [
             "groups",
             "group_members",
@@ -5725,7 +5778,7 @@ mod tests {
                 row.get(0)
             })
             .expect("migration count");
-        assert_eq!(count, 25);
+        assert_eq!(count, i64::try_from(super::MIGRATIONS.len()).expect("migration count"));
         for table in [
             "prompt_documents",
             "prompt_entries",
@@ -5753,7 +5806,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            24
+            i64::try_from(super::MIGRATIONS.len()).expect("migration count")
         );
         drop(connection);
         drop(reopened);
@@ -5789,7 +5842,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            24
+            i64::try_from(super::MIGRATIONS.len()).expect("migration count")
         );
         let column: i64 = connection
             .query_row(
@@ -5816,7 +5869,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            24
+            i64::try_from(super::MIGRATIONS.len()).expect("migration count")
         );
         drop(connection);
         drop(reopened);
@@ -5865,7 +5918,7 @@ mod tests {
                 .query_row("SELECT count(*) FROM schema_migrations", [], |row| row
                     .get::<_, i64>(0))
                 .expect("migration count"),
-            24
+            i64::try_from(super::MIGRATIONS.len()).expect("migration count")
         );
         drop(connection);
         drop(database);

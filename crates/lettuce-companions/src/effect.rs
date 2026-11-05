@@ -5,7 +5,7 @@ use lettuce_types::{
 
 use crate::{CompanionTurnTransition, EmotionVector, RelationshipDelta};
 
-const MAX_SUMMARY_BYTES: usize = 8 * 1024;
+const MAX_SUMMARY_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 const MAX_SIGNAL_BYTES: usize = 256;
 const MAX_SIGNAL_CHANGES: usize = 64;
 const MAX_MEMORY_CHANGES: usize = 512;
