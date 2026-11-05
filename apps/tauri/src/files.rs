@@ -174,6 +174,19 @@ fn create_backup_temporary_path(
 }
 
 #[cfg(not(target_os = "android"))]
+fn sync_backup_path(uri: &str) -> Result<(), FileAccessError> {
+    // Windows FlushFileBuffers requires a handle opened with write access.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path(uri)?)
+        .and_then(|file| file.sync_all())
+        .map_err(|failure| {
+            tracing::warn!(%failure, "backup temporary file could not be synchronized");
+            access_error(&failure)
+        })
+}
+
+#[cfg(not(target_os = "android"))]
 fn publish_backup_path(
     temporary: &str,
     target: Option<&str>,
@@ -257,9 +270,7 @@ impl<R: Runtime> FileAccess for DesktopFileAccess<R> {
         create_backup_temporary_path(intent, protected)
     }
     fn sync_backup(&self, uri: &str) -> Result<(), FileAccessError> {
-        std::fs::File::open(path(uri)?)
-            .and_then(|file| file.sync_all())
-            .map_err(|failure| access_error(&failure))
+        sync_backup_path(uri)
     }
     fn publish_backup(
         &self,
@@ -708,9 +719,7 @@ impl FileAccess for PathFileAccess {
         create_backup_temporary_path(intent, protected)
     }
     fn sync_backup(&self, uri: &str) -> Result<(), FileAccessError> {
-        std::fs::File::open(path(uri)?)
-            .and_then(|file| file.sync_all())
-            .map_err(|failure| access_error(&failure))
+        sync_backup_path(uri)
     }
     fn publish_backup(
         &self,
@@ -1072,10 +1081,7 @@ mod backup_publication_tests {
         writer.write_all(b"complete new backup").expect("write");
         writer.flush().expect("flush");
         drop(writer);
-        std::fs::File::open(&uri)
-            .expect("temporary")
-            .sync_all()
-            .expect("durable");
+        sync_backup_path(&uri).expect("durable");
         assert_eq!(
             std::fs::read(&target).expect("old still active"),
             b"old backup"
@@ -1089,6 +1095,22 @@ mod backup_publication_tests {
         );
         assert_eq!(std::fs::read(&target).expect("new"), b"complete new backup");
         assert!(!Path::new(&uri).exists());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn backup_sync_does_not_create_a_missing_temporary_file() {
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-backup-missing-sync-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).expect("folder");
+        let temporary = root.join("backup.partial");
+        assert_eq!(
+            sync_backup_path(temporary.to_str().expect("path")),
+            Err(FileAccessError::NotFound)
+        );
+        assert!(!temporary.exists());
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 
