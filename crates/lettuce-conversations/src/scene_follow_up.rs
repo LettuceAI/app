@@ -134,6 +134,19 @@ pub enum SceneFollowUpError {
     Storage { reason: &'static str },
 }
 
+/// The variant and prompt a follow-up is created for by `ensure_follow_up`.
+#[derive(Debug, Clone, Copy)]
+pub struct EnsureSceneFollowUp<'a> {
+    pub conversation_id: ConversationId,
+    pub message_id: MessageId,
+    pub target: SceneFollowUpTarget,
+    pub prompt: &'a str,
+    pub mode: SceneFollowUpMode,
+    /// Who the image depicts; `None` is the message's own cast.
+    pub cast: Option<&'a SceneCastSelection>,
+    pub now: TimestampMillis,
+}
+
 pub trait SceneFollowUpRepository: Send + Sync {
     fn get_follow_up(
         &self,
@@ -164,13 +177,7 @@ pub trait SceneFollowUpRepository: Send + Sync {
     /// it has.
     fn ensure_follow_up(
         &self,
-        conversation_id: ConversationId,
-        message_id: MessageId,
-        target: SceneFollowUpTarget,
-        prompt: &str,
-        mode: SceneFollowUpMode,
-        cast: Option<&SceneCastSelection>,
-        now: TimestampMillis,
+        request: EnsureSceneFollowUp<'_>,
     ) -> Result<SceneFollowUp, SceneFollowUpError>;
 
     /// Applies `change` when the follow-up is in one of `from`; `None` when

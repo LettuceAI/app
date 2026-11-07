@@ -15468,13 +15468,15 @@ async fn starter_scene_image(edit_after_admission: bool) {
     let follow_ups = crate::SceneFollowUps::new(&database, &store);
     lettuce_conversations::SceneFollowUpRepository::ensure_follow_up(
         &database,
-        conversation.id,
-        welcome.message.id,
-        target,
-        "  A harbor at dusk ",
-        lettuce_conversations::SceneFollowUpMode::Manual,
-        None,
-        TimestampMillis::new(NOW.get() + 9),
+        lettuce_conversations::EnsureSceneFollowUp {
+            conversation_id: conversation.id,
+            message_id: welcome.message.id,
+            target,
+            prompt: "  A harbor at dusk ",
+            mode: lettuce_conversations::SceneFollowUpMode::Manual,
+            cast: None,
+            now: TimestampMillis::new(NOW.get() + 9),
+        },
     )
     .expect("follow-up");
     let (first, job) = follow_ups

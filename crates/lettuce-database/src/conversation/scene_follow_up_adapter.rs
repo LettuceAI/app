@@ -1,8 +1,8 @@
 use lettuce_conversations::{
-    SceneFollowUp, SceneFollowUpChange, SceneFollowUpError, SceneFollowUpMode,
+    EnsureSceneFollowUp, SceneFollowUp, SceneFollowUpChange, SceneFollowUpError, SceneFollowUpMode,
     SceneFollowUpRepository, SceneFollowUpState, SceneFollowUpTarget,
 };
-use lettuce_types::{ConversationId, MessageId, RequestId, TimestampMillis};
+use lettuce_types::{ConversationId, RequestId, TimestampMillis};
 use rusqlite::{OptionalExtension, Row, params};
 
 use crate::Database;
@@ -220,14 +220,17 @@ impl SceneFollowUpRepository for Database {
 
     fn ensure_follow_up(
         &self,
-        conversation_id: ConversationId,
-        message_id: MessageId,
-        target: SceneFollowUpTarget,
-        prompt: &str,
-        mode: SceneFollowUpMode,
-        cast: Option<&lettuce_conversations::SceneCastSelection>,
-        now: TimestampMillis,
+        request: EnsureSceneFollowUp<'_>,
     ) -> Result<SceneFollowUp, SceneFollowUpError> {
+        let EnsureSceneFollowUp {
+            conversation_id,
+            message_id,
+            target,
+            prompt,
+            mode,
+            cast,
+            now,
+        } = request;
         let cast = cast_json(cast)?;
         let connection = self.connection().map_err(storage)?;
         connection

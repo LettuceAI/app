@@ -12871,15 +12871,15 @@ mod tests {
         for (candidate, prompt) in [(first, "First harbor"), (second, "Second harbor")] {
             fixture
                 .database
-                .ensure_follow_up(
-                    fixture.conversation_id,
+                .ensure_follow_up(lettuce_conversations::EnsureSceneFollowUp {
+                    conversation_id: fixture.conversation_id,
                     message_id,
-                    lettuce_conversations::SceneFollowUpTarget::Candidate(candidate),
+                    target: lettuce_conversations::SceneFollowUpTarget::Candidate(candidate),
                     prompt,
-                    lettuce_conversations::SceneFollowUpMode::AskFirst,
-                    (candidate == first).then_some(&cast),
-                    TimestampMillis::new(100),
-                )
+                    mode: lettuce_conversations::SceneFollowUpMode::AskFirst,
+                    cast: (candidate == first).then_some(&cast),
+                    now: TimestampMillis::new(100),
+                })
                 .expect("follow-up");
         }
         store_fixture_model_snapshots(&fixture.database);
