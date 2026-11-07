@@ -50,8 +50,8 @@
     "bindings:generate": "cargo run -p lettuce-tauri --features bindings --bin export-bindings"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.3",
-    "@types/node": "^26.6.3",
+    "@types/bun": "^1.4.4",
+    "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   }
 }
