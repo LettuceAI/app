@@ -58,8 +58,8 @@ pub struct LegacyBackupGroupSession {
     pub memory_error: Option<String>,
     pub memory_progress_step: Option<u64>,
     pub archived: bool,
-    pub created_at: u64,
-    pub updated_at: u64,
+    pub created_at: i64,
+    pub updated_at: i64,
     pub participation: Vec<LegacyBackupGroupParticipation>,
     pub messages: Vec<LegacyBackupGroupMessage>,
 }
@@ -82,7 +82,7 @@ pub struct LegacyBackupGroupMessage {
     pub content: String,
     pub speaker_character_source_id: Option<String>,
     pub turn_number: u64,
-    pub created_at: u64,
+    pub created_at: i64,
     pub usage: LegacyBackupGroupMessageUsage,
     pub selected_variant_source_id: Option<String>,
     pub pinned: bool,
@@ -104,7 +104,7 @@ pub struct LegacyBackupGroupMessageVariant {
     pub ordinal: u64,
     pub content: String,
     pub speaker_character_source_id: Option<String>,
-    pub created_at: u64,
+    pub created_at: i64,
     pub usage: LegacyBackupGroupMessageUsage,
     pub reasoning: Option<String>,
     pub selection_reasoning: Option<String>,
@@ -1510,8 +1510,11 @@ fn finite_nonnegative(
     }
 }
 
-fn timestamp(value: i64, field: &str) -> Result<u64, LegacyBackupGroupSessionError> {
-    u64::try_from(value).map_err(|_| malformed(field))
+// Legacy timestamps are epoch millis and may be negative (pre-1970), which the
+// signed `TimestampMillis` preserves. The `_field` stays for call-site symmetry
+// with the other validators even though any `i64` is a valid instant.
+fn timestamp(value: i64, _field: &str) -> Result<i64, LegacyBackupGroupSessionError> {
+    Ok(value)
 }
 fn count(value: i64, field: &str) -> Result<u64, LegacyBackupGroupSessionError> {
     u64::try_from(value).map_err(|_| malformed(field))

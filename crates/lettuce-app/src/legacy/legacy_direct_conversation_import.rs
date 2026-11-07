@@ -149,7 +149,7 @@ pub(crate) struct TimelineMessage<'a> {
     pub source_id: &'a str,
     pub role: &'a str,
     pub content: &'a str,
-    pub created_at: u64,
+    pub created_at: i64,
     pub effective_at: Option<i64>,
     pub visible_in_chat: bool,
     pub pinned: bool,
@@ -215,7 +215,7 @@ impl TimelineSpeed<'_> {
 pub(crate) struct TimelineVariant<'a> {
     pub source_id: &'a str,
     pub content: &'a str,
-    pub created_at: u64,
+    pub created_at: i64,
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
@@ -235,8 +235,8 @@ pub(crate) struct LegacyConversationSource<'a> {
     pub snapshots: Vec<SnapshotArtifactDraft>,
     pub model: Option<ModelSelectionSnapshot>,
     pub archived: bool,
-    pub created_at: u64,
-    pub updated_at: u64,
+    pub created_at: i64,
+    pub updated_at: i64,
     pub messages: Vec<TimelineMessage<'a>>,
     pub memory: Option<&'a LegacyBackupMemoryEmbeddingOwner>,
     pub memory_texts: Option<&'a str>,
@@ -1672,20 +1672,28 @@ fn legacy_companion_effect(
             })
             .collect::<Vec<_>>()
     };
+    let user_message_id = text("user_message_id").and_then(imported);
+    let created_at = integer("created_at")?;
     let window = json("source_window")?;
     let source_window = window
         .get("enqueuedAt")
         .and_then(serde_json::Value::as_i64)
         .map(|enqueued_at| CompanionEffectSourceWindow {
-            message_ids: window
-                .get("messageIds")
-                .and_then(serde_json::Value::as_array)
+            // Legacy serialised the window's message ids from a `HashSet`
+            // (`finalize_companion_turn_effects` in the old app), so their order was
+            // not stable between instances. The window always covered exactly this
+            // turn's user and assistant messages, so rebuild it in the canonical
+            // [user?, assistant] order the backup graph verifies against instead of
+            // trusting the stored order.
+            message_ids: user_message_id
                 .into_iter()
-                .flatten()
-                .filter_map(serde_json::Value::as_str)
-                .filter_map(imported)
+                .chain(std::iter::once(assistant_message_id))
                 .collect(),
-            enqueued_at: TimestampMillis::new(enqueued_at),
+            // Legacy read the job's `enqueued_at` just before the effect's
+            // `created_at` (two separate clock reads, enqueue first), so the window
+            // can land a millisecond before the effect. The backup graph requires
+            // the window not to predate the effect, so clamp it up to `created_at`.
+            enqueued_at: TimestampMillis::new(enqueued_at.max(created_at)),
         });
     if status == CompanionTurnEffectStatus::Ready && source_window.is_none() {
         return None;
@@ -1694,7 +1702,6 @@ fn legacy_companion_effect(
     if summary.as_ref().is_some_and(|value| value.len() > 8 * 1024) {
         return None;
     }
-    let created_at = integer("created_at")?;
     let updated_at = integer("updated_at")?.max(created_at);
     Some(CompanionTurnEffect {
         id: lettuce_types::CompanionEffectId::from_uuid(
@@ -1702,7 +1709,7 @@ fn legacy_companion_effect(
         ),
         conversation_id,
         turn_id: turn.id,
-        user_message_id: text("user_message_id").and_then(imported),
+        user_message_id,
         assistant_message_id,
         status,
         summary,
@@ -2490,10 +2497,10 @@ pub(crate) fn parse<T: std::str::FromStr>(value: &str) -> Result<T, Error> {
     value.parse().map_err(|_| Error::InvalidInput)
 }
 
-fn timestamp(value: u64) -> Result<TimestampMillis, Error> {
-    i64::try_from(value)
-        .map(TimestampMillis::new)
-        .map_err(|_| Error::InvalidInput)
+// Legacy timestamps are epoch millis and may be negative (pre-1970); the signed
+// `TimestampMillis` preserves them, so every `i64` converts without rejection.
+fn timestamp(value: i64) -> Result<TimestampMillis, Error> {
+    Ok(TimestampMillis::new(value))
 }
 
 fn has_media(parts: &[MessagePart]) -> bool {

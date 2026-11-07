@@ -1353,8 +1353,14 @@ mod tests {
                         "signal_changes": "{\"added\":[\"curious\"],\"removed\":[]}",
                         "memory_changes": "{\"added\":[],\"updated\":[],\"superseded\":[]}",
                         "source_window": serde_json::json!({
-                            "messageIds": [greeting, reply],
-                            "enqueuedAt": 40
+                            // Assistant-first: legacy serialised these ids from a
+                            // `HashSet`, so the order was unstable. The import must
+                            // still verify against the canonical [user, assistant].
+                            "messageIds": [reply, greeting],
+                            // One millisecond before the effect's created_at (40):
+                            // legacy read the job's enqueue time just before the
+                            // effect row. The import must clamp it up to 40.
+                            "enqueuedAt": 39
                         }).to_string()
                     })
                     .to_string(),
@@ -1609,6 +1615,27 @@ mod tests {
         assert_eq!(
             effect.status,
             lettuce_companions::CompanionTurnEffectStatus::Ready
+        );
+        assert_eq!(
+            effect
+                .source_window
+                .as_ref()
+                .expect("ready effect source window")
+                .message_ids,
+            vec![
+                lettuce_types::MessageId::from_uuid(scope.source("message", &greeting)),
+                lettuce_types::MessageId::from_uuid(scope.source("message", &reply)),
+            ],
+            "the legacy window's unordered message ids import in canonical [user, assistant] order"
+        );
+        assert_eq!(
+            effect
+                .source_window
+                .as_ref()
+                .expect("ready effect source window")
+                .enqueued_at,
+            TimestampMillis::new(40),
+            "a window enqueued one ms before the effect clamps up to the effect's created_at"
         );
         let backend = AppBackend::open(
             &first.database_path,

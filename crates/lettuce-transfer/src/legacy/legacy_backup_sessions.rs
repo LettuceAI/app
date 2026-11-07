@@ -48,8 +48,8 @@ pub struct LegacyBackupDirectSession {
     pub memory_error: Option<String>,
     pub memory_progress_step: Option<u64>,
     pub archived: bool,
-    pub created_at: u64,
-    pub updated_at: u64,
+    pub created_at: i64,
+    pub updated_at: i64,
     pub messages: Vec<LegacyBackupDirectMessage>,
 }
 
@@ -64,7 +64,7 @@ pub struct LegacyBackupDirectMessage {
     pub ordinal: u64,
     pub role: String,
     pub content: String,
-    pub created_at: u64,
+    pub created_at: i64,
     pub effective_at: Option<i64>,
     pub visible_in_chat: bool,
     pub scene_edited: bool,
@@ -85,7 +85,7 @@ pub struct LegacyBackupDirectMessageVariant {
     pub source_id: String,
     pub ordinal: u64,
     pub content: String,
-    pub created_at: u64,
+    pub created_at: i64,
     pub usage: LegacyBackupMessageUsage,
     pub reasoning: Option<String>,
 }
@@ -1009,8 +1009,11 @@ fn validate_text(value: &str, field: &str) -> Result<(), LegacyBackupSessionErro
     }
 }
 
-fn timestamp(value: i64, field: &str) -> Result<u64, LegacyBackupSessionError> {
-    u64::try_from(value).map_err(|_| malformed(field))
+// Legacy timestamps are epoch millis and may be negative (pre-1970), which the
+// signed `TimestampMillis` preserves. The `_field` stays for call-site symmetry
+// with the other validators even though any `i64` is a valid instant.
+fn timestamp(value: i64, _field: &str) -> Result<i64, LegacyBackupSessionError> {
+    Ok(value)
 }
 
 fn count(value: i64, field: &str) -> Result<u64, LegacyBackupSessionError> {
@@ -1205,6 +1208,47 @@ mod tests {
             "updated_at": 20,
             "messages": messages
         })
+    }
+
+    #[test]
+    fn direct_session_timestamps_keep_pre_1970_instants() {
+        let character = id(11);
+        let root = id(12);
+        let message_id = id(13);
+        // Legacy stored send dates as signed epoch millis; a chat edited to a
+        // date before 1970 kept a negative value, which `TimestampMillis` holds.
+        let pre_epoch = json!({
+            "id": message_id,
+            "role": "user",
+            "content": "Sent in 1969",
+            "created_at": -35_000_000_000i64,
+            "effective_at": null,
+            "visible_in_chat": true,
+            "scene_edited": false,
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "total_tokens": null,
+            "first_token_ms": null,
+            "tokens_per_second": null,
+            "mtp_stats": null,
+            "model_id": null,
+            "selected_variant_id": null,
+            "is_pinned": false,
+            "memory_refs": "[]",
+            "used_lorebook_entries": "[]",
+            "attachments": "[]",
+            "reasoning": null,
+            "parent_message_id": null,
+            "variants": []
+        });
+        let mut row = session(&root, &character, None, &root, None, vec![pre_epoch]);
+        row["created_at"] = json!(-40_000_000_000i64);
+        row["updated_at"] = json!(-30_000_000_000i64);
+        let plan = plan_legacy_backup_direct_sessions(source(json!([row]), &character))
+            .expect("pre-1970 timestamps import instead of being rejected as malformed");
+        assert_eq!(plan.sessions[0].created_at, -40_000_000_000);
+        assert_eq!(plan.sessions[0].updated_at, -30_000_000_000);
+        assert_eq!(plan.sessions[0].messages[0].created_at, -35_000_000_000);
     }
 
     #[test]

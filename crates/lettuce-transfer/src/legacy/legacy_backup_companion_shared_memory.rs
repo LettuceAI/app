@@ -67,9 +67,9 @@ pub struct LegacyBackupCompanionEpisode {
     pub persona_id: Option<PersonaId>,
     pub episode_index: u32,
     pub previous_conversation_source_id: Option<String>,
-    pub started_at: u64,
-    pub ended_at: Option<u64>,
-    pub updated_at: u64,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -472,12 +472,12 @@ fn map_episodes(
                 return Err(orphan(format!("{path}.previous_session_id")));
             }
         }
-        let started_at = count(row.started_at, &format!("{path}.started_at"))?;
+        let started_at = timestamp(row.started_at, &format!("{path}.started_at"))?;
         let ended_at = row
             .ended_at
-            .map(|value| count(value, &format!("{path}.ended_at")))
+            .map(|value| timestamp(value, &format!("{path}.ended_at")))
             .transpose()?;
-        let updated_at = count(row.updated_at, &format!("{path}.updated_at"))?;
+        let updated_at = timestamp(row.updated_at, &format!("{path}.updated_at"))?;
         if ended_at.is_some_and(|value| value < started_at) || updated_at < started_at {
             return Err(malformed(format!("{path}.timestamps")));
         }
@@ -715,6 +715,13 @@ fn validate_identifier(
 
 fn count(value: i64, field: &str) -> Result<u64, LegacyBackupCompanionSharedMemoryError> {
     u64::try_from(value).map_err(|_| malformed(field))
+}
+
+// Legacy episode timestamps are epoch millis and may be negative (pre-1970),
+// which the signed `TimestampMillis` preserves. The `_field` stays for call-site
+// symmetry with `count` even though any `i64` is a valid instant.
+fn timestamp(value: i64, _field: &str) -> Result<i64, LegacyBackupCompanionSharedMemoryError> {
+    Ok(value)
 }
 
 fn report_extra(

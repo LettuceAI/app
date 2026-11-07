@@ -96,27 +96,50 @@ impl CompanionEffectBackup {
                 .into_iter()
                 .chain(std::iter::once(effect.assistant_message_id))
                 .collect::<Vec<_>>();
-            if effects.insert(effect.id, effect.conversation_id).is_some()
-                || turns.get(&effect.turn_id) != Some(&effect.conversation_id)
-                || messages.get(&effect.assistant_message_id)
-                    != Some(&(effect.conversation_id, MessageRole::Assistant))
-                || effect.user_message_id.is_some_and(|id| {
-                    messages.get(&id) != Some(&(effect.conversation_id, MessageRole::User))
-                })
-                || effect.created_at > effect.updated_at
-                || effect.seed.validate().is_err()
-                || !valid_effect_terminal(effect)
-                || effect.source_window.as_ref().is_some_and(|source| {
-                    source.message_ids != expected_source_messages
-                        || source.enqueued_at < effect.created_at
-                        || source.message_ids.iter().any(|id| {
-                            messages.get(id).map(|value| value.0) != Some(effect.conversation_id)
-                        })
-                })
+            // Each invariant reports its own reason so a failed import names the
+            // one it hit. `effects.insert` runs first for its duplicate check and
+            // to populate the map the rewind validation below reads.
+            let reason = if effects.insert(effect.id, effect.conversation_id).is_some() {
+                Some("two effects share an id")
+            } else if turns.get(&effect.turn_id) != Some(&effect.conversation_id) {
+                Some("effect's turn is missing or belongs to another conversation")
+            } else if messages.get(&effect.assistant_message_id)
+                != Some(&(effect.conversation_id, MessageRole::Assistant))
             {
-                return Err(CompanionEffectBackupError::InvalidData {
-                    reason: "effect references a missing message, has out of order timestamps, an invalid seed or terminal state, or a mismatched source window",
-                });
+                Some("effect's assistant message is missing or is not an assistant message in its conversation")
+            } else if effect.user_message_id.is_some_and(|id| {
+                messages.get(&id) != Some(&(effect.conversation_id, MessageRole::User))
+            }) {
+                Some("effect's user message is missing or is not a user message in its conversation")
+            } else if effect.created_at > effect.updated_at {
+                Some("effect's created_at is after its updated_at")
+            } else if effect.seed.validate().is_err() {
+                Some("effect's seed is invalid")
+            } else if !valid_effect_terminal(effect) {
+                Some("effect's status does not match its summary, memory changes or source window")
+            } else if effect
+                .source_window
+                .as_ref()
+                .is_some_and(|source| source.message_ids != expected_source_messages)
+            {
+                Some("effect's source window is not exactly its user and assistant messages")
+            } else if effect
+                .source_window
+                .as_ref()
+                .is_some_and(|source| source.enqueued_at < effect.created_at)
+            {
+                Some("effect's source window was enqueued before the effect was created")
+            } else if effect.source_window.as_ref().is_some_and(|source| {
+                source.message_ids.iter().any(|id| {
+                    messages.get(id).map(|value| value.0) != Some(effect.conversation_id)
+                })
+            }) {
+                Some("effect's source window references a message from another conversation")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                return Err(CompanionEffectBackupError::InvalidData { reason });
             }
         }
         let mut rewind_ids = BTreeSet::new();

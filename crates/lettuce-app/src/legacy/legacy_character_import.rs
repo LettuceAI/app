@@ -838,7 +838,7 @@ mod tests {
         let companion_first_id = lettuce_types::ConversationId::new();
         let companion_second_id = lettuce_types::ConversationId::new();
         let companion_session =
-            |id: lettuce_types::ConversationId, created_at: u64, state: Option<String>| {
+            |id: lettuce_types::ConversationId, created_at: i64, state: Option<String>| {
                 lettuce_transfer::LegacyBackupDirectSession {
                     source_id: id.to_string(),
                     character_source_id: companion_id.to_string(),
@@ -904,7 +904,7 @@ mod tests {
         };
         let unpinned_session = |id: lettuce_types::ConversationId,
                                 prompt_source_id: Option<String>,
-                                created_at: u64| {
+                                created_at: i64| {
             lettuce_transfer::LegacyBackupDirectSession {
                 source_id: id.to_string(),
                 root_session_source_id: id.to_string(),
@@ -1360,7 +1360,7 @@ mod tests {
                 content: content.to_owned(),
                 speaker_character_source_id: speaker.map(|id| id.to_string()),
                 turn_number: ordinal,
-                created_at: 200 + ordinal,
+                created_at: 200 + ordinal as i64,
                 usage: group_usage(),
                 selected_variant_source_id: selected,
                 pinned: false,

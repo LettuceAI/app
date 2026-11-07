@@ -80,7 +80,7 @@ struct ImportedLine {
     source_id: String,
     role: &'static str,
     content: String,
-    created_at: u64,
+    created_at: i64,
     variants: Vec<(String, String)>,
     selected: Option<String>,
 }
@@ -110,8 +110,7 @@ where
         let source_id = Uuid::new_v4().to_string();
         let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
-        let millis = |value: i64| u64::try_from(value).unwrap_or(0);
-        let lines = imported_lines(&chat, millis);
+        let lines = imported_lines(&chat);
         let request = DirectConversationLaunchRequest {
             format_version: DIRECT_LAUNCH_REQUEST_FORMAT_V1,
             title: chat_title(&chat, file_stem),
@@ -180,8 +179,8 @@ where
                 snapshots,
                 model: selected_model(&details.model),
                 archived: false,
-                created_at: millis(now.get()),
-                updated_at: millis(now.get()),
+                created_at: now.get(),
+                updated_at: now.get(),
                 messages: lines
                     .iter()
                     .map(|line| TimelineMessage {
@@ -387,8 +386,7 @@ where
                 .iter()
                 .find_map(|member| selected_model(&member.model_override))
         });
-        let millis = |value: i64| u64::try_from(value).unwrap_or(0);
-        let lines = imported_lines(&chat, millis);
+        let lines = imported_lines(&chat);
         let author = |message: &lettuce_transfer::ChatJsonlMessage| {
             (message.role == ChatJsonlRole::Assistant)
                 .then_some(message.name.as_ref())
@@ -413,8 +411,8 @@ where
                 snapshots,
                 model,
                 archived: false,
-                created_at: millis(now.get()),
-                updated_at: millis(now.get()),
+                created_at: now.get(),
+                updated_at: now.get(),
                 messages: lines
                     .iter()
                     .zip(&speaking)
@@ -470,10 +468,7 @@ where
 
 /// The transcript's messages that have content, their swipes as variants
 /// with `swipe_id`, else the first, selected.
-fn imported_lines(
-    chat: &lettuce_transfer::ChatJsonl,
-    millis: impl Fn(i64) -> u64,
-) -> Vec<ImportedLine> {
+fn imported_lines(chat: &lettuce_transfer::ChatJsonl) -> Vec<ImportedLine> {
     chat.messages
         .iter()
         .filter_map(|message| {
@@ -496,7 +491,7 @@ fn imported_lines(
                     ChatJsonlRole::System => "system",
                 },
                 content,
-                created_at: millis(message.created_at),
+                created_at: message.created_at,
                 variants,
                 selected,
             })
