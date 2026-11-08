@@ -26,7 +26,7 @@ use lettuce_types::{JobId, TimestampMillis};
 
 use crate::{
     ArtifactInstallCoordinator, ArtifactInstallError, ArtifactInstallPlan,
-    ArtifactInstallRunResult, ArtifactSource, ArtifactSourceClient, ArtifactSourceError,
+    ArtifactInstallRunResult, ArtifactSource, ArtifactSourceClient,
     PlannedArtifact,
 };
 
@@ -212,7 +212,7 @@ pub enum OnnxRuntimeInstallError {
     #[error("Failed to download ONNX Runtime archive {url}: {error}")]
     Probe {
         url: String,
-        error: ArtifactSourceError,
+        error: ArtifactProbeError,
     },
     #[error("Failed to download ONNX Runtime archive: {0}")]
     Download(ArtifactInstallError),
@@ -229,28 +229,13 @@ pub enum OnnxRuntimeInstallError {
 /// Looks up the size of a release archive before it is downloaded.
 #[async_trait]
 pub trait OnnxRuntimeDownloadSource: ArtifactSourceClient {
-    async fn archive_size(&self, url: &str) -> Result<u64, ArtifactSourceError>;
+    async fn archive_size(&self, url: &str) -> Result<u64, ArtifactProbeError>;
 }
 
 #[async_trait]
 impl OnnxRuntimeDownloadSource for ArtifactDownloadClient {
-    async fn archive_size(&self, url: &str) -> Result<u64, ArtifactSourceError> {
-        self.probe_https_size(url)
-            .await
-            .map_err(|error| match error {
-                ArtifactProbeError::Refused(_) => ArtifactSourceError::InvalidResponse,
-                ArtifactProbeError::Download(
-                    lettuce_network::ArtifactDownloadError::Transport { .. }
-                    | lettuce_network::ArtifactDownloadError::TimedOut,
-                ) => ArtifactSourceError::Transport,
-                ArtifactProbeError::Download(
-                    lettuce_network::ArtifactDownloadError::InvalidRequest { .. },
-                ) => ArtifactSourceError::InvalidRequest,
-                ArtifactProbeError::Download(
-                    lettuce_network::ArtifactDownloadError::InvalidResponse { .. }
-                    | lettuce_network::ArtifactDownloadError::Refused { .. },
-                ) => ArtifactSourceError::InvalidResponse,
-            })
+    async fn archive_size(&self, url: &str) -> Result<u64, ArtifactProbeError> {
+        self.probe_https_size(url).await
     }
 }
 

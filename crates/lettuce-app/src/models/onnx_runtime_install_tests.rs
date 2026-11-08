@@ -5,7 +5,7 @@ use lettuce_embeddings::{CommittedOnnxRuntime, OnnxRuntimeSource};
 use lettuce_types::OperationId;
 
 use super::*;
-use crate::ArtifactBody;
+use crate::{ArtifactBody, ArtifactSourceError};
 
 struct TempApp(PathBuf);
 
@@ -81,6 +81,46 @@ fn archive_downloads_are_size_checked_below_the_download_folder() {
         planned.artifact.local_segments,
         ["1.22.0", "onnxruntime-linux-x64-1.22.0.tgz"]
     );
+}
+
+struct FailedProbe(ArtifactProbeError);
+
+#[async_trait]
+impl ArtifactSourceClient for FailedProbe {
+    async fn open(&self, _: &ArtifactSource, _: u64, _: u64) -> Result<Box<dyn ArtifactBody>, ArtifactSourceError> {
+        panic!("a failed size probe must not start an artifact download");
+    }
+}
+
+#[async_trait]
+impl OnnxRuntimeDownloadSource for FailedProbe {
+    async fn archive_size(&self, _: &str) -> Result<u64, ArtifactProbeError> {
+        Err(self.0)
+    }
+}
+
+#[tokio::test]
+async fn archive_probe_failures_preserve_http_status_timeout_and_validation_reason() {
+    use lettuce_network::ArtifactDownloadError;
+
+    let app = TempApp::new();
+    let database = Database::open_in_memory().expect("database");
+    let installer = OnnxRuntimeInstaller::new(&database, app.paths());
+    for (expected, message) in [
+        (ArtifactProbeError::Refused(403), "status 403"),
+        (ArtifactProbeError::Refused(429), "status 429"),
+        (ArtifactProbeError::Refused(504), "status 504"),
+        (ArtifactDownloadError::TimedOut.into(), "timed out"),
+        (ArtifactDownloadError::InvalidResponse { reason: "content length is missing or zero" }.into(), "content length is missing or zero"),
+    ] {
+        let error = installer.install_first(
+            OnnxRuntimeHostOs::Linux,
+            onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "x86_64").expect("archives"),
+            &FailedProbe(expected), &CancellationToken::new(), &no_events,
+        ).await.expect_err("probe must fail");
+        assert!(error.to_string().contains(message), "lost diagnostic: {error}");
+        assert!(matches!(error, OnnxRuntimeInstallError::Probe { error, .. } if error == expected));
+    }
 }
 
 /// Runtime evidence is created without a committed environment, which is
@@ -262,11 +302,11 @@ mod linux {
 
     #[async_trait]
     impl OnnxRuntimeDownloadSource for Source {
-        async fn archive_size(&self, url: &str) -> Result<u64, ArtifactSourceError> {
+        async fn archive_size(&self, url: &str) -> Result<u64, ArtifactProbeError> {
             self.files
                 .get(url)
                 .map(|bytes| bytes.len() as u64)
-                .ok_or(ArtifactSourceError::InvalidResponse)
+                .ok_or(ArtifactProbeError::Refused(404))
         }
     }
 
@@ -677,7 +717,7 @@ mod linux {
 
     #[async_trait]
     impl OnnxRuntimeDownloadSource for Unreachable {
-        async fn archive_size(&self, _url: &str) -> Result<u64, ArtifactSourceError> {
+        async fn archive_size(&self, _url: &str) -> Result<u64, ArtifactProbeError> {
             panic!("a committed runtime must not be looked up again");
         }
     }
