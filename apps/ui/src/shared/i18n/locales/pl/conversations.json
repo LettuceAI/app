@@ -761,6 +761,12 @@
     "characterAppearanceHint": "Wygląd wszystkich czatów z tą postacią",
     "companionMode": {
       "title": "Tryb towarzysza"
+    },
+    "companionPersonalMemories": {
+      "title": "Przynoś wspomnienia z czatów bezpośrednich"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Zapisuj z powrotem do czatów bezpośrednich"
     }
   },
   "appearance": {
@@ -846,6 +852,12 @@
       "noMatch": "Nic nie pasuje do „{{query}}”",
       "noMatchBody": "Spróbuj słowa ze wspomnienia.",
       "noCategory": "Nic w tej kategorii"
+    },
+    "perspective": {
+      "shared": "Wspólne",
+      "hint": "Tylko {{name}} pamięta te wspomnienia. Pozostali nigdy ich nie widzą.",
+      "emptyTitle": "Nic tu jeszcze nie ma",
+      "emptyBody": "To, co {{name}} wyniesie z tej grupy, pojawia się tutaj. Możesz też dodać własne."
     },
     "sheet": {
       "addTitle": "Dodaj wspomnienie",

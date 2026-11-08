@@ -722,6 +722,12 @@
     "characterAppearanceHint": "Tampilan untuk semua obrolan dengan karakter ini",
     "companionMode": {
       "title": "Mode Companion"
+    },
+    "companionPersonalMemories": {
+      "title": "Bawa memori dari obrolan langsung"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Tulis balik ke obrolan langsung"
     }
   },
   "appearance": {
@@ -798,6 +804,12 @@
       "noMatch": "Tidak ada yang cocok dengan \"{{query}}\"",
       "noMatchBody": "Coba kata dari memorinya sendiri.",
       "noCategory": "Tidak ada di kategori ini"
+    },
+    "perspective": {
+      "shared": "Bersama",
+      "hint": "Hanya {{name}} yang mengingat ini. Anggota lain tidak pernah melihatnya.",
+      "emptyTitle": "Belum ada apa-apa",
+      "emptyBody": "Apa yang ditangkap {{name}} di grup ini muncul di sini. Anda juga dapat menambahkannya sendiri."
     },
     "sheet": {
       "addTitle": "Tambah memori",

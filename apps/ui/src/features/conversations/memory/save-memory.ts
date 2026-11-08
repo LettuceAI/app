@@ -3,13 +3,14 @@ import type { MemoryItemView } from "@/api/generated/bindings";
 import type { MemoryDraft } from "./MemoryItems";
 import type { MemoryWrite } from "./use-memory-write";
 
-export async function saveMemoryDraft(api: ApiClient, conversationId: string, write: MemoryWrite, item: MemoryItemView | null, draft: MemoryDraft, session: number): Promise<boolean> {
+export async function saveMemoryDraft(api: ApiClient, conversationId: string, write: MemoryWrite, item: MemoryItemView | null, draft: MemoryDraft, session: number, perspectiveCharacterId: string | null = null): Promise<boolean> {
+  const scope = perspectiveCharacterId === null ? {} : { perspective_character_id: perspectiveCharacterId };
   const observed = draft.observedAt?.getTime() ?? null;
   let ok = true;
   if (item === null) {
     const payload = { text: draft.text, category: draft.category, observed_at: observed };
     ok = await write(`add:${session}:${JSON.stringify(payload)}`, (current, operationId) =>
-      api.call("memoryAdd", { conversation_id: conversationId, ...payload, expected_revision: current.revision, client_operation_id: operationId }),
+      api.call("memoryAdd", { conversation_id: conversationId, ...payload, ...scope, expected_revision: current.revision, client_operation_id: operationId }),
     );
   } else {
     const textChanged = draft.text !== item.text;
@@ -25,6 +26,7 @@ export async function saveMemoryDraft(api: ApiClient, conversationId: string, wr
         if (stored && !updateText && !updateCategory && !updateDate) return;
         return api.call("memoryUpdate", {
           conversation_id: conversationId,
+          ...scope,
           memory_id: item.id,
           text: updateText ? draft.text : null,
           category: updateCategory ? { type: "set", value: draft.category } : { type: "keep" },
@@ -38,6 +40,7 @@ export async function saveMemoryDraft(api: ApiClient, conversationId: string, wr
       if (current.items.some((entry) => entry.id === item.id && entry.pinned === draft.pinned)) return;
       return api.call("memoryPin", {
         conversation_id: conversationId,
+        ...scope,
         memory_id: item.id,
         pinned: draft.pinned,
         expected_revision: current.revision,
@@ -50,6 +53,7 @@ export async function saveMemoryDraft(api: ApiClient, conversationId: string, wr
         if (current.items.some((entry) => entry.id === item.id && entry.temperature === draft.temperature)) return;
         return api.call("memorySetTemperature", {
           conversation_id: conversationId,
+          ...scope,
           memory_id: item.id,
           temperature: draft.temperature,
           expected_revision: current.revision,

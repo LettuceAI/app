@@ -163,7 +163,13 @@
     "characterModelBody": "Theo cài đặt riêng của họ",
     "companionMode": "Chế độ bạn đồng hành",
     "companionModeOn": "Các thành viên giữ cảm xúc và mối quan hệ thay đổi theo diễn biến cuộc trò chuyện",
-    "companionModeOff": "Các thành viên trả lời mà không theo dõi cảm xúc hay mối quan hệ"
+    "companionModeOff": "Các thành viên trả lời mà không theo dõi cảm xúc hay mối quan hệ",
+    "personalMemories": "Mang theo ký ức từ chat trực tiếp",
+    "personalMemoriesOn": "Mỗi thành viên cũng nhớ các cuộc chat riêng của mình với bạn. Những người khác không bao giờ thấy chúng.",
+    "personalMemoriesOff": "Các thành viên chỉ nhớ những gì đã xảy ra trong nhóm này.",
+    "memoryWriteBack": "Ghi ngược về chat trực tiếp",
+    "memoryWriteBackOn": "Những gì một thành viên rút ra từ nhóm này cũng được nhớ trong các cuộc chat riêng của họ với bạn, nếu nhân vật đó chia sẻ ký ức giữa các cuộc chat.",
+    "memoryWriteBackOff": "Những gì xảy ra ở đây vẫn ở trong nhóm này."
   },
   "edit": {
     "tabs": {

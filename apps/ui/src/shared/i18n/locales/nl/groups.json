@@ -169,7 +169,13 @@
     "characterModelBody": "Wat hun eigen instellingen zeggen",
     "companionMode": "Metgezelmodus",
     "companionModeOn": "Leden houden emoties en relaties die veranderen naarmate de chat vordert",
-    "companionModeOff": "Leden antwoorden zonder bijgehouden emoties of relaties"
+    "companionModeOff": "Leden antwoorden zonder bijgehouden emoties of relaties",
+    "personalMemories": "Herinneringen uit privéchats meenemen",
+    "personalMemoriesOn": "Elk lid herinnert zich ook zijn eigen chats met jou. De anderen zien die nooit.",
+    "personalMemoriesOff": "Leden herinneren zich alleen wat er in deze groep is gebeurd.",
+    "memoryWriteBack": "Terugschrijven naar privéchats",
+    "memoryWriteBackOn": "Wat een lid uit deze groep meeneemt, wordt ook onthouden in zijn eigen chats met jou, als dat personage herinneringen deelt over chats heen.",
+    "memoryWriteBackOff": "Wat hier gebeurt, blijft in deze groep."
   },
   "edit": {
     "tabs": {

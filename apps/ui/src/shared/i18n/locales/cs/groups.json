@@ -181,7 +181,13 @@
     "characterModelBody": "Podle jejich vlastního nastavení",
     "companionMode": "Režim společníka",
     "companionModeOn": "Členové si udržují emoce a vztahy, které se mění v průběhu chatu",
-    "companionModeOff": "Členové odpovídají bez sledovaných emocí a vztahů"
+    "companionModeOff": "Členové odpovídají bez sledovaných emocí a vztahů",
+    "personalMemories": "Přinést paměti z přímých chatů",
+    "personalMemoriesOn": "Každý člen si pamatuje i své vlastní chaty s tebou. Ostatní je nikdy nevidí.",
+    "personalMemoriesOff": "Členové si pamatují jen to, co se stalo v této skupině.",
+    "memoryWriteBack": "Zapisovat zpět do přímých chatů",
+    "memoryWriteBackOn": "To, co si člen z této skupiny odnese, si pamatuje i ve svých chatech s tebou, pokud tato postava sdílí paměť napříč chaty.",
+    "memoryWriteBackOff": "Co se stane tady, zůstane v této skupině."
   },
   "edit": {
     "tabs": {

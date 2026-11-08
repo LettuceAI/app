@@ -169,7 +169,13 @@
     "characterModelBody": "Ahogy a saját beállításai mondják",
     "companionMode": "Társ mód",
     "companionModeOn": "A tagok érzelmei és kapcsolatai a beszélgetés előrehaladtával változnak",
-    "companionModeOff": "A tagok követett érzelmek és kapcsolatok nélkül válaszolnak"
+    "companionModeOff": "A tagok követett érzelmek és kapcsolatok nélkül válaszolnak",
+    "personalMemories": "Közvetlen csevegések memóriáinak behozása",
+    "personalMemoriesOn": "Minden tag a veled folytatott saját csevegéseire is emlékszik. A többiek ezeket sosem látják.",
+    "personalMemoriesOff": "A tagok csak arra emlékeznek, ami ebben a csoportban történt.",
+    "memoryWriteBack": "Visszaírás a közvetlen csevegésekbe",
+    "memoryWriteBackOn": "Amit egy tag ebből a csoportból magával visz, azt a veled folytatott saját csevegéseiben is megjegyzi, ha az a karakter megosztja a memóriát a csevegések között.",
+    "memoryWriteBackOff": "Ami itt történik, az ebben a csoportban marad."
   },
   "edit": {
     "tabs": {

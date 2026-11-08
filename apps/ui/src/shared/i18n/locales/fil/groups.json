@@ -169,7 +169,13 @@
     "characterModelBody": "Kung ano ang sinasabi ng sarili nilang settings",
     "companionMode": "Companion mode",
     "companionModeOn": "Nananatili sa mga kasapi ang mga emosyon at relasyong nagbabago habang tumatagal ang chat",
-    "companionModeOff": "Sumasagot ang mga kasapi nang walang sinusubaybayang emosyon o relasyon"
+    "companionModeOff": "Sumasagot ang mga kasapi nang walang sinusubaybayang emosyon o relasyon",
+    "personalMemories": "Isama ang mga memory ng direktang chat",
+    "personalMemoriesOn": "Naaalala rin ng bawat kasapi ang sarili nilang mga chat mo. Hindi ito nakikita ng iba.",
+    "personalMemoriesOff": "Ang naaalala lang ng mga kasapi ay ang nangyari sa grupong ito.",
+    "memoryWriteBack": "Isulat pabalik sa mga direktang chat",
+    "memoryWriteBackOn": "Ang nakukuha ng isang kasapi mula sa grupong ito ay naaalala rin sa sarili nilang mga chat mo, kung ibinabahagi ng karakter na iyon ang memory sa iba't ibang chat.",
+    "memoryWriteBackOff": "Ang nangyayari rito ay nananatili sa grupong ito."
   },
   "edit": {
     "tabs": {

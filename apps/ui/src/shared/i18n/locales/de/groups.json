@@ -169,7 +169,13 @@
     "characterModelBody": "Was auch immer in den eigenen Einstellungen steht",
     "companionMode": "Companion-Modus",
     "companionModeOn": "Mitglieder behalten Emotionen und Beziehungen, die sich im Verlauf des Chats verändern",
-    "companionModeOff": "Mitglieder antworten ohne verfolgte Emotionen oder Beziehungen"
+    "companionModeOff": "Mitglieder antworten ohne verfolgte Emotionen oder Beziehungen",
+    "personalMemories": "Erinnerungen aus Einzelchats einbeziehen",
+    "personalMemoriesOn": "Jedes Mitglied erinnert sich auch an seine eigenen Chats mit dir. Die anderen sehen diese nie.",
+    "personalMemoriesOff": "Mitglieder erinnern sich nur an das, was in dieser Gruppe passiert ist.",
+    "memoryWriteBack": "In Einzelchats zurückschreiben",
+    "memoryWriteBackOn": "Was ein Mitglied aus dieser Gruppe mitnimmt, wird auch in seinen eigenen Chats mit dir erinnert, wenn diese Figur Erinnerungen chatübergreifend teilt.",
+    "memoryWriteBackOff": "Was hier passiert, bleibt in dieser Gruppe."
   },
   "edit": {
     "tabs": {

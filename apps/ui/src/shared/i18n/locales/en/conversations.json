@@ -735,6 +735,12 @@
     "characterAppearanceHint": "Appearance for all chats with this character",
     "companionMode": {
       "title": "Companion mode"
+    },
+    "companionPersonalMemories": {
+      "title": "Bring direct-chat memories"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Write back to direct chats"
     }
   },
   "appearance": {
@@ -814,6 +820,12 @@
       "noMatch": "Nothing matches \"{{query}}\"",
       "noMatchBody": "Try a word from the memory itself.",
       "noCategory": "Nothing in this category"
+    },
+    "perspective": {
+      "shared": "Shared",
+      "hint": "Only {{name}} recalls these. The others never see them.",
+      "emptyTitle": "Nothing here yet",
+      "emptyBody": "What {{name}} picks up in this group shows up here. You can also add one yourself."
     },
     "sheet": {
       "addTitle": "Add memory",

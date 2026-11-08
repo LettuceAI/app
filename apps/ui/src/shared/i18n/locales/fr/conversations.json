@@ -748,6 +748,12 @@
     "characterAppearanceHint": "Apparence de toutes les discussions avec ce personnage",
     "companionMode": {
       "title": "Mode compagnon"
+    },
+    "companionPersonalMemories": {
+      "title": "Apporter les souvenirs des discussions directes"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Écrire en retour dans les discussions directes"
     }
   },
   "appearance": {
@@ -830,6 +836,12 @@
       "noMatch": "Rien ne correspond à « {{query}} »",
       "noMatchBody": "Essayez un mot du souvenir lui-même.",
       "noCategory": "Rien dans cette catégorie"
+    },
+    "perspective": {
+      "shared": "Partagés",
+      "hint": "Seul {{name}} se souvient de ceux-ci. Les autres ne les voient jamais.",
+      "emptyTitle": "Rien ici pour l'instant",
+      "emptyBody": "Ce que {{name}} retient dans ce groupe apparaît ici. Vous pouvez aussi en ajouter un vous-même."
     },
     "sheet": {
       "addTitle": "Ajouter un souvenir",

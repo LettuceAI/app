@@ -1,16 +1,17 @@
 import { useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCanGoBack, useNavigate, useParams, useRouteContext, useRouter } from "@tanstack/react-router";
+import { useCanGoBack, useNavigate, useParams, useRouteContext, useRouter, useSearch } from "@tanstack/react-router";
 import { Brain, Plus, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, Chip, EmptyState, icon, ListGroup, LoadingState, Page, SearchField, Tab, TabList, Tabs, toast, useCompactLayout } from "@lettuceai/crisp";
+import { Avatar, Button, Chip, EmptyState, FilterBar, icon, ListGroup, LoadingState, Page, SearchField, Tab, TabList, Tabs, Text, toast, useCompactLayout } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
 import type { MemoryCycleView, MemoryItemView, MemoryView, TimelineMessage } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import { characterParticipant } from "../data/messages";
-import { memoryCyclesQuery, memoryQuery, pinnedMessagesQuery, settingsQuery, timelineQuery } from "../data/queries";
+import { memoryCyclesQuery, memoryPerspectiveQuery, memoryQuery, pinnedMessagesQuery, settingsQuery, timelineQuery } from "../data/queries";
+import { groupCompanionStateQuery } from "../companion/queries";
 import { ActivityTab } from "./ActivityTab";
 import { useMemoryError } from "./errors";
 import { MemoryRow, MemorySheet, type MemoryDraft } from "./MemoryItems";
@@ -38,7 +39,6 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
   const canGoBack = useCanGoBack();
   const phone = useCompactLayout();
   const errorText = useMemoryError();
-  const write = useMemoryWrite(api, conversationId);
   const [pinIds] = useState(createOperationIds);
   const [tab, setTab] = useState<Tab>("memories");
   const [target, setTarget] = useState<SheetTarget | null>(null);
@@ -53,6 +53,16 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
   const on = mode !== undefined && mode !== "disabled";
   const dynamic = mode === "dynamic";
   const memory = useQuery({ ...memoryQuery(api, conversationId), enabled: on });
+  const { scope } = useSearch({ from: "/chat/$conversationId/memory" });
+  const companionGroup = settings.data?.kind === "group" && settings.data.companion_mode?.value === true;
+  const groupState = useQuery({ ...groupCompanionStateQuery(api, conversationId), enabled: companionGroup });
+  const members = groupState.data?.members ?? [];
+  const scoped = companionGroup && scope !== undefined && scope !== "shared";
+  const member = scoped ? (members.find((entry) => entry.character_id === scope) ?? null) : null;
+  const memberId = member?.character_id ?? null;
+  const perspective = useQuery({ ...memoryPerspectiveQuery(api, conversationId, memberId), enabled: on && memberId !== null });
+  const current = member === null ? memory : perspective;
+  const write = useMemoryWrite(api, conversationId, memberId);
   const cycles = useInfiniteQuery({ ...memoryCyclesQuery(api, conversationId), enabled: dynamic });
   const pinned = useInfiniteQuery({ ...pinnedMessagesQuery(api, conversationId), enabled: on });
   const timeline = useInfiniteQuery({ ...timelineQuery(api, conversationId), enabled: on });
@@ -71,7 +81,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
   const saveMemory = async (item: MemoryItemView | null, draft: MemoryDraft) => {
     setSaving(true);
     try {
-      const ok = await saveMemoryDraft(api, conversationId, write, item, draft, session);
+      const ok = await saveMemoryDraft(api, conversationId, write, item, draft, session, memberId);
       if (ok) toast.success(t(item === null ? "memory.sheet.added" : "memory.sheet.saved"));
       if (ok) setTarget(null);
     } finally {
@@ -83,7 +93,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
     setSaving(true);
     try {
       const ok = await write(`delete:${session}:${item.id}`, (current, operationId) =>
-        api.call("memoryDelete", { conversation_id: conversationId, memory_id: item.id, expected_revision: current.revision, client_operation_id: operationId }),
+        api.call("memoryDelete", { conversation_id: conversationId, ...(memberId === null ? {} : { perspective_character_id: memberId }), memory_id: item.id, expected_revision: current.revision, client_operation_id: operationId }),
       );
       if (ok) {
         toast.success(t("memory.sheet.deleted"));
@@ -150,19 +160,23 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
   const openChatSettings = () => {
     void navigate({ to: "/chat/$conversationId", params: { conversationId }, search: { panel: "settings" }, state: { panelPushed: true } });
   };
+  const pickScope = (next: string) => {
+    setTarget(null);
+    void navigate({ to: "/chat/$conversationId/memory", params: { conversationId }, search: { scope: next }, resetScroll: false, replace: true });
+  };
   const openSummary = () => {
     setSummarySession((current) => current + 1);
     setSummaryOpen(true);
   };
 
-  const data: MemoryView | undefined = memory.data;
-  const tabs: readonly Tab[] = dynamic ? ["memories", "activity", "pinned"] : ["memories", "pinned"];
+  const data: MemoryView | undefined = current.data;
+  const tabs: readonly Tab[] = member === null && dynamic ? ["memories", "activity", "pinned"] : ["memories", "pinned"];
   const active = tabs.includes(tab) ? tab : "memories";
   const complete = (query: { isSuccess: boolean; hasNextPage: boolean }, count: number) => (query.isSuccess && !query.hasNextPage ? count : undefined);
   const counts: Record<Tab, number | undefined> = {
     memories: data?.items.length,
     activity: complete(cycles, cycleItems.length),
-    pinned: complete(pinned, pinnedItems.length),
+    pinned: member === null ? complete(pinned, pinnedItems.length) : data?.items.filter((entry) => entry.pinned).length,
   };
   const tabLabel: Record<Tab, string> = { memories: t("memory.tabs.memories"), activity: t("memory.tabs.activity"), pinned: t("memory.tabs.pinned") };
 
@@ -178,9 +192,23 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
         action={<Button onClick={openChatSettings}>{t("memory.off.action")}</Button>}
       />
     );
-  } else if (memory.isPending) body = <LoadingState />;
-  else if (memory.isError) body = <FailureState error={memory.error} onRetry={() => void memory.refetch()} />;
-  else if (data) {
+  } else if (scoped && groupState.isPending) body = <LoadingState />;
+  else if (current.isPending) body = <LoadingState />;
+  else if (current.isError) body = <FailureState error={current.error} onRetry={() => void current.refetch()} />;
+  else if (data && member !== null) {
+    body = (
+      <div className="@container px-4 pb-10 pt-4 @xl:px-8">
+        <MemoriesTab
+          key={`${member.character_id}:${active}`}
+          items={active === "pinned" ? data.items.filter((entry) => entry.pinned) : data.items}
+          dynamic={dynamic}
+          perspective={member.display_name}
+          onOpen={(item) => setTarget({ kind: "edit", item })}
+          onAdd={() => setTarget({ kind: "add" })}
+        />
+      </div>
+    );
+  } else if (data) {
     const main =
       active === "memories" ? (
         <MemoriesTab items={data.items} dynamic={dynamic} onOpen={(item) => setTarget({ kind: "edit", item })} onAdd={() => setTarget({ kind: "add" })} />
@@ -232,18 +260,31 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
         onBack={back}
         backLabel={t("memory.back")}
         padding="none"
-        {...(on && data
+        {...(on && memory.data
           ? {
               filters: (
-                <Tabs value={active} onChange={setTab}>
-                  <TabList>
-                    {tabs.map((id) => (
-                      <Tab key={id} value={id} {...(counts[id] === undefined ? {} : { count: counts[id] })}>
-                        {tabLabel[id]}
-                      </Tab>
-                    ))}
-                  </TabList>
-                </Tabs>
+                <div className="space-y-2">
+                  {companionGroup && members.length > 0 && (
+                    <FilterBar
+                      aria-label={t("companion.group.members")}
+                      value={member?.character_id ?? "shared"}
+                      onChange={pickScope}
+                      options={[
+                        { value: "shared", label: t("memory.perspective.shared") },
+                        ...members.map((entry) => ({ value: entry.character_id, label: entry.display_name, icon: <Avatar src={participants.find((participant) => participant.character_id === entry.character_id)?.avatar?.url ?? null} name={entry.display_name} size="xs" /> })),
+                      ]}
+                    />
+                  )}
+                  <Tabs value={active} onChange={setTab}>
+                    <TabList>
+                      {tabs.map((id) => (
+                        <Tab key={id} value={id} {...(counts[id] === undefined ? {} : { count: counts[id] })}>
+                          {tabLabel[id]}
+                        </Tab>
+                      ))}
+                    </TabList>
+                  </Tabs>
+                </div>
               ),
             }
           : {})}
@@ -255,7 +296,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
           key={session}
           open={target !== null}
           item={shown.kind === "edit" ? shown.item : null}
-          categories={data.allowed_categories}
+          categories={(memory.data ?? data).allowed_categories}
           busy={saving}
           onClose={() => setTarget(null)}
           onSave={(draft) => void saveMemory(shown.kind === "edit" ? shown.item : null, draft)}
@@ -264,11 +305,11 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
           }}
         />
       )}
-      {data && (
+      {memory.data && (
         <SummarySheet
           key={summarySession}
           open={summaryOpen}
-          text={data.summary?.text ?? ""}
+          text={memory.data.summary?.text ?? ""}
           dynamic={dynamic}
           busy={saving}
           onClose={() => setSummaryOpen(false)}
@@ -280,7 +321,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
   );
 }
 
-export function MemoriesTab({ items, dynamic, onOpen, onAdd, companion = false }: { items: readonly MemoryItemView[]; dynamic: boolean; onOpen: (item: MemoryItemView) => void; onAdd: () => void; companion?: boolean }) {
+export function MemoriesTab({ items, dynamic, onOpen, onAdd, companion = false, perspective }: { items: readonly MemoryItemView[]; dynamic: boolean; onOpen: (item: MemoryItemView) => void; onAdd: () => void; companion?: boolean; perspective?: string }) {
   const { t } = useTranslation("conversations");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<MemoryItemView["category"]>(null);
@@ -301,6 +342,7 @@ export function MemoriesTab({ items, dynamic, onOpen, onAdd, companion = false }
 
   return (
     <div className="space-y-4">
+      {perspective !== undefined && <Text variant="hint">{t("memory.perspective.hint", { name: perspective })}</Text>}
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <SearchField value={query} onChange={setQuery} placeholder={t("memory.search")} aria-label={t("memory.search")} />
@@ -325,8 +367,8 @@ export function MemoriesTab({ items, dynamic, onOpen, onAdd, companion = false }
         items.length === 0 ? (
           <EmptyState
             icon={<Brain size={icon.xl} />}
-            title={t(companion ? "companion.memories.emptyTitle" : "memory.empty.title")}
-            description={companion ? t("companion.memories.emptyBody") : dynamic ? t("memory.empty.dynamic") : t("memory.empty.manual")}
+            title={perspective !== undefined ? t("memory.perspective.emptyTitle") : t(companion ? "companion.memories.emptyTitle" : "memory.empty.title")}
+            description={perspective !== undefined ? t("memory.perspective.emptyBody", { name: perspective }) : companion ? t("companion.memories.emptyBody") : dynamic ? t("memory.empty.dynamic") : t("memory.empty.manual")}
             action={
               <Button leading={<Plus size={icon.sm} />} onClick={onAdd}>
                 {t("memory.empty.action")}

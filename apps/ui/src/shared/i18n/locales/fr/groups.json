@@ -175,7 +175,13 @@
     "characterModelBody": "Selon ses propres paramètres",
     "companionMode": "Mode compagnon",
     "companionModeOn": "Les membres gardent des émotions et des relations qui évoluent au fil de la discussion",
-    "companionModeOff": "Les membres répondent sans émotions ni relations suivies"
+    "companionModeOff": "Les membres répondent sans émotions ni relations suivies",
+    "personalMemories": "Apporter les souvenirs des discussions directes",
+    "personalMemoriesOn": "Chaque membre se souvient aussi de ses propres discussions avec vous. Les autres ne les voient jamais.",
+    "personalMemoriesOff": "Les membres ne se souviennent que de ce qui s'est passé dans ce groupe.",
+    "memoryWriteBack": "Écrire en retour dans les discussions directes",
+    "memoryWriteBackOn": "Ce qu'un membre retient de ce groupe est aussi mémorisé dans ses propres discussions avec vous, si ce personnage partage sa mémoire entre les discussions.",
+    "memoryWriteBackOff": "Ce qui se passe ici reste dans ce groupe."
   },
   "edit": {
     "tabs": {

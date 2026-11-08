@@ -175,7 +175,13 @@
     "characterModelBody": "O que as configurações dele disserem",
     "companionMode": "Modo Companion",
     "companionModeOn": "Os membros mantêm emoções e relações que mudam conforme a conversa avança",
-    "companionModeOff": "Os membros respondem sem emoções ou relações acompanhadas"
+    "companionModeOff": "Os membros respondem sem emoções ou relações acompanhadas",
+    "personalMemories": "Trazer memórias dos chats diretos",
+    "personalMemoriesOn": "Cada membro também se lembra dos próprios chats com você. Os outros nunca os veem.",
+    "personalMemoriesOff": "Os membros só se lembram do que aconteceu neste grupo.",
+    "memoryWriteBack": "Escrever de volta nos chats diretos",
+    "memoryWriteBackOn": "O que um membro leva deste grupo também é lembrado nos próprios chats dele com você, se esse personagem compartilha memória entre chats.",
+    "memoryWriteBackOff": "O que acontece aqui fica neste grupo."
   },
   "edit": {
     "tabs": {

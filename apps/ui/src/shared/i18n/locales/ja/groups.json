@@ -163,7 +163,13 @@
     "characterModelBody": "それぞれの設定に従います",
     "companionMode": "コンパニオンモード",
     "companionModeOn": "メンバーは、チャットが進むにつれて変化する感情や関係を保ちます",
-    "companionModeOff": "メンバーは、感情や関係を追跡せずに返答します"
+    "companionModeOff": "メンバーは、感情や関係を追跡せずに返答します",
+    "personalMemories": "ダイレクトチャットのメモリを持ち込む",
+    "personalMemoriesOn": "各メンバーは、あなたとの自分のチャットも思い出します。ほかのメンバーには見えません。",
+    "personalMemoriesOff": "メンバーは、このグループで起きたことだけを思い出します。",
+    "memoryWriteBack": "ダイレクトチャットに書き戻す",
+    "memoryWriteBackOn": "メンバーがこのグループで得たことは、そのキャラクターがチャット間でメモリを共有している場合、あなたとの自分のチャットでも記憶されます。",
+    "memoryWriteBackOff": "ここで起きたことは、このグループ内にとどまります。"
   },
   "edit": {
     "tabs": {

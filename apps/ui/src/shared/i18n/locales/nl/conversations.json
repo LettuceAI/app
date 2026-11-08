@@ -735,6 +735,12 @@
     "characterAppearanceHint": "Weergave voor alle chats met dit karakter",
     "companionMode": {
       "title": "Metgezelmodus"
+    },
+    "companionPersonalMemories": {
+      "title": "Herinneringen uit privéchats meenemen"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Terugschrijven naar privéchats"
     }
   },
   "appearance": {
@@ -814,6 +820,12 @@
       "noMatch": "Niets komt overeen met \"{{query}}\"",
       "noMatchBody": "Probeer een woord uit de herinnering zelf.",
       "noCategory": "Niets in deze categorie"
+    },
+    "perspective": {
+      "shared": "Gedeeld",
+      "hint": "Alleen {{name}} herinnert zich deze. De anderen zien ze nooit.",
+      "emptyTitle": "Hier is nog niets",
+      "emptyBody": "Wat {{name}} in deze groep oppikt, verschijnt hier. Je kunt er ook zelf een toevoegen."
     },
     "sheet": {
       "addTitle": "Herinnering toevoegen",

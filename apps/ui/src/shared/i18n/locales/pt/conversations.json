@@ -748,6 +748,12 @@
     "characterAppearanceHint": "Aparência para todas as conversas com este personagem",
     "companionMode": {
       "title": "Modo Companion"
+    },
+    "companionPersonalMemories": {
+      "title": "Trazer memórias dos chats diretos"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Escrever de volta nos chats diretos"
     }
   },
   "appearance": {
@@ -830,6 +836,12 @@
       "noMatch": "Nada corresponde a \"{{query}}\"",
       "noMatchBody": "Tente uma palavra da própria memória.",
       "noCategory": "Nada nesta categoria"
+    },
+    "perspective": {
+      "shared": "Compartilhadas",
+      "hint": "Só {{name}} se lembra destas. Os outros nunca as veem.",
+      "emptyTitle": "Nada aqui ainda",
+      "emptyBody": "O que {{name}} aprende neste grupo aparece aqui. Você também pode adicionar uma."
     },
     "sheet": {
       "addTitle": "Adicionar memória",

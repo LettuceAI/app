@@ -4,13 +4,14 @@ import { toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
 import type { MemoryView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
-import { memoryQuery } from "../data/queries";
+import { memoryPerspectiveQuery, memoryQuery } from "../data/queries";
 import { useMemoryError } from "./errors";
 
-export async function refreshMemory(queryClient: QueryClient, api: ApiClient, conversationId: string): Promise<void> {
-  void queryClient.invalidateQueries({ queryKey: [...queryKeys.memory.detail(conversationId), "cycles"] });
+export async function refreshMemory(queryClient: QueryClient, api: ApiClient, conversationId: string, perspectiveCharacterId: string | null = null): Promise<void> {
+  if (perspectiveCharacterId === null) void queryClient.invalidateQueries({ queryKey: [...queryKeys.memory.detail(conversationId), "cycles"] });
   try {
-    await queryClient.fetchQuery({ ...memoryQuery(api, conversationId), staleTime: 0 });
+    if (perspectiveCharacterId === null) await queryClient.fetchQuery({ ...memoryQuery(api, conversationId), staleTime: 0 });
+    else await queryClient.fetchQuery({ ...memoryPerspectiveQuery(api, conversationId, perspectiveCharacterId), staleTime: 0 });
   } catch {
     return;
   }
@@ -19,7 +20,7 @@ export async function refreshMemory(queryClient: QueryClient, api: ApiClient, co
 export type MemoryEdit = (view: MemoryView, operationId: string) => Promise<unknown>;
 export type MemoryWrite = (key: string, edit: MemoryEdit) => Promise<boolean>;
 
-export function useMemoryWrite(api: ApiClient, conversationId: string): MemoryWrite {
+export function useMemoryWrite(api: ApiClient, conversationId: string, perspectiveCharacterId: string | null = null): MemoryWrite {
   const queryClient = useQueryClient();
   const errorText = useMemoryError();
   const tail = useRef<Promise<unknown>>(Promise.resolve());
@@ -29,7 +30,7 @@ export function useMemoryWrite(api: ApiClient, conversationId: string): MemoryWr
       const run = tail.current.then(async (): Promise<boolean> => {
         let operation = pending.get(key);
         if (!operation) {
-          const current = queryClient.getQueryData<MemoryView>(queryKeys.memory.detail(conversationId));
+          const current = queryClient.getQueryData<MemoryView>(perspectiveCharacterId === null ? queryKeys.memory.detail(conversationId) : queryKeys.memory.perspective(conversationId, perspectiveCharacterId));
           if (!current) return false;
           operation = { view: current, id: crypto.randomUUID(), edit };
           pending.set(key, operation);
@@ -41,15 +42,15 @@ export function useMemoryWrite(api: ApiClient, conversationId: string): MemoryWr
           const conflict = isApiFailure(error) && error.code === "conflict";
           if (conflict) pending.delete(key);
           toast.error(errorText(error));
-          if (conflict) await refreshMemory(queryClient, api, conversationId);
+          if (conflict) await refreshMemory(queryClient, api, conversationId, perspectiveCharacterId);
           return false;
         }
-        await refreshMemory(queryClient, api, conversationId);
+        await refreshMemory(queryClient, api, conversationId, perspectiveCharacterId);
         return true;
       });
       tail.current = run;
       return run;
     },
-    [api, conversationId, queryClient, errorText, pending],
+    [api, conversationId, perspectiveCharacterId, queryClient, errorText, pending],
   );
 }

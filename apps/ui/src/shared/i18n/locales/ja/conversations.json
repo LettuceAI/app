@@ -722,6 +722,12 @@
     "characterAppearanceHint": "このキャラクターとのすべてのチャットの外観",
     "companionMode": {
       "title": "コンパニオンモード"
+    },
+    "companionPersonalMemories": {
+      "title": "ダイレクトチャットのメモリを持ち込む"
+    },
+    "companionMemoryWriteBack": {
+      "title": "ダイレクトチャットに書き戻す"
     }
   },
   "appearance": {
@@ -798,6 +804,12 @@
       "noMatch": "「{{query}}」に一致するものはありません",
       "noMatchBody": "メモリ自体の言葉を試してください。",
       "noCategory": "このカテゴリには何もありません"
+    },
+    "perspective": {
+      "shared": "共有",
+      "hint": "{{name}}だけがこれらを思い出します。ほかのメンバーには見えません。",
+      "emptyTitle": "まだ何もありません",
+      "emptyBody": "このグループで{{name}}が得たことがここに表示されます。自分で追加することもできます。"
     },
     "sheet": {
       "addTitle": "メモリを追加",

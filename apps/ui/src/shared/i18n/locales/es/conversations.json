@@ -748,6 +748,12 @@
     "characterAppearanceHint": "Apariencia de todos los chats con este personaje",
     "companionMode": {
       "title": "Modo compañero"
+    },
+    "companionPersonalMemories": {
+      "title": "Traer memorias de chats directos"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Escribir de vuelta en los chats directos"
     }
   },
   "appearance": {
@@ -830,6 +836,12 @@
       "noMatch": "Nada coincide con «{{query}}»",
       "noMatchBody": "Prueba con una palabra de la propia memoria.",
       "noCategory": "No hay nada en esta categoría"
+    },
+    "perspective": {
+      "shared": "Compartida",
+      "hint": "Solo {{name}} recuerda esto. Los demás nunca lo ven.",
+      "emptyTitle": "Aún no hay nada",
+      "emptyBody": "Lo que {{name}} capte en este grupo aparece aquí. También puedes añadir una tú."
     },
     "sheet": {
       "addTitle": "Añadir memoria",

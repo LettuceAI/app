@@ -169,7 +169,13 @@
     "characterModelBody": "Det deres egne innstillinger sier",
     "companionMode": "Kompanjongmodus",
     "companionModeOn": "Medlemmene beholder følelser og relasjoner som endrer seg etter hvert som samtalen går",
-    "companionModeOff": "Medlemmene svarer uten sporede følelser eller relasjoner"
+    "companionModeOff": "Medlemmene svarer uten sporede følelser eller relasjoner",
+    "personalMemories": "Ta med minner fra direktesamtaler",
+    "personalMemoriesOn": "Hvert medlem husker også sine egne samtaler med deg. De andre ser dem aldri.",
+    "personalMemoriesOff": "Medlemmene husker bare det som skjedde i denne gruppen.",
+    "memoryWriteBack": "Skriv tilbake til direktesamtaler",
+    "memoryWriteBackOn": "Det et medlem tar med seg fra denne gruppen, huskes også i medlemmets egne samtaler med deg, hvis den karakteren deler minner på tvers av samtaler.",
+    "memoryWriteBackOff": "Det som skjer her, blir i denne gruppen."
   },
   "edit": {
     "tabs": {

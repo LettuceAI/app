@@ -735,6 +735,12 @@
     "characterAppearanceHint": "Darstellung für alle Chats mit diesem Charakter",
     "companionMode": {
       "title": "Companion-Modus"
+    },
+    "companionPersonalMemories": {
+      "title": "Erinnerungen aus Einzelchats einbeziehen"
+    },
+    "companionMemoryWriteBack": {
+      "title": "In Einzelchats zurückschreiben"
     }
   },
   "appearance": {
@@ -814,6 +820,12 @@
       "noMatch": "Nichts passt zu „{{query}}“",
       "noMatchBody": "Versuch es mit einem Wort aus der Erinnerung selbst.",
       "noCategory": "Nichts in dieser Kategorie"
+    },
+    "perspective": {
+      "shared": "Gemeinsam",
+      "hint": "Nur {{name}} erinnert sich daran. Die anderen sehen sie nie.",
+      "emptyTitle": "Noch nichts hier",
+      "emptyBody": "Was {{name}} in dieser Gruppe aufschnappt, erscheint hier. Du kannst auch selbst eine hinzufügen."
     },
     "sheet": {
       "addTitle": "Erinnerung hinzufügen",

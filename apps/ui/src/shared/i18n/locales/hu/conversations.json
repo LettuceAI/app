@@ -735,6 +735,12 @@
     "characterAppearanceHint": "A karakter minden beszélgetésének megjelenése",
     "companionMode": {
       "title": "Társ mód"
+    },
+    "companionPersonalMemories": {
+      "title": "Közvetlen csevegések memóriáinak behozása"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Visszaírás a közvetlen csevegésekbe"
     }
   },
   "appearance": {
@@ -814,6 +820,12 @@
       "noMatch": "Semmi sem egyezik ezzel: „{{query}}”",
       "noMatchBody": "Próbálj egy szót magából a memóriából.",
       "noCategory": "Ebben a kategóriában nincs semmi"
+    },
+    "perspective": {
+      "shared": "Közös",
+      "hint": "Csak {{name}} emlékszik ezekre. A többiek sosem látják őket.",
+      "emptyTitle": "Itt még nincs semmi",
+      "emptyBody": "Amit {{name}} ebben a csoportban megjegyez, itt jelenik meg. Te is hozzáadhatsz egyet."
     },
     "sheet": {
       "addTitle": "Memória hozzáadása",

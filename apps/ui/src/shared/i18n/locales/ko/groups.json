@@ -163,7 +163,13 @@
     "characterModelBody": "각자 설정에 따름",
     "companionMode": "동반자 모드",
     "companionModeOn": "구성원은 채팅이 이어지면서 변하는 감정과 관계를 유지해요",
-    "companionModeOff": "구성원은 감정과 관계를 추적하지 않고 답해요"
+    "companionModeOff": "구성원은 감정과 관계를 추적하지 않고 답해요",
+    "personalMemories": "1:1 채팅의 기억 가져오기",
+    "personalMemoriesOn": "각 구성원은 나와 나눈 자신의 채팅도 기억해요. 다른 구성원은 이를 볼 수 없어요.",
+    "personalMemoriesOff": "구성원은 이 그룹에서 있었던 일만 기억해요.",
+    "memoryWriteBack": "1:1 채팅에 다시 기록하기",
+    "memoryWriteBackOn": "구성원이 이 그룹에서 얻은 내용은, 그 캐릭터가 채팅 간에 기억을 공유한다면 나와 나눈 자신의 채팅에서도 기억돼요.",
+    "memoryWriteBackOff": "여기서 있었던 일은 이 그룹에만 남아요."
   },
   "edit": {
     "tabs": {

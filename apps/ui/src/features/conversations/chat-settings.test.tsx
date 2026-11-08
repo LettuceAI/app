@@ -284,6 +284,38 @@ describe("chat settings panel", () => {
     expect(direct).toBeTruthy();
   });
 
+  it("shows the direct-chat memory rows only while companion mode is on and resets a chat override", async () => {
+    const member = (id: string, name: string): ParticipantSettings => ({ participant_id: `p-${id}`, character_id: id, name, enabled: true, muted: false, model: { id: null, source: "group" } });
+    const groupSettings = (companion: boolean): ConversationSettingsView => ({ ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, companion_mode: { value: companion, source: "group" }, companion_personal_memories: { value: true, source: "conversation" }, companion_memory_write_back: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [member("ca", "Ada")] } });
+    const update = vi.fn<NonNullable<MockCallHandlers["conversationSettingsUpdate"]>>(() => ({ status: "ok", data: groupSettings(true) }));
+    const calls = (companion: boolean): MockCallHandlers => ({
+      ...panelCalls,
+      conversationOpen: () => ({ status: "ok", data: view([], { kind: "group", source: { type: "group", group_id: "g1" } }) }),
+      conversationSettingsGet: () => ({ status: "ok", data: groupSettings(companion) }),
+      conversationSettingsUpdate: update,
+      conversationParticipationStats: () => ({ status: "ok", data: { total_messages: 0, items: [] } }),
+    });
+    await open({ path: "/chat/c1?panel=settings", calls: calls(false) });
+    await screen.findByRole("switch", { name: "Companion mode" });
+    expect(screen.queryByRole("switch", { name: "Bring direct-chat memories" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Write back to direct chats" })).toBeNull();
+    cleanup();
+    await open({ path: "/chat/c1?panel=settings", calls: calls(true) });
+    const personal = await screen.findByRole("switch", { name: "Bring direct-chat memories" });
+    const writeBack = screen.getByRole("switch", { name: "Write back to direct chats" });
+    expect(personal.getAttribute("aria-checked")).toBe("true");
+    expect(writeBack.getAttribute("aria-checked")).toBe("false");
+    expect(within(personal.parentElement!.parentElement!.parentElement!).getByText("This chat only")).toBeTruthy();
+    expect(within(writeBack.parentElement!.parentElement!.parentElement!).getByText("From the group")).toBeTruthy();
+    expect(within(writeBack.parentElement!).queryByRole("button", { name: "Reset" })).toBeNull();
+    fireEvent.click(writeBack);
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![0].patch).toMatchObject({ companion_memory_write_back: { type: "set", value: true } });
+    fireEvent.click(within(personal.parentElement!).getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(update.mock.calls[1]![0].patch).toMatchObject({ companion_personal_memories: { type: "reset" } });
+  });
+
   it("opens the group's notes from a group chat and saves a note aimed at one member", async () => {
     const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, disable_character_notes: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
     const upsert = vi.fn<NonNullable<MockCallHandlers["groupNotesUpsert"]>>((request) => ({ status: "ok", data: { id: "n1", group_id: request.group_id, visible_to: request.visible_to, label: request.label, content: request.content, available_at: request.available_at, expires_at: null, recurrence: "none", recurrence_window_ms: null, enabled: true, created_at: 1, updated_at: 1 } }));

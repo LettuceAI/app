@@ -285,11 +285,11 @@ export const commands = {
 	hfAuthClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_clear")),
 	memoryGet: (request: ConversationRequest) => typedError<MemoryView, ApiError_Serialize>(__TAURI_INVOKE("memory_get", { request })),
 	groupCompanionMemoryGet: (request: GroupCompanionMemoryGetRequest) => typedError<MemoryView, ApiError_Serialize>(__TAURI_INVOKE("group_companion_memory_get", { request })),
-	memoryAdd: (request: MemoryAddRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_add", { request })),
+	memoryAdd: (request: MemoryAddRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_add", { request })),
 	memoryUpdate: (request: MemoryUpdateRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_update", { request })),
-	memoryDelete: (request: MemoryDeleteRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_delete", { request })),
-	memoryPin: (request: MemoryPinRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_pin", { request })),
-	memorySetTemperature: (request: MemoryTemperatureRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_set_temperature", { request })),
+	memoryDelete: (request: MemoryDeleteRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_delete", { request })),
+	memoryPin: (request: MemoryPinRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_pin", { request })),
+	memorySetTemperature: (request: MemoryTemperatureRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_set_temperature", { request })),
 	memorySummaryUpdate: (request: MemorySummaryUpdateRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_summary_update", { request })),
 	memoryTrigger: (request: MemoryTriggerRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("memory_trigger", { request })),
 	memoryRetry: (request: MemoryRetryRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("memory_retry", { request })),
@@ -2603,14 +2603,14 @@ export type GroupCompanionMemberView = {
 	member_relationships: GroupMemberRelationshipView[],
 };
 
-export type GroupCompanionMessageEffectsRequest = {
-	conversation_id: string,
-	message_id: string,
-};
-
 export type GroupCompanionMemoryGetRequest = {
 	conversation_id: string,
 	character_id: string,
+};
+
+export type GroupCompanionMessageEffectsRequest = {
+	conversation_id: string,
+	message_id: string,
 };
 
 export type GroupCompanionStateGetRequest = {
@@ -6181,7 +6181,9 @@ export type MediaSaveToRequest = {
 	target: FileTarget,
 };
 
-export type MemoryAddRequest = {
+export type MemoryAddRequest = MemoryAddRequest_Serialize | MemoryAddRequest_Deserialize;
+
+export type MemoryAddRequest_Deserialize = {
 	conversation_id: string,
 	text: string,
 	category: MemoryCategory | null,
@@ -6189,6 +6191,16 @@ export type MemoryAddRequest = {
 	expected_revision: number,
 	client_operation_id: string,
 	perspective_character_id?: string | null,
+};
+
+export type MemoryAddRequest_Serialize = {
+	conversation_id: string,
+	text: string,
+	category: MemoryCategory | null,
+	observed_at: number | null,
+	expected_revision: number,
+	client_operation_id: string,
+	perspective_character_id: string | null,
 };
 
 /**  Why a chat's dynamic memory does not run. */
@@ -6248,12 +6260,22 @@ export type MemoryCyclesRequest = {
 	limit: number | null,
 };
 
-export type MemoryDeleteRequest = {
+export type MemoryDeleteRequest = MemoryDeleteRequest_Serialize | MemoryDeleteRequest_Deserialize;
+
+export type MemoryDeleteRequest_Deserialize = {
 	conversation_id: string,
 	memory_id: string,
 	expected_revision: number,
 	client_operation_id: string,
 	perspective_character_id?: string | null,
+};
+
+export type MemoryDeleteRequest_Serialize = {
+	conversation_id: string,
+	memory_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	perspective_character_id: string | null,
 };
 
 export type MemoryEditResult = {
@@ -6299,13 +6321,24 @@ export type MemoryOrigin = "user" | "model" | "import";
 
 export type MemoryPausedReason = "lease_lost";
 
-export type MemoryPinRequest = {
+export type MemoryPinRequest = MemoryPinRequest_Serialize | MemoryPinRequest_Deserialize;
+
+export type MemoryPinRequest_Deserialize = {
 	conversation_id: string,
 	memory_id: string,
 	pinned: boolean,
 	expected_revision: number,
 	client_operation_id: string,
 	perspective_character_id?: string | null,
+};
+
+export type MemoryPinRequest_Serialize = {
+	conversation_id: string,
+	memory_id: string,
+	pinned: boolean,
+	expected_revision: number,
+	client_operation_id: string,
+	perspective_character_id: string | null,
 };
 
 export type MemoryRetryRequest = {
@@ -6363,13 +6396,24 @@ export type MemorySummaryView = {
 
 export type MemoryTemperature = "hot" | "cold";
 
-export type MemoryTemperatureRequest = {
+export type MemoryTemperatureRequest = MemoryTemperatureRequest_Serialize | MemoryTemperatureRequest_Deserialize;
+
+export type MemoryTemperatureRequest_Deserialize = {
 	conversation_id: string,
 	memory_id: string,
 	temperature: MemoryTemperature,
 	expected_revision: number,
 	client_operation_id: string,
 	perspective_character_id?: string | null,
+};
+
+export type MemoryTemperatureRequest_Serialize = {
+	conversation_id: string,
+	memory_id: string,
+	temperature: MemoryTemperature,
+	expected_revision: number,
+	client_operation_id: string,
+	perspective_character_id: string | null,
 };
 
 export type MemoryTriggerRequest = {
@@ -6398,7 +6442,7 @@ export type MemoryUpdateRequest_Serialize = {
 	observed_at: MemoryObservedAtChange,
 	expected_revision: number,
 	client_operation_id: string,
-	perspective_character_id?: string | null,
+	perspective_character_id: string | null,
 };
 
 export type MemoryView = {

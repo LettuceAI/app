@@ -748,6 +748,12 @@
     "characterAppearanceHint": "Aspetto per tutte le chat con questo personaggio",
     "companionMode": {
       "title": "Modalità Companion"
+    },
+    "companionPersonalMemories": {
+      "title": "Porta i ricordi delle chat dirette"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Riscrivi nelle chat dirette"
     }
   },
   "appearance": {
@@ -830,6 +836,12 @@
       "noMatch": "Niente corrisponde a \"{{query}}\"",
       "noMatchBody": "Prova con una parola del ricordo stesso.",
       "noCategory": "Niente in questa categoria"
+    },
+    "perspective": {
+      "shared": "Condivisi",
+      "hint": "Solo {{name}} ricorda questi. Gli altri non li vedono mai.",
+      "emptyTitle": "Ancora niente qui",
+      "emptyBody": "Ciò che {{name}} coglie in questo gruppo compare qui. Puoi anche aggiungerne uno tu."
     },
     "sheet": {
       "addTitle": "Aggiungi ricordo",

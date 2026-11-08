@@ -43,6 +43,14 @@ export function memoryQuery(api: ApiClient, conversationId: string) {
   });
 }
 
+export function memoryPerspectiveQuery(api: ApiClient, conversationId: string, characterId: string | null) {
+  return queryOptions({
+    queryKey: queryKeys.memory.perspective(conversationId, characterId ?? ""),
+    queryFn: () => api.call("groupCompanionMemoryGet", { conversation_id: conversationId, character_id: characterId ?? "" }),
+    enabled: characterId !== null,
+  });
+}
+
 export function metricsQuery(api: ApiClient, conversationId: string, messageId: string) {
   return queryOptions({
     queryKey: [...queryKeys.conversations.detail(conversationId), "metrics", messageId] as const,

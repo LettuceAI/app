@@ -739,3 +739,87 @@ it("starts a new add action after cancelling an uncertain save", async () => {
   await waitFor(() => expect(requests).toHaveLength(2));
   expect(requests[1]?.client_operation_id).not.toBe(requests[0]?.client_operation_id);
 });
+
+describe("group companion member memory", () => {
+  const members = [
+    { character_id: "ca", participant_id: "pa", display_name: "Ada" },
+    { character_id: "cb", participant_id: "pb", display_name: "Bea" },
+  ];
+
+  function groupCalls(companion: boolean, perspective: { revision: number; items: MemoryItemView[] }, asked: Record<string, unknown>[]): MockCallHandlers {
+    const group: ConversationView = {
+      ...conversation([message("a1", "assistant", "Sit down.")]),
+      kind: "group",
+      source: { type: "group", group_id: "g1" },
+      participants: [
+        { id: "pu", role: "user", name: "Hunter", character_id: null, avatar: null },
+        ...members.map((entry) => ({ id: entry.participant_id, role: "character" as const, name: entry.display_name, character_id: entry.character_id, avatar: null })),
+      ],
+    };
+    return {
+      conversationOpen: () => ({ status: "ok", data: group }),
+      conversationSettingsGet: () => ({ status: "ok", data: { ...settingsFor("dynamic"), kind: "group", companion_mode: { value: companion, source: "group" } } }),
+      groupCompanionStateGet: () => ({ status: "ok", data: companion ? { members } as never : null }),
+      groupCompanionMemoryGet: (request: Record<string, unknown>) => {
+        asked.push(request);
+        return { status: "ok", data: { items: perspective.items, summary: null, status: idleStatus, revision: perspective.revision, allowed_categories: ["profile", "preference"] } };
+      },
+    };
+  }
+
+  it("offers the scope picker only for a companion-mode group", async () => {
+    await open();
+    await screen.findByPlaceholderText("Search memories");
+    expect(screen.queryByText("Shared")).toBeNull();
+    cleanup();
+    await open({ calls: groupCalls(false, { revision: 7, items: [] }, []) });
+    await screen.findByPlaceholderText("Search memories");
+    expect(screen.queryByText("Shared")).toBeNull();
+    cleanup();
+    await open({ calls: groupCalls(true, { revision: 7, items: [] }, []) });
+    await screen.findByPlaceholderText("Search memories");
+    expect(await screen.findByText("Shared")).toBeTruthy();
+    expect(screen.getByText("Ada")).toBeTruthy();
+    expect(screen.getByText("Bea")).toBeTruthy();
+    expect(tabNames()).toEqual(["Memories", "Activity", "Pinned"]);
+  });
+
+  it("loads the chosen member's own memory without the Activity tab", async () => {
+    const asked: Record<string, unknown>[] = [];
+    const { runtime } = await open({ calls: groupCalls(true, { revision: 7, items: [item("m1", "Ada likes rain.")] }, asked) });
+    fireEvent.click(await screen.findByText("Ada"));
+    expect(await screen.findByText("Ada likes rain.")).toBeTruthy();
+    expect(asked).toEqual([{ conversation_id: "c1", character_id: "ca" }]);
+    expect(runtime.router.state.location.search).toMatchObject({ scope: "ca" });
+    expect(tabNames()).toEqual(["Memories", "Pinned"]);
+    expect(screen.getByText("Only Ada recalls these. The others never see them.")).toBeTruthy();
+    expect(screen.queryByText("Context summary")).toBeNull();
+    fireEvent.click(screen.getByText("Shared"));
+    await screen.findByText("Context summary");
+    expect(tabNames()).toEqual(["Memories", "Activity", "Pinned"]);
+  });
+
+  it("explains an empty member space and adds with the member's id while Shared sends none", async () => {
+    const asked: Record<string, unknown>[] = [];
+    const { called } = await open({ calls: groupCalls(true, { revision: 7, items: [] }, asked) });
+    fireEvent.click(await screen.findByText("Bea"));
+    expect(await screen.findByText("Nothing here yet")).toBeTruthy();
+    expect(screen.getByText("What Bea picks up in this group shows up here. You can also add one yourself.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add memory" }));
+    let dialog = await screen.findByRole("dialog", { name: "Add memory" });
+    fireEvent.change(within(dialog).getByPlaceholderText("What should the character remember?"), { target: { value: "Bea hates crowds." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(called("memoryAdd")).toHaveLength(1));
+    expect(called("memoryAdd")[0]?.request).toMatchObject({ conversation_id: "c1", perspective_character_id: "cb", text: "Bea hates crowds.", expected_revision: 7 });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add memory" })).toBeNull());
+    fireEvent.click(screen.getByText("Shared"));
+    await waitFor(() => expect(screen.queryByText("Only Bea recalls these. The others never see them.")).toBeNull());
+    fireEvent.click(await screen.findByRole("button", { name: "Add memory" }));
+    dialog = await screen.findByRole("dialog", { name: "Add memory" });
+    fireEvent.change(within(dialog).getByPlaceholderText("What should the character remember?"), { target: { value: "The group meets at dusk." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(called("memoryAdd")).toHaveLength(2));
+    expect(called("memoryAdd")[1]?.request).toMatchObject({ conversation_id: "c1", text: "The group meets at dusk.", expected_revision: 5 });
+    expect("perspective_character_id" in called("memoryAdd")[1]!.request).toBe(false);
+  });
+});

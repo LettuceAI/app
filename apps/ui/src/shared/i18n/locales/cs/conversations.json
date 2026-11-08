@@ -761,6 +761,12 @@
     "characterAppearanceHint": "Vzhled pro všechny chaty s touto postavou",
     "companionMode": {
       "title": "Režim společníka"
+    },
+    "companionPersonalMemories": {
+      "title": "Přinést paměti z přímých chatů"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Zapisovat zpět do přímých chatů"
     }
   },
   "appearance": {
@@ -846,6 +852,12 @@
       "noMatch": "Nic neodpovídá „{{query}}“",
       "noMatchBody": "Zkus slovo ze samotné paměti.",
       "noCategory": "V této kategorii nic není"
+    },
+    "perspective": {
+      "shared": "Sdílené",
+      "hint": "Pouze {{name}} si tohle pamatuje. Ostatní to nikdy nevidí.",
+      "emptyTitle": "Zatím tu nic není",
+      "emptyBody": "Co si {{name}} z této skupiny odnese, se objeví tady. Můžeš také přidat vlastní."
     },
     "sheet": {
       "addTitle": "Přidat paměť",

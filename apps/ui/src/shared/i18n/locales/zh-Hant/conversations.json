@@ -722,6 +722,12 @@
     "characterAppearanceHint": "與此角色所有對話的外觀",
     "companionMode": {
       "title": "夥伴模式"
+    },
+    "companionPersonalMemories": {
+      "title": "帶入私聊記憶"
+    },
+    "companionMemoryWriteBack": {
+      "title": "寫回私聊"
     }
   },
   "appearance": {
@@ -798,6 +804,12 @@
       "noMatch": "沒有符合「{{query}}」的項目",
       "noMatchBody": "試試記憶本身中的某個詞。",
       "noCategory": "此分類中沒有內容"
+    },
+    "perspective": {
+      "shared": "共享",
+      "hint": "只有{{name}}會記得這些。其他成員永遠看不到。",
+      "emptyTitle": "這裡還沒有內容",
+      "emptyBody": "{{name}}在這個群組裡獲得的內容會顯示在這裡。你也可以自行新增一則。"
     },
     "sheet": {
       "addTitle": "新增記憶",

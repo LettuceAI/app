@@ -735,6 +735,12 @@
     "characterAppearanceHint": "Appearance para sa lahat ng chat sa karakter na ito",
     "companionMode": {
       "title": "Companion mode"
+    },
+    "companionPersonalMemories": {
+      "title": "Isama ang mga memory ng direktang chat"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Isulat pabalik sa mga direktang chat"
     }
   },
   "appearance": {
@@ -814,6 +820,12 @@
       "noMatch": "Walang tugma sa \"{{query}}\"",
       "noMatchBody": "Subukan ang isang salita mula sa memory mismo.",
       "noCategory": "Walang laman ang kategoryang ito"
+    },
+    "perspective": {
+      "shared": "Ibinahagi",
+      "hint": "Si {{name}} lang ang nakakaalala sa mga ito. Hindi ito nakikita ng iba.",
+      "emptyTitle": "Wala pa rito",
+      "emptyBody": "Lalabas dito ang nakukuha ni {{name}} sa grupong ito. Puwede ka ring magdagdag ng sarili mo."
     },
     "sheet": {
       "addTitle": "Magdagdag ng memory",

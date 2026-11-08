@@ -722,6 +722,12 @@
     "characterAppearanceHint": "이 캐릭터와의 모든 채팅 외관",
     "companionMode": {
       "title": "동반자 모드"
+    },
+    "companionPersonalMemories": {
+      "title": "1:1 채팅의 기억 가져오기"
+    },
+    "companionMemoryWriteBack": {
+      "title": "1:1 채팅에 다시 기록하기"
     }
   },
   "appearance": {
@@ -798,6 +804,12 @@
       "noMatch": "\"{{query}}\"와 일치하는 항목이 없어요",
       "noMatchBody": "기억 자체에 나오는 단어를 입력해 보세요.",
       "noCategory": "이 카테고리에는 아무것도 없어요"
+    },
+    "perspective": {
+      "shared": "공유",
+      "hint": "{{name}} 구성원만 이 기억을 떠올려요. 다른 구성원은 볼 수 없어요.",
+      "emptyTitle": "아직 아무것도 없어요",
+      "emptyBody": "{{name}} 구성원이 이 그룹에서 알게 된 내용이 여기에 나타나요. 직접 추가할 수도 있어요."
     },
     "sheet": {
       "addTitle": "기억 추가",

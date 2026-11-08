@@ -735,6 +735,12 @@
     "characterAppearanceHint": "Utseende for alle samtaler med denne karakteren",
     "companionMode": {
       "title": "Kompanjongmodus"
+    },
+    "companionPersonalMemories": {
+      "title": "Ta med minner fra direktesamtaler"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Skriv tilbake til direktesamtaler"
     }
   },
   "appearance": {
@@ -814,6 +820,12 @@
       "noMatch": "Ingenting samsvarer med «{{query}}»",
       "noMatchBody": "Prøv et ord fra selve minnet.",
       "noCategory": "Ingenting i denne kategorien"
+    },
+    "perspective": {
+      "shared": "Delt",
+      "hint": "Bare {{name}} husker disse. De andre ser dem aldri.",
+      "emptyTitle": "Ingenting her ennå",
+      "emptyBody": "Det {{name}} får med seg i denne gruppen, vises her. Du kan også legge til et selv."
     },
     "sheet": {
       "addTitle": "Legg til minne",

@@ -735,6 +735,12 @@
     "characterAppearanceHint": "इस कैरेक्टर की सभी चैट्स की दिखावट",
     "companionMode": {
       "title": "साथी मोड"
+    },
+    "companionPersonalMemories": {
+      "title": "सीधी चैट की यादें साथ लाएँ"
+    },
+    "companionMemoryWriteBack": {
+      "title": "सीधी चैट में वापस लिखें"
     }
   },
   "appearance": {
@@ -814,6 +820,12 @@
       "noMatch": "\"{{query}}\" से कुछ मेल नहीं",
       "noMatchBody": "मेमोरी के किसी शब्द को आज़माएँ।",
       "noCategory": "इस श्रेणी में कुछ नहीं"
+    },
+    "perspective": {
+      "shared": "साझा",
+      "hint": "सिर्फ़ {{name}} को ये याद रहती हैं। बाकी सदस्य इन्हें कभी नहीं देखते।",
+      "emptyTitle": "यहाँ अभी कुछ नहीं",
+      "emptyBody": "इस ग्रुप में {{name}} को जो याद रहता है, वह यहाँ दिखता है। आप खुद भी एक जोड़ सकते हैं।"
     },
     "sheet": {
       "addTitle": "मेमोरी जोड़ें",

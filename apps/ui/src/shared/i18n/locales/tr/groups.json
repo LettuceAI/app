@@ -169,7 +169,13 @@
     "characterModelBody": "Kendi ayarlarında ne yazıyorsa o",
     "companionMode": "Yoldaş modu",
     "companionModeOn": "Üyeler, sohbet ilerledikçe değişen duygular ve ilişkiler taşır",
-    "companionModeOff": "Üyeler, takip edilen duygular veya ilişkiler olmadan yanıt verir"
+    "companionModeOff": "Üyeler, takip edilen duygular veya ilişkiler olmadan yanıt verir",
+    "personalMemories": "Doğrudan sohbet anılarını getir",
+    "personalMemoriesOn": "Her üye sizinle olan kendi sohbetlerini de hatırlar. Diğerleri bunları asla görmez.",
+    "personalMemoriesOff": "Üyeler yalnızca bu grupta olanları hatırlar.",
+    "memoryWriteBack": "Doğrudan sohbetlere geri yaz",
+    "memoryWriteBackOn": "Bir üyenin bu gruptan edindikleri, o karakter anıları sohbetler arasında paylaşıyorsa sizinle olan kendi sohbetlerinde de hatırlanır.",
+    "memoryWriteBackOff": "Burada olanlar bu grupta kalır."
   },
   "edit": {
     "tabs": {

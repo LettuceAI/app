@@ -181,7 +181,13 @@
     "characterModelBody": "Zgodnie z ich własnymi ustawieniami",
     "companionMode": "Tryb towarzysza",
     "companionModeOn": "Członkowie zachowują emocje i relacje, które zmieniają się w miarę trwania czatu",
-    "companionModeOff": "Członkowie odpowiadają bez śledzonych emocji i relacji"
+    "companionModeOff": "Członkowie odpowiadają bez śledzonych emocji i relacji",
+    "personalMemories": "Przynoś wspomnienia z czatów bezpośrednich",
+    "personalMemoriesOn": "Każdy członek pamięta też własne czaty z tobą. Pozostali nigdy ich nie widzą.",
+    "personalMemoriesOff": "Członkowie pamiętają tylko to, co wydarzyło się w tej grupie.",
+    "memoryWriteBack": "Zapisuj z powrotem do czatów bezpośrednich",
+    "memoryWriteBackOn": "To, co członek wyniesie z tej grupy, jest też zapamiętywane w jego własnych czatach z tobą, jeśli ta postać dzieli pamięć między czatami.",
+    "memoryWriteBackOff": "To, co dzieje się tutaj, zostaje w tej grupie."
   },
   "edit": {
     "tabs": {

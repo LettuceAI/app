@@ -415,6 +415,8 @@ const chatSettingsRoute = createRoute({
 const chatMemoryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chat/$conversationId/memory",
+  validateSearch: (search: Record<string, unknown>): { scope?: string } =>
+    typeof search.scope === "string" && search.scope !== "" ? { scope: search.scope } : {},
   component: ChatMemoryPage,
 });
 const chatCompanionRoute = createRoute({

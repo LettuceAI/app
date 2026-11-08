@@ -735,6 +735,12 @@
     "characterAppearanceHint": "Bu karakterle olan tüm sohbetlerin görünümü",
     "companionMode": {
       "title": "Yoldaş modu"
+    },
+    "companionPersonalMemories": {
+      "title": "Doğrudan sohbet anılarını getir"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Doğrudan sohbetlere geri yaz"
     }
   },
   "appearance": {
@@ -814,6 +820,12 @@
       "noMatch": "\"{{query}}\" ile eşleşen bir şey yok",
       "noMatchBody": "Anının kendisinden bir kelime deneyin.",
       "noCategory": "Bu kategoride bir şey yok"
+    },
+    "perspective": {
+      "shared": "Ortak",
+      "hint": "Bunları yalnızca {{name}} hatırlar. Diğerleri bunları asla görmez.",
+      "emptyTitle": "Henüz burada bir şey yok",
+      "emptyBody": "{{name}} bu grupta neler edinirse burada görünür. Kendiniz de bir tane ekleyebilirsiniz."
     },
     "sheet": {
       "addTitle": "Anı ekle",

@@ -392,6 +392,28 @@ describe("group time awareness and notes", () => {
     expect(save.mock.calls[0]![0].draft).toMatchObject({ companion_mode: true });
   });
 
+  it("shows the direct-chat memory rows only while companion mode is on and saves their draft fields", async () => {
+    const on = group({ ...savedGroup.draft, companion_mode: true, companion_personal_memories: true, companion_memory_write_back: false });
+    const save = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => ({ status: "ok", data: group(request.draft) }));
+    await renderGroups("/groups/g1/edit?section=chat", { groupSave: save, groupGet: () => ({ status: "ok", data: on }) });
+    const personal = await screen.findByRole("switch", { name: "Bring direct-chat memories" });
+    const writeBack = screen.getByRole("switch", { name: "Write back to direct chats" });
+    expect(personal.getAttribute("aria-checked")).toBe("true");
+    expect(writeBack.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("Each member also recalls its own chats with you. The others never see these.")).toBeTruthy();
+    expect(screen.getByText("What happens here stays in this group.")).toBeTruthy();
+    fireEvent.click(personal);
+    fireEvent.click(writeBack);
+    expect(screen.getByText("Members only recall what happened in this group.")).toBeTruthy();
+    expect(screen.getByText("What a member takes from this group is also remembered in its own chats with you, if that character shares memory across chats.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![0].draft).toMatchObject({ companion_personal_memories: false, companion_memory_write_back: true });
+    fireEvent.click(screen.getByRole("switch", { name: "Companion mode" }));
+    await waitFor(() => expect(screen.queryByRole("switch", { name: "Bring direct-chat memories" })).toBeNull());
+    expect(screen.queryByRole("switch", { name: "Write back to direct chats" })).toBeNull();
+  });
+
   it("offers only Continue in the creator's missing Soul warning", async () => {
     await renderGroups("/groups/new");
     fireEvent.click((await screen.findByText("Aria")).closest("button")!);

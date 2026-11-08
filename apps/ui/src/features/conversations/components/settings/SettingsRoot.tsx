@@ -218,6 +218,44 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
             }
           />
         )}
+        {settings.companion_mode?.value && settings.companion_personal_memories && (
+          <ListRow
+            title={t("settings.companionPersonalMemories.title")}
+            description={t(`settings.source.${settings.companion_personal_memories.source}`)}
+            trailing={
+              <span className="flex items-center gap-2">
+                {settings.companion_personal_memories.source === "conversation" && (
+                  <Button variant="ghost" size="sm" disabled={ctx.busy} onClick={() => void ctx.save({ companion_personal_memories: { type: "reset" } })}>{t("settings.reset")}</Button>
+                )}
+                <Switch
+                  checked={settings.companion_personal_memories.value}
+                  disabled={ctx.busy}
+                  aria-label={t("settings.companionPersonalMemories.title")}
+                  onChange={(on) => void ctx.save({ companion_personal_memories: { type: "set", value: on } })}
+                />
+              </span>
+            }
+          />
+        )}
+        {settings.companion_mode?.value && settings.companion_memory_write_back && (
+          <ListRow
+            title={t("settings.companionMemoryWriteBack.title")}
+            description={t(`settings.source.${settings.companion_memory_write_back.source}`)}
+            trailing={
+              <span className="flex items-center gap-2">
+                {settings.companion_memory_write_back.source === "conversation" && (
+                  <Button variant="ghost" size="sm" disabled={ctx.busy} onClick={() => void ctx.save({ companion_memory_write_back: { type: "reset" } })}>{t("settings.reset")}</Button>
+                )}
+                <Switch
+                  checked={settings.companion_memory_write_back.value}
+                  disabled={ctx.busy}
+                  aria-label={t("settings.companionMemoryWriteBack.title")}
+                  onChange={(on) => void ctx.save({ companion_memory_write_back: { type: "set", value: on } })}
+                />
+              </span>
+            }
+          />
+        )}
       </ListGroup>
 
       <ListGroup label={t("settings.sections.lorebooks")}>

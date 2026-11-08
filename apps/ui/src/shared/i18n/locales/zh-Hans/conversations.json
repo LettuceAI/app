@@ -722,6 +722,12 @@
     "characterAppearanceHint": "与此角色所有聊天的外观",
     "companionMode": {
       "title": "伙伴模式"
+    },
+    "companionPersonalMemories": {
+      "title": "带入私聊记忆"
+    },
+    "companionMemoryWriteBack": {
+      "title": "写回私聊"
     }
   },
   "appearance": {
@@ -798,6 +804,12 @@
       "noMatch": "没有匹配“{{query}}”的内容",
       "noMatchBody": "试试记忆中的某个词。",
       "noCategory": "此分类中没有内容"
+    },
+    "perspective": {
+      "shared": "共享",
+      "hint": "只有{{name}}会记得这些。其他成员永远看不到。",
+      "emptyTitle": "这里还没有内容",
+      "emptyBody": "{{name}}在这个群组里获得的内容会显示在这里。你也可以自己添加一条。"
     },
     "sheet": {
       "addTitle": "添加记忆",

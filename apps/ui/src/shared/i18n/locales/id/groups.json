@@ -163,7 +163,13 @@
     "characterModelBody": "Sesuai pengaturan mereka sendiri",
     "companionMode": "Mode Companion",
     "companionModeOn": "Anggota menyimpan emosi dan hubungan yang berubah seiring obrolan berjalan",
-    "companionModeOff": "Anggota menjawab tanpa emosi atau hubungan yang dilacak"
+    "companionModeOff": "Anggota menjawab tanpa emosi atau hubungan yang dilacak",
+    "personalMemories": "Bawa memori dari obrolan langsung",
+    "personalMemoriesOn": "Setiap anggota juga mengingat obrolannya sendiri dengan Anda. Anggota lain tidak pernah melihatnya.",
+    "personalMemoriesOff": "Anggota hanya mengingat apa yang terjadi di grup ini.",
+    "memoryWriteBack": "Tulis balik ke obrolan langsung",
+    "memoryWriteBackOn": "Apa yang diambil anggota dari grup ini juga diingat dalam obrolannya sendiri dengan Anda, jika karakter itu berbagi memori lintas obrolan.",
+    "memoryWriteBackOff": "Apa yang terjadi di sini tetap di grup ini."
   },
   "edit": {
     "tabs": {

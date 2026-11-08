@@ -722,6 +722,12 @@
     "characterAppearanceHint": "Giao diện cho mọi cuộc trò chuyện với nhân vật này",
     "companionMode": {
       "title": "Chế độ bạn đồng hành"
+    },
+    "companionPersonalMemories": {
+      "title": "Mang theo ký ức từ chat trực tiếp"
+    },
+    "companionMemoryWriteBack": {
+      "title": "Ghi ngược về chat trực tiếp"
     }
   },
   "appearance": {
@@ -798,6 +804,12 @@
       "noMatch": "Không có kết quả cho \"{{query}}\"",
       "noMatchBody": "Thử một từ trong chính ký ức.",
       "noCategory": "Không có gì trong mục này"
+    },
+    "perspective": {
+      "shared": "Chung",
+      "hint": "Chỉ {{name}} nhớ những ký ức này. Những người khác không bao giờ thấy chúng.",
+      "emptyTitle": "Chưa có gì ở đây",
+      "emptyBody": "Những gì {{name}} tiếp nhận trong nhóm này sẽ hiện ở đây. Bạn cũng có thể tự thêm."
     },
     "sheet": {
       "addTitle": "Thêm ký ức",

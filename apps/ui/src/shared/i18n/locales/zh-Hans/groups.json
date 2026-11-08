@@ -163,7 +163,13 @@
     "characterModelBody": "按角色自己的设置",
     "companionMode": "伙伴模式",
     "companionModeOn": "成员会保留随聊天推进而变化的情绪和关系",
-    "companionModeOff": "成员回应时不追踪情绪和关系"
+    "companionModeOff": "成员回应时不追踪情绪和关系",
+    "personalMemories": "带入私聊记忆",
+    "personalMemoriesOn": "每位成员也会记得自己与你的私聊。其他成员永远看不到这些。",
+    "personalMemoriesOff": "成员只会记得这个群组里发生的事。",
+    "memoryWriteBack": "写回私聊",
+    "memoryWriteBackOn": "成员从这个群组中获得的内容，如果该角色跨聊天共享记忆，也会记在它与你的私聊中。",
+    "memoryWriteBackOff": "这里发生的事只留在这个群组里。"
   },
   "edit": {
     "tabs": {
