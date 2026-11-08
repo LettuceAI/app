@@ -41,7 +41,8 @@ fn migration_26_preserves_existing_content_and_database_guards() {
             .collect::<Result<_, _>>().expect("schema objects")
     };
     let before = objects(&connection);
-    apply_migrations(&mut connection, MIGRATIONS).expect("upgrade");
+    let through_26 = &MIGRATIONS[..26];
+    apply_migrations(&mut connection, through_26).expect("upgrade");
     assert_eq!(objects(&connection), before);
     assert_eq!(&recorded_migrations(&connection)[..history.len()], history.as_slice());
     let settings: (String, i64) = connection.query_row("SELECT state_json,updated_at FROM device_ui_state WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?))).expect("settings");
@@ -54,7 +55,7 @@ fn migration_26_preserves_existing_content_and_database_guards() {
     assert!(connection.prepare("PRAGMA foreign_key_check").expect("check").query([]).expect("rows").next().expect("next").is_none());
     assert_eq!(connection.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0)).expect("integrity"), "ok");
     let upgraded = recorded_migrations(&connection);
-    apply_migrations(&mut connection, MIGRATIONS).expect("repeat startup");
+    apply_migrations(&mut connection, through_26).expect("repeat startup");
     assert_eq!(recorded_migrations(&connection), upgraded);
 }
 

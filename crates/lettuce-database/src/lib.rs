@@ -203,6 +203,11 @@ const MIGRATION_27: Migration = Migration {
     sql: include_str!("../migrations/0027_creation_limits.sql"),
 };
 
+const MIGRATION_28: Migration = Migration {
+    id: 28,
+    sql: include_str!("../migrations/0028_group_companion.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -231,6 +236,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_25,
     MIGRATION_26,
     MIGRATION_27,
+    MIGRATION_28,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

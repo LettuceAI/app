@@ -7,6 +7,7 @@ pub(crate) mod conversation_mutation_kernel;
 pub(crate) mod conversation_mutations;
 pub(crate) mod conversation_query;
 pub(crate) mod conversation_vertical_slice;
+pub(crate) mod group_companion_adapter;
 pub(crate) mod initial_inference_adapter;
 pub(crate) mod scene_follow_up_adapter;
 pub(crate) mod settings_references;
