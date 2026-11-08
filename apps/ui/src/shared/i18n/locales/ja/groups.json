@@ -160,7 +160,10 @@
     "characterNotesOff": "グループのノートのみ使用されます",
     "models": "モデル",
     "characterModel": "キャラクターのモデル",
-    "characterModelBody": "それぞれの設定に従います"
+    "characterModelBody": "それぞれの設定に従います",
+    "companionMode": "コンパニオンモード",
+    "companionModeOn": "メンバーは、チャットが進むにつれて変化する感情や関係を保ちます",
+    "companionModeOff": "メンバーは、感情や関係を追跡せずに返答します"
   },
   "edit": {
     "tabs": {

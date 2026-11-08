@@ -719,7 +719,10 @@
       "time": "時刻"
     },
     "groupAppearanceHint": "このグループのすべてのチャットの外観",
-    "characterAppearanceHint": "このキャラクターとのすべてのチャットの外観"
+    "characterAppearanceHint": "このキャラクターとのすべてのチャットの外観",
+    "companionMode": {
+      "title": "コンパニオンモード"
+    }
   },
   "appearance": {
     "forGroup": "このグループのすべてのチャット用",
@@ -1149,6 +1152,33 @@
       "clearSearch": "検索をクリア"
     },
     "lastReply": "最後の返信",
-    "replyHint": "チャットの各メッセージがそのメニューからこれを開きます"
+    "replyHint": "チャットの各メッセージがそのメニューからこれを開きます",
+    "soulWarning": {
+      "title": "ソウルが未作成です",
+      "body": "{{names}}のソウルが書かれていません。ソウルがないと、コンパニオンとしての振る舞いが弱くなります。",
+      "edit": "ソウルを編集",
+      "editFor": "{{name}}のソウルを編集",
+      "continue": "続ける"
+    },
+    "group": {
+      "members": "メンバー",
+      "matrixCorner": "相手",
+      "withOthers": "ほかのメンバーに対して",
+      "towardOthers": "{{name}}から見たほかのメンバー",
+      "noStance": "まだありません",
+      "noCheckpoint": "{{name}}はまだターンを経験していません。これは初期値です。",
+      "stanceLabel": "{{from}}から{{to}}へ: {{band}}",
+      "stanceTitle": "{{from}}から{{to}}へ",
+      "effectSummary": "影響を受けた人: {{names}}",
+      "you": "あなた",
+      "someone": "誰か",
+      "axisToward": "{{target}}への{{axis}}",
+      "feels": "{{emotion}}を感じている",
+      "reason": {
+        "witnessed": "これを目撃した",
+        "addressed": "話しかけられた",
+        "social_event": "社会的イベント: {{kind}}"
+      }
+    }
   }
 }

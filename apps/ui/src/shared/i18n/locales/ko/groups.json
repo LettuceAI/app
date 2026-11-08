@@ -160,7 +160,10 @@
     "characterNotesOff": "그룹 노트만 사용해요",
     "models": "모델",
     "characterModel": "캐릭터 모델",
-    "characterModelBody": "각자 설정에 따름"
+    "characterModelBody": "각자 설정에 따름",
+    "companionMode": "동반자 모드",
+    "companionModeOn": "구성원은 채팅이 이어지면서 변하는 감정과 관계를 유지해요",
+    "companionModeOff": "구성원은 감정과 관계를 추적하지 않고 답해요"
   },
   "edit": {
     "tabs": {

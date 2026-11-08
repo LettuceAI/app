@@ -160,7 +160,10 @@
     "characterNotesOff": "Hanya catatan grup yang digunakan",
     "models": "Model",
     "characterModel": "Model karakter",
-    "characterModelBody": "Sesuai pengaturan mereka sendiri"
+    "characterModelBody": "Sesuai pengaturan mereka sendiri",
+    "companionMode": "Mode Companion",
+    "companionModeOn": "Anggota menyimpan emosi dan hubungan yang berubah seiring obrolan berjalan",
+    "companionModeOff": "Anggota menjawab tanpa emosi atau hubungan yang dilacak"
   },
   "edit": {
     "tabs": {

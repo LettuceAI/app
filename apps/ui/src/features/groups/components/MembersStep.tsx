@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Button, CharacterCardSkeleton, EmptyState, icon, ListGroup, ListRow, SearchField, Text } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import { CharacterChoices } from "@/entities/character/CharacterChoices";
+import { useMissingSoulWarning } from "@/features/conversations";
 import { FailureState } from "@/shared/ui/FailureState";
 import { castQuery } from "../data/queries";
 import type { GroupForm } from "../data/form";
@@ -20,6 +21,7 @@ export function MembersStep({ api, form, update, onImport }: StepProps & { onImp
   const { t, i18n } = useTranslation("groups");
   const navigate = useNavigate();
   const cast = useQuery(castQuery(api));
+  const soulWarning = useMissingSoulWarning(api, { editable: false });
   const [query, setQuery] = useState("");
   const needle = query.trim().toLocaleLowerCase();
   const visible = (cast.data ?? []).filter((member) => [member.name, member.description].some((text) => text?.toLocaleLowerCase().includes(needle)));
@@ -33,7 +35,8 @@ export function MembersStep({ api, form, update, onImport }: StepProps & { onImp
     {cast.isPending ? <div className={grid}>{Array.from({ length: 6 }, (_, i) => <CharacterCardSkeleton key={i} />)}</div> : cast.isError ? <FailureState error={cast.error} onRetry={() => void cast.refetch()} /> : cast.data.length < 2 ?
       <EmptyState icon={<Users size={icon.xl} />} title={t("members.emptyTitle")} description={t("members.emptyBody")} action={<Button variant="tonal" onClick={() => void navigate({ to: "/characters/new" })}>{t("members.create")}</Button>} /> : visible.length === 0 ?
       <EmptyState size="sm" icon={<Search size={icon.xl} />} title={t("noMatch", { query: query.trim() })} action={<Button variant="secondary" onClick={() => setQuery("")}>{t("clear")}</Button>} /> :
-      <CharacterChoices choices={visible} selected={picked} onPick={(id) => update((current) => ({ ...current, draft: { ...current.draft, members: picked.includes(id) ? current.draft.members.filter((item) => item.character_id !== id) : [...current.draft.members, { character_id: id, ordinal: current.draft.members.length, muted: false, model_profile_override: null }] } }))} />}
+      <CharacterChoices choices={visible} selected={picked} onPick={(id) => { update((current) => ({ ...current, draft: { ...current.draft, members: picked.includes(id) ? current.draft.members.filter((item) => item.character_id !== id) : [...current.draft.members, { character_id: id, ordinal: current.draft.members.length, muted: false, model_profile_override: null }] } })); if (!picked.includes(id) && form.draft.companion_mode) void soulWarning.warn([id]); }} />}
+    {soulWarning.dialog}
     <ListGroup><ListRow icon={<FileUp size={icon.lg} />} title={t("members.import")} description={t("members.importBody")} trailing={<Button size="sm" variant="tonal" onClick={onImport}>{t("members.chooseFile")}</Button>} /></ListGroup>
   </div>;
 }

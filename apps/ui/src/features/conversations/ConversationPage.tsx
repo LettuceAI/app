@@ -48,6 +48,7 @@ import { ParticipantsBar } from "./components/ParticipantsBar";
 import { type Speaker } from "./components/SpeakerSheet";
 import { BranchSheet, type BranchTarget } from "./components/BranchSheet";
 import { EffectSheet } from "./companion/EffectSheet";
+import { GroupEffectSheet } from "./companion/GroupEffectSheet";
 import { SceneImageSheet } from "./scene-images/SceneImageSheet";
 import { Timeline } from "./components/Timeline";
 import {
@@ -439,7 +440,10 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
 
   const sceneCharacter = useQuery(characterQuery(api, view?.source.type === "direct" ? view.source.character_id : null));
   const companion = view?.kind === "direct" && (settings.data?.companion === true || sceneCharacter.data?.draft.defaults?.interaction_mode === "companion");
-  const openMemories = () => void navigate({ to: companion ? "/chat/$conversationId/companion" : "/chat/$conversationId/memory", params: { conversationId } });
+  const groupCompanion = view?.kind === "group" && settings.data?.companion_mode?.value === true;
+  const companionPage = companion || groupCompanion;
+  const openMemories = () => void navigate({ to: companionPage ? "/chat/$conversationId/companion" : "/chat/$conversationId/memory", params: { conversationId } });
+  const openMemoryList = () => void navigate({ to: companion ? "/chat/$conversationId/companion" : "/chat/$conversationId/memory", params: { conversationId } });
   const sceneMessage = timeline.windowed ? undefined : messages.find((message) => message.role === "scene");
   const scenes = useMemo(
     () => [...(sceneCharacter.data?.draft.scenes ?? [])].sort((a, b) => a.ordinal - b.ordinal),
@@ -758,7 +762,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               avatar={avatar}
               {...(isGroup ? { faces } : {})}
               phone={phone}
-              memory={memoryOn || companion ? { count: memory.data?.items.length ?? 0, busy: memoryBusy, ...(companion ? { label: t("companion.title") } : {}) } : null}
+              memory={memoryOn || companionPage ? { count: memory.data?.items.length ?? 0, busy: memoryBusy, ...(companionPage ? { label: t("companion.title") } : {}) } : null}
               search={search}
               onBack={goBack}
               onOptions={openSettings}
@@ -794,6 +798,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               conversationId={conversationId}
               message={shownMenu}
               companion={companion}
+              groupCompanion={groupCompanion}
               onCompanionEffect={() => { setMenuId(null); setEffectMessage(shownMenu); }}
               after={menuAfter}
               busy={meta.active || pendingTurn}
@@ -867,7 +872,9 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           }}
         />}
 
-        {shownEffect && <EffectSheet key={shownEffect.id} api={api} conversationId={conversationId} message={shownEffect} open={effectMessage !== null} onClose={() => setEffectMessage(null)} />}
+        {shownEffect && (groupCompanion && view
+          ? <GroupEffectSheet key={shownEffect.id} api={api} conversationId={conversationId} message={shownEffect} participants={view.participants} open={effectMessage !== null} onClose={() => setEffectMessage(null)} />
+          : <EffectSheet key={shownEffect.id} api={api} conversationId={conversationId} message={shownEffect} open={effectMessage !== null} onClose={() => setEffectMessage(null)} />)}
 
         {view && (
           <ChatSettingsPanel
@@ -890,7 +897,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               })
             }
             onHome={goHome}
-            onMemories={openMemories}
+            onMemories={openMemoryList}
             onBranches={() =>
               void navigate({ to: "/chat/$conversationId/branches", params: { conversationId } })
             }

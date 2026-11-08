@@ -166,7 +166,10 @@
     "characterNotesOff": "Bare gruppens notater brukes",
     "models": "Modeller",
     "characterModel": "Karakternes modell",
-    "characterModelBody": "Det deres egne innstillinger sier"
+    "characterModelBody": "Det deres egne innstillinger sier",
+    "companionMode": "Kompanjongmodus",
+    "companionModeOn": "Medlemmene beholder følelser og relasjoner som endrer seg etter hvert som samtalen går",
+    "companionModeOff": "Medlemmene svarer uten sporede følelser eller relasjoner"
   },
   "edit": {
     "tabs": {

@@ -745,7 +745,10 @@
       "time": "Ora"
     },
     "groupAppearanceHint": "Aspetto per tutte le chat di questo gruppo",
-    "characterAppearanceHint": "Aspetto per tutte le chat con questo personaggio"
+    "characterAppearanceHint": "Aspetto per tutte le chat con questo personaggio",
+    "companionMode": {
+      "title": "Modalità Companion"
+    }
   },
   "appearance": {
     "forGroup": "Per ogni chat di questo gruppo",
@@ -1211,6 +1214,33 @@
       "clearSearch": "Cancella ricerca"
     },
     "lastReply": "Ultima risposta",
-    "replyHint": "Ogni messaggio della chat apre questo dal suo menu"
+    "replyHint": "Ogni messaggio della chat apre questo dal suo menu",
+    "soulWarning": {
+      "title": "Nessuna Anima scritta",
+      "body": "Non c'è un'Anima scritta per: {{names}}. Senza, il loro comportamento da companion sarà più debole.",
+      "edit": "Modifica Anima",
+      "editFor": "Modifica l'Anima di {{name}}",
+      "continue": "Continua"
+    },
+    "group": {
+      "members": "Membri",
+      "matrixCorner": "Verso",
+      "withOthers": "Con gli altri",
+      "towardOthers": "Come {{name}} vede gli altri",
+      "noStance": "Ancora nessuna",
+      "noCheckpoint": "{{name}} non ha ancora vissuto nessun turno. Questi sono i valori iniziali.",
+      "stanceLabel": "{{from}} verso {{to}}: {{band}}",
+      "stanceTitle": "{{from}} verso {{to}}",
+      "effectSummary": "Coinvolti: {{names}}",
+      "you": "tu",
+      "someone": "qualcuno",
+      "axisToward": "{{axis}} verso {{target}}",
+      "feels": "Prova {{emotion}}",
+      "reason": {
+        "witnessed": "Ha assistito",
+        "addressed": "È stato interpellato",
+        "social_event": "Evento sociale: {{kind}}"
+      }
+    }
   }
 }

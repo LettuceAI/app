@@ -67,8 +67,6 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   const latest = useRef(stored);
   const busy = useRef(false);
 
-  const companion = draft.draft.defaults.interaction_mode === "companion" && draft.draft.defaults.companion_soul !== null;
-  if (tab === "soul" && !companion) setTab("profile");
   const mobileSceneEditor = phone && tab === "scenes" && sceneEditorOpen;
   const selectedScene = draft.draft.scenes.find((scene) => scene.id === selectedSceneId);
   const dirty = useMemo(() => isDirty(draft, stored.form), [draft, stored.form]);
@@ -236,7 +234,7 @@ function EditFlow({ characterId, view, lorebooks }: { characterId: string; view:
   const tabs = mobileSceneEditor ? undefined : (
     <Tabs value={tab} onChange={(next) => go(next as EditTab)}>
       <TabList aria-label={t("edit.tabs.label")}>
-        {editTabs.filter((entry) => entry !== "soul" || companion).map((entry) => <Tab key={entry} value={entry} {...(entry === "scenes" ? { count: draft.draft.scenes.length } : {})}>{t(`edit.tabs.${entry}`)}</Tab>)}
+        {editTabs.map((entry) => <Tab key={entry} value={entry} {...(entry === "scenes" ? { count: draft.draft.scenes.length } : {})}>{t(`edit.tabs.${entry}`)}</Tab>)}
       </TabList>
     </Tabs>
   );

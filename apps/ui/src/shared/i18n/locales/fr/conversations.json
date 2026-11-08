@@ -745,7 +745,10 @@
       "time": "Heure"
     },
     "groupAppearanceHint": "Apparence de toutes les discussions de ce groupe",
-    "characterAppearanceHint": "Apparence de toutes les discussions avec ce personnage"
+    "characterAppearanceHint": "Apparence de toutes les discussions avec ce personnage",
+    "companionMode": {
+      "title": "Mode compagnon"
+    }
   },
   "appearance": {
     "forGroup": "Pour chaque discussion de ce groupe",
@@ -1211,6 +1214,33 @@
       "clearSearch": "Effacer la recherche"
     },
     "lastReply": "Dernière réponse",
-    "replyHint": "Chaque message de la discussion l'ouvre depuis son menu"
+    "replyHint": "Chaque message de la discussion l'ouvre depuis son menu",
+    "soulWarning": {
+      "title": "Aucune Âme rédigée",
+      "body": "Aucune Âme n'est rédigée pour : {{names}}. Sans elle, leur comportement de compagnon sera plus faible.",
+      "edit": "Modifier l'Âme",
+      "editFor": "Modifier l'Âme de {{name}}",
+      "continue": "Continuer"
+    },
+    "group": {
+      "members": "Membres",
+      "matrixCorner": "Envers",
+      "withOthers": "Avec les autres",
+      "towardOthers": "Comment {{name}} voit les autres",
+      "noStance": "Aucun pour l'instant",
+      "noCheckpoint": "{{name}} n'a pas encore vécu de tour. Ce sont les valeurs de départ.",
+      "stanceLabel": "{{from}} envers {{to}} : {{band}}",
+      "stanceTitle": "{{from}} envers {{to}}",
+      "effectSummary": "Concernés : {{names}}",
+      "you": "vous",
+      "someone": "quelqu'un",
+      "axisToward": "{{axis}} envers {{target}}",
+      "feels": "Ressent {{emotion}}",
+      "reason": {
+        "witnessed": "A été témoin",
+        "addressed": "S'est fait interpeller",
+        "social_event": "Événement social : {{kind}}"
+      }
+    }
   }
 }

@@ -74,6 +74,9 @@ export const queryKeys = {
     state: (conversationId: string) => ["companions", "state", conversationId] as const,
     soul: (conversationId: string, characterId?: string) => ["companions", "soul", conversationId, ...(characterId ? [characterId] : [])] as const,
     effect: (conversationId: string, messageId: string) => ["companions", "effect", conversationId, messageId] as const,
+    group: (conversationId: string) => ["companions", "group", conversationId] as const,
+    groupState: (conversationId: string) => ["companions", "group", conversationId, "state"] as const,
+    groupEffects: (conversationId: string, messageId: string) => ["companions", "group", conversationId, "effects", messageId] as const,
   },
   characterNotes: {
     all: ["character-notes"] as const,
@@ -133,6 +136,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.library.counts(),
     queryKeys.conversations.detail(event.conversation_id),
     queryKeys.memory.detail(event.conversation_id),
+    queryKeys.companions.group(event.conversation_id),
     queryKeys.lorebooks.previews(),
   ],
   conversation_changed: (event) => [
@@ -141,6 +145,7 @@ export const appEventInvalidations: AppEventInvalidations = {
     queryKeys.groups.all,
     queryKeys.conversations.detail(event.conversation_id),
     queryKeys.memory.detail(event.conversation_id),
+    queryKeys.companions.group(event.conversation_id),
     queryKeys.lorebooks.previews(),
   ],
   conversation_removed: () => [

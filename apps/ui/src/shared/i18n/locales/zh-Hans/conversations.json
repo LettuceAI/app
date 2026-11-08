@@ -719,7 +719,10 @@
       "time": "时间"
     },
     "groupAppearanceHint": "此群组所有聊天的外观",
-    "characterAppearanceHint": "与此角色所有聊天的外观"
+    "characterAppearanceHint": "与此角色所有聊天的外观",
+    "companionMode": {
+      "title": "伙伴模式"
+    }
   },
   "appearance": {
     "forGroup": "此群组的每个聊天",
@@ -1149,6 +1152,33 @@
       "clearSearch": "清除搜索"
     },
     "lastReply": "上一条回复",
-    "replyHint": "聊天中的每条消息都可以从菜单打开此项"
+    "replyHint": "聊天中的每条消息都可以从菜单打开此项",
+    "soulWarning": {
+      "title": "尚未撰写灵魂",
+      "body": "尚未为 {{names}} 撰写灵魂。没有灵魂，他们作为伙伴的表现会更弱。",
+      "edit": "编辑灵魂",
+      "editFor": "编辑 {{name}} 的灵魂",
+      "continue": "继续"
+    },
+    "group": {
+      "members": "成员",
+      "matrixCorner": "对象",
+      "withOthers": "与其他人",
+      "towardOthers": "{{name}} 如何看待其他人",
+      "noStance": "暂无",
+      "noCheckpoint": "{{name}} 还没有经历过任何回合。这些是初始值。",
+      "stanceLabel": "{{from}} 对 {{to}}：{{band}}",
+      "stanceTitle": "{{from}} 对 {{to}}",
+      "effectSummary": "受影响：{{names}}",
+      "you": "你",
+      "someone": "某人",
+      "axisToward": "对 {{target}} 的{{axis}}",
+      "feels": "感到{{emotion}}",
+      "reason": {
+        "witnessed": "目睹了此事",
+        "addressed": "被人搭话",
+        "social_event": "社交事件：{{kind}}"
+      }
+    }
   }
 }

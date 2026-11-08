@@ -719,7 +719,10 @@
       "time": "時間"
     },
     "groupAppearanceHint": "此群組所有對話的外觀",
-    "characterAppearanceHint": "與此角色所有對話的外觀"
+    "characterAppearanceHint": "與此角色所有對話的外觀",
+    "companionMode": {
+      "title": "夥伴模式"
+    }
   },
   "appearance": {
     "forGroup": "此群組的每段對話",
@@ -1149,6 +1152,33 @@
       "clearSearch": "清除搜尋"
     },
     "lastReply": "上次回覆",
-    "replyHint": "對話中的每則訊息都會從其選單開啟此內容"
+    "replyHint": "對話中的每則訊息都會從其選單開啟此內容",
+    "soulWarning": {
+      "title": "尚未撰寫靈魂",
+      "body": "尚未為 {{names}} 撰寫靈魂。沒有靈魂，他們作為夥伴的表現會較弱。",
+      "edit": "編輯靈魂",
+      "editFor": "編輯 {{name}} 的靈魂",
+      "continue": "繼續"
+    },
+    "group": {
+      "members": "成員",
+      "matrixCorner": "對象",
+      "withOthers": "與其他人",
+      "towardOthers": "{{name}} 如何看待其他人",
+      "noStance": "尚無",
+      "noCheckpoint": "{{name}} 還沒有經歷過任何回合。這些是初始值。",
+      "stanceLabel": "{{from}} 對 {{to}}：{{band}}",
+      "stanceTitle": "{{from}} 對 {{to}}",
+      "effectSummary": "受影響：{{names}}",
+      "you": "你",
+      "someone": "某人",
+      "axisToward": "對 {{target}} 的{{axis}}",
+      "feels": "感到{{emotion}}",
+      "reason": {
+        "witnessed": "目睹了此事",
+        "addressed": "被人搭話",
+        "social_event": "社交事件：{{kind}}"
+      }
+    }
   }
 }

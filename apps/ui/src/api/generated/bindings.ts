@@ -297,6 +297,8 @@ export const commands = {
 	memoryCycleRevert: (request: MemoryCycleRevertRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_cycle_revert", { request })),
 	memoryErrorDismiss: (request: MemoryErrorDismissRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("memory_error_dismiss", { request })),
 	companionStateGet: (request: CompanionStateGetRequest) => typedError<CompanionStateView | null, ApiError_Serialize>(__TAURI_INVOKE("companion_state_get", { request })),
+	groupCompanionStateGet: (request: GroupCompanionStateGetRequest) => typedError<GroupCompanionStateView | null, ApiError_Serialize>(__TAURI_INVOKE("group_companion_state_get", { request })),
+	groupCompanionMessageEffects: (request: GroupCompanionMessageEffectsRequest) => typedError<GroupCompanionMemberEffectView[], ApiError_Serialize>(__TAURI_INVOKE("group_companion_message_effects", { request })),
 	companionSoulGet: (request: CompanionSoulGetRequest) => typedError<CompanionSoulView, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_get", { request })),
 	companionSoulGrowthClear: (request: CompanionSoulGrowthClearRequest) => typedError<number, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_clear", { request })),
 	companionSoulGrowthRemove: (request: CompanionSoulGrowthRemoveRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_remove", { request })),
@@ -2552,6 +2554,59 @@ export type GradientColor = {
 	hex: string,
 };
 
+export type GroupCompanionEffectReason = "witnessed" | "addressed" | "social_event";
+
+export type GroupCompanionEffectTarget = { kind: "persona" } | { kind: "character"; character_id: string };
+
+/**
+ *  What one message did to one member for one reason. `target` and
+ *  `relationship` are both set when the effect moved a relationship, and both
+ *  absent when it only moved emotions.
+ */
+export type GroupCompanionEffectView = {
+	reason: GroupCompanionEffectReason,
+	social_event: string | null,
+	target: GroupCompanionEffectTarget | null,
+	relationship: RelationshipChange | null,
+	felt: EmotionChange,
+};
+
+export type GroupCompanionMemberEffectView = {
+	character_id: string,
+	display_name: string,
+	effects: GroupCompanionEffectView[],
+};
+
+/**
+ *  One member of a companion-mode group chat: its latest state on the active
+ *  branch (the initial state while it has no checkpoint), its relationship
+ *  with the persona the chat uses now and its stance toward the other
+ *  members.
+ */
+export type GroupCompanionMemberView = {
+	character_id: string,
+	participant_id: string,
+	display_name: string,
+	has_checkpoint: boolean,
+	relationship: CompanionRelationshipView,
+	expressed: CompanionEmotionVector,
+	felt: CompanionEmotionVector,
+	member_relationships: GroupMemberRelationshipView[],
+};
+
+export type GroupCompanionMessageEffectsRequest = {
+	conversation_id: string,
+	message_id: string,
+};
+
+export type GroupCompanionStateGetRequest = {
+	conversation_id: string,
+};
+
+export type GroupCompanionStateView = {
+	members: GroupCompanionMemberView[],
+};
+
 export type GroupDeleteRequest = {
 	group_id: string,
 	expected_revision: number,
@@ -2643,6 +2698,18 @@ export type GroupLorebookUnbindRequest = {
 
 export type GroupLorebooksListRequest = {
 	group_id: string,
+};
+
+/**
+ *  How a group member stands toward another member: the four axes of the
+ *  member relationship.
+ */
+export type GroupMemberRelationshipView = {
+	target_character_id: string,
+	closeness: number | null,
+	trust: number | null,
+	affection: number | null,
+	tension: number | null,
 };
 
 /**

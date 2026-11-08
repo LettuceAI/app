@@ -1,9 +1,12 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Accordion, AccordionItem, Button, Field, icon, ListGroup, ListRow, Slider, Switch, Textarea } from "@lettuceai/crisp";
+import { FailureState } from "@/shared/ui/FailureState";
 import type { CompanionEmotionVector, CompanionRegulationStyle, CompanionRelationshipDefaults, CompanionSoulConfigView, CompanionSoulIdentity } from "@/api/generated/bindings";
 import type { StepProps } from "../components/step-props";
+import { draftDefaultQuery } from "../data/queries";
 import { GenerateSoulSheet } from "./GenerateSoulSheet";
 
 type TextField = { [K in keyof CompanionSoulIdentity]: CompanionSoulIdentity[K] extends string ? K : never }[keyof CompanionSoulIdentity];
@@ -31,10 +34,13 @@ function Sliders<K extends string>({ label, keys, values, onChange }: { label: (
 export function SoulTab({ api, form, update }: StepProps) {
   const { t } = useTranslation("characters");
   const [generating, setGenerating] = useState(false);
-  const config = form.draft.defaults.companion_soul;
-  if (!config) return null;
+  const stored = form.draft.defaults.companion_soul;
+  const start = useQuery({ ...draftDefaultQuery(api, "companion"), enabled: stored === null });
+  const fallback = start.data?.defaults.companion_soul ?? null;
+  const config = stored ?? fallback;
+  if (!config) return start.isError ? <FailureState error={start.error} onRetry={() => void start.refetch()} /> : null;
   const change = (edit: (current: CompanionSoulConfigView) => CompanionSoulConfigView) => update((current) => {
-    const existing = current.draft.defaults.companion_soul;
+    const existing = current.draft.defaults.companion_soul ?? fallback;
     return existing ? { ...current, draft: { ...current.draft, defaults: { ...current.draft.defaults, companion_soul: edit(existing) } } } : current;
   });
   const { soul } = config;

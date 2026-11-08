@@ -10,9 +10,11 @@ import { metricsQuery, usageQuery } from "../data/queries";
 import { MessagePromptDetails, SpeakerSelectionReason } from "./MessagePromptDetails";
 import { MessageSources } from "./MessageSources";
 import { CompanionEffectRow } from "../companion/EffectSheet";
+import { GroupEffectRow } from "../companion/GroupEffectSheet";
 
 export interface MessageMenuProps {
   companion?: boolean;
+  groupCompanion?: boolean;
   onCompanionEffect?: () => void;
   api: ApiClient;
   conversationId: string;
@@ -93,13 +95,14 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
   );
 }
 
-export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, onBranchCharacter, onBranchGroup, groupBranch = false, onDelete, companion = false, onCompanionEffect, onSceneImage }: MessageMenuProps) {
+export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, onBranchCharacter, onBranchGroup, groupBranch = false, onDelete, companion = false, groupCompanion = false, onCompanionEffect, onSceneImage }: MessageMenuProps) {
   const { t } = useTranslation("conversations");
   const scene = message.role === "scene";
   return (
     <div className="space-y-3 pb-1">
       <MessageStats api={api} conversationId={conversationId} message={message} />
       {groupBranch && message.role === "assistant" && <SpeakerSelectionReason api={api} conversationId={conversationId} messageId={message.id} />}
+      {groupCompanion && (message.role === "assistant" || message.role === "user") && onCompanionEffect && <GroupEffectRow key={message.id} api={api} conversationId={conversationId} message={message} onOpen={onCompanionEffect} />}
       {companion && message.role === "assistant" && onCompanionEffect && <CompanionEffectRow key={message.id} api={api} conversationId={conversationId} message={message} onOpen={onCompanionEffect} />}
       {message.role === "assistant" && <MessageSources key={message.id} api={api} conversationId={conversationId} messageId={message.id} />}
       <ListGroup>

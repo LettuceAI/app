@@ -732,7 +732,10 @@
       "time": "समय"
     },
     "groupAppearanceHint": "इस ग्रुप की सभी चैट्स की दिखावट",
-    "characterAppearanceHint": "इस कैरेक्टर की सभी चैट्स की दिखावट"
+    "characterAppearanceHint": "इस कैरेक्टर की सभी चैट्स की दिखावट",
+    "companionMode": {
+      "title": "साथी मोड"
+    }
   },
   "appearance": {
     "forGroup": "इस ग्रुप की हर चैट के लिए",
@@ -1180,6 +1183,33 @@
       "clearSearch": "खोज साफ़ करें"
     },
     "lastReply": "आखिरी जवाब",
-    "replyHint": "चैट का हर संदेश इसे अपने मेन्यू से खोलता है"
+    "replyHint": "चैट का हर संदेश इसे अपने मेन्यू से खोलता है",
+    "soulWarning": {
+      "title": "कोई आत्मा नहीं लिखी गई",
+      "body": "{{names}} के लिए कोई आत्मा नहीं लिखी गई है। इसके बिना उनका साथी व्यवहार कमज़ोर रहेगा।",
+      "edit": "आत्मा संपादित करें",
+      "editFor": "{{name}} की आत्मा संपादित करें",
+      "continue": "जारी रखें"
+    },
+    "group": {
+      "members": "सदस्य",
+      "matrixCorner": "की ओर",
+      "withOthers": "बाकी लोगों के साथ",
+      "towardOthers": "{{name}} बाकी लोगों को कैसे देखता है",
+      "noStance": "अभी कुछ नहीं",
+      "noCheckpoint": "{{name}} अभी किसी टर्न से नहीं गुज़रा है। ये शुरुआती मान हैं।",
+      "stanceLabel": "{{from}} की {{to}} के प्रति: {{band}}",
+      "stanceTitle": "{{from}} की {{to}} के प्रति",
+      "effectSummary": "प्रभावित: {{names}}",
+      "you": "आप",
+      "someone": "कोई",
+      "axisToward": "{{axis}}, {{target}} के प्रति",
+      "feels": "{{emotion}} महसूस करता है",
+      "reason": {
+        "witnessed": "यह देखा",
+        "addressed": "संबोधित किया गया",
+        "social_event": "सामाजिक घटना: {{kind}}"
+      }
+    }
   }
 }

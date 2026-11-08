@@ -758,7 +758,10 @@
       "time": "Čas"
     },
     "groupAppearanceHint": "Vzhled pro všechny chaty v této skupině",
-    "characterAppearanceHint": "Vzhled pro všechny chaty s touto postavou"
+    "characterAppearanceHint": "Vzhled pro všechny chaty s touto postavou",
+    "companionMode": {
+      "title": "Režim společníka"
+    }
   },
   "appearance": {
     "forGroup": "Pro každý chat v této skupině",
@@ -1242,6 +1245,33 @@
       "clearSearch": "Vymazat hledání"
     },
     "lastReply": "Poslední odpověď",
-    "replyHint": "Každá zpráva v chatu to otevře ze svého menu"
+    "replyHint": "Každá zpráva v chatu to otevře ze svého menu",
+    "soulWarning": {
+      "title": "Chybí Duše",
+      "body": "Pro {{names}} není napsaná žádná Duše. Bez ní bude jejich chování společníka slabší.",
+      "edit": "Upravit Duši",
+      "editFor": "Upravit Duši postavy {{name}}",
+      "continue": "Pokračovat"
+    },
+    "group": {
+      "members": "Členové",
+      "matrixCorner": "Vůči",
+      "withOthers": "S ostatními",
+      "towardOthers": "Jak {{name}} vidí ostatní",
+      "noStance": "Zatím žádný",
+      "noCheckpoint": "Pro {{name}} zatím neproběhlo žádné kolo. Toto jsou počáteční hodnoty.",
+      "stanceLabel": "{{from}} vůči {{to}}: {{band}}",
+      "stanceTitle": "{{from}} vůči {{to}}",
+      "effectSummary": "Dotčení: {{names}}",
+      "you": "ty",
+      "someone": "někdo",
+      "axisToward": "{{axis}} vůči {{target}}",
+      "feels": "Cítí {{emotion}}",
+      "reason": {
+        "witnessed": "Svědek události",
+        "addressed": "Osloveno",
+        "social_event": "Společenská událost: {{kind}}"
+      }
+    }
   }
 }

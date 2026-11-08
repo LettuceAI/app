@@ -312,6 +312,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::memory::memory_cycle_revert,
             commands::memory::memory_error_dismiss,
             commands::companion::companion_state_get,
+            commands::companion::group_companion_state_get,
+            commands::companion::group_companion_message_effects,
             commands::companion::companion_soul_get,
             commands::companion::companion_soul_growth_clear,
             commands::companion::companion_soul_growth_remove,

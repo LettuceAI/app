@@ -14,6 +14,7 @@ import { memoryQuery, modelsQuery, personasQuery } from "../../data/queries";
 import { lorebooksQuery } from "@/entities/lorebook";
 import { characterQuery, effectivePersonaId, messageCountQuery, sourceChatsQuery } from "../../data/settings-queries";
 import { useChatModels } from "../../data/use-models";
+import { useMissingSoulWarning } from "../../companion/missing-soul";
 import { formatTime } from "../../data/messages";
 import type { PanelCtx } from "./context";
 import { MembersSection } from "./MembersSection";
@@ -44,6 +45,7 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
   const modelsStatus = useQuery(modelsQuery(api));
   const memoryOn = settings !== undefined && settings.memory.mode !== "disabled";
   const memory = useQuery({ ...memoryQuery(api, conversationId), enabled: memoryOn });
+  const soulWarning = useMissingSoulWarning(api);
   const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState("");
 
@@ -118,6 +120,9 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
     const done = await ctx.run(() => removeChat(api, queryClient, conversationId).then(() => true));
     if (done) onHome();
   };
+  const warnAfter = async (on: boolean, saved: Promise<boolean>) => {
+    if ((await saved) && on) await soulWarning.warn(settings.members?.participants.filter((member) => member.enabled).flatMap((member) => member.character_id === null ? [] : [member.character_id]) ?? []);
+  };
   const retryMemory = () =>
     void ctx.run(async () => {
       const outcome = await api.call("memoryRewindRetry", { conversation_id: conversationId });
@@ -128,6 +133,7 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
 
   return (
     <div className="space-y-6 pb-4">
+      {soulWarning.dialog}
       <div className="flex items-center gap-3">
         <Avatar src={avatar} name={name} size="lg" />
         <div className="min-w-0 flex-1">
@@ -193,6 +199,25 @@ export function SettingsRoot({ ctx, name, avatar, onOpenMemories, onBranches, on
           onOpen={() => ctx.openSheet("background")}
           onReset={() => void ctx.save({ background: { type: "reset" } })}
         />
+        {settings.companion_mode && (
+          <ListRow
+            title={t("settings.companionMode.title")}
+            description={t(`settings.source.${settings.companion_mode.source}`)}
+            trailing={
+              <span className="flex items-center gap-2">
+                {settings.companion_mode.source === "conversation" && (
+                  <Button variant="ghost" size="sm" disabled={ctx.busy} onClick={() => void ctx.save({ companion_mode: { type: "reset" } })}>{t("settings.reset")}</Button>
+                )}
+                <Switch
+                  checked={settings.companion_mode.value}
+                  disabled={ctx.busy}
+                  aria-label={t("settings.companionMode.title")}
+                  onChange={(on) => void warnAfter(on, ctx.save({ companion_mode: { type: "set", value: on } }))}
+                />
+              </span>
+            }
+          />
+        )}
       </ListGroup>
 
       <ListGroup label={t("settings.sections.lorebooks")}>

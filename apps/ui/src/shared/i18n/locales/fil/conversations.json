@@ -732,7 +732,10 @@
       "time": "Oras"
     },
     "groupAppearanceHint": "Appearance para sa lahat ng chat sa grupong ito",
-    "characterAppearanceHint": "Appearance para sa lahat ng chat sa karakter na ito"
+    "characterAppearanceHint": "Appearance para sa lahat ng chat sa karakter na ito",
+    "companionMode": {
+      "title": "Companion mode"
+    }
   },
   "appearance": {
     "forGroup": "Para sa bawat chat sa grupong ito",
@@ -1180,6 +1183,33 @@
       "clearSearch": "Burahin ang paghahanap"
     },
     "lastReply": "Huling tugon",
-    "replyHint": "Binubuksan ito ng bawat mensahe sa chat mula sa menu nito"
+    "replyHint": "Binubuksan ito ng bawat mensahe sa chat mula sa menu nito",
+    "soulWarning": {
+      "title": "Walang nakasulat na Soul",
+      "body": "Walang nakasulat na Soul para kay/sa: {{names}}. Kung wala ito, mas mahina ang kanilang companion behavior.",
+      "edit": "I-edit ang Soul",
+      "editFor": "I-edit ang Soul ni {{name}}",
+      "continue": "Magpatuloy"
+    },
+    "group": {
+      "members": "Mga Kasapi",
+      "matrixCorner": "Papunta kay",
+      "withOthers": "Sa iba pa",
+      "towardOthers": "Paano nakikita ni {{name}} ang iba",
+      "noStance": "Wala pa",
+      "noCheckpoint": "Wala pang naranasang turn si {{name}}. Ito ang mga panimulang halaga.",
+      "stanceLabel": "{{from}} papunta kay {{to}}: {{band}}",
+      "stanceTitle": "{{from}} papunta kay {{to}}",
+      "effectSummary": "Apektado: {{names}}",
+      "you": "ikaw",
+      "someone": "may isang tao",
+      "axisToward": "{{axis}} papunta kay {{target}}",
+      "feels": "Nakararamdam ng {{emotion}}",
+      "reason": {
+        "witnessed": "Nasaksihan ito",
+        "addressed": "Kinausap",
+        "social_event": "Social event: {{kind}}"
+      }
+    }
   }
 }

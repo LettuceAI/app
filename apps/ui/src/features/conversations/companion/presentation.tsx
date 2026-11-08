@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge, cn, icon, Panel, Scale, Text, Tooltip } from "@lettuceai/crisp";
-import type { CompanionEmotionVector, CompanionRelationshipDefaults, CompanionStateView } from "@/api/generated/bindings";
+import type { CompanionEmotionVector, CompanionRelationshipDefaults, CompanionRelationshipView } from "@/api/generated/bindings";
 
 import { axes, type Axis, emotionGroups, numericEntries, signed, referenceFor, dataLabel } from "./values";
 
@@ -32,7 +32,7 @@ export function BondTile({ axis, value, reference, compact = false, narrow = fal
   );
 }
 
-export function BondTiles({ state, defaults, compact = false, narrow = false }: { state: CompanionStateView; defaults: CompanionRelationshipDefaults; compact?: boolean; narrow?: boolean }) {
+export function BondTiles({ state, defaults, compact = false, narrow = false }: { state: { relationship: CompanionRelationshipView }; defaults: CompanionRelationshipDefaults; compact?: boolean; narrow?: boolean }) {
   return axes.flatMap((axis) => {
     const value = state.relationship[axis];
     return value === null || (compact && axis === "stability") ? [] : [<BondTile key={axis} axis={axis} value={value} reference={referenceFor(axis, defaults)} compact={compact} narrow={narrow} />];

@@ -25,3 +25,9 @@ export function referenceFor(axis: Axis, defaults: CompanionRelationshipDefaults
 export function changedAxes(relationship: RelationshipChange) {
   return numericEntries(relationship).filter(([, value]) => value !== 0);
 }
+
+export const stanceAxes = ["closeness", "trust", "affection", "tension"] as const;
+
+export function closenessBand(value: number): "low" | "mid" | "high" {
+  return value < -1 / 3 ? "low" : value > 1 / 3 ? "high" : "mid";
+}

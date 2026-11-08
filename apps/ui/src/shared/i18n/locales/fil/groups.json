@@ -166,7 +166,10 @@
     "characterNotesOff": "Mga tala ng grupo lang ang ginagamit",
     "models": "Mga Modelo",
     "characterModel": "Modelo ng karakter",
-    "characterModelBody": "Kung ano ang sinasabi ng sarili nilang settings"
+    "characterModelBody": "Kung ano ang sinasabi ng sarili nilang settings",
+    "companionMode": "Companion mode",
+    "companionModeOn": "Nananatili sa mga kasapi ang mga emosyon at relasyong nagbabago habang tumatagal ang chat",
+    "companionModeOff": "Sumasagot ang mga kasapi nang walang sinusubaybayang emosyon o relasyon"
   },
   "edit": {
     "tabs": {

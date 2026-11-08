@@ -8,6 +8,7 @@ import { ModelChoiceSheet } from "@/features/characters";
 import { modelsQuery } from "../../data/queries";
 import { FailureState } from "@/shared/ui/FailureState";
 import { participationQuery } from "../../data/settings-queries";
+import { useMissingSoulWarning } from "../../companion/missing-soul";
 import { AddMemberSheet } from "./AddMemberSheet";
 import type { PanelCtx } from "./context";
 import { SettingRow } from "./SettingRow";
@@ -21,6 +22,7 @@ export function MembersSection({ ctx }: { ctx: PanelCtx }) {
   const [adding, setAdding] = useState(false);
   const [modelMember, setModelMember] = useState<string | null>(null);
   const models = useQuery(modelsQuery(api));
+  const soulWarning = useMissingSoulWarning(api);
   if (stats.isPending) return <LoadingState />;
   if (stats.isError) return <FailureState error={stats.error} onRetry={() => void stats.refetch()} />;
   const members = stats.data.items.filter((member) => member.enabled);
@@ -38,15 +40,18 @@ export function MembersSection({ ctx }: { ctx: PanelCtx }) {
       });
       await refresh();
     });
-  const add = (characterId: string) =>
-    ctx.run(async () => {
+  const add = async (characterId: string) => {
+    const added = await ctx.run(async () => {
       await api.call("conversationParticipantAdd", {
         conversation_id: conversationId,
         character_id: characterId,
         client_operation_id: crypto.randomUUID(),
       });
       await refresh();
+      return true;
     });
+    if (added && ctx.settings?.companion_mode?.value === true) await soulWarning.warn([characterId]);
+  };
   const remove = async (participantId: string, name: string) => {
     const sure = await confirm({
       title: t("members.remove.title", { name }),
@@ -132,6 +137,7 @@ export function MembersSection({ ctx }: { ctx: PanelCtx }) {
       })}
       {selection?.models_source === "conversation" && <ListRowButton title={t("members.followModels")} description={t("members.followModelsHint")} chevron={false} disabled={ctx.busy} onClick={() => void ctx.save({ reset_member_models: true })} />}
     </ListGroup>
+    {soulWarning.dialog}
     {chosen && ctx.activeSheet === "member_model" && <ModelChoiceSheet api={api} open busy={ctx.busy} value={chosen.model.source === "conversation" ? chosen.model.id : null} defaultChoice={{ title: t("members.characterModel"), description: t("members.characterModelHint") }} onChange={(id) => setModel(chosen.participant_id, id)} onClose={() => { setModelMember(null); ctx.closeSheet(); }} />}
     </>
   );

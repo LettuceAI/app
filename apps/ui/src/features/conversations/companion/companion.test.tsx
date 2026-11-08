@@ -1,7 +1,7 @@
 import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createBrowserHistory, createMemoryHistory, type RouterHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CharacterDraft_Serialize, CompanionEmotionVector, CompanionSoulView, CompanionStateView, ConversationSettingsView, ConversationView, JobView_Serialize, MemoryCycleView, MemoryItemView, MemoryView, MessageCompanionEffect, SoulFactView, ThymosStatus, TimelineMessage } from "@/api/generated/bindings";
+import type { CharacterDraft_Serialize, CompanionEmotionVector, CompanionSoulView, CompanionStateView, ConversationSettingsView, ConversationView, GroupCompanionMemberEffectView, GroupCompanionMemberView, JobView_Serialize, MemoryCycleView, MemoryItemView, MemoryView, MessageCompanionEffect, SoulFactView, ThymosStatus, TimelineMessage } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -416,5 +416,74 @@ describe("companion chat", () => {
     fireEvent.click(await screen.findByRole("button", { name: "from 1 memory" }));
     expect(await screen.findByText("The source memories are no longer available.")).toBeTruthy();
     expect(within(screen.getByRole("dialog", { name: "Where this came from" })).queryByText("We went running by the lake.")).toBeNull();
+  });
+});
+
+const groupMember = (id: string, name: string, patch: Partial<GroupCompanionMemberView> = {}): GroupCompanionMemberView => ({ character_id: id, participant_id: `p${id}`, display_name: name, has_checkpoint: true, relationship: { closeness: 0.3, trust: 0.2, affection: 0.1, tension: 0.05, stability: 0.6, interaction_count: 12, last_interaction_at: NOW }, expressed: vector({ warmth: 0.5 }), felt: vector({ calm: 0.4 }), member_relationships: [], ...patch });
+const groupMembers = (): GroupCompanionMemberView[] => [
+  groupMember("ca", "Ada", { member_relationships: [{ target_character_id: "cb", closeness: 0.8, trust: 0.4, affection: 0.2, tension: 0.1 }] }),
+  groupMember("cb", "Bea", { has_checkpoint: false, relationship: { closeness: 0.7, trust: 0.2, affection: 0.1, tension: 0.05, stability: 0.6, interaction_count: 0, last_interaction_at: 0 } }),
+];
+const groupView = (): ConversationView => ({ ...conversation(), kind: "group", title: "Lighthouse crew", participants: [{ id: "pa", role: "character", name: "Ada", character_id: "ca", avatar: null }, { id: "pb", role: "character", name: "Bea", character_id: "cb", avatar: null }, { id: "pu", role: "user", name: "You", character_id: null, avatar: null }], source: { type: "group", group_id: "g1" } });
+const groupSettings = (on: boolean): ConversationSettingsView => ({ ...settings(), kind: "group", companion: false, companion_mode: { value: on, source: "group" }, members: { members_source: "group", muted_source: "group", models_source: "group", participants: [] } });
+const groupEffects = (): GroupCompanionMemberEffectView[] => [{ character_id: "ca", display_name: "Ada", effects: [
+  { reason: "addressed", social_event: null, target: { kind: "persona" }, relationship: { closeness: 0.04, trust: null, affection: null, tension: -0.05, stability: null }, felt: vector({ warmth: 0.12 }) },
+  { reason: "social_event", social_event: "party", target: { kind: "character", character_id: "cb" }, relationship: { closeness: 0.02, trust: null, affection: null, tension: null, stability: null }, felt: vector() },
+] }];
+const groupCalls = (on = true, souls: string[] = []): MockCallHandlers => ({
+  conversationOpen: () => ok(groupView()),
+  conversationSettingsGet: () => ok(groupSettings(on)),
+  conversationParticipationStats: () => ok({ total_messages: 0, items: [] }),
+  groupCompanionStateGet: () => ok(on ? { members: groupMembers() } : null),
+  groupCompanionMessageEffects: () => ok(groupEffects()),
+  companionSoulGet: (request) => { souls.push(request.character_id); return ok({ ...soul(), character_id: request.character_id }); },
+});
+
+describe("group companion chat", () => {
+  it("shows a member's bond, the matrix of stances, a stance sheet and the Soul of the chosen member", async () => {
+    const souls: string[] = [];
+    await open({ path: "/chat/c1/companion", calls: groupCalls(true, souls) });
+    expect((await screen.findByRole("meter", { name: "Closeness" })).getAttribute("aria-valuenow")).toBe("0.3");
+    expect(screen.queryByRole("tab", { name: /^Memories/ })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /^Activity/ })).toBeNull();
+    expect(screen.getByText("With the others")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Ada toward Bea: Intimate" }));
+    const sheet = await screen.findByRole("dialog", { name: "Ada toward Bea" });
+    expect(within(sheet).getByText("+80")).toBeTruthy();
+    expect(within(sheet).getByText("+40")).toBeTruthy();
+    expect(within(sheet).getByText("Tension")).toBeTruthy();
+    fireEvent.click(within(sheet).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Ada toward Bea" })).toBeNull());
+    expect(screen.getAllByText("None yet").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("radio", { name: /Bea/ }));
+    await waitFor(() => expect(screen.getByRole("meter", { name: "Closeness" }).getAttribute("aria-valuenow")).toBe("0.7"));
+    expect(screen.getByText("Bea has not been through a turn yet. These are the starting values.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: /^Soul/ }));
+    await screen.findByText("Patient and curious.");
+    expect(souls).toContain("cb");
+  });
+
+  it("opens the companion page from the header only while companion mode is on", async () => {
+    const app = await open({ path: "/chat/c1", calls: groupCalls() });
+    fireEvent.click(await screen.findByRole("button", { name: "Companion" }));
+    await waitFor(() => expect(app.runtime.router.state.location.pathname).toBe("/chat/c1/companion"));
+    cleanup();
+    await open({ path: "/chat/c1", calls: groupCalls(false) });
+    await screen.findByText("A reply.");
+    expect(screen.queryByRole("button", { name: "Companion" })).toBeNull();
+  });
+
+  it("lists who a message affected and what it did to each member", async () => {
+    const app = await open({ path: "/chat/c1", calls: groupCalls() });
+    fireEvent.contextMenu(await screen.findByText("A reply."));
+    fireEvent.click(await screen.findByRole("button", { name: /What this reply changed/ }));
+    const sheet = await screen.findByRole("dialog", { name: "What this reply changed" });
+    expect(within(sheet).getByText("Ada")).toBeTruthy();
+    expect(within(sheet).getByText("Was addressed")).toBeTruthy();
+    expect(within(sheet).getByText("Closeness toward you")).toBeTruthy();
+    expect(within(sheet).getByText("Social event: party")).toBeTruthy();
+    expect(within(sheet).getByText("Closeness toward Bea")).toBeTruthy();
+    expect(within(sheet).getByText("Feels Warmth")).toBeTruthy();
+    expect(app.called("messageCompanionEffect")).toHaveLength(0);
   });
 });

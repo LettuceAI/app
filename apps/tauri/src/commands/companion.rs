@@ -14,6 +14,26 @@ pub async fn companion_state_get(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn group_companion_state_get(
+    context: State<'_, ApiContextSlot>,
+    request: dto::GroupCompanionStateGetRequest,
+) -> Result<Option<dto::GroupCompanionStateView>, ApiError> {
+    let context = context.snapshot()?;
+    api::group_companion_state_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn group_companion_message_effects(
+    context: State<'_, ApiContextSlot>,
+    request: dto::GroupCompanionMessageEffectsRequest,
+) -> Result<Vec<dto::GroupCompanionMemberEffectView>, ApiError> {
+    let context = context.snapshot()?;
+    api::group_companion_message_effects(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn companion_soul_get(
     context: State<'_, ApiContextSlot>,
     request: dto::CompanionSoulGetRequest,

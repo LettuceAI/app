@@ -732,7 +732,10 @@
       "time": "Uhrzeit"
     },
     "groupAppearanceHint": "Darstellung für alle Chats in dieser Gruppe",
-    "characterAppearanceHint": "Darstellung für alle Chats mit diesem Charakter"
+    "characterAppearanceHint": "Darstellung für alle Chats mit diesem Charakter",
+    "companionMode": {
+      "title": "Companion-Modus"
+    }
   },
   "appearance": {
     "forGroup": "Für jeden Chat in dieser Gruppe",
@@ -1180,6 +1183,33 @@
       "clearSearch": "Suche löschen"
     },
     "lastReply": "Letzte Antwort",
-    "replyHint": "Jede Nachricht im Chat öffnet dies über ihr Menü"
+    "replyHint": "Jede Nachricht im Chat öffnet dies über ihr Menü",
+    "soulWarning": {
+      "title": "Keine Soul geschrieben",
+      "body": "Für {{names}} ist keine Soul geschrieben. Ohne sie fällt ihr Companion-Verhalten schwächer aus.",
+      "edit": "Soul bearbeiten",
+      "editFor": "Soul von {{name}} bearbeiten",
+      "continue": "Weiter"
+    },
+    "group": {
+      "members": "Mitglieder",
+      "matrixCorner": "Gegenüber",
+      "withOthers": "Mit den anderen",
+      "towardOthers": "Wie {{name}} die anderen sieht",
+      "noStance": "Noch keine",
+      "noCheckpoint": "{{name}} hat noch keine Runde erlebt. Das sind die Startwerte.",
+      "stanceLabel": "{{from}} gegenüber {{to}}: {{band}}",
+      "stanceTitle": "{{from}} gegenüber {{to}}",
+      "effectSummary": "Betroffen: {{names}}",
+      "you": "du",
+      "someone": "jemand",
+      "axisToward": "{{axis}} gegenüber {{target}}",
+      "feels": "Fühlt {{emotion}}",
+      "reason": {
+        "witnessed": "Hat das miterlebt",
+        "addressed": "Wurde angesprochen",
+        "social_event": "Soziales Ereignis: {{kind}}"
+      }
+    }
   }
 }

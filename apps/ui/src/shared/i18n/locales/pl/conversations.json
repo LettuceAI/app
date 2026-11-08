@@ -758,7 +758,10 @@
       "time": "Czas"
     },
     "groupAppearanceHint": "Wygląd wszystkich czatów w tej grupie",
-    "characterAppearanceHint": "Wygląd wszystkich czatów z tą postacią"
+    "characterAppearanceHint": "Wygląd wszystkich czatów z tą postacią",
+    "companionMode": {
+      "title": "Tryb towarzysza"
+    }
   },
   "appearance": {
     "forGroup": "Dla każdego czatu w tej grupie",
@@ -1242,6 +1245,33 @@
       "clearSearch": "Wyczyść wyszukiwanie"
     },
     "lastReply": "Ostatnia odpowiedź",
-    "replyHint": "Każda wiadomość w czacie otwiera to z jej menu"
+    "replyHint": "Każda wiadomość w czacie otwiera to z jej menu",
+    "soulWarning": {
+      "title": "Brak napisanej Duszy",
+      "body": "Nie napisano Duszy dla: {{names}}. Bez niej ich zachowanie jako towarzysza będzie słabsze.",
+      "edit": "Edytuj Duszę",
+      "editFor": "Edytuj Duszę postaci {{name}}",
+      "continue": "Kontynuuj"
+    },
+    "group": {
+      "members": "Członkowie",
+      "matrixCorner": "Wobec",
+      "withOthers": "Z pozostałymi",
+      "towardOthers": "Jak {{name}} widzi pozostałych",
+      "noStance": "Jeszcze brak",
+      "noCheckpoint": "{{name}} nie przeszedł(-ęła) jeszcze żadnej tury. To wartości początkowe.",
+      "stanceLabel": "{{from}} wobec {{to}}: {{band}}",
+      "stanceTitle": "{{from}} wobec {{to}}",
+      "effectSummary": "Dotyczy: {{names}}",
+      "you": "ty",
+      "someone": "ktoś",
+      "axisToward": "{{axis}} wobec {{target}}",
+      "feels": "Czuje: {{emotion}}",
+      "reason": {
+        "witnessed": "Był(a) tego świadkiem",
+        "addressed": "Ktoś się do tego zwrócił",
+        "social_event": "Zdarzenie społeczne: {{kind}}"
+      }
+    }
   }
 }

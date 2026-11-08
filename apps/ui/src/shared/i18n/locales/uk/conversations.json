@@ -758,7 +758,10 @@
       "time": "Час"
     },
     "groupAppearanceHint": "Зовнішній вигляд для всіх чатів цієї групи",
-    "characterAppearanceHint": "Зовнішній вигляд для всіх чатів із цим персонажем"
+    "characterAppearanceHint": "Зовнішній вигляд для всіх чатів із цим персонажем",
+    "companionMode": {
+      "title": "Режим компаньйона"
+    }
   },
   "appearance": {
     "forGroup": "Для кожного чату цієї групи",
@@ -1242,6 +1245,33 @@
       "clearSearch": "Очистити пошук"
     },
     "lastReply": "Остання відповідь",
-    "replyHint": "Кожне повідомлення в чаті відкриває це зі свого меню"
+    "replyHint": "Кожне повідомлення в чаті відкриває це зі свого меню",
+    "soulWarning": {
+      "title": "Душу не написано",
+      "body": "Для {{names}} не написано Душі. Без неї їхня поведінка як компаньйона буде слабшою.",
+      "edit": "Редагувати Душу",
+      "editFor": "Редагувати Душу персонажа {{name}}",
+      "continue": "Продовжити"
+    },
+    "group": {
+      "members": "Учасники",
+      "matrixCorner": "Щодо",
+      "withOthers": "З рештою",
+      "towardOthers": "Як {{name}} бачить решту",
+      "noStance": "Поки немає",
+      "noCheckpoint": "{{name}} ще не пройшов(-ла) жодного ходу. Це початкові значення.",
+      "stanceLabel": "{{from}} щодо {{to}}: {{band}}",
+      "stanceTitle": "{{from}} щодо {{to}}",
+      "effectSummary": "Зачеплені: {{names}}",
+      "you": "ви",
+      "someone": "хтось",
+      "axisToward": "{{axis}} щодо {{target}}",
+      "feels": "Відчуває: {{emotion}}",
+      "reason": {
+        "witnessed": "Був(-ла) свідком",
+        "addressed": "До нього звернулися",
+        "social_event": "Соціальна подія: {{kind}}"
+      }
+    }
   }
 }

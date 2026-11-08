@@ -9,6 +9,7 @@ import { createTestI18n } from "@/shared/testing/i18n";
 import { draftToSave, newGroupForm, sceneFromText } from "./data/form";
 import { groupsQuery } from "./data/queries";
 import defaultCharacter from "./fixtures/default-character.json";
+import companionFixture from "./fixtures/companion-character.json";
 import { createApiClient } from "@/api/client";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
@@ -363,6 +364,63 @@ describe("group time awareness and notes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save.mock.calls[0]![0].draft).toMatchObject({ time_awareness: true, disable_character_notes: true });
+  });
+
+  it("saves companion mode with the group and names members without a Soul when it is switched on", async () => {
+    const withSoul = { ...characterDraft.defaults, companion_soul: { ...companionFixture.defaults.companion_soul, soul: { ...companionFixture.defaults.companion_soul.soul, essence: "Calm and watchful." }, authored_facts: [] } };
+    let current = savedGroup;
+    const save = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => {
+      current = { ...current, draft: request.draft, revision: current.revision + 1 };
+      return { status: "ok", data: current };
+    });
+    await renderGroups("/groups/g1/edit?section=chat", {
+      groupSave: save,
+      groupGet: () => ({ status: "ok", data: current }),
+      characterGet: ({ character_id }) => ({ status: "ok", data: { id: character_id, draft: { ...characterDraft, profile: { ...characterDraft.profile, name: cast.find((item) => item.id === character_id)?.name ?? character_id }, defaults: character_id === "b" ? withSoul : { ...characterDraft.defaults, companion_soul: null } }, archived: false, assets: [], revision: 1, created_at: 1, updated_at: 1 } as never }),
+    });
+    const companionMode = await screen.findByRole("switch", { name: "Companion mode" });
+    expect(companionMode.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(companionMode);
+    const dialog = await screen.findByRole("dialog", { name: "No Soul written" });
+    expect(within(dialog).getByText(/No Soul is written for: Aria\./)).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Edit the Soul of Bram" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "No Soul written" })).toBeNull());
+    expect(screen.getByRole("switch", { name: "Companion mode" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![0].draft).toMatchObject({ companion_mode: true });
+  });
+
+  it("offers only Continue in the creator's missing Soul warning", async () => {
+    await renderGroups("/groups/new");
+    fireEvent.click((await screen.findByText("Aria")).closest("button")!);
+    fireEvent.click(screen.getByText("Bram").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: "Continue to setup" }));
+    await screen.findByRole("textbox", { name: "Group name" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue to scene" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Continue to extras" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "Companion mode" }));
+    const dialog = await screen.findByRole("dialog", { name: "No Soul written" });
+    expect(within(dialog).getByText(/No Soul is written for: Aria and Bram\./)).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: /Edit the Soul of/ })).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Continue" })).toBeTruthy();
+  });
+
+  it("warns when a character without a Soul joins a companion group and still adds it", async () => {
+    const on = group({ ...savedGroup.draft, companion_mode: true });
+    const save = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => ({ status: "ok", data: group(request.draft) }));
+    await renderGroups("/groups/g1/edit?section=members", { groupSave: save, groupGet: () => ({ status: "ok", data: on }) });
+    fireEvent.click(await screen.findByRole("button", { name: "Add characters" }));
+    const sheet = await screen.findByRole("dialog", { name: "Add characters" });
+    fireEvent.click(within(sheet).getByRole("checkbox", { name: "Cleo" }));
+    fireEvent.click(within(sheet).getByRole("button", { name: "Add 1 character" }));
+    const dialog = await screen.findByRole("dialog", { name: "No Soul written" });
+    expect(within(dialog).getByText(/No Soul is written for: Cleo\./)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![0].draft.members.map((member) => member.character_id)).toEqual(["a", "b", "c"]);
   });
 
   it("lists the group's notes with who sees them and toggles one at once", async () => {

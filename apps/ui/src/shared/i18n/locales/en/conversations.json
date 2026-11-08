@@ -732,7 +732,10 @@
       "time": "Time"
     },
     "groupAppearanceHint": "Appearance for all chats in this group",
-    "characterAppearanceHint": "Appearance for all chats with this character"
+    "characterAppearanceHint": "Appearance for all chats with this character",
+    "companionMode": {
+      "title": "Companion mode"
+    }
   },
   "appearance": {
     "forGroup": "For every chat in this group",
@@ -1180,6 +1183,33 @@
       "clearSearch": "Clear search"
     },
     "lastReply": "Last reply",
-    "replyHint": "Every message in the chat opens this from its menu"
+    "replyHint": "Every message in the chat opens this from its menu",
+    "soulWarning": {
+      "title": "No Soul written",
+      "body": "No Soul is written for: {{names}}. Without one, their companion behavior will be weaker.",
+      "edit": "Edit Soul",
+      "editFor": "Edit the Soul of {{name}}",
+      "continue": "Continue"
+    },
+    "group": {
+      "members": "Members",
+      "matrixCorner": "Toward",
+      "withOthers": "With the others",
+      "towardOthers": "How {{name}} sees the others",
+      "noStance": "None yet",
+      "noCheckpoint": "{{name}} has not been through a turn yet. These are the starting values.",
+      "stanceLabel": "{{from}} toward {{to}}: {{band}}",
+      "stanceTitle": "{{from}} toward {{to}}",
+      "effectSummary": "Affected: {{names}}",
+      "you": "you",
+      "someone": "someone",
+      "axisToward": "{{axis}} toward {{target}}",
+      "feels": "Feels {{emotion}}",
+      "reason": {
+        "witnessed": "Witnessed this",
+        "addressed": "Was addressed",
+        "social_event": "Social event: {{kind}}"
+      }
+    }
   }
 }

@@ -8,7 +8,7 @@ import {
 } from "@lettuceai/crisp";
 import type { CharacterSummary } from "@/api/generated/bindings";
 import { ModelChoiceSheet } from "@/features/characters";
-import { modelsQuery } from "@/features/conversations";
+import { modelsQuery, useMissingSoulWarning } from "@/features/conversations";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import type { StepProps } from "./MembersStep";
 
@@ -37,6 +37,7 @@ function MemberCard({ member, handle, position, phone, detail, onMenu }: {
 export function EditMembersTab({ api, form, update, cast, phone }: StepProps & { cast: EditorMember[]; phone: boolean }) {
   const { t, i18n } = useTranslation("groups");
   const models = useQuery(modelsQuery(api));
+  const soulWarning = useMissingSoulWarning(api);
   const [panel, setPanel] = useState<MemberPanel | null>(null);
   const { shown } = useClosingValue(panel);
   const [picked, setPicked] = useState<string[]>([]);
@@ -77,6 +78,7 @@ export function EditMembersTab({ api, form, update, cast, phone }: StepProps & {
       }}
     </ReorderableList>}
     <Text variant="hint" className="block px-1">{t("setup.orderBody")} {t("edit.membersFollow")}</Text>
+    {soulWarning.dialog}
     <Sheet open={panel?.kind === "member"} onClose={() => setPanel(null)} size="sm" title={member?.name} description={link && t(member?.archived ? "edit.orderArchived" : "edit.orderNumber", { number: count(members.indexOf(link) + 1) })} leftAction={member && <Avatar src={member.avatar?.url ?? null} name={member.name} size="md" />}>
       {member && link && <div className="space-y-4 pb-1">
         <ListGroup>
@@ -89,6 +91,7 @@ export function EditMembersTab({ api, form, update, cast, phone }: StepProps & {
     {panel?.kind === "model" && link && <ModelChoiceSheet api={api} open value={link.model_profile_override} defaultChoice={{ title: t("extras.characterModel"), description: t("extras.characterModelBody") }} onChange={(id) => patchMember(link.character_id, { model_profile_override: id })} onClose={() => setPanel(null)} />}
     <Sheet open={panel?.kind === "add"} onClose={() => setPanel(null)} size="sm" title={t("edit.addMembers")} description={t("edit.addMembersBody")} footer={<Button variant="primary" block disabled={picked.length === 0} onClick={() => {
       update((current) => ({ ...current, draft: { ...current.draft, members: [...current.draft.members, ...picked.filter((id) => !current.draft.members.some((item) => item.character_id === id)).map((id, index) => ({ character_id: id, ordinal: current.draft.members.length + index, muted: false, model_profile_override: null }))] } }));
+      if (form.draft.companion_mode) void soulWarning.warn(picked.filter((id) => !members.some((item) => item.character_id === id)));
       setPanel(null);
     }}>{picked.length === 0 ? t("edit.pickToAdd") : t("edit.addCount", { count: picked.length, formatted: count(picked.length) })}</Button>}>
       <div className="space-y-3 pb-1">

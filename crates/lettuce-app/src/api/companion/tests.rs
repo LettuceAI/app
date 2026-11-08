@@ -3,8 +3,10 @@ use std::sync::{Arc, Mutex};
 use crate::api::jobs::JobFeed;
 use crate::api::tests::{Harness, Reply, harness};
 use crate::api::*;
+use crate::launch::tests::{member, seed_group, seed_named_character};
 use lettuce_contracts::{self as dto, ApiErrorCode};
-use lettuce_types::CharacterId;
+use lettuce_conversations::ConversationReader;
+use lettuce_types::{CharacterId, ConversationId, GroupId};
 
 fn companion(harness: &Harness, name: &str, share_soul_growth: bool) -> CharacterId {
     let fact = lettuce_companions::SoulFact {
@@ -120,6 +122,229 @@ async fn companion_state_reads_the_chat_state_and_nothing_for_plain_chats() {
     );
     assert_eq!(
         get("not-an-id".into()).await.expect_err("bad id").code,
+        ApiErrorCode::InvalidInput
+    );
+}
+
+fn companion_group(harness: &Harness, companion_mode: bool) -> (GroupId, CharacterId, CharacterId) {
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1)],
+        None,
+        |group| group.companion_mode = companion_mode,
+    );
+    (group_id, ada, bea)
+}
+
+async fn launch_group_chat(harness: &Harness, group_id: GroupId, key: &str) -> String {
+    conversation_launch_group(
+        &harness.context,
+        dto::LaunchGroupRequest {
+            group_id: group_id.to_string(),
+            client_operation_id: key.into(),
+        },
+    )
+    .await
+    .expect("launch group")
+    .conversation_id
+}
+
+fn send_with_checkpoints(
+    harness: &Harness,
+    chat: &str,
+    present: CharacterId,
+    text: &str,
+) -> lettuce_types::MessageId {
+    use lettuce_companions::GroupCompanionTurnWriter;
+    use lettuce_conversations::{
+        GenerationInput, MessageDraft, MessagePart, MessageRole, MessageVisibility, OperationToken,
+        ParticipantRole, SendConversation,
+    };
+
+    let database = harness.context.backend().database();
+    let conversation =
+        ConversationReader::get(database, chat.parse::<ConversationId>().expect("id"))
+            .expect("conversation")
+            .conversation;
+    let user = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::User)
+        .expect("user participant");
+    let command = SendConversation {
+        conversation_id: conversation.id,
+        branch_id: conversation.active_branch_id,
+        expected_revision: conversation.revision,
+        operation: OperationToken {
+            key: lettuce_conversations::IdempotencyKey::new("group-companion-send").expect("key"),
+            request_digest: lettuce_types::ContentHash::parse("ab".repeat(32)).expect("digest"),
+        },
+        message: MessageDraft {
+            role: MessageRole::User,
+            author_participant_id: Some(user.id),
+            parts: vec![MessagePart::Text { text: text.into() }],
+            visibility: MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: false,
+        },
+        swap_roles: false,
+    };
+    let now = harness.context.now();
+    let prepared = lettuce_companions::PreparedGroupCompanionTurn {
+        conversation_id: conversation.id,
+        persona_id: None,
+        members: vec![(present, lettuce_companions::CompanionSoulConfig::default())],
+        applied: Vec::new(),
+        states: std::collections::BTreeMap::new(),
+        persona_relationships: std::collections::BTreeMap::new(),
+        persona_revisions: std::collections::BTreeMap::from([(present, None)]),
+        user_event: Some(lettuce_companions::GroupCompanionUserEvent {
+            present: vec![present],
+            addressed: vec![present],
+            signals: lettuce_companions::unavailable_signal_bundle(),
+            at: now,
+        }),
+    };
+    let sent = database
+        .begin_group_companion_send(&command, prepared, now)
+        .expect("send with companion state");
+    match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        _ => panic!("expected a user message"),
+    }
+}
+
+async fn group_state(
+    harness: &Harness,
+    chat: &str,
+) -> Result<Option<dto::GroupCompanionStateView>, dto::ApiError> {
+    group_companion_state_get(
+        &harness.context,
+        dto::GroupCompanionStateGetRequest {
+            conversation_id: chat.into(),
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn group_companion_state_lists_members_with_and_without_a_checkpoint() {
+    let harness = harness(Reply::Text("Hello."));
+    let (group_id, ada, bea) = companion_group(&harness, true);
+    let chat = launch_group_chat(&harness, group_id, "group-state-launch").await;
+
+    let fresh = group_state(&harness, &chat)
+        .await
+        .expect("state")
+        .expect("companion mode is on");
+    assert_eq!(
+        fresh
+            .members
+            .iter()
+            .map(|member| (member.character_id.clone(), member.has_checkpoint))
+            .collect::<Vec<_>>(),
+        vec![(ada.to_string(), false), (bea.to_string(), false)]
+    );
+    let defaults = lettuce_companions::RelationshipDefaults::default();
+    assert_eq!(fresh.members[0].relationship.closeness, defaults.closeness);
+    assert_eq!(fresh.members[0].relationship.interaction_count, 0);
+    assert!(fresh.members[0].member_relationships.is_empty());
+
+    let message_id = send_with_checkpoints(&harness, &chat, ada, "Hello Ada.");
+
+    let state = group_state(&harness, &chat)
+        .await
+        .expect("state")
+        .expect("companion mode is on");
+    assert_eq!(state.members.len(), 2);
+    assert_eq!(state.members[0].character_id, ada.to_string());
+    assert!(state.members[0].has_checkpoint);
+    assert_eq!(state.members[1].character_id, bea.to_string());
+    assert!(!state.members[1].has_checkpoint);
+    assert_eq!(state.members[1].relationship.closeness, defaults.closeness);
+
+    let effects = group_companion_message_effects(
+        &harness.context,
+        dto::GroupCompanionMessageEffectsRequest {
+            conversation_id: chat.clone(),
+            message_id: message_id.to_string(),
+        },
+    )
+    .await
+    .expect("effects");
+    assert_eq!(effects.len(), 1);
+    assert_eq!(effects[0].character_id, ada.to_string());
+    assert_eq!(effects[0].display_name, "Ada");
+    assert_eq!(effects[0].effects.len(), 1);
+    let effect = &effects[0].effects[0];
+    assert_eq!(effect.reason, dto::GroupCompanionEffectReason::Addressed);
+    assert_eq!(
+        effect.target,
+        Some(dto::GroupCompanionEffectTarget::Persona)
+    );
+    assert!(effect.relationship.is_some());
+    assert_eq!(effect.social_event, None);
+
+    let none = group_companion_message_effects(
+        &harness.context,
+        dto::GroupCompanionMessageEffectsRequest {
+            conversation_id: chat,
+            message_id: lettuce_types::MessageId::new().to_string(),
+        },
+    )
+    .await
+    .expect("effects of an unknown message");
+    assert!(none.is_empty());
+}
+
+#[tokio::test]
+async fn group_companion_state_is_none_without_companion_mode_or_for_other_chats() {
+    let harness = harness(Reply::Text("reply"));
+    let (group_id, _, _) = companion_group(&harness, false);
+    let chat = launch_group_chat(&harness, group_id, "group-state-off").await;
+    assert_eq!(group_state(&harness, &chat).await.expect("group"), None);
+
+    let character = companion(&harness, "Direct", false);
+    let direct = launch_companion(&harness, character, "group-state-direct").await;
+    assert_eq!(group_state(&harness, &direct).await.expect("direct"), None);
+
+    assert_eq!(
+        group_state(&harness, &ConversationId::new().to_string())
+            .await
+            .expect_err("unknown chat")
+            .code,
+        ApiErrorCode::NotFound
+    );
+}
+
+#[tokio::test]
+async fn the_soul_of_a_group_member_is_read_through_the_group_chat_and_a_stranger_is_refused() {
+    let harness = harness(Reply::Text("reply"));
+    let (group_id, ada, _) = companion_group(&harness, true);
+    let stranger = seed_named_character(harness.context.backend().database(), "Stranger");
+    let chat = launch_group_chat(&harness, group_id, "group-soul-launch").await;
+    let get = |character: CharacterId| {
+        let context = harness.context.clone();
+        let chat = chat.clone();
+        async move {
+            companion_soul_get(
+                &context,
+                dto::CompanionSoulGetRequest {
+                    character_id: character.to_string(),
+                    conversation_id: Some(chat),
+                },
+            )
+            .await
+        }
+    };
+    let soul = get(ada).await.expect("member soul");
+    assert_eq!(soul.character_id, ada.to_string());
+    assert_eq!(soul.conversation_id.as_deref(), Some(chat.as_str()));
+    assert_eq!(
+        get(stranger).await.expect_err("not a member").code,
         ApiErrorCode::InvalidInput
     );
 }

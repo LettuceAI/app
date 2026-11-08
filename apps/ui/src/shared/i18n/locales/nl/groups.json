@@ -166,7 +166,10 @@
     "characterNotesOff": "Alleen de notities van de groep worden gebruikt",
     "models": "Modellen",
     "characterModel": "Model van het karakter",
-    "characterModelBody": "Wat hun eigen instellingen zeggen"
+    "characterModelBody": "Wat hun eigen instellingen zeggen",
+    "companionMode": "Metgezelmodus",
+    "companionModeOn": "Leden houden emoties en relaties die veranderen naarmate de chat vordert",
+    "companionModeOff": "Leden antwoorden zonder bijgehouden emoties of relaties"
   },
   "edit": {
     "tabs": {

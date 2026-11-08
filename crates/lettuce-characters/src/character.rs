@@ -287,11 +287,6 @@ impl CharacterDefaults {
                 &config.prompting.style_notes,
             )?;
         }
-        if self.interaction_mode != InteractionMode::Companion && self.companion_soul.is_some() {
-            return Err(ValidationError::Invariant {
-                field: "character.companion_soul.mode",
-            });
-        }
         Ok(())
     }
 }
@@ -672,12 +667,13 @@ mod tests {
     }
 
     #[test]
-    fn companion_soul_config_requires_companion_mode() {
+    fn companion_soul_config_validates_in_any_mode() {
         let mut defaults = CharacterDefaults {
             companion_soul: Some(CompanionSoulConfig::default()),
             ..CharacterDefaults::default()
         };
-        assert!(defaults.validate().is_err());
+        assert_eq!(defaults.interaction_mode, InteractionMode::Roleplay);
+        assert!(defaults.validate().is_ok());
         defaults.interaction_mode = InteractionMode::Companion;
         assert!(defaults.validate().is_ok());
     }

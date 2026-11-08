@@ -719,7 +719,10 @@
       "time": "시간"
     },
     "groupAppearanceHint": "이 그룹의 모든 채팅 외관",
-    "characterAppearanceHint": "이 캐릭터와의 모든 채팅 외관"
+    "characterAppearanceHint": "이 캐릭터와의 모든 채팅 외관",
+    "companionMode": {
+      "title": "동반자 모드"
+    }
   },
   "appearance": {
     "forGroup": "이 그룹의 모든 채팅에",
@@ -1149,6 +1152,33 @@
       "clearSearch": "검색 지우기"
     },
     "lastReply": "마지막 답장",
-    "replyHint": "채팅의 모든 메시지가 메뉴에서 이것을 열어요"
+    "replyHint": "채팅의 모든 메시지가 메뉴에서 이것을 열어요",
+    "soulWarning": {
+      "title": "작성된 소울 없음",
+      "body": "{{names}}의 소울이 작성되어 있지 않아요. 소울이 없으면 동반자로서의 행동이 약해져요.",
+      "edit": "소울 편집",
+      "editFor": "{{name}}의 소울 편집",
+      "continue": "계속"
+    },
+    "group": {
+      "members": "구성원",
+      "matrixCorner": "대상",
+      "withOthers": "다른 구성원과",
+      "towardOthers": "{{name}}이(가) 다른 구성원을 보는 방식",
+      "noStance": "아직 없음",
+      "noCheckpoint": "{{name}}은(는) 아직 턴을 거치지 않았어요. 시작 값이에요.",
+      "stanceLabel": "{{from}} → {{to}}: {{band}}",
+      "stanceTitle": "{{from}} → {{to}}",
+      "effectSummary": "영향받음: {{names}}",
+      "you": "당신",
+      "someone": "누군가",
+      "axisToward": "{{target}}에 대한 {{axis}}",
+      "feels": "{{emotion}}을(를) 느낌",
+      "reason": {
+        "witnessed": "이 일을 목격함",
+        "addressed": "말을 걸어옴",
+        "social_event": "사회적 사건: {{kind}}"
+      }
+    }
   }
 }

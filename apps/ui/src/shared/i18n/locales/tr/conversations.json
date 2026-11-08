@@ -732,7 +732,10 @@
       "time": "Saat"
     },
     "groupAppearanceHint": "Bu gruptaki tüm sohbetlerin görünümü",
-    "characterAppearanceHint": "Bu karakterle olan tüm sohbetlerin görünümü"
+    "characterAppearanceHint": "Bu karakterle olan tüm sohbetlerin görünümü",
+    "companionMode": {
+      "title": "Yoldaş modu"
+    }
   },
   "appearance": {
     "forGroup": "Bu gruptaki her sohbet için",
@@ -1180,6 +1183,33 @@
       "clearSearch": "Aramayı temizle"
     },
     "lastReply": "Son yanıt",
-    "replyHint": "Sohbetteki her mesaj bunu menüsünden açar"
+    "replyHint": "Sohbetteki her mesaj bunu menüsünden açar",
+    "soulWarning": {
+      "title": "Yazılmış Soul yok",
+      "body": "{{names}} için yazılmış bir Soul yok. Soul olmadan yoldaş davranışları daha zayıf olur.",
+      "edit": "Soul'u düzenle",
+      "editFor": "{{name}} adlı karakterin Soul'unu düzenle",
+      "continue": "Devam"
+    },
+    "group": {
+      "members": "Üyeler",
+      "matrixCorner": "Karşısında",
+      "withOthers": "Diğerleriyle",
+      "towardOthers": "{{name}} diğerlerini nasıl görüyor",
+      "noStance": "Henüz yok",
+      "noCheckpoint": "{{name}} henüz hiçbir turdan geçmedi. Bunlar başlangıç değerleri.",
+      "stanceLabel": "{{from}}, {{to}} karşısında: {{band}}",
+      "stanceTitle": "{{from}}, {{to}} karşısında",
+      "effectSummary": "Etkilenenler: {{names}}",
+      "you": "sen",
+      "someone": "biri",
+      "axisToward": "{{axis}}, {{target}} karşısında",
+      "feels": "{{emotion}} hissediyor",
+      "reason": {
+        "witnessed": "Buna tanık oldu",
+        "addressed": "Kendisine seslenildi",
+        "social_event": "Sosyal olay: {{kind}}"
+      }
+    }
   }
 }

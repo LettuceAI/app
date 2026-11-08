@@ -23,6 +23,7 @@ import { RelationshipTab } from "./RelationshipTab";
 import { SoulTab } from "./SoulTab";
 import { useOverlayBack } from "./use-overlay-back";
 import { EffectSheet } from "./EffectSheet";
+import { GroupCompanionScreen } from "./GroupCompanionScreen";
 
 type Target = { kind: "add" } | { kind: "edit"; item: MemoryItemView };
 type CompanionTab = "relationship" | "memories" | "soul" | "activity";
@@ -122,6 +123,7 @@ function CompanionScreen({ conversationId }: { conversationId: string }) {
     setSummarySession((value) => value + 1);
     setSummaryOpen(true);
   };
+  if (view?.kind === "group") return <GroupCompanionScreen api={api} conversationId={conversationId} view={view} tab={tab === "soul" ? "soul" : "relationship"} onTab={changeTab} onBack={openChat} />;
   const initialMessages = view?.messages;
   const latestReply = initialMessages?.items.findLast((message) => message.role === "assistant");
   const firstMessageAt = initialMessages?.next_cursor === null ? initialMessages.items.find((message) => message.role !== "system")?.created_at ?? null : null;

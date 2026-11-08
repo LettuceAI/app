@@ -745,7 +745,10 @@
       "time": "Hora"
     },
     "groupAppearanceHint": "Aparência para todas as conversas deste grupo",
-    "characterAppearanceHint": "Aparência para todas as conversas com este personagem"
+    "characterAppearanceHint": "Aparência para todas as conversas com este personagem",
+    "companionMode": {
+      "title": "Modo Companion"
+    }
   },
   "appearance": {
     "forGroup": "Para toda conversa deste grupo",
@@ -1211,6 +1214,33 @@
       "clearSearch": "Limpar pesquisa"
     },
     "lastReply": "Última resposta",
-    "replyHint": "Toda mensagem da conversa abre isto pelo menu dela"
+    "replyHint": "Toda mensagem da conversa abre isto pelo menu dela",
+    "soulWarning": {
+      "title": "Nenhum Soul escrito",
+      "body": "Não há um Soul escrito para: {{names}}. Sem ele, o comportamento de companion será mais fraco.",
+      "edit": "Editar Soul",
+      "editFor": "Editar o Soul de {{name}}",
+      "continue": "Continuar"
+    },
+    "group": {
+      "members": "Membros",
+      "matrixCorner": "Em relação a",
+      "withOthers": "Com os outros",
+      "towardOthers": "Como {{name}} vê os outros",
+      "noStance": "Ainda nenhum",
+      "noCheckpoint": "{{name}} ainda não passou por nenhum turno. Estes são os valores iniciais.",
+      "stanceLabel": "{{from}} em relação a {{to}}: {{band}}",
+      "stanceTitle": "{{from}} em relação a {{to}}",
+      "effectSummary": "Afetados: {{names}}",
+      "you": "você",
+      "someone": "alguém",
+      "axisToward": "{{axis}} em relação a {{target}}",
+      "feels": "Sente {{emotion}}",
+      "reason": {
+        "witnessed": "Presenciou isto",
+        "addressed": "Foi abordado",
+        "social_event": "Evento social: {{kind}}"
+      }
+    }
   }
 }

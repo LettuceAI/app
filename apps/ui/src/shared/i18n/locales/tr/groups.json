@@ -166,7 +166,10 @@
     "characterNotesOff": "Yalnızca grubun notları kullanılır",
     "models": "Modeller",
     "characterModel": "Karakterin modeli",
-    "characterModelBody": "Kendi ayarlarında ne yazıyorsa o"
+    "characterModelBody": "Kendi ayarlarında ne yazıyorsa o",
+    "companionMode": "Yoldaş modu",
+    "companionModeOn": "Üyeler, sohbet ilerledikçe değişen duygular ve ilişkiler taşır",
+    "companionModeOff": "Üyeler, takip edilen duygular veya ilişkiler olmadan yanıt verir"
   },
   "edit": {
     "tabs": {

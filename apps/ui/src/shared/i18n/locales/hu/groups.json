@@ -166,7 +166,10 @@
     "characterNotesOff": "Csak a csoport jegyzetei vannak használatban",
     "models": "Modellek",
     "characterModel": "Karakter modellje",
-    "characterModelBody": "Ahogy a saját beállításai mondják"
+    "characterModelBody": "Ahogy a saját beállításai mondják",
+    "companionMode": "Társ mód",
+    "companionModeOn": "A tagok érzelmei és kapcsolatai a beszélgetés előrehaladtával változnak",
+    "companionModeOff": "A tagok követett érzelmek és kapcsolatok nélkül válaszolnak"
   },
   "edit": {
     "tabs": {

@@ -732,7 +732,10 @@
       "time": "Tid"
     },
     "groupAppearanceHint": "Utseende for alle samtaler i denne gruppen",
-    "characterAppearanceHint": "Utseende for alle samtaler med denne karakteren"
+    "characterAppearanceHint": "Utseende for alle samtaler med denne karakteren",
+    "companionMode": {
+      "title": "Kompanjongmodus"
+    }
   },
   "appearance": {
     "forGroup": "For hver samtale i denne gruppen",
@@ -1180,6 +1183,33 @@
       "clearSearch": "Tøm søket"
     },
     "lastReply": "Siste svar",
-    "replyHint": "Hver melding i samtalen åpner dette fra menyen"
+    "replyHint": "Hver melding i samtalen åpner dette fra menyen",
+    "soulWarning": {
+      "title": "Ingen Sjel skrevet",
+      "body": "Ingen Sjel er skrevet for: {{names}}. Uten en Sjel blir kompanjongadferden svakere.",
+      "edit": "Rediger Sjel",
+      "editFor": "Rediger Sjelen til {{name}}",
+      "continue": "Fortsett"
+    },
+    "group": {
+      "members": "Medlemmer",
+      "matrixCorner": "Mot",
+      "withOthers": "Med de andre",
+      "towardOthers": "Hvordan {{name}} ser de andre",
+      "noStance": "Ingen ennå",
+      "noCheckpoint": "{{name}} har ikke vært gjennom noen tur ennå. Dette er startverdiene.",
+      "stanceLabel": "{{from}} mot {{to}}: {{band}}",
+      "stanceTitle": "{{from}} mot {{to}}",
+      "effectSummary": "Berørt: {{names}}",
+      "you": "du",
+      "someone": "noen",
+      "axisToward": "{{axis}} mot {{target}}",
+      "feels": "Føler {{emotion}}",
+      "reason": {
+        "witnessed": "Var vitne til dette",
+        "addressed": "Ble tiltalt",
+        "social_event": "Sosial hendelse: {{kind}}"
+      }
+    }
   }
 }

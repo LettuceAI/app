@@ -1,7 +1,7 @@
 import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ConversationSettingsUpdateRequest_Deserialize, ConversationSettingsView, ConversationSummary, ConversationView, TimelineMessage } from "@/api/generated/bindings";
+import type { ConversationSettingsUpdateRequest_Deserialize, ConversationSettingsView, ConversationSummary, ConversationView, ParticipantSettings, TimelineMessage } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -249,6 +249,39 @@ describe("chat settings panel", () => {
     fireEvent.click(notes);
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
     expect(update.mock.calls[0]![0].patch).toMatchObject({ disable_character_notes: { type: "set", value: true } });
+  });
+
+  it("switches companion mode on for a group chat and warns about members without a Soul without blocking the change", async () => {
+    const soulFields = ["essence", "traits", "backstory", "appearance", "goals", "likes", "voice", "relational_style", "vulnerabilities", "fears", "habits", "boundaries"];
+    const soul = (essence: string) => ({ soul: Object.fromEntries(soulFields.map((field) => [field, field === "essence" ? essence : ""])), authored_facts: [] });
+    const member = (id: string, name: string): ParticipantSettings => ({ participant_id: `p-${id}`, character_id: id, name, enabled: true, muted: false, model: { id: null, source: "group" } });
+    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, companion_mode: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [member("ca", "Ada"), member("cb", "Bea")] } };
+    const update = vi.fn<NonNullable<MockCallHandlers["conversationSettingsUpdate"]>>(() => ({ status: "ok", data: groupSettings }));
+    const stat = (id: string, name: string) => ({ participant_id: `p-${id}`, character_id: id, name, enabled: true, muted: false, message_count: 0, percent: 0, last_spoke_message_id: null, last_spoke_at: null });
+    await open({ path: "/chat/c1?panel=settings", calls: {
+      ...panelCalls,
+      conversationOpen: () => ({ status: "ok", data: view([], { kind: "group", source: { type: "group", group_id: "g1" } }) }),
+      conversationSettingsGet: () => ({ status: "ok", data: groupSettings }),
+      conversationSettingsUpdate: update,
+      conversationParticipationStats: () => ({ status: "ok", data: { total_messages: 0, items: [stat("ca", "Ada"), stat("cb", "Bea")] } }),
+      characterGet: ({ character_id }) => ({ status: "ok", data: { ...character, id: character_id, draft: { ...character.draft, profile: { name: character_id === "ca" ? "Ada" : "Bea" }, defaults: { interaction_mode: "roleplay", voice: null, companion_soul: character_id === "ca" ? null : soul("Calm and watchful.") } } } as never }),
+    } });
+    const row = await screen.findByRole("switch", { name: "Companion mode" });
+    expect(row.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(row);
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update.mock.calls[0]![0].patch).toMatchObject({ companion_mode: { type: "set", value: true } });
+    const dialog = await screen.findByRole("dialog", { name: "No Soul written" });
+    expect(within(dialog).getByText(/No Soul is written for: Ada\./)).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Edit the Soul of Ada" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Edit the Soul of Bea" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "No Soul written" })).toBeNull());
+    cleanup();
+    const direct = await open({ path: "/chat/c1?panel=settings", calls: panelCalls });
+    await screen.findByRole("heading", { name: "Time" });
+    expect(screen.queryByRole("switch", { name: "Companion mode" })).toBeNull();
+    expect(direct).toBeTruthy();
   });
 
   it("opens the group's notes from a group chat and saves a note aimed at one member", async () => {

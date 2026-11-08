@@ -8,3 +8,4 @@ export { startDirectChat } from "./data/actions";
 export { modelsQuery } from "./data/queries";
 export { useChatModels, type ChatModel } from "./data/use-models";
 export { ParticipantsBar } from "./components/ParticipantsBar";
+export { useMissingSoulWarning } from "./companion/missing-soul";

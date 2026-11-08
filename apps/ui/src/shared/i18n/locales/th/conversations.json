@@ -719,7 +719,10 @@
       "time": "เวลา"
     },
     "groupAppearanceHint": "การแสดงผลสำหรับทุกแชทในกลุ่มนี้",
-    "characterAppearanceHint": "การแสดงผลสำหรับทุกแชทกับตัวละครนี้"
+    "characterAppearanceHint": "การแสดงผลสำหรับทุกแชทกับตัวละครนี้",
+    "companionMode": {
+      "title": "โหมดเพื่อนคู่ใจ"
+    }
   },
   "appearance": {
     "forGroup": "สำหรับทุกแชทในกลุ่มนี้",
@@ -1149,6 +1152,33 @@
       "clearSearch": "ล้างการค้นหา"
     },
     "lastReply": "คำตอบล่าสุด",
-    "replyHint": "ทุกข้อความในแชทเปิดสิ่งนี้จากเมนู"
+    "replyHint": "ทุกข้อความในแชทเปิดสิ่งนี้จากเมนู",
+    "soulWarning": {
+      "title": "ยังไม่ได้เขียน Soul",
+      "body": "ยังไม่ได้เขียน Soul สำหรับ: {{names}} หากไม่มี พฤติกรรมเพื่อนคู่ใจของพวกเขาจะอ่อนลง",
+      "edit": "แก้ไข Soul",
+      "editFor": "แก้ไข Soul ของ {{name}}",
+      "continue": "ดำเนินการต่อ"
+    },
+    "group": {
+      "members": "สมาชิก",
+      "matrixCorner": "ต่อ",
+      "withOthers": "กับคนอื่น ๆ",
+      "towardOthers": "{{name}} มองคนอื่นอย่างไร",
+      "noStance": "ยังไม่มี",
+      "noCheckpoint": "{{name}} ยังไม่ผ่านเทิร์นใดเลย นี่คือค่าเริ่มต้น",
+      "stanceLabel": "{{from}} ต่อ {{to}}: {{band}}",
+      "stanceTitle": "{{from}} ต่อ {{to}}",
+      "effectSummary": "ได้รับผลกระทบ: {{names}}",
+      "you": "คุณ",
+      "someone": "บางคน",
+      "axisToward": "{{axis}} ต่อ {{target}}",
+      "feels": "รู้สึก{{emotion}}",
+      "reason": {
+        "witnessed": "เห็นเหตุการณ์นี้",
+        "addressed": "ถูกพูดด้วย",
+        "social_event": "เหตุการณ์ทางสังคม: {{kind}}"
+      }
+    }
   }
 }

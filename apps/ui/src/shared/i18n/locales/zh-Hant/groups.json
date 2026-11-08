@@ -160,7 +160,10 @@
     "characterNotesOff": "只使用群組的筆記",
     "models": "模型",
     "characterModel": "角色的模型",
-    "characterModelBody": "依角色自己的設定"
+    "characterModelBody": "依角色自己的設定",
+    "companionMode": "夥伴模式",
+    "companionModeOn": "成員會保留隨對話推進而變化的情緒和關係",
+    "companionModeOff": "成員回應時不追蹤情緒和關係"
   },
   "edit": {
     "tabs": {

@@ -745,7 +745,10 @@
       "time": "Hora"
     },
     "groupAppearanceHint": "Apariencia de todos los chats de este grupo",
-    "characterAppearanceHint": "Apariencia de todos los chats con este personaje"
+    "characterAppearanceHint": "Apariencia de todos los chats con este personaje",
+    "companionMode": {
+      "title": "Modo compañero"
+    }
   },
   "appearance": {
     "forGroup": "Para cada chat de este grupo",
@@ -1211,6 +1214,33 @@
       "clearSearch": "Limpiar búsqueda"
     },
     "lastReply": "Última respuesta",
-    "replyHint": "Cada mensaje del chat abre esto desde su menú"
+    "replyHint": "Cada mensaje del chat abre esto desde su menú",
+    "soulWarning": {
+      "title": "Sin Alma escrita",
+      "body": "No hay un Alma escrita para: {{names}}. Sin ella, su comportamiento como compañero será más débil.",
+      "edit": "Editar Alma",
+      "editFor": "Editar el Alma de {{name}}",
+      "continue": "Continuar"
+    },
+    "group": {
+      "members": "Miembros",
+      "matrixCorner": "Hacia",
+      "withOthers": "Con los demás",
+      "towardOthers": "Cómo ve {{name}} a los demás",
+      "noStance": "Todavía ninguno",
+      "noCheckpoint": "{{name}} aún no ha vivido ningún turno. Estos son los valores iniciales.",
+      "stanceLabel": "{{from}} hacia {{to}}: {{band}}",
+      "stanceTitle": "{{from}} hacia {{to}}",
+      "effectSummary": "Afectados: {{names}}",
+      "you": "tú",
+      "someone": "alguien",
+      "axisToward": "{{axis}} hacia {{target}}",
+      "feels": "Siente {{emotion}}",
+      "reason": {
+        "witnessed": "Presenció esto",
+        "addressed": "Se dirigieron a esta persona",
+        "social_event": "Evento social: {{kind}}"
+      }
+    }
   }
 }

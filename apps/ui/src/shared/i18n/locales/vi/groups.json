@@ -160,7 +160,10 @@
     "characterNotesOff": "Chỉ dùng ghi chú của nhóm",
     "models": "Mô hình",
     "characterModel": "Mô hình của nhân vật",
-    "characterModelBody": "Theo cài đặt riêng của họ"
+    "characterModelBody": "Theo cài đặt riêng của họ",
+    "companionMode": "Chế độ bạn đồng hành",
+    "companionModeOn": "Các thành viên giữ cảm xúc và mối quan hệ thay đổi theo diễn biến cuộc trò chuyện",
+    "companionModeOff": "Các thành viên trả lời mà không theo dõi cảm xúc hay mối quan hệ"
   },
   "edit": {
     "tabs": {

@@ -732,7 +732,10 @@
       "time": "Tijd"
     },
     "groupAppearanceHint": "Weergave voor alle chats in deze groep",
-    "characterAppearanceHint": "Weergave voor alle chats met dit karakter"
+    "characterAppearanceHint": "Weergave voor alle chats met dit karakter",
+    "companionMode": {
+      "title": "Metgezelmodus"
+    }
   },
   "appearance": {
     "forGroup": "Voor elke chat in deze groep",
@@ -1180,6 +1183,33 @@
       "clearSearch": "Zoekopdracht wissen"
     },
     "lastReply": "Laatste antwoord",
-    "replyHint": "Elk bericht in de chat opent dit via het menu"
+    "replyHint": "Elk bericht in de chat opent dit via het menu",
+    "soulWarning": {
+      "title": "Geen Ziel geschreven",
+      "body": "Er is geen Ziel geschreven voor: {{names}}. Zonder Ziel is hun metgezelgedrag zwakker.",
+      "edit": "Ziel bewerken",
+      "editFor": "Ziel van {{name}} bewerken",
+      "continue": "Doorgaan"
+    },
+    "group": {
+      "members": "Leden",
+      "matrixCorner": "Richting",
+      "withOthers": "Met de anderen",
+      "towardOthers": "Hoe {{name}} de anderen ziet",
+      "noStance": "Nog geen",
+      "noCheckpoint": "{{name}} heeft nog geen beurt meegemaakt. Dit zijn de beginwaarden.",
+      "stanceLabel": "{{from}} richting {{to}}: {{band}}",
+      "stanceTitle": "{{from}} richting {{to}}",
+      "effectSummary": "Betrokken: {{names}}",
+      "you": "jij",
+      "someone": "iemand",
+      "axisToward": "{{axis}} richting {{target}}",
+      "feels": "Voelt {{emotion}}",
+      "reason": {
+        "witnessed": "Was hierbij aanwezig",
+        "addressed": "Werd aangesproken",
+        "social_event": "Sociale gebeurtenis: {{kind}}"
+      }
+    }
   }
 }

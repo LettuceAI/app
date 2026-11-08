@@ -178,7 +178,10 @@
     "characterNotesOff": "Używane są tylko notatki grupy",
     "models": "Modele",
     "characterModel": "Model postaci",
-    "characterModelBody": "Zgodnie z ich własnymi ustawieniami"
+    "characterModelBody": "Zgodnie z ich własnymi ustawieniami",
+    "companionMode": "Tryb towarzysza",
+    "companionModeOn": "Członkowie zachowują emocje i relacje, które zmieniają się w miarę trwania czatu",
+    "companionModeOff": "Członkowie odpowiadają bez śledzonych emocji i relacji"
   },
   "edit": {
     "tabs": {

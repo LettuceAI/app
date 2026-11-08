@@ -719,7 +719,10 @@
       "time": "Waktu"
     },
     "groupAppearanceHint": "Tampilan untuk semua obrolan di grup ini",
-    "characterAppearanceHint": "Tampilan untuk semua obrolan dengan karakter ini"
+    "characterAppearanceHint": "Tampilan untuk semua obrolan dengan karakter ini",
+    "companionMode": {
+      "title": "Mode Companion"
+    }
   },
   "appearance": {
     "forGroup": "Untuk setiap obrolan di grup ini",
@@ -1149,6 +1152,33 @@
       "clearSearch": "Hapus pencarian"
     },
     "lastReply": "Balasan terakhir",
-    "replyHint": "Setiap pesan dalam obrolan membuka ini dari menunya"
+    "replyHint": "Setiap pesan dalam obrolan membuka ini dari menunya",
+    "soulWarning": {
+      "title": "Belum ada Jiwa",
+      "body": "Belum ada Jiwa yang ditulis untuk: {{names}}. Tanpanya, perilaku companion mereka akan lebih lemah.",
+      "edit": "Edit Jiwa",
+      "editFor": "Edit Jiwa {{name}}",
+      "continue": "Lanjutkan"
+    },
+    "group": {
+      "members": "Anggota",
+      "matrixCorner": "Terhadap",
+      "withOthers": "Dengan yang lain",
+      "towardOthers": "Cara {{name}} memandang yang lain",
+      "noStance": "Belum ada",
+      "noCheckpoint": "{{name}} belum menjalani giliran apa pun. Ini adalah nilai awal.",
+      "stanceLabel": "{{from}} terhadap {{to}}: {{band}}",
+      "stanceTitle": "{{from}} terhadap {{to}}",
+      "effectSummary": "Terpengaruh: {{names}}",
+      "you": "kamu",
+      "someone": "seseorang",
+      "axisToward": "{{axis}} terhadap {{target}}",
+      "feels": "Merasa {{emotion}}",
+      "reason": {
+        "witnessed": "Menyaksikan ini",
+        "addressed": "Diajak bicara",
+        "social_event": "Peristiwa sosial: {{kind}}"
+      }
+    }
   }
 }

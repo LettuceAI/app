@@ -3,13 +3,22 @@ mod tests;
 
 use lettuce_characters::{CharacterDetails, CharacterRepository, InteractionMode};
 use lettuce_companions::{
-    CompanionSoulConfig, CompanionStateRepository, CompanionStateSnapshot, SoulFact, SoulOwner,
-    SoulRepository, SoulRepositoryError,
+    CompanionSoulConfig, CompanionStateRepository, CompanionStateSnapshot,
+    GroupCompanionEffectReason, GroupCompanionRepository, GroupCompanionTarget, RelationshipState,
+    SoulFact, SoulOwner, SoulRepository, SoulRepositoryError, initial_group_member_state,
+    initial_group_relationship,
 };
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
-use lettuce_conversations::{ConversationKind, ConversationLifecycle, ConversationReader};
+use lettuce_conversations::{
+    Conversation, ConversationKind, ConversationLifecycle, ConversationOverviewReader,
+    ConversationParticipant, ConversationReader, MessageRole, MessageVisibility,
+    ParticipantSource,
+};
 use lettuce_settings::GlobalSettingsStore;
-use lettuce_types::{CharacterId, ConversationId, ModelProfileId, RequestId, TimestampMillis};
+use lettuce_types::{
+    CharacterId, ConversationId, MessageId, ModelProfileId, PageLimit, PageRequest, RequestId,
+    TimestampMillis,
+};
 
 use super::ApiContext;
 use crate::companion::companion_clock::companion_state_owner;
@@ -33,19 +42,13 @@ fn soul_error(error: SoulRepositoryError) -> ApiError {
     )
 }
 
-fn companion_character(
+fn character_with_config(
     database: &lettuce_database::Database,
     id: CharacterId,
 ) -> Result<(CharacterDetails, CompanionSoulConfig), ApiError> {
     let details = CharacterRepository::get(database, id)
         .map_err(IntoApiError::into_api_error)?
         .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the character was not found"))?;
-    if details.character.defaults.interaction_mode != InteractionMode::Companion {
-        return Err(api_error(
-            ApiErrorCode::Unsupported,
-            "the character is not a companion",
-        ));
-    }
     let config = details
         .character
         .defaults
@@ -53,6 +56,16 @@ fn companion_character(
         .clone()
         .unwrap_or_default();
     Ok((details, config))
+}
+
+fn require_companion(details: &CharacterDetails) -> Result<(), ApiError> {
+    if details.character.defaults.interaction_mode != InteractionMode::Companion {
+        return Err(api_error(
+            ApiErrorCode::Unsupported,
+            "the character is not a companion",
+        ));
+    }
+    Ok(())
 }
 
 struct Target {
@@ -68,12 +81,15 @@ fn target(
     conversation_id: Option<&str>,
 ) -> Result<Target, ApiError> {
     let character_id: CharacterId = parse_id(character_id, "character_id")?;
-    let (_, config) = companion_character(database, character_id)?;
+    let (details, config) = character_with_config(database, character_id)?;
     let conversation_id: Option<ConversationId> = conversation_id
         .map(|value| parse_id(value, "conversation_id"))
         .transpose()?;
     let owner = match conversation_id {
-        None => SoulOwner::Character(character_id),
+        None => {
+            require_companion(&details)?;
+            SoulOwner::Character(character_id)
+        }
         Some(conversation_id) => {
             let aggregate = ConversationReader::get(database, conversation_id)
                 .map_err(IntoApiError::into_api_error)?;
@@ -83,13 +99,20 @@ fn target(
                     "the conversation was not found",
                 ));
             }
-            let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
-                return Err(invalid_field(
-                    "conversation_id",
-                    "the conversation is not a chat with this character",
-                ));
+            let belongs = match &aggregate.conversation.kind {
+                ConversationKind::Direct(direct) => {
+                    require_companion(&details)?;
+                    direct.character.source_id == character_id
+                }
+                ConversationKind::Group(_) => aggregate
+                    .conversation
+                    .participants
+                    .iter()
+                    .any(|participant| {
+                        participant.source == ParticipantSource::Character(character_id)
+                    }),
             };
-            if details.character.source_id != character_id {
+            if !belongs {
                 return Err(invalid_field(
                     "conversation_id",
                     "the conversation is not a chat with this character",
@@ -389,6 +412,18 @@ fn draft_document(draft: &dto::CompanionSoulDraft) -> Result<serde_json::Value, 
     })
 }
 
+fn relationship_view(value: &RelationshipState) -> dto::CompanionRelationshipView {
+    dto::CompanionRelationshipView {
+        closeness: value.closeness,
+        trust: value.trust,
+        affection: value.affection,
+        tension: value.tension,
+        stability: value.stability,
+        interaction_count: value.interaction_count,
+        last_interaction_at: value.last_interaction_at.get(),
+    }
+}
+
 fn state_view(snapshot: &CompanionStateSnapshot) -> dto::CompanionStateView {
     let state = &snapshot.state;
     let relationship = &state.relationship_state;
@@ -397,15 +432,7 @@ fn state_view(snapshot: &CompanionStateSnapshot) -> dto::CompanionStateView {
         conversation_id: snapshot.owner.conversation_id.to_string(),
         character_id: snapshot.owner.character_id.to_string(),
         persona_id: snapshot.owner.persona_id.map(|id| id.to_string()),
-        relationship: dto::CompanionRelationshipView {
-            closeness: relationship.closeness,
-            trust: relationship.trust,
-            affection: relationship.affection,
-            tension: relationship.tension,
-            stability: relationship.stability,
-            interaction_count: relationship.interaction_count,
-            last_interaction_at: relationship.last_interaction_at.get(),
-        },
+        relationship: relationship_view(relationship),
         felt: emotion_view(&emotions.felt),
         expressed: emotion_view(&emotions.expressed),
         blocked: emotion_view(&emotions.blocked),
@@ -446,6 +473,249 @@ pub async fn companion_state_get(
                 )
             })?;
             Ok(snapshot.as_ref().map(state_view))
+        })
+        .await
+}
+
+fn live_conversation(
+    database: &lettuce_database::Database,
+    conversation_id: ConversationId,
+) -> Result<Conversation, ApiError> {
+    let conversation = ConversationReader::get(database, conversation_id)
+        .map_err(IntoApiError::into_api_error)?
+        .conversation;
+    if conversation.lifecycle == ConversationLifecycle::Tombstoned {
+        return Err(api_error(
+            ApiErrorCode::NotFound,
+            "the conversation was not found",
+        ));
+    }
+    Ok(conversation)
+}
+
+fn character_participants(
+    conversation: &Conversation,
+) -> Vec<(CharacterId, &ConversationParticipant)> {
+    let mut participants = conversation.participants.iter().collect::<Vec<_>>();
+    participants.sort_by_key(|participant| participant.ordinal);
+    participants
+        .into_iter()
+        .filter(|participant| participant.enabled)
+        .filter_map(|participant| match participant.source {
+            ParticipantSource::Character(character_id) => Some((character_id, participant)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn active_path(
+    database: &lettuce_database::Database,
+    conversation: &Conversation,
+) -> Result<Vec<MessageId>, ApiError> {
+    let mut cursor = None;
+    let mut path = Vec::new();
+    loop {
+        let page = ConversationOverviewReader::timeline_page_after(
+            database,
+            conversation.id,
+            conversation.active_branch_id,
+            &PageRequest {
+                cursor,
+                limit: PageLimit::new(200),
+            },
+        )
+        .map_err(IntoApiError::into_api_error)?;
+        path.extend(
+            page.items
+                .iter()
+                .filter(|item| {
+                    item.message.visibility == MessageVisibility::Visible
+                        && matches!(
+                            item.message.role,
+                            MessageRole::User | MessageRole::Assistant
+                        )
+                })
+                .map(|item| item.message.id),
+        );
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => return Ok(path),
+        }
+    }
+}
+
+fn group_repository_error(
+    error: lettuce_companions::GroupCompanionRepositoryError,
+) -> ApiError {
+    api_error(
+        ApiErrorCode::Internal,
+        format!("the group companion state could not be read: {error:?}"),
+    )
+}
+
+/// The companion state of every enabled member of a companion-mode group
+/// chat, read for the persona the chat uses now; `None` for a chat that is
+/// not a group or has companion mode off. A member without a checkpoint on
+/// the active branch shows the initial state of its companion settings.
+pub async fn group_companion_state_get(
+    context: &ApiContext,
+    request: dto::GroupCompanionStateGetRequest,
+) -> Result<Option<dto::GroupCompanionStateView>, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let conversation = live_conversation(database, conversation_id)?;
+            if !matches!(conversation.kind, ConversationKind::Group(_))
+                || !crate::generation::live_sources::live_companion_mode(database, &conversation)
+                    .map_err(IntoApiError::into_api_error)?
+            {
+                return Ok(None);
+            }
+            let path = active_path(database, &conversation)?;
+            let checkpoints =
+                GroupCompanionRepository::latest_checkpoints(database, conversation_id, &path)
+                    .map_err(group_repository_error)?;
+            let persona_id = lettuce_conversations::effective_persona(&conversation)
+                .map(|persona| persona.source_id);
+            let mut members = Vec::new();
+            for (character_id, participant) in character_participants(&conversation) {
+                let (_, config) = character_with_config(database, character_id)?;
+                let checkpoint = checkpoints
+                    .iter()
+                    .find(|checkpoint| checkpoint.character_id == character_id);
+                let (emotions, member_relationships) = match checkpoint {
+                    Some(checkpoint) => (
+                        checkpoint.emotional_state.clone(),
+                        checkpoint.member_relationships.clone(),
+                    ),
+                    None => {
+                        let initial = initial_group_member_state(&config);
+                        (initial.emotional_state, initial.member_relationships)
+                    }
+                };
+                let relationship = GroupCompanionRepository::persona_relationship(
+                    database,
+                    character_id,
+                    persona_id,
+                )
+                .map_err(group_repository_error)?
+                .map(|(_, state)| state)
+                .unwrap_or_else(|| initial_group_relationship(&config));
+                members.push(dto::GroupCompanionMemberView {
+                    character_id: character_id.to_string(),
+                    participant_id: participant.id.to_string(),
+                    display_name: participant.display_name.clone(),
+                    has_checkpoint: checkpoint.is_some(),
+                    relationship: relationship_view(&relationship),
+                    expressed: emotion_view(&emotions.expressed),
+                    felt: emotion_view(&emotions.felt),
+                    member_relationships: member_relationships
+                        .iter()
+                        .map(|stance| dto::GroupMemberRelationshipView {
+                            target_character_id: stance.target_character_id.to_string(),
+                            closeness: stance.state.closeness,
+                            trust: stance.state.trust,
+                            affection: stance.state.affection,
+                            tension: stance.state.tension,
+                        })
+                        .collect(),
+                });
+            }
+            Ok(Some(dto::GroupCompanionStateView { members }))
+        })
+        .await
+}
+
+fn emotion_change(value: &lettuce_companions::EmotionVector) -> dto::EmotionChange {
+    dto::EmotionChange {
+        warmth: value.warmth,
+        trust: value.trust,
+        calm: value.calm,
+        vulnerability: value.vulnerability,
+        longing: value.longing,
+        hurt: value.hurt,
+        tension: value.tension,
+        irritation: value.irritation,
+        affection_intensity: value.affection_intensity,
+        reassurance_need: value.reassurance_need,
+    }
+}
+
+/// What one message did to each member of a group chat: one row per member
+/// whose checkpoint for the message holds at least one effect.
+pub async fn group_companion_message_effects(
+    context: &ApiContext,
+    request: dto::GroupCompanionMessageEffectsRequest,
+) -> Result<Vec<dto::GroupCompanionMemberEffectView>, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let conversation = live_conversation(database, conversation_id)?;
+            let checkpoints = GroupCompanionRepository::checkpoints_for_message(
+                database,
+                conversation_id,
+                message_id,
+            )
+            .map_err(group_repository_error)?;
+            Ok(checkpoints
+                .into_iter()
+                .filter(|checkpoint| !checkpoint.effects.is_empty())
+                .map(|checkpoint| dto::GroupCompanionMemberEffectView {
+                    character_id: checkpoint.character_id.to_string(),
+                    display_name: conversation
+                        .participants
+                        .iter()
+                        .find(|participant| {
+                            participant.source
+                                == ParticipantSource::Character(checkpoint.character_id)
+                        })
+                        .map(|participant| participant.display_name.clone())
+                        .unwrap_or_default(),
+                    effects: checkpoint
+                        .effects
+                        .iter()
+                        .map(|effect| dto::GroupCompanionEffectView {
+                            reason: match effect.reason {
+                                GroupCompanionEffectReason::Witnessed => {
+                                    dto::GroupCompanionEffectReason::Witnessed
+                                }
+                                GroupCompanionEffectReason::Addressed => {
+                                    dto::GroupCompanionEffectReason::Addressed
+                                }
+                                GroupCompanionEffectReason::SocialEvent => {
+                                    dto::GroupCompanionEffectReason::SocialEvent
+                                }
+                            },
+                            social_event: effect.social_event.clone(),
+                            target: effect.relationship_change.as_ref().map(|change| {
+                                match change.target {
+                                    GroupCompanionTarget::Persona { .. } => {
+                                        dto::GroupCompanionEffectTarget::Persona
+                                    }
+                                    GroupCompanionTarget::Character { character_id } => {
+                                        dto::GroupCompanionEffectTarget::Character {
+                                            character_id: character_id.to_string(),
+                                        }
+                                    }
+                                }
+                            }),
+                            relationship: effect.relationship_change.as_ref().map(|change| {
+                                dto::RelationshipChange {
+                                    closeness: change.delta.closeness,
+                                    trust: change.delta.trust,
+                                    affection: change.delta.affection,
+                                    tension: change.delta.tension,
+                                    stability: change.delta.stability,
+                                }
+                            }),
+                            felt: emotion_change(&effect.emotion_delta.felt),
+                        })
+                        .collect(),
+                })
+                .collect())
         })
         .await
 }

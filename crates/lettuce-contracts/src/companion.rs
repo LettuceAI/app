@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::{EmotionChange, RelationshipChange};
+
 /// Which Soul a view or edit acts on: the character's, shared by all of its
 /// chats, or one chat's own while the character does not share Soul growth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,4 +290,97 @@ pub struct CompanionSoulWriterRunRequest {
     pub user_notes: Option<String>,
     pub model_profile_id: Option<String>,
     pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupCompanionStateGetRequest {
+    pub conversation_id: String,
+}
+
+/// How a group member stands toward another member: the four axes of the
+/// member relationship.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupMemberRelationshipView {
+    pub target_character_id: String,
+    pub closeness: f64,
+    pub trust: f64,
+    pub affection: f64,
+    pub tension: f64,
+}
+
+/// One member of a companion-mode group chat: its latest state on the active
+/// branch (the initial state while it has no checkpoint), its relationship
+/// with the persona the chat uses now and its stance toward the other
+/// members.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupCompanionMemberView {
+    pub character_id: String,
+    pub participant_id: String,
+    pub display_name: String,
+    pub has_checkpoint: bool,
+    pub relationship: CompanionRelationshipView,
+    pub expressed: CompanionEmotionVector,
+    pub felt: CompanionEmotionVector,
+    pub member_relationships: Vec<GroupMemberRelationshipView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupCompanionStateView {
+    pub members: Vec<GroupCompanionMemberView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupCompanionMessageEffectsRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum GroupCompanionEffectReason {
+    Witnessed,
+    Addressed,
+    SocialEvent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GroupCompanionEffectTarget {
+    Persona,
+    Character { character_id: String },
+}
+
+/// What one message did to one member for one reason. `target` and
+/// `relationship` are both set when the effect moved a relationship, and both
+/// absent when it only moved emotions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupCompanionEffectView {
+    pub reason: GroupCompanionEffectReason,
+    pub social_event: Option<String>,
+    pub target: Option<GroupCompanionEffectTarget>,
+    pub relationship: Option<RelationshipChange>,
+    pub felt: EmotionChange,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupCompanionMemberEffectView {
+    pub character_id: String,
+    pub display_name: String,
+    pub effects: Vec<GroupCompanionEffectView>,
 }

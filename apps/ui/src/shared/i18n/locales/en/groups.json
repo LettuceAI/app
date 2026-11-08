@@ -166,7 +166,10 @@
     "characterNotesOff": "Only the group's notes are used",
     "models": "Models",
     "characterModel": "Character's model",
-    "characterModelBody": "Whatever their own settings say"
+    "characterModelBody": "Whatever their own settings say",
+    "companionMode": "Companion mode",
+    "companionModeOn": "Members keep emotions and relationships that change as the chat goes on",
+    "companionModeOff": "Members answer without tracked emotions or relationships"
   },
   "edit": {
     "tabs": {

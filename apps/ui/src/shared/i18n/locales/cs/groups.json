@@ -178,7 +178,10 @@
     "characterNotesOff": "Používají se jen poznámky skupiny",
     "models": "Modely",
     "characterModel": "Model postavy",
-    "characterModelBody": "Podle jejich vlastního nastavení"
+    "characterModelBody": "Podle jejich vlastního nastavení",
+    "companionMode": "Režim společníka",
+    "companionModeOn": "Členové si udržují emoce a vztahy, které se mění v průběhu chatu",
+    "companionModeOff": "Členové odpovídají bez sledovaných emocí a vztahů"
   },
   "edit": {
     "tabs": {

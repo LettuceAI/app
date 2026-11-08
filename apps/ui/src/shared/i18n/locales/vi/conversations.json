@@ -719,7 +719,10 @@
       "time": "Giờ"
     },
     "groupAppearanceHint": "Giao diện cho mọi cuộc trò chuyện trong nhóm này",
-    "characterAppearanceHint": "Giao diện cho mọi cuộc trò chuyện với nhân vật này"
+    "characterAppearanceHint": "Giao diện cho mọi cuộc trò chuyện với nhân vật này",
+    "companionMode": {
+      "title": "Chế độ bạn đồng hành"
+    }
   },
   "appearance": {
     "forGroup": "Cho mọi cuộc trò chuyện trong nhóm này",
@@ -1149,6 +1152,33 @@
       "clearSearch": "Xóa tìm kiếm"
     },
     "lastReply": "Câu trả lời trước",
-    "replyHint": "Mỗi tin nhắn trong cuộc trò chuyện mở mục này từ menu của nó"
+    "replyHint": "Mỗi tin nhắn trong cuộc trò chuyện mở mục này từ menu của nó",
+    "soulWarning": {
+      "title": "Chưa viết Soul",
+      "body": "Chưa viết Soul cho: {{names}}. Nếu thiếu, hành vi bạn đồng hành của họ sẽ yếu hơn.",
+      "edit": "Sửa Soul",
+      "editFor": "Sửa Soul của {{name}}",
+      "continue": "Tiếp tục"
+    },
+    "group": {
+      "members": "Thành viên",
+      "matrixCorner": "Đối với",
+      "withOthers": "Với những người khác",
+      "towardOthers": "Cách {{name}} nhìn những người khác",
+      "noStance": "Chưa có",
+      "noCheckpoint": "{{name}} chưa trải qua lượt nào. Đây là các giá trị ban đầu.",
+      "stanceLabel": "{{from}} đối với {{to}}: {{band}}",
+      "stanceTitle": "{{from}} đối với {{to}}",
+      "effectSummary": "Bị ảnh hưởng: {{names}}",
+      "you": "bạn",
+      "someone": "ai đó",
+      "axisToward": "{{axis}} đối với {{target}}",
+      "feels": "Cảm thấy {{emotion}}",
+      "reason": {
+        "witnessed": "Đã chứng kiến việc này",
+        "addressed": "Được nhắc đến",
+        "social_event": "Sự kiện xã hội: {{kind}}"
+      }
+    }
   }
 }

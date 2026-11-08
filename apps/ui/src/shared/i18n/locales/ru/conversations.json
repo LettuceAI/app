@@ -758,7 +758,10 @@
       "time": "Время"
     },
     "groupAppearanceHint": "Оформление для всех чатов этой группы",
-    "characterAppearanceHint": "Оформление для всех чатов с этим персонажем"
+    "characterAppearanceHint": "Оформление для всех чатов с этим персонажем",
+    "companionMode": {
+      "title": "Режим компаньона"
+    }
   },
   "appearance": {
     "forGroup": "Для каждого чата в этой группе",
@@ -1242,6 +1245,33 @@
       "clearSearch": "Очистить поиск"
     },
     "lastReply": "Последний ответ",
-    "replyHint": "Каждое сообщение в чате открывает это из своего меню"
+    "replyHint": "Каждое сообщение в чате открывает это из своего меню",
+    "soulWarning": {
+      "title": "Душа не написана",
+      "body": "Для {{names}} не написана Душа. Без неё их поведение как компаньона будет слабее.",
+      "edit": "Изменить Душу",
+      "editFor": "Изменить Душу персонажа {{name}}",
+      "continue": "Продолжить"
+    },
+    "group": {
+      "members": "Участники",
+      "matrixCorner": "К",
+      "withOthers": "С остальными",
+      "towardOthers": "Как {{name}} видит остальных",
+      "noStance": "Пока нет",
+      "noCheckpoint": "{{name}} ещё не прошёл(-ла) ни одного хода. Это начальные значения.",
+      "stanceLabel": "{{from}} к {{to}}: {{band}}",
+      "stanceTitle": "{{from}} к {{to}}",
+      "effectSummary": "Затронуты: {{names}}",
+      "you": "вы",
+      "someone": "кто-то",
+      "axisToward": "{{axis}} к {{target}}",
+      "feels": "Чувствует: {{emotion}}",
+      "reason": {
+        "witnessed": "Был(а) свидетелем",
+        "addressed": "К нему обратились",
+        "social_event": "Социальное событие: {{kind}}"
+      }
+    }
   }
 }

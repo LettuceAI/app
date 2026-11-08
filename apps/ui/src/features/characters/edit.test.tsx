@@ -415,10 +415,19 @@ describe("character edit page", () => {
     expect(save.mock.calls[0]![0].draft).toEqual({ ...draft, profile: { ...draft.profile, name: "Cass" } });
   });
 
-  it("hides the Soul tab for roleplay characters", async () => {
-    await renderEdit(roleplay());
-    expect(screen.getByRole("tab", { name: /^Profile/ })).toBeTruthy();
-    expect(screen.queryByRole("tab", { name: "Soul" })).toBeNull();
+  it("shows the Soul tab for roleplay characters and fills it from the companion defaults, keeping the mode", async () => {
+    const save = vi.fn((request: CharacterSaveRequest_Deserialize) => ok(saved(request)));
+    await renderEdit(roleplay(), { characterSave: save });
+    fireEvent.click(tab("Soul"));
+    fireEvent.click(await screen.findByRole("button", { name: /Baseline affect/ }));
+    const warmth = await screen.findByRole("slider", { name: "Warmth" });
+    expect(saveButton()).toBeNull();
+    fireEvent.change(warmth, { target: { value: "0.5" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    const defaults = save.mock.calls[0]![0].draft.defaults;
+    expect(defaults.interaction_mode).toBe("roleplay");
+    expect(defaults.companion_soul).not.toBeNull();
   });
 
   it("shows the Soul tab for companions and saves slider and switch changes", async () => {

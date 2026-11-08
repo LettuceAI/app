@@ -166,7 +166,10 @@
     "characterNotesOff": "सिर्फ़ ग्रुप के नोट्स उपयोग होते हैं",
     "models": "मॉडल",
     "characterModel": "कैरेक्टर का मॉडल",
-    "characterModelBody": "जो उनकी अपनी सेटिंग्स कहती हैं"
+    "characterModelBody": "जो उनकी अपनी सेटिंग्स कहती हैं",
+    "companionMode": "साथी मोड",
+    "companionModeOn": "सदस्यों की भावनाएँ और रिश्ते चैट आगे बढ़ने के साथ बदलते रहते हैं",
+    "companionModeOff": "सदस्य बिना ट्रैक की गई भावनाओं या रिश्तों के जवाब देते हैं"
   },
   "edit": {
     "tabs": {

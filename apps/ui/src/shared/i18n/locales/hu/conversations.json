@@ -732,7 +732,10 @@
       "time": "Idő"
     },
     "groupAppearanceHint": "A csoport minden beszélgetésének megjelenése",
-    "characterAppearanceHint": "A karakter minden beszélgetésének megjelenése"
+    "characterAppearanceHint": "A karakter minden beszélgetésének megjelenése",
+    "companionMode": {
+      "title": "Társ mód"
+    }
   },
   "appearance": {
     "forGroup": "A csoport minden beszélgetéséhez",
@@ -1180,6 +1183,33 @@
       "clearSearch": "Keresés törlése"
     },
     "lastReply": "Utolsó válasz",
-    "replyHint": "A beszélgetés minden üzenete a menüjéből nyitja meg ezt"
+    "replyHint": "A beszélgetés minden üzenete a menüjéből nyitja meg ezt",
+    "soulWarning": {
+      "title": "Nincs megírt Lélek",
+      "body": "Nincs megírt Lélek ehhez: {{names}}. Enélkül a társviselkedésük gyengébb lesz.",
+      "edit": "Lélek szerkesztése",
+      "editFor": "{{name}} Lelkének szerkesztése",
+      "continue": "Tovább"
+    },
+    "group": {
+      "members": "Tagok",
+      "matrixCorner": "Irányában",
+      "withOthers": "A többiekkel",
+      "towardOthers": "Hogyan látja {{name}} a többieket",
+      "noStance": "Még nincs",
+      "noCheckpoint": "{{name}} még nem élt át egyetlen kört sem. Ezek a kezdőértékek.",
+      "stanceLabel": "{{from}} {{to}} iránt: {{band}}",
+      "stanceTitle": "{{from}} {{to}} iránt",
+      "effectSummary": "Érintettek: {{names}}",
+      "you": "te",
+      "someone": "valaki",
+      "axisToward": "{{axis}} {{target}} iránt",
+      "feels": "{{emotion}} érzést érez",
+      "reason": {
+        "witnessed": "Szemtanúja volt",
+        "addressed": "Megszólították",
+        "social_event": "Társas esemény: {{kind}}"
+      }
+    }
   }
 }

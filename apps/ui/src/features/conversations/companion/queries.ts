@@ -9,6 +9,20 @@ export function companionStateQuery(api: ApiClient, conversationId: string) {
   });
 }
 
+export function groupCompanionStateQuery(api: ApiClient, conversationId: string) {
+  return queryOptions({
+    queryKey: queryKeys.companions.groupState(conversationId),
+    queryFn: () => api.call("groupCompanionStateGet", { conversation_id: conversationId }),
+  });
+}
+
+export function groupCompanionEffectsQuery(api: ApiClient, conversationId: string, messageId: string) {
+  return queryOptions({
+    queryKey: queryKeys.companions.groupEffects(conversationId, messageId),
+    queryFn: () => api.call("groupCompanionMessageEffects", { conversation_id: conversationId, message_id: messageId }),
+  });
+}
+
 export function companionSoulQuery(api: ApiClient, conversationId: string, characterId: string | null) {
   return queryOptions({
     queryKey: queryKeys.companions.soul(conversationId, characterId ?? ""),
