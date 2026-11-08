@@ -3830,6 +3830,43 @@ pub(crate) mod tests {
         checkpointed_window(database, conversation_id, space_id, messages, text, at, 0)
     }
 
+    #[test]
+    fn purging_a_conversation_removes_its_changed_memory_items() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let attempt = checkpointed_run(
+            &database, conversation_id, space_id, &messages, "Summary", 10,
+        );
+        finish(&database, &attempt, true, 12);
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO dynamic_memory_changed_items (run_id, memory_id) VALUES (?1, ?2)",
+                [attempt.run_id.to_string(), MemoryId::new().to_string()],
+            )
+            .expect("changed item");
+        database
+            .purge_conversation(conversation_id, TimestampMillis::new(20))
+            .expect("purge with changed memory items");
+        let connection = database.connection().expect("connection");
+        let count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM dynamic_memory_changed_items WHERE run_id=?1",
+                [attempt.run_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("changed items");
+        assert_eq!(count, 0);
+        assert!(
+            !connection
+                .prepare("PRAGMA foreign_key_check")
+                .expect("check")
+                .exists([])
+                .expect("foreign keys")
+        );
+    }
+
     fn memory_job(database: &Database, conversation_id: ConversationId) -> JobId {
         lettuce_jobs::JobStore::create_or_get(
             database,

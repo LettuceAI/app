@@ -356,6 +356,117 @@ async fn memory_chat(harness: &Harness, key: &str) -> MemoryChat {
     memory_chat_with(harness, key, false).await
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_an_earlier_suffix_does_not_invalidate_the_same_effect_twice() {
+    for recover_old_failure in [false, true] {
+        let harness = crate::api::tests::harness_in(
+            Reply::Text("Hello."),
+            Arc::new(lettuce_jobs::SystemClock),
+            None,
+            None,
+            Arc::new(crate::api::app::inspect_tests::AllModels),
+        );
+        let database = harness.context.backend().database();
+        let character = create_character(
+            database,
+            "Companion",
+            CharacterDefaults {
+                interaction_mode: lettuce_characters::InteractionMode::Companion,
+                memory_policy: MemoryPolicy::Dynamic,
+                companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+                ..Default::default()
+            },
+        );
+        let chat = launch_with(&harness, character, "overlapping-rewinds").await;
+        let lead = append(&harness, chat, "overlapping-lead", text("Earlier message."));
+        send(
+            &harness,
+            &chat.to_string(),
+            "overlapping-send",
+            "Hello",
+            Arc::new(RecordingStream::default()),
+        )
+        .await
+        .expect("send");
+        ConversationGenerationWorker::new(harness.context.clone())
+            .run_once()
+            .await
+            .expect("reply");
+        let effect = lettuce_companions::CompanionTurnEffectRepository::list_for_conversation(
+            database, chat,
+        )
+        .expect("effects")
+        .into_iter()
+        .next()
+        .expect("companion effect");
+        let user = effect.user_message_id.expect("user message");
+        let first_request =
+            delete_after_request(chat, user, revision(&harness, chat), "overlapping-first");
+        messages_delete_after(&harness.context, first_request.clone())
+            .await
+            .expect("first rewind");
+        let second_request =
+            delete_after_request(chat, lead, revision(&harness, chat), "overlapping-second");
+        if recover_old_failure {
+            // Recreate the durable state left by the old coordinator: the
+            // second tombstone committed, but its duplicate invalidation failed.
+            let pending = PendingSuffixRewind {
+                after_message_id: lead,
+                tombstone: TombstoneMessage {
+                    conversation_id: chat,
+                    message_id: user,
+                    expected_revision: Revision::new(second_request.expected_revision),
+                    operation: delete_after_token(chat, lead, "overlapping-second"),
+                    descendants: DescendantPolicy::Tombstone,
+                },
+                summary_message_interval: 20,
+            };
+            let tombstone = PendingSuffixRewindRepository::tombstone_suffix(
+                database, &pending, harness.context.now(),
+            )
+            .expect("second tombstone");
+            assert_eq!(
+                database.rewind_dynamic_memory_suffix(lettuce_memory::DynamicMemorySuffixRewind {
+                    operation_id: OperationId::from_uuid(tombstone.operation.id.as_uuid()),
+                    conversation_id: chat,
+                    invalid_run_id: None,
+                    expected_memory_revision: memory_revision(&harness, chat),
+                    invalidated_effect_ids: vec![effect.id],
+                    at: harness.context.now(),
+                }),
+                Err(lettuce_memory::DynamicMemorySuffixRewindError::Conflict)
+            );
+            PendingSuffixRewindRepository::fail_pending_suffix_rewind(
+                database, &pending, lettuce_memory::OwedRewindFailure::Conflict,
+            )
+            .expect("record old failure");
+            let retry = memory_rewind_retry(
+                &harness.context,
+                dto::MemoryRewindRetryRequest { conversation_id: chat.to_string() },
+            )
+            .await
+            .expect("retry old failure");
+            assert_eq!(retry, dto::MemoryRewindRetryOutcome::Completed);
+        } else {
+            messages_delete_after(&harness.context, second_request.clone())
+                .await
+                .expect("earlier rewind");
+        }
+        assert!(pending_of(&harness, chat).is_empty());
+        assert_eq!(
+            PendingSuffixRewindRepository::pending_rewind_failure(database, chat)
+                .expect("failure cleared"),
+            None
+        );
+        messages_delete_after(&harness.context, first_request)
+            .await
+            .expect("replay first rewind");
+        messages_delete_after(&harness.context, second_request)
+            .await
+            .expect("replay earlier rewind");
+    }
+}
+
 async fn memory_chat_with(harness: &Harness, key: &str, with_lead: bool) -> MemoryChat {
     let database = harness.context.backend().database();
     let character_id = create_character(

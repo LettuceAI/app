@@ -362,7 +362,20 @@ where
             .unwrap_or_default();
         let mut invalidated_effect_ids = Vec::new();
         let mut retained_effects = Vec::new();
+        let existing = self
+            .repository
+            .get_dynamic_memory_suffix_rewind(operation_id)?;
         for effect in effects {
+            // An earlier delete may already have invalidated an effect whose
+            // source window also intersects this suffix. Only a replay of the
+            // operation that invalidated it includes it again.
+            if effect.status == CompanionTurnEffectStatus::Invalidated
+                && !existing
+                    .as_ref()
+                    .is_some_and(|receipt| receipt.invalidated_effect_ids.contains(&effect.id))
+            {
+                continue;
+            }
             let message_ids = effect_message_ids(&effect);
             if message_ids.iter().any(|id| removed.contains(id)) {
                 invalidated_effect_ids.push(effect.id);
@@ -375,9 +388,6 @@ where
         invalidated_effect_ids.sort_unstable();
         retained_effects.sort_by_key(|effect| (effect.created_at, effect.id));
 
-        let existing = self
-            .repository
-            .get_dynamic_memory_suffix_rewind(operation_id)?;
         let rewind = if let Some(receipt) = existing {
             if receipt.conversation_id != command.conversation_id
                 || receipt.invalid_run_id != invalid_run_index.map(|index| runs[index].id)

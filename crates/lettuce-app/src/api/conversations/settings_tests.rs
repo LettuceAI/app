@@ -203,51 +203,106 @@ async fn direct_background_follows_character_and_scene_until_overridden_then_res
     let scene_image = image_asset(database);
     let own_image = image_asset(database);
     let character = CharacterRepository::get(database, character_id)
-        .expect("character").expect("exists").character;
+        .expect("character")
+        .expect("exists")
+        .character;
     let character = CharacterRepository::attach_media(
-        database, character_id, character.revision,
-        CharacterMediaLink { asset_id: character_image, slot: CharacterMediaSlot::Background, ordinal: 0 },
+        database,
+        character_id,
+        character.revision,
+        CharacterMediaLink {
+            asset_id: character_image,
+            slot: CharacterMediaSlot::Background,
+            ordinal: 0,
+        },
         NOW,
-    ).expect("character background");
+    )
+    .expect("character background");
     let scene = crate::launch::tests::text_scene(character_id, 0, "The garden.");
     let scene_id = scene.id;
     SceneRepository::add_scene(database, character_id, character.revision, scene, NOW)
         .expect("scene");
     let chat = crate::api::tests::launch(&harness, "direct-background").await;
     let inherited = view(&harness, &chat).await;
-    assert_eq!(inherited.background.asset.map(|asset| asset.asset_id), id(character_image));
+    assert_eq!(
+        inherited.background.asset.map(|asset| asset.asset_id),
+        id(character_image)
+    );
     assert_eq!(inherited.background.source, dto::SettingSource::Character);
     assert_eq!(listed_background(&harness, &chat).await, id(character_image));
 
     let character = CharacterRepository::get(database, character_id)
-        .expect("character").expect("exists").character;
+        .expect("character")
+        .expect("exists")
+        .character;
     SceneRepository::replace_scene_assets(
-        database, character_id, character.revision, scene_id,
-        vec![SceneAssetLink { id: lettuce_types::SceneAssetLinkId::new(), asset_id: scene_image, slot: SceneAssetSlot::Background, ordinal: 0 }],
+        database,
+        character_id,
+        character.revision,
+        scene_id,
+        vec![SceneAssetLink {
+            id: lettuce_types::SceneAssetLinkId::new(),
+            asset_id: scene_image,
+            slot: SceneAssetSlot::Background,
+            ordinal: 0,
+        }],
         NOW,
-    ).expect("scene background");
-    let selected = update(&harness, &chat, inherited.settings_revision, dto::ConversationSettingsPatch {
-        scene: Some(dto::IdChange::Set { id: scene_id.to_string() }),
-        ..Default::default()
-    }).await.expect("select scene");
+    )
+    .expect("scene background");
+    let selected = update(
+        &harness,
+        &chat,
+        inherited.settings_revision,
+        dto::ConversationSettingsPatch {
+            scene: Some(dto::IdChange::Set { id: scene_id.to_string() }),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("select scene");
     assert_eq!(selected.background.asset.map(|asset| asset.asset_id), id(scene_image));
     assert_eq!(listed_background(&harness, &chat).await, id(scene_image));
-    let own = update(&harness, &chat, selected.settings_revision, dto::ConversationSettingsPatch {
-        background: Some(dto::BackgroundChange::Image { asset_id: own_image.to_string() }),
-        ..Default::default()
-    }).await.expect("own background");
+    let own = update(
+        &harness,
+        &chat,
+        selected.settings_revision,
+        dto::ConversationSettingsPatch {
+            background: Some(dto::BackgroundChange::Image { asset_id: own_image.to_string() }),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("own background");
     assert_eq!(own.background.asset.map(|asset| asset.asset_id), id(own_image));
-    let hidden = update(&harness, &chat, own.settings_revision, dto::ConversationSettingsPatch {
-        background: Some(dto::BackgroundChange::Hidden), ..Default::default()
-    }).await.expect("hide background");
+    assert_eq!(own.background.source, dto::SettingSource::Conversation);
+    let hidden = update(
+        &harness,
+        &chat,
+        own.settings_revision,
+        dto::ConversationSettingsPatch {
+            background: Some(dto::BackgroundChange::Hidden),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("hide background");
     assert!(hidden.background.hidden);
     assert!(hidden.background.asset.is_none());
     assert_eq!(listed_background(&harness, &chat).await, None);
-    let reset = update(&harness, &chat, hidden.settings_revision, dto::ConversationSettingsPatch {
-        background: Some(dto::BackgroundChange::Reset), ..Default::default()
-    }).await.expect("reset background");
+    let reset = update(
+        &harness,
+        &chat,
+        hidden.settings_revision,
+        dto::ConversationSettingsPatch {
+            background: Some(dto::BackgroundChange::Reset),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("reset background");
     assert!(!reset.background.hidden);
     assert_eq!(reset.background.asset.map(|asset| asset.asset_id), id(scene_image));
+    assert_eq!(reset.background.source, dto::SettingSource::Character);
     assert_eq!(listed_background(&harness, &chat).await, id(scene_image));
 }
 

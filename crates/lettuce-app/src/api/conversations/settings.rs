@@ -100,7 +100,6 @@ pub(crate) fn settings_view(
             ConversationKind::Group(_) => group_or_launch(profile),
         },
     };
-    let background = background(context, &conversation, profile);
     let (time, companion) = time_view(context, &conversation)?;
     let model_settings = match &conversation.kind {
         ConversationKind::Direct(_) => Some(
@@ -201,7 +200,7 @@ pub(crate) fn settings_view(
                 prompt,
                 lorebooks,
                 model,
-                background,
+                background: background(context, &conversation, profile, character.as_ref()),
                 scene,
                 memory: dto::SettingMemory {
                     mode: memory,
@@ -299,7 +298,7 @@ pub(crate) fn settings_view(
                 prompt: choice::<PromptDocumentId>(None, dto::SettingSource::Character),
                 lorebooks,
                 model,
-                background,
+                background: background(context, &conversation, profile, None),
                 scene,
                 memory: dto::SettingMemory {
                     mode: memory,
@@ -538,6 +537,7 @@ fn background(
     context: &ApiContext,
     conversation: &Conversation,
     profile: Option<&GroupProfile>,
+    character: Option<&lettuce_characters::CharacterDetails>,
 ) -> dto::SettingBackground {
     match conversation
         .current_settings
@@ -556,7 +556,11 @@ fn background(
         },
         None => match &conversation.kind {
             ConversationKind::Direct(_) => dto::SettingBackground {
-                asset: None,
+                asset: character
+                    .and_then(|character| {
+                        crate::image::scene_cast::direct_background(conversation, character)
+                    })
+                    .map(|asset_id| context.asset_ref(asset_id)),
                 hidden: false,
                 source: dto::SettingSource::Character,
             },

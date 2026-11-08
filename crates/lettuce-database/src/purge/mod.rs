@@ -361,6 +361,7 @@ impl<'c> Purge<'c> {
             &values,
         )?;
         for table in [
+            "dynamic_memory_changed_items",
             "dynamic_memory_background_tool_results",
             "dynamic_memory_background_round_settlements",
             "dynamic_memory_admitted_tool_calls",
