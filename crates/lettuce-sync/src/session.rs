@@ -403,6 +403,10 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
             crate::GROUP_NOTE_SYNC_VERSION,
         ),
         (
+            crate::GROUP_COMPANION_MESSAGE_SYNC_SCHEMA,
+            crate::GROUP_COMPANION_MESSAGE_SYNC_VERSION,
+        ),
+        (
             crate::COMPANION_RELATIONSHIP_SYNC_SCHEMA,
             crate::COMPANION_RELATIONSHIP_SYNC_VERSION,
         ),
@@ -556,9 +560,10 @@ mod tests {
             6,
             "a group carries a companion mode"
         );
+        assert_eq!(crate::GROUP_COMPANION_MESSAGE_SYNC_VERSION, 1);
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "2519ba23051f9181d09d4f36f720fefc2804cea34f6e5e1a54cdc0ff4137ce00"
+            "07e3fc7009e334cbf3d0ceb02983d6e0c107721e196d15a1bec19091cfa43875"
         );
     }
 

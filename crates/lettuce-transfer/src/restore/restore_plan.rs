@@ -318,6 +318,7 @@ pub fn decode_provider_backup_restore_plan(
         "data/companion-effects.json",
         "companion-effects.v1",
     )?;
+    let group_companion = take_json(sections, "data/group-companion.json", "group-companion.v1")?;
     let memory = take_json(sections, "data/memory.json", "memory.v1")?;
     let memory_projections = take_json(
         sections,
@@ -347,6 +348,7 @@ pub fn decode_provider_backup_restore_plan(
         conversation_outbox,
         companion_state,
         companion_effects,
+        group_companion,
         memory,
         memory_projections,
         dynamic_memory,

@@ -24,8 +24,8 @@ use crate::BackupSection;
 
 const _: () = assert!(MAX_MEDIA_BLOB_BYTES <= crate::MAX_BACKUP_ENTRY_BYTES);
 
-pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 8;
-pub const PROVIDER_BACKUP_FIXED_SECTIONS: usize = 13;
+pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 9;
+pub const PROVIDER_BACKUP_FIXED_SECTIONS: usize = 14;
 /// Largest byte run one data document occupies in a single backup entry; a
 /// larger document continues in `<name>.part<N>` entries so no library size
 /// reaches the per-entry ceiling.
@@ -133,6 +133,8 @@ pub struct ProviderBackupGraph {
     pub companion_state: crate::CompanionStateBackup,
     #[serde(skip)]
     pub companion_effects: crate::CompanionEffectBackup,
+    #[serde(skip)]
+    pub group_companion: crate::GroupCompanionBackup,
     #[serde(skip)]
     pub memory: crate::MemoryBackup,
     #[serde(skip)]
@@ -509,6 +511,11 @@ pub fn plan_provider_backup_export(
             reason: "companion effects could not be serialized",
         }
     })?;
+    let group_companion = serde_json::to_vec(&graph.group_companion).map_err(|_| {
+        ProviderBackupGraphError::Serialization {
+            reason: "group companion could not be serialized",
+        }
+    })?;
     let memory =
         serde_json::to_vec(&graph.memory).map_err(|_| ProviderBackupGraphError::Serialization {
             reason: "memory could not be serialized",
@@ -575,6 +582,11 @@ pub fn plan_provider_backup_export(
             "data/companion-effects.json",
             "companion-effects.v1",
             companion_effects,
+        ),
+        BackupSection::new(
+            "data/group-companion.json",
+            "group-companion.v1",
+            group_companion,
         ),
         BackupSection::new("data/memory.json", "memory.v1", memory),
         BackupSection::new(
@@ -1192,6 +1204,12 @@ pub fn canonicalize_and_validate(
                 ProviderBackupGraphError::InvalidGraph { reason }
             },
         )?;
+    graph
+        .group_companion
+        .canonicalize_and_validate(&graph.authored, &graph.conversation_history)
+        .map_err(|crate::GroupCompanionBackupError::InvalidData { reason }| {
+            ProviderBackupGraphError::InvalidGraph { reason }
+        })?;
     graph
         .memory
         .canonicalize_and_validate(
@@ -2004,6 +2022,11 @@ mod tests {
                 effects: Vec::new(),
                 rewinds: Vec::new(),
             },
+            group_companion: crate::GroupCompanionBackup {
+                version: crate::GROUP_COMPANION_BACKUP_VERSION,
+                checkpoints: Vec::new(),
+                persona_applications: Vec::new(),
+            },
             memory: crate::MemoryBackup {
                 synced_cursors: Vec::new(),
                 pools: Vec::new(),
@@ -2091,7 +2114,7 @@ mod tests {
         assert!(!format!("{secret:?}").contains("backup-secret-canary"));
         let sections = provider_backup_sections(source_graph, vec![secret], Vec::new(), Vec::new())
             .expect("sections");
-        assert_eq!(sections.len(), 13);
+        assert_eq!(sections.len(), 14);
         assert!(
             sections[1]
                 .bytes
@@ -2385,8 +2408,8 @@ mod tests {
             Vec::new(),
         )
         .expect("media sections");
-        assert_eq!(sections.len(), 14);
-        assert_eq!(&*sections[13].bytes, &bytes);
+        assert_eq!(sections.len(), 15);
+        assert_eq!(&*sections[14].bytes, &bytes);
 
         let envelope = crate::seal_backup(
             "restore-test",

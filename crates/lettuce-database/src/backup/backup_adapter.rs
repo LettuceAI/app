@@ -3,16 +3,18 @@ use lettuce_transfer::{
     AuthoredProfileBackup, BackupConversation, BackupConversationOutbox, BackupConversationRuntime,
     BackupConversationUsage, BackupDynamicMemoryAttempt, BackupDynamicMemoryRound,
     BackupDynamicMemoryRun, BackupGenerationAttemptRuntime, BackupGenerationCheckpoint,
-    BackupGenerationTurn, BackupGlobalSettings, BackupJobInference, BackupLorebookBindings,
+    BackupGenerationTurn, BackupGlobalSettings, BackupGroupCompanionCheckpoint,
+    BackupGroupCompanionPersonaApplication, BackupJobInference, BackupLorebookBindings,
     BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace, BackupMessage,
     COMPANION_EFFECT_BACKUP_VERSION, COMPANION_STATE_BACKUP_VERSION,
     CONVERSATION_HISTORY_BACKUP_VERSION, CONVERSATION_OUTBOX_BACKUP_VERSION,
     CONVERSATION_RUNTIME_BACKUP_VERSION, CONVERSATION_USAGE_BACKUP_VERSION, CompanionEffectBackup,
     CompanionStateBackup, ConversationHistoryBackup, ConversationOutboxBackup,
     ConversationRuntimeBackup, ConversationUsageBackup, DYNAMIC_MEMORY_BACKUP_VERSION,
-    DynamicMemoryBackup, JOB_BACKUP_VERSION, JobBackup, MEMORY_BACKUP_VERSION, MEMORY_PROJECTION_BACKUP_VERSION, MemoryBackup, MemoryProjectionBackup,
-    PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupSelections,
-    ProviderBackupSource, ProviderBackupSourceError,
+    DynamicMemoryBackup, GROUP_COMPANION_BACKUP_VERSION, GroupCompanionBackup, JOB_BACKUP_VERSION,
+    JobBackup, MEMORY_BACKUP_VERSION, MEMORY_PROJECTION_BACKUP_VERSION, MemoryBackup,
+    MemoryProjectionBackup, PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph,
+    ProviderBackupSelections, ProviderBackupSource, ProviderBackupSourceError,
 };
 use lettuce_types::{
     AssetId, CharacterId, ContentHash, ConversationId, GenerationAttemptId, GroupId, LorebookId,
@@ -318,6 +320,167 @@ fn read_companion_effects(
         effects,
         rewinds,
     })
+}
+
+fn read_group_companion(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<GroupCompanionBackup, ProviderBackupSourceError> {
+    let rows = transaction
+        .prepare(
+            "SELECT conversation_id,message_id,character_id,source_revision_id,source_candidate_id,emotional_state_json,member_relationships_json,created_at FROM group_companion_checkpoints ORDER BY conversation_id,message_id,character_id",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, i64>(7)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    let checkpoints = rows
+        .into_iter()
+        .map(
+            |(
+                conversation_id,
+                message_id,
+                character_id,
+                source_revision_id,
+                source_candidate_id,
+                emotional_state,
+                member_relationships,
+                created_at,
+            )| {
+                let invalid = |error: &dyn std::fmt::Display| {
+                    tracing::warn!(%error, "read group companion failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read group companion: a value could not be read or converted",
+                    }
+                };
+                let conversation_id: ConversationId = conversation_id.parse().map_err(|error| {
+                    invalid(&error)
+                })?;
+                let message_id: lettuce_types::MessageId = message_id.parse().map_err(|error| {
+                    invalid(&error)
+                })?;
+                let character_id: CharacterId = character_id.parse().map_err(|error| {
+                    invalid(&error)
+                })?;
+                let effects = read_group_companion_effects(
+                    transaction,
+                    conversation_id,
+                    message_id,
+                    character_id,
+                )?;
+                Ok(BackupGroupCompanionCheckpoint {
+                    conversation_id,
+                    message_id,
+                    character_id,
+                    source: lettuce_companions::GroupCompanionMessageSource {
+                        revision_id: source_revision_id
+                            .map(|value| value.parse())
+                            .transpose()
+                            .map_err(|error| invalid(&error))?,
+                        candidate_id: source_candidate_id
+                            .map(|value| value.parse())
+                            .transpose()
+                            .map_err(|error| invalid(&error))?,
+                    },
+                    emotional_state: serde_json::from_str(&emotional_state)
+                        .map_err(|error| invalid(&error))?,
+                    member_relationships: serde_json::from_str(&member_relationships)
+                        .map_err(|error| invalid(&error))?,
+                    effects,
+                    created_at: TimestampMillis::new(created_at),
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+    let applications = transaction
+        .prepare(
+            "SELECT conversation_id,message_id,character_id,persona_key,applied_at FROM group_companion_persona_applications ORDER BY conversation_id,message_id,character_id,persona_key",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?
+        .into_iter()
+        .map(
+            |(conversation_id, message_id, character_id, persona_key, applied_at)| {
+                let invalid = |error: &dyn std::fmt::Display| {
+                    tracing::warn!(%error, "read group companion failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read group companion: a value could not be read or converted",
+                    }
+                };
+                Ok(BackupGroupCompanionPersonaApplication {
+                    conversation_id: conversation_id.parse().map_err(|error| invalid(&error))?,
+                    message_id: message_id.parse().map_err(|error| invalid(&error))?,
+                    character_id: character_id.parse().map_err(|error| invalid(&error))?,
+                    persona_key,
+                    applied_at: TimestampMillis::new(applied_at),
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+    Ok(GroupCompanionBackup {
+        version: GROUP_COMPANION_BACKUP_VERSION,
+        checkpoints,
+        persona_applications: applications,
+    })
+}
+
+fn read_group_companion_effects(
+    transaction: &rusqlite::Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: lettuce_types::MessageId,
+    character_id: CharacterId,
+) -> Result<Vec<lettuce_companions::GroupCompanionEffect>, ProviderBackupSourceError> {
+    transaction
+        .prepare(
+            "SELECT effect_json FROM group_companion_effects WHERE conversation_id = ?1 AND message_id = ?2 AND character_id = ?3 ORDER BY ordinal",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map(
+                    params![
+                        conversation_id.to_string(),
+                        message_id.to_string(),
+                        character_id.to_string()
+                    ],
+                    |row| row.get::<_, String>(0),
+                )?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?
+        .into_iter()
+        .map(|value| {
+            serde_json::from_str(&value).map_err(|error| {
+                tracing::warn!(%error, "read group companion failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read group companion: a value could not be read or converted",
+                }
+            })
+        })
+        .collect()
 }
 
 fn read_memory(
@@ -1841,6 +2004,7 @@ impl ProviderBackupSource for Database {
         let conversation_outbox = read_conversation_outbox(&transaction, &conversation_history)?;
         let companion_state = read_companion_state(&transaction)?;
         let companion_effects = read_companion_effects(&transaction)?;
+        let group_companion = read_group_companion(&transaction)?;
         let memory = read_memory(&transaction)?;
         let memory_projections = read_memory_projections(&transaction)?;
         let dynamic_memory = read_dynamic_memory(&transaction)?;
@@ -1884,6 +2048,7 @@ impl ProviderBackupSource for Database {
             conversation_outbox,
             companion_state,
             companion_effects,
+            group_companion,
             memory,
             memory_projections,
             dynamic_memory,

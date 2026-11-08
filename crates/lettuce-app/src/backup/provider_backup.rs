@@ -2374,7 +2374,7 @@ mod tests {
                 .any(|window| window == b"audio-backup-canary")
         );
         let sections = open_backup(&envelope, "backup password").expect("open backup");
-        assert_eq!(sections.len(), 24);
+        assert_eq!(sections.len(), 25);
         assert!(
             sections[1]
                 .bytes
@@ -2487,12 +2487,15 @@ mod tests {
             serde_json::from_slice(&sections[8].bytes).expect("companion state JSON");
         let companion_effects: lettuce_transfer::CompanionEffectBackup =
             serde_json::from_slice(&sections[9].bytes).expect("companion effects JSON");
+        let group_companion: lettuce_transfer::GroupCompanionBackup =
+            serde_json::from_slice(&sections[10].bytes).expect("group companion JSON");
         let memory: lettuce_transfer::MemoryBackup =
-            serde_json::from_slice(&sections[10].bytes).expect("memory JSON");
+            serde_json::from_slice(&sections[11].bytes).expect("memory JSON");
         let memory_projections: lettuce_transfer::MemoryProjectionBackup =
-            serde_json::from_slice(&sections[11].bytes).expect("memory projections JSON");
+            serde_json::from_slice(&sections[12].bytes).expect("memory projections JSON");
         let dynamic_memory: lettuce_transfer::DynamicMemoryBackup =
-            serde_json::from_slice(&sections[12].bytes).expect("dynamic memory JSON");
+            serde_json::from_slice(&sections[13].bytes).expect("dynamic memory JSON");
+        assert!(group_companion.checkpoints.is_empty());
         assert_eq!(usage.events.len(), 3);
         let known = usage
             .events

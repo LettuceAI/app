@@ -8,7 +8,9 @@ use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use lettuce_types::{CharacterId, ConversationId, GroupId, Revision, TimestampMillis};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, types::Value};
+use rusqlite::{
+    Connection, OptionalExtension, Transaction, TransactionBehavior, params, types::Value,
+};
 
 use crate::Database;
 
@@ -81,8 +83,8 @@ const TERMINAL_TURN: &str = "('succeeded', 'failed', 'cancelled', 'interrupted')
 const RUNS: &str = "SELECT id FROM dynamic_memory_runs WHERE conversation_id = ?1 OR space_id IN (SELECT value FROM json_each(?2))";
 
 /// Rows deleted by one purge transaction and what they mentioned.
-struct Purge<'c> {
-    connection: &'c Connection,
+struct Purge<'c, 'conn> {
+    connection: &'c Transaction<'conn>,
     tables: BTreeSet<String>,
     uuids: BTreeSet<String>,
     snapshot_artifacts: BTreeSet<String>,
@@ -91,8 +93,8 @@ struct Purge<'c> {
     now: TimestampMillis,
 }
 
-impl<'c> Purge<'c> {
-    fn new(connection: &'c Connection, now: TimestampMillis) -> Self {
+impl<'c, 'conn> Purge<'c, 'conn> {
+    fn new(connection: &'c Transaction<'conn>, now: TimestampMillis) -> Self {
         Self {
             connection,
             tables: BTreeSet::new(),
@@ -277,6 +279,13 @@ impl<'c> Purge<'c> {
             )
             .map_err(storage)?;
         self.delete("companion_continuity_episodes", "conversation_id = ?1", one)?;
+        self.delete("group_companion_effects", "conversation_id = ?1", one)?;
+        self.delete("group_companion_checkpoints", "conversation_id = ?1", one)?;
+        self.delete(
+            "group_companion_persona_applications",
+            "conversation_id = ?1",
+            one,
+        )?;
         let feature_jobs = "job_id IN (SELECT id FROM jobs WHERE kind = 'creation_run' AND subject_kind = 'conversation' AND subject_id = ?1) OR job_id IN (SELECT job_id FROM image_generations WHERE source = 'scene' AND json_extract(request_json, '$.value.attribution.conversation_id') = ?1)";
         self.delete("job_operations", feature_jobs, one)?;
         self.delete("job_details", feature_jobs, one)?;
@@ -535,6 +544,7 @@ impl<'c> Purge<'c> {
             self.conversation(&conversation)?;
         }
         self.leave_groups(id)?;
+        self.remove_group_relationship_target(id)?;
         let text = Value::Text(id.to_owned());
         let one = std::slice::from_ref(&text);
         let pools = self.strings(
@@ -546,6 +556,13 @@ impl<'c> Purge<'c> {
             self.authorize(pool)?;
         }
         self.memory(None, &pools)?;
+        self.delete("group_companion_effects", "character_id = ?1", one)?;
+        self.delete("group_companion_checkpoints", "character_id = ?1", one)?;
+        self.delete(
+            "group_companion_persona_applications",
+            "character_id = ?1",
+            one,
+        )?;
         let sessions = "conversation_id IN (SELECT conversation_id FROM companion_session_states WHERE character_id = ?1)";
         self.delete("companion_state_apply_receipts", "character_id = ?1", one)?;
         self.delete("companion_emotion_vectors", sessions, one)?;
@@ -586,6 +603,71 @@ impl<'c> Purge<'c> {
                 reason: "character: a storage step failed",
             }
         })?);
+        Ok(())
+    }
+
+    /// Removes a deleted character from the group checkpoints of the members that remain.
+    fn remove_group_relationship_target(&mut self, character: &str) -> Result<(), PurgeError> {
+        let pairs = self
+            .connection
+            .prepare(
+                "SELECT DISTINCT checkpoint.conversation_id, checkpoint.message_id
+                 FROM group_companion_checkpoints checkpoint
+                 WHERE EXISTS (
+                     SELECT 1 FROM json_each(checkpoint.member_relationships_json) relationship
+                     WHERE json_extract(relationship.value, '$.target_character_id') = ?1
+                 )
+                 ORDER BY checkpoint.conversation_id, checkpoint.message_id",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([character], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(storage)?;
+        for (conversation_id, message_id) in pairs {
+            let conversation_id: ConversationId = conversation_id.parse().map_err(storage)?;
+            let message_id: lettuce_types::MessageId = message_id.parse().map_err(storage)?;
+            let mut checkpoints =
+                crate::conversation::group_companion_adapter::load_checkpoints_for_message_in(
+                    self.connection,
+                    conversation_id,
+                    message_id,
+                )
+                .map_err(|error| {
+                    tracing::warn!(?error, "remove group relationship target failed");
+                    PurgeError::Storage {
+                        reason: "remove group relationship target: a storage step failed",
+                    }
+                })?;
+            for checkpoint in &mut checkpoints {
+                checkpoint
+                    .member_relationships
+                    .retain(|relationship| relationship.target_character_id.to_string() != character);
+            }
+            self.delete(
+                "group_companion_effects",
+                "conversation_id = ?1 AND message_id = ?2",
+                &[
+                    Value::Text(conversation_id.to_string()),
+                    Value::Text(message_id.to_string()),
+                ],
+            )?;
+            crate::conversation::group_companion_adapter::replace_message_checkpoints_in(
+                self.connection,
+                conversation_id,
+                message_id,
+                &checkpoints,
+            )
+            .map_err(|error| {
+                tracing::warn!(?error, "remove group relationship target failed");
+                PurgeError::Storage {
+                    reason: "remove group relationship target: a storage step failed",
+                }
+            })?;
+        }
         Ok(())
     }
 
@@ -744,12 +826,12 @@ impl<'c> Purge<'c> {
 }
 
 pub(crate) fn purge_branch_memory_in(
-    connection: &Connection,
+    transaction: &Transaction<'_>,
     conversation_id: lettuce_types::ConversationId,
     branch_id: lettuce_types::ConversationBranchId,
     now: TimestampMillis,
 ) -> Result<(), PurgeError> {
-    let mut purge = Purge::new(connection, now);
+    let mut purge = Purge::new(transaction, now);
     let values = [
         Value::Text(conversation_id.to_string()),
         Value::Text(branch_id.to_string()),
@@ -885,7 +967,7 @@ fn purge_on(
     connection: &mut Connection,
     foreign_keys_lost: &AtomicBool,
     now: TimestampMillis,
-    work: impl FnOnce(&mut Purge<'_>) -> Result<(), PurgeError>,
+    work: impl FnOnce(&mut Purge<'_, '_>) -> Result<(), PurgeError>,
 ) -> Result<PurgeReceipt, PurgeError> {
     connection
         .pragma_update(None, "foreign_keys", false)
@@ -916,7 +998,7 @@ fn restore_foreign_keys(connection: &Connection) -> bool {
 fn purge_transaction(
     connection: &mut Connection,
     now: TimestampMillis,
-    work: impl FnOnce(&mut Purge<'_>) -> Result<(), PurgeError>,
+    work: impl FnOnce(&mut Purge<'_, '_>) -> Result<(), PurgeError>,
 ) -> Result<PurgeReceipt, PurgeError> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)

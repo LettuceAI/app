@@ -139,6 +139,80 @@ fn load_checkpoints(
         .collect()
 }
 
+pub(crate) fn load_checkpoints_for_message_in(
+    connection: &Connection,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+) -> Result<Vec<GroupCompanionCheckpoint>, Error> {
+    let rows = {
+        let mut statement = connection
+            .prepare(
+                "SELECT message_id, character_id, source_revision_id,
+                        source_candidate_id, emotional_state_json,
+                        member_relationships_json, created_at
+                 FROM group_companion_checkpoints
+                 WHERE conversation_id = ?1 AND message_id = ?2
+                 ORDER BY character_id",
+            )
+            .map_err(failure)?;
+        statement
+            .query_map(
+                params![conversation_id.to_string(), message_id.to_string()],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )
+            .map_err(failure)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(failure)?
+    };
+    load_checkpoints(connection, conversation_id, rows)
+}
+
+pub(crate) fn load_persona_applications_for_message_in(
+    connection: &Connection,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+) -> Result<Vec<(CharacterId, String, TimestampMillis)>, Error> {
+    let mut statement = connection
+        .prepare(
+            "SELECT character_id, persona_key, applied_at
+             FROM group_companion_persona_applications
+             WHERE conversation_id = ?1 AND message_id = ?2
+             ORDER BY character_id",
+        )
+        .map_err(failure)?;
+    statement
+        .query_map(
+            params![conversation_id.to_string(), message_id.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )
+        .map_err(failure)?
+        .map(|row| {
+            let (character_id, persona_key, applied_at) = row.map_err(failure)?;
+            Ok((
+                CharacterId::from_str(&character_id).map_err(corrupt)?,
+                persona_key,
+                TimestampMillis::new(applied_at),
+            ))
+        })
+        .collect()
+}
+
 impl GroupCompanionRepository for Database {
     fn latest_checkpoints(
         &self,
@@ -192,37 +266,7 @@ impl GroupCompanionRepository for Database {
         message_id: MessageId,
     ) -> Result<Vec<GroupCompanionCheckpoint>, Error> {
         let connection = self.connection().map_err(failure)?;
-        let rows = {
-            let mut statement = connection
-                .prepare(
-                    "SELECT message_id, character_id, source_revision_id,
-                            source_candidate_id, emotional_state_json,
-                            member_relationships_json, created_at
-                     FROM group_companion_checkpoints
-                     WHERE conversation_id = ?1 AND message_id = ?2
-                     ORDER BY character_id",
-                )
-                .map_err(failure)?;
-            statement
-                .query_map(
-                    params![conversation_id.to_string(), message_id.to_string()],
-                    |row| {
-                        Ok((
-                            row.get(0)?,
-                            row.get(1)?,
-                            row.get(2)?,
-                            row.get(3)?,
-                            row.get(4)?,
-                            row.get(5)?,
-                            row.get(6)?,
-                        ))
-                    },
-                )
-                .map_err(failure)?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(failure)?
-        };
-        load_checkpoints(&connection, conversation_id, rows)
+        load_checkpoints_for_message_in(&connection, conversation_id, message_id)
     }
 
     fn path_checkpoint_sources(
@@ -520,7 +564,7 @@ fn conversation_error(error: Error) -> ConversationRepositoryError {
     }
 }
 
-fn load_message_source(
+pub(crate) fn load_message_source(
     tx: &Transaction<'_>,
     conversation_id: ConversationId,
     message_id: MessageId,

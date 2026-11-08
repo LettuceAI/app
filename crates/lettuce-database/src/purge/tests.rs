@@ -322,3 +322,183 @@ fn persona_purge_failure_notice_is_a_sync_entity() {
     assert_eq!(notices[0].entity_id, id);
     assert_eq!(notices[0].reason, PurgeNoticeReason::DroppedAfterFailures);
 }
+
+#[test]
+fn character_purge_removes_group_companion_checkpoints_and_relationships_toward_it() {
+    use lettuce_companions::{
+        GroupCompanionCheckpoint, GroupCompanionEffect, GroupCompanionEffectReason,
+        GroupCompanionMessageSource, GroupCompanionRepository, GroupMemberRelationship,
+        RelationshipState,
+    };
+    use lettuce_types::{
+        ConversationBranchId, ConversationId, ConversationParticipantId, MessageId,
+        MessageRevisionId,
+    };
+
+    let database = Database::open_in_memory().expect("database");
+    let deleted = CharacterId::new();
+    let survivor = CharacterId::new();
+    let conversation_id = ConversationId::new();
+    let branch_id = ConversationBranchId::new();
+    let user_participant = ConversationParticipantId::new();
+    let message_id = MessageId::new();
+    let revision_id = MessageRevisionId::new();
+    let relationship = |target_character_id| GroupMemberRelationship {
+        target_character_id,
+        state: RelationshipState {
+            closeness: 0.0,
+            trust: 0.1,
+            affection: 0.0,
+            tension: 0.0,
+            stability: 0.0,
+            interaction_count: 0,
+            last_interaction_at: TimestampMillis::new(10),
+        },
+    };
+    let effect = |signal: &str| GroupCompanionEffect {
+        reason: GroupCompanionEffectReason::Witnessed,
+        social_event: None,
+        emotion_delta: lettuce_companions::CompanionEmotionDelta::default(),
+        relationship_change: None,
+        signal_changes: lettuce_companions::CompanionSignalChanges {
+            added: vec![signal.into()],
+            removed: Vec::new(),
+        },
+    };
+    let checkpoint = |character_id, target_character_id, signal: &str| GroupCompanionCheckpoint {
+        message_id,
+        character_id,
+        source: GroupCompanionMessageSource {
+            revision_id: Some(revision_id),
+            candidate_id: None,
+        },
+        emotional_state: lettuce_companions::EmotionalState {
+            felt: lettuce_companions::EmotionVector::default(),
+            expressed: lettuce_companions::EmotionVector::default(),
+            blocked: lettuce_companions::EmotionVector::default(),
+            momentum: lettuce_companions::EmotionVector::default(),
+            active_drivers: Vec::new(),
+            confidence: 0.5,
+            updated_at: TimestampMillis::new(10),
+        },
+        member_relationships: vec![relationship(target_character_id)],
+        effects: vec![effect(signal)],
+        created_at: TimestampMillis::new(10),
+    };
+    {
+        let mut connection = database.connection().expect("lock");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        for (character_id, name) in [(deleted, "Deleted"), (survivor, "Survivor")] {
+            transaction
+                .execute(
+                    "INSERT INTO characters (
+                       id, status, name, normalized_name, profile_json,
+                       provenance_json, defaults_json, interaction_mode,
+                       memory_policy, voice_autoplay, presentation_json, revision,
+                       created_at, updated_at
+                     ) VALUES (?1, 'active', ?2, ?3, '{}', '{}', '{}',
+                               'companion', 'manual', 0, '{}', 1, 1, 1)",
+                    params![character_id.to_string(), name, name.to_ascii_lowercase()],
+                )
+                .expect("character");
+        }
+        transaction
+            .execute(
+                "INSERT INTO conversations (
+                   id, kind, lifecycle, title, active_branch_id, kind_json,
+                   revision, created_at, updated_at
+                 ) VALUES (?1, 'group', 'active', 'Group', ?2,
+                           '{\"format_version\":1,\"value\":null}', 1, 1, 1)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("conversation");
+        transaction
+            .execute(
+                "INSERT INTO conversation_branches (
+                   conversation_id, id, status, revision, created_at, updated_at
+                 ) VALUES (?1, ?2, 'active', 1, 1, 1)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("branch");
+        transaction
+            .execute(
+                "INSERT INTO conversation_participants (
+                   conversation_id, id, role, ordinal, source_kind, source_id,
+                   enabled, muted, display_name, model_selection_json, revision,
+                   created_at, updated_at
+                 ) VALUES (?1, ?2, 'user', 0, 'user', NULL, 1, 0, 'User',
+                           '{\"format_version\":1}', 1, 1, 1)",
+                params![conversation_id.to_string(), user_participant.to_string()],
+            )
+            .expect("user participant");
+        transaction
+            .execute(
+                "INSERT INTO conversation_messages (
+                   conversation_id, id, branch_id, author_participant_id, role,
+                   timeline_ordinal, logical_time, effective_time, visibility, pinned,
+                   scene_edited, active_revision_id, revision, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, 'user', 1, 1, 1, 'visible', 0, 0, ?5, 1, 1, 1)",
+                params![
+                    conversation_id.to_string(),
+                    message_id.to_string(),
+                    branch_id.to_string(),
+                    user_participant.to_string(),
+                    revision_id.to_string()
+                ],
+            )
+            .expect("message");
+        transaction
+            .execute(
+                "INSERT INTO conversation_message_revisions (
+                   conversation_id, id, message_id, branch_id, sequence, parts_json,
+                   authored_at
+                 ) VALUES (?1, ?2, ?3, ?4, 1,
+                           '{\"format_version\":1,\"value\":null}', 1)",
+                params![
+                    conversation_id.to_string(),
+                    revision_id.to_string(),
+                    message_id.to_string(),
+                    branch_id.to_string()
+                ],
+            )
+            .expect("revision");
+        crate::conversation::group_companion_adapter::replace_message_checkpoints_in(
+            &transaction,
+            conversation_id,
+            message_id,
+            &[
+                checkpoint(deleted, survivor, "deleted"),
+                checkpoint(survivor, deleted, "survivor"),
+            ],
+        )
+        .expect("checkpoints");
+        crate::conversation::group_companion_adapter::record_persona_application_in(
+            &transaction,
+            conversation_id,
+            message_id,
+            deleted,
+            "__default__",
+            TimestampMillis::new(20),
+        )
+        .expect("persona application");
+        transaction.commit().expect("commit");
+    }
+    database
+        .purge_character(deleted, TimestampMillis::new(30))
+        .expect("purge character");
+    let checkpoints = database
+        .checkpoints_for_message(conversation_id, message_id)
+        .expect("checkpoints");
+    assert_eq!(checkpoints.len(), 1);
+    assert_eq!(checkpoints[0].character_id, survivor);
+    assert!(checkpoints[0].member_relationships.is_empty());
+    assert_eq!(checkpoints[0].effects.len(), 1);
+    assert_eq!(
+        database
+            .recorded_persona_applications(conversation_id, &[message_id], None)
+            .expect("persona applications"),
+        Vec::new()
+    );
+}

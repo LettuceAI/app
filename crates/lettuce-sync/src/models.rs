@@ -177,6 +177,10 @@ pub const GROUP_NOTE_SYNC_KIND: &str = "group_note";
 pub const GROUP_NOTE_SYNC_SCHEMA: &str = "group.scheduled_note";
 pub const GROUP_NOTE_SYNC_VERSION: u32 = 1;
 
+pub const GROUP_COMPANION_MESSAGE_SYNC_KIND: &str = "group_companion_message";
+pub const GROUP_COMPANION_MESSAGE_SYNC_SCHEMA: &str = "group_companion.message";
+pub const GROUP_COMPANION_MESSAGE_SYNC_VERSION: u32 = 1;
+
 pub const USAGE_COST_SYNC_KIND: &str = "usage_cost";
 pub const USAGE_COST_SYNC_SCHEMA: &str = "usage.cost_basis";
 pub const USAGE_COST_SYNC_VERSION: u32 = 1;

@@ -5,7 +5,7 @@ use lettuce_conversations::{
     MessageRevision, SelectedConversationCopyKind, ValidationError,
 };
 use lettuce_transfer::BackupMessage;
-use lettuce_types::{MessageId, MessageRevisionId, Revision};
+use lettuce_types::{ConversationId, MessageId, MessageRevisionId, Revision};
 
 use super::{
     conversation_history_writer as history, conversation_mutations as mutations,
@@ -14,6 +14,62 @@ use super::{
 
 fn invalid(field: &'static str) -> ConversationRepositoryError {
     ConversationRepositoryError::Invalid(ValidationError::InvalidReference { field })
+}
+
+fn copy_error(error: impl std::fmt::Debug) -> ConversationRepositoryError {
+    ConversationRepositoryError::Storage {
+        reason: format!("{error:?}"),
+    }
+}
+
+fn copy_group_companion_for_message_in(
+    transaction: &rusqlite::Transaction<'_>,
+    source_conversation_id: ConversationId,
+    target_conversation_id: ConversationId,
+    source_message_id: MessageId,
+    target_message_id: MessageId,
+) -> Result<(), ConversationRepositoryError> {
+    let mut checkpoints = super::group_companion_adapter::load_checkpoints_for_message_in(
+        transaction,
+        source_conversation_id,
+        source_message_id,
+    )
+    .map_err(copy_error)?;
+    let source = super::group_companion_adapter::load_message_source(
+        transaction,
+        target_conversation_id,
+        target_message_id,
+    )
+    .map_err(copy_error)?;
+    for checkpoint in &mut checkpoints {
+        checkpoint.message_id = target_message_id;
+        checkpoint.source = source.clone();
+    }
+    super::group_companion_adapter::replace_message_checkpoints_in(
+        transaction,
+        target_conversation_id,
+        target_message_id,
+        &checkpoints,
+    )
+    .map_err(copy_error)?;
+    let applications = super::group_companion_adapter::load_persona_applications_for_message_in(
+        transaction,
+        source_conversation_id,
+        source_message_id,
+    )
+    .map_err(copy_error)?;
+    for (character_id, persona_key, applied_at) in applications {
+        super::group_companion_adapter::record_persona_application_in(
+            transaction,
+            target_conversation_id,
+            target_message_id,
+            character_id,
+            &persona_key,
+            applied_at,
+        )
+        .map_err(copy_error)?;
+    }
+    Ok(())
 }
 
 fn replace_copy_placeholders(parts: &mut [MessagePart], kind: &SelectedConversationCopyKind) {
@@ -377,6 +433,13 @@ impl crate::ApiOperationTransaction<'_, '_> {
         let mut message_ids = HashMap::new();
         let mut result = Vec::with_capacity(items.len());
         let mut parent = target_branch.head_message_id;
+        let copies_group_companion = matches!(
+            source.conversation.kind,
+            lettuce_conversations::ConversationKind::Group(_)
+        ) && matches!(
+            target.conversation.kind,
+            lettuce_conversations::ConversationKind::Group(_)
+        );
         for item in items {
             let id = MessageId::new();
             let revision_id = MessageRevisionId::new();
@@ -554,6 +617,15 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 history::insert_copied_scene_source(self.transaction, &backup)?;
             }
             message_ids.insert(old_id, id);
+            if copies_group_companion {
+                copy_group_companion_for_message_in(
+                    self.transaction,
+                    command.source_conversation_id,
+                    command.target_conversation_id,
+                    old_id,
+                    id,
+                )?;
+            }
             result.push(id);
             parent = Some(id);
         }
@@ -1025,5 +1097,230 @@ impl crate::Database {
             }
         })?;
         super::conversation_artifact_adapter::snapshot_draft_in(&transaction, reference)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Database;
+    use lettuce_companions::{
+        GroupCompanionCheckpoint, GroupCompanionEffect, GroupCompanionEffectReason,
+        GroupCompanionMessageSource, GroupCompanionRepository, GroupMemberRelationship,
+        RelationshipState,
+    };
+    use lettuce_types::{
+        CharacterId, ConversationBranchId, ConversationParticipantId, MessageRevisionId,
+        TimestampMillis,
+    };
+    use rusqlite::{TransactionBehavior, params};
+
+    #[test]
+    fn copying_a_group_message_copies_its_group_companion_checkpoints_effects_and_persona_applications() {
+        let database = Database::open_in_memory().expect("database");
+        let source_conversation_id = ConversationId::new();
+        let target_conversation_id = ConversationId::new();
+        let source_branch_id = ConversationBranchId::new();
+        let target_branch_id = ConversationBranchId::new();
+        let source_participant = ConversationParticipantId::new();
+        let target_participant = ConversationParticipantId::new();
+        let source_message_id = MessageId::new();
+        let target_message_id = MessageId::new();
+        let source_revision_id = MessageRevisionId::new();
+        let target_revision_id = MessageRevisionId::new();
+        let first_character = CharacterId::new();
+        let second_character = CharacterId::new();
+        let checkpoint = GroupCompanionCheckpoint {
+            message_id: source_message_id,
+            character_id: first_character,
+            source: GroupCompanionMessageSource {
+                revision_id: Some(source_revision_id),
+                candidate_id: None,
+            },
+            emotional_state: lettuce_companions::EmotionalState {
+                felt: lettuce_companions::EmotionVector::default(),
+                expressed: lettuce_companions::EmotionVector::default(),
+                blocked: lettuce_companions::EmotionVector::default(),
+                momentum: lettuce_companions::EmotionVector::default(),
+                active_drivers: Vec::new(),
+                confidence: 0.5,
+                updated_at: TimestampMillis::new(10),
+            },
+            member_relationships: vec![GroupMemberRelationship {
+                target_character_id: second_character,
+                state: RelationshipState {
+                    closeness: 0.0,
+                    trust: 0.1,
+                    affection: 0.0,
+                    tension: 0.0,
+                    stability: 0.0,
+                    interaction_count: 0,
+                    last_interaction_at: TimestampMillis::new(10),
+                },
+            }],
+            effects: vec![GroupCompanionEffect {
+                reason: GroupCompanionEffectReason::Witnessed,
+                social_event: None,
+                emotion_delta: lettuce_companions::CompanionEmotionDelta::default(),
+                relationship_change: None,
+                signal_changes: lettuce_companions::CompanionSignalChanges::default(),
+            }],
+            created_at: TimestampMillis::new(10),
+        };
+        {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("transaction");
+            for (character_id, name) in
+                [(first_character, "First"), (second_character, "Second")]
+            {
+                transaction
+                    .execute(
+                        "INSERT INTO characters (
+                           id, status, name, normalized_name, profile_json,
+                           provenance_json, defaults_json, interaction_mode,
+                           memory_policy, voice_autoplay, presentation_json, revision,
+                           created_at, updated_at
+                         ) VALUES (?1, 'active', ?2, ?3, '{}', '{}', '{}',
+                                   'companion', 'manual', 0, '{}', 1, 1, 1)",
+                        params![character_id.to_string(), name, name.to_ascii_lowercase()],
+                    )
+                    .expect("character");
+            }
+            for (conversation_id, branch_id, participant, message_id, revision_id) in [
+                (
+                    source_conversation_id,
+                    source_branch_id,
+                    source_participant,
+                    source_message_id,
+                    source_revision_id,
+                ),
+                (
+                    target_conversation_id,
+                    target_branch_id,
+                    target_participant,
+                    target_message_id,
+                    target_revision_id,
+                ),
+            ] {
+                transaction
+                    .execute(
+                        "INSERT INTO conversations (
+                           id, kind, lifecycle, title, active_branch_id, kind_json,
+                           revision, created_at, updated_at
+                         ) VALUES (?1, 'group', 'active', 'Group', ?2,
+                                   '{\"format_version\":1,\"value\":null}', 1, 1, 1)",
+                        params![conversation_id.to_string(), branch_id.to_string()],
+                    )
+                    .expect("conversation");
+                transaction
+                    .execute(
+                        "INSERT INTO conversation_branches (
+                           conversation_id, id, status, revision, created_at, updated_at
+                         ) VALUES (?1, ?2, 'active', 1, 1, 1)",
+                        params![conversation_id.to_string(), branch_id.to_string()],
+                    )
+                    .expect("branch");
+                transaction
+                    .execute(
+                        "INSERT INTO conversation_participants (
+                           conversation_id, id, role, ordinal, source_kind, source_id,
+                           enabled, muted, display_name, model_selection_json, revision,
+                           created_at, updated_at
+                         ) VALUES (?1, ?2, 'user', 0, 'user', NULL, 1, 0, 'User',
+                                   '{\"format_version\":1}', 1, 1, 1)",
+                        params![conversation_id.to_string(), participant.to_string()],
+                    )
+                    .expect("participant");
+                transaction
+                    .execute(
+                        "INSERT INTO conversation_messages (
+                           conversation_id, id, branch_id, author_participant_id, role,
+                           timeline_ordinal, logical_time, effective_time, visibility, pinned,
+                           scene_edited, active_revision_id, revision, created_at, updated_at
+                         ) VALUES (?1, ?2, ?3, ?4, 'user', 1, 1, 1, 'visible', 0, 0, ?5, 1, 1, 1)",
+                        params![
+                            conversation_id.to_string(),
+                            message_id.to_string(),
+                            branch_id.to_string(),
+                            participant.to_string(),
+                            revision_id.to_string()
+                        ],
+                    )
+                    .expect("message");
+                transaction
+                    .execute(
+                        "INSERT INTO conversation_message_revisions (
+                           conversation_id, id, message_id, branch_id, sequence, parts_json,
+                           authored_at
+                         ) VALUES (?1, ?2, ?3, ?4, 1,
+                                   '{\"format_version\":1,\"value\":null}', 1)",
+                        params![
+                            conversation_id.to_string(),
+                            revision_id.to_string(),
+                            message_id.to_string(),
+                            branch_id.to_string()
+                        ],
+                    )
+                    .expect("revision");
+            }
+            super::super::group_companion_adapter::replace_message_checkpoints_in(
+                &transaction,
+                source_conversation_id,
+                source_message_id,
+                std::slice::from_ref(&checkpoint),
+            )
+            .expect("checkpoints");
+            super::super::group_companion_adapter::record_persona_application_in(
+                &transaction,
+                source_conversation_id,
+                source_message_id,
+                first_character,
+                "__default__",
+                TimestampMillis::new(20),
+            )
+            .expect("persona application");
+            transaction.commit().expect("commit");
+        }
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        copy_group_companion_for_message_in(
+            &transaction,
+            source_conversation_id,
+            target_conversation_id,
+            source_message_id,
+            target_message_id,
+        )
+        .expect("copy group companion");
+        transaction.commit().expect("commit");
+        drop(connection);
+        let target_source = GroupCompanionMessageSource {
+            revision_id: Some(target_revision_id),
+            candidate_id: None,
+        };
+        let mut copied = checkpoint.clone();
+        copied.message_id = target_message_id;
+        copied.source = target_source.clone();
+        assert_eq!(
+            database
+                .checkpoints_for_message(target_conversation_id, target_message_id)
+                .expect("copied checkpoints"),
+            vec![copied]
+        );
+        assert_eq!(
+            database
+                .recorded_persona_applications(target_conversation_id, &[target_message_id], None)
+                .expect("copied persona applications"),
+            vec![(target_message_id, first_character)]
+        );
+        assert_eq!(
+            database
+                .path_checkpoint_sources(target_conversation_id, &[target_message_id])
+                .expect("copied checkpoint sources"),
+            vec![(target_message_id, target_source)]
+        );
     }
 }

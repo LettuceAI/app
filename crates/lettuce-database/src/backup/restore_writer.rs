@@ -770,6 +770,36 @@ impl ProviderBackupRestoreWriter for Database {
             )
             .map_err(invalid)?;
         }
+        let mut group_checkpoints = BTreeMap::<
+            (lettuce_types::ConversationId, lettuce_types::MessageId),
+            Vec<lettuce_companions::GroupCompanionCheckpoint>,
+        >::new();
+        for checkpoint in &graph.group_companion.checkpoints {
+            group_checkpoints
+                .entry((checkpoint.conversation_id, checkpoint.message_id))
+                .or_default()
+                .push(checkpoint.to_checkpoint());
+        }
+        for ((conversation_id, message_id), checkpoints) in group_checkpoints {
+            crate::conversation::group_companion_adapter::replace_message_checkpoints_in(
+                &transaction,
+                conversation_id,
+                message_id,
+                &checkpoints,
+            )
+            .map_err(invalid)?;
+        }
+        for application in &graph.group_companion.persona_applications {
+            crate::conversation::group_companion_adapter::record_persona_application_in(
+                &transaction,
+                application.conversation_id,
+                application.message_id,
+                application.character_id,
+                &application.persona_key,
+                application.applied_at,
+            )
+            .map_err(invalid)?;
+        }
         for run in &companion.growth_runs {
             crate::companion::growth_adapter::insert_restored_in(&transaction, run)
                 .map_err(invalid)?;
@@ -1101,5 +1131,256 @@ pub(crate) mod tests {
         }
         let graph = assert_backup_round_trip(&database);
         assert_eq!(graph.authored.personas.len(), 4_097);
+    }
+
+    #[test]
+    fn group_companion_rows_round_trip_through_a_backup() {
+        use lettuce_characters::{
+            Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
+            CharacterProvenance, CharacterRepository,
+        };
+        use lettuce_companions::{
+            CompanionEmotionDelta, CompanionSignalChanges, GroupCompanionCheckpoint,
+            GroupCompanionEffect, GroupCompanionEffectReason, GroupCompanionMessageSource,
+            GroupCompanionRepository,
+        };
+        use lettuce_conversations::{
+            ArtifactCodec, ArtifactRetention, CharacterLaunchSnapshot, ConversationCreator,
+            ConversationKind, ConversationParticipantDraft, DirectConversationDetails,
+            InitialTimelineDraft, ParticipantRole, ParticipantSource, PreparedConversationLaunch,
+            ProtectedArtifactBytes, ProtectedSnapshotRef, SnapshotArtifactDraft, SnapshotSelection,
+            SnapshotSource,
+        };
+        use lettuce_types::{
+            CharacterId, ContentHash, ConversationId, MessageId, MessageRevisionId, Revision,
+            SnapshotArtifactId, TimestampMillis,
+        };
+        use rusqlite::{TransactionBehavior, params};
+
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        CharacterRepository::create(
+            &database,
+            lettuce_characters::CreateCharacterPlan {
+                character: Character::new(
+                    character_id,
+                    CharacterProfile {
+                        name: "Group member".into(),
+                        nickname: None,
+                        description: Some("A member".into()),
+                        definition: None,
+                        design_description: None,
+                        scenario: None,
+                    },
+                    CharacterProvenance::default(),
+                    CharacterDefaults::default(),
+                    CharacterPresentationV1::default(),
+                    None,
+                    CharacterMedia::default(),
+                    TimestampMillis::new(2),
+                )
+                .expect("character"),
+                scenes: Vec::new(),
+                variants: Vec::new(),
+                starters: Vec::new(),
+            },
+        )
+        .expect("store character");
+        let bytes =
+            ProtectedArtifactBytes::new(b"group companion backup launch".to_vec()).expect("bytes");
+        let reference = ProtectedSnapshotRef {
+            source: SnapshotSource::Character(character_id),
+            source_revision: Revision::INITIAL,
+            artifact_id: SnapshotArtifactId::new(),
+            digest: bytes.digest(),
+            schema_version: 1,
+            byte_size: u64::try_from(bytes.len()).expect("byte size"),
+        };
+        let plan = lettuce_conversations::CreateConversationPlan {
+            current_settings: None,
+            conversation_id: ConversationId::new(),
+            title: "Group companion backup".into(),
+            kind: ConversationKind::Direct(DirectConversationDetails {
+                format_version: 1,
+                character: CharacterLaunchSnapshot {
+                    snapshot_ref: reference.clone(),
+                    source_id: character_id,
+                    source_revision: Revision::INITIAL,
+                    name: "Group member".into(),
+                    nickname: None,
+                },
+                persona: SnapshotSelection::Disabled,
+                scene: SnapshotSelection::Disabled,
+                starter: SnapshotSelection::Disabled,
+                prompt: SnapshotSelection::Disabled,
+                lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                model: SnapshotSelection::Disabled,
+                memory: SnapshotSelection::Disabled,
+                voice: SnapshotSelection::Disabled,
+            }),
+            participants: vec![
+                ConversationParticipantDraft {
+                    id: lettuce_types::ConversationParticipantId::new(),
+                    role: ParticipantRole::User,
+                    ordinal: 0,
+                    source: ParticipantSource::User,
+                    enabled: true,
+                    muted: false,
+                    display_name: "User".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+                ConversationParticipantDraft {
+                    id: lettuce_types::ConversationParticipantId::new(),
+                    role: ParticipantRole::Character,
+                    ordinal: 1,
+                    source: ParticipantSource::Character(character_id),
+                    enabled: true,
+                    muted: false,
+                    display_name: "Group member".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+            ],
+            initial_timeline: InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
+            operation: lettuce_conversations::OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("group-companion-backup-create")
+                    .expect("operation key"),
+                request_digest: ContentHash::parse(
+                    blake3::hash(b"group companion backup create")
+                        .to_hex()
+                        .to_string(),
+                )
+                .expect("request digest"),
+            },
+        };
+        let launch = PreparedConversationLaunch::new(
+            plan,
+            vec![SnapshotArtifactDraft {
+                source: reference.source,
+                source_revision: reference.source_revision,
+                artifact_id: reference.artifact_id,
+                digest: reference.digest,
+                schema_version: reference.schema_version,
+                byte_size: reference.byte_size,
+                codec: ArtifactCodec::Json,
+                retention: ArtifactRetention::Conversation,
+                bytes,
+            }],
+        )
+        .expect("prepared launch");
+        let commit =
+            ConversationCreator::create(&database, launch, TimestampMillis::new(1)).expect("create");
+        let conversation_id = commit.value.conversation.id;
+        let branch_id = commit.value.conversation.active_branch_id;
+        let user_participant = commit
+            .value
+            .conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::User)
+            .expect("user participant")
+            .id;
+        let message_id = MessageId::new();
+        let revision_id = MessageRevisionId::new();
+        let checkpoint = GroupCompanionCheckpoint {
+            message_id,
+            character_id,
+            source: GroupCompanionMessageSource {
+                revision_id: Some(revision_id),
+                candidate_id: None,
+            },
+            emotional_state: lettuce_companions::EmotionalState {
+                felt: lettuce_companions::EmotionVector::default(),
+                expressed: lettuce_companions::EmotionVector::default(),
+                blocked: lettuce_companions::EmotionVector::default(),
+                momentum: lettuce_companions::EmotionVector::default(),
+                active_drivers: Vec::new(),
+                confidence: 0.5,
+                updated_at: TimestampMillis::new(10),
+            },
+            member_relationships: Vec::new(),
+            effects: vec![GroupCompanionEffect {
+                reason: GroupCompanionEffectReason::Witnessed,
+                social_event: None,
+                emotion_delta: CompanionEmotionDelta::default(),
+                relationship_change: None,
+                signal_changes: CompanionSignalChanges::default(),
+            }],
+            created_at: TimestampMillis::new(10),
+        };
+        {
+            let mut connection = database.connection().expect("database lock");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("transaction");
+            transaction
+                .execute(
+                    "INSERT INTO conversation_messages (
+                       conversation_id, id, branch_id, author_participant_id, role,
+                       timeline_ordinal, logical_time, effective_time, visibility, pinned,
+                       scene_edited, active_revision_id, revision, created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, 'user', 1, 1, 1, 'visible', 0, 0, ?5, 1, 1, 1)",
+                    params![
+                        conversation_id.to_string(),
+                        message_id.to_string(),
+                        branch_id.to_string(),
+                        user_participant.to_string(),
+                        revision_id.to_string()
+                    ],
+                )
+                .expect("message");
+            transaction
+                .execute(
+                    "INSERT INTO conversation_message_revisions (
+                       conversation_id, id, message_id, branch_id, sequence, parts_json,
+                       authored_at
+                     ) VALUES (?1, ?2, ?3, ?4, 1,
+                               '{\"format_version\":1,\"value\":[]}', 1)",
+                    params![
+                        conversation_id.to_string(),
+                        revision_id.to_string(),
+                        message_id.to_string(),
+                        branch_id.to_string()
+                    ],
+                )
+                .expect("revision");
+            crate::conversation::group_companion_adapter::replace_message_checkpoints_in(
+                &transaction,
+                conversation_id,
+                message_id,
+                std::slice::from_ref(&checkpoint),
+            )
+            .expect("checkpoints");
+            crate::conversation::group_companion_adapter::record_persona_application_in(
+                &transaction,
+                conversation_id,
+                message_id,
+                character_id,
+                "__default__",
+                TimestampMillis::new(20),
+            )
+            .expect("persona application");
+            transaction.commit().expect("commit");
+        }
+        let (graph, restored) = backup_round_trip(&database, |_| {});
+        assert_eq!(graph.group_companion.checkpoints.len(), 1);
+        assert_eq!(graph.group_companion.checkpoints[0].effects.len(), 1);
+        assert_eq!(graph.group_companion.persona_applications.len(), 1);
+        assert_eq!(
+            restored
+                .checkpoints_for_message(conversation_id, message_id)
+                .expect("restored checkpoints"),
+            vec![checkpoint]
+        );
+        assert_eq!(
+            restored
+                .recorded_persona_applications(conversation_id, &[message_id], None)
+                .expect("restored persona applications"),
+            vec![(message_id, character_id)]
+        );
     }
 }

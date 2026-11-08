@@ -1476,6 +1476,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::GROUP_NOTE_SYNC_VERSION,
         )
         | (
+            lettuce_sync::GROUP_COMPANION_MESSAGE_SYNC_KIND,
+            lettuce_sync::GROUP_COMPANION_MESSAGE_SYNC_SCHEMA,
+            lettuce_sync::GROUP_COMPANION_MESSAGE_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_KIND,
             lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_SCHEMA,
             lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_VERSION,
@@ -2778,6 +2783,42 @@ const COMPANION_SESSION_CODEC: SnapshotCodec = SnapshotCodec {
     delete: None,
 };
 
+const GROUP_COMPANION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::GROUP_COMPANION_MESSAGE_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| {
+        crate::sync::group_companion_sync_adapter::decode_group_companion_message(id, bytes)
+            .map_err(|_| ApplyOneError::Corrupt)
+    },
+    current: |tx, id| {
+        crate::sync::group_companion_sync_adapter::sync_load_group_companion_message(tx, id)
+            .map_err(conversation_apply_error)?
+            .map(|message| {
+                crate::sync::group_companion_sync_adapter::canonical_group_companion_message_payload(
+                    &message,
+                )
+                .map_err(conversation_apply_error)
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let message: crate::sync::group_companion_sync_adapter::SyncGroupCompanionMessage =
+            serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+        crate::sync::group_companion_sync_adapter::sync_replace_group_companion_message(
+            tx, id, &message,
+        )
+        .map_err(conversation_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::sync::group_companion_sync_adapter::sync_group_companion_message_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
 fn decode_note(
     id: &str,
     bytes: &[u8],
@@ -3246,7 +3287,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 38] = [
+const SCANNED_CODECS: [&SnapshotCodec; 39] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -3272,6 +3313,7 @@ const SCANNED_CODECS: [&SnapshotCodec; 38] = [
     &COMPANION_NOTE_CODEC,
     &COMPANION_RELATIONSHIP_CODEC,
     &COMPANION_SESSION_CODEC,
+    &GROUP_COMPANION_MESSAGE_CODEC,
     &AUDIO_PROVIDER_CODEC,
     &USER_VOICE_CODEC,
     &ASR_VOCABULARY_TERM_CODEC,
@@ -3586,6 +3628,24 @@ fn snapshot_source_time(kind: &str, bytes: &[u8]) -> Option<TimestampMillis> {
         >(bytes)
         .ok()?;
         return newest(&mut std::iter::once(relationship.state.last_interaction_at));
+    }
+    if kind == lettuce_sync::GROUP_COMPANION_MESSAGE_SYNC_KIND {
+        let message = serde_json::from_slice::<
+            crate::sync::group_companion_sync_adapter::SyncGroupCompanionMessage,
+        >(bytes)
+        .ok()?;
+        return newest(
+            &mut message
+                .checkpoints
+                .iter()
+                .map(|checkpoint| checkpoint.created_at)
+                .chain(
+                    message
+                        .persona_applications
+                        .iter()
+                        .map(|application| application.applied_at),
+                ),
+        );
     }
     fn latest(value: &serde_json::Value) -> Option<i64> {
         match value {
