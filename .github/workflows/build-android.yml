@@ -1,0 +1,129 @@
+name: Build Android package
+
+on:
+  workflow_call:
+    inputs:
+      source_sha: {type: string, required: true}
+      ci_sha: {type: string, required: true}
+      version: {type: string, required: true}
+      dev: {type: boolean, required: true}
+      version_code: {type: string, required: true}
+    secrets:
+      ANDROID_KEY_BASE64: {required: true}
+      ANDROID_KEY_ALIAS: {required: true}
+      ANDROID_KEY_PASSWORD: {required: true}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      GGML_NATIVE: 'OFF'
+      ANDROID_PLATFORM: android-30
+      NDK_VERSION: '29.0.14206865'
+      APP_VERSION: ${{ inputs.version }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Checkout the workflow's CI configuration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ci_sha }}
+          path: .release-ci
+          sparse-checkout: |
+            .github/actions
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-37.0 build-tools;37.0.0 ndk;29.0.14206865
+      - name: Configure Android native tools
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-dev llvm-dev ninja-build pkg-config libssl-dev
+          {
+            echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION"
+            echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$NDK_VERSION"
+            echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION"
+          } >> "$GITHUB_ENV"
+      - uses: ./.release-ci/.github/actions/setup-build
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          cache-key: android
+          target-directory: ${{ env.CARGO_TARGET_DIR }}
+      - uses: ./.release-ci/.github/actions/configure-release
+        with:
+          version: ${{ inputs.version }}
+          dev: ${{ inputs.dev }}
+          android: 'true'
+          android-version-code: ${{ inputs.version_code }}
+      - name: Configure release signing
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const keystore = path.join(process.env.RUNNER_TEMP, 'lettuce-release.jks');
+          fs.writeFileSync(keystore, Buffer.from(process.env.ANDROID_KEY_BASE64, 'base64'), {mode: 0o600});
+          const escape = text => Array.from({length: text.length}, (_, i) => {
+            const unit = text.charCodeAt(i);
+            return unit <= 0x20 || unit >= 0x7f || '\\:=#!'.includes(text[i]) ? '\\u' + unit.toString(16).padStart(4, '0') : text[i];
+          }).join('');
+          fs.writeFileSync('apps/tauri/gen/android/keystore.properties', [
+            `keyAlias=${escape(process.env.ANDROID_KEY_ALIAS)}`,
+            `password=${escape(process.env.ANDROID_KEY_PASSWORD)}`,
+            `storeFile=${escape(keystore)}`,
+          ].join('\n') + '\n', {mode: 0o600});
+          JS
+          keytool -list -keystore "$RUNNER_TEMP/lettuce-release.jks" -alias "$ANDROID_KEY_ALIAS" -storepass:env ANDROID_KEY_PASSWORD > /dev/null
+      - name: Build universal APK and app bundle
+        run: bun run tauri android build --ci --config "$GITHUB_WORKSPACE/.release-config.json" --apk --aab --target aarch64 armv7 i686 x86_64 -- --locked
+      - name: Verify signing, application ID, and version
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find apps/tauri/gen/android/app/build/outputs/apk -type f -name '*.apk')
+          mapfile -t bundles < <(find apps/tauri/gen/android/app/build/outputs/bundle -type f -name '*.aab')
+          ((${#apks[@]} == 1 && ${#bundles[@]} == 1))
+          tools="$ANDROID_HOME/build-tools/37.0.0"
+          "$tools/apksigner" verify --verbose "${apks[0]}"
+          jarsigner -J-Duser.language=en -J-Duser.country=US -verify "${bundles[0]}" | grep -F 'jar verified.'
+          badging="$("$tools/aapt" dump badging "${apks[0]}")"
+          grep -F "name='$LETTUCE_ANDROID_APPLICATION_ID'" <<< "$badging"
+          grep -F "versionName='$APP_VERSION'" <<< "$badging"
+          mkdir dist-artifacts
+          cp "${apks[0]}" "dist-artifacts/LettuceAI_${APP_VERSION}_android-universal.apk"
+          cp "${bundles[0]}" "dist-artifacts/LettuceAI_${APP_VERSION}_android.aab"
+          printf '%s\n%s\n%s\n' "$SOURCE_SHA" "$APP_VERSION" android > dist-artifacts/BUILD_INFO
+          (cd dist-artifacts && sha256sum -- * > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-package-android
+          path: dist-artifacts/
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
+          retention-days: 30
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -f apps/tauri/gen/android/keystore.properties "$RUNNER_TEMP/lettuce-release.jks"

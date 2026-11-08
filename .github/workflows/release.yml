@@ -1,10 +1,13 @@
-# Register the refactor workflow for manual dispatch from GitHub Actions.
-# Select refactor/lettuceai-next to run that branch's desktop and Android jobs.
 name: Build and release
+run-name: LettuceAI ${{ inputs.channel }} · ${{ inputs.source_ref }} · ${{ github.actor }}
 
 on:
   workflow_dispatch:
     inputs:
+      source_ref:
+        description: Refactor source branch, tag, or commit to build with this workflow's CI configuration.
+        type: string
+        default: refactor/lettuceai-next
       channel:
         description: Dev app (separate installation) or stable release.
         type: choice
@@ -18,6 +21,10 @@ on:
         description: Include NVIDIA CUDA builds for Windows and Linux.
         type: boolean
         default: true
+      cuda_only:
+        description: Build only Windows and Linux CUDA packages, without publishing.
+        type: boolean
+        default: false
       publish:
         description: Create a GitHub release after all builds succeed. Leave off to keep only Actions artifacts.
         type: boolean
@@ -34,12 +41,294 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  select-refactor-branch:
-    name: Select the refactor branch
+  prepare:
+    name: Validate release and collect changes
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
+      dev: ${{ steps.release.outputs.dev }}
+      matrix: ${{ steps.release.outputs.matrix }}
+      android_code: ${{ steps.release.outputs.android_code }}
+      publish: ${{ steps.release.outputs.publish }}
     steps:
-      - name: Explain the required workflow branch
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare release metadata and full commit list
+        id: release
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          CHANNEL: ${{ inputs.channel || 'stable' }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          INCLUDE_CUDA: ${{ github.event_name == 'push' || inputs.cuda }}
+          CUDA_ONLY: ${{ inputs.cuda_only }}
+          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+          PUBLISH_AUR: ${{ github.event_name == 'push' || inputs.aur }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag }}
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_PACKAGER_NAME: ${{ secrets.AUR_PACKAGER_NAME }}
+          AUR_PACKAGER_EMAIL: ${{ secrets.AUR_PACKAGER_EMAIL }}
+          AUR_SSH_KNOWN_HOSTS: ${{ vars.AUR_SSH_KNOWN_HOSTS }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const cudaOnly = context.eventName === 'workflow_dispatch' && process.env.CUDA_ONLY === 'true';
+            const { execFileSync } = require('node:child_process');
+            const git = (...args) => execFileSync('git', args, {encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).trim();
+            if (!fs.existsSync('apps/tauri/tauri.conf.json')) throw new Error('source_ref must select the refactor app, such as refactor/lettuceai-next');
+            const sourceVersion = JSON.parse(fs.readFileSync('apps/tauri/tauri.conf.json')).version;
+            const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+            const validateVersion = value => {
+              const parts = semver.exec(value);
+              if (!parts || +parts[1] > 255 || +parts[2] > 255 || +parts[3] > 65535 || parts[4]?.split('.').some(part => /^0\d+$/.test(part))) {
+                throw new Error('Version must be valid SemVer within Windows installer limits');
+              }
+              return parts;
+            };
+            validateVersion(sourceVersion);
+            for (const path of ['package.json', 'apps/ui/package.json']) {
+              if (JSON.parse(fs.readFileSync(path)).version !== sourceVersion) throw new Error(`Version mismatch: ${path}`);
+            }
+            const rustVersion = fs.readFileSync('Cargo.toml', 'utf8').match(/\[workspace\.package\]\s*\nversion\s*=\s*"([^"]+)"/);
+            if (rustVersion?.[1] !== sourceVersion) throw new Error('Cargo workspace version differs from the app version');
+            if (!cudaOnly) {
+              for (const name of ['ANDROID_KEY_BASE64', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'MACOS_SIGNING_CERTIFICATE', 'MACOS_SIGNING_PASSWORD']) {
+                if (!process.env[name]) throw new Error(`Missing signing secret: ${name}`);
+              }
+            }
+            const sha = git('rev-parse', 'HEAD');
+            const tagged = context.eventName === 'push';
+            const dev = !tagged && process.env.CHANNEL === 'dev';
+            const requestedVersion = (process.env.RELEASE_VERSION || '').trim();
+            if (dev && requestedVersion) throw new Error('The version input is for stable releases; dev versions are automatic');
+            const version = dev ? `0.1.${context.runNumber}-dev.${sha.slice(0, 7)}`
+              : tagged ? context.ref.replace(/^refs\/tags\/v/, '') : requestedVersion || sourceVersion;
+            const parts = validateVersion(version);
+            const prerelease = dev || Boolean(parts[4]);
+            if (tagged && context.ref !== `refs/tags/v${version}`) throw new Error('Release tags must have the form v<version>');
+            const tag = dev ? `dev-${context.runNumber}-${sha.slice(0, 7)}` : `v${version}`;
+            const publish = process.env.PUBLISH === 'true';
+            if (cudaOnly && publish) throw new Error('CUDA-only builds require publish=false');
+            if (publish && process.env.PUBLISH_AUR === 'true' && (dev || !prerelease)) {
+              for (const name of ['AUR_SSH_PRIVATE_KEY', 'AUR_PACKAGER_NAME', 'AUR_PACKAGER_EMAIL', 'AUR_SSH_KNOWN_HOSTS']) {
+                if (!process.env[name]) throw new Error(`Missing AUR setting: ${name}; configure it or turn off the aur checkbox`);
+              }
+            }
+            const releases = await github.paginate(github.rest.repos.listReleases, {...context.repo, per_page: 100});
+            const existing = releases.find(item => item.tag_name === tag);
+            if (publish && existing && (!existing.draft || existing.target_commitish !== sha)) {
+              throw new Error(`Release ${tag} is already published or belongs to another commit`);
+            }
+            const ancestor = tag => {
+              try { git('merge-base', '--is-ancestor', `refs/tags/${tag}`, sha); return true; }
+              catch { return false; }
+            };
+            let previous = process.env.PREVIOUS_TAG;
+            if (previous) {
+              git('check-ref-format', `refs/tags/${previous}`);
+              if (!ancestor(previous)) throw new Error('previous_tag must exist and be an ancestor of this build');
+            } else {
+              previous = releases.filter(item => !item.draft && item.prerelease === prerelease && item.tag_name !== tag && (dev ? /^(dev-|desktop-dev-|android-dev-)/.test(item.tag_name) : !/^(dev-|desktop-dev-|android-dev-)/.test(item.tag_name)))
+                .sort((a, b) => b.published_at.localeCompare(a.published_at))
+                .find(item => ancestor(item.tag_name))?.tag_name;
+            }
+            const range = previous ? `refs/tags/${previous}..${sha}` : sha;
+            const fields = git('log', '--reverse', '--format=%H%x00%s%x00%an%x00', range).split('\0');
+            const escape = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\\`*_[\]]/g, '\\$&');
+            const repoUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}`;
+            const commits = [];
+            for (let i = 0; i + 2 < fields.length; i += 3) {
+              const commit = fields[i].trim();
+              commits.push(`- [\`${commit.slice(0, 7)}\`](${repoUrl}/commit/${commit}) ${escape(fields[i + 1])} (${escape(fields[i + 2])})`);
+            }
+            const changes = ['## Changes', '', previous
+              ? `Since \`${previous}\` · [Compare changes](${repoUrl}/compare/${encodeURIComponent(previous)}...${sha})`
+              : 'First release in this channel; the complete commit history is included.', '',
+              `${commits.length} commits, including merge commits.`, '', ...commits,
+              ...(commits.length ? [] : ['No new commits since the previous release.'])].join('\n') + '\n';
+            const cuda = process.env.INCLUDE_CUDA === 'true' || cudaOnly;
+            const matrix = [
+              {id: 'linux-x64', runner: 'ubuntu-24.04', target: 'x86_64-unknown-linux-gnu', features: 'vulkan', bundles: 'deb,appimage'},
+              {id: 'windows-x64', runner: 'windows-2022', target: 'x86_64-pc-windows-msvc', features: 'vulkan', bundles: 'nsis,msi'},
+              {id: 'macos-arm64', runner: 'macos-15', target: 'aarch64-apple-darwin', features: 'metal', bundles: 'app,dmg'},
+              {id: 'macos-x64', runner: 'macos-15-intel', target: 'x86_64-apple-darwin', features: 'metal', bundles: 'app,dmg'},
+              ...(cuda ? [
+                {id: 'linux-x64-cuda', runner: 'ubuntu-24.04', target: 'x86_64-unknown-linux-gnu', features: 'cuda', bundles: 'deb,appimage'},
+                {id: 'windows-x64-cuda', runner: 'windows-2022', target: 'x86_64-pc-windows-msvc', features: 'cuda', bundles: 'nsis,msi'},
+              ] : []),
+            ].filter(item => !cudaOnly || item.features === 'cuda');
+            const androidCode = Math.floor(Date.now() / 1000);
+            if (androidCode > 2100000000) throw new Error('Android versionCode exceeds the Play Store limit');
+            const meta = {sha, version, source_version: sourceVersion, tag, dev, prerelease, previous, commits: commits.length,
+              identifier: dev ? 'dev.lettuceai.app' : 'com.lettuceai.app',
+              title: dev ? `LettuceAI Dev ${version}` : `LettuceAI ${version}`,
+              targets: [...matrix.map(item => item.id), ...(cudaOnly ? [] : ['android'])], android_code: androidCode,
+              run_url: `${repoUrl}/actions/runs/${context.runId}`};
+            let notes = `Built from [\`${sha.slice(0, 7)}\`](${repoUrl}/commit/${sha}). [Build run](${meta.run_url}).\n\n`;
+            notes += cudaOnly ? 'Windows and Linux NVIDIA CUDA packages are attached.\n\n'
+              : 'Android, Windows, Linux, and macOS packages are attached. Standard desktop packages use Vulkan (Windows/Linux) or Metal (macOS).\n\n';
+            notes += 'Linux `.tar.gz` archives include the unpacked AppImage contents: extract the archive and run `./AppRun`. No installation or FUSE is required; the Ubuntu 24.04 build compatibility requirements still apply.\n\n';
+            if (cuda) notes += 'Files with `cuda` in the name are NVIDIA CUDA builds.\n\n';
+            notes += cudaOnly ? 'Windows installers are not code-signed.\n\n'
+              : 'Android packages are release-signed. macOS packages are ad-hoc signed and not notarized. Windows installers are not code-signed.\n\n';
+            if (dev) notes += 'This dev build uses `dev.lettuceai.app` and installs separately from stable LettuceAI.\n\n';
+            notes += Buffer.byteLength(notes + changes, 'utf8') <= 120000 ? changes
+              : `## Changes\n\nThe complete list of ${commits.length} commits exceeds GitHub’s release description limit. Every commit is listed in [CHANGES.md](${repoUrl}/releases/download/${encodeURIComponent(tag)}/CHANGES.md).\n`;
+            fs.mkdirSync('.release', {recursive: true});
+            fs.writeFileSync('.release/metadata.json', JSON.stringify(meta, null, 2) + '\n');
+            fs.writeFileSync('.release/CHANGES.md', changes);
+            fs.writeFileSync('.release/NOTES.md', notes);
+            for (const [key, value] of Object.entries({sha, version, dev, matrix: JSON.stringify({include: matrix}), android_code: androidCode, publish})) core.setOutput(key, value);
+            const distribution = publish ? 'A GitHub release will be published after all builds succeed.'
+              : 'Builds will remain in Actions artifacts for 30 days. GitHub release and AUR publication are disabled.';
+            await core.summary.addHeading(meta.title).addRaw(`Commit: ${sha}\n\n${commits.length} commits · ${meta.targets.length} build targets\n\n${distribution}`).write();
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-metadata
+          path: .release/
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  desktop:
+    name: Build ${{ matrix.id }}
+    needs: prepare
+    uses: ./.github/workflows/build-desktop.yml
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    with:
+      source_sha: ${{ needs.prepare.outputs.sha }}
+      ci_sha: ${{ github.workflow_sha }}
+      version: ${{ needs.prepare.outputs.version }}
+      dev: ${{ needs.prepare.outputs.dev == 'true' }}
+      build_id: ${{ matrix.id }}
+      runner: ${{ matrix.runner }}
+      target: ${{ matrix.target }}
+      features: ${{ matrix.features }}
+      bundles: ${{ matrix.bundles }}
+    secrets:
+      MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+      MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+
+  android:
+    name: Build signed Android packages
+    needs: prepare
+    if: inputs.cuda_only != true
+    uses: ./.github/workflows/build-android.yml
+    with:
+      source_sha: ${{ needs.prepare.outputs.sha }}
+      ci_sha: ${{ github.workflow_sha }}
+      version: ${{ needs.prepare.outputs.version }}
+      dev: ${{ needs.prepare.outputs.dev == 'true' }}
+      version_code: ${{ needs.prepare.outputs.android_code }}
+    secrets: inherit
+
+  publish:
+    name: Publish complete release
+    needs: [prepare, desktop, android]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.draft.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-metadata
+          path: .release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-package-*
+          path: artifacts
+      - name: Verify every target and checksum
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+          APP_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
         run: |
-          echo '::error::Select refactor/lettuceai-next in Run workflow to build the refactor app.'
-          exit 1
+          set -euo pipefail
+          mkdir upload
+          mapfile -t targets < <(jq -r '.targets[]' .release/metadata.json)
+          test "$(find artifacts -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "${#targets[@]}"
+          for target in "${targets[@]}"; do
+            directory="artifacts/release-package-$target"
+            test "$(sed -n '1p' "$directory/BUILD_INFO")" = "$SOURCE_SHA"
+            test "$(sed -n '2p' "$directory/BUILD_INFO")" = "$APP_VERSION"
+            test "$(sed -n '3p' "$directory/BUILD_INFO")" = "$target"
+            (cd "$directory" && sha256sum --check SHA256SUMS.txt)
+            for file in "$directory"/*; do
+              case "$(basename "$file")" in BUILD_INFO|SHA256SUMS.txt) continue ;; esac
+              test -f "$file" && test ! -L "$file"
+              test ! -e "upload/$(basename "$file")"
+              cp "$file" upload/
+            done
+          done
+          cp .release/CHANGES.md upload/
+          cp .release/metadata.json upload/build-info.json
+          (cd upload && sha256sum -- * > SHA256SUMS.txt)
+      - name: Create or resume draft release
+        id: draft
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('node:fs');
+            const meta = JSON.parse(fs.readFileSync('.release/metadata.json'));
+            const body = fs.readFileSync('.release/NOTES.md', 'utf8');
+            let release;
+            try { release = (await github.rest.repos.getReleaseByTag({...context.repo, tag: meta.tag})).data; }
+            catch (error) { if (error.status !== 404) throw error; }
+            if (release && (!release.draft || release.target_commitish !== meta.sha)) throw new Error('Refusing to overwrite a published release or another commit’s draft');
+            const fields = {...context.repo, name: meta.title, body, prerelease: meta.prerelease, target_commitish: meta.sha};
+            if (release) await github.rest.repos.updateRelease({...fields, release_id: release.id});
+            else await github.rest.repos.createRelease({...fields, tag_name: meta.tag, draft: true});
+            core.setOutput('tag', meta.tag);
+      - name: Upload verified installers and release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.draft.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" upload/* --clobber
+      - name: Verify uploaded assets and publish
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('node:fs');
+            const meta = JSON.parse(fs.readFileSync('.release/metadata.json'));
+            const {data: release} = await github.rest.repos.getReleaseByTag({...context.repo, tag: meta.tag});
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {...context.repo, release_id: release.id, per_page: 100});
+            const expected = fs.readdirSync('upload').sort();
+            if (JSON.stringify(assets.map(item => item.name).sort()) !== JSON.stringify(expected)) throw new Error('Release asset set differs; leaving release as draft');
+            for (const asset of assets) {
+              if (asset.size !== fs.statSync(`upload/${asset.name}`).size || asset.state !== 'uploaded') throw new Error(`Incomplete upload: ${asset.name}`);
+            }
+            await github.rest.repos.updateRelease({...context.repo, release_id: release.id, draft: false, prerelease: meta.prerelease, make_latest: meta.prerelease ? 'false' : 'legacy'});
+            await core.summary.addLink('Published release', release.html_url).write();
+
+  aur:
+    name: Publish stable or dev AUR packages
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.publish == 'true' && (github.event_name == 'push' || inputs.aur) && (needs.prepare.outputs.dev == 'true' || !contains(needs.prepare.outputs.version, '-'))
+    uses: ./.github/workflows/publish-aur.yml
+    with:
+      release_tag: ${{ needs.publish.outputs.tag }}
+      publish: true
+    secrets: inherit

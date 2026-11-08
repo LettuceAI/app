@@ -1,0 +1,375 @@
+name: Build desktop package
+
+on:
+  workflow_call:
+    inputs:
+      source_sha: {type: string, required: true}
+      ci_sha: {type: string, required: true}
+      version: {type: string, required: true}
+      dev: {type: boolean, required: true}
+      build_id: {type: string, required: true}
+      runner: {type: string, required: true}
+      target: {type: string, required: true}
+      features: {type: string, required: true}
+      bundles: {type: string, required: true}
+    secrets:
+      MACOS_SIGNING_CERTIFICATE:
+        required: false
+      MACOS_SIGNING_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 180
+    env:
+      CARGO_TARGET_DIR: ${{ inputs.runner == 'windows-2022' && 'C:/t' || format('{0}/target', github.workspace) }}
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_POSITION_INDEPENDENT_CODE: 'ON'
+      GGML_NATIVE: 'OFF'
+      CMAKE_CUDA_ARCHITECTURES: '75-virtual;80-virtual;86-real;89-real;90-virtual;120a-real'
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+      BUILD_ID: ${{ inputs.build_id }}
+      APP_VERSION: ${{ inputs.version }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      RUST_TARGET: ${{ inputs.target }}
+      BUILD_FEATURES: ${{ inputs.features }}
+      BUILD_BUNDLES: ${{ inputs.bundles }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Checkout the workflow's CI configuration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ci_sha }}
+          path: .release-ci
+          sparse-checkout: |
+            .github/actions
+            scripts/macos
+          persist-credentials: false
+      - name: Enable long Windows source paths
+        if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - name: Configure Windows MSVC and Ninja
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tools = Join-Path $env:VCToolsInstallDir 'bin/Hostx64/x64'
+          $compiler = Join-Path $tools 'cl.exe'
+          $linker = Join-Path $tools 'link.exe'
+          if (!(Test-Path $compiler) -or !(Test-Path $linker)) { throw 'MSVC compiler or linker is missing' }
+          $ninja = (Get-Command ninja.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          $ninjaVersion = & $ninja --version
+          if ($LASTEXITCODE -ne 0 -or [version]$ninjaVersion -lt [version]'1.12') { throw 'Ninja 1.12 or newer is required for Windows long paths' }
+          $ninjaVersion
+          (Split-Path $ninja) >> $env:GITHUB_PATH
+          "CC=$compiler" >> $env:GITHUB_ENV
+          "CXX=$compiler" >> $env:GITHUB_ENV
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" >> $env:GITHUB_ENV
+          # MSBuild FileTracker cannot handle the nested Vulkan shader generator paths.
+          'CMAKE_GENERATOR=Ninja' >> $env:GITHUB_ENV
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential clang libclang-dev llvm-dev pkg-config libasound2-dev libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libdbus-1-dev libwayland-dev libx11-dev librsvg2-dev patchelf libvulkan-dev glslc spirv-headers
+      - name: Pin the Linux CUDA host compiler
+        if: runner.os == 'Linux' && inputs.features == 'cuda'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc_major="$(cat scripts/cuda-gcc-version)"
+          [[ "$gcc_major" =~ ^[0-9]+$ ]]
+          sudo apt-get install -y --no-install-recommends "gcc-$gcc_major" "g++-$gcc_major"
+          "/usr/bin/gcc-$gcc_major" --version
+          "/usr/bin/g++-$gcc_major" --version
+          {
+            echo "CC=/usr/bin/gcc-$gcc_major"
+            echo "CXX=/usr/bin/g++-$gcc_major"
+            echo "CUDAHOSTCXX=/usr/bin/g++-$gcc_major"
+            echo "NVCC_CCBIN=/usr/bin/g++-$gcc_major"
+          } >> "$GITHUB_ENV"
+      - name: Make room for Linux CUDA outputs
+        if: runner.os == 'Linux' && inputs.features == 'cuda'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc
+          df -h /
+      - name: Make room for Windows CUDA outputs
+        if: runner.os == 'Windows' && inputs.features == 'cuda'
+        shell: pwsh
+        run: |
+          Get-PSDrive -PSProvider FileSystem
+          foreach ($path in @('C:/Android','C:/Program Files (x86)/Android','C:/ghcup','C:/hostedtoolcache/windows/go')) {
+            if (Test-Path $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+          }
+          Get-PSDrive -PSProvider FileSystem
+      - name: Configure Windows LLVM
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $clang = Join-Path $env:ProgramFiles 'LLVM/bin'
+          if (!(Test-Path "$clang/libclang.dll")) { throw 'Runner libclang is missing' }
+          "LIBCLANG_PATH=$clang" >> $env:GITHUB_ENV
+      - name: Configure macOS Xcode and Metal compiler
+        if: runner.os == 'macOS'
+        env:
+          # Icon Composer needs Xcode 26; macOS 15 runners default to Xcode 16.
+          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+        run: |
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcrun actool --version --output-format human-readable-text
+          if ! xcrun --sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+            xcrun --sdk macosx metal --version
+          fi
+      - name: Install the Windows Vulkan SDK
+        if: runner.os == 'Windows' && inputs.features == 'vulkan'
+        shell: pwsh
+        run: |
+          $sdkVersion = '1.3.296.0'
+          $installer = Join-Path $env:RUNNER_TEMP 'vulkan-sdk.exe'
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$sdkVersion/windows/vulkan_sdk.exe?Human=true" -OutFile $installer
+          $expected = (Invoke-RestMethod "https://sdk.lunarg.com/sdk/sha/$sdkVersion/windows/VulkanSDK-$sdkVersion-Installer.exe.json").sha
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $expected) { throw 'Vulkan SDK checksum mismatch' }
+          $process = Start-Process $installer -ArgumentList '--accept-licenses','--default-answer','--confirm-command','install','copy_only=1' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Vulkan SDK installer exited with $($process.ExitCode)" }
+          $sdk = "C:/VulkanSDK/$sdkVersion"
+          if (!(Test-Path "$sdk/Bin/glslc.exe")) { throw 'Vulkan shader compiler was not installed' }
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          "Vulkan_ROOT=$sdk" >> $env:GITHUB_ENV
+          "$sdk/Bin" >> $env:GITHUB_PATH
+      - name: Fetch SPIRV-Headers for the Windows Vulkan build
+        if: runner.os == 'Windows' && inputs.features == 'vulkan'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: KhronosGroup/SPIRV-Headers
+          ref: 2a9b6f951c7d6b04b6c21fe1bf3f475b68b84801 # vulkan-sdk-1.3.296.0
+          path: .ci-deps/spirv-headers
+          persist-credentials: false
+      - name: Install and verify Windows Vulkan development packages
+        if: runner.os == 'Windows' && inputs.features == 'vulkan'
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP 'spirv-headers'
+          $headersBuild = Join-Path $env:RUNNER_TEMP 'spirv-headers-build'
+          cmake -S .ci-deps/spirv-headers -B $headersBuild -G Ninja "-DCMAKE_INSTALL_PREFIX=$prefix" -DSPIRV_HEADERS_ENABLE_TESTS=OFF -DSPIRV_HEADERS_ENABLE_INSTALL=ON
+          if ($LASTEXITCODE -ne 0) { throw 'SPIRV-Headers configuration failed' }
+          cmake --install $headersBuild
+          if ($LASTEXITCODE -ne 0) { throw 'SPIRV-Headers installation failed' }
+          $prefixes = "$prefix;$env:VULKAN_SDK"
+          if ($env:CMAKE_PREFIX_PATH) { $prefixes += ";$env:CMAKE_PREFIX_PATH" }
+          "CMAKE_PREFIX_PATH=$prefixes" >> $env:GITHUB_ENV
+          $checkBuild = Join-Path $env:RUNNER_TEMP 'vulkan-toolchain-check'
+          cmake -S scripts/check-vulkan-toolchain -B $checkBuild -G Ninja "-DCMAKE_PREFIX_PATH=$prefixes" -DCMAKE_BUILD_TYPE=Release
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan development package discovery failed' }
+          cmake --build $checkBuild --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan header and linker check failed' }
+      - uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d # v0.2.36
+        if: inputs.features == 'cuda'
+        with:
+          cuda: '13.1.0'
+          method: network
+          log-file-suffix: ${{ inputs.build_id }}
+      - uses: ./.release-ci/.github/actions/setup-build
+        with:
+          targets: ${{ inputs.target }}
+          cache-key: ${{ runner.os == 'Windows' && format('{0}-ninja', inputs.build_id) || inputs.build_id }}
+          target-directory: ${{ env.CARGO_TARGET_DIR }}
+          cache-targets: ${{ inputs.features != 'cuda' }}
+      - uses: ./.release-ci/.github/actions/configure-release
+        with:
+          version: ${{ inputs.version }}
+          dev: ${{ inputs.dev }}
+      - name: Import the persistent macOS signing identity
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+        run: bash .release-ci/scripts/macos/import-signing-identity.sh
+      - name: Verify Keychain access across signed builds
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash .release-ci/scripts/macos/test-signing-identity.sh
+      - name: Compile the desktop app
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bun run tauri build --ci --config "$GITHUB_WORKSPACE/.release-config.json" --target "$RUST_TARGET" --features "$BUILD_FEATURES" --no-bundle -- --locked
+      - name: Compile the Windows desktop app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: bun run tauri build --ci --config "$env:GITHUB_WORKSPACE/.release-config.json" --target "$env:RUST_TARGET" --features "$env:BUILD_FEATURES" --no-bundle -- --locked
+      - name: Preserve compiled CUDA binary for repackaging
+        if: inputs.features == 'cuda'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cuda-native-${{ inputs.build_id }}
+          path: ${{ env.CARGO_TARGET_DIR }}/${{ inputs.target }}/release/lettuceai${{ runner.os == 'Windows' && '.exe' || '' }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Include Windows CUDA runtime libraries
+        if: runner.os == 'Windows' && inputs.features == 'cuda'
+        shell: pwsh
+        run: |
+          $config = Get-Content .release-config.json -Raw | ConvertFrom-Json -AsHashtable
+          $runtime = @{}
+          $staging = Join-Path $env:GITHUB_WORKSPACE 'apps/tauri/.release-cuda'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          $search = @("$env:CUDA_PATH/bin", "$env:CUDA_PATH/bin/x64")
+          foreach ($pattern in @('cudart64*.dll','cublas64*.dll','cublasLt64*.dll','nvJitLink*.dll','nvrtc64*.dll','nvrtc-builtins64*.dll')) {
+            $matches = @($search | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ -Filter $pattern -File })
+            if ($matches.Count -eq 0 -and $pattern -in @('cudart64*.dll','cublas64*.dll','cublasLt64*.dll')) { throw "Missing CUDA runtime: $pattern" }
+            foreach ($file in $matches) {
+              Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $staging $file.Name) -Force
+              # Tauri normalizes resource paths without preserving Windows drive prefixes.
+              $runtime[".release-cuda/$($file.Name)"] = $file.Name
+            }
+          }
+          $config.bundle.resources = $runtime
+          $config | ConvertTo-Json -Depth 30 | Set-Content .release-config.json -Encoding utf8
+      - name: Include Linux CUDA runtime libraries
+        if: runner.os == 'Linux' && inputs.features == 'cuda'
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$CARGO_TARGET_DIR/$RUST_TARGET/release/lettuceai"
+          mkdir -p .release-cuda
+          queue=("$binary")
+          while ((${#queue[@]})); do
+            current="${queue[0]}"
+            queue=("${queue[@]:1}")
+            needed="$(patchelf --print-needed "$current")"
+            while IFS= read -r library; do
+              case "$library" in libcudart.so*|libcublas.so*|libcublasLt.so*|libnvJitLink.so*|libnvrtc.so*|libnvrtc-builtins.so*) ;; *) continue ;; esac
+              test ! -e ".release-cuda/$library" || continue
+              found=''
+              for directory in "$CUDA_PATH/lib64" "$CUDA_PATH/targets/x86_64-linux/lib"; do
+                if test -f "$directory/$library"; then found="$directory/$library"; break; fi
+              done
+              test -n "$found" || { echo "Missing CUDA dependency: $library" >&2; exit 1; }
+              echo "Bundling CUDA dependency: $library"
+              cp -L "$found" ".release-cuda/$library"
+              patchelf --set-rpath "\$ORIGIN" ".release-cuda/$library"
+              queue+=(".release-cuda/$library")
+            done <<< "$needed"
+          done
+          if test -n "$(find .release-cuda -type f -print -quit)"; then
+            original_rpath="$(patchelf --print-rpath "$binary")"
+            patchelf --set-rpath "\$ORIGIN/../lib/lettuceai-cuda:$original_rpath" "$binary"
+          else
+            echo 'No shared CUDA runtime dependencies; using the statically linked runtime.'
+          fi
+          node <<'JS'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const config = JSON.parse(fs.readFileSync('.release-config.json'));
+          config.bundle.linux = {};
+          for (const type of ['deb', 'appimage']) {
+            const files = {};
+            for (const name of fs.readdirSync('.release-cuda')) {
+              files[`${type === 'appimage' ? '' : '/'}usr/lib/lettuceai-cuda/${name}`] = path.resolve('.release-cuda', name);
+            }
+            config.bundle.linux[type] = {files};
+          }
+          fs.writeFileSync('.release-config.json', JSON.stringify(config));
+          JS
+      - name: Create installers
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          # NVIDIA drivers belong to the host, including on GPU-less build runners.
+          LINUXDEPLOY_EXCLUDED_LIBRARIES: ${{ runner.os == 'Linux' && inputs.features == 'cuda' && 'libcuda.so*;libnvidia-*' || '' }}
+        run: bun run tauri bundle --verbose --ci --config "$GITHUB_WORKSPACE/.release-config.json" --target "$RUST_TARGET" --features "$BUILD_FEATURES" --bundles "$BUILD_BUNDLES"
+      - name: Create Windows installers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: bun run tauri bundle --verbose --ci --config "$env:GITHUB_WORKSPACE/.release-config.json" --target "$env:RUST_TARGET" --features "$env:BUILD_FEATURES" --bundles "$env:BUILD_BUNDLES"
+      - name: Collect installers and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_directory="$CARGO_TARGET_DIR"
+          if [[ "$RUNNER_OS" == Windows ]]; then target_directory="$(cygpath -u "$target_directory")"; fi
+          bundle="$target_directory/$RUST_TARGET/release/bundle"
+          mkdir dist-artifacts
+          prefix="LettuceAI_${APP_VERSION}_${BUILD_ID}"
+          shopt -s nullglob
+          case "$RUNNER_OS" in
+            Linux) patterns=('deb/*.deb' 'appimage/*.AppImage'); suffixes=('.deb' '.AppImage') ;;
+            Windows) patterns=('nsis/*.exe' 'msi/*.msi'); suffixes=('-setup.exe' '.msi') ;;
+            macOS) patterns=('dmg/*.dmg'); suffixes=('.dmg') ;;
+            *) exit 1 ;;
+          esac
+          for index in "${!patterns[@]}"; do
+            # These globs are fixed above; filenames from the bundle remain quoted.
+            matches=()
+            while IFS= read -r match; do matches+=("$match"); done < <(compgen -G "$bundle/${patterns[$index]}" || true)
+            ((${#matches[@]} == 1)) || { echo "Expected one ${patterns[$index]}, found ${#matches[@]}" >&2; exit 1; }
+            test -s "${matches[0]}"
+            cp "${matches[0]}" "dist-artifacts/$prefix${suffixes[$index]}"
+          done
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            staging="$(mktemp -d "$RUNNER_TEMP/lettuce-portable.XXXXXX")"
+            appimage="$GITHUB_WORKSPACE/dist-artifacts/$prefix.AppImage"
+            chmod +x "$appimage"
+            (cd "$staging" && "$appimage" --appimage-extract > /dev/null)
+            test -x "$staging/squashfs-root/AppRun"
+            mv "$staging/squashfs-root" "$staging/$prefix"
+            cp LICENSE "$staging/$prefix/LICENSE"
+            printf '%s\n' \
+              'Extract the entire archive, then run ./AppRun from this directory.' \
+              'Keep the directory contents together; bundled libraries and resources are required.' \
+              'No package manager, installation, or FUSE is required.' \
+              'Built on Ubuntu 24.04; requires compatible host glibc and graphics drivers.' \
+              > "$staging/$prefix/PORTABLE-README.txt"
+            if [[ "$BUILD_FEATURES" == cuda ]]; then
+              printf '%s\n' 'The CUDA build also requires a compatible NVIDIA driver.' >> "$staging/$prefix/PORTABLE-README.txt"
+            fi
+            tar -czf "dist-artifacts/$prefix.tar.gz" -C "$staging" "$prefix"
+          fi
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            apps=("$bundle"/macos/*.app)
+            ((${#apps[@]} == 1))
+            # Fail packaging if Tauri skipped compiling the adaptive app icon.
+            test -s "${apps[0]}/Contents/Resources/Assets.car"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "${apps[0]}/Contents/Info.plist"
+            bash .release-ci/scripts/macos/verify-signing-identity.sh "${apps[0]}"
+            tar -czf "dist-artifacts/$prefix.app.tar.gz" -C "$(dirname "${apps[0]}")" "$(basename "${apps[0]}")"
+          fi
+          printf '%s\n%s\n%s\n' "$SOURCE_SHA" "$APP_VERSION" "$BUILD_ID" > dist-artifacts/BUILD_INFO
+          (cd dist-artifacts && sha256sum -- * > SHA256SUMS.txt)
+      - name: Remove the macOS signing keychain and runner trust
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          cleanup_status=0
+          if [[ -n "${LETTUCE_SIGNING_CERTIFICATE_PATH:-}" ]]; then
+            sudo security remove-trusted-cert -d "$LETTUCE_SIGNING_CERTIFICATE_PATH" || cleanup_status=$?
+          fi
+          if [[ -n "${LETTUCE_SIGNING_KEYCHAIN:-}" && -f "$LETTUCE_SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$LETTUCE_SIGNING_KEYCHAIN" || cleanup_status=$?
+          fi
+          exit "$cleanup_status"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-package-${{ inputs.build_id }}
+          path: dist-artifacts/
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
+          retention-days: 30

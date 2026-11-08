@@ -1,0 +1,201 @@
+name: Publish AUR packages
+run-name: AUR · ${{ inputs.release_tag }} · ${{ github.actor }}
+
+on:
+  workflow_call:
+    inputs:
+      release_tag: {type: string, required: true}
+      publish: {type: boolean, default: true}
+      pkgrel: {type: string, default: '1'}
+    secrets:
+      AUR_SSH_PRIVATE_KEY: {required: false}
+      AUR_PACKAGER_NAME: {required: false}
+      AUR_PACKAGER_EMAIL: {required: false}
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published GitHub release tag to package (v3.0.0 or dev-...).
+        type: string
+        required: true
+      publish:
+        description: Push to AUR; off generates reviewable package files only.
+        type: boolean
+        default: false
+      pkgrel:
+        description: Arch package revision; increase for packaging changes to the same app version.
+        type: string
+        default: '1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  aur:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      PKGREL: ${{ inputs.pkgrel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download published release metadata
+        run: |
+          set -euo pipefail
+          mkdir .aur-release
+          gh release download "$RELEASE_TAG" --pattern build-info.json --pattern SHA256SUMS.txt --dir .aur-release
+          (cd .aur-release && grep '  build-info.json$' SHA256SUMS.txt | sha256sum --check)
+      - name: Prepare stable or dev package recipes
+        id: packages
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('node:fs');
+            const meta = JSON.parse(fs.readFileSync('.aur-release/build-info.json'));
+            const {data: release} = await github.rest.repos.getReleaseByTag({...context.repo, tag: process.env.RELEASE_TAG});
+            if (release.draft || release.tag_name !== meta.tag || !/^[0-9a-f]{40}$/.test(meta.sha) || release.target_commitish !== meta.sha) throw new Error('Expected a published release with matching build metadata');
+            if (typeof meta.dev !== 'boolean' || !Array.isArray(meta.targets)) throw new Error('Invalid release channel or targets');
+            if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(meta.version)) throw new Error('Invalid release version');
+            if (!/^[1-9]\d*$/.test(process.env.PKGREL)) throw new Error('pkgrel must be a positive integer');
+            if (meta.dev ? !/^dev-\d+-[0-9a-f]{7}$/.test(meta.tag) : release.prerelease || meta.tag !== `v${meta.version}`) throw new Error('Stable prereleases cannot replace stable AUR packages');
+            const appname = meta.dev ? 'lettuceai-dev' : 'lettuceai';
+            const identifier = meta.dev ? 'dev.lettuceai.app' : 'com.lettuceai.app';
+            if (meta.identifier !== identifier) throw new Error('Release identity does not match the package channel');
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {...context.repo, release_id: release.id, per_page: 100});
+            const checksums = new Map(fs.readFileSync('.aur-release/SHA256SUMS.txt', 'utf8').trim().split('\n').map(line => {
+              const match = /^([0-9a-f]{64})  ([A-Za-z0-9_.-]+)$/.exec(line);
+              if (!match) throw new Error('Invalid release checksum entry');
+              return [match[2], match[1]];
+            }));
+            const template = fs.readFileSync('.github/aur/PKGBUILD.in', 'utf8');
+            const packages = [];
+            for (const target of ['linux-x64', 'linux-x64-cuda']) {
+              if (!meta.targets.includes(target)) {
+                if (target === 'linux-x64') throw new Error('Release has no standard Linux build');
+                continue;
+              }
+              const cuda = target.endsWith('-cuda');
+              const pkgname = `lettuceai${cuda ? '-cuda' : ''}${meta.dev ? '-dev' : ''}-bin`;
+              const other = `lettuceai${cuda ? '' : '-cuda'}${meta.dev ? '-dev' : ''}-bin`;
+              const archive = `LettuceAI_${meta.version}_${target}`;
+              const asset = `${archive}.tar.gz`;
+              const sha256 = checksums.get(asset);
+              const published = assets.find(item => item.name === asset);
+              if (!sha256 || !published || published.state !== 'uploaded' || published.size <= 0) throw new Error(`Missing published asset or checksum: ${asset}`);
+              if (published.digest && published.digest !== `sha256:${sha256}`) throw new Error(`GitHub asset digest mismatch: ${asset}`);
+              const values = {
+                PKGNAME: pkgname, PKGVER: meta.version.replace(/-/g, '_'), PKGREL: process.env.PKGREL,
+                DESCRIPTION: `${meta.dev ? 'dev, ' : ''}${cuda ? 'NVIDIA CUDA' : 'CPU and Vulkan'}`,
+                DEPENDS: cuda ? "'nvidia-utils'" : "'vulkan-icd-loader'",
+                OPTDEPENDS: cuda ? '' : "'vulkan-driver: GPU acceleration for local models'",
+                CONFLICTS: [appname, other, ...(!meta.dev ? ['lettuceai-vulkan-bin'] : [])].map(name => `'${name}'`).join(' '),
+                APPNAME: appname, APP_ID: identifier, DISPLAY_NAME: meta.dev ? 'LettuceAI (Dev)' : 'LettuceAI',
+                ASSET: asset, ARCHIVE_DIR: archive, SHA256: sha256,
+                URL: `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${meta.tag}/${asset}`,
+              };
+              const recipe = template.replace(/@([A-Z0-9_]+)@/g, (_, key) => {
+                if (!(key in values)) throw new Error(`Unknown PKGBUILD placeholder: ${key}`);
+                return values[key];
+              });
+              fs.mkdirSync(`aur-out/${pkgname}`, {recursive: true});
+              fs.writeFileSync(`aur-out/${pkgname}/PKGBUILD`, recipe);
+              packages.push(pkgname);
+            }
+            fs.writeFileSync('aur-out/packages.json', JSON.stringify(packages));
+            core.setOutput('names', packages.join(' '));
+            await core.summary.addHeading('AUR packages').addRaw(packages.map(name => `- ${name}: ${meta.version.replace(/-/g, '_')}-${process.env.PKGREL}`).join('\n') + '\n').write();
+      - name: Generate SRCINFO with Arch makepkg
+        run: |
+          set -euo pipefail
+          docker run --rm --volume "$GITHUB_WORKSPACE/aur-out:/work" archlinux:base-devel bash -euc '
+            useradd --create-home builder
+            chown -R builder:builder /work
+            for directory in /work/lettuceai*-bin; do
+              runuser -u builder -- bash -euc '\''cd "$1"; makepkg --printsrcinfo > .SRCINFO'\'' bash "$directory"
+            done
+          '
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aur-${{ inputs.release_tag }}
+          path: aur-out/
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+      - name: Configure AUR SSH credentials
+        if: inputs.publish
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_SSH_KNOWN_HOSTS: ${{ vars.AUR_SSH_KNOWN_HOSTS }}
+          AUR_PACKAGER_NAME: ${{ secrets.AUR_PACKAGER_NAME }}
+          AUR_PACKAGER_EMAIL: ${{ secrets.AUR_PACKAGER_EMAIL }}
+        run: |
+          set -euo pipefail
+          for name in AUR_SSH_PRIVATE_KEY AUR_SSH_KNOWN_HOSTS AUR_PACKAGER_NAME AUR_PACKAGER_EMAIL; do
+            test -n "${!name}" || { echo "Missing AUR setting: $name" >&2; exit 1; }
+          done
+          mkdir -m 700 "$RUNNER_TEMP/aur-ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/aur-ssh/key"
+          chmod 600 "$RUNNER_TEMP/aur-ssh/key"
+          printf '%s\n' "$AUR_SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/aur-ssh/known_hosts"
+          printf 'GIT_SSH_COMMAND=ssh -i "%s/aur-ssh/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="%s/aur-ssh/known_hosts"\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Validate AUR updates before pushing
+        if: inputs.publish
+        env:
+          AUR_PACKAGES: ${{ steps.packages.outputs.names }}
+          AUR_PACKAGER_NAME: ${{ secrets.AUR_PACKAGER_NAME }}
+          AUR_PACKAGER_EMAIL: ${{ secrets.AUR_PACKAGER_EMAIL }}
+        run: |
+          set -euo pipefail
+          mkdir aur-repos
+          for package in $AUR_PACKAGES; do
+            directory="$GITHUB_WORKSPACE/aur-repos/$package"
+            git clone "ssh://aur@aur.archlinux.org/$package.git" "$directory"
+            git -C "$directory" config user.name "$AUR_PACKAGER_NAME"
+            git -C "$directory" config user.email "$AUR_PACKAGER_EMAIL"
+            candidate="aur-out/$package/.SRCINFO"
+            version="$(awk '$1 == "pkgver" {print $3}' "$candidate")"
+            revision="$(awk '$1 == "pkgrel" {print $3}' "$candidate")"
+            comparison=1
+            if test -f "$directory/.SRCINFO"; then
+              previous_version="$(awk '$1 == "pkgver" {print $3}' "$directory/.SRCINFO")"
+              previous_revision="$(awk '$1 == "pkgrel" {print $3}' "$directory/.SRCINFO")"
+              previous_epoch="$(awk '$1 == "epoch" {print $3}' "$directory/.SRCINFO")"
+              comparison="$(docker run --rm archlinux:base-devel vercmp "$version-$revision" "${previous_epoch:-0}:$previous_version-$previous_revision")"
+              if ((comparison < 0)); then
+                echo "Skipping $package: AUR already has a newer version."
+                continue
+              fi
+            fi
+            install -m 644 "aur-out/$package/PKGBUILD" "$directory/PKGBUILD"
+            install -m 644 "$candidate" "$directory/.SRCINFO"
+            git -C "$directory" add -- PKGBUILD .SRCINFO
+            if git -C "$directory" diff --cached --quiet; then continue; fi
+            if ((comparison == 0)); then
+              echo "Changed recipe for $package has the same version; increase pkgrel before publishing." >&2
+              exit 1
+            fi
+            git -C "$directory" -c commit.gpgsign=false commit -m "Update $package to $version-$revision"
+          done
+      - name: Push validated package updates
+        if: inputs.publish
+        env:
+          AUR_PACKAGES: ${{ steps.packages.outputs.names }}
+        run: |
+          set -euo pipefail
+          for package in $AUR_PACKAGES; do
+            directory="aur-repos/$package"
+            if git -C "$directory" rev-parse --verify HEAD >/dev/null 2>&1; then
+              git -C "$directory" push origin HEAD:master
+            fi
+          done
+      - name: Remove temporary AUR credentials
+        if: always() && inputs.publish
+        run: rm -f "$RUNNER_TEMP/aur-ssh/key" "$RUNNER_TEMP/aur-ssh/known_hosts"
