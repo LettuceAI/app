@@ -372,11 +372,6 @@ impl crate::ApiOperationTransaction<'_, '_> {
         } else {
             items.last().map(|item| item.message.id)
         };
-        if matches!(command.kind, SelectedConversationCopyKind::DirectToGroup)
-            && matches!(&target.conversation.kind, lettuce_conversations::ConversationKind::Group(details) if details.group.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Conversation)
-        {
-            items.retain(|item| item.message.role != lettuce_conversations::MessageRole::Scene);
-        }
         self.transaction.execute("INSERT INTO conversation_snapshot_refs (conversation_id,artifact_id) SELECT ?1,artifact_id FROM conversation_snapshot_refs WHERE conversation_id = ?2 ON CONFLICT DO NOTHING",rusqlite::params![command.target_conversation_id.to_string(),command.source_conversation_id.to_string()]).map_err(slice::db)?;
 
         let mut message_ids = HashMap::new();

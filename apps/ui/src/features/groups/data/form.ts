@@ -13,7 +13,7 @@ export interface GroupForm {
 export function newGroupForm(presentation: LibraryChatAppearanceV1_Serialize, dynamicMemory: boolean): GroupForm {
   return {
     draft: {
-      name: "", chat_mode: "conversation", speaker_selection: "llm", memory_policy: dynamicMemory ? "dynamic" : "manual",
+      name: "", speaker_selection: "llm", memory_policy: dynamicMemory ? "dynamic" : "manual",
       persona: { kind: "inherit" }, disable_character_lorebooks: false, time_awareness: false, disable_character_notes: false,
       group_roleplay_prompt_id: null,
       presentation, presentation_overrides: [], members: [], background_asset_id: null, starting_scene: null,
@@ -22,9 +22,7 @@ export function newGroupForm(presentation: LibraryChatAppearanceV1_Serialize, dy
   };
 }
 
-export function stepsFor(mode: GroupDraft_Serialize["chat_mode"]) {
-  return mode === "roleplay" ? ["members", "setup", "scene", "extras"] as const : ["members", "setup", "extras"] as const;
-}
+export const createSteps = ["members", "setup", "scene", "extras"] as const;
 
 export function sceneFromText(text: string, id: string): LibraryGroupStartingSceneDraft_Serialize {
   return { scene: { id, ordinal: 0, content: { format_version: 1, parts: [{ kind: "text", text }] }, direction: null, selected_variant_id: null, assets: [] }, variants: [] };
@@ -41,5 +39,5 @@ export function validStep(step: string, form: GroupForm): boolean {
 }
 
 export function draftToSave(form: GroupForm, fallbackName: string): GroupDraft_Serialize {
-  return { ...form.draft, name: form.draft.name.trim() || fallbackName, members: form.draft.members.map((member, ordinal) => ({ ...member, ordinal })), starting_scene: form.draft.chat_mode === "roleplay" && form.sceneSource !== "none" ? form.draft.starting_scene : null };
+  return { ...form.draft, name: form.draft.name.trim() || fallbackName, members: form.draft.members.map((member, ordinal) => ({ ...member, ordinal })), starting_scene: form.sceneSource !== "none" ? form.draft.starting_scene : null };
 }

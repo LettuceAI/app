@@ -900,13 +900,6 @@ pub trait GroupRepository: Send + Sync {
         persona: Selection<PersonaId>,
         now: TimestampMillis,
     ) -> Result<GroupProfile, RepositoryError>;
-    fn set_chat_mode(
-        &self,
-        id: GroupId,
-        expected_revision: Revision,
-        mode: crate::ChatMode,
-        now: TimestampMillis,
-    ) -> Result<GroupProfile, RepositoryError>;
     fn set_speaker_selection(
         &self,
         id: GroupId,

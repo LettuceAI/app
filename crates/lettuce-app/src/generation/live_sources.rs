@@ -6,9 +6,9 @@ use lettuce_characters::{
     Persona, PersonaRepository, RepositoryError, Selection,
 };
 use lettuce_conversations::{
-    Conversation, ConversationKind, ConversationParticipant, GroupChatModeSnapshot,
-    GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, MemorySettingsSnapshot, ParticipantRole,
-    ParticipantSource, SettingProvenance, SnapshotSelection,
+    Conversation, ConversationKind, ConversationParticipant, GroupSpeakerSelectionSnapshot,
+    MemoryModeSnapshot, MemorySettingsSnapshot, ParticipantRole, ParticipantSource,
+    SettingProvenance, SnapshotSelection,
 };
 use lettuce_types::{CharacterId, ModelProfileId};
 
@@ -19,7 +19,6 @@ use lettuce_types::{CharacterId, ModelProfileId};
 pub(crate) struct LiveGroup {
     pub(crate) profile: Option<GroupProfile>,
     pub(crate) starting_scene: Option<GroupStartingScene>,
-    pub(crate) chat_mode: GroupChatModeSnapshot,
     pub(crate) disable_character_lorebooks: bool,
     pub(crate) disable_character_notes: bool,
     pub(crate) speaker_selection: GroupSpeakerSelectionSnapshot,
@@ -38,14 +37,6 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
         None => (None, None),
     };
     let own = conversation.current_settings.as_ref();
-    let chat_mode = own
-        .and_then(|settings| settings.chat_mode)
-        .or_else(|| {
-            profile
-                .as_ref()
-                .map(|profile| crate::launch::policy::group_chat_mode(profile.chat_mode))
-        })
-        .unwrap_or(launch.chat_mode);
     let disable_character_lorebooks = own
         .and_then(|settings| settings.disable_character_lorebooks)
         .or_else(|| {
@@ -76,7 +67,6 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
     Ok(Some(LiveGroup {
         profile,
         starting_scene,
-        chat_mode,
         disable_character_lorebooks,
         disable_character_notes,
         speaker_selection,

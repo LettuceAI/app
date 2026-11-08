@@ -4,7 +4,7 @@ use lettuce_characters::{
 use lettuce_context::{LorebookRepository, PromptLookupResult, PromptPurpose, PromptRepository};
 use lettuce_conversations::{
     Conversation, ConversationBackground, ConversationKind, ConversationReader,
-    ConversationTimeOverride, CurrentConversationSettingsPatch, GroupChatModeSnapshot,
+    ConversationTimeOverride, CurrentConversationSettingsPatch,
     GroupSpeakerSelectionSnapshot, LorebookLaunchSnapshot, MemoryModeSnapshot,
     MemorySettingsSnapshot, OperationToken, PatchValue, PersonaLaunchSnapshot,
     PreparedConversationSettingsUpdate, PromptLaunchSnapshot, PromptPurposeSnapshot,
@@ -63,7 +63,6 @@ pub struct ConversationSettingsChange {
     pub author_note: Option<String>,
     pub speaker_selection: Option<Change<GroupSpeakerSelectionSnapshot>>,
     pub memory: Option<Change<MemoryModeSnapshot>>,
-    pub chat_mode: Option<Change<GroupChatModeSnapshot>>,
     pub disable_character_lorebooks: Option<Change<bool>>,
     pub disable_character_notes: Option<Change<bool>>,
     /// Replaces the conversation's own model settings; an empty layer
@@ -215,7 +214,6 @@ impl Builder<'_> {
             }
         };
         group_only("speaker_selection", change.speaker_selection.is_some())?;
-        group_only("chat_mode", change.chat_mode.is_some())?;
         group_only(
             "disable_character_lorebooks",
             change.disable_character_lorebooks.is_some(),
@@ -322,9 +320,6 @@ impl Builder<'_> {
                 Change::Set(mode) => PatchValue::Set(self.memory(*mode)?),
                 Change::Reset => PatchValue::UseLaunchDefault,
             };
-        }
-        if let Some(change) = &change.chat_mode {
-            patch.chat_mode = value_patch(change);
         }
         if let Some(change) = &change.disable_character_lorebooks {
             patch.disable_character_lorebooks = value_patch(change);

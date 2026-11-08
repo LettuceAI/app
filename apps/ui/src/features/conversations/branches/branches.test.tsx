@@ -16,7 +16,7 @@ afterEach(() => cleanup());
 function chat(id: string, title: string, origin: string | null, updatedAt: number): ConversationSummary {
   return {
     id, title, kind: "direct", revision: 1, updated_at: updatedAt, archived: false, avatars: [], background: null, last_message_preview: null,
-    source: { type: "direct", character_id: "ch1" }, message_count: 5, chat_mode: null, missing_models: [], memory_blocked: null,
+    source: { type: "direct", character_id: "ch1" }, message_count: 5, missing_models: [], memory_blocked: null,
     origin_conversation_id: origin, origin_message_id: origin ? "m1" : null,
   };
 }

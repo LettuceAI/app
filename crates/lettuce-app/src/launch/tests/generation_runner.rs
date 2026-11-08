@@ -9739,7 +9739,6 @@ async fn a_group_reasoning_condition_reads_only_the_models_own_setting() {
         false,
         "Hello cast.",
         |group| {
-            group.chat_mode = ChatMode::Conversation;
             for member in &group.members {
                 let character = lettuce_characters::CharacterRepository::get(database, member.character_id).expect("character").expect("exists").character;
                 let mut defaults = character.defaults;

@@ -975,14 +975,10 @@ where
         };
         check_display("title", &title)?;
 
-        let chat_mode = policy::group_chat_mode(group.group.chat_mode);
         let speaker_selection = policy::group_speaker_selection(group.group.speaker_selection);
         let memory_mode = policy::memory_mode_of(group.group.memory_policy);
         let persona = self.resolve_group_persona(request.persona, &group.group.persona)?;
-        let scene = match chat_mode {
-            GroupChatModeSnapshot::Conversation => Selected::Disabled,
-            GroupChatModeSnapshot::Roleplay => self.resolve_group_scene(group_id, &group)?,
-        };
+        let scene = self.resolve_group_scene(group_id, &group)?;
         let variants = group
             .starting_scene
             .as_ref()
@@ -1329,7 +1325,6 @@ where
             .collect();
         let intent = GroupLaunchIntent {
             title: &title,
-            chat_mode,
             memory_mode,
             members: &member_intents,
             scene: scene.map(|value| value.id),
@@ -1352,7 +1347,7 @@ where
                 source_revision: group.group.revision,
                 name: group.group.name.clone(),
                 members: member_snapshots,
-                chat_mode,
+                chat_mode: GroupChatModeSnapshot::Roleplay,
                 speaker_selection,
                 speaker_selection_model,
                 memory: SnapshotSelection::Inherited(MemorySettingsSnapshot {
@@ -1676,7 +1671,6 @@ fn check_display(field: &'static str, value: &str) -> Result<(), ConversationLau
 }
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct GroupLaunchOverrides {
-    pub(crate) chat_mode: Option<lettuce_characters::ChatMode>,
     pub(crate) memory_policy: Option<lettuce_characters::MemoryPolicy>,
     pub(crate) disable_character_lorebooks: Option<bool>,
     /// Each member's own model; a member missing here keeps the group's.
@@ -1692,9 +1686,6 @@ impl GroupLaunchOverrides {
             details.starting_scene = scene.clone();
         }
         let group = &mut details.group;
-        if let Some(chat_mode) = self.chat_mode {
-            group.chat_mode = chat_mode;
-        }
         if let Some(memory_policy) = self.memory_policy {
             group.memory_policy = memory_policy;
         }

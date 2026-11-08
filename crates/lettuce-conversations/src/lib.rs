@@ -492,7 +492,6 @@ mod tests {
     }
 
     fn group_plan(
-        chat_mode: GroupChatModeSnapshot,
         scene: SnapshotSelection<SceneLaunchSnapshot>,
         initial_timeline: InitialTimelineDraft,
     ) -> CreateConversationPlan {
@@ -508,7 +507,6 @@ mod tests {
             first_id,
             second_id,
         );
-        details.group.chat_mode = chat_mode;
         details.group.scene = scene;
         CreateConversationPlan {
             current_settings: None,
@@ -679,7 +677,6 @@ mod tests {
         assert!(direct.validate().is_ok());
 
         let mut group = group_plan(
-            GroupChatModeSnapshot::Conversation,
             SnapshotSelection::Disabled,
             InitialTimelineDraft {
                 format_version: 1,
@@ -705,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn create_plan_enforces_group_chat_mode_initial_timeline_policy() {
+    fn create_plan_enforces_group_initial_timeline_policy() {
         let scene_ref = snapshot_ref(SnapshotSource::Scene(SceneId::new()));
         let scene_entry = initial_entry(
             InitialMessageOrigin::SelectedScene {
@@ -715,18 +712,7 @@ mod tests {
             None,
             Some("group scene"),
         );
-        let conversation = group_plan(
-            GroupChatModeSnapshot::Conversation,
-            SnapshotSelection::Disabled,
-            InitialTimelineDraft {
-                format_version: 1,
-                entries: vec![scene_entry.clone()],
-            },
-        );
-        assert!(conversation.validate().is_err());
-
         let roleplay = group_plan(
-            GroupChatModeSnapshot::Roleplay,
             SnapshotSelection::Explicit(SceneLaunchSnapshot {
                 snapshot_ref: scene_ref.clone(),
                 source_id: match scene_ref.source {
@@ -744,7 +730,6 @@ mod tests {
         assert!(roleplay.validate().is_ok());
 
         let wrong_scene = group_plan(
-            GroupChatModeSnapshot::Roleplay,
             match &roleplay.kind {
                 ConversationKind::Group(details) => details.group.scene.clone(),
                 ConversationKind::Direct(_) => unreachable!(),
@@ -1081,7 +1066,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             follow_group_members: false,
@@ -1199,7 +1183,6 @@ mod tests {
         assert!(refs.iter().any(|reference| **reference == lorebook_ref));
 
         let mut group = group_plan(
-            GroupChatModeSnapshot::Conversation,
             SnapshotSelection::Disabled,
             InitialTimelineDraft {
                 format_version: 1,
@@ -2160,7 +2143,7 @@ mod tests {
                 source_revision: Revision::INITIAL,
                 name: "Group".into(),
                 members,
-                chat_mode: GroupChatModeSnapshot::Conversation,
+                chat_mode: GroupChatModeSnapshot::Roleplay,
                 speaker_selection: GroupSpeakerSelectionSnapshot::RoundRobin,
                 speaker_selection_model: None,
                 memory: SnapshotSelection::Disabled,
@@ -2555,7 +2538,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             follow_group_members: false,
@@ -2615,7 +2597,6 @@ mod tests {
             scene_provenance: SettingProvenance::Disabled,
             speaker_selection: None,
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
-            chat_mode: None,
             disable_character_lorebooks: None,
             disable_character_notes: None,
             members_overridden: false,
@@ -2665,7 +2646,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             follow_group_members: false,
@@ -2697,7 +2677,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             follow_group_members: false,
@@ -2741,7 +2720,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             follow_group_members: false,
@@ -2881,7 +2859,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             follow_group_members: false,
@@ -2920,7 +2897,6 @@ mod tests {
         assert!(wrong_prompt.validate_against_kind(&direct.kind).is_err());
 
         let group = group_plan(
-            GroupChatModeSnapshot::Conversation,
             SnapshotSelection::Disabled,
             InitialTimelineDraft {
                 format_version: 1,
@@ -2928,31 +2904,10 @@ mod tests {
             },
         );
         assert!(current.validate_against_kind(&group.kind).is_err());
-        let mut group_roleplay = group.clone();
-        if let ConversationKind::Group(details) = &mut group_roleplay.kind {
-            details.group.chat_mode = GroupChatModeSnapshot::Roleplay;
-        }
-        let mut roleplay_in_group = current.clone();
-        roleplay_in_group
-            .prompt
-            .as_mut()
-            .expect("prompt")
-            .purpose = PromptPurposeSnapshot::GroupRoleplay;
-        assert!(
-            roleplay_in_group
-                .validate_against_kind(&group_roleplay.kind)
-                .is_err(),
-            "a group conversation has no prompt slot"
-        );
         let mut group_settings = current.clone();
         group_settings.prompt = None;
         group_settings.prompt_provenance = SettingProvenance::LaunchInherited;
         assert!(group_settings.validate_against_kind(&group.kind).is_ok());
-        assert!(
-            group_settings
-                .validate_against_kind(&group_roleplay.kind)
-                .is_ok()
-        );
 
         let mut invalid = patch.clone();
         invalid.lorebooks = PatchValue::Set(Vec::new());
@@ -3009,7 +2964,6 @@ mod tests {
             scene_provenance: SettingProvenance::Disabled,
             speaker_selection: None,
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
-            chat_mode: None,
             disable_character_lorebooks: None,
             disable_character_notes: None,
             members_overridden: false,

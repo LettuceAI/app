@@ -2621,7 +2621,6 @@ fn legacy_group_plan(
             id: destination_group,
             status: candidate.status,
             name: candidate.name.clone(),
-            chat_mode: candidate.chat_mode,
             persona,
             speaker_selection: candidate.speaker_selection,
             memory_policy: candidate.memory_policy,

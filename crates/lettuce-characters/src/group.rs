@@ -9,7 +9,7 @@ use crate::constants::{
 };
 use crate::presentation::ChatAppearanceV1;
 use crate::{
-    ChatMode, LifecycleStatus, MemoryPolicy, Selection, SpeakerSelection, ValidationError,
+    LifecycleStatus, MemoryPolicy, Selection, SpeakerSelection, ValidationError,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,7 +33,6 @@ pub struct GroupProfile {
     pub id: GroupId,
     pub status: LifecycleStatus,
     pub name: String,
-    pub chat_mode: ChatMode,
     pub persona: Selection<lettuce_types::PersonaId>,
     pub speaker_selection: SpeakerSelection,
     pub memory_policy: MemoryPolicy,
@@ -68,7 +67,6 @@ impl GroupProfile {
             id,
             status: LifecycleStatus::Active,
             name,
-            chat_mode: ChatMode::Conversation,
             persona: Selection::Inherit,
             speaker_selection: SpeakerSelection::Llm,
             memory_policy: MemoryPolicy::Manual,
@@ -154,7 +152,7 @@ impl GroupProfile {
 mod tests {
     use super::{GroupMember, GroupProfile};
     use crate::{
-        ChatAppearanceV1, ChatMode, LifecycleStatus, MemoryPolicy, Selection, SpeakerSelection,
+        ChatAppearanceV1, LifecycleStatus, MemoryPolicy, Selection, SpeakerSelection,
         ValidationError,
     };
     use lettuce_types::{CharacterId, GroupId, Revision, TimestampMillis};
@@ -173,7 +171,6 @@ mod tests {
             id: GroupId::new(),
             status: LifecycleStatus::Active,
             name: "Cast".into(),
-            chat_mode: ChatMode::Roleplay,
             persona: Selection::Inherit,
             speaker_selection: SpeakerSelection::RoundRobin,
             memory_policy: MemoryPolicy::Manual,
@@ -238,7 +235,6 @@ mod tests {
             TimestampMillis::new(1),
         )
         .expect("group");
-        assert_eq!(group.chat_mode, ChatMode::Conversation);
         assert_eq!(group.speaker_selection, SpeakerSelection::Llm);
     }
 

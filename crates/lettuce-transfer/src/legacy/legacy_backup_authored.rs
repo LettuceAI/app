@@ -4,7 +4,7 @@ use std::{
 };
 
 use lettuce_characters::{
-    CardStyle, CharacterPresentationV1, CharacterProfile, CharacterProvenance, ChatMode,
+    CardStyle, CharacterPresentationV1, CharacterProfile, CharacterProvenance,
     ConversationStarter, Crop, GradientSource, GroupMember, GroupProfile, InteractionMode,
     LifecycleStatus, MemoryPolicy, SceneDocumentV1, ScenePart, Selection, SpeakerSelection,
     StarterMessage, StarterRole,
@@ -134,7 +134,6 @@ pub struct LegacyBackupGroupCandidate {
     pub id: GroupId,
     pub status: LifecycleStatus,
     pub name: String,
-    pub chat_mode: ChatMode,
     pub persona: Selection<PersonaId>,
     pub speaker_selection: SpeakerSelection,
     pub memory_policy: MemoryPolicy,
@@ -1491,9 +1490,8 @@ fn map_groups(
             ));
             persona = Selection::Disabled;
         }
-        let chat_mode = match row.chat_type.as_str() {
-            "conversation" => ChatMode::Conversation,
-            "roleplay" => ChatMode::Roleplay,
+        match row.chat_type.as_str() {
+            "conversation" | "roleplay" => {}
             _ => {
                 return Err(malformed(
                     LegacyBackupDocumentKind::GroupCharacters,
@@ -1574,7 +1572,6 @@ fn map_groups(
             id,
             status,
             name: row.name.clone(),
-            chat_mode,
             persona: persona.clone(),
             speaker_selection,
             memory_policy,
@@ -1603,7 +1600,6 @@ fn map_groups(
             id,
             status,
             name: row.name,
-            chat_mode,
             persona,
             speaker_selection,
             memory_policy,

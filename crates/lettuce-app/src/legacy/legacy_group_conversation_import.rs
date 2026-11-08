@@ -141,10 +141,6 @@ where
             operation_key: launch_key(context.scope, &session.source_id)?,
         };
         let overrides = crate::launch::GroupLaunchOverrides {
-            chat_mode: Some(match session.chat_mode.as_str() {
-                "roleplay" => lettuce_characters::ChatMode::Roleplay,
-                _ => lettuce_characters::ChatMode::Conversation,
-            }),
             memory_policy: Some(match session.memory_policy.as_str() {
                 "dynamic" => lettuce_characters::MemoryPolicy::Dynamic,
                 _ => lettuce_characters::MemoryPolicy::Manual,
@@ -215,8 +211,6 @@ where
                 speaker_selection: (speaker_selection != details.group.speaker_selection)
                     .then_some(speaker_selection),
                 persona_disabled: session.persona_disabled,
-                chat_mode: session_override(&session.config_overrides_json, "chatType")
-                    .then_some(details.group.chat_mode),
                 disable_character_lorebooks: session_override(
                     &session.config_overrides_json,
                     "disableCharacterLorebooks",

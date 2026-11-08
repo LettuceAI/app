@@ -1,5 +1,5 @@
 use lettuce_characters::{
-    Character, CharacterDefaults, ChatMode, ConversationStarter, GroupMember, InteractionMode,
+    Character, CharacterDefaults, ConversationStarter, GroupMember, InteractionMode,
     MemoryPolicy, Scene, ScenePart, SceneVariant, Selection, SpeakerSelection,
 };
 use lettuce_companions::CompanionSoulConfig;
@@ -8,7 +8,7 @@ use lettuce_context::{
     PromptRepositoryError,
 };
 use lettuce_conversations::{
-    GroupChatModeSnapshot, GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, SnapshotSelection,
+    GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, SnapshotSelection,
     SnapshotSource,
 };
 use lettuce_types::{
@@ -229,13 +229,6 @@ pub(crate) const fn memory_mode_of(policy: MemoryPolicy) -> MemoryModeSnapshot {
     match policy {
         MemoryPolicy::Manual => MemoryModeSnapshot::Manual,
         MemoryPolicy::Dynamic => MemoryModeSnapshot::Dynamic,
-    }
-}
-
-pub(crate) const fn group_chat_mode(mode: ChatMode) -> GroupChatModeSnapshot {
-    match mode {
-        ChatMode::Conversation => GroupChatModeSnapshot::Conversation,
-        ChatMode::Roleplay => GroupChatModeSnapshot::Roleplay,
     }
 }
 

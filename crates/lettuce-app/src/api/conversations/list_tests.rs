@@ -191,7 +191,6 @@ async fn lists_filter_by_character_and_lifecycle_and_cut_previews_at_400_charact
     let preview = mine[0].last_message_preview.clone().expect("preview");
     assert_eq!(preview.chars().count(), 400);
     assert!(preview.chars().all(|character| character == 'é'));
-    assert_eq!(mine[0].chat_mode, None);
     assert_eq!(mine[0].missing_models, Vec::new());
     assert!(!ids(&mine).contains(&theirs));
 
@@ -278,7 +277,6 @@ async fn a_group_launch_retried_with_its_key_returns_the_same_chat() {
             group_id: group_id.to_string()
         }
     );
-    assert!(chats[0].chat_mode.is_some());
     let latest =
         conversations_latest_by_group(&harness.context, dto::LatestConversationsRequest::default())
             .await

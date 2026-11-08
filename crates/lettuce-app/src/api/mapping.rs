@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use lettuce_characters::{Character, CharacterMediaSlot, CharacterRepository};
 use lettuce_contracts as dto;
 use lettuce_conversations::{
-    ConversationKind, ConversationKindTag, ConversationParticipant, GroupChatModeSnapshot,
+    ConversationKind, ConversationKindTag, ConversationParticipant,
     MediaAssetRole, MessagePart, MessageRenderSource, MessageRole, ParticipantRole,
     ParticipantSource, TimelineItem,
 };
@@ -206,13 +206,6 @@ pub(crate) fn conversation_source(kind: &ConversationKind) -> dto::ConversationS
         ConversationKind::Group(details) => dto::ConversationSource::Group {
             group_id: details.group.source_id.to_string(),
         },
-    }
-}
-
-pub(crate) const fn group_chat_mode(mode: GroupChatModeSnapshot) -> dto::GroupChatMode {
-    match mode {
-        GroupChatModeSnapshot::Conversation => dto::GroupChatMode::Conversation,
-        GroupChatModeSnapshot::Roleplay => dto::GroupChatMode::Roleplay,
     }
 }
 

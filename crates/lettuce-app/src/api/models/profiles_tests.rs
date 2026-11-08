@@ -765,7 +765,6 @@ async fn model_usage_reports_exactly_what_delete_changes() {
             group_id: None,
             draft: dto::GroupDraft {
                 name: "Usage group".into(),
-                chat_mode: dto::GroupChatMode::Conversation,
                 persona: dto::LibraryPersonaSelection::Inherit,
                 speaker_selection: dto::SpeakerSelectionMethod::Heuristic,
                 memory_policy: dto::LibraryMemoryPolicy::Manual,

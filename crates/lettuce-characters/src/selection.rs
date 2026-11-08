@@ -54,13 +54,6 @@ pub enum MemoryPolicy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ChatMode {
-    Conversation,
-    Roleplay,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum SpeakerSelection {
     Llm,
     Heuristic,

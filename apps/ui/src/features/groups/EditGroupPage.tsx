@@ -6,12 +6,11 @@ import { Eye, MessageSquarePlus, MoreHorizontal, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Alert, Button, confirm, dismissTopLayer, Field, icon, IconButton, Input, Menu, MenuContent,
-  MenuItem, MenuSeparator, MenuTrigger, motion as m, Page, Segmented, Skeleton, Tab, TabList, Tabs, toast, useCompactLayout,
+  MenuItem, MenuSeparator, MenuTrigger, motion as m, Page, Skeleton, Tab, TabList, Tabs, toast, useCompactLayout,
 } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure } from "@/api/client";
 import { queryKeys } from "@/api/query-keys";
-import type { GroupChatMode } from "@/api/generated/bindings";
 import { staysOnPage } from "@/entities/image-input";
 import { usePreferences } from "@/entities/preferences";
 import { EditSaveBar } from "@/shared/ui/EditSaveBar";
@@ -60,11 +59,9 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
   const dirty = !same(form, stored.form);
   const live = useRef({ dirty, busy });
   useLayoutEffect(() => { live.current = { dirty, busy }; }, [dirty, busy]);
-  const roleplay = form.draft.chat_mode === "roleplay";
   const look = preferences.ready ? appearanceLook(form.draft, preferences.value, true) : null;
   const previewOpen = phone && section === "appearance" && search.preview === true && look !== null;
   const pushed = useLocation({ select: (location) => location.state.appearancePreviewPushed });
-  if (section === "scene" && !roleplay) setSection("group");
   const memberViews = new Map(loaded.members.map((member) => [member.id, member]));
   const allCast: EditorMember[] = [...(cast.data ?? []).map((member) => ({ ...member, archived: memberViews.get(member.id)?.archived ?? false }))];
   for (const view of loaded.members) {
@@ -76,7 +73,7 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
   const fallbackName = names.length ? new Intl.ListFormat(i18n.language, { style: "long", type: "conjunction" }).format(names) : stored.form.draft.name;
   const membersChanged = !same(form.draft.members, stored.form.draft.members);
   const archived = allCast.find((member) => member.archived && form.draft.members.some((item) => item.character_id === member.id));
-  const blocker = conflict ? t("edit.reloadFirst") : membersChanged && form.draft.members.length < 2 ? t("edit.needTwo") : membersChanged && form.draft.members.every((member) => member.muted) ? t("edit.lastAnswering") : membersChanged && archived ? t("edit.restoreMember", { name: archived.name }) : roleplay && !validStep("scene", form) ? t("create.completeScene") : null;
+  const blocker = conflict ? t("edit.reloadFirst") : membersChanged && form.draft.members.length < 2 ? t("edit.needTwo") : membersChanged && form.draft.members.every((member) => member.muted) ? t("edit.lastAnswering") : membersChanged && archived ? t("edit.restoreMember", { name: archived.name }) : !validStep("scene", form) ? t("create.completeScene") : null;
   const fail = (error: unknown) => toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`));
   const discardPrompt = () => confirm({ title: t("edit.leaveTitle"), message: t("edit.leaveBody"), confirmLabel: t("create.discard"), cancelLabel: t("create.keep"), destructive: true });
   useBlocker({
@@ -155,9 +152,8 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
     finally { working.current = false; setBusy(null); }
   };
   const props = { api, form, update: setForm };
-  const modeHint = form.draft.chat_mode === stored.form.draft.chat_mode ? t(`setup.${form.draft.chat_mode}Body`) : t(form.draft.chat_mode === "roleplay" ? "edit.modeRoleplay" : stored.form.draft.starting_scene ? "edit.modeRemovesScene" : "edit.modeConversation");
   const tabs = <Tabs value={section} onChange={go}><TabList aria-label={t("edit.sections")} className={phone ? "flex-wrap" : ""}>
-    {editSections.filter((entry) => entry !== "scene" || roleplay).map((entry) => <Tab key={entry} value={entry} {...(entry === "members" ? { count: form.draft.members.length } : {})}>{t(`edit.tabs.${entry}`)}</Tab>)}
+    {editSections.map((entry) => <Tab key={entry} value={entry} {...(entry === "members" ? { count: form.draft.members.length } : {})}>{t(`edit.tabs.${entry}`)}</Tab>)}
   </TabList></Tabs>;
   const actions = <div className="flex items-center gap-1.5">
     {phone && section === "appearance" && <IconButton label={t("appearance.preview")} onClick={openPreview}><Eye size={icon.lg} /></IconButton>}
@@ -177,7 +173,6 @@ function EditFlow({ loaded, dynamicMemory }: { loaded: LoadedGroup; dynamicMemor
       {section === "group" ? <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
         <div className="min-w-0 space-y-6">
           <Field label={t("setup.name")} hint={t("setup.nameHint")}><Input value={form.draft.name} placeholder={fallbackName} onChange={(event) => setForm((current) => ({ ...current, draft: { ...current.draft, name: event.target.value } }))} /></Field>
-          <Field label={t("setup.mode")} hint={modeHint}><Segmented<GroupChatMode> block aria-label={t("setup.mode")} value={form.draft.chat_mode} onChange={(chat_mode) => setForm((current) => ({ ...current, draft: { ...current.draft, chat_mode } }))} options={[{ value: "conversation", label: t("setup.conversation") }, { value: "roleplay", label: t("setup.roleplay") }]} /></Field>
         </div>
         <div className="min-w-0 space-y-6"><BackgroundGroup {...props} /></div>
       </div> : section === "members" ? <EditMembersTab {...props} cast={allCast} phone={phone} /> : section === "scene" ? <SceneStep {...props} autoFocus={false} /> : section === "appearance" ? <AppearanceEditor draft={form.draft} onChange={(draft) => setForm((current) => ({ ...current, draft }))} phone={phone} preview={!phone && look ? <AppearancePreviewPanel look={look} image={previewImage} onImage={setPreviewImage} /> : undefined} /> : <div className="space-y-6">

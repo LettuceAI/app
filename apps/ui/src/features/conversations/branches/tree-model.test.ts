@@ -5,7 +5,7 @@ import { buildTree, type TreeItem } from "./tree-model";
 function chat(id: string, origin: string | null, updatedAt: number): ConversationSummary {
   return {
     id, title: id, kind: "direct", revision: 1, updated_at: updatedAt, archived: false, avatars: [], background: null, last_message_preview: null,
-    source: { type: "direct", character_id: "ch" }, message_count: 1, chat_mode: null, missing_models: [], memory_blocked: null,
+    source: { type: "direct", character_id: "ch" }, message_count: 1, missing_models: [], memory_blocked: null,
     origin_conversation_id: origin, origin_message_id: origin ? "m" : null,
   };
 }

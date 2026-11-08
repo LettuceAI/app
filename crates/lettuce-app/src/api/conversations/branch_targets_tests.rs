@@ -33,24 +33,20 @@ async fn branch_targets_keep_memory_at_the_cutoff_and_isolate_later_changes() {
         expected_revision: 2, client_operation_id: "later-memory".into(),
     }).await.expect("later memory");
     let source = open(&harness, &chat).await;
-    for (index, mode) in [None, Some(dto::GroupChatMode::Conversation), Some(dto::GroupChatMode::Roleplay)].into_iter().enumerate() {
-        let copied = if let Some(mode) = mode {
-            conversation_branch_direct_to_group(&harness.context, dto::ConversationGroupCopyRequest {
-                conversation_id: chat.clone(), message_id: cutoff.clone(),
-                character_ids: vec![harness.character_id.to_string(), other.to_string()],
-                chat_mode: Some(mode), title: Some("My branch".into()), expected_revision: Some(source.revision),
-                client_operation_id: format!("group-{mode:?}"),
-            }).await.expect("group copy")
-        } else {
-            conversation_branch_direct_to_character(&harness.context, dto::ConversationCharacterCopyRequest {
-                conversation_id: chat.clone(), message_id: cutoff.clone(), character_id: other.to_string(),
-                expected_revision: Some(source.revision), client_operation_id: "character-copy".into(),
-            }).await.expect("character copy")
-        };
+    let copied_character = conversation_branch_direct_to_character(&harness.context, dto::ConversationCharacterCopyRequest {
+        conversation_id: chat.clone(), message_id: cutoff.clone(), character_id: other.to_string(),
+        expected_revision: Some(source.revision), client_operation_id: "character-copy".into(),
+    }).await.expect("character copy");
+    let copied_group = conversation_branch_direct_to_group(&harness.context, dto::ConversationGroupCopyRequest {
+        conversation_id: chat.clone(), message_id: cutoff.clone(),
+        character_ids: vec![harness.character_id.to_string(), other.to_string()],
+        title: Some("My branch".into()), expected_revision: Some(source.revision),
+        client_operation_id: "group-copy".into(),
+    }).await.expect("group copy");
+    for (index, copied) in [copied_character, copied_group].into_iter().enumerate() {
         let target = open(&harness, &copied.conversation_id).await;
         assert_eq!(target.origin_conversation_id.as_deref(), Some(chat.as_str()));
         assert_eq!(target.origin_message_id.as_deref(), Some(cutoff.as_str()));
-        assert_eq!(target.chat_mode, mode);
         assert_eq!(target.messages.items.len(), 2, "later messages must not be copied");
         let memory = memories(&harness, &target.id).await;
         assert_eq!(memory.items.len(), 1);
@@ -73,7 +69,7 @@ async fn branch_targets_reject_stale_sources_and_replay_completed_operations() {
     let current = open(&harness, &chat).await;
     let mut request = dto::ConversationGroupCopyRequest {
         conversation_id: chat.clone(), message_id: cutoff, character_ids: vec![harness.character_id.to_string(), other.to_string()],
-        chat_mode: Some(dto::GroupChatMode::Conversation), title: None,
+        title: None,
         expected_revision: Some(current.revision - 1), client_operation_id: "stale-group-copy".into(),
     };
     assert_eq!(conversation_branch_direct_to_group(&harness.context, request.clone()).await.expect_err("stale").code, ApiErrorCode::Conflict);
@@ -96,7 +92,7 @@ async fn branch_targets_preserve_historical_speakers_through_group_and_character
     let group = conversation_branch_direct_to_group(&harness.context, dto::ConversationGroupCopyRequest {
         conversation_id: chat.clone(), message_id: cutoff,
         character_ids: vec![harness.character_id.to_string(), other.to_string()],
-        chat_mode: Some(dto::GroupChatMode::Conversation), title: None,
+        title: None,
         expected_revision: Some(current.revision), client_operation_id: "speaker-group".into(),
     }).await.expect("group");
     let group_view = open(&harness, &group.conversation_id).await;

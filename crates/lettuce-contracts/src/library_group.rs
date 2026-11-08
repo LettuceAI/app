@@ -39,7 +39,6 @@ pub struct LibraryGroupStartingSceneDraft {
 #[serde(deny_unknown_fields)]
 pub struct GroupDraft {
     pub name: String,
-    pub chat_mode: crate::GroupChatMode,
     pub persona: LibraryPersonaSelection,
     pub speaker_selection: crate::SpeakerSelectionMethod,
     pub memory_policy: crate::LibraryMemoryPolicy,

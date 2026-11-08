@@ -1348,8 +1348,6 @@ export type ChatExportRequest = {
 	target: FileTarget | null,
 };
 
-export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "reset" };
-
 export type ChatTemplateExportRequest = {
 	character_id: string,
 	starter_id: string,
@@ -1775,7 +1773,6 @@ export type ConversationGroupCopyRequest_Deserialize = {
 	conversation_id: string,
 	message_id: string,
 	character_ids: string[],
-	chat_mode?: GroupChatMode | null,
 	title?: string | null,
 	expected_revision?: number | null,
 	client_operation_id: string,
@@ -1785,7 +1782,6 @@ export type ConversationGroupCopyRequest_Serialize = {
 	conversation_id: string,
 	message_id: string,
 	character_ids: string[],
-	chat_mode?: GroupChatMode | null,
 	title?: string | null,
 	expected_revision?: number,
 	client_operation_id: string,
@@ -2013,7 +2009,6 @@ export type ConversationSettingsPatch_Deserialize = {
 	author_note: string | null,
 	speaker_selection: SpeakerSelectionChange | null,
 	memory: MemoryModeChange | null,
-	chat_mode: ChatModeChange | null,
 	disable_character_lorebooks: FlagChange | null,
 	disable_character_notes: FlagChange | null,
 	/**  Replaces the chat's own layer; an empty layer clears it. */
@@ -2038,7 +2033,6 @@ export type ConversationSettingsPatch_Serialize = {
 	author_note: string | null,
 	speaker_selection: SpeakerSelectionChange | null,
 	memory: MemoryModeChange | null,
-	chat_mode: ChatModeChange | null,
 	disable_character_lorebooks: FlagChange | null,
 	disable_character_notes: FlagChange | null,
 	/**  Replaces the chat's own layer; an empty layer clears it. */
@@ -2103,7 +2097,6 @@ export type ConversationSettingsView_Deserialize = {
 	background: SettingBackground_Deserialize,
 	scene: SettingChoice,
 	memory: SettingMemory,
-	chat_mode: SettingChatMode | null,
 	disable_character_lorebooks: SettingFlag | null,
 	disable_character_notes: SettingFlag | null,
 	speaker_selection: SettingSpeakerSelection | null,
@@ -2146,7 +2139,6 @@ export type ConversationSettingsView_Serialize = {
 	background: SettingBackground_Serialize,
 	scene: SettingChoice,
 	memory: SettingMemory,
-	chat_mode: SettingChatMode | null,
 	disable_character_lorebooks: SettingFlag | null,
 	disable_character_notes: SettingFlag | null,
 	speaker_selection: SettingSpeakerSelection | null,
@@ -2191,8 +2183,6 @@ export type ConversationSummary_Deserialize = {
 	source: ConversationSource,
 	/**  Visible messages on the selected branch, system notes excluded. */
 	message_count: number,
-	/**  Group chats only. */
-	chat_mode: GroupChatMode | null,
 	/**  Optional models the chat needs that are not installed. */
 	missing_models: RequiredModel[],
 	/**  Why the chat's dynamic memory is stopped, when it is. */
@@ -2225,8 +2215,6 @@ export type ConversationSummary_Serialize = {
 	source: ConversationSource,
 	/**  Visible messages on the selected branch, system notes excluded. */
 	message_count: number,
-	/**  Group chats only. */
-	chat_mode: GroupChatMode | null,
 	/**  Optional models the chat needs that are not installed. */
 	missing_models: RequiredModel[],
 	/**  Why the chat's dynamic memory is stopped, when it is. */
@@ -2260,8 +2248,6 @@ export type ConversationView_Deserialize = {
 	settings_revision: number | null,
 	archived: boolean,
 	source: ConversationSource,
-	/**  Group chats only. */
-	chat_mode: GroupChatMode | null,
 	/**  Optional models the chat needs that are not installed. */
 	missing_models: RequiredModel[],
 	/**  Why the chat's dynamic memory is stopped, when it is. */
@@ -2289,8 +2275,6 @@ export type ConversationView_Serialize = {
 	settings_revision: number | null,
 	archived: boolean,
 	source: ConversationSource,
-	/**  Group chats only. */
-	chat_mode: GroupChatMode | null,
 	/**  Optional models the chat needs that are not installed. */
 	missing_models: RequiredModel[],
 	/**  Why the chat's dynamic memory is stopped, when it is. */
@@ -2564,8 +2548,6 @@ export type GradientColor = {
 	hex: string,
 };
 
-export type GroupChatMode = "conversation" | "roleplay";
-
 export type GroupDeleteRequest = {
 	group_id: string,
 	expected_revision: number,
@@ -2576,7 +2558,6 @@ export type GroupDraft = GroupDraft_Serialize | GroupDraft_Deserialize;
 
 export type GroupDraft_Deserialize = {
 	name: string,
-	chat_mode: GroupChatMode,
 	persona: LibraryPersonaSelection,
 	speaker_selection: SpeakerSelectionMethod,
 	memory_policy: LibraryMemoryPolicy,
@@ -2593,7 +2574,6 @@ export type GroupDraft_Deserialize = {
 
 export type GroupDraft_Serialize = {
 	name: string,
-	chat_mode: GroupChatMode,
 	persona: LibraryPersonaSelection,
 	speaker_selection: SpeakerSelectionMethod,
 	memory_policy: LibraryMemoryPolicy,
@@ -8373,11 +8353,6 @@ export type SettingBackground_Deserialize = {
 export type SettingBackground_Serialize = {
 	asset: AssetRef_Serialize | null,
 	hidden: boolean,
-	source: SettingSource,
-};
-
-export type SettingChatMode = {
-	mode: GroupChatMode,
 	source: SettingSource,
 };
 

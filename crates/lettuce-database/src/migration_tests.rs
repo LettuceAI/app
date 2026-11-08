@@ -1,5 +1,16 @@
 use lettuce_characters::{ChatAppearanceV1, FontSize, GroupRepository};
-use lettuce_types::GroupId;
+use lettuce_conversations::{
+    BranchStatus, CharacterLaunchSnapshot, Conversation, ConversationBranch, ConversationKind,
+    ConversationParticipant, ConversationReader, CurrentConversationSettings,
+    GroupChatModeSnapshot, GroupConversationDetails, GroupLaunchSnapshot,
+    GroupMemberLaunchSnapshot, GroupParticipantPolicyDocument, GroupParticipantPolicySnapshot,
+    GroupSpeakerSelectionSnapshot, ParticipantRole, ParticipantSource, ProtectedSnapshotRef,
+    SnapshotSelection, SnapshotSource, TrustedArtifactDescriptor,
+};
+use lettuce_types::{
+    CharacterId, ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
+    GroupId, Revision, SnapshotArtifactId, TimestampMillis,
+};
 use rusqlite::{Connection, params};
 
 use super::{Database, MIGRATIONS, apply_migrations, configure, migration_checksum};
@@ -170,6 +181,253 @@ fn migration_29_consolidates_group_prompts() {
             .expect("integrity"),
         "ok"
     );
+}
+
+#[test]
+fn migration_30_makes_stored_groups_roleplay_only() {
+    let path = std::env::temp_dir().join(format!(
+        "lettuce-migration-30-{}.db",
+        GroupId::new()
+    ));
+    let group_id = GroupId::new();
+    let conversation_id = ConversationId::new();
+    let branch_id = ConversationBranchId::new();
+    let first = CharacterId::new();
+    let second = CharacterId::new();
+    let user_participant = ConversationParticipantId::new();
+    let first_participant = ConversationParticipantId::new();
+    let second_participant = ConversationParticipantId::new();
+    {
+        let mut connection = Connection::open(&path).expect("old file");
+        configure(&connection, false).expect("configure");
+        let old: Vec<_> = MIGRATIONS
+            .iter()
+            .copied()
+            .filter(|migration| migration.id <= 29)
+            .collect();
+        apply_migrations(&mut connection, &old).expect("old schema");
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .expect("transaction");
+        let artifact = |source: SnapshotSource| -> ProtectedSnapshotRef {
+            let payload = format!("{source:?}").into_bytes();
+            let digest = ContentHash::parse(blake3::hash(&payload).to_hex().to_string())
+                .expect("digest");
+            let reference = ProtectedSnapshotRef {
+                source,
+                source_revision: Revision::INITIAL,
+                artifact_id: SnapshotArtifactId::new(),
+                digest,
+                schema_version: 1,
+                byte_size: u64::try_from(payload.len()).expect("size"),
+            };
+            crate::conversation::conversation_artifact_adapter::insert_trusted_artifact_in(
+                &transaction,
+                &TrustedArtifactDescriptor::Snapshot(reference.clone()),
+                &payload,
+                TimestampMillis::new(0),
+            )
+            .expect("artifact");
+            reference
+        };
+        let group_ref = artifact(SnapshotSource::Group(group_id));
+        let first_ref = artifact(SnapshotSource::Character(first));
+        let second_ref = artifact(SnapshotSource::Character(second));
+        transaction
+            .execute(
+                "INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit','round_robin','manual',0,'{}',1,0,0)",
+                params![group_id.to_string()],
+            )
+            .expect("group");
+        let member = |character: CharacterId, snapshot_ref: ProtectedSnapshotRef, ordinal: u32| {
+            GroupMemberLaunchSnapshot {
+                character: CharacterLaunchSnapshot {
+                    snapshot_ref,
+                    source_id: character,
+                    source_revision: Revision::INITIAL,
+                    name: format!("Member {ordinal}"),
+                    nickname: None,
+                },
+                ordinal,
+                enabled: true,
+                muted: false,
+                model_override: SnapshotSelection::Disabled,
+                lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                prompt: SnapshotSelection::Disabled,
+            }
+        };
+        let kind = ConversationKind::Group(GroupConversationDetails {
+            format_version: 1,
+            group: GroupLaunchSnapshot {
+                snapshot_ref: group_ref,
+                source_id: group_id,
+                source_revision: Revision::INITIAL,
+                name: "Group".into(),
+                members: vec![
+                    member(first, first_ref, 0),
+                    member(second, second_ref, 1),
+                ],
+                chat_mode: GroupChatModeSnapshot::Conversation,
+                speaker_selection: GroupSpeakerSelectionSnapshot::RoundRobin,
+                speaker_selection_model: None,
+                memory: SnapshotSelection::Disabled,
+                disable_character_lorebook: false,
+                persona: SnapshotSelection::Disabled,
+                scene: SnapshotSelection::Disabled,
+                prompt: SnapshotSelection::Disabled,
+                lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                model: SnapshotSelection::Disabled,
+            },
+            initial_participant_policy: GroupParticipantPolicyDocument {
+                members: vec![
+                    GroupParticipantPolicySnapshot {
+                        participant_id: first_participant,
+                        enabled: true,
+                        muted: false,
+                        model_override: SnapshotSelection::Disabled,
+                    },
+                    GroupParticipantPolicySnapshot {
+                        participant_id: second_participant,
+                        enabled: true,
+                        muted: false,
+                        model_override: SnapshotSelection::Disabled,
+                    },
+                ],
+                revision: Revision::INITIAL,
+                created_at: TimestampMillis::new(0),
+                updated_at: TimestampMillis::new(0),
+            },
+        });
+        let participant = |id, ordinal, role, source, name: &str| ConversationParticipant {
+            id,
+            role,
+            ordinal,
+            enabled: true,
+            muted: false,
+            source,
+            display_name: name.to_owned(),
+            authored_description: None,
+            model_selection: SnapshotSelection::Disabled,
+            member_snapshot: None,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(0),
+            updated_at: TimestampMillis::new(0),
+        };
+        let conversation = Conversation {
+            id: conversation_id,
+            lifecycle: lettuce_conversations::ConversationLifecycle::Active,
+            title: "Group launch".into(),
+            origin_conversation_id: None,
+            origin_message_id: None,
+            kind,
+            active_branch_id: branch_id,
+            participants: vec![
+                participant(
+                    user_participant,
+                    0,
+                    ParticipantRole::User,
+                    ParticipantSource::User,
+                    "User",
+                ),
+                participant(
+                    first_participant,
+                    1,
+                    ParticipantRole::Character,
+                    ParticipantSource::Character(first),
+                    "Member 0",
+                ),
+                participant(
+                    second_participant,
+                    2,
+                    ParticipantRole::Character,
+                    ParticipantSource::Character(second),
+                    "Member 1",
+                ),
+            ],
+            current_settings: Some(CurrentConversationSettings::inherited(Revision::INITIAL)),
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(0),
+            updated_at: TimestampMillis::new(0),
+        };
+        crate::conversation::conversation_vertical_slice::save_conversation(
+            &transaction,
+            &conversation,
+        )
+        .expect("conversation");
+        crate::conversation::conversation_vertical_slice::save_branch(
+            &transaction,
+            &ConversationBranch {
+                label: None,
+                label_updated_at: None,
+                id: branch_id,
+                conversation_id,
+                parent_branch_id: None,
+                fork_message_id: None,
+                head_message_id: None,
+                status: BranchStatus::Active,
+                revision: Revision::INITIAL,
+                created_at: TimestampMillis::new(0),
+                updated_at: TimestampMillis::new(0),
+            },
+        )
+        .expect("branch");
+        for reference in lettuce_conversations::conversation_snapshot_references(&conversation.kind)
+        {
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                    params![conversation_id.to_string(), reference.artifact_id.to_string()],
+                )
+                .expect("snapshot ref");
+        }
+        transaction
+            .execute(
+                "UPDATE conversation_settings SET chat_mode='conversation' WHERE conversation_id=?1",
+                [conversation_id.to_string()],
+            )
+            .expect("legacy override");
+        transaction.commit().expect("commit");
+    }
+    let database = Database::open(&path).expect("upgrade");
+    let connection = database.connection().expect("connection");
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT chat_mode FROM groups WHERE id=?1",
+                [group_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("group mode"),
+        "roleplay"
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT chat_mode FROM conversation_settings WHERE conversation_id=?1",
+                [conversation_id.to_string()],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("settings mode"),
+        None
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT json_extract(kind_json,'$.value.details.group.chat_mode') FROM conversations WHERE id=?1",
+                [conversation_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("launch mode"),
+        "roleplay"
+    );
+    drop(connection);
+    let aggregate = ConversationReader::get(&database, conversation_id).expect("load");
+    let ConversationKind::Group(details) = &aggregate.conversation.kind else {
+        panic!("group conversation");
+    };
+    assert_eq!(details.group.chat_mode, GroupChatModeSnapshot::Roleplay);
+    drop(database);
+    std::fs::remove_file(path).expect("remove test database");
 }
 
 #[test]

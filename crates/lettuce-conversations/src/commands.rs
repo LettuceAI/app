@@ -295,15 +295,6 @@ impl CreateConversationPlan {
                 }
             }
             ConversationKind::Group(details) => {
-                if matches!(
-                    details.group.chat_mode,
-                    crate::snapshot::GroupChatModeSnapshot::Conversation
-                ) && !self.initial_timeline.entries.is_empty()
-                {
-                    return Err(ValidationError::InvalidReference {
-                        field: "conversation_plan.group.conversation_initial_timeline",
-                    });
-                }
                 if self.initial_timeline.entries.iter().any(|entry| {
                     matches!(entry.origin, InitialMessageOrigin::StarterMessage { .. })
                 }) {
@@ -321,12 +312,7 @@ impl CreateConversationPlan {
                         }
                         crate::snapshot::SnapshotSelection::Disabled => None,
                     };
-                    if selected != Some(snapshot_ref)
-                        || !matches!(
-                            details.group.chat_mode,
-                            crate::snapshot::GroupChatModeSnapshot::Roleplay
-                        )
-                    {
+                    if selected != Some(snapshot_ref) {
                         return Err(ValidationError::InvalidReference {
                             field: "conversation_plan.group.scene_origin",
                         });
@@ -1184,10 +1170,6 @@ pub struct CurrentConversationSettingsPatch {
     /// Group conversations only; it cannot be cleared, only set or returned
     /// to the group's.
     #[serde(default)]
-    pub chat_mode: PatchValue<crate::snapshot::GroupChatModeSnapshot>,
-    /// Group conversations only; it cannot be cleared, only set or returned
-    /// to the group's.
-    #[serde(default)]
     pub disable_character_lorebooks: PatchValue<bool>,
     /// Group conversations only; it cannot be cleared, only set or returned
     /// to the group's.
@@ -1217,11 +1199,6 @@ impl CurrentConversationSettingsPatch {
         if matches!(self.speaker_selection, PatchValue::Clear) {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.speaker_selection",
-            });
-        }
-        if matches!(self.chat_mode, PatchValue::Clear) {
-            return Err(ValidationError::InvalidReference {
-                field: "conversation_settings.chat_mode",
             });
         }
         if matches!(self.disable_character_lorebooks, PatchValue::Clear) {
@@ -1423,11 +1400,6 @@ impl CurrentConversationSettingsPatch {
             scene_provenance,
             speaker_selection,
             speaker_selection_provenance,
-            chat_mode: match self.chat_mode {
-                PatchValue::Keep => base.chat_mode,
-                PatchValue::Set(mode) => Some(mode),
-                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
-            },
             disable_character_lorebooks: match self.disable_character_lorebooks {
                 PatchValue::Keep => base.disable_character_lorebooks,
                 PatchValue::Set(disabled) => Some(disabled),
@@ -1631,10 +1603,6 @@ mod tests {
     fn group_switches_cannot_be_cleared_and_resets_follow_the_group() {
         for patch in [
             CurrentConversationSettingsPatch {
-                chat_mode: PatchValue::Clear,
-                ..CurrentConversationSettingsPatch::default()
-            },
-            CurrentConversationSettingsPatch {
                 disable_character_lorebooks: PatchValue::Clear,
                 ..CurrentConversationSettingsPatch::default()
             },
@@ -1646,17 +1614,12 @@ mod tests {
             assert!(patch.apply(None, None).is_err());
         }
         let set = CurrentConversationSettingsPatch {
-            chat_mode: PatchValue::Set(crate::snapshot::GroupChatModeSnapshot::Roleplay),
             disable_character_lorebooks: PatchValue::Set(true),
             disable_character_notes: PatchValue::Set(true),
             ..CurrentConversationSettingsPatch::default()
         }
         .apply(None, None)
         .expect("set");
-        assert_eq!(
-            set.chat_mode,
-            Some(crate::snapshot::GroupChatModeSnapshot::Roleplay)
-        );
         assert_eq!(set.disable_character_lorebooks, Some(true));
         assert_eq!(set.disable_character_notes, Some(true));
         let mut owned = set.clone();
@@ -1664,7 +1627,6 @@ mod tests {
         owned.muted_overridden = true;
         owned.member_models_overridden = true;
         let reset = CurrentConversationSettingsPatch {
-            chat_mode: PatchValue::UseLaunchDefault,
             disable_character_lorebooks: PatchValue::UseLaunchDefault,
             disable_character_notes: PatchValue::UseLaunchDefault,
             follow_group_members: true,
@@ -1672,7 +1634,6 @@ mod tests {
         }
         .apply(Some(&owned), Some(owned.revision))
         .expect("reset");
-        assert_eq!(reset.chat_mode, None);
         assert_eq!(reset.disable_character_lorebooks, None);
         assert_eq!(reset.disable_character_notes, None);
         assert!(!reset.members_overridden && !reset.muted_overridden);

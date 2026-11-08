@@ -1172,6 +1172,7 @@ pub struct GroupMemberV1 {
 pub struct GroupSnapshotBodyV1 {
     pub group_id: GroupId,
     pub name: String,
+    /// Stored launches may say `Conversation`; it is not read.
     pub chat_mode: ChatModeV1,
     pub speaker_selection: SpeakerSelectionV1,
     pub memory_policy: MemoryPolicyV1,

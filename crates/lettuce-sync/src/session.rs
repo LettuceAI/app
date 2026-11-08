@@ -548,17 +548,17 @@ mod tests {
         );
         assert_eq!(
             crate::CONVERSATION_SYNC_VERSION,
-            8,
-            "a group conversation may override the character-notes switch"
+            9,
+            "groups are roleplay-only"
         );
         assert_eq!(
             crate::GROUP_SYNC_VERSION,
-            4,
-            "a group carries a time awareness default and a character-notes switch"
+            5,
+            "a group is roleplay-only"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "a1ea6821851318a68381d63d3c8b1294140d47342c0dafa3750ed413ae8c5ef3"
+            "8ad781f6d0342fea8d0ae763edae16c613a3817cf23e05edf52319cc30f36481"
         );
     }
 

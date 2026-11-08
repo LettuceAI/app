@@ -19,7 +19,7 @@ const settings = {
   conversation_id: "c1", kind: "direct", title: "Harbour", revision: 1, settings_revision: 1, author_note: null,
   persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, lorebooks: { ids: [], source: "app_default" },
   model: { id: "writer", source: "app_default" }, background: { asset: null, hidden: false, source: "app_default" },
-  scene: { id: null, source: "app_default" }, memory: { mode: "disabled", source: "app_default" }, chat_mode: null,
+  scene: { id: null, source: "app_default" }, memory: { mode: "disabled", source: "app_default" },
   disable_character_lorebooks: null, disable_character_notes: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
 } satisfies ConversationSettingsView;
 const imageSettings = {
@@ -38,7 +38,7 @@ async function open(options: { initial?: TimelineMessage; calls?: MockCallHandle
       id: "c1", origin_conversation_id: null, origin_message_id: null, kind: options.group ? "group" : "direct", title: "Harbour", branch: { branch_id: "b1", head_message_id: "a1" },
       participants: [{ id: "pc", role: "character", name: "Cassian", character_id: "ch1", avatar: null }, { id: "pu", role: "user", name: "You", character_id: null, avatar: null }],
       messages: { items: [message], next_cursor: null }, pending_turn_id: null, can_send: true, revision: 1, settings_revision: 1, archived: false,
-      source: options.group ? { type: "group", source_group_id: "g1" } : { type: "direct", character_id: "ch1" }, chat_mode: null, missing_models: [], memory_blocked: null,
+      source: options.group ? { type: "group", source_group_id: "g1" } : { type: "direct", character_id: "ch1" }, missing_models: [], memory_blocked: null,
     } as ConversationView }),
     conversationSettingsGet: () => ({ status: "ok", data: settings }),
     settingsGet: () => ({ status: "ok", data: { global: { image_generation: { ...imageSettings, scene_enabled: options.enabled ?? true }, ui_preferences: {} }, revision: 1 } as unknown as SettingsView }),

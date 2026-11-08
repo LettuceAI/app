@@ -74,7 +74,6 @@ function view(
     settings_revision: 2,
     archived: false,
     source: { type: "direct", character_id: "ch1" },
-    chat_mode: null,
     missing_models: [],
     memory_blocked: null,
     ...patch,
@@ -95,7 +94,6 @@ const settings: ConversationSettingsView = {
   background: { asset: null, hidden: false, source: "character" },
   scene: { id: null, source: "app_default" },
   memory: { mode: "manual", source: "app_default" },
-  chat_mode: null,
   disable_character_lorebooks: null, disable_character_notes: null,
   speaker_selection: null,
   members: null,
@@ -299,7 +297,7 @@ it("keeps the reading position when a new message arrives without a local send",
 });
 
 describe("conversation screen", () => {
-  it.each(["Conversation", "Roleplay"])("asks for at least one more character and branches in the %s group mode", async (mode) => {
+  it("asks for at least one more character and branches to a group", async () => {
     const branch = vi.fn(() => ({ status: "ok" as const, data: { conversation_id: "group-copy", revision: 1 } }));
     const runtime = await open({ calls: {
       charactersList: () => ({ status: "ok", data: { items: [
@@ -316,13 +314,12 @@ describe("conversation screen", () => {
     expect((await within(dialog).findByRole("checkbox", { name: "Cassian" }) as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Mira" }));
     expect((create as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(within(dialog).getByRole("radio", { name: mode }));
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Group name" }), { target: { value: "Harbour friends" } });
     expect(branch).not.toHaveBeenCalled();
     fireEvent.click(create);
     await waitFor(() => expect(branch).toHaveBeenCalledWith(expect.objectContaining({
       conversation_id: "c1", message_id: "a1", character_ids: ["ch1", "ch2"],
-      chat_mode: mode.toLowerCase(), title: "Harbour friends", expected_revision: 4,
+      title: "Harbour friends", expected_revision: 4,
     })));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/chat/group-copy"));
   });

@@ -24,7 +24,7 @@ function view(messages: TimelineMessage[], patch: Partial<ConversationView> = {}
       { id: "pc", role: "character", name: "Cassian", character_id: "ch1", avatar: null },
     ],
     messages: { items: messages, next_cursor: null }, pending_turn_id: null, can_send: true, revision: 4, settings_revision: 2, archived: false,
-    source: { type: "direct", character_id: "ch1" }, chat_mode: null, missing_models: [], memory_blocked: null, ...patch,
+    source: { type: "direct", character_id: "ch1" }, missing_models: [], memory_blocked: null, ...patch,
   };
 }
 
@@ -32,7 +32,7 @@ const settings: ConversationSettingsView = {
   conversation_id: "c1", kind: "direct", title: "Harbour", revision: 4, settings_revision: 2, author_note: null,
   persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" },
   lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" },
-  scene: { id: null, source: "app_default" }, memory: { mode: "manual", source: "app_default" }, chat_mode: null,
+  scene: { id: null, source: "app_default" }, memory: { mode: "manual", source: "app_default" },
   disable_character_lorebooks: null, disable_character_notes: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
 };
 
@@ -93,7 +93,7 @@ const character = {
 function summary(id: string, title: string, patch: Partial<ConversationSummary> = {}): ConversationSummary {
   return {
     id, kind: "direct", title, avatars: [], background: null, revision: 3, last_message_preview: `About ${title}`, updated_at: 1_700_000_000_000, archived: false,
-    source: { type: "direct", character_id: "ch1" }, message_count: 5, chat_mode: null, missing_models: [], memory_blocked: null, origin_conversation_id: null, origin_message_id: null, ...patch,
+    source: { type: "direct", character_id: "ch1" }, message_count: 5, missing_models: [], memory_blocked: null, origin_conversation_id: null, origin_message_id: null, ...patch,
   };
 }
 

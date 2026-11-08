@@ -44,7 +44,6 @@ async fn group_character_copies_replace_known_names_and_keep_current_scene_rules
         harness.context.now(),
     )
     .expect("profile");
-    profile.chat_mode = lettuce_characters::ChatMode::Roleplay;
     profile.starting_scene_id = Some(scene.id);
     GroupRepository::create(
         harness.context.backend().database(),
@@ -210,7 +209,6 @@ async fn group_copies_follow_the_chat_snapshot_after_the_profile_changes() {
         harness.context.now(),
     )
     .expect("profile");
-    profile.chat_mode = lettuce_characters::ChatMode::Roleplay;
     profile.persona = Selection::Explicit(launch_persona);
     profile.starting_scene_id = Some(launch_scene.id);
     GroupRepository::create(

@@ -155,10 +155,6 @@ pub struct CurrentConversationSettings {
     pub speaker_selection: Option<crate::snapshot::GroupSpeakerSelectionSnapshot>,
     #[serde(default)]
     pub speaker_selection_provenance: crate::commands::SettingProvenance,
-    /// A group conversation's own chat mode, a current override of the
-    /// group's; `None` follows the group.
-    #[serde(default)]
-    pub chat_mode: Option<crate::snapshot::GroupChatModeSnapshot>,
     /// A group conversation's own character-lorebook switch, a current
     /// override of the group's; `None` follows the group.
     #[serde(default)]
@@ -206,7 +202,6 @@ impl CurrentConversationSettings {
             scene_provenance: crate::commands::SettingProvenance::LaunchInherited,
             speaker_selection: None,
             speaker_selection_provenance: crate::commands::SettingProvenance::LaunchInherited,
-            chat_mode: None,
             disable_character_lorebooks: None,
             disable_character_notes: None,
             members_overridden: false,
@@ -385,8 +380,7 @@ impl CurrentConversationSettings {
             });
         }
         if matches!(kind, ConversationKind::Direct(_))
-            && (self.chat_mode.is_some()
-                || self.disable_character_lorebooks.is_some()
+            && (self.disable_character_lorebooks.is_some()
                 || self.disable_character_notes.is_some())
         {
             return Err(ValidationError::InvalidReference {
@@ -422,14 +416,6 @@ impl CurrentConversationSettings {
                     });
                 }
             }
-        }
-        if matches!(kind, ConversationKind::Group(_))
-            && self.chat_mode == Some(crate::snapshot::GroupChatModeSnapshot::Conversation)
-            && self.scene.is_some()
-        {
-            return Err(ValidationError::InvalidReference {
-                field: "conversation_settings.scene",
-            });
         }
         Ok(())
     }

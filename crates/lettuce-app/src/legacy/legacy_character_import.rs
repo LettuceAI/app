@@ -69,7 +69,7 @@ mod tests {
 
     use lettuce_characters::{
         CardStyle, CharacterProfile, CharacterProvenance, CharacterRepository, ChatAppearanceV1,
-        ChatMode, GradientSource, GroupMember, GroupRepository, InteractionMode, LifecycleStatus,
+        GradientSource, GroupMember, GroupRepository, InteractionMode, LifecycleStatus,
         MemoryPolicy, SceneDocumentV1, ScenePart, Selection, SpeakerSelection, StarterMessage,
         StarterRole,
     };
@@ -449,7 +449,6 @@ mod tests {
             id: group_id,
             status: LifecycleStatus::Active,
             name: "Harbor crew".to_owned(),
-            chat_mode: ChatMode::Roleplay,
             persona: Selection::Disabled,
             speaker_selection: SpeakerSelection::Director,
             memory_policy: MemoryPolicy::Manual,
@@ -1530,8 +1529,8 @@ mod tests {
                 };
                 assert_eq!(
                     details.group.chat_mode,
-                    lettuce_conversations::GroupChatModeSnapshot::Conversation,
-                    "the session's own chat type wins over the group's"
+                    lettuce_conversations::GroupChatModeSnapshot::Roleplay,
+                    "a legacy session chat type does not override the group"
                 );
                 assert!(details.group.disable_character_lorebook);
                 assert!(!matches!(
@@ -1545,10 +1544,6 @@ mod tests {
             .current_settings
             .as_ref()
             .expect("the session's overrides are the conversation's own settings");
-        assert_eq!(
-            own.chat_mode,
-            Some(lettuce_conversations::GroupChatModeSnapshot::Conversation)
-        );
         assert_eq!(own.disable_character_lorebooks, Some(true));
         assert_eq!(
             (own.prompt.as_ref(), own.prompt_provenance),
@@ -1575,15 +1570,6 @@ mod tests {
         let live = crate::generation::live_sources::live_group(backend.database(), imported)
             .expect("live group")
             .expect("group conversation");
-        assert_eq!(
-            live.profile.as_ref().map(|profile| profile.chat_mode),
-            Some(ChatMode::Roleplay)
-        );
-        assert_eq!(
-            live.chat_mode,
-            lettuce_conversations::GroupChatModeSnapshot::Conversation,
-            "an imported chat-type override survives a group edit"
-        );
         assert!(live.disable_character_lorebooks);
         assert_eq!(
             live.profile.as_ref().map(|profile| profile.persona.clone()),

@@ -26,7 +26,7 @@ const ui_state = { onboarding: { completed: true } };
 function chat(id: string, title: string, updatedAt: number): ConversationSummary {
   return {
     id, kind: "direct", title, avatars: [], background: null, revision: 1, last_message_preview: null, updated_at: updatedAt,
-    archived: false, source: { type: "direct", character_id: "c1" }, message_count: 1, chat_mode: null, missing_models: [],
+    archived: false, source: { type: "direct", character_id: "c1" }, message_count: 1, missing_models: [],
   } as unknown as ConversationSummary;
 }
 

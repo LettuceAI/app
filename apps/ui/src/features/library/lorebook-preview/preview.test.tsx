@@ -108,7 +108,6 @@ const chat: ConversationSummary_Serialize = {
   archived: false,
   source: { type: "direct", character_id: "character" },
   message_count: 3,
-  chat_mode: null,
   missing_models: [],
   memory_blocked: null,
   origin_conversation_id: null,

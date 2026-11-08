@@ -75,14 +75,6 @@ pub enum ConversationSource {
     Group { group_id: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(rename_all = "snake_case")]
-pub enum GroupChatMode {
-    Conversation,
-    Roleplay,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
@@ -107,8 +99,6 @@ pub struct ConversationSummary {
     /// Visible messages on the selected branch, system notes excluded.
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub message_count: u64,
-    /// Group chats only.
-    pub chat_mode: Option<GroupChatMode>,
     /// Optional models the chat needs that are not installed.
     pub missing_models: Vec<crate::RequiredModel>,
     /// Why the chat's dynamic memory is stopped, when it is.
@@ -207,8 +197,6 @@ pub struct ConversationView {
     pub settings_revision: Option<u64>,
     pub archived: bool,
     pub source: ConversationSource,
-    /// Group chats only.
-    pub chat_mode: Option<GroupChatMode>,
     /// Optional models the chat needs that are not installed.
     pub missing_models: Vec<crate::RequiredModel>,
     /// Why the chat's dynamic memory is stopped, when it is.
@@ -1065,14 +1053,6 @@ pub struct SettingMemory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
-pub struct SettingChatMode {
-    pub mode: GroupChatMode,
-    pub source: SettingSource,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
 pub struct SettingFlag {
     pub value: bool,
     pub source: SettingSource,
@@ -1158,7 +1138,6 @@ pub struct ConversationSettingsView {
     pub background: SettingBackground,
     pub scene: SettingChoice,
     pub memory: SettingMemory,
-    pub chat_mode: Option<SettingChatMode>,
     pub disable_character_lorebooks: Option<SettingFlag>,
     pub disable_character_notes: Option<SettingFlag>,
     pub speaker_selection: Option<SettingSpeakerSelection>,
@@ -1255,14 +1234,6 @@ pub enum MemoryModeChange {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ChatModeChange {
-    Set { mode: GroupChatMode },
-    Reset,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FlagChange {
     Set { value: bool },
     Reset,
@@ -1295,7 +1266,6 @@ pub struct ConversationSettingsPatch {
     pub author_note: Option<String>,
     pub speaker_selection: Option<SpeakerSelectionChange>,
     pub memory: Option<MemoryModeChange>,
-    pub chat_mode: Option<ChatModeChange>,
     pub disable_character_lorebooks: Option<FlagChange>,
     pub disable_character_notes: Option<FlagChange>,
     /// Replaces the chat's own layer; an empty layer clears it.
@@ -1490,9 +1460,6 @@ pub struct ConversationGroupCopyRequest {
     pub conversation_id: String,
     pub message_id: String,
     pub character_ids: Vec<String>,
-    #[serde(default)]
-    #[cfg_attr(feature = "specta", specta(optional))]
-    pub chat_mode: Option<GroupChatMode>,
     #[serde(default)]
     #[cfg_attr(feature = "specta", specta(optional))]
     pub title: Option<String>,

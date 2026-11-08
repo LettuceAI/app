@@ -617,6 +617,7 @@ pub struct GroupLaunchSnapshot {
     pub source_revision: Revision,
     pub name: String,
     pub members: Vec<GroupMemberLaunchSnapshot>,
+    /// Stored launches may say `Conversation`; it is not read.
     pub chat_mode: GroupChatModeSnapshot,
     pub speaker_selection: GroupSpeakerSelectionSnapshot,
     #[serde(default)]
@@ -690,13 +691,6 @@ impl GroupLaunchSnapshot {
         self.memory.validate("group.memory")?;
         self.persona.validate("group.persona")?;
         self.scene.validate("group.scene")?;
-        if self.chat_mode == GroupChatModeSnapshot::Conversation
-            && !matches!(self.scene, SnapshotSelection::Disabled)
-        {
-            return Err(ValidationError::InvalidReference {
-                field: "group.scene.chat_mode",
-            });
-        }
         self.prompt.validate("group.prompt")?;
         if self.speaker_selection_model.is_some()
             && self.speaker_selection != GroupSpeakerSelectionSnapshot::Llm

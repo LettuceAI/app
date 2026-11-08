@@ -1,5 +1,5 @@
 use lettuce_characters::{
-    Character, CharacterMediaSlot, ChatMode, ConversationStarter, GroupMember, GroupProfile,
+    Character, CharacterMediaSlot, ConversationStarter, GroupMember, GroupProfile,
     ImageRecommendation, Persona, PersonaMediaSlot, Scene, SceneAssetSlot, SceneOwner, ScenePart,
     SceneVariant, Selection, SpeakerSelection, StarterRole, VoicePreference,
 };
@@ -114,10 +114,7 @@ pub(crate) fn group_body(group: &GroupProfile, members: &[GroupMember]) -> Group
     GroupSnapshotBodyV1 {
         group_id: group.id,
         name: group.name.clone(),
-        chat_mode: match group.chat_mode {
-            ChatMode::Conversation => ChatModeV1::Conversation,
-            ChatMode::Roleplay => ChatModeV1::Roleplay,
-        },
+        chat_mode: ChatModeV1::Roleplay,
         speaker_selection: match group.speaker_selection {
             SpeakerSelection::Llm => SpeakerSelectionV1::Llm,
             SpeakerSelection::Heuristic => SpeakerSelectionV1::Heuristic,

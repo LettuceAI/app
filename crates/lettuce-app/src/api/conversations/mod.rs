@@ -139,9 +139,6 @@ fn conversation_summary(
         archived: overview.summary.lifecycle == ConversationLifecycle::Archived,
         source: mapping::conversation_source(&conversation.kind),
         message_count: overview.message_count,
-        chat_mode: group
-            .as_ref()
-            .map(|group| mapping::group_chat_mode(group.chat_mode)),
         missing_models: missing.of(context, conversation)?,
         memory_blocked: self::messages::memory_blocked(context, conversation.id)?,
         origin_conversation_id: conversation.origin_conversation_id.map(|id| id.to_string()),
@@ -193,17 +190,6 @@ fn summary_background(
             },
         ),
     }
-}
-
-fn chat_mode(
-    context: &ApiContext,
-    conversation: &lettuce_conversations::Conversation,
-) -> Result<Option<dto::GroupChatMode>, ApiError> {
-    Ok(
-        crate::generation::live_sources::live_group(context.backend().database(), conversation)
-            .map_err(IntoApiError::into_api_error)?
-            .map(|group| mapping::group_chat_mode(group.chat_mode)),
-    )
 }
 
 fn summaries(
@@ -395,7 +381,6 @@ pub async fn conversation_open(
                     .map(|settings| settings.revision.get()),
                 archived: conversation.lifecycle == ConversationLifecycle::Archived,
                 source: mapping::conversation_source(&conversation.kind),
-                chat_mode: chat_mode(context, &conversation)?,
                 missing_models,
                 memory_blocked: self::messages::memory_blocked(context, conversation.id)?,
                 title: conversation.title,

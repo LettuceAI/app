@@ -132,8 +132,6 @@ pub(crate) struct SessionSettingsSource<'a> {
     pub companion_clock: Option<lettuce_conversations::ConversationClockSettings>,
     /// Legacy `persona_disabled`: the chat turned its persona off.
     pub persona_disabled: bool,
-    /// A group session's own `chatType` override.
-    pub chat_mode: Option<lettuce_conversations::GroupChatModeSnapshot>,
     /// A group session's own `disableCharacterLorebooks` override.
     pub disable_character_lorebooks: Option<bool>,
     /// Which of its members, muted flags and member models a group session
@@ -598,7 +596,6 @@ where
                 lorebook_source_ids: session.lorebook_source_ids_override.as_deref(),
                 speaker_selection: None,
                 persona_disabled: session.persona_disabled,
-                chat_mode: None,
                 disable_character_lorebooks: None,
                 participant_overrides: lettuce_conversations::ParticipantOverrides::default(),
                 model_settings: &session.generation_settings.model_settings,
@@ -1237,7 +1234,6 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
         && input.background.is_none()
         && input.companion_clock.is_none()
         && !input.persona_disabled
-        && input.chat_mode.is_none()
         && input.disable_character_lorebooks.is_none()
         && !input.participant_overrides.any()
     {
@@ -1271,7 +1267,6 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
             scene_provenance: SettingProvenance::LaunchInherited,
             speaker_selection_provenance: provenance(input.speaker_selection.is_some()),
             speaker_selection: input.speaker_selection,
-            chat_mode: input.chat_mode,
             disable_character_lorebooks: input.disable_character_lorebooks,
             disable_character_notes: None,
             members_overridden: input.participant_overrides.members,

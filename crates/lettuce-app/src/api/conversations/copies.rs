@@ -702,10 +702,6 @@ pub async fn conversation_branch_direct_to_group(
                 now,
             )
             .map_err(|error| api_error(ApiErrorCode::InvalidInput, error.to_string()))?;
-            group.chat_mode = match request.chat_mode.unwrap_or(dto::GroupChatMode::Roleplay) {
-                dto::GroupChatMode::Conversation => lettuce_characters::ChatMode::Conversation,
-                dto::GroupChatMode::Roleplay => lettuce_characters::ChatMode::Roleplay,
-            };
             if let Some(title) = &request.title {
                 let title = title.trim();
                 if !title.is_empty() { group.name = title.to_owned(); }
@@ -742,7 +738,6 @@ pub async fn conversation_branch_direct_to_group(
                 },
             };
             let starting_scene = selected_scene
-                .filter(|_| group.chat_mode == lettuce_characters::ChatMode::Roleplay)
                 .map(|snapshot| {
                     use lettuce_conversations::{ConversationSnapshotMaterializer, ScenePartV1, SceneAssetSlotV1};
                     let body = database.materialize_scene(conversation_id, snapshot)

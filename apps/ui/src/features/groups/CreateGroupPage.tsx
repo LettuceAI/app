@@ -12,7 +12,7 @@ import { MembersStep } from "./components/MembersStep";
 import { SetupStep } from "./components/SetupStep";
 import { SceneStep } from "./components/SceneStep";
 import { ExtrasStep } from "./components/ExtrasStep";
-import { draftToSave, newGroupForm, stepsFor, validStep, type GroupForm } from "./data/form";
+import { createSteps, draftToSave, newGroupForm, validStep, type GroupForm } from "./data/form";
 import { notesToCreate } from "./data/notes";
 import { castQuery } from "./data/queries";
 import { launchGroup, saveGroup, type SaveAttempt } from "./data/actions";
@@ -41,7 +41,7 @@ function GroupFlow({ start, dynamicMemory }: { start: GroupForm; dynamicMemory: 
   const savingRef = useRef(false);
   const attempt = useRef<SaveAttempt | null>(null);
   const mainRef = useRef<HTMLElement>(null);
-  const steps = stepsFor(form.draft.chat_mode);
+  const steps = createSteps;
   const step = steps[Math.min(index, steps.length - 1)]!;
   const last = index >= steps.length - 1;
   const touched = JSON.stringify(form) !== JSON.stringify(start);

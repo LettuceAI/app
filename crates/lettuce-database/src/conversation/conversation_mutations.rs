@@ -2121,7 +2121,7 @@ pub(crate) fn write_settings(
                     crate::conversation::conversation_vertical_slice::encode_model_settings(&settings.model_settings)?,
                     crate::conversation::conversation_vertical_slice::background_asset(settings.background),
                     crate::conversation::conversation_vertical_slice::background_hidden(settings.background),
-                    settings.chat_mode.map(slice::chat_mode_name),
+                    Option::<String>::None,
                     settings.disable_character_lorebooks,
                     Option::<String>::None,
                     slice::provenance_name(lettuce_conversations::SettingProvenance::LaunchInherited),
@@ -2164,7 +2164,7 @@ pub(crate) fn write_settings(
                 crate::conversation::conversation_vertical_slice::encode_model_settings(&settings.model_settings)?,
                 crate::conversation::conversation_vertical_slice::background_asset(settings.background),
                     crate::conversation::conversation_vertical_slice::background_hidden(settings.background),
-                settings.chat_mode.map(slice::chat_mode_name),
+                Option::<String>::None,
                 settings.disable_character_lorebooks,
                 Option::<String>::None,
                 slice::provenance_name(lettuce_conversations::SettingProvenance::LaunchInherited),
@@ -10043,7 +10043,6 @@ mod tests {
                             companion_clock: PatchValue::Keep,
                             background: PatchValue::Keep,
                             model_settings: PatchValue::Keep,
-                            chat_mode: Default::default(),
                             disable_character_lorebooks: Default::default(),
                             disable_character_notes: Default::default(),
                             follow_group_members: false,
@@ -17575,7 +17574,6 @@ mod tests {
                 companion_clock: PatchValue::Keep,
                 background: PatchValue::Keep,
                 model_settings: PatchValue::Keep,
-                chat_mode: Default::default(),
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
                 follow_group_members: false,
@@ -18137,7 +18135,6 @@ mod tests {
                 persona: PatchValue::Keep,
                 scene: PatchValue::Keep,
                 speaker_selection: PatchValue::Keep,
-                chat_mode: Default::default(),
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
                 follow_group_members: false,
@@ -18252,7 +18249,7 @@ mod tests {
     }
 
     #[test]
-    fn group_settings_reject_prompt_and_scene() {
+    fn group_settings_reject_prompt_but_accept_scene() {
         let fixture = group_fixture();
         assert!(matches!(
             ConversationReader::get(&*fixture.database, fixture.conversation_id)
@@ -18287,7 +18284,6 @@ mod tests {
                     persona: PatchValue::Keep,
                     scene,
                     speaker_selection: PatchValue::Keep,
-                    chat_mode: Default::default(),
                     disable_character_lorebooks: Default::default(),
                     disable_character_notes: Default::default(),
                     follow_group_members: false,
@@ -18338,7 +18334,6 @@ mod tests {
                     expected_settings_revision: None,
                     operation: token("group-settings-scene", "56"),
                     patch: CurrentConversationSettingsPatch {
-                        chat_mode: PatchValue::Set(GroupChatModeSnapshot::Conversation),
                         ..patch(PatchValue::Keep, PatchValue::Set(scene))
                     },
                 },
@@ -18347,10 +18342,7 @@ mod tests {
             .expect("prepared group scene"),
             TimestampMillis::new(21),
         );
-        assert!(matches!(
-            result,
-            Err(ConversationRepositoryError::Invalid(_))
-        ));
+        result.expect("a group accepts a scene");
         let artifact_count: i64 = fixture
             .database
             .connection()
@@ -18360,8 +18352,8 @@ mod tests {
                 [scene_ref.artifact_id.to_string()],
                 |row| row.get(0),
             )
-            .expect("scene rollback");
-        assert_eq!(artifact_count, 0);
+            .expect("scene artifact");
+        assert_eq!(artifact_count, 1);
 
         fixture
             .database
@@ -18369,7 +18361,7 @@ mod tests {
                 PreparedConversationSettingsUpdate::new(
                     UpdateConversationSettings {
                         conversation_id: fixture.conversation_id,
-                        expected_settings_revision: None,
+                        expected_settings_revision: Some(Revision::INITIAL),
                         operation: token("group-settings-speaker", "78"),
                         patch: CurrentConversationSettingsPatch {
                             speaker_selection: PatchValue::Set(
@@ -18392,8 +18384,9 @@ mod tests {
             Some(lettuce_conversations::GroupSpeakerSelectionSnapshot::Director)
         );
         let settings = conversation.current_settings.expect("settings");
-        assert_eq!(settings.revision, Revision::INITIAL);
+        assert_eq!(settings.revision, Revision::new(2));
         assert!(settings.prompt.is_none());
+        assert!(settings.scene.is_some());
     }
 
     #[test]

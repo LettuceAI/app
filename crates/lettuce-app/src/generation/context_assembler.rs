@@ -245,12 +245,8 @@ where
         } else {
             select_timeline(&aggregate.branches, &request)?
         };
-        let (mut scene, mut scene_direction) = snapshot.scene_values(&scene_timeline)?;
-        if let Some(group) = &live_group {
-            if group.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Conversation {
-                scene.clear();
-                scene_direction.clear();
-            }
+        let (mut scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
+        if live_group.is_some() {
             scene = resolve_member_mentions(&scene, &snapshot.group_members);
         }
         if !empty_preview {

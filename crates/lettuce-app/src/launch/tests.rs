@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use lettuce_characters::{
     Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
-    CharacterProvenance, CharacterRepository, ChatMode, ConversationStarter, CreateCharacterPlan,
+    CharacterProvenance, CharacterRepository, ConversationStarter, CreateCharacterPlan,
     CreateGroupPlan, GroupMember, GroupProfile, GroupRepository, GroupStartingScene,
     InteractionMode, LifecycleStatus, MemoryPolicy, Persona, PersonaRepository, Scene,
     SceneDocumentV1, SceneOwner, ScenePart, SceneVariant, Selection, StarterMessage, StarterRole,
@@ -5146,7 +5146,6 @@ async fn a_group_prompt_lists_the_other_members_and_resolves_scene_mentions() {
             "{{@\"Bea\"}} waits for {{@\"Nobody\"}} at the dock.",
         )),
         |group| {
-            group.chat_mode = ChatMode::Roleplay;
             group.group_roleplay_prompt_id = Some(group_prompt);
         },
     );
@@ -5797,7 +5796,6 @@ async fn a_group_turn_reads_its_members_and_lorebook_switch_live() {
         vec![member(first, 0), member(second, 1)],
         None,
         |group| {
-            group.chat_mode = ChatMode::Conversation;
             group.group_roleplay_prompt_id = Some(roleplay);
         },
     );
@@ -5857,14 +5855,6 @@ async fn a_group_turn_reads_its_members_and_lorebook_switch_live() {
         NOW,
     )
     .expect("add a member");
-    let group = GroupRepository::set_chat_mode(
-        &database,
-        group_id,
-        group.revision,
-        ChatMode::Roleplay,
-        NOW,
-    )
-    .expect("switch to roleplay");
     GroupRepository::set_disable_character_lorebooks(
         &database,
         group_id,
@@ -5923,7 +5913,6 @@ async fn a_group_launched_without_a_persona_follows_the_groups_later_persona() {
         vec![member(first, 0), member(second, 1)],
         None,
         |group| {
-            group.chat_mode = ChatMode::Conversation;
             group.group_roleplay_prompt_id = Some(prompt_id);
             group.persona = Selection::Disabled;
         },
@@ -6550,7 +6539,6 @@ async fn a_group_turn_reads_its_prompt_and_lorebooks_live() {
         vec![member(first, 0), member(second, 1)],
         None,
         |group| {
-            group.chat_mode = ChatMode::Conversation;
             group.group_roleplay_prompt_id = Some(group_prompt);
         },
     );
@@ -11897,7 +11885,7 @@ fn group_delete_after_keeps_the_scene_anchor_and_tombstones_the_reply() {
         &database,
         vec![member(first, 0), member(second, 1)],
         Some(group_starting_scene("Keep this scene.")),
-        |group| group.chat_mode = ChatMode::Roleplay,
+        |_| {},
     );
     let launched = ConversationLaunchPlanner::new(&database)
         .launch_group(&group_request(group_id, "group-delete-after-launch"), NOW)
@@ -13104,7 +13092,7 @@ fn model_source_id(
 }
 
 #[test]
-fn a_conversation_mode_group_opens_empty_even_with_a_starting_scene() {
+fn a_group_with_a_starting_scene_materializes_it() {
     let backend = backend();
     let database = backend.database();
     let first = seed_named_character(database, "Ada");
@@ -13117,12 +13105,19 @@ fn a_conversation_mode_group_opens_empty_even_with_a_starting_scene() {
     );
     let plan = group_plan_for(
         database,
-        &group_request(group_id, "group-conversation-scene"),
+        &group_request(group_id, "group-starting-scene"),
     );
     let details = group_details(&plan);
-    assert_eq!(details.group.chat_mode, GroupChatModeSnapshot::Conversation);
-    assert_eq!(details.group.scene, SnapshotSelection::Disabled);
-    assert!(plan.initial_timeline.entries.is_empty());
+    assert_eq!(details.group.chat_mode, GroupChatModeSnapshot::Roleplay);
+    assert!(matches!(
+        details.group.scene,
+        SnapshotSelection::Inherited(_)
+    ));
+    assert_eq!(plan.initial_timeline.entries.len(), 1);
+    assert_eq!(
+        message_text(&plan.initial_timeline.entries[0].parts[0]),
+        "A quiet harbour at dawn."
+    );
     match &details.group.prompt {
         SnapshotSelection::Inherited(prompt) => {
             assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupRoleplay);
@@ -13158,7 +13153,7 @@ fn a_roleplay_group_materializes_one_trimmed_scene_message_from_the_selected_var
         database,
         vec![member(first, 0), member(second, 1)],
         Some(starting),
-        |group| group.chat_mode = ChatMode::Roleplay,
+        |_| {},
     );
     let plan = group_plan_for(database, &group_request(group_id, "group-roleplay-scene"));
     let details = group_details(&plan);
@@ -13216,7 +13211,6 @@ fn a_group_launch_override_replaces_or_clears_the_group_starting_scene() {
             .prepare_group_with(
                 &group_request(group_id, key),
                 &crate::launch::GroupLaunchOverrides {
-                    chat_mode: Some(ChatMode::Roleplay),
                     starting_scene,
                     ..Default::default()
                 },
@@ -13254,7 +13248,7 @@ fn a_blank_group_scene_is_selected_without_a_timeline_entry() {
         database,
         vec![member(first, 0), member(second, 1)],
         Some(group_starting_scene("   ")),
-        |group| group.chat_mode = ChatMode::Roleplay,
+        |_| {},
     );
     let plan = group_plan_for(database, &group_request(group_id, "group-blank-scene"));
     match &group_details(&plan).group.scene {
@@ -13276,7 +13270,7 @@ fn an_archived_group_scene_degrades_to_no_scene() {
         database,
         vec![member(first, 0), member(second, 1)],
         Some(starting),
-        |group| group.chat_mode = ChatMode::Roleplay,
+        |_| {},
     );
     let plan = group_plan_for(database, &group_request(group_id, "group-archived-scene"));
     assert_eq!(
@@ -13335,7 +13329,7 @@ fn the_roleplay_built_in_prompt_is_used_when_the_group_sets_none() {
         database,
         vec![member(first, 0), member(second, 1)],
         None,
-        |group| group.chat_mode = ChatMode::Roleplay,
+        |_| {},
     );
     let plan = group_plan_for(database, &group_request(group_id, "group-prompt-roleplay"));
     match &group_details(&plan).group.prompt {
@@ -14358,7 +14352,7 @@ fn a_group_scene_never_speaks_its_direction() {
         database,
         vec![member(first, 0), member(second, 1)],
         Some(starting),
-        |group| group.chat_mode = ChatMode::Roleplay,
+        |_| {},
     );
     let plan = group_plan_for(database, &group_request(group_id, "group-scene-direction"));
     assert!(plan.initial_timeline.entries.is_empty());
@@ -14428,7 +14422,7 @@ fn the_group_profile_persona_sits_between_the_request_and_the_application_defaul
 }
 
 #[test]
-fn a_member_carries_its_own_group_prompt_in_every_mode() {
+fn a_member_carries_its_own_group_prompt() {
     let backend = backend();
     let database = backend.database();
     let roleplay = seed_prompt(
@@ -14461,7 +14455,7 @@ fn a_member_carries_its_own_group_prompt_in_every_mode() {
         database,
         vec![member(first, 0), member(second, 1)],
         None,
-        |group| group.chat_mode = ChatMode::Roleplay,
+        |_| {},
     );
     let plan = group_plan_for(
         database,

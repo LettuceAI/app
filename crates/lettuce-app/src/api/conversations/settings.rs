@@ -9,7 +9,7 @@ use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
     ArchiveConversation, Conversation, ConversationBackground, ConversationKind,
     ConversationLifecycle, ConversationReader, ConversationRepository, ConversationTimeOverride,
-    GroupChatModeSnapshot, GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, ParticipantRole,
+    GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, ParticipantRole,
     ParticipantSource, RenameConversation, RestoreConversation, SettingProvenance, SnapshotSelection,
 };
 use lettuce_types::{
@@ -19,7 +19,6 @@ use lettuce_types::{
 
 use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
-use crate::api::mapping;
 use crate::conversation::{self, Change, Choice, ConversationEditError};
 use crate::generation::live_sources::{self, LiveGroup, MemberModel};
 use crate::launch::policy::{self, PromptSource};
@@ -208,7 +207,6 @@ pub(crate) fn settings_view(
                     mode: memory,
                     source: memory_source,
                 },
-                chat_mode: None,
                 disable_character_lorebooks: None,
                 disable_character_notes: None,
                 speaker_selection: None,
@@ -306,13 +304,6 @@ pub(crate) fn settings_view(
                     mode: memory,
                     source: memory_source,
                 },
-                chat_mode: Some(dto::SettingChatMode {
-                    mode: mapping::group_chat_mode(live.chat_mode),
-                    source: own_or_group(
-                        own.and_then(|settings| settings.chat_mode).is_some(),
-                        profile,
-                    ),
-                }),
                 disable_character_lorebooks: Some(dto::SettingFlag {
                     value: live.disable_character_lorebooks,
                     source: own_or_group(
@@ -860,15 +851,6 @@ fn settings_change(
                 dto::MemoryModeChange::Reset => Ok(Change::Reset),
             })
             .transpose()?,
-        chat_mode: patch.chat_mode.map(|change| match change {
-            dto::ChatModeChange::Set {
-                mode: dto::GroupChatMode::Conversation,
-            } => Change::Set(GroupChatModeSnapshot::Conversation),
-            dto::ChatModeChange::Set {
-                mode: dto::GroupChatMode::Roleplay,
-            } => Change::Set(GroupChatModeSnapshot::Roleplay),
-            dto::ChatModeChange::Reset => Change::Reset,
-        }),
         disable_character_lorebooks: patch
             .disable_character_lorebooks
             .map(|change| match change {

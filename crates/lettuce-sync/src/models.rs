@@ -105,7 +105,7 @@ pub fn canonical_prompt_payload(
 
 pub const GROUP_SYNC_KIND: &str = "group";
 pub const GROUP_SYNC_SCHEMA: &str = "group.snapshot";
-pub const GROUP_SYNC_VERSION: u32 = 4;
+pub const GROUP_SYNC_VERSION: u32 = 5;
 pub const GROUP_LOREBOOK_BINDINGS_SYNC_KIND: &str = "group_lorebook_bindings";
 
 /// The complete reusable group: profile, members and starting scene.
@@ -128,7 +128,7 @@ pub const CONVERSATION_SNAPSHOT_SYNC_VERSION: u32 = 3;
 
 pub const CONVERSATION_SYNC_KIND: &str = "conversation";
 pub const CONVERSATION_SYNC_SCHEMA: &str = "conversation.root";
-pub const CONVERSATION_SYNC_VERSION: u32 = 8;
+pub const CONVERSATION_SYNC_VERSION: u32 = 9;
 
 pub const CONVERSATION_MESSAGE_SYNC_KIND: &str = "conversation_message";
 pub const CONVERSATION_MESSAGE_SYNC_SCHEMA: &str = "conversation.message";

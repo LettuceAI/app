@@ -385,7 +385,6 @@ async fn direct_group_copy_creates_profile_and_chat_and_replays() {
     .expect("source message");
     let request = dto::ConversationGroupCopyRequest {
         expected_revision: None,
-        chat_mode: None,
         title: None,
         conversation_id: source_id.clone(),
         message_id: message.message.id.clone(),
@@ -411,10 +410,6 @@ async fn direct_group_copy_creates_profile_and_chat_and_replays() {
     .expect("group")
     .expect("new group");
     assert_eq!(group.group.members.len(), 2);
-    assert_eq!(
-        group.group.chat_mode,
-        lettuce_characters::ChatMode::Roleplay
-    );
     assert!(group.group.name.ends_with(" Branch"));
     let timeline = lettuce_conversations::ConversationReader::timeline_page(
         harness.context.backend().database(),
@@ -500,7 +495,7 @@ async fn new_group_copy_rolls_back_profile_messages_and_receipt_together() {
         ConversationReader::get(database, source_id.parse().expect("source id")).expect("source");
     let now = harness.context.now();
     let group_id = lettuce_types::GroupId::new();
-    let mut group = GroupProfile::new(
+    let group = GroupProfile::new(
         group_id,
         "Atomic Branch".into(),
         vec![
@@ -520,7 +515,6 @@ async fn new_group_copy_rolls_back_profile_messages_and_receipt_together() {
         now,
     )
     .expect("group");
-    group.chat_mode = lettuce_characters::ChatMode::Roleplay;
     let request = crate::GroupConversationLaunchRequest {
         format_version: crate::GROUP_LAUNCH_REQUEST_FORMAT_V1,
         title: group.name.clone(),

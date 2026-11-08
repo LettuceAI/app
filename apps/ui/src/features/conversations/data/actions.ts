@@ -146,14 +146,13 @@ export async function branchGroupToCharacter(services: ConversationServices, mes
   return copy.conversation_id;
 }
 
-export async function branchToGroup(services: ConversationServices, message: Pick<TimelineMessage, "id">, characterIds: string[], mode: "conversation" | "roleplay", title: string, options: BranchOptions): Promise<string> {
+export async function branchToGroup(services: ConversationServices, message: Pick<TimelineMessage, "id">, characterIds: string[], title: string, options: BranchOptions): Promise<string> {
   trimIfStuck(services);
   const { api, queryClient, conversationId } = services;
   const copy = await api.call("conversationBranchDirectToGroup", {
     conversation_id: conversationId,
     message_id: message.id,
     character_ids: characterIds,
-    chat_mode: mode,
     title: title.trim() || null,
     expected_revision: options.revision,
     client_operation_id: options.operationId,
@@ -218,7 +217,7 @@ export async function selectScene(services: ConversationServices, message: Timel
 export function settingsPatch(change: Partial<ConversationSettingsPatch_Deserialize>): ConversationSettingsPatch_Deserialize {
   return {
     persona: null, prompt: null, lorebooks: null, model: null, background: null, scene: null, author_note: null,
-    speaker_selection: null, memory: null, chat_mode: null, disable_character_lorebooks: null, disable_character_notes: null, ...change,
+    speaker_selection: null, memory: null, disable_character_lorebooks: null, disable_character_notes: null, ...change,
   };
 }
 

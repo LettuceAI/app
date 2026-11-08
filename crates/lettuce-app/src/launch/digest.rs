@@ -1,5 +1,5 @@
 use lettuce_conversations::{
-    GroupChatModeSnapshot, InitialMessageOrigin, InitialTimelineDraft, MemoryModeSnapshot,
+    InitialMessageOrigin, InitialTimelineDraft, MemoryModeSnapshot,
     MessageRole, SnapshotArtifactDraft, SnapshotSource,
 };
 use lettuce_types::{
@@ -228,7 +228,6 @@ pub(crate) struct GroupMemberIntent<'a> {
 #[derive(Debug, Clone)]
 pub(crate) struct GroupLaunchIntent<'a> {
     pub(crate) title: &'a str,
-    pub(crate) chat_mode: GroupChatModeSnapshot,
     pub(crate) memory_mode: MemoryModeSnapshot,
     pub(crate) members: &'a [GroupMemberIntent<'a>],
     pub(crate) scene: Selected<SceneId>,
@@ -260,7 +259,6 @@ struct GroupLaunchIntentV1<'a> {
     user_display_name: String,
     user_authored_description: Option<String>,
     group_id: GroupId,
-    chat_mode: GroupChatModeSnapshot,
     memory_mode: MemoryModeSnapshot,
     persona: IntentSelectionV1<PersonaId>,
     members: Vec<GroupMemberIntentV1<'a>>,
@@ -290,7 +288,6 @@ pub(crate) fn group_request_digest(
         user_display_name: request.user.display_name.clone(),
         user_authored_description: request.user.authored_description.clone(),
         group_id: request.group_id,
-        chat_mode: intent.chat_mode,
         memory_mode: intent.memory_mode,
         persona: request.persona.into(),
         members: intent

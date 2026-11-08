@@ -2,7 +2,7 @@ use lettuce_types::ConversationParticipantId;
 use serde::{Deserialize, Serialize};
 
 use crate::snapshot::{
-    GroupChatModeSnapshot, LorebookLaunchSnapshot, MemorySettingsSnapshot, ModelSelectionSnapshot,
+    LorebookLaunchSnapshot, MemorySettingsSnapshot, ModelSelectionSnapshot,
     PersonaLaunchSnapshot, PromptLaunchSnapshot, SceneLaunchSnapshot, VoiceSettingsSnapshot,
 };
 use crate::{
@@ -126,10 +126,7 @@ pub fn resolve_effective_settings(
             } else {
                 selection_value(&member.lorebooks).unwrap_or_default()
             };
-            let launch_scene = match details.group.chat_mode {
-                GroupChatModeSnapshot::Conversation => None,
-                GroupChatModeSnapshot::Roleplay => selection_value(&details.group.scene),
-            };
+            let launch_scene = selection_value(&details.group.scene);
 
             Ok(EffectiveConversationSettings {
                 author_note: current_or_launch(
@@ -496,9 +493,7 @@ mod tests {
         }
     }
 
-    fn group_conversation(
-        mode: GroupChatModeSnapshot,
-    ) -> (Conversation, ConversationParticipantId) {
+    fn group_conversation() -> (Conversation, ConversationParticipantId) {
         let first_character = CharacterId::new();
         let second_character = CharacterId::new();
         let first_id = ConversationParticipantId::new();
@@ -540,17 +535,13 @@ mod tests {
             source_revision: Revision::INITIAL,
             name: "Group".into(),
             members: vec![first_member, second_member],
-            chat_mode: mode,
+            chat_mode: crate::snapshot::GroupChatModeSnapshot::Roleplay,
             speaker_selection: GroupSpeakerSelectionSnapshot::RoundRobin,
             speaker_selection_model: None,
             memory: SnapshotSelection::Explicit(memory()),
             disable_character_lorebook: false,
             persona: SnapshotSelection::Explicit(persona(PersonaId::new())),
-            scene: if mode == GroupChatModeSnapshot::Roleplay {
-                SnapshotSelection::Explicit(scene(SceneId::new()))
-            } else {
-                SnapshotSelection::Disabled
-            },
+            scene: SnapshotSelection::Explicit(scene(SceneId::new())),
             prompt: SnapshotSelection::Explicit(group_prompt),
             lorebooks: SnapshotSelection::Explicit(vec![group_book, overlap_book]),
             model: SnapshotSelection::Explicit(cast_model),
@@ -644,7 +635,6 @@ mod tests {
                 companion_clock: PatchValue::Keep,
                 background: PatchValue::Keep,
                 model_settings: PatchValue::Keep,
-                chat_mode: Default::default(),
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
                 follow_group_members: false,
@@ -680,7 +670,7 @@ mod tests {
 
     #[test]
     fn group_conversations_can_choose_their_own_speaker_selection() {
-        let (mut conversation, _) = group_conversation(GroupChatModeSnapshot::Roleplay);
+        let (mut conversation, _) = group_conversation();
         assert_eq!(
             effective_speaker_selection(&conversation),
             Some(GroupSpeakerSelectionSnapshot::RoundRobin)
@@ -702,7 +692,7 @@ mod tests {
 
     #[test]
     fn group_settings_prefer_member_and_merge_lorebooks() {
-        let (conversation, speaker) = group_conversation(GroupChatModeSnapshot::Roleplay);
+        let (conversation, speaker) = group_conversation();
         let effective =
             resolve_effective_settings(&conversation, Some(speaker)).expect("group settings");
         let (_group_prompt_id, member_prompt_id, second_speaker) =
@@ -793,16 +783,23 @@ mod tests {
     }
 
     #[test]
-    fn conversational_group_rejects_launch_scene() {
-        let (mut conversation, _) = group_conversation(GroupChatModeSnapshot::Conversation);
+    fn a_group_accepts_a_launch_scene() {
+        let (mut conversation, _) = group_conversation();
         if let ConversationKind::Group(details) = &mut conversation.kind {
             details.group.scene = SnapshotSelection::Explicit(scene(SceneId::new()));
         }
-        assert_eq!(
-            conversation.validate(),
-            Err(ValidationError::InvalidReference {
-                field: "group.scene.chat_mode"
-            })
-        );
+        conversation.validate().expect("group with a scene");
+    }
+
+    #[test]
+    fn a_stored_conversation_launch_snapshot_still_renders_its_scene() {
+        let (mut conversation, speaker) = group_conversation();
+        if let ConversationKind::Group(details) = &mut conversation.kind {
+            details.group.chat_mode = crate::snapshot::GroupChatModeSnapshot::Conversation;
+        }
+        conversation.validate().expect("a stored launch loads");
+        let effective = resolve_effective_settings(&conversation, Some(speaker))
+            .expect("assembled settings");
+        assert!(effective.scene.is_some());
     }
 }

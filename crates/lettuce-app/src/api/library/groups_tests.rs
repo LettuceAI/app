@@ -23,7 +23,6 @@ pub(crate) async fn draft(context: &ApiContext, character_id: String) -> dto::Gr
     .expect("copy");
     dto::GroupDraft {
         name: "Library group".into(),
-        chat_mode: dto::GroupChatMode::Conversation,
         persona: dto::LibraryPersonaSelection::Inherit,
         speaker_selection: dto::SpeakerSelectionMethod::Heuristic,
         memory_policy: dto::LibraryMemoryPolicy::Manual,

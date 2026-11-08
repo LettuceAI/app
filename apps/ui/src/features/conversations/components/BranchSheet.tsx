@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useBlocker } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
-import { Avatar, Button, Checkbox, EmptyState, Field, icon, Input, ListGroup, ListRow, ListRowButton, LoadingState, SearchField, Segmented, Sheet, Text, toast } from "@lettuceai/crisp";
+import { Avatar, Button, Checkbox, EmptyState, Field, icon, Input, ListGroup, ListRow, ListRowButton, LoadingState, SearchField, Sheet, Text, toast } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
-import type { ConversationView, GroupChatMode } from "@/api/generated/bindings";
+import type { ConversationView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import type { CharacterChoice } from "@/entities/character/CharacterChoices";
 import { plainText } from "@/shared/formatting/plainText";
@@ -34,7 +34,6 @@ export function BranchSheet({ open, services, view, target, onClose, onCreated }
   const ownerId = view.source.type === "direct" ? view.source.character_id : null;
   const group = target.kind === "group";
   const [selected, setSelected] = useState<string[]>(group && ownerId ? [ownerId] : []);
-  const [mode, setMode] = useState<GroupChatMode>("conversation");
   const [title, setTitle] = useState("");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -67,13 +66,13 @@ export function BranchSheet({ open, services, view, target, onClose, onCreated }
     if (running.current || !valid) return;
     running.current = true;
     setBusy(true);
-    const payload = JSON.stringify({ target, selected, mode, title: title.trim() });
+    const payload = JSON.stringify({ target, selected, title: title.trim() });
     if (operation.current?.payload !== payload) operation.current = { payload, id: crypto.randomUUID() };
     const options = { revision: target.revision, operationId: operation.current.id };
     try {
       const message = { id: target.messageId };
       const id = group
-        ? await branchToGroup(services, message, selected, mode, title, options)
+        ? await branchToGroup(services, message, selected, title, options)
         : view.kind === "group"
           ? await branchGroupToCharacter(services, message, selected[0]!, options)
           : await branchToNewChat(services, message, selected[0]!, options);
@@ -97,10 +96,6 @@ export function BranchSheet({ open, services, view, target, onClose, onCreated }
     <div className="space-y-4 pb-1">
       {group && <>
         <Field label={groups("setup.name")}><Input value={title} disabled={busy} placeholder={t("branchSetup.defaultName", { name: source?.name ?? view.title })} onChange={(event) => setTitle(event.target.value)} /></Field>
-        <Field label={groups("setup.mode")} hint={groups(`setup.${mode}Body`)}>
-          <Segmented<GroupChatMode> block aria-label={groups("setup.mode")} value={mode} onChange={(value) => { if (!busy) setMode(value); }}
-            options={[{ value: "conversation", label: groups("setup.conversation") }, { value: "roleplay", label: groups("setup.roleplay") }]} />
-        </Field>
         <div className="space-y-1 px-1">
           <Text variant="label" className="block">{t("branchSetup.characters")}</Text>
           <Text variant="hint">{t("branchSetup.sourceLocked")}</Text>

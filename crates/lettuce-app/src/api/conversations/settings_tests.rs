@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use lettuce_characters::{ChatMode, GroupRepository, MemoryPolicy, Selection, SpeakerSelection};
+use lettuce_characters::{GroupRepository, MemoryPolicy, Selection, SpeakerSelection};
 use lettuce_context::{
     BindingInsertionTarget, GroupLorebookBindingRepository, LorebookBindingCreate, PromptPurpose,
 };
@@ -208,10 +208,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
     let chat = launch_group(&harness, group_id, "follow-launch").await;
     let launched = view(&harness, &chat).await;
     assert_eq!(
-        launched.chat_mode.expect("mode").source,
-        dto::SettingSource::Group
-    );
-    assert_eq!(
         launched.speaker_selection.expect("speaker").method,
         dto::SpeakerSelectionMethod::RoundRobin
     );
@@ -230,14 +226,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         NOW,
     )
     .expect("persona");
-    GroupRepository::set_chat_mode(
-        database,
-        group_id,
-        group_revision(&harness, group_id),
-        ChatMode::Roleplay,
-        NOW,
-    )
-    .expect("chat mode");
     GroupRepository::set_speaker_selection(
         database,
         group_id,
@@ -337,10 +325,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         }
     );
     assert_eq!(
-        live.chat_mode.map(|mode| (mode.mode, mode.source)),
-        Some((dto::GroupChatMode::Roleplay, group))
-    );
-    assert_eq!(
         live.speaker_selection
             .map(|speaker| (speaker.method, speaker.source)),
         Some((dto::SpeakerSelectionMethod::Heuristic, group))
@@ -399,10 +383,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         .expect("live group")
         .expect("group chat");
     assert_eq!(
-        turn_group.chat_mode,
-        lettuce_conversations::GroupChatModeSnapshot::Roleplay
-    );
-    assert_eq!(
         turn_group.speaker_selection,
         lettuce_conversations::GroupSpeakerSelectionSnapshot::Heuristic
     );
@@ -428,9 +408,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
             memory: Some(dto::MemoryModeChange::Set {
                 mode: dto::MemoryMode::Manual,
             }),
-            chat_mode: Some(dto::ChatModeChange::Set {
-                mode: dto::GroupChatMode::Roleplay,
-            }),
             disable_character_lorebooks: Some(dto::FlagChange::Set { value: false }),
             ..dto::ConversationSettingsPatch::default()
         },
@@ -455,14 +432,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         NOW,
     )
     .expect("persona again");
-    GroupRepository::set_chat_mode(
-        database,
-        group_id,
-        group_revision(&harness, group_id),
-        ChatMode::Conversation,
-        NOW,
-    )
-    .expect("mode again");
     GroupRepository::set_speaker_selection(
         database,
         group_id,
@@ -505,10 +474,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
     assert!(kept.background.hidden);
     assert_eq!(kept.scene.source, conversation);
     assert_eq!(
-        kept.chat_mode.map(|mode| (mode.mode, mode.source)),
-        Some((dto::GroupChatMode::Roleplay, conversation))
-    );
-    assert_eq!(
         kept.speaker_selection
             .map(|speaker| (speaker.method, speaker.source)),
         Some((dto::SpeakerSelectionMethod::RoundRobin, conversation))
@@ -543,7 +508,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
             scene: Some(dto::IdChange::Reset),
             speaker_selection: Some(dto::SpeakerSelectionChange::Reset),
             memory: Some(dto::MemoryModeChange::Reset),
-            chat_mode: Some(dto::ChatModeChange::Reset),
             disable_character_lorebooks: Some(dto::FlagChange::Reset),
             reset_members: true,
             reset_member_models: true,
@@ -563,10 +527,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
     assert_eq!(reset.lorebooks.ids, vec![book.to_string()]);
     assert_eq!(reset.background.source, group);
     assert_eq!(reset.scene.source, group);
-    assert_eq!(
-        reset.chat_mode.map(|mode| (mode.mode, mode.source)),
-        Some((dto::GroupChatMode::Conversation, group))
-    );
     assert_eq!(
         reset
             .speaker_selection
@@ -972,15 +932,6 @@ async fn settings_updates_resolve_ids_and_refuse_stale_revisions() {
                 ..dto::ConversationSettingsPatch::default()
             },
             "prompt_id",
-        ),
-        (
-            dto::ConversationSettingsPatch {
-                chat_mode: Some(dto::ChatModeChange::Set {
-                    mode: dto::GroupChatMode::Roleplay,
-                }),
-                ..dto::ConversationSettingsPatch::default()
-            },
-            "chat_mode",
         ),
     ] {
         let error = update(&harness, &chat, cleared.settings_revision, patch)

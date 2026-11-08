@@ -1347,12 +1347,7 @@ fn hydrate_initial_origin(
             },
         },
         ConversationKind::Group(details) => match &origin {
-            InitialMessageOrigin::SelectedScene { .. }
-                if matches!(
-                    details.group.chat_mode,
-                    lettuce_conversations::GroupChatModeSnapshot::Roleplay
-                ) =>
-            {
+            InitialMessageOrigin::SelectedScene { .. } => {
                 match &details.group.scene {
                     lettuce_conversations::SnapshotSelection::Inherited(value)
                     | lettuce_conversations::SnapshotSelection::Explicit(value) => {

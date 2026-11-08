@@ -19,7 +19,7 @@ function group(draft: GroupDraft_Serialize): GroupView_Serialize {
   return { id: "g1", draft, archived: false, assets: [], revision: 1, created_at: 1, updated_at: 1 };
 }
 const savedGroup = group({ ...newGroupForm(characterDraft.presentation.chat_appearance, false).draft, name: "Harbor crew", members: cast.slice(0, 2).map((item, ordinal) => ({ character_id: item.id, ordinal, muted: false, model_profile_override: null })) });
-const chat = (id: string, title: string, updatedAt: number): ConversationSummary => ({ id, title, kind: "group", source: { type: "group", group_id: "g1" }, avatars: [], background: null, revision: 1, last_message_preview: "By the harbor", updated_at: updatedAt, archived: false, message_count: 1, chat_mode: "conversation", missing_models: [], memory_blocked: null, origin_conversation_id: null, origin_message_id: null });
+const chat = (id: string, title: string, updatedAt: number): ConversationSummary => ({ id, title, kind: "group", source: { type: "group", group_id: "g1" }, avatars: [], background: null, revision: 1, last_message_preview: "By the harbor", updated_at: updatedAt, archived: false, message_count: 1, missing_models: [], memory_blocked: null, origin_conversation_id: null, origin_message_id: null });
 async function renderGroups(path = "/groups", calls: MockCallHandlers = {}, browser = false) {
   const transport = createMockTransport({ calls: {
     appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true } } } }),
@@ -76,11 +76,10 @@ describe("group home and creator", () => {
     expect(list).toHaveBeenCalledTimes(2);
   });
 
-  it("requires two members and changes the wizard when roleplay is chosen", async () => {
+  it("requires two members and always offers the scene step", async () => {
     const { runtime } = await renderGroups("/groups/new", {}, true);
     expect((await screen.findByRole("button", { name: "Continue to setup" }) as HTMLButtonElement).disabled).toBe(true);
     await selectMembers();
-    fireEvent.click(screen.getByRole("radio", { name: "Roleplay" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue to scene" }));
     fireEvent.click(await screen.findByRole("radio", { name: /Write one/ }));
     expect((screen.getByRole("button", { name: "Continue to extras" }) as HTMLButtonElement).disabled).toBe(true);
@@ -96,7 +95,8 @@ describe("group home and creator", () => {
     const launch = vi.fn<NonNullable<MockCallHandlers["conversationLaunchGroup"]>>(() => ({ status: "error", error: { code: "unavailable", message: "diagnostic", details: null } }));
     const { runtime } = await renderGroups("/groups/new", { groupSave: save, conversationLaunchGroup: launch });
     await selectMembers();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to extras" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to scene" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Continue to extras" }));
     fireEvent.click(await screen.findByRole("button", { name: "Create and chat" }));
     await screen.findByText("The group is saved. Try again to finish attaching lorebooks or opening its chat.");
     fireEvent.click(screen.getByRole("button", { name: "Create and chat" }));
@@ -113,7 +113,6 @@ describe("group home and creator", () => {
     await selectMembers();
     fireEvent.change(screen.getByRole("textbox", { name: "Group name" }), { target: { value: "  Crew  " } });
     fireEvent.click(screen.getByRole("radio", { name: /^Round Robin/ }));
-    fireEvent.click(screen.getByRole("radio", { name: "Roleplay" }));
     fireEvent.click(screen.getByRole("button", { name: "Continue to scene" }));
     fireEvent.click(await screen.findByRole("radio", { name: /^Write one/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "Scene" }), { target: { value: "At the harbor" } });
@@ -122,7 +121,7 @@ describe("group home and creator", () => {
     fireEvent.click(within(await screen.findByRole("dialog", { name: "Persona" })).getByRole("button", { name: "No persona" }));
     fireEvent.click(screen.getByRole("button", { name: "Create group" }));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/groups"));
-    expect(save.mock.calls[0]![0].draft).toMatchObject({ name: "Crew", chat_mode: "roleplay", speaker_selection: "round_robin", memory_policy: "manual", persona: { kind: "disabled" }, members: [{ character_id: "a", ordinal: 0 }, { character_id: "b", ordinal: 1 }], starting_scene: { scene: { content: { parts: [{ kind: "text", text: "At the harbor" }] } } } });
+    expect(save.mock.calls[0]![0].draft).toMatchObject({ name: "Crew", speaker_selection: "round_robin", memory_policy: "manual", persona: { kind: "disabled" }, members: [{ character_id: "a", ordinal: 0 }, { character_id: "b", ordinal: 1 }], starting_scene: { scene: { content: { parts: [{ kind: "text", text: "At the harbor" }] } } } });
   });
 
   it("maps imported group speakers to existing characters before committing", async () => {
@@ -143,11 +142,13 @@ describe("group home and creator", () => {
     expect(commit.mock.calls[0]![0]).toMatchObject({ digest: "digest", source: { uri: "/tmp/crew.jsonl" }, options: { speakers: { Aria: "a", "Unknown speaker": "b" } } });
   });
 
-  it("omits a retained roleplay scene when saving in conversation mode", () => {
+  it("omits a retained scene when no scene source is chosen", () => {
     const form = newGroupForm(characterDraft.presentation.chat_appearance, false);
-    form.sceneSource = "custom";
+    form.sceneSource = "none";
     form.draft.starting_scene = sceneFromText("A scene", "scene1");
     expect(draftToSave(form, "Crew").starting_scene).toBeNull();
+    form.sceneSource = "custom";
+    expect(draftToSave(form, "Crew").starting_scene).toEqual(form.draft.starting_scene);
   });
 });
 
@@ -207,7 +208,7 @@ describe("group editor", () => {
   });
 
   it("inserts a scene image at the caret and completes character placeholders", async () => {
-    const initial = { ...savedGroup, draft: { ...savedGroup.draft, chat_mode: "roleplay" as const, starting_scene: sceneFromText("Start End", "scene") } };
+    const initial = { ...savedGroup, draft: { ...savedGroup.draft, starting_scene: sceneFromText("Start End", "scene") } };
     const save = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => ({ status: "ok", data: group(request.draft) }));
     const ingest = vi.fn<NonNullable<MockCallHandlers["assetsIngest"]>>(() => ({ status: "ok", data: { asset_id: "image1", url: "asset://image1", media_type: "image/png", width: 100, height: 100 } as never }));
     await renderGroups("/groups/g1/edit?section=scene", { groupGet: () => ({ status: "ok", data: initial }), groupSave: save, filesPickOpen: () => ({ status: "ok", data: { sources: [{ uri: "/tmp/scene.png" }] } }), assetsIngest: ingest });
@@ -233,7 +234,7 @@ describe("group editor", () => {
     expect((name as HTMLInputElement).value).toBe("Harbor crew");
     expect(screen.queryByRole("button", { name: "Continue to setup" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Scene" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Scene" })).toBeTruthy();
     fireEvent.change(name, { target: { value: "New crew" } });
     fireEvent.click(screen.getByRole("tab", { name: /Members/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Aria: options" }));
@@ -316,7 +317,7 @@ describe("group editor", () => {
     starting.scene.direction = "At the docks";
     starting.scene.selected_variant_id = "variant1";
     starting.variants = [{ id: "variant1", scene_id: "scene1", ordinal: 0, content: { format_version: 1, parts: [{ kind: "text", text: "Another opening" }] }, direction: null }];
-    let current = { ...savedGroup, draft: { ...savedGroup.draft, chat_mode: "roleplay" as const, starting_scene: starting } };
+    let current = { ...savedGroup, draft: { ...savedGroup.draft, starting_scene: starting } };
     const save = vi.fn<NonNullable<MockCallHandlers["groupSave"]>>((request) => {
       current = { ...current, revision: 2, draft: request.draft } as typeof current;
       return { status: "ok", data: current };
@@ -405,7 +406,8 @@ describe("group time awareness and notes", () => {
     const upsert = vi.fn<NonNullable<MockCallHandlers["groupNotesUpsert"]>>(() => ({ status: "ok", data: note() }));
     const { runtime } = await renderGroups("/groups/new", { groupSave: save, groupNotesUpsert: upsert });
     await selectMembers();
-    fireEvent.click(screen.getByRole("button", { name: "Continue to extras" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to scene" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Continue to extras" }));
     fireEvent.click(await screen.findByRole("switch", { name: "Time awareness" }));
     fireEvent.click(await screen.findByRole("button", { name: /Add a note/ }));
     const dialog = await screen.findByRole("dialog", { name: "New scheduled note" });
