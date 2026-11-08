@@ -14,7 +14,7 @@ export function newGroupForm(presentation: LibraryChatAppearanceV1_Serialize, dy
   return {
     draft: {
       name: "", speaker_selection: "llm", memory_policy: dynamicMemory ? "dynamic" : "manual",
-      persona: { kind: "inherit" }, disable_character_lorebooks: false, time_awareness: false, disable_character_notes: false, companion_mode: false,
+      persona: { kind: "inherit" }, disable_character_lorebooks: false, time_awareness: false, disable_character_notes: false, companion_mode: false, companion_personal_memories: true, companion_memory_write_back: true,
       group_roleplay_prompt_id: null,
       presentation, presentation_overrides: [], members: [], background_asset_id: null, starting_scene: null,
     },

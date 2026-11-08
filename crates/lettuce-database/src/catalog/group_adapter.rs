@@ -194,7 +194,7 @@ fn group_row(
 ) -> Result<Option<GroupProfile>, rusqlite::Error> {
     connection
         .query_row(
-            "SELECT id,status,name,normalized_name,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at,presentation_overrides_json,time_awareness,disable_character_notes,companion_mode FROM groups WHERE id=?1",
+            "SELECT id,status,name,normalized_name,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at,presentation_overrides_json,time_awareness,disable_character_notes,companion_mode,companion_personal_memories,companion_memory_write_back FROM groups WHERE id=?1",
             [group_id.to_string()],
             |row| {
                 let status_text: String = row.get(1)?;
@@ -215,9 +215,13 @@ fn group_row(
                 let time_awareness: i64 = row.get(18)?;
                 let disable_character_notes: i64 = row.get(19)?;
                 let companion_mode: i64 = row.get(20)?;
+                let companion_personal_memories: i64 = row.get(21)?;
+                let companion_memory_write_back: i64 = row.get(22)?;
                 if !matches!(time_awareness, 0 | 1)
                     || !matches!(disable_character_notes, 0 | 1)
                     || !matches!(companion_mode, 0 | 1)
+                    || !matches!(companion_personal_memories, 0 | 1)
+                    || !matches!(companion_memory_write_back, 0 | 1)
                 {
                     return Err(invalid());
                 }
@@ -232,6 +236,8 @@ fn group_row(
                     time_awareness: time_awareness != 0,
                     disable_character_notes: disable_character_notes != 0,
                     companion_mode: companion_mode != 0,
+                    companion_personal_memories: companion_personal_memories != 0,
+                    companion_memory_write_back: companion_memory_write_back != 0,
                     group_roleplay_prompt_id: row.get::<_, Option<String>>(9)?.map(id).transpose()?,
                     presentation,
                     presentation_overrides: row.get::<_, Option<String>>(17)?.map(|value| serde_json::from_str(&value).map_err(|_| invalid())).transpose()?,
@@ -761,7 +767,7 @@ pub(crate) fn insert_group_rows(
     if let Some(asset) = plan.group.background_asset_id {
         ensure_image_asset(tx, asset)?;
     }
-    tx.execute("INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at,time_awareness,disable_character_notes,companion_mode) VALUES (?1,?2,?3,?4,'roleplay',?5,?6,?7,?8,?9,?10,?11,?12,?13,'image',?14,?15,?16,?17,?18,?19,?20)", params![plan.group.id.to_string(), status_name(plan.group.status), plan.group.name, canonical_name(&plan.group.name), selection_kind(&plan.group.persona), match &plan.group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(plan.group.speaker_selection), memory_name(plan.group.memory_policy), plan.group.disable_character_lorebooks, None::<String>, plan.group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&plan.group.presentation, PRESENTATION_VERSION)?, plan.group.background_asset_id.map(|id| id.to_string()), plan.group.starting_scene_id.map(|id| id.to_string()), sql_revision(plan.group.revision)?, plan.group.created_at.get(), plan.group.updated_at.get(), plan.group.time_awareness, plan.group.disable_character_notes, plan.group.companion_mode]).map_err(db_error)?;
+    tx.execute("INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at,time_awareness,disable_character_notes,companion_mode,companion_personal_memories,companion_memory_write_back) VALUES (?1,?2,?3,?4,'roleplay',?5,?6,?7,?8,?9,?10,?11,?12,?13,'image',?14,?15,?16,?17,?18,?19,?20,?21,?22)", params![plan.group.id.to_string(), status_name(plan.group.status), plan.group.name, canonical_name(&plan.group.name), selection_kind(&plan.group.persona), match &plan.group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(plan.group.speaker_selection), memory_name(plan.group.memory_policy), plan.group.disable_character_lorebooks, None::<String>, plan.group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&plan.group.presentation, PRESENTATION_VERSION)?, plan.group.background_asset_id.map(|id| id.to_string()), plan.group.starting_scene_id.map(|id| id.to_string()), sql_revision(plan.group.revision)?, plan.group.created_at.get(), plan.group.updated_at.get(), plan.group.time_awareness, plan.group.disable_character_notes, plan.group.companion_mode, plan.group.companion_personal_memories, plan.group.companion_memory_write_back]).map_err(db_error)?;
     write_members(tx, plan.group.id, &plan.group.members)?;
     write_presentation(tx, plan.group.id, &plan.group.presentation)?;
     write_presentation_overrides(tx, plan.group.id, plan.group.presentation_overrides.as_ref())?;
@@ -875,7 +881,7 @@ fn replace_group_graph(
         params![group.id.to_string(), details.starting_scene.as_ref().map(|scene| scene.scene.id.to_string())],
     )
     .map_err(db_error)?;
-    tx.execute("UPDATE groups SET status=?2,name=?3,normalized_name=?4,chat_mode='roleplay',persona_selection_kind=?5,persona_id=?6,speaker_selection=?7,memory_policy=?8,disable_character_lorebooks=?9,group_conversation_prompt_id=?10,group_roleplay_prompt_id=?11,presentation_json=?12,background_asset_id=?13,starting_scene_id=?14,revision=?15,created_at=?16,updated_at=?17,time_awareness=?18,disable_character_notes=?19,companion_mode=?20 WHERE id=?1", params![group.id.to_string(), status_name(group.status), group.name, canonical_name(&group.name), selection_kind(&group.persona), match &group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(group.speaker_selection), memory_name(group.memory_policy), group.disable_character_lorebooks, None::<String>, group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&group.presentation, PRESENTATION_VERSION)?, group.background_asset_id.map(|id| id.to_string()), group.starting_scene_id.map(|id| id.to_string()), sql_revision(group.revision)?, group.created_at.get(), group.updated_at.get(), group.time_awareness, group.disable_character_notes, group.companion_mode]).map_err(db_error)?;
+    tx.execute("UPDATE groups SET status=?2,name=?3,normalized_name=?4,chat_mode='roleplay',persona_selection_kind=?5,persona_id=?6,speaker_selection=?7,memory_policy=?8,disable_character_lorebooks=?9,group_conversation_prompt_id=?10,group_roleplay_prompt_id=?11,presentation_json=?12,background_asset_id=?13,starting_scene_id=?14,revision=?15,created_at=?16,updated_at=?17,time_awareness=?18,disable_character_notes=?19,companion_mode=?20,companion_personal_memories=?21,companion_memory_write_back=?22 WHERE id=?1", params![group.id.to_string(), status_name(group.status), group.name, canonical_name(&group.name), selection_kind(&group.persona), match &group.persona { Selection::Explicit(id) => Some(id.to_string()), _ => None }, speaker_name(group.speaker_selection), memory_name(group.memory_policy), group.disable_character_lorebooks, None::<String>, group.group_roleplay_prompt_id.map(|id| id.to_string()), encode(&group.presentation, PRESENTATION_VERSION)?, group.background_asset_id.map(|id| id.to_string()), group.starting_scene_id.map(|id| id.to_string()), sql_revision(group.revision)?, group.created_at.get(), group.updated_at.get(), group.time_awareness, group.disable_character_notes, group.companion_mode, group.companion_personal_memories, group.companion_memory_write_back]).map_err(db_error)?;
     write_members(tx, group.id, &group.members)?;
     write_presentation(tx, group.id, &group.presentation)?;
     write_presentation_overrides(tx, group.id, group.presentation_overrides.as_ref())?;
@@ -2448,6 +2454,8 @@ mod tests {
         group.time_awareness = true;
         group.disable_character_notes = true;
         group.companion_mode = true;
+        group.companion_personal_memories = false;
+        group.companion_memory_write_back = false;
         group.group_roleplay_prompt_id = Some(PromptDocumentId::new());
         group.presentation = presentation.clone();
         group.presentation_overrides = Some(["font_size".to_owned(), "chat_widget_slots".to_owned()].into());

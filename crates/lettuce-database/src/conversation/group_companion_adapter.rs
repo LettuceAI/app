@@ -12,10 +12,10 @@ use lettuce_conversations::{
     SendConversation, SendConversationResult,
 };
 use lettuce_types::{
-    CharacterId, ConversationId, MessageCandidateId, MessageId, MessageRevisionId, PersonaId,
-    Revision, TimestampMillis,
+    CharacterId, ConversationBranchId, ConversationId, MemorySpaceId, MessageCandidateId,
+    MessageId, MessageRevisionId, PersonaId, Revision, TimestampMillis,
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::Database;
 
@@ -371,6 +371,123 @@ impl GroupCompanionRepository for Database {
                 params![conversation_id.to_string(), path, persona_key(persona_id)],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
+            .map_err(failure)?
+            .map(|row| {
+                let (message_id, character_id) = row.map_err(failure)?;
+                Ok((
+                    MessageId::from_str(&message_id).map_err(corrupt)?,
+                    CharacterId::from_str(&character_id).map_err(corrupt)?,
+                ))
+            })
+            .collect()
+    }
+
+    fn perspective_space(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        character_id: CharacterId,
+    ) -> Result<Option<MemorySpaceId>, Error> {
+        let connection = self.connection().map_err(failure)?;
+        connection
+            .query_row(
+                "SELECT space_id FROM group_companion_memory_spaces
+                 WHERE conversation_id = ?1 AND branch_id = ?2 AND character_id = ?3",
+                params![
+                    conversation_id.to_string(),
+                    branch_id.to_string(),
+                    character_id.to_string()
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(failure)?
+            .map(|value| MemorySpaceId::from_str(&value).map_err(corrupt))
+            .transpose()
+    }
+
+    fn ensure_perspective_space(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        character_id: CharacterId,
+    ) -> Result<MemorySpaceId, Error> {
+        let mut connection = self.connection().map_err(failure)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(failure)?;
+        let existing = transaction
+            .query_row(
+                "SELECT space_id FROM group_companion_memory_spaces
+                 WHERE conversation_id = ?1 AND branch_id = ?2 AND character_id = ?3",
+                params![
+                    conversation_id.to_string(),
+                    branch_id.to_string(),
+                    character_id.to_string()
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(failure)?;
+        if let Some(value) = existing {
+            return MemorySpaceId::from_str(&value).map_err(corrupt);
+        }
+        let space_id = crate::memory::memory_adapter::create_perspective_space_in(
+            &transaction,
+            conversation_id,
+            branch_id,
+            character_id,
+        )
+        .map_err(failure)?;
+        transaction.commit().map_err(failure)?;
+        Ok(space_id)
+    }
+
+    fn companion_pool_space(
+        &self,
+        character_id: CharacterId,
+    ) -> Result<Option<MemorySpaceId>, Error> {
+        let connection = self.connection().map_err(failure)?;
+        let space = connection
+            .query_row(
+                "SELECT space_id FROM companion_memory_pools WHERE character_id = ?1",
+                [character_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(failure)?;
+        let Some(space) = space else {
+            return Ok(None);
+        };
+        if !crate::catalog::character_adapter::companion_memory_shared_in(&connection, character_id)
+            .map_err(failure)?
+        {
+            return Ok(None);
+        }
+        MemorySpaceId::from_str(&space).map(Some).map_err(corrupt)
+    }
+
+    fn message_presence(
+        &self,
+        conversation_id: ConversationId,
+        path: &[MessageId],
+    ) -> Result<Vec<(MessageId, CharacterId)>, Error> {
+        let path = serde_json::to_string(&path.iter().map(ToString::to_string).collect::<Vec<_>>())
+            .map_err(corrupt)?;
+        let connection = self.connection().map_err(failure)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT DISTINCT c.message_id, c.character_id
+                 FROM group_companion_checkpoints c
+                 JOIN json_each(?2) p ON p.value = c.message_id
+                 WHERE c.conversation_id = ?1
+                 ORDER BY p.key, c.character_id",
+            )
+            .map_err(failure)?;
+        statement
+            .query_map(params![conversation_id.to_string(), path], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(failure)?
             .map(|row| {
                 let (message_id, character_id) = row.map_err(failure)?;
@@ -1316,6 +1433,102 @@ mod tests {
         assert_eq!(
             apply_prepared_group_companion_turn(&tx, &prepared, None, TimestampMillis::new(40)),
             Err(Error::Conflict)
+        );
+    }
+
+    #[test]
+    fn perspective_space_is_created_once_and_companion_pool_requires_sharing() {
+        let fixture = Fixture::new();
+        let character = fixture.characters[0];
+        let first = fixture
+            .database
+            .ensure_perspective_space(fixture.conversation_id, fixture.branch_id, character)
+            .expect("first perspective space");
+        let second = fixture
+            .database
+            .ensure_perspective_space(fixture.conversation_id, fixture.branch_id, character)
+            .expect("idempotent perspective space");
+        assert_eq!(first, second);
+        assert_eq!(
+            fixture
+                .database
+                .perspective_space(fixture.conversation_id, fixture.branch_id, character)
+                .expect("perspective space"),
+            Some(first)
+        );
+        let pool = lettuce_types::MemorySpaceId::new();
+        let defaults = lettuce_characters::CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: Some(CompanionSoulConfig {
+                share_memory_across_chats: true,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("transaction");
+            transaction
+                .execute(
+                    "INSERT INTO memory_spaces (id, revision) VALUES (?1, 1)",
+                    [pool.to_string()],
+                )
+                .expect("pool space");
+            transaction
+                .execute(
+                    "INSERT INTO companion_memory_pools (character_id, space_id) VALUES (?1, ?2)",
+                    params![character.to_string(), pool.to_string()],
+                )
+                .expect("pool");
+            transaction
+                .execute(
+                    "UPDATE characters SET defaults_json = ?1 WHERE id = ?2",
+                    params![
+                        crate::encode_versioned(&defaults, 1).expect("defaults"),
+                        character.to_string()
+                    ],
+                )
+                .expect("shared defaults");
+            transaction.commit().expect("commit");
+        }
+        assert_eq!(
+            fixture
+                .database
+                .companion_pool_space(character)
+                .expect("shared pool"),
+            Some(pool)
+        );
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE characters SET defaults_json = ?1 WHERE id = ?2",
+                params![
+                    crate::encode_versioned(
+                        &lettuce_characters::CharacterDefaults {
+                            interaction_mode: lettuce_characters::InteractionMode::Companion,
+                            companion_soul: Some(CompanionSoulConfig {
+                                share_memory_across_chats: false,
+                                ..Default::default()
+                            }),
+                            ..Default::default()
+                        },
+                        1
+                    )
+                    .expect("defaults"),
+                    character.to_string()
+                ],
+            )
+            .expect("unshared defaults");
+        assert_eq!(
+            fixture
+                .database
+                .companion_pool_space(character)
+                .expect("unshared pool"),
+            None
         );
     }
 }

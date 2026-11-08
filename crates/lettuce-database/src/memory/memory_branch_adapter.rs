@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use lettuce_conversations::ConversationRepositoryError;
 use lettuce_memory::MemorySpaceSnapshot;
 use lettuce_types::{
-    ConversationBranchId, ConversationId, DynamicMemoryRunId, MemoryId, MemorySpaceId, MessageId,
-    Revision,
+    CharacterId, ConversationBranchId, ConversationId, DynamicMemoryRunId, MemoryId, MemorySpaceId,
+    MessageId, Revision,
 };
 use rusqlite::{OptionalExtension, Transaction, params};
 
@@ -100,11 +100,19 @@ pub(crate) fn seed_branch_space_in(
     fork_message_id: MessageId,
     deterministic: bool,
 ) -> Result<(), ConversationRepositoryError> {
+    let position = message_position_in(transaction, conversation_id, fork_message_id)?;
     let Some(parent_space_id) = own_space_in(transaction, conversation_id, parent_branch_id)?
     else {
+        seed_forked_perspective_spaces_in(
+            transaction,
+            conversation_id,
+            parent_branch_id,
+            branch_id,
+            position,
+            deterministic,
+        )?;
         return Ok(());
     };
-    let position = message_position_in(transaction, conversation_id, fork_message_id)?;
     let (cut, summary) = branch_state_in(
         transaction,
         conversation_id,
@@ -179,6 +187,322 @@ pub(crate) fn seed_branch_space_in(
             .map_err(storage)?;
         store_materialised_summary_in(transaction, conversation_id, branch_id, space_id, &summary)?;
     }
+    seed_forked_perspective_spaces_in(
+        transaction,
+        conversation_id,
+        parent_branch_id,
+        branch_id,
+        position,
+        deterministic,
+    )?;
+    Ok(())
+}
+
+fn perspective_spaces_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<Vec<(CharacterId, MemorySpaceId)>, ConversationRepositoryError> {
+    let mut statement = transaction
+        .prepare(
+            "SELECT character_id, space_id FROM group_companion_memory_spaces
+              WHERE conversation_id = ?1 AND branch_id = ?2
+              ORDER BY character_id",
+        )
+        .map_err(storage)?;
+    statement
+        .query_map(
+            params![conversation_id.to_string(), branch_id.to_string()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .map_err(storage)?
+        .map(|row| {
+            let (character_id, space_id) = row.map_err(storage)?;
+            Ok((
+                character_id.parse().map_err(storage)?,
+                space_id.parse().map_err(storage)?,
+            ))
+        })
+        .collect()
+}
+
+fn perspective_space_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    character_id: CharacterId,
+) -> Result<Option<MemorySpaceId>, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT space_id FROM group_companion_memory_spaces
+              WHERE conversation_id = ?1 AND branch_id = ?2 AND character_id = ?3",
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                character_id.to_string()
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .map(|value| value.parse().map_err(storage))
+        .transpose()
+}
+
+fn perspective_id_namespace(
+    branch_id: ConversationBranchId,
+    character_id: CharacterId,
+) -> uuid::Uuid {
+    uuid::Uuid::new_v5(
+        &branch_id.as_uuid(),
+        format!("perspective:{character_id}").as_bytes(),
+    )
+}
+
+fn seed_forked_perspective_spaces_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    parent_branch_id: ConversationBranchId,
+    branch_id: ConversationBranchId,
+    position: u64,
+    deterministic: bool,
+) -> Result<(), ConversationRepositoryError> {
+    for (character_id, parent_space_id) in
+        perspective_spaces_in(transaction, conversation_id, parent_branch_id)?
+    {
+        if perspective_space_in(transaction, conversation_id, branch_id, character_id)?.is_some() {
+            continue;
+        }
+        let (cut, summary) = branch_state_in(
+            transaction,
+            conversation_id,
+            parent_branch_id,
+            parent_space_id,
+            position,
+            None,
+        )?;
+        let seed = match cut {
+            Some(snapshot) => snapshot,
+            None => memory_adapter::get_in(transaction, parent_space_id)
+                .map_err(storage)?
+                .ok_or_else(|| ConversationRepositoryError::Storage {
+                    reason: "seed forked perspective space in: a required value is missing"
+                        .to_owned(),
+                })?,
+        };
+        let namespace = perspective_id_namespace(branch_id, character_id);
+        let space_id = if deterministic {
+            MemorySpaceId::from_uuid(uuid::Uuid::new_v5(&namespace, b"memory-space"))
+        } else {
+            MemorySpaceId::new()
+        };
+        let ids: HashMap<_, _> = seed
+            .items
+            .iter()
+            .map(|item| {
+                let id = if deterministic {
+                    MemoryId::from_uuid(uuid::Uuid::new_v5(
+                        &namespace,
+                        item.id.as_uuid().as_bytes(),
+                    ))
+                } else {
+                    MemoryId::new()
+                };
+                (item.id, id)
+            })
+            .collect();
+        let mut items = seed.items.clone();
+        for item in &mut items {
+            item.id = ids[&item.id];
+            item.superseded_by = item.superseded_by.and_then(|id| ids.get(&id).copied());
+            if item.superseded_by.is_none() {
+                item.superseded_at = None;
+            }
+            item.supersedes = item
+                .supersedes
+                .iter()
+                .filter_map(|id| ids.get(id).copied())
+                .collect();
+        }
+        memory_adapter::insert_perspective_space_in(
+            transaction,
+            conversation_id,
+            branch_id,
+            character_id,
+            &MemorySpaceSnapshot {
+                id: space_id,
+                revision: Revision::INITIAL,
+                items,
+            },
+        )?;
+        for item in &seed.items {
+            transaction.execute(
+                "INSERT INTO memory_embedding_projections (space_id,memory_id,source_revision,dimensions,source_text,status,vector,updated_at)
+                 SELECT ?1,?2,source_revision,dimensions,source_text,status,vector,updated_at FROM memory_embedding_projections
+                  WHERE space_id = ?3 AND memory_id = ?4 AND source_text = ?5",
+                params![space_id.to_string(), ids[&item.id].to_string(), seed.id.to_string(), item.id.to_string(), item.text],
+            ).map_err(storage)?;
+        }
+        if let Some(mut summary) = summary {
+            summary.space_id = space_id;
+            summary.branch_id = branch_id;
+            memory_adapter::replace_summary_in(transaction, space_id, Some(&summary))
+                .map_err(storage)?;
+            store_materialised_summary_in(
+                transaction,
+                conversation_id,
+                branch_id,
+                space_id,
+                &summary,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn seed_new_perspective_spaces_in(
+    transaction: &Transaction<'_>,
+    source_conversation_id: ConversationId,
+    source_branch_id: ConversationBranchId,
+    target_conversation_id: ConversationId,
+    target_branch_id: ConversationBranchId,
+    at_message_id: Option<MessageId>,
+    message_ids: &HashMap<MessageId, MessageId>,
+) -> Result<(), ConversationRepositoryError> {
+    let position = at_message_id
+        .map(|id| message_position_in(transaction, source_conversation_id, id))
+        .transpose()?;
+    for (character_id, source_space_id) in
+        perspective_spaces_in(transaction, source_conversation_id, source_branch_id)?
+    {
+        let (cut, mut summary) = if let Some(position) = position {
+            branch_state_in(
+                transaction,
+                source_conversation_id,
+                source_branch_id,
+                source_space_id,
+                position,
+                None,
+            )?
+        } else {
+            (
+                None,
+                memory_adapter::get_summary_in(transaction, source_space_id).map_err(storage)?,
+            )
+        };
+        let seed = cut.map_or_else(
+            || {
+                memory_adapter::get_in(transaction, source_space_id)
+                    .map_err(storage)?
+                    .ok_or_else(|| ConversationRepositoryError::Storage {
+                        reason: "seed new perspective space in: a required value is missing"
+                            .to_owned(),
+                    })
+            },
+            Ok,
+        )?;
+        let space_id = match perspective_space_in(
+            transaction,
+            target_conversation_id,
+            target_branch_id,
+            character_id,
+        )? {
+            Some(id) => {
+                let current = memory_adapter::get_in(transaction, id)
+                    .map_err(storage)?
+                    .ok_or_else(|| ConversationRepositoryError::Storage {
+                        reason: "seed new perspective space in: a required value is missing"
+                            .to_owned(),
+                    })?;
+                if !current.items.is_empty()
+                    || memory_adapter::get_summary_in(transaction, id)
+                        .map_err(storage)?
+                        .is_some()
+                {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                id
+            }
+            None => memory_adapter::create_perspective_space_in(
+                transaction,
+                target_conversation_id,
+                target_branch_id,
+                character_id,
+            )?,
+        };
+        let ids: HashMap<_, _> = seed
+            .items
+            .iter()
+            .map(|item| (item.id, MemoryId::new()))
+            .collect();
+        let mut items = seed.items.clone();
+        for item in &mut items {
+            item.id = ids[&item.id];
+            item.superseded_by = item.superseded_by.and_then(|id| ids.get(&id).copied());
+            if item.superseded_by.is_none() {
+                item.superseded_at = None;
+            }
+            item.supersedes = item
+                .supersedes
+                .iter()
+                .filter_map(|id| ids.get(id).copied())
+                .collect();
+            item.source_message_id = item
+                .source_message_id
+                .and_then(|id| message_ids.get(&id).copied());
+            if item.source_message_id.is_none() {
+                item.source_role = None;
+                if item.observed_time_precision.as_deref() == Some("turn") {
+                    item.observed_at = None;
+                    item.observed_time_precision = None;
+                }
+            }
+        }
+        if summary.as_ref().is_some_and(|value| {
+            value
+                .source_message_ids
+                .iter()
+                .any(|id| !message_ids.contains_key(id))
+        }) {
+            summary = None;
+        }
+        if let Some(summary) = &mut summary {
+            summary.space_id = space_id;
+            summary.branch_id = target_branch_id;
+            summary.source_message_ids = summary
+                .source_message_ids
+                .iter()
+                .filter_map(|id| message_ids.get(id).copied())
+                .collect();
+            summary.validate().map_err(|_| {
+                ConversationRepositoryError::Invalid(
+                    lettuce_conversations::ValidationError::InvalidReference {
+                        field: "copy.summary.source_messages",
+                    },
+                )
+            })?;
+        }
+        memory_adapter::insert_items(transaction, space_id, &items).map_err(storage)?;
+        for item in &seed.items {
+            transaction.execute(
+                "INSERT INTO memory_embedding_projections (space_id,memory_id,source_revision,dimensions,source_text,status,vector,updated_at)
+                 SELECT ?1,?2,source_revision,dimensions,source_text,status,vector,updated_at FROM memory_embedding_projections
+                  WHERE space_id = ?3 AND memory_id = ?4 AND source_text = ?5",
+                params![space_id.to_string(), ids[&item.id].to_string(), seed.id.to_string(), item.id.to_string(), item.text],
+            ).map_err(storage)?;
+        }
+        memory_adapter::replace_summary_in(transaction, space_id, summary.as_ref())
+            .map_err(storage)?;
+        if let Some(summary) = &summary {
+            store_materialised_summary_in(
+                transaction,
+                target_conversation_id,
+                target_branch_id,
+                space_id,
+                summary,
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -204,8 +528,19 @@ pub(crate) fn seed_new_conversation_space_in(
         }
     }
     let owned_source = own_space_in(transaction, source_conversation_id, source_branch_id)?;
-    let Some(source_space) = memory_adapter::branch_space_id_in(transaction, source_conversation_id, source_branch_id)
-        .map_err(storage)? else {
+    let Some(source_space) =
+        memory_adapter::branch_space_id_in(transaction, source_conversation_id, source_branch_id)
+            .map_err(storage)?
+    else {
+        seed_new_perspective_spaces_in(
+            transaction,
+            source_conversation_id,
+            source_branch_id,
+            conversation_id,
+            branch_id,
+            at_message_id,
+            message_ids,
+        )?;
         return Ok(HashMap::new());
     };
     let pooled_source = owned_source != Some(source_space);
@@ -362,6 +697,15 @@ pub(crate) fn seed_new_conversation_space_in(
             params![conversation_id.to_string(), branch_id.to_string(), i64::try_from(summary.window_end).map_err(storage)?],
         ).map_err(storage)?;
     }
+    seed_new_perspective_spaces_in(
+        transaction,
+        source_conversation_id,
+        source_branch_id,
+        conversation_id,
+        branch_id,
+        at_message_id,
+        message_ids,
+    )?;
     Ok(ids)
 }
 
@@ -799,4 +1143,193 @@ pub(crate) fn pin_seeded_summary_in(
         store_materialised_summary_in(transaction, conversation_id, branch_id, space_id, &summary)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Database;
+    use lettuce_memory::{MemoryCategory, MemoryItem, Score};
+    use lettuce_types::{
+        ConversationParticipantId, MemoryId, MemorySpaceId, MessageRevisionId, TimestampMillis,
+    };
+    use rusqlite::{TransactionBehavior, params};
+
+    fn item(id: MemoryId, text: &str) -> MemoryItem {
+        MemoryItem {
+            id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
+            text: text.to_owned(),
+            origin: lettuce_memory::MemoryOrigin::Model,
+            category: Some(MemoryCategory::Other),
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: Some(3),
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::FULL,
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(1),
+            last_accessed_at: TimestampMillis::new(1),
+        }
+    }
+
+    #[test]
+    fn perspective_space_is_seeded_when_a_branch_forks() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        let parent_branch = ConversationBranchId::new();
+        let child_branch = ConversationBranchId::new();
+        let character_id = CharacterId::new();
+        let participant_id = ConversationParticipantId::new();
+        let fork_message = MessageId::new();
+        let revision_id = MessageRevisionId::new();
+        let parent_space = MemorySpaceId::new();
+        let first = item(MemoryId::new(), "before fork");
+        let second = item(MemoryId::new(), "also before fork");
+        {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("transaction");
+            transaction
+                .execute(
+                    "INSERT INTO characters (
+                       id, status, name, normalized_name, profile_json,
+                       provenance_json, defaults_json, interaction_mode,
+                       memory_policy, voice_autoplay, presentation_json, revision,
+                       created_at, updated_at
+                     ) VALUES (?1, 'active', 'Member', 'member', '{}', '{}', '{}',
+                               'companion', 'manual', 0, '{}', 1, 1, 1)",
+                    [character_id.to_string()],
+                )
+                .expect("character");
+            transaction
+                .execute(
+                    "INSERT INTO conversations (
+                       id, kind, lifecycle, title, active_branch_id, kind_json,
+                       revision, created_at, updated_at
+                     ) VALUES (?1, 'group', 'active', 'Group', ?2,
+                               '{\"format_version\":1}', 1, 1, 1)",
+                    params![conversation_id.to_string(), parent_branch.to_string()],
+                )
+                .expect("conversation");
+            transaction
+                .execute(
+                    "INSERT INTO conversation_branches (
+                       conversation_id, id, status, revision, created_at, updated_at
+                     ) VALUES (?1, ?2, 'active', 1, 1, 1)",
+                    params![conversation_id.to_string(), parent_branch.to_string()],
+                )
+                .expect("parent branch");
+            transaction
+                .execute(
+                    "INSERT INTO conversation_participants (
+                       conversation_id, id, role, ordinal, source_kind, source_id,
+                       enabled, muted, display_name, model_selection_json, revision,
+                       created_at, updated_at
+                     ) VALUES (?1, ?2, 'user', 0, 'user', NULL, 1, 0, 'User',
+                               '{\"format_version\":1}', 1, 1, 1)",
+                    params![conversation_id.to_string(), participant_id.to_string()],
+                )
+                .expect("participant");
+            transaction
+                .execute(
+                    "INSERT INTO conversation_messages (
+                       conversation_id, id, branch_id, author_participant_id, role,
+                       timeline_ordinal, logical_time, effective_time, visibility, pinned,
+                       scene_edited, active_revision_id, revision, created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, 'user', 1, 1, 1, 'visible', 0, 0, ?5, 1, 1, 1)",
+                    params![
+                        conversation_id.to_string(),
+                        fork_message.to_string(),
+                        parent_branch.to_string(),
+                        participant_id.to_string(),
+                        revision_id.to_string()
+                    ],
+                )
+                .expect("message");
+            transaction
+                .execute(
+                    "INSERT INTO conversation_message_revisions (
+                       conversation_id, id, message_id, branch_id, sequence, parts_json,
+                       authored_at
+                     ) VALUES (?1, ?2, ?3, ?4, 1,
+                               '{\"format_version\":1,\"value\":[]}', 1)",
+                    params![
+                        conversation_id.to_string(),
+                        revision_id.to_string(),
+                        fork_message.to_string(),
+                        parent_branch.to_string()
+                    ],
+                )
+                .expect("revision");
+            transaction
+                .execute(
+                    "INSERT INTO conversation_branches (
+                       conversation_id, id, parent_branch_id, fork_message_id, status,
+                       revision, created_at, updated_at
+                     ) VALUES (?1, ?2, ?3, ?4, 'active', 1, 1, 1)",
+                    params![
+                        conversation_id.to_string(),
+                        child_branch.to_string(),
+                        parent_branch.to_string(),
+                        fork_message.to_string()
+                    ],
+                )
+                .expect("child branch");
+            memory_adapter::insert_perspective_space_in(
+                &transaction,
+                conversation_id,
+                parent_branch,
+                character_id,
+                &MemorySpaceSnapshot {
+                    id: parent_space,
+                    revision: Revision::INITIAL,
+                    items: vec![first.clone(), second.clone()],
+                },
+            )
+            .expect("parent perspective space");
+            seed_branch_space_in(
+                &transaction,
+                conversation_id,
+                parent_branch,
+                child_branch,
+                fork_message,
+                false,
+            )
+            .expect("seed branch");
+            transaction.commit().expect("commit");
+        }
+        let connection = database.connection().expect("connection");
+        let child_space: String = connection
+            .query_row(
+                "SELECT space_id FROM group_companion_memory_spaces
+                  WHERE conversation_id = ?1 AND branch_id = ?2 AND character_id = ?3",
+                params![
+                    conversation_id.to_string(),
+                    child_branch.to_string(),
+                    character_id.to_string()
+                ],
+                |row| row.get(0),
+            )
+            .expect("child perspective binding");
+        let texts: Vec<String> = connection
+            .prepare("SELECT text FROM memory_items WHERE space_id = ?1 ORDER BY ordinal")
+            .expect("items")
+            .query_map([child_space.clone()], |row| row.get(0))
+            .expect("item rows")
+            .collect::<Result<_, _>>()
+            .expect("items");
+        assert_eq!(texts, vec![first.text, second.text]);
+        assert_ne!(child_space, parent_space.to_string());
+    }
 }

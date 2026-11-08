@@ -414,6 +414,7 @@ impl ProviderBackupRestoreWriter for Database {
             let memory = graph.memory.spaces.iter().find(|space| {
                 space.conversation_id == conversation_id
                     && !is_pool(space)
+                    && space.perspective_character_id.is_none()
                     && restored_history.aggregate.branches.iter().any(|branch| {
                         branch.parent_branch_id.is_none() && Some(branch.id) == space.branch_id
                     })
@@ -464,17 +465,32 @@ impl ProviderBackupRestoreWriter for Database {
             let Some(branch_id) = space.branch_id else {
                 continue;
             };
-            let existing: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0)", params![space.conversation_id.to_string(), branch_id.to_string()], |row| row.get(0)).map_err(invalid)?;
-            if existing {
-                continue;
+            if let Some(character_id) = space.perspective_character_id {
+                let existing: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM group_companion_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND character_id = ?3)", params![space.conversation_id.to_string(), branch_id.to_string(), character_id.to_string()], |row| row.get(0)).map_err(invalid)?;
+                if existing {
+                    continue;
+                }
+                crate::memory::memory_adapter::insert_perspective_space_in(
+                    &transaction,
+                    space.conversation_id,
+                    branch_id,
+                    character_id,
+                    &space.snapshot,
+                )
+                .map_err(invalid)?;
+            } else {
+                let existing: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0)", params![space.conversation_id.to_string(), branch_id.to_string()], |row| row.get(0)).map_err(invalid)?;
+                if existing {
+                    continue;
+                }
+                crate::memory::memory_adapter::insert_space_in(
+                    &transaction,
+                    space.conversation_id,
+                    branch_id,
+                    &space.snapshot,
+                )
+                .map_err(invalid)?;
             }
-            crate::memory::memory_adapter::insert_space_in(
-                &transaction,
-                space.conversation_id,
-                branch_id,
-                &space.snapshot,
-            )
-            .map_err(invalid)?;
             let projections = graph
                 .memory_projections
                 .projections
@@ -1134,7 +1150,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn group_companion_rows_round_trip_through_a_backup() {
+    fn perspective_spaces_and_group_companion_rows_round_trip_through_a_backup() {
         use lettuce_characters::{
             Character, CharacterDefaults, CharacterMedia, CharacterPresentationV1, CharacterProfile,
             CharacterProvenance, CharacterRepository,
@@ -1312,6 +1328,8 @@ pub(crate) mod tests {
             }],
             created_at: TimestampMillis::new(10),
         };
+        let perspective_space = lettuce_types::MemorySpaceId::new();
+        let perspective_item = lettuce_types::MemoryId::new();
         {
             let mut connection = database.connection().expect("database lock");
             let transaction = connection
@@ -1364,12 +1382,55 @@ pub(crate) mod tests {
                 TimestampMillis::new(20),
             )
             .expect("persona application");
+            crate::memory::memory_adapter::insert_perspective_space_in(
+                &transaction,
+                conversation_id,
+                branch_id,
+                character_id,
+                &lettuce_memory::MemorySpaceSnapshot {
+                    id: perspective_space,
+                    revision: Revision::INITIAL,
+                    items: vec![lettuce_memory::MemoryItem {
+                        id: perspective_item,
+                        short_id: lettuce_memory::MemoryShortId::derived(perspective_item),
+                        text: "perspective memory".into(),
+                        origin: lettuce_memory::MemoryOrigin::Model,
+                        category: Some(lettuce_memory::MemoryCategory::Other),
+                        source_message_id: None,
+                        source_role: None,
+                        observed_at: None,
+                        observed_time_precision: None,
+                        superseded_by: None,
+                        superseded_at: None,
+                        supersedes: Vec::new(),
+                        token_count: Some(3),
+                        is_cold: false,
+                        is_pinned: false,
+                        importance: lettuce_memory::Score::FULL,
+                        persistence_importance: lettuce_memory::Score::FULL,
+                        prompt_importance: lettuce_memory::Score::FULL,
+                        volatility: lettuce_memory::Score::LEGACY_VOLATILITY,
+                        access_count: 0,
+                        created_at: TimestampMillis::new(1),
+                        last_accessed_at: TimestampMillis::new(1),
+                    }],
+                },
+            )
+            .expect("perspective space");
             transaction.commit().expect("commit");
         }
         let (graph, restored) = backup_round_trip(&database, |_| {});
         assert_eq!(graph.group_companion.checkpoints.len(), 1);
         assert_eq!(graph.group_companion.checkpoints[0].effects.len(), 1);
         assert_eq!(graph.group_companion.persona_applications.len(), 1);
+        assert!(graph.memory.spaces.iter().any(|space| {
+            space.perspective_character_id == Some(character_id)
+                && space
+                    .snapshot
+                    .items
+                    .iter()
+                    .any(|item| item.id == perspective_item)
+        }));
         assert_eq!(
             restored
                 .checkpoints_for_message(conversation_id, message_id)
@@ -1382,5 +1443,22 @@ pub(crate) mod tests {
                 .expect("restored persona applications"),
             vec![(message_id, character_id)]
         );
+        let connection = restored.connection().expect("restored connection");
+        let restored_item: String = connection
+            .query_row(
+                "SELECT item.text FROM group_companion_memory_spaces binding
+                   JOIN memory_items item ON item.space_id = binding.space_id
+                  WHERE binding.conversation_id = ?1 AND binding.branch_id = ?2
+                    AND binding.character_id = ?3 AND item.id = ?4",
+                params![
+                    conversation_id.to_string(),
+                    branch_id.to_string(),
+                    character_id.to_string(),
+                    perspective_item.to_string()
+                ],
+                |row| row.get(0),
+            )
+            .expect("restored perspective item");
+        assert_eq!(restored_item, "perspective memory");
     }
 }

@@ -209,6 +209,8 @@ pub(crate) fn settings_view(
                 disable_character_lorebooks: None,
                 disable_character_notes: None,
                 companion_mode: None,
+                companion_personal_memories: None,
+                companion_memory_write_back: None,
                 speaker_selection: None,
                 members: None,
                 model_settings,
@@ -327,6 +329,28 @@ pub(crate) fn settings_view(
                         .unwrap_or(false),
                     source: own_or_group(
                         own.and_then(|settings| settings.companion_mode).is_some(),
+                        profile,
+                    ),
+                }),
+                companion_personal_memories: Some(dto::SettingFlag {
+                    value: own
+                        .and_then(|settings| settings.companion_personal_memories)
+                        .or_else(|| profile.map(|profile| profile.companion_personal_memories))
+                        .unwrap_or(true),
+                    source: own_or_group(
+                        own.and_then(|settings| settings.companion_personal_memories)
+                            .is_some(),
+                        profile,
+                    ),
+                }),
+                companion_memory_write_back: Some(dto::SettingFlag {
+                    value: own
+                        .and_then(|settings| settings.companion_memory_write_back)
+                        .or_else(|| profile.map(|profile| profile.companion_memory_write_back))
+                        .unwrap_or(true),
+                    source: own_or_group(
+                        own.and_then(|settings| settings.companion_memory_write_back)
+                            .is_some(),
                         profile,
                     ),
                 }),
@@ -882,6 +906,18 @@ fn settings_change(
             dto::FlagChange::Set { value } => Change::Set(value),
             dto::FlagChange::Reset => Change::Reset,
         }),
+        companion_personal_memories: patch
+            .companion_personal_memories
+            .map(|change| match change {
+                dto::FlagChange::Set { value } => Change::Set(value),
+                dto::FlagChange::Reset => Change::Reset,
+            }),
+        companion_memory_write_back: patch
+            .companion_memory_write_back
+            .map(|change| match change {
+                dto::FlagChange::Set { value } => Change::Set(value),
+                dto::FlagChange::Reset => Change::Reset,
+            }),
         model_settings: patch
             .model_settings
             .map(|layer| {

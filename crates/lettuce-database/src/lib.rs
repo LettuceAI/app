@@ -223,6 +223,16 @@ const MIGRATION_31: Migration = Migration {
     sql: include_str!("../migrations/0031_group_companion_mode.sql"),
 };
 
+const MIGRATION_32: Migration = Migration {
+    id: 32,
+    sql: include_str!("../migrations/0032_group_companion_memory_settings.sql"),
+};
+
+const MIGRATION_33: Migration = Migration {
+    id: 33,
+    sql: include_str!("../migrations/0033_group_companion_memory_spaces.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -255,6 +265,8 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_29,
     MIGRATION_30,
     MIGRATION_31,
+    MIGRATION_32,
+    MIGRATION_33,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -6190,6 +6202,10 @@ mod tests {
                 "generation_initial_dispatches",
                 "generation_initial_replay_refs",
                 "generation_speaker_dispatches",
+                "group_companion_checkpoints",
+                "group_companion_effects",
+                "group_companion_memory_spaces",
+                "group_companion_persona_applications",
                 "group_lorebook_bindings",
                 "group_members",
                 "group_presentation_asset_refs",

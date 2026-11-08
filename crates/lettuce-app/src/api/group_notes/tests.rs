@@ -8,6 +8,8 @@ async fn saved_group(harness: &crate::api::tests::Harness) -> dto::GroupView {
     draft.time_awareness = true;
     draft.disable_character_notes = true;
     draft.companion_mode = true;
+    draft.companion_personal_memories = false;
+    draft.companion_memory_write_back = false;
     group_save(
         &harness.context,
         dto::GroupSaveRequest {
@@ -46,6 +48,7 @@ async fn the_group_keeps_its_time_default_and_character_notes_switch() {
             && group.draft.disable_character_notes
             && group.draft.companion_mode
     );
+    assert!(!group.draft.companion_personal_memories && !group.draft.companion_memory_write_back);
     let fetched = group_get(&harness.context, dto::GroupGetRequest { group_id: group.id.clone() })
         .await
         .expect("get");
@@ -53,6 +56,9 @@ async fn the_group_keeps_its_time_default_and_character_notes_switch() {
         fetched.draft.time_awareness
             && fetched.draft.disable_character_notes
             && fetched.draft.companion_mode
+    );
+    assert!(
+        !fetched.draft.companion_personal_memories && !fetched.draft.companion_memory_write_back
     );
 }
 

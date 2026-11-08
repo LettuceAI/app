@@ -15113,6 +15113,8 @@ fn group_flags_and_notes_sync_with_the_group() {
             group.time_awareness = true;
             group.disable_character_notes = true;
             group.companion_mode = true;
+            group.companion_personal_memories = false;
+            group.companion_memory_write_back = false;
         },
     );
     let note = a
@@ -15128,6 +15130,9 @@ fn group_flags_and_notes_sync_with_the_group() {
         on_b.group.time_awareness
             && on_b.group.disable_character_notes
             && on_b.group.companion_mode
+    );
+    assert!(
+        !on_b.group.companion_personal_memories && !on_b.group.companion_memory_write_back
     );
     assert_eq!(
         b.list_group_notes(group_id).expect("b notes"),
@@ -15835,6 +15840,148 @@ fn live_companion_mode_resolves_override_then_group_then_false() {
     assert!(
         !crate::generation::live_sources::live_companion_mode(database, &direct_conversation)
             .expect("direct mode")
+    );
+}
+
+#[test]
+fn live_companion_personal_memories_resolves_override_then_group() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "First");
+    let second = seed_named_character(database, "Second");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.companion_personal_memories = true,
+    );
+    let mut group_conversation = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(group_id, "personal-memories-live"), NOW)
+        .expect("launch group")
+        .value
+        .conversation;
+    assert!(
+        crate::generation::live_sources::live_companion_personal_memories(
+            database,
+            &group_conversation
+        )
+        .expect("group personal memories")
+    );
+    group_conversation.current_settings = Some(
+        lettuce_conversations::CurrentConversationSettingsPatch {
+            companion_personal_memories: lettuce_conversations::PatchValue::Set(false),
+            ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+        }
+        .apply(None, None)
+        .expect("override"),
+    );
+    assert!(
+        !crate::generation::live_sources::live_companion_personal_memories(
+            database,
+            &group_conversation
+        )
+        .expect("override personal memories")
+    );
+    let plain_group = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let plain_conversation = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(plain_group, "personal-memories-default-live"), NOW)
+        .expect("launch plain group")
+        .value
+        .conversation;
+    assert!(
+        crate::generation::live_sources::live_companion_personal_memories(
+            database,
+            &plain_conversation
+        )
+        .expect("plain group personal memories")
+    );
+    let direct_conversation = ConversationLaunchPlanner::new(database)
+        .launch_direct(&request(first, "personal-memories-direct-live"), NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    assert!(
+        !crate::generation::live_sources::live_companion_personal_memories(
+            database,
+            &direct_conversation
+        )
+        .expect("direct personal memories")
+    );
+}
+
+#[test]
+fn live_companion_memory_write_back_resolves_override_then_group() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "First");
+    let second = seed_named_character(database, "Second");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.companion_memory_write_back = true,
+    );
+    let mut group_conversation = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(group_id, "memory-write-back-live"), NOW)
+        .expect("launch group")
+        .value
+        .conversation;
+    assert!(
+        crate::generation::live_sources::live_companion_memory_write_back(
+            database,
+            &group_conversation
+        )
+        .expect("group write back")
+    );
+    group_conversation.current_settings = Some(
+        lettuce_conversations::CurrentConversationSettingsPatch {
+            companion_memory_write_back: lettuce_conversations::PatchValue::Set(false),
+            ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+        }
+        .apply(None, None)
+        .expect("override"),
+    );
+    assert!(
+        !crate::generation::live_sources::live_companion_memory_write_back(
+            database,
+            &group_conversation
+        )
+        .expect("override write back")
+    );
+    let plain_group = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let plain_conversation = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(plain_group, "memory-write-back-default-live"), NOW)
+        .expect("launch plain group")
+        .value
+        .conversation;
+    assert!(
+        crate::generation::live_sources::live_companion_memory_write_back(
+            database,
+            &plain_conversation
+        )
+        .expect("plain group write back")
+    );
+    let direct_conversation = ConversationLaunchPlanner::new(database)
+        .launch_direct(&request(first, "memory-write-back-direct-live"), NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    assert!(
+        !crate::generation::live_sources::live_companion_memory_write_back(
+            database,
+            &direct_conversation
+        )
+        .expect("direct write back")
     );
 }
 

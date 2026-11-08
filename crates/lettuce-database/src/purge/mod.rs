@@ -238,7 +238,7 @@ impl<'c, 'conn> Purge<'c, 'conn> {
     /// the rows this conversation produced in it.
     fn conversation(&mut self, id: &str) -> Result<(), PurgeError> {
         let text = Value::Text(id.to_owned());
-        let own_spaces = self.strings(
+        let mut own_spaces = self.strings(
             "SELECT link.space_id FROM conversation_memory_spaces link
              WHERE link.conversation_id = ?1 AND link.pooled = 0
                AND NOT EXISTS (SELECT 1 FROM companion_memory_pools pool WHERE pool.space_id = link.space_id)
@@ -246,6 +246,10 @@ impl<'c, 'conn> Purge<'c, 'conn> {
                                WHERE other.space_id = link.space_id AND other.conversation_id <> ?1)",
             std::slice::from_ref(&text),
         )?;
+        own_spaces.extend(self.strings(
+            "SELECT space_id FROM group_companion_memory_spaces WHERE conversation_id = ?1",
+            std::slice::from_ref(&text),
+        )?);
         self.authorize(id)?;
         for space in &own_spaces {
             self.authorize(space)?;
@@ -438,6 +442,7 @@ impl<'c, 'conn> Purge<'c, 'conn> {
             self.delete(table, "conversation_id = ?1", &values[..1])?;
         }
         self.delete("conversation_memory_spaces", &by_owner, &values)?;
+        self.delete("group_companion_memory_spaces", &by_owner, &values)?;
         self.delete("companion_memory_pools", &format!("({in_spaces})"), &values)?;
         self.delete(
             "memory_spaces",
@@ -547,10 +552,14 @@ impl<'c, 'conn> Purge<'c, 'conn> {
         self.remove_group_relationship_target(id)?;
         let text = Value::Text(id.to_owned());
         let one = std::slice::from_ref(&text);
-        let pools = self.strings(
+        let mut pools = self.strings(
             "SELECT space_id FROM companion_memory_pools WHERE character_id = ?1",
             one,
         )?;
+        pools.extend(self.strings(
+            "SELECT space_id FROM group_companion_memory_spaces WHERE character_id = ?1",
+            one,
+        )?);
         self.authorize(id)?;
         for pool in &pools {
             self.authorize(pool)?;
@@ -842,10 +851,14 @@ pub(crate) fn purge_branch_memory_in(
     )? {
         return Err(PurgeError::Busy);
     }
-    let spaces = purge.strings(
+    let mut spaces = purge.strings(
         "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
         &values,
     )?;
+    spaces.extend(purge.strings(
+        "SELECT space_id FROM group_companion_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2",
+        &values,
+    )?);
     for space in &spaces {
         purge.authorize(space)?;
     }

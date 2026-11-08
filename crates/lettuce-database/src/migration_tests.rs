@@ -203,7 +203,7 @@ fn migration_30_makes_stored_groups_roleplay_only() {
         let old: Vec<_> = MIGRATIONS
             .iter()
             .copied()
-            .filter(|migration| migration.id <= 31)
+            .filter(|migration| migration.id <= 32)
             .collect();
         apply_migrations(&mut connection, &old).expect("old schema");
         let transaction = connection
@@ -577,4 +577,105 @@ fn migration_31_defaults_existing_group_companion_mode_off() {
     assert_eq!(override_column, 1);
     let upgraded = recorded_migrations(&connection);
     assert_eq!(upgraded.iter().filter(|entry| entry.0 == 31).count(), 1);
+}
+
+#[test]
+fn migration_32_defaults_existing_group_companion_memory_on() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let old: Vec<_> = MIGRATIONS
+        .iter()
+        .copied()
+        .filter(|migration| migration.id <= 31)
+        .collect();
+    apply_migrations(&mut connection, &old).expect("schema through migration 31");
+    let group_id = GroupId::new();
+    connection
+        .execute(
+            "INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Existing group','existing group','roleplay','inherit','heuristic','manual',1,'{\"format_version\":1,\"value\":{}}',17,100,200)",
+            params![group_id.to_string()],
+        )
+        .expect("existing group");
+    apply_migrations(&mut connection, &MIGRATIONS[..32]).expect("schema through migration 32");
+    let memories: i64 = connection
+        .query_row(
+            "SELECT companion_personal_memories FROM groups WHERE id = ?1",
+            [group_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("existing group personal memories");
+    assert_eq!(memories, 1);
+    let write_back: i64 = connection
+        .query_row(
+            "SELECT companion_memory_write_back FROM groups WHERE id = ?1",
+            [group_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("existing group memory write-back");
+    assert_eq!(write_back, 1);
+    for column in ["companion_personal_memories", "companion_memory_write_back"] {
+        let override_column: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('conversation_settings') WHERE name = ?1",
+                [column],
+                |row| row.get(0),
+            )
+            .expect("override column");
+        assert_eq!(override_column, 1);
+    }
+    let upgraded = recorded_migrations(&connection);
+    assert_eq!(upgraded.iter().filter(|entry| entry.0 == 32).count(), 1);
+}
+
+#[test]
+fn migration_33_adds_group_companion_memory_spaces() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let old: Vec<_> = MIGRATIONS
+        .iter()
+        .copied()
+        .filter(|migration| migration.id <= 32)
+        .collect();
+    apply_migrations(&mut connection, &old).expect("schema through migration 32");
+    apply_migrations(&mut connection, &MIGRATIONS[..33]).expect("schema through migration 33");
+    let columns: Vec<String> = connection
+        .prepare("SELECT name FROM pragma_table_info('group_companion_memory_spaces') ORDER BY cid")
+        .expect("columns")
+        .query_map([], |row| row.get(0))
+        .expect("column rows")
+        .collect::<Result<_, _>>()
+        .expect("columns");
+    assert_eq!(
+        columns,
+        vec!["conversation_id", "branch_id", "character_id", "space_id",]
+    );
+    let index: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE type = 'index' AND name = 'group_companion_memory_spaces_space_idx'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("index");
+    assert_eq!(index, 1);
+    let foreign_key_tables: std::collections::BTreeSet<String> = connection
+        .prepare("SELECT \"table\" FROM pragma_foreign_key_list('group_companion_memory_spaces')")
+        .expect("foreign keys")
+        .query_map([], |row| row.get(0))
+        .expect("foreign key rows")
+        .collect::<Result<_, _>>()
+        .expect("foreign keys");
+    assert_eq!(
+        foreign_key_tables,
+        [
+            "characters",
+            "conversation_branches",
+            "conversations",
+            "memory_spaces"
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+    );
+    let upgraded = recorded_migrations(&connection);
+    assert_eq!(upgraded.iter().filter(|entry| entry.0 == 33).count(), 1);
 }

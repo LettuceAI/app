@@ -167,6 +167,14 @@ pub struct CurrentConversationSettings {
     /// the group.
     #[serde(default)]
     pub companion_mode: Option<bool>,
+    /// The chat's own override of the group's personal companion memories;
+    /// `None` follows the group.
+    #[serde(default)]
+    pub companion_personal_memories: Option<bool>,
+    /// The chat's own override of the group's companion memory write-back;
+    /// `None` follows the group.
+    #[serde(default)]
+    pub companion_memory_write_back: Option<bool>,
     /// The participants' enabled flags are the conversation's own instead of
     /// the group's member list.
     #[serde(default)]
@@ -209,6 +217,8 @@ impl CurrentConversationSettings {
             disable_character_lorebooks: None,
             disable_character_notes: None,
             companion_mode: None,
+            companion_personal_memories: None,
+            companion_memory_write_back: None,
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,
@@ -387,7 +397,9 @@ impl CurrentConversationSettings {
         if matches!(kind, ConversationKind::Direct(_))
             && (self.disable_character_lorebooks.is_some()
                 || self.disable_character_notes.is_some()
-                || self.companion_mode.is_some())
+                || self.companion_mode.is_some()
+                || self.companion_personal_memories.is_some()
+                || self.companion_memory_write_back.is_some())
         {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.group_overrides",

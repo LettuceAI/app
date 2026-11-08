@@ -268,7 +268,8 @@ pub(crate) fn branch_space_id_in(
         .transpose()
 }
 
-/// The conversations that can write a space: its owner, or a pool's members.
+/// The conversations that can write a space: its owner, a pool's members, or
+/// the member whose perspective space it is.
 pub(crate) fn space_conversations_in(
     connection: &rusqlite::Connection,
     space_id: MemorySpaceId,
@@ -277,6 +278,8 @@ pub(crate) fn space_conversations_in(
     connection
         .prepare(
             "SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = ?1
+             UNION
+             SELECT conversation_id FROM group_companion_memory_spaces WHERE space_id = ?1
              ORDER BY 1 LIMIT ?2",
         )?
         .query_map(params![space_id.to_string(), limit], |row| row.get(0))?
@@ -352,6 +355,71 @@ pub(crate) fn create_conversation_space_in(
                 reason: error.to_string(),
             },
         )?;
+    Ok(space_id)
+}
+
+/// Creates one member's perspective space on a branch with its restored id,
+/// revision and items on the caller's transaction.
+pub(crate) fn insert_perspective_space_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    character_id: lettuce_types::CharacterId,
+    space: &lettuce_memory::MemorySpaceSnapshot,
+) -> Result<(), lettuce_conversations::ConversationRepositoryError> {
+    space.validate().map_err(space_storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO memory_spaces (id, revision) VALUES (?1, ?2)",
+            params![
+                space.id.to_string(),
+                i64::try_from(space.revision.get()).map_err(space_storage_error)?
+            ],
+        )
+        .map_err(space_storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO group_companion_memory_spaces (
+                conversation_id, branch_id, character_id, space_id
+             ) VALUES (?1, ?3, ?4, ?2)",
+            params![
+                conversation_id.to_string(),
+                space.id.to_string(),
+                branch_id.to_string(),
+                character_id.to_string()
+            ],
+        )
+        .map_err(space_storage_error)?;
+    insert_items(transaction, space.id, &space.items).map_err(space_storage_error)
+}
+
+/// Creates one member's empty perspective space on a branch.
+pub(crate) fn create_perspective_space_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    character_id: lettuce_types::CharacterId,
+) -> Result<MemorySpaceId, lettuce_conversations::ConversationRepositoryError> {
+    let space_id = MemorySpaceId::new();
+    transaction
+        .execute(
+            "INSERT INTO memory_spaces (id, revision) VALUES (?1, 1)",
+            [space_id.to_string()],
+        )
+        .map_err(space_storage_error)?;
+    transaction
+        .execute(
+            "INSERT INTO group_companion_memory_spaces (
+                conversation_id, branch_id, character_id, space_id
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                character_id.to_string(),
+                space_id.to_string()
+            ],
+        )
+        .map_err(space_storage_error)?;
     Ok(space_id)
 }
 

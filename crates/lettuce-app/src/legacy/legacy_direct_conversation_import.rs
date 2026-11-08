@@ -1270,6 +1270,8 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
             disable_character_lorebooks: input.disable_character_lorebooks,
             disable_character_notes: None,
             companion_mode: None,
+            companion_personal_memories: None,
+            companion_memory_write_back: None,
             members_overridden: input.participant_overrides.members,
             muted_overridden: input.participant_overrides.muted,
             member_models_overridden: input.participant_overrides.member_models,
@@ -1444,6 +1446,7 @@ fn memory_space(
         Some(BackupMemorySpace {
             conversation_id,
             branch_id: Some(branch_id),
+            perspective_character_id: None,
             snapshot: MemorySpaceSnapshot {
                 id: space_id,
                 revision: Revision::INITIAL,

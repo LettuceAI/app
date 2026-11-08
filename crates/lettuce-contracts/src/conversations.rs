@@ -1141,6 +1141,8 @@ pub struct ConversationSettingsView {
     pub disable_character_lorebooks: Option<SettingFlag>,
     pub disable_character_notes: Option<SettingFlag>,
     pub companion_mode: Option<SettingFlag>,
+    pub companion_personal_memories: Option<SettingFlag>,
+    pub companion_memory_write_back: Option<SettingFlag>,
     pub speaker_selection: Option<SettingSpeakerSelection>,
     pub members: Option<GroupMembersSettings>,
     /// The sampler and runtime settings a one-to-one chat overrides; empty
@@ -1270,6 +1272,8 @@ pub struct ConversationSettingsPatch {
     pub disable_character_lorebooks: Option<FlagChange>,
     pub disable_character_notes: Option<FlagChange>,
     pub companion_mode: Option<FlagChange>,
+    pub companion_personal_memories: Option<FlagChange>,
+    pub companion_memory_write_back: Option<FlagChange>,
     /// Replaces the chat's own layer; an empty layer clears it.
     #[serde(default)]
     pub model_settings: Option<crate::SettingsModelSettingsLayer>,

@@ -5,8 +5,8 @@ use lettuce_conversations::{
     SendConversation, SendConversationResult,
 };
 use lettuce_types::{
-    CharacterId, ConversationId, MessageCandidateId, MessageId, MessageRevisionId, PersonaId,
-    Revision, TimestampMillis,
+    CharacterId, ConversationBranchId, ConversationId, MemorySpaceId, MessageCandidateId,
+    MessageId, MessageRevisionId, PersonaId, Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -115,6 +115,35 @@ pub trait GroupCompanionRepository: Send + Sync {
         conversation_id: ConversationId,
         path: &[MessageId],
         persona_id: Option<PersonaId>,
+    ) -> Result<Vec<(MessageId, CharacterId)>, GroupCompanionRepositoryError>;
+
+    /// The member's perspective space on this branch, if one was created.
+    fn perspective_space(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        character_id: CharacterId,
+    ) -> Result<Option<MemorySpaceId>, GroupCompanionRepositoryError>;
+
+    /// The member's perspective space on this branch, created empty when missing.
+    fn ensure_perspective_space(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        character_id: CharacterId,
+    ) -> Result<MemorySpaceId, GroupCompanionRepositoryError>;
+
+    /// The character's direct-chat memory pool, only when it exists and the character shares memory across chats.
+    fn companion_pool_space(
+        &self,
+        character_id: CharacterId,
+    ) -> Result<Option<MemorySpaceId>, GroupCompanionRepositoryError>;
+
+    /// Every (message, member) pair on `path` that has a checkpoint, i.e. who was present for which message.
+    fn message_presence(
+        &self,
+        conversation_id: ConversationId,
+        path: &[MessageId],
     ) -> Result<Vec<(MessageId, CharacterId)>, GroupCompanionRepositoryError>;
 }
 

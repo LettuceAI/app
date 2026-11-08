@@ -28,7 +28,10 @@ fn exchanged_space_id() -> MemorySpaceId {
 const OWNERS: &str = "SELECT 'pool:' || character_id AS owner, space_id FROM companion_memory_pools
      UNION ALL
      SELECT 'conversation:' || conversation_id || ':branch:' || branch_id AS owner, space_id FROM conversation_memory_spaces
-      WHERE pooled = 0";
+      WHERE pooled = 0
+     UNION ALL
+     SELECT 'perspective:' || conversation_id || ':branch:' || branch_id || ':character:' || character_id AS owner, space_id
+       FROM group_companion_memory_spaces";
 
 pub(crate) fn branch_owner(
     owner: &str,
@@ -41,10 +44,39 @@ pub(crate) fn branch_owner(
     Some((conversation.parse().ok()?, branch.parse().ok()?))
 }
 
+pub(crate) fn perspective_owner(
+    owner: &str,
+) -> Option<(
+    lettuce_types::ConversationId,
+    lettuce_types::ConversationBranchId,
+    lettuce_types::CharacterId,
+)> {
+    let rest = owner.strip_prefix("perspective:")?;
+    let (conversation, rest) = rest.split_once(":branch:")?;
+    let (branch, character) = rest.split_once(":character:")?;
+    Some((
+        conversation.parse().ok()?,
+        branch.parse().ok()?,
+        character.parse().ok()?,
+    ))
+}
+
+pub(crate) fn owner_branch(
+    owner: &str,
+) -> Option<(
+    lettuce_types::ConversationId,
+    lettuce_types::ConversationBranchId,
+)> {
+    branch_owner(owner).or_else(|| {
+        perspective_owner(owner).map(|(conversation, branch, _)| (conversation, branch))
+    })
+}
+
 pub(crate) fn valid_owner(owner: &str) -> bool {
     match owner.split_once(':') {
         Some(("pool", id)) => id.parse::<lettuce_types::CharacterId>().is_ok(),
         Some(("conversation", _)) => branch_owner(owner).is_some(),
+        Some(("perspective", _)) => perspective_owner(owner).is_some(),
         _ => false,
     }
 }
@@ -68,6 +100,44 @@ fn local_space(
         .optional()
         .map_err(storage)?;
     space.map(|id| id.parse().map_err(storage)).transpose()
+}
+
+/// Resolves an owner for a write, creating a perspective space's binding when
+/// the imported owner arrives before its local binding exists.
+fn local_space_for_write(
+    transaction: &Transaction<'_>,
+    owner: &str,
+) -> Result<Option<MemorySpaceId>, MemoryRepositoryError> {
+    if let Some(space_id) = local_space(transaction, owner)? {
+        return Ok(Some(space_id));
+    }
+    let Some((conversation_id, branch_id, character_id)) = perspective_owner(owner) else {
+        return Ok(None);
+    };
+    let present: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversation_branches
+                            WHERE conversation_id = ?1 AND id = ?2)
+                AND EXISTS(SELECT 1 FROM characters WHERE id = ?3)",
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                character_id.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !present {
+        return Ok(None);
+    }
+    memory_adapter::create_perspective_space_in(
+        transaction,
+        conversation_id,
+        branch_id,
+        character_id,
+    )
+    .map(Some)
+    .map_err(storage)
 }
 
 pub(crate) fn sync_memory_item_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
@@ -127,7 +197,7 @@ pub(crate) fn sync_put_memory_item(
             lettuce_memory::MemoryValidationError::DuplicateItemId,
         ));
     }
-    let Some(space_id) = local_space(transaction, owner)? else {
+    let Some(space_id) = local_space_for_write(transaction, owner)? else {
         return Err(MemoryRepositoryError::NotFound);
     };
     lettuce_memory::MemorySpaceSnapshot {
@@ -271,16 +341,21 @@ pub(crate) fn sync_replace_memory_summary(
     summary: &MemorySummary,
 ) -> Result<(), MemoryRepositoryError> {
     summary.validate()?;
-    let Some(space_id) = local_space(transaction, owner)? else {
+    let Some(space_id) = local_space_for_write(transaction, owner)? else {
         return Err(MemoryRepositoryError::NotFound);
     };
     let branch_present: bool = transaction
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM conversation_branches branch
-                JOIN conversation_memory_spaces binding
-                  ON binding.conversation_id = branch.conversation_id
-                 AND binding.branch_id = branch.id
-                WHERE branch.id = ?1 AND binding.space_id = ?2)",
+                WHERE branch.id = ?1
+                  AND (EXISTS(SELECT 1 FROM conversation_memory_spaces binding
+                               WHERE binding.conversation_id = branch.conversation_id
+                                 AND binding.branch_id = branch.id
+                                 AND binding.space_id = ?2)
+                       OR EXISTS(SELECT 1 FROM group_companion_memory_spaces binding
+                              WHERE binding.conversation_id = branch.conversation_id
+                                AND binding.branch_id = branch.id
+                                AND binding.space_id = ?2)))",
             params![summary.branch_id.to_string(), space_id.to_string()],
             |row| row.get(0),
         )
@@ -348,10 +423,20 @@ fn branch_space(
     transaction: &Transaction<'_>,
     owner: &str,
 ) -> Result<Option<(MemorySpaceId, lettuce_types::ConversationBranchId)>, MemoryRepositoryError> {
-    let Some((_, branch)) = branch_owner(owner) else {
+    let Some((_, branch)) = owner_branch(owner) else {
         return Err(storage("invalid inherited summary owner"));
     };
     Ok(local_space(transaction, owner)?.map(|space| (space, branch)))
+}
+
+fn branch_space_for_write(
+    transaction: &Transaction<'_>,
+    owner: &str,
+) -> Result<Option<(MemorySpaceId, lettuce_types::ConversationBranchId)>, MemoryRepositoryError> {
+    let Some((_, branch)) = owner_branch(owner) else {
+        return Err(storage("invalid inherited summary owner"));
+    };
+    Ok(local_space_for_write(transaction, owner)?.map(|space| (space, branch)))
 }
 
 pub(crate) fn sync_load_inherited_summary(
@@ -382,10 +467,10 @@ pub(crate) fn sync_replace_inherited_summary(
     summary: &MemorySummary,
 ) -> Result<(), MemoryRepositoryError> {
     summary.validate()?;
-    let Some((space_id, branch_id)) = branch_space(transaction, owner)? else {
+    let Some((space_id, branch_id)) = branch_space_for_write(transaction, owner)? else {
         return Err(MemoryRepositoryError::NotFound);
     };
-    let conversation_id = branch_owner(owner)
+    let conversation_id = owner_branch(owner)
         .map(|(conversation, _)| conversation)
         .ok_or_else(|| storage("invalid inherited summary owner"))?;
     if !crate::memory::memory_branch_adapter::branch_has_parent(
@@ -609,7 +694,7 @@ pub(crate) fn sync_put_manual_edit(
     if operation != record.history.edit.id || record != &exchanged_manual_record(record) {
         return Err(MemoryRepositoryError::Conflict);
     }
-    let Some(space_id) = local_space(transaction, owner)? else {
+    let Some(space_id) = local_space_for_write(transaction, owner)? else {
         return Err(MemoryRepositoryError::NotFound);
     };
     let branch_exists: bool = transaction
@@ -711,4 +796,157 @@ pub(crate) fn sync_delete_manual_edit(
             .map_err(storage)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Database;
+    use lettuce_memory::{MemoryCategory, MemorySpaceSnapshot, Score};
+    use lettuce_types::{
+        CharacterId, ConversationBranchId, ConversationId, MemoryId, Revision, TimestampMillis,
+    };
+    use rusqlite::params;
+
+    fn item(id: MemoryId, text: &str) -> MemoryItem {
+        MemoryItem {
+            id,
+            short_id: MemoryShortId::derived(id),
+            text: text.to_owned(),
+            origin: lettuce_memory::MemoryOrigin::Model,
+            category: Some(MemoryCategory::Other),
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: Some(3),
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::FULL,
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(1),
+            last_accessed_at: TimestampMillis::new(1),
+        }
+    }
+
+    fn insert_fixture(
+        database: &Database,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        character_id: CharacterId,
+    ) {
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .expect("transaction");
+        transaction
+            .execute(
+                "INSERT INTO characters (
+                   id, status, name, normalized_name, profile_json,
+                   provenance_json, defaults_json, interaction_mode,
+                   memory_policy, voice_autoplay, presentation_json, revision,
+                   created_at, updated_at
+                 ) VALUES (?1, 'active', 'Member', 'member', '{}', '{}', '{}',
+                           'companion', 'manual', 0, '{}', 1, 1, 1)",
+                [character_id.to_string()],
+            )
+            .expect("character");
+        transaction
+            .execute(
+                "INSERT INTO conversations (
+                   id, kind, lifecycle, title, active_branch_id, kind_json,
+                   revision, created_at, updated_at
+                 ) VALUES (?1, 'group', 'active', 'Group', ?2,
+                           '{\"format_version\":1}', 1, 1, 1)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("conversation");
+        transaction
+            .execute(
+                "INSERT INTO conversation_branches (
+                   conversation_id, id, status, revision, created_at, updated_at
+                 ) VALUES (?1, ?2, 'active', 1, 1, 1)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("branch");
+        transaction.commit().expect("commit");
+    }
+
+    #[test]
+    fn perspective_space_items_round_trip_between_databases() {
+        let source = Database::open_in_memory().expect("source database");
+        let target = Database::open_in_memory().expect("target database");
+        let conversation_id = ConversationId::new();
+        let branch_id = ConversationBranchId::new();
+        let character_id = CharacterId::new();
+        insert_fixture(&source, conversation_id, branch_id, character_id);
+        insert_fixture(&target, conversation_id, branch_id, character_id);
+        let memory = item(MemoryId::new(), "perspective memory");
+        let source_space = lettuce_types::MemorySpaceId::new();
+        {
+            let mut connection = source.connection().expect("source connection");
+            let transaction = connection.transaction().expect("source transaction");
+            memory_adapter::insert_perspective_space_in(
+                &transaction,
+                conversation_id,
+                branch_id,
+                character_id,
+                &MemorySpaceSnapshot {
+                    id: source_space,
+                    revision: Revision::INITIAL,
+                    items: vec![memory.clone()],
+                },
+            )
+            .expect("source perspective space");
+            transaction.commit().expect("commit source");
+        }
+        let ids = {
+            let connection = source.connection().expect("source connection");
+            sync_memory_item_ids(&connection).expect("source item ids")
+        };
+        let expected_owner =
+            format!("perspective:{conversation_id}:branch:{branch_id}:character:{character_id}");
+        assert_eq!(ids, vec![format!("{expected_owner}/{}", memory.id)]);
+        let loaded = {
+            let mut connection = source.connection().expect("source connection");
+            let transaction = connection.transaction().expect("source transaction");
+            let loaded = sync_load_memory_item(&transaction, &ids[0])
+                .expect("load item")
+                .expect("synced item");
+            transaction.commit().expect("commit source read");
+            loaded
+        };
+        {
+            let mut connection = target.connection().expect("target connection");
+            let transaction = connection.transaction().expect("target transaction");
+            assert!(
+                sync_put_memory_item(&transaction, &ids[0], &loaded).expect("put imported item")
+            );
+            transaction.commit().expect("commit target");
+        }
+        let connection = target.connection().expect("target connection");
+        let binding: (String, String) = connection
+            .query_row(
+                "SELECT character_id, space_id FROM group_companion_memory_spaces
+                  WHERE conversation_id = ?1 AND branch_id = ?2",
+                params![conversation_id.to_string(), branch_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("imported perspective binding");
+        assert_eq!(binding.0, character_id.to_string());
+        let text: String = connection
+            .query_row(
+                "SELECT text FROM memory_items WHERE space_id = ?1 AND id = ?2",
+                params![binding.1, memory.id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("imported item");
+        assert_eq!(text, memory.text);
+    }
 }

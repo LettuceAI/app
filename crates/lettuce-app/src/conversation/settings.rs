@@ -66,6 +66,8 @@ pub struct ConversationSettingsChange {
     pub disable_character_lorebooks: Option<Change<bool>>,
     pub disable_character_notes: Option<Change<bool>>,
     pub companion_mode: Option<Change<bool>>,
+    pub companion_personal_memories: Option<Change<bool>>,
+    pub companion_memory_write_back: Option<Change<bool>>,
     /// Replaces the conversation's own model settings; an empty layer
     /// clears them.
     pub model_settings: Option<lettuce_models::ModelSettingsLayer>,
@@ -224,6 +226,14 @@ impl Builder<'_> {
             change.disable_character_notes.is_some(),
         )?;
         group_only("companion_mode", change.companion_mode.is_some())?;
+        group_only(
+            "companion_personal_memories",
+            change.companion_personal_memories.is_some(),
+        )?;
+        group_only(
+            "companion_memory_write_back",
+            change.companion_memory_write_back.is_some(),
+        )?;
         group_only("members", change.follow_group_members)?;
         group_only("member_models", change.follow_group_member_models)?;
         if change.model_settings.is_some() && group {
@@ -331,6 +341,12 @@ impl Builder<'_> {
         }
         if let Some(change) = &change.companion_mode {
             patch.companion_mode = value_patch(change);
+        }
+        if let Some(change) = &change.companion_personal_memories {
+            patch.companion_personal_memories = value_patch(change);
+        }
+        if let Some(change) = &change.companion_memory_write_back {
+            patch.companion_memory_write_back = value_patch(change);
         }
         if let Some(layer) = &change.model_settings {
             patch.model_settings = PatchValue::Set(layer.clone());

@@ -552,18 +552,23 @@ mod tests {
         );
         assert_eq!(
             crate::CONVERSATION_SYNC_VERSION,
-            10,
-            "group conversations carry a companion mode override"
+            11,
+            "group conversations carry companion memory overrides"
         );
         assert_eq!(
             crate::GROUP_SYNC_VERSION,
-            6,
-            "a group carries a companion mode"
+            7,
+            "a group carries companion memory settings"
         );
         assert_eq!(crate::GROUP_COMPANION_MESSAGE_SYNC_VERSION, 1);
         assert_eq!(
+            crate::MEMORY_ITEM_SYNC_VERSION,
+            5,
+            "memory items can belong to a member's perspective space"
+        );
+        assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "07e3fc7009e334cbf3d0ceb02983d6e0c107721e196d15a1bec19091cfa43875"
+            "f44d998afe596bac473fc81550c996b7f6dd7a493ca06a4a1fad187d476f1f7a"
         );
     }
 

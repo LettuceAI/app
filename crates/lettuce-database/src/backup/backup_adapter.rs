@@ -527,6 +527,53 @@ fn read_memory(
                 })?,
         );
     }
+    let perspective_owners = transaction
+        .prepare("SELECT conversation_id,space_id,branch_id,character_id FROM group_companion_memory_spaces ORDER BY conversation_id, branch_id, character_id")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    let mut perspective_characters = std::collections::BTreeMap::new();
+    for (conversation_id, space_id, branch_id, character_id) in perspective_owners {
+        own_branches.insert(
+            space_id.clone(),
+            branch_id
+                .parse::<lettuce_types::ConversationBranchId>()
+                .map_err(|error| {
+                    tracing::warn!(%error, "read memory failed");
+                    ProviderBackupSourceError::InvalidData {
+                        reason: "read memory: a value could not be read or converted",
+                    }
+                })?,
+        );
+        perspective_characters.insert(
+            space_id.clone(),
+            character_id.parse::<CharacterId>().map_err(|error| {
+                tracing::warn!(%error, "read memory failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read memory: a value could not be read or converted",
+                }
+            })?,
+        );
+        bound
+            .entry(space_id)
+            .or_default()
+            .push(conversation_id.parse().map_err(|error| {
+                tracing::warn!(%error, "read memory failed");
+                ProviderBackupSourceError::InvalidData {
+                    reason: "read memory: a value could not be read or converted",
+                }
+            })?);
+    }
     let spaces = bound
         .into_iter()
         .map(|(space_id, mut conversations)| {
@@ -547,6 +594,7 @@ fn read_memory(
                     }
                 })?;
             let branch_id = own_branches.get(&space_id).copied();
+            let perspective_character_id = perspective_characters.get(&space_id).copied();
             let space_id = space_id
                 .parse()
                 .map_err(|error| {
@@ -595,6 +643,7 @@ fn read_memory(
             Ok(BackupMemorySpace {
                 conversation_id,
                 branch_id,
+                perspective_character_id,
                 snapshot,
                 summary,
                 inherited_summary,

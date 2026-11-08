@@ -772,6 +772,8 @@ async fn model_usage_reports_exactly_what_delete_changes() {
                 time_awareness: false,
                 disable_character_notes: false,
                 companion_mode: false,
+                companion_personal_memories: true,
+                companion_memory_write_back: true,
                 group_roleplay_prompt_id: None,
                 presentation: character.draft.presentation.chat_appearance.clone(),
                 presentation_overrides: None,

@@ -2489,7 +2489,7 @@ fn decode_memory_summary(
     }
     let summary: lettuce_memory::MemorySummary =
         serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
-    if crate::sync::memory_sync_adapter::branch_owner(id)
+    if crate::sync::memory_sync_adapter::owner_branch(id)
         .is_some_and(|(_, branch)| branch != summary.branch_id)
     {
         return Err(ApplyOneError::Corrupt);

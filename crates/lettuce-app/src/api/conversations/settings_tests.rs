@@ -1180,6 +1180,160 @@ async fn a_direct_chat_rejects_a_companion_mode_override() {
     assert_eq!(field(&error), Some("companion_mode"));
 }
 
+/// A group chat follows the group's personal companion memories until it
+/// sets its own.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_group_chat_follows_the_group_companion_personal_memories_until_it_sets_its_own() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1)],
+        None,
+        |group| group.companion_personal_memories = true,
+    );
+    let chat = launch_group(&harness, group_id, "companion-personal-memories-launch").await;
+    let followed = view(&harness, &chat).await;
+    assert_eq!(
+        followed
+            .companion_personal_memories
+            .map(|flag| (flag.value, flag.source)),
+        Some((true, dto::SettingSource::Group))
+    );
+    let own = update(
+        &harness,
+        &chat,
+        followed.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_personal_memories: Some(dto::FlagChange::Set { value: false }),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect("own companion personal memories");
+    assert_eq!(
+        own.companion_personal_memories
+            .map(|flag| (flag.value, flag.source)),
+        Some((false, dto::SettingSource::Conversation))
+    );
+    let reset = update(
+        &harness,
+        &chat,
+        own.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_personal_memories: Some(dto::FlagChange::Reset),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect("reset companion personal memories");
+    assert_eq!(
+        reset
+            .companion_personal_memories
+            .map(|flag| (flag.value, flag.source)),
+        Some((true, dto::SettingSource::Group))
+    );
+}
+
+/// A group chat follows the group's companion memory write-back until it
+/// sets its own.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_group_chat_follows_the_group_companion_memory_write_back_until_it_sets_its_own() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1)],
+        None,
+        |group| group.companion_memory_write_back = true,
+    );
+    let chat = launch_group(&harness, group_id, "companion-memory-write-back-launch").await;
+    let followed = view(&harness, &chat).await;
+    assert_eq!(
+        followed
+            .companion_memory_write_back
+            .map(|flag| (flag.value, flag.source)),
+        Some((true, dto::SettingSource::Group))
+    );
+    let own = update(
+        &harness,
+        &chat,
+        followed.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_memory_write_back: Some(dto::FlagChange::Set { value: false }),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect("own companion memory write-back");
+    assert_eq!(
+        own.companion_memory_write_back
+            .map(|flag| (flag.value, flag.source)),
+        Some((false, dto::SettingSource::Conversation))
+    );
+    let reset = update(
+        &harness,
+        &chat,
+        own.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_memory_write_back: Some(dto::FlagChange::Reset),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect("reset companion memory write-back");
+    assert_eq!(
+        reset
+            .companion_memory_write_back
+            .map(|flag| (flag.value, flag.source)),
+        Some((true, dto::SettingSource::Group))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_direct_chat_rejects_a_companion_personal_memories_override() {
+    let harness = harness(Reply::Text("Hello."));
+    let chat =
+        crate::api::tests::launch(&harness, "companion-personal-memories-direct-launch").await;
+    let current = view(&harness, &chat).await;
+    let error = update(
+        &harness,
+        &chat,
+        current.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_personal_memories: Some(dto::FlagChange::Set { value: true }),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect_err("direct companion personal memories");
+    assert_eq!(field(&error), Some("companion_personal_memories"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_direct_chat_rejects_a_companion_memory_write_back_override() {
+    let harness = harness(Reply::Text("Hello."));
+    let chat =
+        crate::api::tests::launch(&harness, "companion-memory-write-back-direct-launch").await;
+    let current = view(&harness, &chat).await;
+    let error = update(
+        &harness,
+        &chat,
+        current.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_memory_write_back: Some(dto::FlagChange::Set { value: true }),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect_err("direct companion memory write-back");
+    assert_eq!(field(&error), Some("companion_memory_write_back"));
+}
+
 /// A one-to-one chat follows its character's memory mode every turn unless
 /// it chose one itself.
 #[tokio::test(flavor = "multi_thread")]

@@ -1579,6 +1579,8 @@ fn map_groups(
             time_awareness: false,
             disable_character_notes: false,
             companion_mode: false,
+            companion_personal_memories: true,
+            companion_memory_write_back: true,
             group_roleplay_prompt_id: None,
             presentation: lettuce_characters::ChatAppearanceV1::default(),
             presentation_overrides: None,

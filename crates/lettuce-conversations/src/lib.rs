@@ -1069,6 +1069,8 @@ mod tests {
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             companion_mode: Default::default(),
+            companion_personal_memories: Default::default(),
+            companion_memory_write_back: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2542,6 +2544,8 @@ mod tests {
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             companion_mode: Default::default(),
+            companion_personal_memories: Default::default(),
+            companion_memory_write_back: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2602,6 +2606,8 @@ mod tests {
             disable_character_lorebooks: None,
             disable_character_notes: None,
             companion_mode: None,
+            companion_personal_memories: None,
+            companion_memory_write_back: None,
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,
@@ -2652,6 +2658,8 @@ mod tests {
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             companion_mode: Default::default(),
+            companion_personal_memories: Default::default(),
+            companion_memory_write_back: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2684,6 +2692,8 @@ mod tests {
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             companion_mode: Default::default(),
+            companion_personal_memories: Default::default(),
+            companion_memory_write_back: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2728,6 +2738,8 @@ mod tests {
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             companion_mode: Default::default(),
+            companion_personal_memories: Default::default(),
+            companion_memory_write_back: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2868,6 +2880,8 @@ mod tests {
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
             companion_mode: Default::default(),
+            companion_personal_memories: Default::default(),
+            companion_memory_write_back: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2892,6 +2906,8 @@ mod tests {
         let mut direct_notes = current.clone();
         direct_notes.disable_character_notes = Some(true);
         direct_notes.companion_mode = Some(true);
+        direct_notes.companion_personal_memories = Some(true);
+        direct_notes.companion_memory_write_back = Some(true);
         assert!(direct_notes.validate_against_kind(&direct.kind).is_err());
         direct.kind = match direct.kind {
             ConversationKind::Direct(mut details) => {
@@ -2975,6 +2991,8 @@ mod tests {
             disable_character_lorebooks: None,
             disable_character_notes: None,
             companion_mode: None,
+            companion_personal_memories: None,
+            companion_memory_write_back: None,
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,

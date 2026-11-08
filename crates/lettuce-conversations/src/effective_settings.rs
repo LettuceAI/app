@@ -638,6 +638,8 @@ mod tests {
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
                 companion_mode: Default::default(),
+                companion_personal_memories: Default::default(),
+                companion_memory_write_back: Default::default(),
                 follow_group_members: false,
                 follow_group_member_models: false,
             }

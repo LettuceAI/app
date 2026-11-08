@@ -502,3 +502,152 @@ fn character_purge_removes_group_companion_checkpoints_and_relationships_toward_
         Vec::new()
     );
 }
+
+#[test]
+fn perspective_memory_spaces_are_purged_with_their_conversation_and_character() {
+    use lettuce_memory::{MemoryCategory, MemoryItem, MemorySpaceSnapshot, Score};
+    use lettuce_types::{
+        ConversationBranchId, ConversationId, MemoryId, MemorySpaceId, Revision,
+    };
+
+    let database = Database::open_in_memory().expect("database");
+    let deleted = CharacterId::new();
+    let survivor = CharacterId::new();
+    let conversation_id = ConversationId::new();
+    let branch_id = ConversationBranchId::new();
+    let deleted_space = MemorySpaceId::new();
+    let survivor_space = MemorySpaceId::new();
+    let item = |text: &str| {
+        let id = MemoryId::new();
+        MemoryItem {
+            id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
+            text: text.to_owned(),
+            origin: lettuce_memory::MemoryOrigin::Model,
+            category: Some(MemoryCategory::Other),
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: Some(3),
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::FULL,
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(1),
+            last_accessed_at: TimestampMillis::new(1),
+        }
+    };
+    {
+        let mut connection = database.connection().expect("lock");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        for (character_id, name) in [(deleted, "Deleted"), (survivor, "Survivor")] {
+            transaction
+                .execute(
+                    "INSERT INTO characters (
+                       id, status, name, normalized_name, profile_json,
+                       provenance_json, defaults_json, interaction_mode,
+                       memory_policy, voice_autoplay, presentation_json, revision,
+                       created_at, updated_at
+                     ) VALUES (?1, 'active', ?2, ?3, '{}', '{}', '{}',
+                               'companion', 'manual', 0, '{}', 1, 1, 1)",
+                    params![character_id.to_string(), name, name.to_ascii_lowercase()],
+                )
+                .expect("character");
+        }
+        transaction
+            .execute(
+                "INSERT INTO conversations (
+                   id, kind, lifecycle, title, active_branch_id, kind_json,
+                   revision, created_at, updated_at
+                 ) VALUES (?1, 'group', 'active', 'Group', ?2,
+                           '{\"format_version\":1,\"value\":null}', 1, 1, 1)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("conversation");
+        transaction
+            .execute(
+                "INSERT INTO conversation_branches (
+                   conversation_id, id, status, revision, created_at, updated_at
+                 ) VALUES (?1, ?2, 'active', 1, 1, 1)",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .expect("branch");
+        for (character_id, space_id, text) in [
+            (deleted, deleted_space, "deleted perspective"),
+            (survivor, survivor_space, "survivor perspective"),
+        ] {
+            crate::memory::memory_adapter::insert_perspective_space_in(
+                &transaction,
+                conversation_id,
+                branch_id,
+                character_id,
+                &MemorySpaceSnapshot {
+                    id: space_id,
+                    revision: Revision::INITIAL,
+                    items: vec![item(text)],
+                },
+            )
+            .expect("perspective space");
+        }
+        transaction.commit().expect("commit");
+    }
+    database
+        .purge_character(deleted, TimestampMillis::new(30))
+        .expect("purge character");
+    {
+        let connection = database.connection().expect("lock");
+        let remaining: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM group_companion_memory_spaces WHERE character_id = ?1",
+                [deleted.to_string()],
+                |row| row.get(0),
+            )
+            .expect("deleted bindings");
+        assert_eq!(remaining, 0);
+        let spaces: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM memory_spaces WHERE id = ?1",
+                [deleted_space.to_string()],
+                |row| row.get(0),
+            )
+            .expect("deleted space");
+        assert_eq!(spaces, 0);
+        let survivor_bindings: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM group_companion_memory_spaces WHERE character_id = ?1",
+                [survivor.to_string()],
+                |row| row.get(0),
+            )
+            .expect("survivor bindings");
+        assert_eq!(survivor_bindings, 1);
+    }
+    database
+        .purge_conversation(conversation_id, TimestampMillis::new(40))
+        .expect("purge conversation");
+    let connection = database.connection().expect("lock");
+    let bindings: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM group_companion_memory_spaces WHERE conversation_id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("conversation bindings");
+    assert_eq!(bindings, 0);
+    let spaces: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM memory_spaces WHERE id IN (?1, ?2)",
+            params![deleted_space.to_string(), survivor_space.to_string()],
+            |row| row.get(0),
+        )
+        .expect("remaining spaces");
+    assert_eq!(spaces, 0);
+}

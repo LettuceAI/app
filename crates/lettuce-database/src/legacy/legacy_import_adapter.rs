@@ -2628,6 +2628,8 @@ fn legacy_group_plan(
             time_awareness: false,
             disable_character_notes: false,
             companion_mode: false,
+            companion_personal_memories: true,
+            companion_memory_write_back: true,
             group_roleplay_prompt_id: prompt(&candidate.group_roleplay_prompt_source_id)
                 .or(prompt(&candidate.group_conversation_prompt_source_id)),
             presentation: candidate.chat_appearance.clone(),

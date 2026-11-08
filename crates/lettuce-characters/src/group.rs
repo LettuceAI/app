@@ -47,6 +47,13 @@ pub struct GroupProfile {
     /// Members of the group's chats act as companions.
     #[serde(default)]
     pub companion_mode: bool,
+    /// The members' own companion memories from their direct chats are
+    /// available in the group's chats.
+    #[serde(default = "default_true")]
+    pub companion_personal_memories: bool,
+    /// Group companion turns write memories back to each member.
+    #[serde(default = "default_true")]
+    pub companion_memory_write_back: bool,
     pub group_roleplay_prompt_id: Option<PromptDocumentId>,
     pub presentation: ChatAppearanceV1,
     #[serde(default)]
@@ -57,6 +64,10 @@ pub struct GroupProfile {
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 impl GroupProfile {
@@ -77,6 +88,8 @@ impl GroupProfile {
             time_awareness: false,
             disable_character_notes: false,
             companion_mode: false,
+            companion_personal_memories: true,
+            companion_memory_write_back: true,
             group_roleplay_prompt_id: None,
             presentation: ChatAppearanceV1::default(),
             presentation_overrides: Some(std::collections::BTreeSet::new()),
@@ -182,6 +195,8 @@ mod tests {
             time_awareness: false,
             disable_character_notes: false,
             companion_mode: false,
+            companion_personal_memories: true,
+            companion_memory_write_back: true,
             group_roleplay_prompt_id: None,
             presentation: ChatAppearanceV1::default(),
             presentation_overrides: None,

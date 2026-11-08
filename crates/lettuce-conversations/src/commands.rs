@@ -1177,6 +1177,10 @@ pub struct CurrentConversationSettingsPatch {
     pub disable_character_notes: PatchValue<bool>,
     #[serde(default)]
     pub companion_mode: PatchValue<bool>,
+    #[serde(default)]
+    pub companion_personal_memories: PatchValue<bool>,
+    #[serde(default)]
+    pub companion_memory_write_back: PatchValue<bool>,
     /// Group conversations only: the members and their muted flags follow
     /// the group again.
     #[serde(default)]
@@ -1216,6 +1220,16 @@ impl CurrentConversationSettingsPatch {
         if matches!(self.companion_mode, PatchValue::Clear) {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.companion_mode",
+            });
+        }
+        if matches!(self.companion_personal_memories, PatchValue::Clear) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.companion_personal_memories",
+            });
+        }
+        if matches!(self.companion_memory_write_back, PatchValue::Clear) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.companion_memory_write_back",
             });
         }
         if let PatchValue::Set(note) = &self.author_note {
@@ -1419,6 +1433,16 @@ impl CurrentConversationSettingsPatch {
             },
             companion_mode: match self.companion_mode {
                 PatchValue::Keep => base.companion_mode,
+                PatchValue::Set(enabled) => Some(enabled),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
+            },
+            companion_personal_memories: match self.companion_personal_memories {
+                PatchValue::Keep => base.companion_personal_memories,
+                PatchValue::Set(enabled) => Some(enabled),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
+            },
+            companion_memory_write_back: match self.companion_memory_write_back {
+                PatchValue::Keep => base.companion_memory_write_back,
                 PatchValue::Set(enabled) => Some(enabled),
                 PatchValue::Clear | PatchValue::UseLaunchDefault => None,
             },
@@ -1626,6 +1650,14 @@ mod tests {
                 companion_mode: PatchValue::Clear,
                 ..CurrentConversationSettingsPatch::default()
             },
+            CurrentConversationSettingsPatch {
+                companion_personal_memories: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            },
+            CurrentConversationSettingsPatch {
+                companion_memory_write_back: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            },
         ] {
             assert!(patch.apply(None, None).is_err());
         }
@@ -1633,6 +1665,8 @@ mod tests {
             disable_character_lorebooks: PatchValue::Set(true),
             disable_character_notes: PatchValue::Set(true),
             companion_mode: PatchValue::Set(true),
+            companion_personal_memories: PatchValue::Set(true),
+            companion_memory_write_back: PatchValue::Set(true),
             ..CurrentConversationSettingsPatch::default()
         }
         .apply(None, None)
@@ -1640,6 +1674,8 @@ mod tests {
         assert_eq!(set.disable_character_lorebooks, Some(true));
         assert_eq!(set.disable_character_notes, Some(true));
         assert_eq!(set.companion_mode, Some(true));
+        assert_eq!(set.companion_personal_memories, Some(true));
+        assert_eq!(set.companion_memory_write_back, Some(true));
         let mut owned = set.clone();
         owned.members_overridden = true;
         owned.muted_overridden = true;
@@ -1648,6 +1684,8 @@ mod tests {
             disable_character_lorebooks: PatchValue::UseLaunchDefault,
             disable_character_notes: PatchValue::UseLaunchDefault,
             companion_mode: PatchValue::UseLaunchDefault,
+            companion_personal_memories: PatchValue::UseLaunchDefault,
+            companion_memory_write_back: PatchValue::UseLaunchDefault,
             follow_group_members: true,
             ..CurrentConversationSettingsPatch::default()
         }
@@ -1656,6 +1694,8 @@ mod tests {
         assert_eq!(reset.disable_character_lorebooks, None);
         assert_eq!(reset.disable_character_notes, None);
         assert_eq!(reset.companion_mode, None);
+        assert_eq!(reset.companion_personal_memories, None);
+        assert_eq!(reset.companion_memory_write_back, None);
         assert!(!reset.members_overridden && !reset.muted_overridden);
         assert!(reset.member_models_overridden);
         let models = CurrentConversationSettingsPatch {
@@ -1691,6 +1731,58 @@ mod tests {
         .apply(Some(&owned), Some(owned.revision))
         .expect("reset");
         assert_eq!(reset.companion_mode, None);
+    }
+
+    #[test]
+    fn companion_personal_memories_override_cannot_be_cleared_and_resets_to_the_group() {
+        assert!(
+            CurrentConversationSettingsPatch {
+                companion_personal_memories: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            }
+            .apply(None, None)
+            .is_err()
+        );
+        let owned = CurrentConversationSettingsPatch {
+            companion_personal_memories: PatchValue::Set(true),
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(None, None)
+        .expect("set");
+        assert_eq!(owned.companion_personal_memories, Some(true));
+        let reset = CurrentConversationSettingsPatch {
+            companion_personal_memories: PatchValue::UseLaunchDefault,
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(Some(&owned), Some(owned.revision))
+        .expect("reset");
+        assert_eq!(reset.companion_personal_memories, None);
+    }
+
+    #[test]
+    fn companion_memory_write_back_override_cannot_be_cleared_and_resets_to_the_group() {
+        assert!(
+            CurrentConversationSettingsPatch {
+                companion_memory_write_back: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            }
+            .apply(None, None)
+            .is_err()
+        );
+        let owned = CurrentConversationSettingsPatch {
+            companion_memory_write_back: PatchValue::Set(true),
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(None, None)
+        .expect("set");
+        assert_eq!(owned.companion_memory_write_back, Some(true));
+        let reset = CurrentConversationSettingsPatch {
+            companion_memory_write_back: PatchValue::UseLaunchDefault,
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(Some(&owned), Some(owned.revision))
+        .expect("reset");
+        assert_eq!(reset.companion_memory_write_back, None);
     }
 
     #[test]

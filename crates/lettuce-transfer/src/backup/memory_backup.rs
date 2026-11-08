@@ -4,7 +4,7 @@ use lettuce_memory::{MemoryRetrievalAccessReceipt, MemorySpaceSnapshot, MemorySu
 use lettuce_types::ConversationId;
 use serde::{Deserialize, Serialize};
 
-pub const MEMORY_BACKUP_VERSION: u32 = 7;
+pub const MEMORY_BACKUP_VERSION: u32 = 8;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -56,6 +56,8 @@ pub struct BackupCompanionMemoryPool {
 pub struct BackupMemorySpace {
     pub conversation_id: ConversationId,
     pub branch_id: Option<lettuce_types::ConversationBranchId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perspective_character_id: Option<lettuce_types::CharacterId>,
     pub snapshot: MemorySpaceSnapshot,
     pub summary: Option<MemorySummary>,
     /// The summary this branch's space inherited from a branch that was later
@@ -81,8 +83,14 @@ impl MemoryBackup {
                 reason: "backup version is not the supported version",
             });
         }
-        self.spaces
-            .sort_by_key(|space| (space.conversation_id, space.branch_id, space.snapshot.id));
+        self.spaces.sort_by_key(|space| {
+            (
+                space.conversation_id,
+                space.branch_id,
+                space.perspective_character_id,
+                space.snapshot.id,
+            )
+        });
         self.synced_cursors
             .sort_by_key(|cursor| (cursor.conversation_id, cursor.branch_id));
         let mut cursor_owners = BTreeSet::new();
@@ -212,6 +220,7 @@ impl MemoryBackup {
             if bound.iter().any(|id| !known_conversations.contains(id))
                 || space.snapshot.validate().is_err()
                 || (pool != space.branch_id.is_none())
+                || (space.perspective_character_id.is_some() && pool)
                 || space.branch_id.is_some_and(|branch_id| {
                     !history.conversations.iter().any(|entry| {
                         entry.aggregate.conversation.id == space.conversation_id
@@ -225,7 +234,10 @@ impl MemoryBackup {
                 || (!pool && !space.shared_conversation_ids.is_empty())
                 || bound.iter().any(|id| {
                     spaces
-                        .insert((*id, space.branch_id), space.snapshot.id)
+                        .insert(
+                            (*id, space.branch_id, space.perspective_character_id),
+                            space.snapshot.id,
+                        )
                         .is_some()
                 })
                 || !space_ids.insert(space.snapshot.id)
@@ -318,7 +330,7 @@ impl MemoryBackup {
             }
         }
         let binds = |conversation_id: ConversationId, space_id: lettuce_types::MemorySpaceId| {
-            spaces.iter().any(|((owner, _), bound_space)| {
+            spaces.iter().any(|((owner, _, _), bound_space)| {
                 *owner == conversation_id && *bound_space == space_id
             })
         };
@@ -369,7 +381,7 @@ impl MemoryBackup {
         for effect in &effects.effects {
             let bound = spaces
                 .iter()
-                .filter(|((owner, _), _)| *owner == effect.conversation_id)
+                .filter(|((owner, _, _), _)| *owner == effect.conversation_id)
                 .map(|(_, space)| space)
                 .collect::<Vec<_>>();
             if bound.is_empty() {
