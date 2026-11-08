@@ -5,6 +5,7 @@
 mod consolidation;
 mod effect;
 mod group;
+mod group_turn;
 mod growth;
 mod prompt;
 mod scheduled_note;
@@ -16,6 +17,7 @@ mod state;
 pub use consolidation::*;
 pub use effect::*;
 pub use group::*;
+pub use group_turn::*;
 pub use growth::*;
 pub use prompt::*;
 pub use scheduled_note::*;
