@@ -44,6 +44,10 @@ const GROUP_CHAT_ROLEPLAY: &[&str] = &[
     "{{context_summary}}",
     "{{key_memories}}",
     "{{scene_cast_lora}}",
+    "{{companion_state}}",
+    "{{companion_member_relationships}}",
+    "{{scheduled_notes}}",
+    "{{author_note}}",
 ];
 const MEMORY_SUMMARIZER: &[&str] = &["{{prev_summary}}", "{{character}}", "{{persona}}"];
 const MEMORY_MANAGER: &[&str] = &[

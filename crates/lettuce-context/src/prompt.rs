@@ -1146,6 +1146,7 @@ pub struct PromptRenderValues {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PromptVariable {
     CompanionState,
+    CompanionMemberRelationships,
     ScheduledNotes,
     GroupCharacters,
     PreviousSummary,
@@ -1247,6 +1248,7 @@ pub enum PromptVariable {
     ExcerptLabel,
     ExcerptContent,
     InteractionCount,
+    CompanionMemberName,
     ClosenessBand,
     TrustBand,
     AffectionBand,
@@ -1302,6 +1304,7 @@ impl PromptVariable {
     const fn placeholder(self) -> &'static str {
         match self {
             Self::CompanionState => "{{companion_state}}",
+            Self::CompanionMemberRelationships => "{{companion_member_relationships}}",
             Self::ScheduledNotes => "{{scheduled_notes}}",
             Self::GroupCharacters => "{{group_characters}}",
             Self::PreviousSummary => "{{prev_summary}}",
@@ -1403,6 +1406,7 @@ impl PromptVariable {
             Self::ExcerptLabel => "{{excerpt_label}}",
             Self::ExcerptContent => "{{excerpt_content}}",
             Self::InteractionCount => "{{interaction_count}}",
+            Self::CompanionMemberName => "{{companion_member_name}}",
             Self::ClosenessBand => "{{closeness_band}}",
             Self::TrustBand => "{{trust_band}}",
             Self::AffectionBand => "{{affection_band}}",
@@ -1457,6 +1461,7 @@ impl PromptVariable {
 
     const ALL: &[Self] = &[
         Self::CompanionState,
+        Self::CompanionMemberRelationships,
         Self::ScheduledNotes,
         Self::GroupCharacters,
         Self::PreviousSummary,
@@ -1558,6 +1563,7 @@ impl PromptVariable {
         Self::ExcerptLabel,
         Self::ExcerptContent,
         Self::InteractionCount,
+        Self::CompanionMemberName,
         Self::ClosenessBand,
         Self::TrustBand,
         Self::AffectionBand,
@@ -1645,7 +1651,11 @@ impl PromptVariable {
             }
             Purpose::GroupChatRoleplay => matches!(
                 self,
-                Variable::GroupCharacters | Variable::SceneCastLoraKeywords
+                Variable::GroupCharacters
+                    | Variable::SceneCastLoraKeywords
+                    | Variable::CompanionState
+                    | Variable::CompanionMemberRelationships
+                    | Variable::ScheduledNotes
             ),
             Purpose::DynamicMemorySummarizer => {
                 matches!(self, Variable::PreviousSummary | Variable::Character)
@@ -2117,6 +2127,7 @@ fn contains_volatile_turn_context(content: &str) -> bool {
         "{{memory_summary}}",
         "{{selected_memories}}",
         "{{companion_state}}",
+        "{{companion_member_relationships}}",
         "{{scheduled_notes}}",
         "{{date",
         "{{time",

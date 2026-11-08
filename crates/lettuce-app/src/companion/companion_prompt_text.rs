@@ -1,8 +1,8 @@
 use std::cell::Cell;
 
 use lettuce_companions::{
-    CompanionPromptState, ConsolidationPromptFacts, EmotionDimension,
-    EmotionReading, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipBand,
+    CompanionPromptState, ConsolidationPromptFacts, EmotionDimension, EmotionReading,
+    GroupMemberStance, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipBand,
     SoulCategory, SoulFactLine, TensionBand, policy_name, scheduled_note_lines,
 };
 use lettuce_context::{PromptRenderValues, PromptVariable as Variable};
@@ -125,6 +125,59 @@ pub(crate) fn render_companion_state(
         Some(ReassuranceCue::Open) => line("companion_reassurance_open", Vec::new())?,
         Some(ReassuranceCue::Avoidant) => line("companion_reassurance_avoidant", Vec::new())?,
         None => {}
+    }
+    Ok(lines.join("\n"))
+}
+
+/// The live member stance block, one catalog line per other member the
+/// speaker has a relationship with; no stance renders the catalog's quiet
+/// line.
+pub(crate) fn render_companion_member_relationships(
+    text: &RuntimeText,
+    character_name: &str,
+    stances: &[(String, GroupMemberStance)],
+) -> Result<String, RuntimeTextError> {
+    let names = PromptRenderValues {
+        character_name: character_name.to_owned(),
+        ..PromptRenderValues::default()
+    };
+    let mut lines = Vec::new();
+    for (member_name, stance) in stances {
+        let mut values = names.clone();
+        values.purpose_values.extend([
+            (Variable::CompanionMemberName, member_name.trim().to_owned()),
+            (
+                Variable::ClosenessBand,
+                text.render_with(&band_key("closeness", stance.closeness.band), [])?,
+            ),
+            (Variable::ClosenessScore, percent(stance.closeness.value)),
+            (
+                Variable::TrustBand,
+                text.render_with(&band_key("trust", stance.trust.band), [])?,
+            ),
+            (Variable::TrustScore, percent(stance.trust.value)),
+            (
+                Variable::AffectionBand,
+                text.render_with(&band_key("affection", stance.affection.band), [])?,
+            ),
+            (Variable::AffectionScore, percent(stance.affection.value)),
+            (
+                Variable::TensionBand,
+                text.render_with(tension_key(stance.tension.band), [])?,
+            ),
+            (Variable::TensionScore, percent(stance.tension.value)),
+        ]);
+        if let Some(rendered) = text
+            .render("companion_member_stance", &values)?
+            .filter(|line| !line.is_empty())
+        {
+            lines.push(rendered);
+        }
+    }
+    if lines.is_empty() {
+        return text
+            .render("companion_member_stance_none", &names)
+            .map(Option::unwrap_or_default);
     }
     Ok(lines.join("\n"))
 }
@@ -416,15 +469,15 @@ const fn soul_key(category: SoulCategory) -> &'static str {
 mod tests {
     use lettuce_companions::{
         CompanionPromptState, CompanionScheduledNote, ConsolidationPromptFacts, EmotionDimension,
-        EmotionReading, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipAxis,
-        RelationshipBand, RelationshipReading, ScheduledNoteRecurrence, SoulCategory, SoulFactLine,
-        SoulFactPolicy, TensionBand, TensionReading,
+        EmotionReading, GroupMemberStance, GrowthPromptFacts, ReassuranceCue, RegulationCue,
+        RelationshipAxis, RelationshipBand, RelationshipReading, ScheduledNoteRecurrence,
+        SoulCategory, SoulFactLine, SoulFactPolicy, TensionBand, TensionReading,
     };
     use lettuce_types::{CharacterId, TimestampMillis};
 
     use super::{
-        emotion_key, render_companion_state, render_consolidation_values, render_growth_values,
-        render_scheduled_notes, soul_key,
+        emotion_key, render_companion_member_relationships, render_companion_state,
+        render_consolidation_values, render_growth_values, render_scheduled_notes, soul_key,
     };
     use crate::BuiltInPromptId;
     use crate::generation::runtime_text::RuntimeText;
@@ -580,6 +633,27 @@ mod tests {
     }
 
     #[test]
+    fn group_companion_prompt_member_stance_renders_one_line_or_the_quiet_text() {
+        let text = RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime);
+        let stance = GroupMemberStance {
+            target_character_id: CharacterId::new(),
+            closeness: RelationshipReading::of(RelationshipAxis::Closeness, 0.6),
+            trust: RelationshipReading::of(RelationshipAxis::Trust, 0.3),
+            affection: RelationshipReading::of(RelationshipAxis::Affection, 0.52),
+            tension: TensionReading::of(0.1),
+        };
+        assert_eq!(
+            render_companion_member_relationships(&text, "Mira", &[("Ari".into(), stance)])
+                .expect("render"),
+            "Current Mira <-> Ari relationship stance: closeness: close - seeks them out, at ease together (60 on a scale from -100 to 100), trust: open - no active suspicion, but trust not yet earned (30 on a scale from -100 to 100), affection: affectionate - cares for them, feels real warmth (52 on a scale from -100 to 100); tension: calm - at ease, no friction between them (10 on a scale from 0 to 100)."
+        );
+        assert_eq!(
+            render_companion_member_relationships(&text, "Mira", &[]).expect("empty"),
+            "Current Mira has no particular history with anyone else in the room yet."
+        );
+    }
+
+    #[test]
     fn every_catalog_key_the_renderer_uses_exists() {
         let seed = crate::BuiltInPromptCatalog::bundled()
             .expect("catalog")
@@ -597,6 +671,8 @@ mod tests {
             "companion_duration_one",
             "companion_duration_many",
             "companion_stance",
+            "companion_member_stance",
+            "companion_member_stance_none",
             "companion_expressed_tone",
             "companion_expressed_tone_quiet",
             "companion_emotion_item",

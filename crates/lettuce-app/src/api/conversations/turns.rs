@@ -15,6 +15,7 @@ use lettuce_conversations::{
     MessageRenderSource, MessageRole, MessageVisibility, OperationKind, OperationToken,
     RegenerateCandidate, RetryGeneration, SendConversation,
 };
+use lettuce_jobs::handle::CancellationToken;
 use lettuce_types::{
     ConversationId, ConversationParticipantId, GenerationTurnId, MessageId, Revision,
 };
@@ -28,7 +29,7 @@ use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
 use crate::api::events::GenerationEventSink;
 use crate::api::models::{TurnOperation, require_conversation_models};
-use crate::{CompanionEmotionEngine, CompanionTurnCoordinator, CompanionTurnError};
+use crate::{CompanionTurnCoordinator, CompanionTurnError};
 
 /// A conversation that can begin a request: it exists and is not deleted.
 fn writable(
@@ -497,11 +498,11 @@ where
                 swap_roles,
                 operation,
             };
-            let begun =
-                CompanionTurnCoordinator::<_, dyn CompanionEmotionEngine>::new(database, None)
-                    .begin_continue(&command, now)
-                    .map_err(|error| companion_begin_error(context, conversation_id, error))?
-                    .value;
+            let emotion = context.emotion();
+            let begun = CompanionTurnCoordinator::new(database, Some(emotion.as_ref()))
+                .begin_continue(&command, now, &CancellationToken::new())
+                .map_err(|error| companion_begin_error(context, conversation_id, error))?
+                .value;
             let accepted = dto::GenerationAccepted {
                 turn_id: begun.turn.id.to_string(),
             };

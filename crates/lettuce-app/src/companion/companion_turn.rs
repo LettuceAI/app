@@ -1,18 +1,21 @@
 use lettuce_characters::{CharacterRepository, RepositoryError as CharacterRepositoryError};
 use lettuce_companions::{
     CompanionContinueRepositoryError, CompanionConversationContinuer, CompanionConversationSender,
-    CompanionSendRepositoryError, CompanionStateReplacement, CompanionStateRepository,
-    CompanionStateRepositoryError, CompanionTurnEffectSeed, CompanionTurnInput,
+    CompanionSendRepositoryError, CompanionSignalBundle, CompanionStateReplacement,
+    CompanionStateRepository, CompanionStateRepositoryError, CompanionTurnEffectSeed,
+    CompanionTurnInput, GroupCompanionRepository, GroupCompanionTurnWriter,
     PreparedCompanionContinue, PreparedCompanionSend, apply_turn, signals_from_classification,
     unavailable_signal_bundle,
 };
 use lettuce_conversations::{
-    ContinueConversation, ContinueConversationResult, ConversationReader, ConversationRepository,
-    ConversationRepositoryError, MessagePart, OperationKind, SendConversation,
-    SendConversationResult,
+    ContinueConversation, ContinueConversationResult, ConversationOverviewReader,
+    ConversationReader, ConversationRepository, ConversationRepositoryError, MessagePart,
+    OperationKind, SendConversation, SendConversationResult,
 };
 use lettuce_jobs::handle::CancellationToken;
-use lettuce_types::TimestampMillis;
+use lettuce_types::{ConversationId, TimestampMillis};
+
+use super::group_companion_turn::prepare_group_companion_turn;
 
 use crate::{CompanionEmotionEngine, CompanionEmotionGenerationError};
 
@@ -49,17 +52,21 @@ pub struct CompanionTurnCoordinator<'a, S, E: ?Sized> {
 impl<S, E> CompanionTurnCoordinator<'_, S, E>
 where
     S: ConversationRepository
+        + ConversationOverviewReader
         + CharacterRepository
         + lettuce_characters::GroupRepository
         + lettuce_settings::GlobalSettingsStore
         + CompanionStateRepository
-        + CompanionConversationContinuer,
-    E: ?Sized,
+        + CompanionConversationContinuer
+        + GroupCompanionRepository
+        + GroupCompanionTurnWriter,
+    E: CompanionEmotionEngine + ?Sized,
 {
     pub fn begin_continue(
         &self,
         command: &ContinueConversation,
         now: TimestampMillis,
+        cancellation: &CancellationToken,
     ) -> Result<ContinueConversationResult, CompanionTurnError> {
         lettuce_conversations::ConversationMutation::Continue(command.clone())
             .validate()
@@ -89,10 +96,24 @@ where
         let Some(owner) =
             crate::companion::companion_clock::companion_state_owner(&aggregate.conversation)
         else {
-            return self
-                .sources
-                .begin_continue(command, now)
-                .map_err(Into::into);
+            let prepared = prepare_group_companion_turn(
+                self.sources,
+                self.emotion,
+                &aggregate,
+                None,
+                now,
+                cancellation,
+            )?;
+            return match prepared {
+                Some(prepared) => self
+                    .sources
+                    .begin_group_companion_continue(command, prepared, now)
+                    .map_err(Into::into),
+                None => self
+                    .sources
+                    .begin_continue(command, now)
+                    .map_err(Into::into),
+            };
         };
         let companion =
             companion_state(self.sources, &aggregate.conversation, owner, now)?.is_some();
@@ -119,11 +140,14 @@ impl<'a, S, E: ?Sized> CompanionTurnCoordinator<'a, S, E> {
 impl<S, E> CompanionTurnCoordinator<'_, S, E>
 where
     S: ConversationRepository
+        + ConversationOverviewReader
         + CharacterRepository
         + lettuce_characters::GroupRepository
         + lettuce_settings::GlobalSettingsStore
         + CompanionStateRepository
-        + CompanionConversationSender,
+        + CompanionConversationSender
+        + GroupCompanionRepository
+        + GroupCompanionTurnWriter,
     E: CompanionEmotionEngine + ?Sized,
 {
     pub fn begin_send(
@@ -155,10 +179,25 @@ where
             }
             .into());
         }
+        let text = classification_text(&command.message.parts);
         let Some(owner) =
             crate::companion::companion_clock::companion_state_owner(&aggregate.conversation)
         else {
-            return self.sources.begin_send(command, now).map_err(Into::into);
+            let prepared = prepare_group_companion_turn(
+                self.sources,
+                self.emotion,
+                &aggregate,
+                Some(&text),
+                now,
+                cancellation,
+            )?;
+            return match prepared {
+                Some(prepared) => self
+                    .sources
+                    .begin_group_companion_send(command, prepared, now)
+                    .map_err(Into::into),
+                None => self.sources.begin_send(command, now).map_err(Into::into),
+            };
         };
         let clock = crate::companion::companion_clock::conversation_clock_context(
             self.sources,
@@ -176,27 +215,8 @@ where
             .companion_soul
             .unwrap_or_default();
         let effective_now = clock.effective_now(now);
-        let text = classification_text(&command.message.parts);
-        let bundle = match self.emotion {
-            Some(engine) => match engine.classify_emotion(&text, cancellation) {
-                Ok(Some(classification)) => signals_from_classification(&classification),
-                Ok(None) => unavailable_signal_bundle(),
-                Err(CompanionEmotionGenerationError::Unavailable) if engine.requires_model() => {
-                    return Err(CompanionTurnError::EmotionUnavailable);
-                }
-                Err(CompanionEmotionGenerationError::Unavailable) => {
-                    tracing::warn!(
-                        conversation_id = %command.conversation_id,
-                        "companion emotion classifier unavailable; using neutral update"
-                    );
-                    unavailable_signal_bundle()
-                }
-                Err(CompanionEmotionGenerationError::Cancelled) => {
-                    return Err(CompanionTurnError::Cancelled);
-                }
-            },
-            None => return Err(CompanionTurnError::EmotionRequired),
-        };
+        let bundle =
+            classification_signals(self.emotion, &text, cancellation, command.conversation_id)?;
         let transition = apply_turn(
             &snapshot.state,
             &config.soul.baseline_affect,
@@ -269,7 +289,7 @@ where
     .map_err(Into::into)
 }
 
-fn classification_text(parts: &[MessagePart]) -> String {
+pub(crate) fn classification_text(parts: &[MessagePart]) -> String {
     parts
         .iter()
         .filter_map(|part| match part {
@@ -278,6 +298,35 @@ fn classification_text(parts: &[MessagePart]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub(crate) fn classification_signals<E>(
+    emotion: Option<&E>,
+    text: &str,
+    cancellation: &CancellationToken,
+    conversation_id: ConversationId,
+) -> Result<CompanionSignalBundle, CompanionTurnError>
+where
+    E: CompanionEmotionEngine + ?Sized,
+{
+    let Some(engine) = emotion else {
+        return Err(CompanionTurnError::EmotionRequired);
+    };
+    match engine.classify_emotion(text, cancellation) {
+        Ok(Some(classification)) => Ok(signals_from_classification(&classification)),
+        Ok(None) => Ok(unavailable_signal_bundle()),
+        Err(CompanionEmotionGenerationError::Unavailable) if engine.requires_model() => {
+            Err(CompanionTurnError::EmotionUnavailable)
+        }
+        Err(CompanionEmotionGenerationError::Unavailable) => {
+            tracing::warn!(
+                conversation_id = %conversation_id,
+                "companion emotion classifier unavailable; using neutral update"
+            );
+            Ok(unavailable_signal_bundle())
+        }
+        Err(CompanionEmotionGenerationError::Cancelled) => Err(CompanionTurnError::Cancelled),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

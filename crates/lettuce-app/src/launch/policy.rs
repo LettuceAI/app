@@ -185,6 +185,16 @@ pub(crate) fn group_prompt<S: PromptRepository + ?Sized>(
     Ok(group_prompt_with_source(sources, member)?.map(|(document, _)| document))
 }
 
+/// The prompt of a group chat in companion mode; a member's own group prompt is not used.
+pub(crate) fn group_companion_prompt<S: PromptRepository + ?Sized>(
+    sources: &S,
+) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+    crate::generation::built_in_prompts::active_built_in_prompt(
+        sources,
+        crate::BuiltInPromptId::GroupCompanion,
+    )
+}
+
 pub(crate) fn group_prompt_with_source<S: PromptRepository + ?Sized>(
     sources: &S,
     member: Option<PromptDocumentId>,

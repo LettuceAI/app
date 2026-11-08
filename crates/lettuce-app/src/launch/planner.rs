@@ -986,7 +986,7 @@ where
         let scene_text = scene
             .value()
             .and_then(|value| policy::resolve_group_scene_text(value, variants));
-        let prompt = self.resolve_group_prompt()?;
+        let prompt = self.resolve_group_prompt(group.group.companion_mode)?;
         let member_prompts = self.resolve_member_prompts(&characters)?;
 
         let group_bindings = if new_group {
@@ -1425,7 +1425,18 @@ where
         Ok(Selected::Inherited(&starting.scene))
     }
 
-    fn resolve_group_prompt(&self) -> Result<Selected<PromptDocument>, ConversationLaunchError> {
+    fn resolve_group_prompt(
+        &self,
+        companion: bool,
+    ) -> Result<Selected<PromptDocument>, ConversationLaunchError> {
+        if companion {
+            return policy::group_companion_prompt(self.sources)
+                .map_err(LaunchSourceError::Prompt)?
+                .map(Selected::Inherited)
+                .ok_or(ConversationLaunchError::BuiltInPromptMissing {
+                    purpose: PromptPurpose::GroupChatRoleplay,
+                });
+        }
         Ok(Selected::Inherited(self.built_in_prompt(
             BuiltInPromptId::GroupChatRoleplay,
             PromptPurpose::GroupChatRoleplay,

@@ -1,13 +1,18 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
+use lettuce_conversations::{
+    ContinueConversation, ContinueConversationResult, ConversationRepositoryError,
+    SendConversation, SendConversationResult,
+};
 use lettuce_types::{
     CharacterId, ConversationId, MessageCandidateId, MessageId, MessageRevisionId, PersonaId,
-    TimestampMillis,
+    Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CompanionEmotionDelta, CompanionSignalChanges, EmotionalState, RelationshipDelta,
+    CompanionEmotionDelta, CompanionSignalBundle, CompanionSignalChanges, CompanionSoulConfig,
+    EmotionalState, GroupCompanionMemberState, GroupCompanionStep, RelationshipDelta,
     RelationshipState,
 };
 
@@ -72,6 +77,7 @@ pub struct GroupCompanionCheckpoint {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupCompanionRepositoryError {
+    Conflict,
     Invalid { reason: String },
     Corrupt { reason: String },
     Failure { reason: String },
@@ -90,6 +96,61 @@ pub trait GroupCompanionRepository: Send + Sync {
         conversation_id: ConversationId,
         message_id: MessageId,
     ) -> Result<Vec<GroupCompanionCheckpoint>, GroupCompanionRepositoryError>;
+
+    /// The message ids among `path` that have checkpoints, with the message source those checkpoints were computed from.
+    fn path_checkpoint_sources(
+        &self,
+        conversation_id: ConversationId,
+        path: &[MessageId],
+    ) -> Result<Vec<(MessageId, GroupCompanionMessageSource)>, GroupCompanionRepositoryError>;
+
+    fn persona_relationship(
+        &self,
+        character_id: CharacterId,
+        persona_id: Option<PersonaId>,
+    ) -> Result<Option<(Revision, RelationshipState)>, GroupCompanionRepositoryError>;
+
+    fn recorded_persona_applications(
+        &self,
+        conversation_id: ConversationId,
+        path: &[MessageId],
+        persona_id: Option<PersonaId>,
+    ) -> Result<Vec<(MessageId, CharacterId)>, GroupCompanionRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupCompanionUserEvent {
+    pub present: Vec<CharacterId>,
+    pub addressed: Vec<CharacterId>,
+    pub signals: CompanionSignalBundle,
+    pub at: TimestampMillis,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedGroupCompanionTurn {
+    pub conversation_id: ConversationId,
+    pub persona_id: Option<PersonaId>,
+    pub members: Vec<(CharacterId, CompanionSoulConfig)>,
+    pub applied: Vec<(MessageId, GroupCompanionStep)>,
+    pub states: BTreeMap<CharacterId, GroupCompanionMemberState>,
+    pub persona_relationships: BTreeMap<CharacterId, RelationshipState>,
+    pub persona_revisions: BTreeMap<CharacterId, Option<Revision>>,
+    pub user_event: Option<GroupCompanionUserEvent>,
+}
+
+pub trait GroupCompanionTurnWriter: Send + Sync {
+    fn begin_group_companion_send(
+        &self,
+        command: &SendConversation,
+        prepared: PreparedGroupCompanionTurn,
+        now: TimestampMillis,
+    ) -> Result<SendConversationResult, ConversationRepositoryError>;
+    fn begin_group_companion_continue(
+        &self,
+        command: &ContinueConversation,
+        prepared: PreparedGroupCompanionTurn,
+        now: TimestampMillis,
+    ) -> Result<ContinueConversationResult, ConversationRepositoryError>;
 }
 
 impl GroupCompanionCheckpoint {

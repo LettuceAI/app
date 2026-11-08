@@ -29,6 +29,7 @@ pub enum BuiltInPromptId {
     LorebookGeneratorRefine,
     LorebookGeneratorCoherence,
     GroupChatRoleplay,
+    GroupCompanion,
     AvatarGeneration,
     AvatarEdit,
     SceneGeneration,
@@ -47,7 +48,7 @@ pub enum BuiltInPromptId {
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 31] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -63,6 +64,7 @@ impl BuiltInPromptId {
         Self::LorebookGeneratorRefine,
         Self::LorebookGeneratorCoherence,
         Self::GroupChatRoleplay,
+        Self::GroupCompanion,
         Self::AvatarGeneration,
         Self::AvatarEdit,
         Self::SceneGeneration,
@@ -98,6 +100,7 @@ impl BuiltInPromptId {
             Self::LorebookGeneratorRefine => "prompt_app_lorebook_generator_refine",
             Self::LorebookGeneratorCoherence => "prompt_app_lorebook_generator_coherence",
             Self::GroupChatRoleplay => "prompt_app_group_chat_roleplay",
+            Self::GroupCompanion => "prompt_app_group_companion",
             Self::AvatarGeneration => "prompt_app_avatar_generation",
             Self::AvatarEdit => "prompt_app_avatar_edit",
             Self::SceneGeneration => "prompt_app_scene_generation",
@@ -140,7 +143,7 @@ impl BuiltInPromptId {
             Self::LorebookGeneratorWriter => PromptPurpose::LorebookGeneratorWriter,
             Self::LorebookGeneratorRefine => PromptPurpose::LorebookGeneratorRefine,
             Self::LorebookGeneratorCoherence => PromptPurpose::LorebookGeneratorCoherence,
-            Self::GroupChatRoleplay => PromptPurpose::GroupChatRoleplay,
+            Self::GroupChatRoleplay | Self::GroupCompanion => PromptPurpose::GroupChatRoleplay,
             Self::AvatarGeneration => PromptPurpose::AvatarGeneration,
             Self::AvatarEdit => PromptPurpose::AvatarEditRequest,
             Self::SceneGeneration => PromptPurpose::SceneGeneration,
@@ -265,6 +268,7 @@ pub struct BuiltInPromptIds {
     pub lorebook_generator_refine: PromptDocumentId,
     pub lorebook_generator_coherence: PromptDocumentId,
     pub group_chat_roleplay: PromptDocumentId,
+    pub group_companion: PromptDocumentId,
     pub avatar_generation: PromptDocumentId,
     pub avatar_edit: PromptDocumentId,
     pub scene_generation: PromptDocumentId,
@@ -316,6 +320,7 @@ impl BuiltInPromptIds {
             lorebook_generator_refine: required(BuiltInPromptId::LorebookGeneratorRefine),
             lorebook_generator_coherence: required(BuiltInPromptId::LorebookGeneratorCoherence),
             group_chat_roleplay: required(BuiltInPromptId::GroupChatRoleplay),
+            group_companion: required(BuiltInPromptId::GroupCompanion),
             avatar_generation: required(BuiltInPromptId::AvatarGeneration),
             avatar_edit: required(BuiltInPromptId::AvatarEdit),
             scene_generation: required(BuiltInPromptId::SceneGeneration),
@@ -352,6 +357,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::LorebookGeneratorRefine => self.lorebook_generator_refine,
             BuiltInPromptId::LorebookGeneratorCoherence => self.lorebook_generator_coherence,
             BuiltInPromptId::GroupChatRoleplay => self.group_chat_roleplay,
+            BuiltInPromptId::GroupCompanion => self.group_companion,
             BuiltInPromptId::AvatarGeneration => self.avatar_generation,
             BuiltInPromptId::AvatarEdit => self.avatar_edit,
             BuiltInPromptId::SceneGeneration => self.scene_generation,
@@ -570,7 +576,14 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
             )
         }
         PromptPurpose::GroupChatRoleplay => {
-            matches!(value, "group_characters" | "scene_cast_lora")
+            matches!(
+                value,
+                "group_characters"
+                    | "scene_cast_lora"
+                    | "companion_state"
+                    | "companion_member_relationships"
+                    | "scheduled_notes"
+            )
         }
         PromptPurpose::DynamicMemorySummarizer => {
             matches!(value, "prev_summary" | "character")
@@ -690,6 +703,8 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "key_memories"
             | "content_rules"
             | "companion_state"
+            | "companion_member_relationships"
+            | "companion_member_name"
             | "scheduled_notes"
             | "group_characters"
             | "prev_summary"
@@ -1075,7 +1090,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 30);
+        assert_eq!(catalog.seeds().len(), 31);
 
         let actual = catalog
             .seeds()
@@ -1186,7 +1201,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 30);
+        assert_eq!(calls[2].seeds.len(), 31);
     }
 
     #[test]
@@ -1791,5 +1806,26 @@ mod tests {
                 variable,
             }) if variable == "not_a_registered_variable"
         ));
+    }
+
+    #[test]
+    fn group_roleplay_built_in_guidelines_match_the_rewrite() {
+        let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
+        let entry = catalog
+            .seed(BuiltInPromptId::GroupChatRoleplay)
+            .entries
+            .iter()
+            .find(|entry| entry.built_in_entry_key.as_deref() == Some("group_rp_guidelines"))
+            .expect("guidelines entry");
+        assert_eq!(
+            entry.content,
+            r#"# Roleplay Guidelines
+- Write only as {{char.name}}. Never write dialogue, actions, decisions or inner thoughts for {{persona.name}} or any other character.
+- Respond directly without prefixing your character's name. Present tense.
+- React to what was just said or done, not to the whole history.
+- Contribute in proportion to your place in the moment. If the scene currently belongs to other characters, stay small and let it.
+- Match your character's real verbal volume. A quiet character may answer with a gesture, one word or silence; that is a complete turn, and it needs no extra description to make up for it.
+- Remember: messages prefixed with [Other Name] are from other characters, not you."#
+        );
     }
 }

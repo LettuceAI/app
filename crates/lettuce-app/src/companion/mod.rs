@@ -25,6 +25,7 @@ pub(crate) mod companion_soul_writer_dispatch;
 pub(crate) mod companion_soul_writer_execution;
 pub(crate) mod companion_soul_writer_job;
 pub(crate) mod companion_turn;
+pub(crate) mod group_companion_turn;
 pub(crate) mod soul_growth_edit;
 
 pub use companion_consolidation_dispatch::*;

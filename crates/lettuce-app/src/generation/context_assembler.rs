@@ -11,8 +11,11 @@ use async_trait::async_trait;
 use lettuce_characters::{CharacterRepository, GroupRepository, PersonaRepository};
 use lettuce_companions::{
     CompanionPromptStateInput, CompanionScheduledNoteError, CompanionScheduledNoteRepository,
-    CompanionStateRepository, GroupScheduledNoteError, GroupScheduledNoteRepository, SoulOwner,
-    SoulRepository, active_group_scheduled_notes, active_scheduled_notes, prompt_state,
+    CompanionStateRepository, GroupCompanionMemberState, GroupCompanionRepository,
+    GroupScheduledNoteError, GroupScheduledNoteRepository, SoulOwner, SoulRepository,
+    active_group_scheduled_notes, active_scheduled_notes, group_member_stances,
+    group_speaker_runtime_state, initial_group_member_state, initial_group_relationship,
+    prompt_state,
 };
 use lettuce_context::{
     CharacterLorebookBindingRepository, GroupLorebookBindingRepository, LorebookActivationSource,
@@ -29,9 +32,9 @@ use lettuce_conversations::{
     ContextBudgetReport, ContextRequest, ContextSection, ContextSectionKind, ConversationAggregate,
     ConversationKind, ConversationReader, ConversationSnapshotMaterializer,
     EffectiveConversationSettings, GenerationOperation, LorebookAttribution, MemoryPromptLine,
-    MessagePart, MessageRenderSource, MessageRole, PromptAttribution, ProviderContextPart,
-    ProviderNeutralContext, ProviderNeutralMessage, SettingProvenance, SnapshotDocumentBody,
-    SnapshotDocumentKind, SnapshotSelection, TimelineItem,
+    MessagePart, MessageRenderSource, MessageRole, ParticipantSource, PromptAttribution,
+    ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage, SettingProvenance,
+    SnapshotDocumentBody, SnapshotDocumentKind, SnapshotSelection, TimelineItem,
 };
 use lettuce_conversations::{
     CharacterSnapshotBodyV1, ConversationParticipant, PersonaSnapshotBodyV1,
@@ -113,6 +116,7 @@ where
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
         + GroupScheduledNoteRepository
+        + GroupCompanionRepository
         + PromptRepository
         + lettuce_settings::GlobalSettingsStore
         + GroupRepository
@@ -252,7 +256,22 @@ where
         if !empty_preview {
             ensure_source_in_timeline(&request)?;
         }
-        let companion_state = self.companion_prompt_state(&aggregate, request.reference_time)?;
+        let companion_prompt_path = visible
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item.message.role,
+                    MessageRole::User | MessageRole::Assistant
+                )
+            })
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>();
+        let companion_prompt =
+            self.companion_prompt_state(&aggregate, &request, &companion_prompt_path)?;
+        let companion_state = companion_prompt.as_ref().map(|texts| texts.state.as_str());
+        let companion_member_relationships = companion_prompt
+            .as_ref()
+            .and_then(|texts| texts.member_relationships.as_deref());
         let scheduled_notes = self.scheduled_notes(
             &aggregate,
             live_group.as_ref(),
@@ -366,7 +385,8 @@ where
             lorebook_text.trim(),
             &request,
             request.swap_roles,
-            companion_state.as_deref(),
+            companion_state,
+            companion_member_relationships,
             scheduled_notes.as_deref(),
         );
         runtime_values.author_note = runtime_values.author_note.trim().to_owned();
@@ -415,7 +435,8 @@ where
                 &lorebook_text,
                 &request,
                 request.swap_roles,
-                companion_state.as_deref(),
+                companion_state,
+                companion_member_relationships,
                 scheduled_notes.as_deref(),
             );
             for (variable, binding, filler) in [
@@ -619,6 +640,11 @@ where
         }
         if companion_state.is_some() && !template_has_placeholder(prompt, "{{companion_state}}") {
             place(runtime.section("runtime_companion_state"));
+        }
+        if companion_member_relationships.is_some()
+            && !template_has_placeholder(prompt, "{{companion_member_relationships}}")
+        {
+            place(runtime.section("runtime_companion_member_relationships"));
         }
         if scheduled_notes.is_some() && !template_has_placeholder(prompt, "{{scheduled_notes}}") {
             place(runtime.section("runtime_scheduled_notes"));
@@ -839,6 +865,11 @@ where
     }
 }
 
+struct CompanionPromptTexts {
+    state: String,
+    member_relationships: Option<String>,
+}
+
 impl<S> ConversationContextAssembler<'_, S>
 where
     S: CharacterRepository
@@ -847,6 +878,7 @@ where
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
         + GroupScheduledNoteRepository
+        + GroupCompanionRepository
         + PromptRepository
         + lettuce_settings::GlobalSettingsStore
         + GroupRepository
@@ -939,18 +971,26 @@ where
 
     fn live_group_prompt(
         &self,
-        _conversation: &lettuce_conversations::Conversation,
+        conversation: &lettuce_conversations::Conversation,
         speaker: Option<CharacterId>,
     ) -> Result<Option<(PromptSnapshot, String)>, ContextAssemblyError> {
         let unavailable = || ContextAssemblyError::ConversationUnavailable;
-        let member = speaker
-            .map(|id| CharacterRepository::get(self.sources, id))
-            .transpose()
-            .map_err(|_| unavailable())?
-            .flatten()
-            .and_then(|character| character.character.defaults.group_roleplay_prompt_id);
-        crate::launch::policy::group_prompt(self.sources, member)
-            .map_err(|_| unavailable())?
+        let companion =
+            crate::generation::live_sources::live_companion_mode(self.sources, conversation)
+                .map_err(|_| unavailable())?;
+        let document = if companion {
+            crate::launch::policy::group_companion_prompt(self.sources)
+                .map_err(|_| unavailable())?
+        } else {
+            let member = speaker
+                .map(|id| CharacterRepository::get(self.sources, id))
+                .transpose()
+                .map_err(|_| unavailable())?
+                .flatten()
+                .and_then(|character| character.character.defaults.group_roleplay_prompt_id);
+            crate::launch::policy::group_prompt(self.sources, member).map_err(|_| unavailable())?
+        };
+        document
             .map(|document| {
                 prompt_document(
                     document.id,
@@ -1318,8 +1358,13 @@ where
     fn companion_prompt_state(
         &self,
         aggregate: &ConversationAggregate,
-        effective_at: TimestampMillis,
-    ) -> Result<Option<String>, ContextAssemblyError> {
+        request: &ContextRequest,
+        path: &[MessageId],
+    ) -> Result<Option<CompanionPromptTexts>, ContextAssemblyError> {
+        if matches!(aggregate.conversation.kind, ConversationKind::Group(_)) {
+            return self.group_companion_prompt_state(aggregate, request, path);
+        }
+        let effective_at = request.reference_time;
         let Some(owner) =
             crate::companion::companion_clock::companion_state_owner(&aggregate.conversation)
         else {
@@ -1396,8 +1441,128 @@ where
             partner_name.as_deref(),
             &facts,
         )
-        .map(|state| Some(state).filter(|state| !state.is_empty()))
+        .map(|state| {
+            Some(CompanionPromptTexts {
+                state,
+                member_relationships: None,
+            })
+            .filter(|texts| !texts.state.is_empty())
+        })
         .map_err(runtime_text_error)
+    }
+
+    fn group_companion_prompt_state(
+        &self,
+        aggregate: &ConversationAggregate,
+        request: &ContextRequest,
+        path: &[MessageId],
+    ) -> Result<Option<CompanionPromptTexts>, ContextAssemblyError> {
+        if !crate::generation::live_sources::live_companion_mode(
+            self.sources,
+            &aggregate.conversation,
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+        {
+            return Ok(None);
+        }
+        let Some(speaker) = speaker_character(&aggregate.conversation, request) else {
+            return Ok(None);
+        };
+        let character = CharacterRepository::get(self.sources, speaker)
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        let config = character
+            .character
+            .defaults
+            .companion_soul
+            .clone()
+            .unwrap_or_default();
+        let state = GroupCompanionRepository::latest_checkpoints(
+            self.sources,
+            aggregate.conversation.id,
+            path,
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+        .into_iter()
+        .find(|checkpoint| checkpoint.character_id == speaker)
+        .map_or_else(
+            || initial_group_member_state(&config),
+            |checkpoint| GroupCompanionMemberState {
+                emotional_state: checkpoint.emotional_state,
+                member_relationships: checkpoint.member_relationships,
+            },
+        );
+        let persona_id = lettuce_conversations::effective_persona(&aggregate.conversation)
+            .map(|persona| persona.source_id);
+        let relationship =
+            GroupCompanionRepository::persona_relationship(self.sources, speaker, persona_id)
+                .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+                .map(|(_, state)| state)
+                .unwrap_or_else(|| initial_group_relationship(&config));
+        let runtime_state =
+            group_speaker_runtime_state(&state, &relationship, &config, request.reference_time);
+        let soul = SoulRepository::get(
+            self.sources,
+            SoulOwner::for_conversation(
+                speaker,
+                aggregate.conversation.id,
+                config.share_soul_growth_across_chats,
+            ),
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+        .map_or_else(
+            || lettuce_companions::initial_soul_state(Some(&config), request.reference_time),
+            Ok,
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
+        let partner_name = persona_id
+            .map(|id| PersonaRepository::get(self.sources, id))
+            .transpose()
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            .flatten()
+            .map(|persona| persona.title);
+        let facts = prompt_state(&CompanionPromptStateInput {
+            soul: &config.soul,
+            soul_state: &soul,
+            runtime_state: &runtime_state,
+            style_notes: &config.prompting.style_notes,
+            continuity_episode: 0,
+            effective_at: request.reference_time,
+        });
+        let text = companion_runtime_text(self.sources)?;
+        let state_text = crate::companion::companion_prompt_text::render_companion_state(
+            &text,
+            &character.character.profile.name,
+            partner_name.as_deref(),
+            &facts,
+        )
+        .map_err(runtime_text_error)?;
+        let stances = group_member_stances(&state)
+            .into_iter()
+            .filter_map(|stance| {
+                aggregate
+                    .conversation
+                    .participants
+                    .iter()
+                    .find(|participant| {
+                        participant.enabled
+                            && participant.source
+                                == ParticipantSource::Character(stance.target_character_id)
+                    })
+                    .map(|participant| (participant.display_name.clone(), stance))
+            })
+            .collect::<Vec<_>>();
+        let member_relationships =
+            crate::companion::companion_prompt_text::render_companion_member_relationships(
+                &text,
+                &character.character.profile.name,
+                &stances,
+            )
+            .map_err(runtime_text_error)?;
+        Ok(Some(CompanionPromptTexts {
+            state: state_text,
+            member_relationships: Some(member_relationships),
+        }))
     }
 
     /// The notes a turn carries as one block: a direct chat's character
@@ -2824,6 +2989,7 @@ fn prompt_values(
     request: &ContextRequest,
     swap_roles: bool,
     companion_state: Option<&str>,
+    companion_member_relationships: Option<&str>,
     scheduled_notes: Option<&str>,
 ) -> PromptRenderValues {
     let character = selected_character(snapshot, request);
@@ -2909,6 +3075,10 @@ fn prompt_values(
             companion_state
                 .map(str::to_owned)
                 .or_else(|| request.prompt_values.companion_state.clone()),
+        ),
+        (
+            PromptVariable::CompanionMemberRelationships,
+            companion_member_relationships.map(str::to_owned),
         ),
         (
             PromptVariable::ScheduledNotes,
@@ -3587,6 +3757,7 @@ fn rendered_sources(
             | "{{selected_memories}}" => ContextSectionKind::Memories,
             "{{author_note}}" => ContextSectionKind::AuthorNote,
             "{{companion_state}}" => ContextSectionKind::CompanionState,
+            "{{companion_member_relationships}}" => ContextSectionKind::CompanionState,
             "{{scheduled_notes}}" => ContextSectionKind::ScheduledNotes,
             "{{group_characters}}" => ContextSectionKind::GroupCast,
             _ => ContextSectionKind::PromptEntry,

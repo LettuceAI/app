@@ -1,5 +1,6 @@
 mod generation_runner;
 mod initial_inference;
+mod group_companion_prompt;
 
 use std::time::Duration;
 
@@ -15,7 +16,8 @@ use lettuce_companions::{
     CompanionScheduledNoteRepository, CompanionSoulWriterRunRepository, CompanionStateOwner,
     CompanionStateReplacement, CompanionStateRepository, CompanionTurnEffectRepository,
     CompanionTurnEffectStatus, CompanionTurnInput, EmotionClassification, EmotionLabelScore,
-    GroupScheduledNoteRepository, PreparedCompanionSend, SoulRepository, apply_turn,
+    GroupCompanionEffectReason, GroupCompanionRepository, GroupScheduledNoteRepository,
+    PreparedCompanionSend, SoulRepository, apply_turn,
 };
 use lettuce_context::{
     BindingInsertionTarget, CharacterLorebookBindingRepository, DetectionPolicy,
@@ -24,15 +26,16 @@ use lettuce_context::{
     PromptBehaviorVersion, PromptMetadataDraft, PromptPurpose, PromptRepository,
 };
 use lettuce_conversations::{
-    AttachAttemptJob, ContextAssembler, ContextRequest, ContinueConversation, ConversationCreator,
-    ConversationKind, ConversationReader, ConversationRepository, CreateConversationPlan,
-    DirectConversationDetails, FinalizationDraft, GenerationCheckpointEnvelope,
-    GenerationCheckpointEvent, GenerationInput, GenerationTurnStatus, GroupChatModeSnapshot,
-    GroupConversationDetails, IdempotencyKey, InferenceCandidate, InferenceOutcome, InferencePort,
-    InferenceRequest, InferenceUsage, InitialMessageOrigin, MemoryModeSnapshot, MessageDraft,
-    MessagePart, MessageRole, MessageVisibility, OperationToken, OutputPolicy, ParticipantRole,
-    PortError, PromptPurposeSnapshot, ProposedToolCall, ProviderContextPart,
-    ResolvedInferenceProfile, SafetyContext, SendConversation, SnapshotSelection, SnapshotSource,
+    AttachAttemptJob, CancelGeneration, ContextAssembler, ContextRequest, ContinueConversation,
+    ConversationCreator, ConversationKind, ConversationReader, ConversationRepository,
+    CreateConversationPlan, DirectConversationDetails, EditMessage, FinalizationDraft,
+    GenerationCheckpointEnvelope, GenerationCheckpointEvent, GenerationInput, GenerationTurnStatus,
+    GroupChatModeSnapshot, GroupConversationDetails, IdempotencyKey, InferenceCandidate,
+    InferenceOutcome, InferencePort, InferenceRequest, InferenceUsage, InitialMessageOrigin,
+    MemoryModeSnapshot, MessageDraft, MessageEditDraft, MessagePart, MessageRole,
+    MessageVisibility, OperationToken, OutputPolicy, ParticipantRole, ParticipantSource, PortError,
+    PromptPurposeSnapshot, ProposedToolCall, ProviderContextPart, ResolvedInferenceProfile,
+    SafetyContext, SendConversation, SettleCancellation, SnapshotSelection, SnapshotSource,
     ToolPolicy,
 };
 use lettuce_database::Database;
@@ -55,10 +58,11 @@ use lettuce_models::{
 };
 use lettuce_settings::{GlobalSettingsStore, SecretOwnerId};
 use lettuce_types::{
-    CharacterId, ContentHash, ConversationStarterId, DynamicMemoryAttemptId, DynamicMemoryRunId,
-    GroupId, JobId, LorebookId, MemoryId, MemorySpaceId, MessageId, ModelProfileId,
-    OperationRecordId, PageLimit, PageRequest, PersonaId, ProviderAccountId, RequestId, Revision,
-    SceneId, SceneVariantId, StarterMessageId, TimestampMillis, ToolExecutionId, UsageEventId,
+    CharacterId, ContentHash, ConversationParticipantId, ConversationStarterId,
+    DynamicMemoryAttemptId, DynamicMemoryRunId, GroupId, JobId, LorebookId, MemoryId,
+    MemorySpaceId, MessageId, ModelProfileId, OperationRecordId, PageLimit, PageRequest, PersonaId,
+    ProviderAccountId, RequestId, Revision, SceneId, SceneVariantId, StarterMessageId,
+    TimestampMillis, ToolExecutionId, UsageEventId,
 };
 
 use super::planner::ConversationLaunchPlanner;
@@ -3413,6 +3417,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 operation: operation("companion-effect-continue"),
             },
             TimestampMillis::new(NOW.get() + 20),
+            &CancellationToken::new(),
         )
         .expect("begin companion continue");
     let continued_finalization = finalize_started_turn(
@@ -3964,6 +3969,7 @@ fn companion_continue_creates_missing_companion_state() {
                 },
             },
             TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
         );
     assert!(
         CompanionStateRepository::get(&database, owner)
@@ -4396,7 +4402,10 @@ async fn assembled_text_of_a_new_direct_chat(
     (context.messages, text)
 }
 
-fn reunion_note(character_id: CharacterId, available_at: i64) -> lettuce_companions::CompanionScheduledNote {
+fn reunion_note(
+    character_id: CharacterId,
+    available_at: i64,
+) -> lettuce_companions::CompanionScheduledNote {
     lettuce_companions::CompanionScheduledNote {
         id: uuid::Uuid::new_v4(),
         character_id,
@@ -4417,14 +4426,16 @@ async fn a_roleplay_chat_renders_active_scheduled_notes_and_is_unchanged_without
     let database = database_with_builtins();
     let character_id = plain_character(&database);
     let (baseline, baseline_text) =
-        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-roleplay-baseline").await;
+        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-roleplay-baseline")
+            .await;
     assert!(!baseline_text.contains("Background context you currently hold in mind"));
 
     database
         .upsert_scheduled_note(reunion_note(character_id, NOW.get() + 1_000_000))
         .expect("store a note that is not due");
     let (not_due, _) =
-        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-roleplay-not-due").await;
+        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-roleplay-not-due")
+            .await;
     assert_eq!(not_due, baseline);
 
     database
@@ -4448,7 +4459,8 @@ async fn a_companion_switched_to_roleplay_keeps_its_scheduled_notes() {
         .upsert_scheduled_note(reunion_note(character_id, 0))
         .expect("store a note");
     let (_, as_companion) =
-        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-switch-companion").await;
+        assembled_text_of_a_new_direct_chat(&database, character_id, "notes-switch-companion")
+            .await;
     assert!(as_companion.contains("- Remember the station reunion."));
 
     let details = CharacterRepository::get(&database, character_id)
@@ -4540,9 +4552,17 @@ fn override_conversation_prompt(
         source_id: document.id,
         source_revision: document.revision,
         title: document.name.clone(),
-        purpose: if matches!(ConversationReader::get(database, conversation_id).expect("conversation").conversation.kind, ConversationKind::Group(_)) {
+        purpose: if matches!(
+            ConversationReader::get(database, conversation_id)
+                .expect("conversation")
+                .conversation
+                .kind,
+            ConversationKind::Group(_)
+        ) {
             PromptPurposeSnapshot::GroupRoleplay
-        } else { PromptPurposeSnapshot::Direct },
+        } else {
+            PromptPurposeSnapshot::Direct
+        },
     };
     database
         .update_settings(
@@ -4565,7 +4585,14 @@ fn override_conversation_prompt(
                 vec![draft],
             )
             .expect("prepared prompt override"),
-            TimestampMillis::new(ConversationReader::get(database, conversation_id).expect("conversation").conversation.updated_at.get().max(NOW.get() + 5)),
+            TimestampMillis::new(
+                ConversationReader::get(database, conversation_id)
+                    .expect("conversation")
+                    .conversation
+                    .updated_at
+                    .get()
+                    .max(NOW.get() + 5),
+            ),
         )
         .expect("override conversation prompt");
 }
@@ -5122,7 +5149,9 @@ async fn a_group_prompt_lists_the_other_members_and_resolves_scene_mentions() {
         PromptPurpose::GroupChatRoleplay,
         "Cast:\n{{group_characters}}\nScene: {{scene}}",
     );
-    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_roleplay_prompt_id = Some(group_prompt); });
+    let first = seed_named_character_with(&database, "Ada", |defaults| {
+        defaults.group_roleplay_prompt_id = Some(group_prompt);
+    });
     let second = seed_named_character(&database, "Bea");
     set_character_texts(
         &database,
@@ -5209,7 +5238,10 @@ fn group_note(
     }
 }
 
-fn character_note(character_id: CharacterId, content: &str) -> lettuce_companions::CompanionScheduledNote {
+fn character_note(
+    character_id: CharacterId,
+    content: &str,
+) -> lettuce_companions::CompanionScheduledNote {
     lettuce_companions::CompanionScheduledNote {
         id: uuid::Uuid::new_v4(),
         character_id,
@@ -5232,22 +5264,24 @@ async fn group_turn_text(
     speaker: Option<CharacterId>,
 ) -> String {
     let mut request = context_request_for(database, conversation.id, source_message_id);
-    request.selected_speaker = speaker.map(|character| lettuce_conversations::SelectedSpeakerDecision {
-        participant_id: conversation
-            .participants
-            .iter()
-            .find(|participant| {
-                participant.source == lettuce_conversations::ParticipantSource::Character(character)
-            })
-            .expect("speaker")
-            .id,
-        method: lettuce_conversations::SpeakerDecisionMethod::Explicit,
-        fallback: lettuce_conversations::SpeakerFallback::None,
-        reference: None,
-        rationale_summary: None,
-        decision_model: None,
-        usage_event_id: None,
-    });
+    request.selected_speaker =
+        speaker.map(|character| lettuce_conversations::SelectedSpeakerDecision {
+            participant_id: conversation
+                .participants
+                .iter()
+                .find(|participant| {
+                    participant.source
+                        == lettuce_conversations::ParticipantSource::Character(character)
+                })
+                .expect("speaker")
+                .id,
+            method: lettuce_conversations::SpeakerDecisionMethod::Explicit,
+            fallback: lettuce_conversations::SpeakerFallback::None,
+            reference: None,
+            rationale_summary: None,
+            decision_model: None,
+            usage_event_id: None,
+        });
     assembled_prompt_with_text(database, request).await.1
 }
 
@@ -5256,7 +5290,12 @@ async fn group_notes_reach_the_members_they_are_visible_to_with_the_speakers_own
     let database = database_with_builtins();
     let ada = seed_named_character(&database, "Ada");
     let bea = seed_named_character(&database, "Bea");
-    let group_id = seed_group(&database, vec![member(ada, 0), member(bea, 1)], None, |_| {});
+    let group_id = seed_group(
+        &database,
+        vec![member(ada, 0), member(bea, 1)],
+        None,
+        |_| {},
+    );
     let conversation = ConversationLaunchPlanner::new(&database)
         .launch_group(&group_request(group_id, "group-notes-launch"), NOW)
         .expect("launch group")
@@ -5273,8 +5312,10 @@ async fn group_notes_reach_the_members_they_are_visible_to_with_the_speakers_own
         ref other => panic!("expected user-message input, got {other:?}"),
     };
 
-    let baseline_ada = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
-    let baseline_bea = group_turn_text(&database, &conversation, source_message_id, Some(bea)).await;
+    let baseline_ada =
+        group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
+    let baseline_bea =
+        group_turn_text(&database, &conversation, source_message_id, Some(bea)).await;
     assert!(!baseline_ada.contains("Background context you currently hold in mind"));
 
     let mut future = group_note(group_id, Vec::new(), "A note from the future.");
@@ -5282,7 +5323,9 @@ async fn group_notes_reach_the_members_they_are_visible_to_with_the_speakers_own
     let mut disabled = group_note(group_id, Vec::new(), "A disabled note.");
     disabled.enabled = false;
     for note in [future, disabled] {
-        database.upsert_group_note(note).expect("inactive group note");
+        database
+            .upsert_group_note(note)
+            .expect("inactive group note");
     }
     assert_eq!(
         group_turn_text(&database, &conversation, source_message_id, Some(ada)).await,
@@ -5324,9 +5367,14 @@ async fn the_character_notes_switch_follows_the_chat_override_before_the_group()
     let database = database_with_builtins();
     let ada = seed_named_character(&database, "Ada");
     let bea = seed_named_character(&database, "Bea");
-    let group_id = seed_group(&database, vec![member(ada, 0), member(bea, 1)], None, |group| {
-        group.disable_character_notes = true;
-    });
+    let group_id = seed_group(
+        &database,
+        vec![member(ada, 0), member(bea, 1)],
+        None,
+        |group| {
+            group.disable_character_notes = true;
+        },
+    );
     let conversation = ConversationLaunchPlanner::new(&database)
         .launch_group(&group_request(group_id, "group-notes-switch-launch"), NOW)
         .expect("launch group")
@@ -5351,7 +5399,10 @@ async fn the_character_notes_switch_follows_the_chat_override_before_the_group()
 
     let off = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
     assert!(off.contains("- The harbor is closed."));
-    assert!(!off.contains("Ada keeps a diary."), "the group switch removes character notes");
+    assert!(
+        !off.contains("Ada keeps a diary."),
+        "the group switch removes character notes"
+    );
 
     database
         .update_settings(
@@ -5375,7 +5426,10 @@ async fn the_character_notes_switch_follows_the_chat_override_before_the_group()
         )
         .expect("override on");
     let on = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
-    assert!(on.contains("- The harbor is closed.\n- Ada keeps a diary."), "the chat override wins over the group");
+    assert!(
+        on.contains("- The harbor is closed.\n- Ada keeps a diary."),
+        "the chat override wins over the group"
+    );
 
     database
         .update_settings(
@@ -5392,7 +5446,8 @@ async fn the_character_notes_switch_follows_the_chat_override_before_the_group()
                         request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
                     },
                     patch: lettuce_conversations::CurrentConversationSettingsPatch {
-                        disable_character_notes: lettuce_conversations::PatchValue::UseLaunchDefault,
+                        disable_character_notes:
+                            lettuce_conversations::PatchValue::UseLaunchDefault,
                         ..lettuce_conversations::CurrentConversationSettingsPatch::default()
                     },
                 },
@@ -5403,7 +5458,10 @@ async fn the_character_notes_switch_follows_the_chat_override_before_the_group()
         )
         .expect("reset to the group");
     let back = group_turn_text(&database, &conversation, source_message_id, Some(ada)).await;
-    assert!(!back.contains("Ada keeps a diary."), "clearing the override follows the group again");
+    assert!(
+        !back.contains("Ada keeps a diary."),
+        "clearing the override follows the group again"
+    );
 }
 
 async fn assembled_messages_with_prompt(
@@ -5775,7 +5833,9 @@ async fn a_group_turn_reads_its_members_and_lorebook_switch_live() {
         PromptPurpose::GroupChatRoleplay,
         "Play cast:\n{{group_characters}}",
     );
-    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_roleplay_prompt_id = Some(roleplay); });
+    let first = seed_named_character_with(&database, "Ada", |defaults| {
+        defaults.group_roleplay_prompt_id = Some(roleplay);
+    });
     let second = seed_named_character(&database, "Bea");
     let third = seed_named_character(&database, "Cy");
     let book = seed_lorebook(&database, "Ada lore");
@@ -5906,7 +5966,9 @@ async fn a_group_launched_without_a_persona_follows_the_groups_later_persona() {
         PromptPurpose::GroupChatRoleplay,
         "User={{user}}",
     );
-    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_roleplay_prompt_id = Some(prompt_id); });
+    let first = seed_named_character_with(&database, "Ada", |defaults| {
+        defaults.group_roleplay_prompt_id = Some(prompt_id);
+    });
     let second = seed_named_character(&database, "Bea");
     let group_id = seed_group(
         &database,
@@ -6095,7 +6157,10 @@ fn disable_conversation_prompt(
             lettuce_conversations::PreparedConversationSettingsUpdate::new(
                 lettuce_conversations::UpdateConversationSettings {
                     conversation_id,
-                    expected_settings_revision: current_settings_revision(database, conversation_id),
+                    expected_settings_revision: current_settings_revision(
+                        database,
+                        conversation_id,
+                    ),
                     operation: OperationToken {
                         key: IdempotencyKey::new("disable-prompt").expect("key"),
                         request_digest: ContentHash::parse("ce".repeat(32)).expect("digest"),
@@ -6108,7 +6173,14 @@ fn disable_conversation_prompt(
                 Vec::new(),
             )
             .expect("prepared prompt disable"),
-            TimestampMillis::new(ConversationReader::get(database, conversation_id).expect("conversation").conversation.updated_at.get().max(NOW.get() + 5)),
+            TimestampMillis::new(
+                ConversationReader::get(database, conversation_id)
+                    .expect("conversation")
+                    .conversation
+                    .updated_at
+                    .get()
+                    .max(NOW.get() + 5),
+            ),
         )
         .expect("disable conversation prompt");
 }
@@ -6532,7 +6604,9 @@ async fn a_group_turn_reads_its_prompt_and_lorebooks_live() {
         PromptPurpose::GroupChatRoleplay,
         "Group voice",
     );
-    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_roleplay_prompt_id = Some(group_prompt); });
+    let first = seed_named_character_with(&database, "Ada", |defaults| {
+        defaults.group_roleplay_prompt_id = Some(group_prompt);
+    });
     let second = seed_named_character(&database, "Bea");
     let group_id = seed_group(
         &database,
@@ -7412,11 +7486,7 @@ fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
         Some(built_in)
     );
     assert_eq!(resolve(None), Some(built_in));
-    let group = seed_prompt(
-        &database,
-        "Group prompt",
-        PromptPurpose::GroupChatRoleplay,
-    );
+    let group = seed_prompt(&database, "Group prompt", PromptPurpose::GroupChatRoleplay);
     let summarizer = seed_prompt(
         &database,
         "Summarizer",
@@ -13103,10 +13173,7 @@ fn a_group_with_a_starting_scene_materializes_it() {
         Some(group_starting_scene("A quiet harbour at dawn.")),
         |_| {},
     );
-    let plan = group_plan_for(
-        database,
-        &group_request(group_id, "group-starting-scene"),
-    );
+    let plan = group_plan_for(database, &group_request(group_id, "group-starting-scene"));
     let details = group_details(&plan);
     assert_eq!(details.group.chat_mode, GroupChatModeSnapshot::Roleplay);
     assert!(matches!(
@@ -13350,11 +13417,7 @@ fn the_roleplay_built_in_prompt_is_used_when_the_group_sets_none() {
 fn legacy_group_prompt_defaults_are_ignored_even_when_active() {
     let backend = backend();
     let database = backend.database();
-    let authored = seed_prompt(
-        database,
-        "Group prompt",
-        PromptPurpose::GroupChatRoleplay,
-    );
+    let authored = seed_prompt(database, "Group prompt", PromptPurpose::GroupChatRoleplay);
     let first = seed_named_character(database, "Ada");
     let second = seed_named_character(database, "Bea");
     let group_id = seed_group(
@@ -13365,7 +13428,12 @@ fn legacy_group_prompt_defaults_are_ignored_even_when_active() {
     );
     let plan = group_plan_for(database, &group_request(group_id, "group-prompt-authored"));
     match &group_details(&plan).group.prompt {
-        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, backend.built_in_prompt_ids().get(BuiltInPromptId::GroupChatRoleplay)),
+        SnapshotSelection::Inherited(prompt) => assert_eq!(
+            prompt.source_id,
+            backend
+                .built_in_prompt_ids()
+                .get(BuiltInPromptId::GroupChatRoleplay)
+        ),
         other => panic!("expected the built-in fallback, got {other:?}"),
     }
 
@@ -14663,7 +14731,12 @@ fn a_group_conversation_with_member_prompts_hydrates_from_the_database() {
     }
     assert_eq!(details.group.members[1].prompt, SnapshotSelection::Disabled);
     match &details.group.prompt {
-        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, backend.built_in_prompt_ids().get(BuiltInPromptId::GroupChatRoleplay)),
+        SnapshotSelection::Inherited(prompt) => assert_eq!(
+            prompt.source_id,
+            backend
+                .built_in_prompt_ids()
+                .get(BuiltInPromptId::GroupChatRoleplay)
+        ),
         other => panic!("expected the built-in fallback, got {other:?}"),
     }
 }
@@ -15032,24 +15105,34 @@ fn group_flags_and_notes_sync_with_the_group() {
     let b = database_with_builtins();
     let first = seed_named_character(&a, "Ada");
     let second = seed_named_character(&a, "Bea");
-    let group_id = seed_group(&a, vec![member(first, 0), member(second, 1)], None, |group| {
-        group.time_awareness = true;
-        group.disable_character_notes = true;
-        group.companion_mode = true;
-    });
+    let group_id = seed_group(
+        &a,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| {
+            group.time_awareness = true;
+            group.disable_character_notes = true;
+            group.companion_mode = true;
+        },
+    );
     let note = a
         .upsert_group_note(group_note(group_id, vec![second], "Bea knows the way."))
         .expect("group note");
 
     sync_prompts(&a, &b, NOW.get() + 1_000);
 
-    let on_b = GroupRepository::get(&b, group_id).expect("b group").expect("b has the group");
+    let on_b = GroupRepository::get(&b, group_id)
+        .expect("b group")
+        .expect("b has the group");
     assert!(
         on_b.group.time_awareness
             && on_b.group.disable_character_notes
             && on_b.group.companion_mode
     );
-    assert_eq!(b.list_group_notes(group_id).expect("b notes"), vec![note.clone()]);
+    assert_eq!(
+        b.list_group_notes(group_id).expect("b notes"),
+        vec![note.clone()]
+    );
 
     b.delete_group_note(note.id).expect("delete on b");
     sync_prompts(&b, &a, NOW.get() + 2_000);
@@ -15072,10 +15155,20 @@ fn a_time_aware_group_starts_its_chats_with_the_clock_on() {
     let database = database_with_builtins();
     let first = seed_named_character(&database, "Ada");
     let second = seed_named_character(&database, "Bea");
-    let aware = seed_group(&database, vec![member(first, 0), member(second, 1)], None, |group| {
-        group.time_awareness = true;
-    });
-    let plain = seed_group(&database, vec![member(first, 0), member(second, 1)], None, |_| {});
+    let aware = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| {
+            group.time_awareness = true;
+        },
+    );
+    let plain = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
     let clock_of = |group_id, key: &str| {
         let launched = ConversationLaunchPlanner::new(&database)
             .launch_group(&group_request(group_id, key), NOW)
@@ -15742,5 +15835,755 @@ fn live_companion_mode_resolves_override_then_group_then_false() {
     assert!(
         !crate::generation::live_sources::live_companion_mode(database, &direct_conversation)
             .expect("direct mode")
+    );
+}
+
+fn group_companion_engine() -> ScenarioEmotionEngine {
+    ScenarioEmotionEngine::new(Ok(Some(EmotionClassification {
+        labels: vec![EmotionLabelScore {
+            label: "love".into(),
+            score: 1.0,
+            threshold: 0.0,
+        }],
+        confidence: 1.0,
+    })))
+}
+
+fn launch_group_companion(
+    operation_key: &str,
+    companion_mode: bool,
+) -> (
+    Database,
+    lettuce_conversations::Conversation,
+    CharacterId,
+    CharacterId,
+) {
+    let database = database_with_builtins();
+    let model_id = seed_model(&database, ProviderProtocol::Ollama, "group-companion-model");
+    set_application_default_model(&database, model_id);
+    let first = seed_named_character_with(&database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+    });
+    let second = seed_named_character_with(&database, "Bea", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+    });
+    let group_id = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.companion_mode = true,
+    );
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, operation_key), NOW)
+        .expect("launch group companion")
+        .value
+        .conversation;
+    let conversation = if companion_mode {
+        launched
+    } else {
+        database
+            .update_settings(
+                lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                    lettuce_conversations::UpdateConversationSettings {
+                        conversation_id: launched.id,
+                        expected_settings_revision: None,
+                        operation: OperationToken {
+                            key: key(&format!("{operation_key}-mode-off")),
+                            request_digest: ContentHash::parse("ba".repeat(32)).expect("digest"),
+                        },
+                        patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                            companion_mode: lettuce_conversations::PatchValue::Set(false),
+                            ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                        },
+                    },
+                    Vec::new(),
+                )
+                .expect("prepared settings override"),
+                TimestampMillis::new(NOW.get() + 1),
+            )
+            .expect("override companion mode")
+            .value
+    };
+    (database, conversation, first, second)
+}
+
+fn set_group_companion_mode(
+    database: &Database,
+    conversation_id: lettuce_types::ConversationId,
+    enabled: bool,
+    operation_key: &str,
+    now: i64,
+) -> lettuce_conversations::Conversation {
+    let current = ConversationReader::get(database, conversation_id)
+        .expect("conversation before mode change")
+        .conversation;
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id,
+                    expected_settings_revision: current
+                        .current_settings
+                        .as_ref()
+                        .map(|settings| settings.revision),
+                    operation: OperationToken {
+                        key: key(operation_key),
+                        request_digest: ContentHash::parse("bb".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        companion_mode: lettuce_conversations::PatchValue::Set(enabled),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared companion mode"),
+            TimestampMillis::new(now),
+        )
+        .expect("set companion mode")
+        .value
+}
+
+fn group_companion_participant(
+    conversation: &lettuce_conversations::Conversation,
+    character_id: CharacterId,
+) -> ConversationParticipantId {
+    conversation
+        .participants
+        .iter()
+        .find(|participant| participant.source == ParticipantSource::Character(character_id))
+        .expect("character participant")
+        .id
+}
+
+fn group_companion_continue_command(
+    conversation: &lettuce_conversations::Conversation,
+    speaker: ConversationParticipantId,
+    operation_key: &str,
+) -> ContinueConversation {
+    ContinueConversation {
+        conversation_id: conversation.id,
+        branch_id: conversation.active_branch_id,
+        expected_revision: conversation.revision,
+        forced_speaker: Some(speaker),
+        swap_roles: false,
+        operation: OperationToken {
+            key: key(operation_key),
+            request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+        },
+    }
+}
+
+fn group_companion_participant_model(
+    conversation: &lettuce_conversations::Conversation,
+    participant_id: ConversationParticipantId,
+) -> lettuce_conversations::ModelSelectionSnapshot {
+    let participant = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.id == participant_id)
+        .expect("character participant");
+    match &participant.model_selection {
+        SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) => model.clone(),
+        SnapshotSelection::Disabled => panic!("expected a resolved model"),
+    }
+}
+
+fn group_companion_user_message_id(result: &lettuce_conversations::BeginGeneration) -> MessageId {
+    match result.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        _ => panic!("expected a user message"),
+    }
+}
+
+fn cancel_started_group_turn(
+    database: &Database,
+    started: &lettuce_conversations::BeginGeneration,
+    operation_key: &str,
+    now: i64,
+) {
+    let attempt_id = started.attempt.id;
+    let current = ConversationReader::get(database, started.conversation.id)
+        .expect("conversation before cancel")
+        .conversation;
+    let requested = database
+        .request_cancellation(
+            &CancelGeneration {
+                conversation_id: started.conversation.id,
+                turn_id: started.turn.id,
+                attempt_id,
+                expected_revision: current.revision,
+                expected_turn_revision: started.turn.revision,
+                operation: OperationToken {
+                    key: key(&format!("{operation_key}-cancel")),
+                    request_digest: ContentHash::parse("ae".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(now),
+        )
+        .expect("request cancellation");
+    let current = ConversationReader::get(database, started.conversation.id)
+        .expect("conversation after cancel request")
+        .conversation;
+    database
+        .settle_cancellation(
+            &SettleCancellation {
+                conversation_id: started.conversation.id,
+                turn_id: started.turn.id,
+                attempt_id,
+                expected_revision: current.revision,
+                expected_turn_revision: requested.value.revision,
+                operation: OperationToken {
+                    key: key(&format!("{operation_key}-settle")),
+                    request_digest: ContentHash::parse("af".repeat(32)).expect("digest"),
+                },
+                usage_event_id: UsageEventId::new(),
+            },
+            TimestampMillis::new(now + 1),
+        )
+        .expect("settle cancellation");
+}
+
+#[test]
+fn group_companion_send_updates_only_the_addressed_member_relationship() {
+    let (database, conversation, first, second) =
+        launch_group_companion("group-companion-send", true);
+    let database = &database;
+    let engine = group_companion_engine();
+    let sent = CompanionTurnCoordinator::new(database, Some(&engine))
+        .begin_send(
+            &direct_send_command(&conversation, "group-companion-send-user", "Hello Ada."),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    let checkpoints = database
+        .checkpoints_for_message(conversation.id, user_message_id)
+        .expect("checkpoints");
+    assert_eq!(checkpoints.len(), 2);
+    let first_checkpoint = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.character_id == first)
+        .expect("first checkpoint");
+    assert_eq!(first_checkpoint.effects.len(), 1);
+    assert_eq!(
+        first_checkpoint.effects[0].reason,
+        GroupCompanionEffectReason::Addressed
+    );
+    assert!(first_checkpoint.effects[0].relationship_change.is_some());
+    let second_checkpoint = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.character_id == second)
+        .expect("second checkpoint");
+    assert_eq!(
+        second_checkpoint.effects[0].reason,
+        GroupCompanionEffectReason::Witnessed
+    );
+    assert!(second_checkpoint.effects[0].relationship_change.is_none());
+    let first_relationship = database
+        .persona_relationship(first, None)
+        .expect("first relationship");
+    assert_eq!(
+        first_relationship.expect("addressed relationship").0,
+        Revision::INITIAL
+    );
+    assert!(
+        database
+            .persona_relationship(second, None)
+            .expect("second relationship")
+            .is_none()
+    );
+}
+
+#[test]
+fn group_companion_continue_applies_the_previous_assistant_message() {
+    let (database, conversation, first, second) =
+        launch_group_companion("group-companion-continue", true);
+    let database = &database;
+    let engine = group_companion_engine();
+    let coordinator = CompanionTurnCoordinator::new(database, Some(&engine));
+    let sent = coordinator
+        .begin_send(
+            &direct_send_command(&conversation, "group-companion-continue-user", "Hello Ada."),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send");
+    cancel_started_group_turn(
+        database,
+        &sent.value,
+        "group-companion-continue",
+        NOW.get() + 2,
+    );
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after send")
+        .conversation;
+    let first_speaker = group_companion_participant(&current, first);
+    let continued = coordinator
+        .begin_continue(
+            &group_companion_continue_command(&current, first_speaker, "group-companion-reply"),
+            TimestampMillis::new(NOW.get() + 4),
+            &CancellationToken::new(),
+        )
+        .expect("continue");
+    let model = group_companion_participant_model(&current, first_speaker);
+    let finalized = finalize_started_turn(
+        database,
+        &continued.value,
+        model,
+        "group-companion-reply",
+        NOW.get() + 5,
+    );
+    let assistant_message_id = finalized.value.assistant_message.id;
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after reply")
+        .conversation;
+    let second_speaker = group_companion_participant(&current, second);
+    let _ = coordinator
+        .begin_continue(
+            &group_companion_continue_command(&current, second_speaker, "group-companion-witness"),
+            TimestampMillis::new(NOW.get() + 6),
+            &CancellationToken::new(),
+        )
+        .expect("continue applies the assistant message");
+    let checkpoints = database
+        .checkpoints_for_message(conversation.id, assistant_message_id)
+        .expect("assistant checkpoints");
+    assert_eq!(checkpoints.len(), 2);
+    let author_checkpoint = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.character_id == first)
+        .expect("author checkpoint");
+    assert!(author_checkpoint.effects.is_empty());
+    let witness_checkpoint = checkpoints
+        .iter()
+        .find(|checkpoint| checkpoint.character_id == second)
+        .expect("witness checkpoint");
+    assert_eq!(
+        witness_checkpoint.effects[0].reason,
+        GroupCompanionEffectReason::Witnessed
+    );
+}
+
+#[test]
+fn group_companion_edited_assistant_message_checkpoints_use_the_new_revision() {
+    let (database, conversation, first, second) =
+        launch_group_companion("group-companion-edit", true);
+    let database = &database;
+    let engine = group_companion_engine();
+    let coordinator = CompanionTurnCoordinator::new(database, Some(&engine));
+    let sent = coordinator
+        .begin_send(
+            &direct_send_command(&conversation, "group-companion-edit-user", "Hello Ada."),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send");
+    cancel_started_group_turn(database, &sent.value, "group-companion-edit", NOW.get() + 2);
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after send")
+        .conversation;
+    let first_speaker = group_companion_participant(&current, first);
+    let continued = coordinator
+        .begin_continue(
+            &group_companion_continue_command(
+                &current,
+                first_speaker,
+                "group-companion-edit-reply",
+            ),
+            TimestampMillis::new(NOW.get() + 4),
+            &CancellationToken::new(),
+        )
+        .expect("continue");
+    let model = group_companion_participant_model(&current, first_speaker);
+    let _ = finalize_started_turn(
+        database,
+        &continued.value,
+        model,
+        "group-companion-edit-reply",
+        NOW.get() + 5,
+    );
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after reply")
+        .conversation;
+    let second_speaker = group_companion_participant(&current, second);
+    let continued = coordinator
+        .begin_continue(
+            &group_companion_continue_command(
+                &current,
+                second_speaker,
+                "group-companion-edit-apply",
+            ),
+            TimestampMillis::new(NOW.get() + 6),
+            &CancellationToken::new(),
+        )
+        .expect("continue applies the assistant message");
+    let model = group_companion_participant_model(&current, second_speaker);
+    let applied = finalize_started_turn(
+        database,
+        &continued.value,
+        model,
+        "group-companion-edit-apply",
+        NOW.get() + 7,
+    );
+    let assistant_message_id = applied.value.assistant_message.id;
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after apply")
+        .conversation;
+    let applying = coordinator
+        .begin_continue(
+            &group_companion_continue_command(
+                &current,
+                first_speaker,
+                "group-companion-edit-applied-assistant",
+            ),
+            TimestampMillis::new(NOW.get() + 8),
+            &CancellationToken::new(),
+        )
+        .expect("continue applies the second assistant message");
+    cancel_started_group_turn(
+        database,
+        &applying.value,
+        "group-companion-edit-applied-assistant",
+        NOW.get() + 9,
+    );
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after apply")
+        .conversation;
+    let edited = database
+        .edit_message(
+            &EditMessage {
+                conversation_id: conversation.id,
+                message_id: assistant_message_id,
+                expected_revision: current.revision,
+                operation: OperationToken {
+                    key: key("group-companion-edit-message"),
+                    request_digest: ContentHash::parse("ac".repeat(32)).expect("digest"),
+                },
+                draft: MessageEditDraft {
+                    parts: vec![MessagePart::Text {
+                        text: "A different reply.".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(NOW.get() + 30),
+        )
+        .expect("edit assistant message");
+    let new_revision = edited.value.revision.id;
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after edit")
+        .conversation;
+    let _ = coordinator
+        .begin_continue(
+            &group_companion_continue_command(
+                &current,
+                first_speaker,
+                "group-companion-edit-replace",
+            ),
+            TimestampMillis::new(NOW.get() + 31),
+            &CancellationToken::new(),
+        )
+        .expect("continue replaces the checkpoints");
+    let checkpoints = database
+        .checkpoints_for_message(conversation.id, assistant_message_id)
+        .expect("assistant checkpoints");
+    assert!(
+        checkpoints
+            .iter()
+            .all(|checkpoint| checkpoint.source.revision_id == Some(new_revision))
+    );
+}
+
+#[test]
+fn group_companion_persona_delta_applies_once_per_user_message() {
+    let (database, conversation, first, _) = launch_group_companion("group-companion-once", true);
+    let database = &database;
+    let engine = group_companion_engine();
+    let coordinator = CompanionTurnCoordinator::new(database, Some(&engine));
+    let sent = coordinator
+        .begin_send(
+            &direct_send_command(&conversation, "group-companion-once-user", "Hello Ada."),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    cancel_started_group_turn(database, &sent.value, "group-companion-once", NOW.get() + 2);
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after send")
+        .conversation;
+    let first_speaker = group_companion_participant(&current, first);
+    let continued = coordinator
+        .begin_continue(
+            &group_companion_continue_command(
+                &current,
+                first_speaker,
+                "group-companion-once-reply",
+            ),
+            TimestampMillis::new(NOW.get() + 4),
+            &CancellationToken::new(),
+        )
+        .expect("continue");
+    let model = group_companion_participant_model(&current, first_speaker);
+    let _ = finalize_started_turn(
+        database,
+        &continued.value,
+        model,
+        "group-companion-once-reply",
+        NOW.get() + 5,
+    );
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after reply")
+        .conversation;
+    let _ = database
+        .edit_message(
+            &EditMessage {
+                conversation_id: conversation.id,
+                message_id: user_message_id,
+                expected_revision: current.revision,
+                operation: OperationToken {
+                    key: key("group-companion-once-edit"),
+                    request_digest: ContentHash::parse("ad".repeat(32)).expect("digest"),
+                },
+                draft: MessageEditDraft {
+                    parts: vec![MessagePart::Text {
+                        text: "Hello Ada, again.".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(NOW.get() + 6),
+        )
+        .expect("edit user message");
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after edit")
+        .conversation;
+    let _ = coordinator
+        .begin_continue(
+            &group_companion_continue_command(
+                &current,
+                first_speaker,
+                "group-companion-once-reapply",
+            ),
+            TimestampMillis::new(NOW.get() + 7),
+            &CancellationToken::new(),
+        )
+        .expect("continue reapplies the pending messages");
+    assert_eq!(
+        database
+            .persona_relationship(first, None)
+            .expect("relationship")
+            .expect("addressed relationship")
+            .0,
+        Revision::INITIAL
+    );
+}
+
+#[test]
+fn group_companion_edited_user_message_is_not_applied_twice() {
+    let (bug_database, bug_conversation, first, _) =
+        launch_group_companion("group-companion-double-bug", true);
+    let bug_database = &bug_database;
+    let engine = group_companion_engine();
+    let coordinator = CompanionTurnCoordinator::new(bug_database, Some(&engine));
+    let sent = coordinator
+        .begin_send(
+            &direct_send_command(
+                &bug_conversation,
+                "group-companion-double-seed",
+                "Hello Ada.",
+            ),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("seed send");
+    cancel_started_group_turn(
+        bug_database,
+        &sent.value,
+        "group-companion-double-seed",
+        NOW.get() + 2,
+    );
+    let current = ConversationReader::get(bug_database, bug_conversation.id)
+        .expect("conversation after seed")
+        .conversation;
+    let sent = coordinator
+        .begin_send(
+            &direct_send_command(&current, "group-companion-double-first", "Hello Ada."),
+            TimestampMillis::new(NOW.get() + 4),
+            &CancellationToken::new(),
+        )
+        .expect("first send");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    cancel_started_group_turn(
+        bug_database,
+        &sent.value,
+        "group-companion-double-first",
+        NOW.get() + 5,
+    );
+    let current = ConversationReader::get(bug_database, bug_conversation.id)
+        .expect("conversation before edit")
+        .conversation;
+    let _ = bug_database
+        .edit_message(
+            &EditMessage {
+                conversation_id: bug_conversation.id,
+                message_id: user_message_id,
+                expected_revision: current.revision,
+                operation: OperationToken {
+                    key: key("group-companion-double-edit"),
+                    request_digest: ContentHash::parse("bc".repeat(32)).expect("digest"),
+                },
+                draft: MessageEditDraft {
+                    parts: vec![MessagePart::Text {
+                        text: "Hello Ada, again.".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(NOW.get() + 7),
+        )
+        .expect("edit first message");
+    let current = ConversationReader::get(bug_database, bug_conversation.id)
+        .expect("conversation after edit")
+        .conversation;
+    let _ = coordinator
+        .begin_send(
+            &direct_send_command(
+                &current,
+                "group-companion-double-second",
+                "Hello Ada again.",
+            ),
+            TimestampMillis::new(NOW.get() + 8),
+            &CancellationToken::new(),
+        )
+        .expect("second send");
+    let bug_relationship = bug_database
+        .persona_relationship(first, None)
+        .expect("bug relationship")
+        .expect("addressed relationship");
+
+    let (control_database, control_conversation, control_first, _) =
+        launch_group_companion("group-companion-double-control", true);
+    let control_database = &control_database;
+    let control_coordinator = CompanionTurnCoordinator::new(control_database, Some(&engine));
+    let sent = control_coordinator
+        .begin_send(
+            &direct_send_command(
+                &control_conversation,
+                "group-companion-double-control-seed",
+                "Hello Ada.",
+            ),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("control seed send");
+    cancel_started_group_turn(
+        control_database,
+        &sent.value,
+        "group-companion-double-control-seed",
+        NOW.get() + 2,
+    );
+    let conversation_off = set_group_companion_mode(
+        control_database,
+        control_conversation.id,
+        false,
+        "group-companion-double-control-off",
+        NOW.get() + 3,
+    );
+    let sent = control_coordinator
+        .begin_send(
+            &direct_send_command(
+                &conversation_off,
+                "group-companion-double-control-first",
+                "Hello Ada.",
+            ),
+            TimestampMillis::new(NOW.get() + 4),
+            &CancellationToken::new(),
+        )
+        .expect("control first send");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    cancel_started_group_turn(
+        control_database,
+        &sent.value,
+        "group-companion-double-control-first",
+        NOW.get() + 5,
+    );
+    let current = ConversationReader::get(control_database, control_conversation.id)
+        .expect("control conversation before edit")
+        .conversation;
+    let _ = control_database
+        .edit_message(
+            &EditMessage {
+                conversation_id: control_conversation.id,
+                message_id: user_message_id,
+                expected_revision: current.revision,
+                operation: OperationToken {
+                    key: key("group-companion-double-control-edit"),
+                    request_digest: ContentHash::parse("bd".repeat(32)).expect("digest"),
+                },
+                draft: MessageEditDraft {
+                    parts: vec![MessagePart::Text {
+                        text: "Hello Ada, again.".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(NOW.get() + 7),
+        )
+        .expect("control edit first message");
+    let conversation_on = set_group_companion_mode(
+        control_database,
+        control_conversation.id,
+        true,
+        "group-companion-double-control-on",
+        NOW.get() + 8,
+    );
+    let _ = control_coordinator
+        .begin_send(
+            &direct_send_command(
+                &conversation_on,
+                "group-companion-double-control-second",
+                "Hello Ada again.",
+            ),
+            TimestampMillis::new(NOW.get() + 8),
+            &CancellationToken::new(),
+        )
+        .expect("control second send");
+    let control_relationship = control_database
+        .persona_relationship(control_first, None)
+        .expect("control relationship")
+        .expect("addressed relationship");
+
+    assert_eq!(bug_relationship.1, control_relationship.1);
+}
+
+#[test]
+fn group_companion_mode_off_takes_the_plain_path() {
+    let (database, conversation, _, _) = launch_group_companion("group-companion-off", false);
+    let database = &database;
+    let engine = group_companion_engine();
+    let sent = CompanionTurnCoordinator::new(database, Some(&engine))
+        .begin_send(
+            &direct_send_command(&conversation, "group-companion-off-user", "Hello Ada."),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    assert!(
+        database
+            .checkpoints_for_message(conversation.id, user_message_id)
+            .expect("checkpoints")
+            .is_empty()
     );
 }

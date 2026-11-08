@@ -73,7 +73,6 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
     }))
 }
 
-#[allow(dead_code)]
 pub(crate) fn live_companion_mode<S: GroupRepository + ?Sized>(
     sources: &S,
     conversation: &Conversation,

@@ -5,8 +5,8 @@ use std::{
 
 use lettuce_characters::{CharacterRepository, PersonaRepository};
 use lettuce_companions::{
-    CompanionScheduledNoteRepository, CompanionStateRepository, GroupScheduledNoteRepository,
-    SoulRepository,
+    CompanionScheduledNoteRepository, CompanionStateRepository, GroupCompanionRepository,
+    GroupScheduledNoteRepository, SoulRepository,
 };
 use lettuce_conversations::{
     ContextAssembler, ContextAssemblyError, ContextRequest, ConversationKind, ConversationReader,
@@ -226,6 +226,7 @@ where
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
         + GroupScheduledNoteRepository
+        + GroupCompanionRepository
         + ModelProfileRepository
         + lettuce_models::GlobalModelSettingsRepository
         + lettuce_models::ModelCatalog
