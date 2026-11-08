@@ -1904,6 +1904,8 @@ pub struct MemoryContribution {
     pub attribution: MemoryAttribution,
     pub summary: Option<String>,
     pub key_memories: Vec<MemoryPromptLine>,
+    pub perspective_memories: Vec<MemoryPromptLine>,
+    pub private_memories: Vec<MemoryPromptLine>,
 }
 
 impl MemoryContribution {
@@ -1916,7 +1918,12 @@ impl MemoryContribution {
                 false,
             )?;
         }
-        for line in &self.key_memories {
+        for line in self
+            .key_memories
+            .iter()
+            .chain(&self.perspective_memories)
+            .chain(&self.private_memories)
+        {
             crate::validation::validate_text(
                 "memory_contribution.memory",
                 &line.text,
@@ -2907,6 +2914,8 @@ mod tests {
                     },
                 }),
             }],
+            perspective_memories: Vec::new(),
+            private_memories: Vec::new(),
         };
         assert!(memory.validate().is_ok());
     }

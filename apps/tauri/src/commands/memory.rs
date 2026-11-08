@@ -14,6 +14,16 @@ pub async fn memory_get(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn group_companion_memory_get(
+    context: State<'_, ApiContextSlot>,
+    request: dto::GroupCompanionMemoryGetRequest,
+) -> Result<dto::MemoryView, ApiError> {
+    let context = context.snapshot()?;
+    api::group_companion_memory_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn memory_add(
     context: State<'_, ApiContextSlot>,
     request: dto::MemoryAddRequest,

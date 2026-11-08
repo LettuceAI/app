@@ -86,6 +86,8 @@ pub struct MemoryAddRequest {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
+    #[serde(default)]
+    pub perspective_character_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +104,8 @@ pub struct MemoryUpdateRequest {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
+    #[serde(default)]
+    pub perspective_character_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +117,8 @@ pub struct MemoryDeleteRequest {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
+    #[serde(default)]
+    pub perspective_character_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,6 +131,8 @@ pub struct MemoryPinRequest {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
+    #[serde(default)]
+    pub perspective_character_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,6 +145,16 @@ pub struct MemoryTemperatureRequest {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
+    #[serde(default)]
+    pub perspective_character_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupCompanionMemoryGetRequest {
+    pub conversation_id: String,
+    pub character_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -9,6 +9,7 @@ mod tests;
 pub(super) mod worker;
 
 use lettuce_characters::{CharacterRepository, GroupRepository};
+use lettuce_companions::GroupCompanionRepository;
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode, RequiredModel};
 use lettuce_conversations::{
     BranchStatus, ConversationKind, ConversationLifecycle, ConversationReader,
@@ -21,7 +22,7 @@ use lettuce_memory::{
     MemoryOrigin, MemoryRepository, MemoryRepositoryError, MemoryShortId, MemorySummary,
 };
 use lettuce_settings::GlobalSettingsStore;
-use lettuce_types::{ConversationId, MemoryId, OperationId, TimestampMillis};
+use lettuce_types::{CharacterId, ConversationId, MemoryId, OperationId, TimestampMillis};
 
 use super::error::{IntoApiError, api_error, invalid_field, model_error, parse_id};
 use super::{ApiContext, conversations::messages};
@@ -59,6 +60,51 @@ pub(crate) fn memory_error(error: MemoryRepositoryError) -> ApiError {
         },
         error.to_string(),
     )
+}
+
+pub(super) fn perspective_member_space(
+    database: &lettuce_database::Database,
+    conversation: &lettuce_conversations::Conversation,
+    character_id: CharacterId,
+    field: &'static str,
+) -> Result<lettuce_types::MemorySpaceId, ApiError> {
+    if !matches!(conversation.kind, ConversationKind::Group(_)) {
+        return Err(invalid_field(
+            field,
+            "perspective memories belong to a group companion chat",
+        ));
+    }
+    let companion = crate::generation::live_sources::live_companion_mode(database, conversation)
+        .map_err(|_| {
+            api_error(
+                ApiErrorCode::Internal,
+                "the group companion mode could not be resolved",
+            )
+        })?;
+    if !companion {
+        return Err(invalid_field(
+            field,
+            "perspective memories require companion mode",
+        ));
+    }
+    let member = conversation.participants.iter().any(|participant| {
+        participant.role == lettuce_conversations::ParticipantRole::Character
+            && participant.source
+                == lettuce_conversations::ParticipantSource::Character(character_id)
+    });
+    if !member {
+        return Err(invalid_field(
+            field,
+            "the character is not a member of the group",
+        ));
+    }
+    database
+        .ensure_perspective_space(
+            conversation.id,
+            conversation.active_branch_id,
+            character_id,
+        )
+        .map_err(|error| api_error(ApiErrorCode::Internal, format!("{error:?}")))
 }
 
 fn category(value: dto::MemoryCategory) -> lettuce_memory::MemoryCategory {
@@ -154,6 +200,19 @@ enum Edit {
     Summary(dto::MemorySummaryUpdateRequest),
 }
 
+impl Edit {
+    fn perspective_character_id(&self) -> Option<&str> {
+        match self {
+            Self::Add(request) => request.perspective_character_id.as_deref(),
+            Self::Update(request) => request.perspective_character_id.as_deref(),
+            Self::Delete(request) => request.perspective_character_id.as_deref(),
+            Self::Pin(request) => request.perspective_character_id.as_deref(),
+            Self::Temperature(request) => request.perspective_character_id.as_deref(),
+            Self::Summary(_) => None,
+        }
+    }
+}
+
 async fn apply<R: serde::Serialize>(
     context: &ApiContext,
     command: &'static str,
@@ -203,15 +262,37 @@ async fn apply<R: serde::Serialize>(
                     "the active conversation branch is unavailable",
                 ));
             }
-            let memory = database
-                .get_for_branch(conversation_id, conversation.active_branch_id)
-                .map_err(memory_error)?
-                .ok_or_else(|| {
-                    api_error(
-                        ApiErrorCode::NotFound,
-                        "the conversation memory space is unavailable",
-                    )
-                })?;
+            let perspective = edit
+                .perspective_character_id()
+                .map(|value| parse_id(value, "perspective_character_id"))
+                .transpose()?;
+            let memory = match perspective {
+                Some(character_id) => {
+                    let space = perspective_member_space(
+                        database,
+                        conversation,
+                        character_id,
+                        "perspective_character_id",
+                    )?;
+                    MemoryRepository::get(database, space)
+                        .map_err(memory_error)?
+                        .ok_or_else(|| {
+                            api_error(
+                                ApiErrorCode::NotFound,
+                                "the conversation memory space is unavailable",
+                            )
+                        })?
+                }
+                None => database
+                    .get_for_branch(conversation_id, conversation.active_branch_id)
+                    .map_err(memory_error)?
+                    .ok_or_else(|| {
+                        api_error(
+                            ApiErrorCode::NotFound,
+                            "the conversation memory space is unavailable",
+                        )
+                    })?,
+            };
             if memory.revision != expected_revision {
                 return Err(api_error(ApiErrorCode::Conflict, "memory revision changed"));
             }

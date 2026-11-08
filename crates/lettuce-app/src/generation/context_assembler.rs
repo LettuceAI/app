@@ -335,7 +335,11 @@ where
         let memory_text = request
             .memory
             .as_ref()
-            .filter(|memory| !memory.key_memories.is_empty())
+            .filter(|memory| {
+                !memory.key_memories.is_empty()
+                    || !memory.perspective_memories.is_empty()
+                    || !memory.private_memories.is_empty()
+            })
             .map(|_| {
                 crate::generation::runtime_text::RuntimeText::load(
                     self.sources,
@@ -369,6 +373,18 @@ where
             .map(|memory| memory_lines(&memory.key_memories, !group))
             .transpose()?
             .unwrap_or_default();
+        let perspective_lines = request
+            .memory
+            .as_ref()
+            .map(|memory| memory_lines(&memory.perspective_memories, !group))
+            .transpose()?
+            .unwrap_or_default();
+        let private_lines = request
+            .memory
+            .as_ref()
+            .map(|memory| memory_lines(&memory.private_memories, !group))
+            .transpose()?
+            .unwrap_or_default();
         let memory_summary = request
             .memory
             .as_ref()
@@ -392,6 +408,14 @@ where
         runtime_values.author_note = runtime_values.author_note.trim().to_owned();
         runtime_values.context_summary = memory_summary.clone();
         runtime_values.key_memories = key_lines.clone();
+        runtime_values.purpose_values.insert(
+            PromptVariable::CompanionPerspectiveMemories,
+            perspective_lines.clone(),
+        );
+        runtime_values.purpose_values.insert(
+            PromptVariable::CompanionPrivateMemories,
+            private_lines.clone(),
+        );
         let runtime_lore_sources = lore_sources(&lore_entries, &runtime_values, group);
         resolve_substituted_values(&mut runtime_values, group);
         let mut sections = Vec::new();
@@ -438,6 +462,14 @@ where
                 companion_state,
                 companion_member_relationships,
                 scheduled_notes.as_deref(),
+            );
+            values.purpose_values.insert(
+                PromptVariable::CompanionPerspectiveMemories,
+                perspective_lines.clone(),
+            );
+            values.purpose_values.insert(
+                PromptVariable::CompanionPrivateMemories,
+                private_lines.clone(),
             );
             for (variable, binding, filler) in [
                 (
@@ -600,6 +632,10 @@ where
         let mut place = |section: Option<RuntimeSection>| placement.place(section);
         let summary_placeholder = template_has_placeholder(prompt, "{{context_summary}}");
         let keys_placeholder = template_has_placeholder(prompt, "{{key_memories}}");
+        let perspective_placeholder =
+            template_has_placeholder(prompt, "{{companion_perspective_memories}}");
+        let private_placeholder =
+            template_has_placeholder(prompt, "{{companion_private_memories}}");
         let memory_used = if group {
             (!memory_summary.is_empty() && summary_placeholder)
                 || (!key_lines.is_empty() && keys_placeholder)
@@ -615,6 +651,10 @@ where
         };
         let mut memory_items_used = !key_lines.is_empty()
             && uses_memory_value(&["{{key_memories}}", "{{selected_memories}}"]);
+        let mut perspective_items_used = !perspective_lines.is_empty()
+            && uses_memory_value(&["{{companion_perspective_memories}}"]);
+let mut private_items_used =
+            !private_lines.is_empty() && uses_memory_value(&["{{companion_private_memories}}"]);
         let mut memory_summary_used = !memory_summary.is_empty()
             && uses_memory_value(&["{{context_summary}}", "{{memory_summary}}"]);
         if !group && !memory_summary.is_empty() && !summary_placeholder {
@@ -625,6 +665,16 @@ where
         if !group && !key_lines.is_empty() && !keys_placeholder {
             let section = runtime.section("runtime_key_memories");
             memory_items_used |= section.is_some();
+            place(section);
+        }
+        if !perspective_lines.is_empty() && !perspective_placeholder {
+            let section = runtime.section("runtime_companion_perspective_memories");
+            perspective_items_used |= section.is_some();
+            place(section);
+        }
+        if !private_lines.is_empty() && !private_placeholder {
+            let section = runtime.section("runtime_companion_private_memories");
+            private_items_used |= section.is_some();
             place(section);
         }
         if !lorebook_text.trim().is_empty() && !template_has_placeholder(prompt, "{{lorebook}}") {
@@ -799,13 +849,30 @@ where
                         },
                     })
                     .collect(),
-                memories: request.memory.as_ref().filter(|_| memory_items_used).map(|memory| {
-                    memory.key_memories.iter().map(|line| lettuce_conversations::UsedMemory {
-                        memory_id: line.memory_id,
-                        text: line.text.clone(),
-                        match_score_basis_points: line.match_score_basis_points,
-                    }).collect()
-                }).unwrap_or_default(),
+                memories: request
+                    .memory
+                    .as_ref()
+                    .map(|memory| {
+                        let mut used = Vec::new();
+                        for (lines, include) in [
+                            (&memory.key_memories, memory_items_used),
+                            (&memory.perspective_memories, perspective_items_used),
+                            (&memory.private_memories, private_items_used),
+                        ] {
+                            if !include {
+                                continue;
+                            }
+                            used.extend(lines.iter().map(|line| {
+                                lettuce_conversations::UsedMemory {
+                                    memory_id: line.memory_id,
+                                    text: line.text.clone(),
+                                    match_score_basis_points: line.match_score_basis_points,
+                                }
+                            }));
+                        }
+                        used
+                    })
+                    .unwrap_or_default(),
                 memory_summary: memory_summary_used.then_some(memory_summary),
             }),
             usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
@@ -3754,7 +3821,9 @@ fn rendered_sources(
             "{{context_summary}}"
             | "{{memory_summary}}"
             | "{{key_memories}}"
-            | "{{selected_memories}}" => ContextSectionKind::Memories,
+            | "{{selected_memories}}"
+            | "{{companion_perspective_memories}}"
+            | "{{companion_private_memories}}" => ContextSectionKind::Memories,
             "{{author_note}}" => ContextSectionKind::AuthorNote,
             "{{companion_state}}" => ContextSectionKind::CompanionState,
             "{{companion_member_relationships}}" => ContextSectionKind::CompanionState,

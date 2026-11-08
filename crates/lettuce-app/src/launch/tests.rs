@@ -5651,6 +5651,8 @@ async fn a_manual_memory_send_adds_the_relevant_memories_block_like_legacy() {
                 text: "Ada fears the sea.".into(),
                 observed: None,
             }],
+            perspective_memories: Vec::new(),
+            private_memories: Vec::new(),
         });
         request
     };

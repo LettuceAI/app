@@ -24,9 +24,13 @@ impl crate::ApiOperationTransaction<'_, '_> {
             |row| row.get(0),
         ).optional().map_err(storage)?;
         let head = head.ok_or(MemoryRepositoryError::Conflict)?;
-        if super::memory_adapter::branch_space_id_in(tx, edit.conversation_id, edit.branch_id)
-            .map_err(storage)?
-            != Some(edit.space_id)
+        if !super::memory_adapter::space_is_on_branch_in(
+            tx,
+            edit.conversation_id,
+            edit.branch_id,
+            edit.space_id,
+        )
+        .map_err(storage)?
         {
             return Err(MemoryRepositoryError::Conflict);
         }

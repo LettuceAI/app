@@ -176,7 +176,7 @@ pub use memory::control::{
     memory_cycle_revert, memory_cycles, memory_error_dismiss, memory_retry, memory_skip,
     memory_trigger,
 };
-pub use memory::read::memory_get;
+pub use memory::read::{group_companion_memory_get, memory_get};
 
 mod serial_events;
 

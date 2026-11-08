@@ -649,7 +649,7 @@ mod tests {
         );
         assert_eq!(
             render_companion_member_relationships(&text, "Mira", &[]).expect("empty"),
-            "Current Mira has no particular history with anyone else in the room yet."
+            "Mira has no particular history with anyone else here yet."
         );
     }
 

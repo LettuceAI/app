@@ -299,6 +299,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::hugging_face::hf_auth_save,
             commands::hugging_face::hf_auth_clear,
             commands::memory::memory_get,
+            commands::memory::group_companion_memory_get,
             commands::memory::memory_add,
             commands::memory::memory_update,
             commands::memory::memory_delete,

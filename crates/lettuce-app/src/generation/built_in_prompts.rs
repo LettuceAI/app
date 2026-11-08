@@ -582,6 +582,8 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
                     | "scene_cast_lora"
                     | "companion_state"
                     | "companion_member_relationships"
+                    | "companion_perspective_memories"
+                    | "companion_private_memories"
                     | "scheduled_notes"
             )
         }
@@ -704,6 +706,8 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "content_rules"
             | "companion_state"
             | "companion_member_relationships"
+            | "companion_perspective_memories"
+            | "companion_private_memories"
             | "companion_member_name"
             | "scheduled_notes"
             | "group_characters"

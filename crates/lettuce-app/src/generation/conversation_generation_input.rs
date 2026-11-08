@@ -35,7 +35,10 @@ use lettuce_models::{
     CapabilityStatus, ChatParameterResolutionInput, ChatProfileResolutionError, ChatRequirements,
     ModelProfileRepository, ModelRepositoryError, ProviderAccountRepository,
 };
-use lettuce_types::{PageLimit, PageRequest, RequestId, TimestampMillis, UsageEventId};
+use lettuce_types::{
+    CharacterId, ConversationBranchId, PageLimit, PageRequest, RequestId, TimestampMillis,
+    UsageEventId,
+};
 use lettuce_usage::JobUsageLedger;
 
 use crate::{
@@ -889,6 +892,21 @@ where
         } else {
             None
         };
+        let speaker = selected_speaker
+            .as_ref()
+            .and_then(|decision| speaker_character(&aggregate.conversation, decision));
+        let companion_mode = group
+            && crate::generation::live_sources::live_companion_mode(
+                self.repository,
+                &aggregate.conversation,
+            )
+            .map_err(|_| unavailable())?;
+        let companion_personal_memories = companion_mode
+            && crate::generation::live_sources::live_companion_personal_memories(
+                self.repository,
+                &aggregate.conversation,
+            )
+            .map_err(|_| unavailable())?;
         let settings = lettuce_conversations::resolve_effective_settings(
             &aggregate.conversation,
             selected_speaker
@@ -990,37 +1008,54 @@ where
                     .as_ref()
                     .and_then(|memory| memory.dynamic_policy.as_ref())
                     .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+                let shape = MemoryPromptShape {
+                    operation,
+                    group,
+                    companion: clock.companion,
+                    companion_mode,
+                    companion_personal_memories,
+                    speaker,
+                    conversation_id,
+                    branch_id,
+                    clock,
+                    source_message_id,
+                };
+                let visible = self.visible_shared_memory(&memory, &timeline.items, shape)?;
                 let selected = self
-                    .retrieve_memories(
-                        None,
-                        &timeline.items,
-                        &memory,
-                        policy,
-                        MemoryPromptShape {
-                            operation,
-                            group,
-                            companion: clock.companion,
-                            clock,
-                            source_message_id,
-                        },
-                        now,
-                    )
+                    .retrieve_memories(None, &timeline.items, &visible, policy, shape, now)
                     .await?;
-                let key_memories = selected
-                    .iter()
-                    .map(|(item, score)| {
-                        let mut line = crate::memory::memory_prompt::memory_prompt_line(item, reference_now);
-                        line.match_score_basis_points = *score;
-                        line
-                    })
-                    .collect::<Vec<_>>();
+                let (perspective_selected, private_selected) = self
+                    .retrieve_companion_memory_layers(None, &timeline.items, policy, shape, now)
+                    .await?;
+                let lines = |selected: &[(lettuce_memory::MemoryItem, Option<i32>)]| {
+                    selected
+                        .iter()
+                        .map(|(item, score)| {
+                            let mut line = crate::memory::memory_prompt::memory_prompt_line(
+                                item,
+                                reference_now,
+                            );
+                            line.match_score_basis_points = *score;
+                            line
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let key_memories = lines(&selected);
+                let perspective_memories = lines(&perspective_selected);
+                let private_memories = lines(&private_selected);
                 (
-                    (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
+                    (summary.is_some()
+                        || !key_memories.is_empty()
+                        || !perspective_memories.is_empty()
+                        || !private_memories.is_empty())
+                    .then(|| MemoryContribution {
                         attribution: MemoryAttribution {
                             revision_id: memory_revision_id(memory.id, memory.revision),
                         },
                         summary,
                         key_memories,
+                        perspective_memories,
+                        private_memories,
                     }),
                     Some(usage_snapshot),
                 )
@@ -1707,6 +1742,29 @@ where
             return Err(ConversationGenerationInputError::MemoryInputUnavailable);
         }
         let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
+        let speaker = selected_speaker
+            .as_ref()
+            .and_then(|decision| speaker_character(&aggregate.conversation, decision));
+        let companion_mode = group
+            && crate::generation::live_sources::live_companion_mode(
+                self.repository,
+                &aggregate.conversation,
+            )
+            .map_err(|_| {
+                ConversationGenerationInputError::Context(
+                    ContextAssemblyError::ConversationUnavailable,
+                )
+            })?;
+        let companion_personal_memories = companion_mode
+            && crate::generation::live_sources::live_companion_personal_memories(
+                self.repository,
+                &aggregate.conversation,
+            )
+            .map_err(|_| {
+                ConversationGenerationInputError::Context(
+                    ContextAssemblyError::ConversationUnavailable,
+                )
+            })?;
         let clock = crate::companion::companion_clock::conversation_clock_context(
             self.repository,
             &aggregate.conversation,
@@ -1805,6 +1863,11 @@ where
                         operation: turn.operation,
                         group,
                         companion,
+                        companion_mode,
+                        companion_personal_memories,
+                        speaker,
+                        conversation_id: work.conversation_id,
+                        branch_id: turn.branch_id,
                         clock,
                         source_message_id,
                     },
@@ -2153,8 +2216,9 @@ where
                 receipt.access.accessed_at,
             )
         } else {
+            let visible = self.visible_shared_memory(&memory, timeline, shape)?;
             let selected = self
-                .retrieve_memories(Some(work), timeline, &memory, settings, shape, now)
+                .retrieve_memories(Some(work), timeline, &visible, settings, shape, now)
                 .await?;
             let revision = if selected.is_empty() {
                 memory.revision
@@ -2177,22 +2241,36 @@ where
             (selected, revision, now)
         };
         let effective_now = shape.clock.effective_now(effective_now);
-        let key_memories = selected
-            .iter()
-            .map(|(item, score)| {
-                let mut line = crate::memory::memory_prompt::memory_prompt_line(item, effective_now);
-                line.match_score_basis_points = *score;
-                line
-            })
-            .collect::<Vec<_>>();
-        let contribution =
-            (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
-                attribution: MemoryAttribution {
-                    revision_id: memory_revision_id(memory.id, revision),
-                },
-                summary,
-                key_memories,
-            });
+        let (perspective_selected, private_selected) = self
+            .retrieve_companion_memory_layers(Some(work), timeline, settings, shape, now)
+            .await?;
+        let lines = |selected: &[(lettuce_memory::MemoryItem, Option<i32>)]| {
+            selected
+                .iter()
+                .map(|(item, score)| {
+                    let mut line =
+                        crate::memory::memory_prompt::memory_prompt_line(item, effective_now);
+                    line.match_score_basis_points = *score;
+                    line
+                })
+                .collect::<Vec<_>>()
+        };
+        let key_memories = lines(&selected);
+        let perspective_memories = lines(&perspective_selected);
+        let private_memories = lines(&private_selected);
+        let contribution = (summary.is_some()
+            || !key_memories.is_empty()
+            || !perspective_memories.is_empty()
+            || !private_memories.is_empty())
+        .then(|| MemoryContribution {
+            attribution: MemoryAttribution {
+                revision_id: memory_revision_id(memory.id, revision),
+            },
+            summary,
+            key_memories,
+            perspective_memories,
+            private_memories,
+        });
         Ok((contribution, Some(usage_snapshot)))
     }
 
@@ -2232,6 +2310,8 @@ where
                 },
                 summary,
                 key_memories,
+                perspective_memories: Vec::new(),
+                private_memories: Vec::new(),
             }),
         )
     }
@@ -2417,6 +2497,98 @@ where
         }).collect())
     }
 
+    async fn retrieve_companion_memory_layers(
+        &self,
+        work: Option<&ConversationGenerationClaimedWork>,
+        timeline: &[lettuce_conversations::TimelineItem],
+        settings: &DynamicMemoryPolicySnapshot,
+        shape: MemoryPromptShape,
+        now: TimestampMillis,
+    ) -> Result<
+        (
+            Vec<(lettuce_memory::MemoryItem, Option<i32>)>,
+            Vec<(lettuce_memory::MemoryItem, Option<i32>)>,
+        ),
+        ConversationGenerationInputError,
+    > {
+        if !(shape.group && shape.companion_mode) {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        let Some(speaker) = shape.speaker else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let perspective = self
+            .repository
+            .perspective_space(shape.conversation_id, shape.branch_id, speaker)
+            .map_err(companion_space_error)?;
+        let perspective = match perspective {
+            Some(space) => {
+                self.retrieve_memory_space(work, timeline, space, settings, shape, now)
+                    .await?
+            }
+            None => Vec::new(),
+        };
+        let pool = if shape.companion_personal_memories {
+            self.repository
+                .companion_pool_space(speaker)
+                .map_err(companion_space_error)?
+        } else {
+            None
+        };
+        let private = match pool {
+            Some(space) => {
+                self.retrieve_memory_space(work, timeline, space, settings, shape, now)
+                    .await?
+            }
+            None => Vec::new(),
+        };
+        Ok((perspective, private))
+    }
+
+    async fn retrieve_memory_space(
+        &self,
+        work: Option<&ConversationGenerationClaimedWork>,
+        timeline: &[lettuce_conversations::TimelineItem],
+        space: lettuce_types::MemorySpaceId,
+        settings: &DynamicMemoryPolicySnapshot,
+        shape: MemoryPromptShape,
+        now: TimestampMillis,
+    ) -> Result<Vec<(lettuce_memory::MemoryItem, Option<i32>)>, ConversationGenerationInputError>
+    {
+        let Some(memory) = MemoryRepository::get(self.repository, space)
+            .map_err(ConversationGenerationInputError::Memory)?
+        else {
+            return Ok(Vec::new());
+        };
+        self.retrieve_memories(work, timeline, &memory, settings, shape, now)
+            .await
+    }
+
+    fn visible_shared_memory(
+        &self,
+        memory: &MemorySpaceSnapshot,
+        timeline: &[lettuce_conversations::TimelineItem],
+        shape: MemoryPromptShape,
+    ) -> Result<MemorySpaceSnapshot, ConversationGenerationInputError> {
+        if !(shape.group && shape.companion_mode) {
+            return Ok(memory.clone());
+        }
+        let Some(speaker) = shape.speaker else {
+            return Ok(memory.clone());
+        };
+        let path = timeline
+            .iter()
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>();
+        let presence = self
+            .repository
+            .message_presence(shape.conversation_id, &path)
+            .map_err(companion_space_error)?;
+        let mut visible = memory.clone();
+        retain_visible_shared_items(&mut visible, &presence, speaker);
+        Ok(visible)
+    }
+
     fn timeline(
         &self,
         conversation_id: lettuce_types::ConversationId,
@@ -2452,6 +2624,48 @@ where
     }
 }
 
+fn companion_space_error(
+    error: lettuce_companions::GroupCompanionRepositoryError,
+) -> ConversationGenerationInputError {
+    ConversationGenerationInputError::Memory(MemoryRepositoryError::Failure(format!(
+        "group companion memory space failed: {error:?}"
+    )))
+}
+
+fn retain_visible_shared_items(
+    memory: &mut MemorySpaceSnapshot,
+    presence: &[(lettuce_types::MessageId, CharacterId)],
+    speaker: CharacterId,
+) {
+    let mut present = HashMap::<lettuce_types::MessageId, HashSet<CharacterId>>::new();
+    for (message_id, character_id) in presence {
+        present.entry(*message_id).or_default().insert(*character_id);
+    }
+    memory.items.retain(|item| {
+        let Some(message_id) = item.source_message_id else {
+            return true;
+        };
+        match present.get(&message_id) {
+            Some(characters) => characters.contains(&speaker),
+            None => true,
+        }
+    });
+}
+
+fn speaker_character(
+    conversation: &lettuce_conversations::Conversation,
+    decision: &SelectedSpeakerDecision,
+) -> Option<CharacterId> {
+    conversation
+        .participants
+        .iter()
+        .find(|participant| participant.id == decision.participant_id)
+        .and_then(|participant| match participant.source {
+            lettuce_conversations::ParticipantSource::Character(character_id) => Some(character_id),
+            _ => None,
+        })
+}
+
 pub(crate) fn modality_scopes(capabilities: lettuce_models::ModalityCapabilities) -> Vec<String> {
     [
         ("text", capabilities.text),
@@ -2470,6 +2684,11 @@ struct MemoryPromptShape {
     operation: lettuce_conversations::GenerationOperation,
     group: bool,
     companion: bool,
+    companion_mode: bool,
+    companion_personal_memories: bool,
+    speaker: Option<CharacterId>,
+    conversation_id: lettuce_types::ConversationId,
+    branch_id: ConversationBranchId,
     clock: crate::companion::companion_clock::ConversationClockContext,
 }
 
@@ -3311,8 +3530,8 @@ mod tests {
         MessageRole, MessageVisibility, TimelineItem,
     };
     use lettuce_types::{
-        ConversationBranchId, ConversationId, MessageCandidateId, MessageId, MessageRevisionId,
-        Revision, TimestampMillis,
+        CharacterId, ConversationBranchId, ConversationId, MessageCandidateId, MessageId,
+        MessageRevisionId, Revision, TimestampMillis,
     };
 
     use super::{conversation_message_count, history_window, memory_query};
@@ -4046,6 +4265,55 @@ mod tests {
                 source
             ),
             20
+        );
+    }
+
+    #[test]
+    fn group_companion_shared_items_follow_speaker_checkpoint_presence() {
+        let speaker = CharacterId::new();
+        let other = CharacterId::new();
+        let attended = MessageId::new();
+        let missed = MessageId::new();
+        let before_companion = MessageId::new();
+        let mut attended_item = retrieval_memory(1, lettuce_memory::MemoryCategory::Other);
+        attended_item.source_message_id = Some(attended);
+        let mut missed_item = retrieval_memory(2, lettuce_memory::MemoryCategory::Other);
+        missed_item.source_message_id = Some(missed);
+        let mut uncheckpointed = retrieval_memory(3, lettuce_memory::MemoryCategory::Other);
+        uncheckpointed.source_message_id = Some(before_companion);
+        let unsourced = retrieval_memory(4, lettuce_memory::MemoryCategory::Other);
+        let mut memory = lettuce_memory::MemorySpaceSnapshot {
+            id: lettuce_types::MemorySpaceId::new(),
+            revision: Revision::INITIAL,
+            items: vec![
+                attended_item.clone(),
+                missed_item.clone(),
+                uncheckpointed.clone(),
+                unsourced.clone(),
+            ],
+        };
+        super::retain_visible_shared_items(
+            &mut memory,
+            &[(attended, speaker), (missed, other)],
+            speaker,
+        );
+        assert_eq!(
+            memory.items.iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec![attended_item.id, uncheckpointed.id, unsourced.id]
+        );
+        let mut missing_speaker = memory.clone();
+        super::retain_visible_shared_items(
+            &mut missing_speaker,
+            &[(attended, other), (missed, other)],
+            speaker,
+        );
+        assert_eq!(
+            missing_speaker
+                .items
+                .iter()
+                .map(|item| item.id)
+                .collect::<Vec<_>>(),
+            vec![uncheckpointed.id, unsourced.id]
         );
     }
 }

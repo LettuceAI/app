@@ -268,6 +268,29 @@ pub(crate) fn branch_space_id_in(
         .transpose()
 }
 
+/// Whether `space_id` is writable on `branch_id`: its branch space or one of
+/// its members' perspective spaces.
+pub(crate) fn space_is_on_branch_in(
+    connection: &rusqlite::Connection,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    space_id: MemorySpaceId,
+) -> rusqlite::Result<bool> {
+    if branch_space_id_in(connection, conversation_id, branch_id)? == Some(space_id) {
+        return Ok(true);
+    }
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM group_companion_memory_spaces
+              WHERE conversation_id = ?1 AND branch_id = ?2 AND space_id = ?3)",
+        params![
+            conversation_id.to_string(),
+            branch_id.to_string(),
+            space_id.to_string()
+        ],
+        |row| row.get(0),
+    )
+}
+
 /// The conversations that can write a space: its owner, a pool's members, or
 /// the member whose perspective space it is.
 pub(crate) fn space_conversations_in(

@@ -730,6 +730,7 @@ async fn delete_after_in_one_pooled_chat_keeps_the_other_chats_later_edit() {
             observed_at: None,
             expected_revision: revision(a.clone()).await.revision,
             client_operation_id: "pool-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -755,6 +756,7 @@ async fn delete_after_in_one_pooled_chat_keeps_the_other_chats_later_edit() {
         observed_at: dto::MemoryObservedAtChange::Keep,
         expected_revision: expected,
         client_operation_id: key.into(),
+        perspective_character_id: None,
     };
     memory_update(
         &harness.context,

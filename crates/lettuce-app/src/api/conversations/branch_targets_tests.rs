@@ -20,6 +20,7 @@ async fn branch_targets_keep_memory_at_the_cutoff_and_isolate_later_changes() {
     let added = memory_add(&harness.context, dto::MemoryAddRequest {
         conversation_id: chat.clone(), text: "Before the branch".into(), category: None,
         observed_at: None, expected_revision: 1, client_operation_id: "before-cut".into(),
+        perspective_character_id: None,
     }).await.expect("add before cut");
     let original_id = added.memory_id.expect("memory id");
     let current = open(&harness, &chat).await;
@@ -31,6 +32,7 @@ async fn branch_targets_keep_memory_at_the_cutoff_and_isolate_later_changes() {
         conversation_id: chat.clone(), memory_id: original_id.clone(), text: Some("Changed after the branch".into()),
         category: dto::MemoryCategoryChange::Keep, observed_at: dto::MemoryObservedAtChange::Keep,
         expected_revision: 2, client_operation_id: "later-memory".into(),
+        perspective_character_id: None,
     }).await.expect("later memory");
     let source = open(&harness, &chat).await;
     let copied_character = conversation_branch_direct_to_character(&harness.context, dto::ConversationCharacterCopyRequest {
@@ -56,6 +58,7 @@ async fn branch_targets_keep_memory_at_the_cutoff_and_isolate_later_changes() {
         memory_delete(&harness.context, dto::MemoryDeleteRequest {
             conversation_id: target.id, memory_id: memory.items[0].id.clone(),
             expected_revision: memory.revision, client_operation_id: format!("delete-{index}"),
+            perspective_character_id: None,
         }).await.expect("delete copied memory");
         assert_eq!(memories(&harness, &chat).await.items[0].text, "Changed after the branch");
     }
@@ -162,6 +165,7 @@ async fn branch_targets_copy_only_local_companion_memories_into_an_independent_s
                 conversation_id: chat.clone(), text: format!("Memory from {name} chat {index}"),
                 category: None, observed_at: None, expected_revision: current.revision,
                 client_operation_id: format!("memory-{}-{index}", characters.len()),
+                perspective_character_id: None,
             }).await.expect("shared pool memory");
             chats.push(chat);
         }

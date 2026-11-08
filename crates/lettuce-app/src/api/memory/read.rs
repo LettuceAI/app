@@ -148,121 +148,165 @@ pub async fn memory_get(
                 .ok_or_else(|| {
                     api_error(ApiErrorCode::NotFound, "conversation memory is missing")
                 })?;
-            let before = database
-                .read_memory_scope(conversation_id, conversation.revision)
-                .map_err(memory_error)?;
-            crate::recount_unknown_memory_tokens(
-                context.embedding().as_ref(),
-                database,
-                &before.memory,
-                before.summary.as_ref(),
-                &CancellationToken::new(),
-            )
-            .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
-            let scope = database
-                .read_memory_scope(conversation_id, conversation.revision)
-                .map_err(memory_error)?;
-            let stored = GlobalSettingsStore::load(database)
-                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
-            let dynamic = if matches!(conversation.kind, ConversationKind::Group(_)) {
-                stored.settings.effective_group_dynamic_memory()
-            } else {
-                &stored.settings.dynamic_memory
-            };
-            let latest = latest_memory_job(context, &scope)?
-                .filter(|job| scope.dismissed_job != Some(job.id));
-            let failure = latest.as_ref().and_then(failure);
-            let mut labels = HashMap::new();
-            let mut text_labels = HashMap::new();
-            for cycle in &scope.cycles {
-                if cycle.reverted {
-                    continue;
-                }
-                let label = format!(
-                    "{}-{}",
-                    cycle.run.summary_window.start, cycle.run.summary_window.end
-                );
-                for result in &cycle.results {
-                    if let MemoryToolOutcome::Created {
-                        id,
-                        short_id,
-                        memories,
-                    } = &result.outcome
-                    {
-                        labels.insert(*id, label.clone());
-                        if let Some(item) = memories.iter().find(|item| item.short_id == *short_id)
-                        {
-                            text_labels.insert(item.text.clone(), label.clone());
-                        }
-                    }
-                }
-            }
-            let since = scope.message_count.saturating_sub(scope.summary_cursor);
-            Ok(dto::MemoryView {
-                revision: scope.memory.revision.get(),
-                allowed_categories: super::allowed_categories(database, &conversation)?
-                    .into_iter()
-                    .map(category)
-                    .collect(),
-                items: scope
-                    .memory
-                    .items
-                    .into_iter()
-                    .map(|item| dto::MemoryItemView {
-                        id: item.id.to_string(),
-                        short_id: item.short_id.to_string(),
-                        cycle_label: labels
-                            .get(&item.id)
-                            .or_else(|| text_labels.get(&item.text))
-                            .cloned(),
-                        text: item.text,
-                        category: item.category.map(category),
-                        origin: origin(item.origin),
-                        pinned: item.is_pinned,
-                        temperature: if item.is_cold {
-                            dto::MemoryTemperature::Cold
-                        } else {
-                            dto::MemoryTemperature::Hot
-                        },
-                        observed_at: item.observed_at.map(|at| at.get()),
-                        observed_time_precision: item.observed_time_precision,
-                        token_count: item.token_count,
-                    })
-                    .collect(),
-                summary: scope.summary.map(|summary| dto::MemorySummaryView {
-                    text: summary.text,
-                    origin: origin(summary.origin),
-                    token_count: summary.token_count,
-                }),
-                status: dto::MemoryStatusView {
-                    run_mode: match dynamic.run_mode {
-                        lettuce_settings::MemoryRunMode::Auto => dto::MemoryRunMode::Auto,
-                        lettuce_settings::MemoryRunMode::AskFirst => dto::MemoryRunMode::AskFirst,
-                        lettuce_settings::MemoryRunMode::Manual => dto::MemoryRunMode::Manual,
-                    },
-                    interval: dynamic.summary_message_interval.max(1),
-                    messages_since_last_cycle: since,
-                    messages_until_next_cycle: u64::from(dynamic.summary_message_interval.max(1))
-                        .saturating_sub(since),
-                    total_conversation_messages: scope.message_count,
-                    pending_approval_count: scope
-                        .approval
-                        .as_ref()
-                        .filter(|approval| approval.pending)
-                        .map(|approval| approval.prompted_message_count),
-                    skipped: scope
-                        .approval
-                        .as_ref()
-                        .is_some_and(|approval| approval.skipped),
-                    latest_cycle_status: latest.as_ref().map(|job| cycle_status(job.state)),
-                    latest_job_id: latest.map(|job| job.id.to_string()),
-                    failure,
-                    paused_reason: (failure == Some(dto::MemoryFailureCode::LeaseLost))
-                        .then_some(dto::MemoryPausedReason::LeaseLost),
-                },
-            })
+            let scope = recount_and_read(context, |context| {
+                context
+                    .backend()
+                    .database()
+                    .read_memory_scope(conversation_id, conversation.revision)
+            })?;
+            memory_view(context, &conversation, scope)
         })
         .await
+}
+
+pub async fn group_companion_memory_get(
+    context: &ApiContext,
+    request: dto::GroupCompanionMemoryGetRequest,
+) -> Result<dto::MemoryView, ApiError> {
+    let conversation_id = parse_id(&request.conversation_id, "conversation_id")?;
+    let character_id: lettuce_types::CharacterId = parse_id(&request.character_id, "character_id")?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let conversation = super::live_conversation(database, conversation_id)?;
+            let space = super::perspective_member_space(
+                database,
+                &conversation,
+                character_id,
+                "character_id",
+            )?;
+            let scope = recount_and_read(context, |context| {
+                context.backend().database().read_memory_scope_for_space(
+                    conversation_id,
+                    conversation.revision,
+                    space,
+                )
+            })?;
+            memory_view(context, &conversation, scope)
+        })
+        .await
+}
+
+fn recount_and_read<F>(context: &ApiContext, read: F) -> Result<MemoryReadScope, ApiError>
+where
+    F: Fn(&ApiContext) -> Result<MemoryReadScope, lettuce_memory::MemoryRepositoryError>,
+{
+    let before = read(context).map_err(memory_error)?;
+    crate::recount_unknown_memory_tokens(
+        context.embedding().as_ref(),
+        context.backend().database(),
+        &before.memory,
+        before.summary.as_ref(),
+        &CancellationToken::new(),
+    )
+    .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    read(context).map_err(memory_error)
+}
+
+fn memory_view(
+    context: &ApiContext,
+    conversation: &lettuce_conversations::Conversation,
+    scope: MemoryReadScope,
+) -> Result<dto::MemoryView, ApiError> {
+    let database = context.backend().database();
+    let stored = GlobalSettingsStore::load(database)
+        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    let dynamic = if matches!(conversation.kind, ConversationKind::Group(_)) {
+        stored.settings.effective_group_dynamic_memory()
+    } else {
+        &stored.settings.dynamic_memory
+    };
+    let latest =
+        latest_memory_job(context, &scope)?.filter(|job| scope.dismissed_job != Some(job.id));
+    let failure = latest.as_ref().and_then(failure);
+    let mut labels = HashMap::new();
+    let mut text_labels = HashMap::new();
+    for cycle in &scope.cycles {
+        if cycle.reverted {
+            continue;
+        }
+        let label = format!(
+            "{}-{}",
+            cycle.run.summary_window.start, cycle.run.summary_window.end
+        );
+        for result in &cycle.results {
+            if let MemoryToolOutcome::Created {
+                id,
+                short_id,
+                memories,
+            } = &result.outcome
+            {
+                labels.insert(*id, label.clone());
+                if let Some(item) = memories.iter().find(|item| item.short_id == *short_id) {
+                    text_labels.insert(item.text.clone(), label.clone());
+                }
+            }
+        }
+    }
+    let since = scope.message_count.saturating_sub(scope.summary_cursor);
+    Ok(dto::MemoryView {
+        revision: scope.memory.revision.get(),
+        allowed_categories: super::allowed_categories(database, conversation)?
+            .into_iter()
+            .map(category)
+            .collect(),
+        items: scope
+            .memory
+            .items
+            .into_iter()
+            .map(|item| dto::MemoryItemView {
+                id: item.id.to_string(),
+                short_id: item.short_id.to_string(),
+                cycle_label: labels
+                    .get(&item.id)
+                    .or_else(|| text_labels.get(&item.text))
+                    .cloned(),
+                text: item.text,
+                category: item.category.map(category),
+                origin: origin(item.origin),
+                pinned: item.is_pinned,
+                temperature: if item.is_cold {
+                    dto::MemoryTemperature::Cold
+                } else {
+                    dto::MemoryTemperature::Hot
+                },
+                observed_at: item.observed_at.map(|at| at.get()),
+                observed_time_precision: item.observed_time_precision,
+                token_count: item.token_count,
+            })
+            .collect(),
+        summary: scope.summary.map(|summary| dto::MemorySummaryView {
+            text: summary.text,
+            origin: origin(summary.origin),
+            token_count: summary.token_count,
+        }),
+        status: dto::MemoryStatusView {
+            run_mode: match dynamic.run_mode {
+                lettuce_settings::MemoryRunMode::Auto => dto::MemoryRunMode::Auto,
+                lettuce_settings::MemoryRunMode::AskFirst => dto::MemoryRunMode::AskFirst,
+                lettuce_settings::MemoryRunMode::Manual => dto::MemoryRunMode::Manual,
+            },
+            interval: dynamic.summary_message_interval.max(1),
+            messages_since_last_cycle: since,
+            messages_until_next_cycle: u64::from(dynamic.summary_message_interval.max(1))
+                .saturating_sub(since),
+            total_conversation_messages: scope.message_count,
+            pending_approval_count: scope
+                .approval
+                .as_ref()
+                .filter(|approval| approval.pending)
+                .map(|approval| approval.prompted_message_count),
+            skipped: scope
+                .approval
+                .as_ref()
+                .is_some_and(|approval| approval.skipped),
+            latest_cycle_status: latest.as_ref().map(|job| cycle_status(job.state)),
+            latest_job_id: latest.map(|job| job.id.to_string()),
+            failure,
+            paused_reason: (failure == Some(dto::MemoryFailureCode::LeaseLost))
+                .then_some(dto::MemoryPausedReason::LeaseLost),
+        },
+    })
 }
 
 #[cfg(test)]

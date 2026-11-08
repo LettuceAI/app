@@ -284,6 +284,7 @@ export const commands = {
 	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_save", { request })),
 	hfAuthClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("hf_auth_clear")),
 	memoryGet: (request: ConversationRequest) => typedError<MemoryView, ApiError_Serialize>(__TAURI_INVOKE("memory_get", { request })),
+	groupCompanionMemoryGet: (request: GroupCompanionMemoryGetRequest) => typedError<MemoryView, ApiError_Serialize>(__TAURI_INVOKE("group_companion_memory_get", { request })),
 	memoryAdd: (request: MemoryAddRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_add", { request })),
 	memoryUpdate: (request: MemoryUpdateRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_update", { request })),
 	memoryDelete: (request: MemoryDeleteRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_delete", { request })),
@@ -2605,6 +2606,11 @@ export type GroupCompanionMemberView = {
 export type GroupCompanionMessageEffectsRequest = {
 	conversation_id: string,
 	message_id: string,
+};
+
+export type GroupCompanionMemoryGetRequest = {
+	conversation_id: string,
+	character_id: string,
 };
 
 export type GroupCompanionStateGetRequest = {
@@ -6182,6 +6188,7 @@ export type MemoryAddRequest = {
 	observed_at: number | null,
 	expected_revision: number,
 	client_operation_id: string,
+	perspective_character_id?: string | null,
 };
 
 /**  Why a chat's dynamic memory does not run. */
@@ -6246,6 +6253,7 @@ export type MemoryDeleteRequest = {
 	memory_id: string,
 	expected_revision: number,
 	client_operation_id: string,
+	perspective_character_id?: string | null,
 };
 
 export type MemoryEditResult = {
@@ -6297,6 +6305,7 @@ export type MemoryPinRequest = {
 	pinned: boolean,
 	expected_revision: number,
 	client_operation_id: string,
+	perspective_character_id?: string | null,
 };
 
 export type MemoryRetryRequest = {
@@ -6360,6 +6369,7 @@ export type MemoryTemperatureRequest = {
 	temperature: MemoryTemperature,
 	expected_revision: number,
 	client_operation_id: string,
+	perspective_character_id?: string | null,
 };
 
 export type MemoryTriggerRequest = {
@@ -6377,6 +6387,7 @@ export type MemoryUpdateRequest_Deserialize = {
 	observed_at?: MemoryObservedAtChange,
 	expected_revision: number,
 	client_operation_id: string,
+	perspective_character_id?: string | null,
 };
 
 export type MemoryUpdateRequest_Serialize = {
@@ -6387,6 +6398,7 @@ export type MemoryUpdateRequest_Serialize = {
 	observed_at: MemoryObservedAtChange,
 	expected_revision: number,
 	client_operation_id: string,
+	perspective_character_id?: string | null,
 };
 
 export type MemoryView = {

@@ -1,5 +1,7 @@
 use super::*;
 
+use lettuce_context::PromptVariable;
+
 fn companion_prompt_group(
     operation_key: &str,
     companion: bool,
@@ -258,7 +260,7 @@ async fn group_companion_prompt_without_checkpoints_renders_the_initial_state() 
         ),
     );
     assert!(text.contains("tracked 0 user interaction"));
-    assert!(text.contains("has no particular history with anyone else in the room yet"));
+    assert!(text.contains("has no particular history with anyone else here yet"));
 }
 
 #[tokio::test]
@@ -354,4 +356,419 @@ fn group_companion_prompt_ignores_the_app_default_prompt() {
                 .get(BuiltInPromptId::GroupCompanion)
         )
     );
+}
+
+#[tokio::test]
+async fn group_companion_prompt_renders_perspective_and_private_memory_layers() {
+    let (backend, conversation, first, _) =
+        companion_prompt_group("group-companion-memory-layers", true);
+    let database = backend.database();
+    let sent = ConversationRepository::begin_send(
+        database,
+        &direct_send_command(
+            &conversation,
+            "group-companion-memory-layers-user",
+            "Hello everyone.",
+        ),
+        TimestampMillis::new(NOW.get() + 1),
+    )
+    .expect("send");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after send")
+        .conversation;
+    let first_speaker = group_companion_participant(&current, first);
+    let mut request = context_request_for(database, conversation.id, user_message_id);
+    request.selected_speaker = Some(selected_speaker(first_speaker));
+    request.reference_time = TimestampMillis::new(NOW.get() + 2);
+    request.memory = Some(lettuce_conversations::MemoryContribution {
+        attribution: lettuce_conversations::MemoryAttribution {
+            revision_id: lettuce_types::MemoryRevisionId::new(),
+        },
+        summary: None,
+        key_memories: vec![lettuce_conversations::MemoryPromptLine {
+            memory_id: None,
+            match_score_basis_points: None,
+            text: "The group met at the harbor.".into(),
+            observed: None,
+        }],
+        perspective_memories: vec![lettuce_conversations::MemoryPromptLine {
+            memory_id: None,
+            match_score_basis_points: None,
+            text: "Ada thought Bea was hiding something.".into(),
+            observed: None,
+        }],
+        private_memories: vec![lettuce_conversations::MemoryPromptLine {
+            memory_id: None,
+            match_score_basis_points: None,
+            text: "Ada told the user a secret.".into(),
+            observed: None,
+        }],
+    });
+    let (_, text) = assembled_prompt_with_text(database, request).await;
+    assert!(text.contains("The group met at the harbor."));
+    assert!(text.contains("## What You Make of This Group"));
+    assert!(text.contains("Ada thought Bea was hiding something."));
+    assert!(text.contains("## Between You and "));
+    assert!(text.contains("Ada told the user a secret."));
+}
+
+struct PreviewInference;
+
+#[async_trait::async_trait]
+impl InferencePort for PreviewInference {
+    async fn run(&self, _request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+        Err(PortError::Empty)
+    }
+}
+
+struct PreviewReplyMedia;
+
+impl crate::ReplyMediaStore for PreviewReplyMedia {
+    fn store_reply_image(
+        &self,
+        _asset_id: lettuce_types::AssetId,
+        _origin: crate::ReplyImageOrigin,
+        _bytes: &[u8],
+    ) -> Result<lettuce_types::AssetId, lettuce_media::MediaStoreError> {
+        Err(lettuce_media::MediaStoreError::CatalogFailure {
+            reason: "preview does not store reply images",
+        })
+    }
+
+    fn discard_reply_image(
+        &self,
+        _asset_id: lettuce_types::AssetId,
+        _now: lettuce_types::TimestampMillis,
+    ) {
+    }
+}
+
+fn companion_memory_group(
+    operation_key: &str,
+    personal: bool,
+) -> (
+    AppBackend,
+    lettuce_conversations::Conversation,
+    CharacterId,
+    CharacterId,
+    MessageId,
+) {
+    let backend = backend();
+    let database = backend.database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.retrieval_limit = 1;
+    settings.dynamic_memory.min_similarity_basis_points = Some(5_000);
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("enable group retrieval");
+    let model_id = seed_model(
+        database,
+        ProviderProtocol::Ollama,
+        &format!("{operation_key}-model"),
+    );
+    set_application_default_model(database, model_id);
+    let first = seed_named_character_with(database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig {
+            share_memory_across_chats: true,
+            ..Default::default()
+        });
+    });
+    let second = seed_named_character_with(database, "Bea", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| {
+            group.companion_mode = true;
+            group.companion_personal_memories = personal;
+            group.memory_policy = MemoryPolicy::Dynamic;
+        },
+    );
+    let conversation = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(group_id, operation_key), NOW)
+        .expect("launch group companion memory")
+        .value
+        .conversation;
+    let engine = group_companion_engine();
+    let coordinator = CompanionTurnCoordinator::new(database, Some(&engine));
+    let sent = coordinator
+        .begin_send(
+            &direct_send_command(
+                &conversation,
+                &format!("{operation_key}-send"),
+                "Hello Ada and Bea.",
+            ),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send group companion message");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    cancel_started_group_turn(database, &sent.value, operation_key, NOW.get() + 2);
+    let conversation = ConversationReader::get(database, conversation.id)
+        .expect("conversation after send")
+        .conversation;
+    (backend, conversation, first, second, user_message_id)
+}
+
+fn seed_axis_zero_memory(
+    database: &Database,
+    space_id: MemorySpaceId,
+    text: &str,
+    source_message_id: Option<MessageId>,
+) {
+    let stored = MemoryRepository::get(database, space_id)
+        .expect("memory")
+        .expect("memory space");
+    let id = MemoryId::new();
+    let item = MemoryItem {
+        id,
+        short_id: lettuce_memory::MemoryShortId::derived(id),
+        text: text.into(),
+        origin: lettuce_memory::MemoryOrigin::Model,
+        category: Some(MemoryCategory::WorldDetail),
+        source_message_id,
+        source_role: source_message_id.map(|_| MessageRole::User),
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: Vec::new(),
+        token_count: Some(6),
+        is_cold: false,
+        is_pinned: false,
+        importance: Score::FULL,
+        persistence_importance: Score::FULL,
+        prompt_importance: Score::FULL,
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 0,
+        created_at: TimestampMillis::new(NOW.get() + 3),
+        last_accessed_at: TimestampMillis::new(NOW.get() + 3),
+    };
+    MemoryRepository::compare_and_apply(
+        database,
+        MemoryChangeSet {
+            space_id,
+            expected_revision: stored.revision,
+            items: vec![item],
+        },
+    )
+    .expect("seed memory");
+    let mut values = vec![0.0; 128];
+    values[0] = 1.0;
+    lettuce_embeddings::MemoryEmbeddingRepository::put_ready(
+        database,
+        lettuce_embeddings::MemoryEmbeddingProjection {
+            space_id,
+            memory_id: id,
+            source_text: text.into(),
+            vector: EmbeddingVector {
+                source_revision: "scenario-v1".into(),
+                values,
+            },
+            dimensions: lettuce_embeddings::EmbeddingDimensions::D128,
+            updated_at: TimestampMillis::new(NOW.get() + 3),
+        },
+    )
+    .expect("seed projection");
+}
+
+fn seed_companion_pool(
+    database: &Database,
+    character_id: CharacterId,
+    operation_key: &str,
+    text: &str,
+) -> MemorySpaceId {
+    let direct = ConversationLaunchPlanner::new(database)
+        .launch_direct(&request(character_id, operation_key), NOW)
+        .expect("launch companion direct chat")
+        .value
+        .conversation;
+    let pool = MemoryRepository::get_for_branch(database, direct.id, direct.active_branch_id)
+        .expect("companion pool")
+        .expect("companion pool space")
+        .id;
+    seed_axis_zero_memory(database, pool, text, None);
+    pool
+}
+
+fn hide_ada_from_user_message_checkpoints(
+    database: &Database,
+    conversation: &lettuce_conversations::Conversation,
+    user_message_id: MessageId,
+    bea: CharacterId,
+) {
+    let bea_checkpoint = database
+        .checkpoints_for_message(conversation.id, user_message_id)
+        .expect("user message checkpoints")
+        .into_iter()
+        .find(|checkpoint| checkpoint.character_id == bea)
+        .expect("Bea checkpoint");
+    let prepared = lettuce_companions::PreparedGroupCompanionTurn {
+        conversation_id: conversation.id,
+        persona_id: None,
+        members: Vec::new(),
+        applied: vec![(
+            user_message_id,
+            lettuce_companions::GroupCompanionStep {
+                checkpoints: vec![bea_checkpoint],
+                persona_relationships: Vec::new(),
+            },
+        )],
+        states: std::collections::BTreeMap::new(),
+        persona_relationships: std::collections::BTreeMap::new(),
+        persona_revisions: std::collections::BTreeMap::new(),
+        user_event: None,
+    };
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation before checkpoint replacement")
+        .conversation;
+    let speaker = group_companion_participant(&current, bea);
+    let command =
+        group_companion_continue_command(&current, speaker, "group-companion-memory-hide-ada");
+    lettuce_companions::GroupCompanionTurnWriter::begin_group_companion_continue(
+        database,
+        &command,
+        prepared,
+        TimestampMillis::new(NOW.get() + 4),
+    )
+    .expect("replace user message checkpoints");
+}
+
+async fn preview_memory_values(
+    backend: &AppBackend,
+    conversation_id: lettuce_types::ConversationId,
+    speaker: CharacterId,
+) -> (String, String, String) {
+    let database = backend.database();
+    let engine = ScenarioEmbeddingEngine;
+    let inference = PreviewInference;
+    let media = PreviewReplyMedia;
+    let runner = backend.prepared_conversation_generation_runner(&engine, &inference, &media);
+    let document = policy::group_companion_prompt(database)
+        .expect("companion prompt lookup")
+        .expect("companion prompt");
+    let (context, _) = runner
+        .prompt_preview_context(
+            conversation_id,
+            &document,
+            Some(speaker),
+            TimestampMillis::new(NOW.get() + 10),
+        )
+        .await
+        .expect("prompt preview");
+    (
+        context.values.key_memories.clone(),
+        context
+            .values
+            .purpose_values
+            .get(&PromptVariable::CompanionPerspectiveMemories)
+            .cloned()
+            .unwrap_or_default(),
+        context
+            .values
+            .purpose_values
+            .get(&PromptVariable::CompanionPrivateMemories)
+            .cloned()
+            .unwrap_or_default(),
+    )
+}
+
+#[tokio::test]
+async fn group_companion_perspective_and_pool_memories_stay_with_their_member() {
+    let (backend, conversation, ada, bea, _) =
+        companion_memory_group("group-companion-memory-owner", true);
+    let database = backend.database();
+    let ada_space = database
+        .ensure_perspective_space(conversation.id, conversation.active_branch_id, ada)
+        .expect("Ada perspective space");
+    seed_axis_zero_memory(
+        database,
+        ada_space,
+        "Ada thought Bea was hiding something.",
+        None,
+    );
+    let bea_space = database
+        .ensure_perspective_space(conversation.id, conversation.active_branch_id, bea)
+        .expect("Bea perspective space");
+    seed_axis_zero_memory(database, bea_space, "Bea thought Ada was bluffing.", None);
+    seed_companion_pool(
+        database,
+        ada,
+        "group-companion-memory-pool",
+        "Ada told the user a secret.",
+    );
+
+    let (_, ada_perspective, ada_private) =
+        preview_memory_values(&backend, conversation.id, ada).await;
+    assert!(ada_perspective.contains("Ada thought Bea was hiding something."));
+    assert!(ada_private.contains("Ada told the user a secret."));
+    assert!(!ada_perspective.contains("Bea thought Ada was bluffing."));
+
+    let (_, bea_perspective, bea_private) =
+        preview_memory_values(&backend, conversation.id, bea).await;
+    assert!(bea_perspective.contains("Bea thought Ada was bluffing."));
+    assert!(!bea_perspective.contains("Ada thought Bea was hiding something."));
+    assert!(!bea_private.contains("Ada told the user a secret."));
+}
+
+#[tokio::test]
+async fn group_companion_personal_memories_toggle_hides_the_pool() {
+    let (backend, conversation, ada, _, _) =
+        companion_memory_group("group-companion-memory-personal-off", false);
+    let database = backend.database();
+    let ada_space = database
+        .ensure_perspective_space(conversation.id, conversation.active_branch_id, ada)
+        .expect("Ada perspective space");
+    seed_axis_zero_memory(
+        database,
+        ada_space,
+        "Ada thought Bea was hiding something.",
+        None,
+    );
+    seed_companion_pool(
+        database,
+        ada,
+        "group-companion-memory-personal-off-pool",
+        "Ada told the user a secret.",
+    );
+
+    let (_, perspective, private) = preview_memory_values(&backend, conversation.id, ada).await;
+    assert!(perspective.contains("Ada thought Bea was hiding something."));
+    assert!(!private.contains("Ada told the user a secret."));
+}
+
+#[tokio::test]
+async fn group_companion_shared_memory_visibility_follows_checkpoints() {
+    let (backend, conversation, ada, bea, user_message_id) =
+        companion_memory_group("group-companion-memory-visibility", false);
+    let database = backend.database();
+    let shared =
+        MemoryRepository::get_for_branch(database, conversation.id, conversation.active_branch_id)
+            .expect("shared memory")
+            .expect("shared space");
+    seed_axis_zero_memory(
+        database,
+        shared.id,
+        "The group met at the harbor.",
+        Some(user_message_id),
+    );
+    hide_ada_from_user_message_checkpoints(database, &conversation, user_message_id, bea);
+
+    let (ada_keys, _, _) = preview_memory_values(&backend, conversation.id, ada).await;
+    assert!(!ada_keys.contains("The group met at the harbor."));
+    let (bea_keys, _, _) = preview_memory_values(&backend, conversation.id, bea).await;
+    assert!(bea_keys.contains("The group met at the harbor."));
 }

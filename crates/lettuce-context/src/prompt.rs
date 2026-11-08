@@ -1147,6 +1147,8 @@ pub struct PromptRenderValues {
 pub enum PromptVariable {
     CompanionState,
     CompanionMemberRelationships,
+    CompanionPerspectiveMemories,
+    CompanionPrivateMemories,
     ScheduledNotes,
     GroupCharacters,
     PreviousSummary,
@@ -1305,6 +1307,8 @@ impl PromptVariable {
         match self {
             Self::CompanionState => "{{companion_state}}",
             Self::CompanionMemberRelationships => "{{companion_member_relationships}}",
+            Self::CompanionPerspectiveMemories => "{{companion_perspective_memories}}",
+            Self::CompanionPrivateMemories => "{{companion_private_memories}}",
             Self::ScheduledNotes => "{{scheduled_notes}}",
             Self::GroupCharacters => "{{group_characters}}",
             Self::PreviousSummary => "{{prev_summary}}",
@@ -1462,6 +1466,8 @@ impl PromptVariable {
     const ALL: &[Self] = &[
         Self::CompanionState,
         Self::CompanionMemberRelationships,
+        Self::CompanionPerspectiveMemories,
+        Self::CompanionPrivateMemories,
         Self::ScheduledNotes,
         Self::GroupCharacters,
         Self::PreviousSummary,
@@ -1655,6 +1661,8 @@ impl PromptVariable {
                     | Variable::SceneCastLoraKeywords
                     | Variable::CompanionState
                     | Variable::CompanionMemberRelationships
+                    | Variable::CompanionPerspectiveMemories
+                    | Variable::CompanionPrivateMemories
                     | Variable::ScheduledNotes
             ),
             Purpose::DynamicMemorySummarizer => {
@@ -2128,6 +2136,8 @@ fn contains_volatile_turn_context(content: &str) -> bool {
         "{{selected_memories}}",
         "{{companion_state}}",
         "{{companion_member_relationships}}",
+        "{{companion_perspective_memories}}",
+        "{{companion_private_memories}}",
         "{{scheduled_notes}}",
         "{{date",
         "{{time",

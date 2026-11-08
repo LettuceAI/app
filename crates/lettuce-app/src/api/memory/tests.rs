@@ -3,6 +3,7 @@ use crate::api::*;
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_conversations::ConversationReader;
 use lettuce_memory::{MemoryRepository, MemorySummaryRepository};
+use lettuce_types::CharacterId;
 
 #[tokio::test]
 async fn memory_categories_match_write_permissions_and_preserve_companion_session_state() {
@@ -26,6 +27,7 @@ async fn memory_categories_match_write_permissions_and_preserve_companion_sessio
         observed_at: None,
         expected_revision: roleplay.revision,
         client_operation_id: "roleplay-routine".into(),
+        perspective_character_id: None,
     }).await.expect_err("companion category refused");
     assert_eq!(error.code, ApiErrorCode::InvalidInput);
 
@@ -47,6 +49,7 @@ async fn memory_categories_match_write_permissions_and_preserve_companion_sessio
         conversation_id: companion.clone(), text: "Morning coffee".into(),
         category: Some(dto::MemoryCategory::Routine), observed_at: None,
         expected_revision: view.revision, client_operation_id: "companion-routine".into(),
+        perspective_character_id: None,
     }).await.expect("companion category accepted");
 
     let character = CharacterRepository::get(database, character_id).expect("character").expect("exists").character;
@@ -61,6 +64,7 @@ async fn memory_categories_match_write_permissions_and_preserve_companion_sessio
         conversation_id: companion, text: "First trip".into(),
         category: Some(dto::MemoryCategory::Milestone), observed_at: None,
         expected_revision: preserved.revision, client_operation_id: "retained-companion-milestone".into(),
+        perspective_character_id: None,
     }).await.expect("retained companion category accepted");
 }
 
@@ -75,6 +79,7 @@ async fn manual_memory_without_tokenizer_replays_and_uses_conversation_membershi
         observed_at: Some(5),
         expected_revision: 1,
         client_operation_id: "manual-add".into(),
+        perspective_character_id: None,
     };
     let added = memory_add(&harness.context, request.clone())
         .await
@@ -115,6 +120,7 @@ async fn manual_memory_without_tokenizer_replays_and_uses_conversation_membershi
         pinned: true,
         expected_revision: 1,
         client_operation_id: "foreign-pin".into(),
+        perspective_character_id: None,
     };
     assert_eq!(
         memory_pin(&harness.context, foreign)
@@ -198,6 +204,7 @@ async fn manual_setters_replay_conflict_and_preserve_legacy_pin_temperature_rule
             observed_at: Some(1),
             expected_revision: 1,
             client_operation_id: "setters-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -211,6 +218,7 @@ async fn manual_setters_replay_conflict_and_preserve_legacy_pin_temperature_rule
         observed_at: dto::MemoryObservedAtChange::Set(None),
         expected_revision: 2,
         client_operation_id: "setter-update".into(),
+        perspective_character_id: None,
     };
     let updated = memory_update(&harness.context, update.clone())
         .await
@@ -236,6 +244,7 @@ async fn manual_setters_replay_conflict_and_preserve_legacy_pin_temperature_rule
         temperature: dto::MemoryTemperature::Cold,
         expected_revision: 3,
         client_operation_id: "setter-cold".into(),
+        perspective_character_id: None,
     };
     let cooled = memory_set_temperature(&harness.context, cold.clone())
         .await
@@ -261,6 +270,7 @@ async fn manual_setters_replay_conflict_and_preserve_legacy_pin_temperature_rule
         pinned: true,
         expected_revision: 4,
         client_operation_id: "setter-pin".into(),
+        perspective_character_id: None,
     };
     let pinned = memory_pin(&harness.context, pin.clone())
         .await
@@ -311,6 +321,7 @@ async fn manual_setters_replay_conflict_and_preserve_legacy_pin_temperature_rule
         memory_id: id,
         expected_revision: 5,
         client_operation_id: "setter-delete".into(),
+        perspective_character_id: None,
     };
     let deleted = memory_delete(&harness.context, delete.clone())
         .await
@@ -354,6 +365,7 @@ async fn dynamic_add_and_metadata_update_require_embedding_without_writing() {
             observed_at: None,
             expected_revision: 1,
             client_operation_id: "before-dynamic-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -398,6 +410,7 @@ async fn dynamic_add_and_metadata_update_require_embedding_without_writing() {
         observed_at: None,
         expected_revision: 2,
         client_operation_id: "dynamic-add".into(),
+        perspective_character_id: None,
     };
     assert_eq!(
         memory_add(&harness.context, add)
@@ -414,6 +427,7 @@ async fn dynamic_add_and_metadata_update_require_embedding_without_writing() {
         observed_at: dto::MemoryObservedAtChange::Keep,
         expected_revision: 2,
         client_operation_id: "dynamic-update".into(),
+        perspective_character_id: None,
     };
     assert_eq!(
         memory_update(&harness.context, update)
@@ -454,6 +468,7 @@ async fn manual_edit_history_is_carried_by_backup_and_restore() {
             observed_at: None,
             expected_revision: 1,
             client_operation_id: "backup-manual-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -519,6 +534,7 @@ async fn manual_edit_history_syncs_into_the_peers_resolved_space() {
             observed_at: None,
             expected_revision: 1,
             client_operation_id: "sync-manual-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -673,6 +689,7 @@ async fn memory_get_recounts_unknown_items_and_summary_once_without_embedding_or
             observed_at: None,
             expected_revision: 1,
             client_operation_id: "read-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -907,6 +924,7 @@ async fn memory_status_reports_real_model_and_embedding_failures_and_lease_pause
                     observed_at: None,
                     expected_revision: 1,
                     client_operation_id: "status-add".into(),
+                    perspective_character_id: None,
                 },
             )
             .await
@@ -1043,6 +1061,7 @@ async fn memory_user_edits_are_cut_locally_by_fork_and_delete_after() {
                 observed_at: None,
                 expected_revision: 1,
                 client_operation_id: "undo-add".into(),
+                perspective_character_id: None,
             },
         )
         .await
@@ -1068,6 +1087,7 @@ async fn memory_user_edits_are_cut_locally_by_fork_and_delete_after() {
                 observed_at: dto::MemoryObservedAtChange::Keep,
                 expected_revision: 2,
                 client_operation_id: "undo-update".into(),
+                perspective_character_id: None,
             },
         )
         .await
@@ -1186,6 +1206,7 @@ async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anch
             observed_at: Some(5),
             expected_revision: 1,
             client_operation_id: "all-undo-item".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1226,6 +1247,7 @@ async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anch
             observed_at: dto::MemoryObservedAtChange::Set(None),
             expected_revision: 3,
             client_operation_id: "all-undo-update".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1238,6 +1260,7 @@ async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anch
             pinned: true,
             expected_revision: 4,
             client_operation_id: "all-undo-pin".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1250,6 +1273,7 @@ async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anch
             pinned: false,
             expected_revision: 5,
             client_operation_id: "all-undo-unpin".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1262,6 +1286,7 @@ async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anch
             temperature: dto::MemoryTemperature::Cold,
             expected_revision: 6,
             client_operation_id: "all-undo-cold".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1273,6 +1298,7 @@ async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anch
             memory_id: item.clone(),
             expected_revision: 7,
             client_operation_id: "all-undo-remove".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1286,6 +1312,7 @@ async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anch
             observed_at: None,
             expected_revision: 8,
             client_operation_id: "all-undo-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1389,6 +1416,7 @@ async fn memory_ids_of_a_deleted_branch_are_refused_and_nothing_is_written() {
             observed_at: None,
             expected_revision: 1,
             client_operation_id: "tombstone-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1427,6 +1455,7 @@ async fn memory_ids_of_a_deleted_branch_are_refused_and_nothing_is_written() {
             pinned: true,
             expected_revision: before.revision.get(),
             client_operation_id: "tombstone-pin".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1464,6 +1493,7 @@ async fn parent_delete_after_never_changes_a_forked_childs_memory() {
             observed_at: None,
             expected_revision: 1,
             client_operation_id: "parent-undo-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1489,6 +1519,7 @@ async fn parent_delete_after_never_changes_a_forked_childs_memory() {
             observed_at: dto::MemoryObservedAtChange::Keep,
             expected_revision: 2,
             client_operation_id: "parent-undo-update".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1628,6 +1659,7 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
             observed_at: None,
             expected_revision: revision(a.clone()).await.revision,
             client_operation_id: "pool-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1639,6 +1671,7 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
             conversation_id: a.clone(), memory_id: added.clone(), pinned: true,
             expected_revision: revision(a.clone()).await.revision,
             client_operation_id: "pool-initial-pin".into(),
+            perspective_character_id: None,
         }).await.expect("initial retained pin");
     }
     let later = conversation_add_user_message(
@@ -1664,6 +1697,7 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
                 pinned,
                 expected_revision: revision(chat.clone()).await.revision,
                 client_operation_id: key.into(),
+                perspective_character_id: None,
             },
         )
         .await
@@ -1674,6 +1708,7 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
             conversation_id: b.clone(), memory_id: added.clone(), temperature: dto::MemoryTemperature::Cold,
             expected_revision: revision(b.clone()).await.revision,
             client_operation_id: "pool-retained-cold".into(),
+            perspective_character_id: None,
         }).await.expect("retained cold setter");
     }
     messages_delete_after(
@@ -1696,5 +1731,128 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
         assert!(kept.items[0].pinned, "the retained chat owns the later pin");
     }
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn perspective_memory_api_creates_and_edits_a_members_space() {
+    use crate::launch::tests::{member, seed_group, seed_named_character};
+    let harness = harness(Reply::Text("reply"));
+    let database = harness.context.backend().database();
+    let first = seed_named_character(database, "Ada");
+    let second = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.companion_mode = true,
+    );
+    let chat = conversation_launch_group(
+        &harness.context,
+        dto::LaunchGroupRequest {
+            group_id: group_id.to_string(),
+            client_operation_id: "perspective-api-launch".into(),
+        },
+    )
+    .await
+    .expect("launch group")
+    .conversation_id;
+    let get = |character: CharacterId| dto::GroupCompanionMemoryGetRequest {
+        conversation_id: chat.clone(),
+        character_id: character.to_string(),
+    };
+    let empty = group_companion_memory_get(&harness.context, get(first))
+        .await
+        .expect("perspective memory");
+    assert!(empty.items.is_empty());
+    let again = group_companion_memory_get(&harness.context, get(first))
+        .await
+        .expect("perspective memory again");
+    assert_eq!(again.revision, empty.revision);
+
+    let added = memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: chat.clone(),
+            text: "Ada's own view".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: empty.revision,
+            client_operation_id: "perspective-add".into(),
+            perspective_character_id: Some(first.to_string()),
+        },
+    )
+    .await
+    .expect("add perspective memory");
+    let member_view = group_companion_memory_get(&harness.context, get(first))
+        .await
+        .expect("member perspective");
+    assert_eq!(member_view.items.len(), 1);
+    assert_eq!(member_view.items[0].text, "Ada's own view");
+    let shared = memory_get(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("shared memory");
+    assert!(shared.items.is_empty());
+
+    memory_update(
+        &harness.context,
+        dto::MemoryUpdateRequest {
+            conversation_id: chat.clone(),
+            memory_id: added.memory_id.expect("memory id"),
+            text: Some("Ada's changed view".into()),
+            category: dto::MemoryCategoryChange::Keep,
+            observed_at: dto::MemoryObservedAtChange::Keep,
+            expected_revision: member_view.revision,
+            client_operation_id: "perspective-update".into(),
+            perspective_character_id: Some(first.to_string()),
+        },
+    )
+    .await
+    .expect("update perspective memory");
+    let updated = group_companion_memory_get(&harness.context, get(first))
+        .await
+        .expect("updated perspective");
+    assert_eq!(updated.items[0].text, "Ada's changed view");
+    memory_delete(
+        &harness.context,
+        dto::MemoryDeleteRequest {
+            conversation_id: chat.clone(),
+            memory_id: updated.items[0].id.clone(),
+            expected_revision: updated.revision,
+            client_operation_id: "perspective-delete".into(),
+            perspective_character_id: Some(first.to_string()),
+        },
+    )
+    .await
+    .expect("delete perspective memory");
+    let deleted = group_companion_memory_get(&harness.context, get(first))
+        .await
+        .expect("deleted perspective");
+    assert!(deleted.items.is_empty());
+
+    let outsider = seed_named_character(database, "Cole");
+    let refused = group_companion_memory_get(&harness.context, get(outsider))
+        .await
+        .expect_err("non-member perspective");
+    assert_eq!(refused.code, ApiErrorCode::InvalidInput);
+    let refused = memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: chat,
+            text: "Not Ada's".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: deleted.revision,
+            client_operation_id: "perspective-outsider".into(),
+            perspective_character_id: Some(outsider.to_string()),
+        },
+    )
+    .await
+    .expect_err("non-member edit");
+    assert_eq!(refused.code, ApiErrorCode::InvalidInput);
 }
 

@@ -1623,6 +1623,7 @@ async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
                 observed_at: None,
                 expected_revision: revision,
                 client_operation_id: format!("stale-add-{index}"),
+                perspective_character_id: None,
             },
         )
         .await
@@ -1640,6 +1641,7 @@ async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
             pinned: true,
             expected_revision: revision,
             client_operation_id: "stale-pin-before".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1671,6 +1673,7 @@ async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
             observed_at: dto::MemoryObservedAtChange::Keep,
             expected_revision: revision,
             client_operation_id: "stale-edit".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1684,6 +1687,7 @@ async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
             pinned: true,
             expected_revision: revision,
             client_operation_id: "stale-repin".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -1888,6 +1892,7 @@ async fn a_manual_edit_emits_one_memory_changed_after_it_commits_and_a_rollback_
             observed_at: None,
             expected_revision: revision,
             client_operation_id: "events-add".into(),
+            perspective_character_id: None,
         },
     )
     .await
@@ -2107,12 +2112,14 @@ async fn pooled_delete_after_preserves_retained_user_edits_when_undoing_model_to
                 conversation_id: a.clone(), text: "Shared tool target".into(), category: None,
                 observed_at: None, expected_revision: status_of(&harness, &a).await.revision,
                 client_operation_id: "tool-pool-add".into(),
+                perspective_character_id: None,
             }).await.expect("existing target").memory_id.expect("id");
             if tool == "unpin_memory" {
                 memory_pin(&harness.context, dto::MemoryPinRequest {
                     conversation_id: a.clone(), memory_id: added.clone(), pinned: true,
                     expected_revision: status_of(&harness, &a).await.revision,
                     client_operation_id: "tool-pool-pin-before".into(),
+                    perspective_character_id: None,
                 }).await.expect("initial pin");
             }
             Some(added)
@@ -2148,15 +2155,18 @@ async fn pooled_delete_after_preserves_retained_user_edits_when_undoing_model_to
             "pin_memory" => { memory_pin(&harness.context, dto::MemoryPinRequest {
                 conversation_id: b.clone(), memory_id: target.clone(), pinned: true,
                 expected_revision: revision, client_operation_id: "tool-pool-retained-pin".into(),
+                perspective_character_id: None,
             }).await.expect("retained equal pin"); }
             "unpin_memory" => { memory_set_temperature(&harness.context, dto::MemoryTemperatureRequest {
                 conversation_id: b.clone(), memory_id: target.clone(), temperature: dto::MemoryTemperature::Cold,
                 expected_revision: revision, client_operation_id: "tool-pool-retained-cold".into(),
+                perspective_character_id: None,
             }).await.expect("retained cold setter"); }
             _ => { memory_update(&harness.context, dto::MemoryUpdateRequest {
                 conversation_id: b.clone(), memory_id: target.clone(), text: Some("User-confirmed fact".into()),
                 category: dto::MemoryCategoryChange::Keep, observed_at: dto::MemoryObservedAtChange::Keep,
                 expected_revision: revision, client_operation_id: "tool-pool-retained-text".into(),
+                perspective_character_id: None,
             }).await.expect("retained edit of model-created item"); }
         }
         messages_delete_after(&harness.context, dto::MessageDeleteRequest {
@@ -2274,6 +2284,7 @@ async fn delete_after_removes_a_decayed_manual_add_unless_another_pool_chat_edit
             conversation_id: a.clone(), text: "Added in the removed suffix".into(), category: None,
             observed_at: None, expected_revision: status_of(&harness, &a).await.revision,
             client_operation_id: "decay-add".into(),
+            perspective_character_id: None,
         }).await.expect("manual add").memory_id.expect("id");
         let round = open_round_with_decay(&harness, &a, vec![("done", serde_json::json!({}))], true).await;
         let cold = status_of(&harness, &a).await;
@@ -2297,6 +2308,7 @@ async fn delete_after_removes_a_decayed_manual_add_unless_another_pool_chat_edit
                 category: dto::MemoryCategoryChange::Keep, observed_at: dto::MemoryObservedAtChange::Keep,
                 expected_revision: status_of(&harness, &b).await.revision,
                 client_operation_id: "decay-retained-edit".into(),
+                perspective_character_id: None,
             }).await.expect("retained pooled edit");
         }
         messages_delete_after(&harness.context, dto::MessageDeleteRequest {

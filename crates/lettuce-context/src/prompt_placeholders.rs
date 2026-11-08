@@ -46,6 +46,8 @@ const GROUP_CHAT_ROLEPLAY: &[&str] = &[
     "{{scene_cast_lora}}",
     "{{companion_state}}",
     "{{companion_member_relationships}}",
+    "{{companion_perspective_memories}}",
+    "{{companion_private_memories}}",
     "{{scheduled_notes}}",
     "{{author_note}}",
 ];

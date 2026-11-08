@@ -1,4 +1,6 @@
-use lettuce_types::{ConversationBranchId, ConversationId, DynamicMemoryRunId, JobId, Revision};
+use lettuce_types::{
+    ConversationBranchId, ConversationId, DynamicMemoryRunId, JobId, MemorySpaceId, Revision,
+};
 
 use crate::{
     DynamicMemoryAttempt, DynamicMemoryAttemptStatus, DynamicMemoryPendingApproval,
@@ -64,5 +66,12 @@ pub trait MemoryReadRepository: Send + Sync {
         &self,
         conversation_id: ConversationId,
         conversation_revision: Revision,
+    ) -> Result<MemoryReadScope, MemoryRepositoryError>;
+
+    fn read_memory_scope_for_space(
+        &self,
+        conversation_id: ConversationId,
+        conversation_revision: Revision,
+        space_id: MemorySpaceId,
     ) -> Result<MemoryReadScope, MemoryRepositoryError>;
 }
