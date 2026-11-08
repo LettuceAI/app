@@ -15035,6 +15035,7 @@ fn group_flags_and_notes_sync_with_the_group() {
     let group_id = seed_group(&a, vec![member(first, 0), member(second, 1)], None, |group| {
         group.time_awareness = true;
         group.disable_character_notes = true;
+        group.companion_mode = true;
     });
     let note = a
         .upsert_group_note(group_note(group_id, vec![second], "Bea knows the way."))
@@ -15043,7 +15044,11 @@ fn group_flags_and_notes_sync_with_the_group() {
     sync_prompts(&a, &b, NOW.get() + 1_000);
 
     let on_b = GroupRepository::get(&b, group_id).expect("b group").expect("b has the group");
-    assert!(on_b.group.time_awareness && on_b.group.disable_character_notes);
+    assert!(
+        on_b.group.time_awareness
+            && on_b.group.disable_character_notes
+            && on_b.group.companion_mode
+    );
     assert_eq!(b.list_group_notes(group_id).expect("b notes"), vec![note.clone()]);
 
     b.delete_group_note(note.id).expect("delete on b");
@@ -15679,4 +15684,63 @@ fn missing_and_archived_group_personas_follow_the_default() {
             .expect("resolve missing")
             .expect("default");
     assert_eq!(selected.id, fallback);
+}
+
+#[test]
+fn live_companion_mode_resolves_override_then_group_then_false() {
+    let backend = backend();
+    let database = backend.database();
+    let first = seed_named_character(database, "First");
+    let second = seed_named_character(database, "Second");
+    let companion_group = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| group.companion_mode = true,
+    );
+    let mut group_conversation = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(companion_group, "companion-mode-live"), NOW)
+        .expect("launch group")
+        .value
+        .conversation;
+    assert!(
+        crate::generation::live_sources::live_companion_mode(database, &group_conversation)
+            .expect("group mode")
+    );
+    group_conversation.current_settings = Some(
+        lettuce_conversations::CurrentConversationSettingsPatch {
+            companion_mode: lettuce_conversations::PatchValue::Set(false),
+            ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+        }
+        .apply(None, None)
+        .expect("override"),
+    );
+    assert!(
+        !crate::generation::live_sources::live_companion_mode(database, &group_conversation)
+            .expect("override mode")
+    );
+    let plain_group = seed_group(
+        database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |_| {},
+    );
+    let plain_conversation = ConversationLaunchPlanner::new(database)
+        .launch_group(&group_request(plain_group, "companion-mode-off-live"), NOW)
+        .expect("launch plain group")
+        .value
+        .conversation;
+    assert!(
+        !crate::generation::live_sources::live_companion_mode(database, &plain_conversation)
+            .expect("plain group mode")
+    );
+    let direct_conversation = ConversationLaunchPlanner::new(database)
+        .launch_direct(&request(first, "companion-mode-direct-live"), NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    assert!(
+        !crate::generation::live_sources::live_companion_mode(database, &direct_conversation)
+            .expect("direct mode")
+    );
 }

@@ -73,6 +73,26 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
     }))
 }
 
+#[allow(dead_code)]
+pub(crate) fn live_companion_mode<S: GroupRepository + ?Sized>(
+    sources: &S,
+    conversation: &Conversation,
+) -> Result<bool, RepositoryError> {
+    let ConversationKind::Group(details) = &conversation.kind else {
+        return Ok(false);
+    };
+    if let Some(enabled) = conversation
+        .current_settings
+        .as_ref()
+        .and_then(|settings| settings.companion_mode)
+    {
+        return Ok(enabled);
+    }
+    Ok(sources
+        .get(details.group.source_id)?
+        .is_some_and(|details| details.group.companion_mode))
+}
+
 /// The participants a group turn uses (`lettuce_conversations::effective_participants`
 /// over the group's current membership).
 pub(crate) fn effective_participants(

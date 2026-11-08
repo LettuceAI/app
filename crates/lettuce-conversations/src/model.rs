@@ -163,6 +163,10 @@ pub struct CurrentConversationSettings {
     /// override of the group's; `None` follows the group.
     #[serde(default)]
     pub disable_character_notes: Option<bool>,
+    /// The chat's own override of the group's companion mode; `None` follows
+    /// the group.
+    #[serde(default)]
+    pub companion_mode: Option<bool>,
     /// The participants' enabled flags are the conversation's own instead of
     /// the group's member list.
     #[serde(default)]
@@ -204,6 +208,7 @@ impl CurrentConversationSettings {
             speaker_selection_provenance: crate::commands::SettingProvenance::LaunchInherited,
             disable_character_lorebooks: None,
             disable_character_notes: None,
+            companion_mode: None,
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,
@@ -381,7 +386,8 @@ impl CurrentConversationSettings {
         }
         if matches!(kind, ConversationKind::Direct(_))
             && (self.disable_character_lorebooks.is_some()
-                || self.disable_character_notes.is_some())
+                || self.disable_character_notes.is_some()
+                || self.companion_mode.is_some())
         {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.group_overrides",

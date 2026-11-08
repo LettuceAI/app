@@ -7,6 +7,7 @@ async fn saved_group(harness: &crate::api::tests::Harness) -> dto::GroupView {
     let mut draft = draft(&harness.context, harness.character_id.to_string()).await;
     draft.time_awareness = true;
     draft.disable_character_notes = true;
+    draft.companion_mode = true;
     group_save(
         &harness.context,
         dto::GroupSaveRequest {
@@ -40,11 +41,19 @@ fn note(group: &dto::GroupView, visible_to: Vec<String>, key: &str) -> dto::Grou
 async fn the_group_keeps_its_time_default_and_character_notes_switch() {
     let harness = harness(Reply::Text("reply"));
     let group = saved_group(&harness).await;
-    assert!(group.draft.time_awareness && group.draft.disable_character_notes);
+    assert!(
+        group.draft.time_awareness
+            && group.draft.disable_character_notes
+            && group.draft.companion_mode
+    );
     let fetched = group_get(&harness.context, dto::GroupGetRequest { group_id: group.id.clone() })
         .await
         .expect("get");
-    assert!(fetched.draft.time_awareness && fetched.draft.disable_character_notes);
+    assert!(
+        fetched.draft.time_awareness
+            && fetched.draft.disable_character_notes
+            && fetched.draft.companion_mode
+    );
 }
 
 #[tokio::test]

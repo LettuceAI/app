@@ -2011,6 +2011,7 @@ export type ConversationSettingsPatch_Deserialize = {
 	memory: MemoryModeChange | null,
 	disable_character_lorebooks: FlagChange | null,
 	disable_character_notes: FlagChange | null,
+	companion_mode: FlagChange | null,
 	/**  Replaces the chat's own layer; an empty layer clears it. */
 	model_settings?: SettingsModelSettingsLayer | null,
 	/**  The members and their muted flags follow the group again. */
@@ -2035,6 +2036,7 @@ export type ConversationSettingsPatch_Serialize = {
 	memory: MemoryModeChange | null,
 	disable_character_lorebooks: FlagChange | null,
 	disable_character_notes: FlagChange | null,
+	companion_mode: FlagChange | null,
 	/**  Replaces the chat's own layer; an empty layer clears it. */
 	model_settings: SettingsModelSettingsLayer | null,
 	/**  The members and their muted flags follow the group again. */
@@ -2099,6 +2101,7 @@ export type ConversationSettingsView_Deserialize = {
 	memory: SettingMemory,
 	disable_character_lorebooks: SettingFlag | null,
 	disable_character_notes: SettingFlag | null,
+	companion_mode: SettingFlag | null,
 	speaker_selection: SettingSpeakerSelection | null,
 	members: GroupMembersSettings | null,
 	/**
@@ -2141,6 +2144,7 @@ export type ConversationSettingsView_Serialize = {
 	memory: SettingMemory,
 	disable_character_lorebooks: SettingFlag | null,
 	disable_character_notes: SettingFlag | null,
+	companion_mode: SettingFlag | null,
 	speaker_selection: SettingSpeakerSelection | null,
 	members: GroupMembersSettings | null,
 	/**
@@ -2564,6 +2568,7 @@ export type GroupDraft_Deserialize = {
 	disable_character_lorebooks: boolean,
 	time_awareness: boolean,
 	disable_character_notes: boolean,
+	companion_mode: boolean,
 	group_roleplay_prompt_id: string | null,
 	presentation: LibraryChatAppearanceV1_Deserialize,
 	presentation_overrides?: string[] | null,
@@ -2580,6 +2585,7 @@ export type GroupDraft_Serialize = {
 	disable_character_lorebooks: boolean,
 	time_awareness: boolean,
 	disable_character_notes: boolean,
+	companion_mode: boolean,
 	group_roleplay_prompt_id: string | null,
 	presentation: LibraryChatAppearanceV1_Serialize,
 	presentation_overrides?: string[] | null,

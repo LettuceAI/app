@@ -771,6 +771,7 @@ async fn model_usage_reports_exactly_what_delete_changes() {
                 disable_character_lorebooks: false,
                 time_awareness: false,
                 disable_character_notes: false,
+                companion_mode: false,
                 group_roleplay_prompt_id: None,
                 presentation: character.draft.presentation.chat_appearance.clone(),
                 presentation_overrides: None,

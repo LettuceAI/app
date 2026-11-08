@@ -637,6 +637,7 @@ mod tests {
                 model_settings: PatchValue::Keep,
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
+                companion_mode: Default::default(),
                 follow_group_members: false,
                 follow_group_member_models: false,
             }

@@ -1578,6 +1578,7 @@ fn map_groups(
             disable_character_lorebooks: row.disable_character_lorebooks,
             time_awareness: false,
             disable_character_notes: false,
+            companion_mode: false,
             group_roleplay_prompt_id: None,
             presentation: lettuce_characters::ChatAppearanceV1::default(),
             presentation_overrides: None,

@@ -1,0 +1,2 @@
+ALTER TABLE groups ADD COLUMN companion_mode INTEGER NOT NULL DEFAULT 0 CHECK (companion_mode IN (0, 1));
+ALTER TABLE conversation_settings ADD COLUMN companion_mode INTEGER CHECK (companion_mode IS NULL OR companion_mode IN (0, 1));

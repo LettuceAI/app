@@ -45,6 +45,7 @@ pub struct GroupDraft {
     pub disable_character_lorebooks: bool,
     pub time_awareness: bool,
     pub disable_character_notes: bool,
+    pub companion_mode: bool,
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub group_roleplay_prompt_id: Option<String>,

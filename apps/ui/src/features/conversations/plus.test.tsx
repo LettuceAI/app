@@ -36,7 +36,7 @@ const settings: ConversationSettingsView = {
   persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" },
   lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" },
   scene: { id: null, source: "app_default" }, memory: { mode: "manual", source: "app_default" },
-  disable_character_lorebooks: null, disable_character_notes: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
+  disable_character_lorebooks: null, disable_character_notes: null, companion_mode: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
 };
 
 interface Setup {

@@ -2627,6 +2627,7 @@ fn legacy_group_plan(
             disable_character_lorebooks: candidate.disable_character_lorebooks,
             time_awareness: false,
             disable_character_notes: false,
+            companion_mode: false,
             group_roleplay_prompt_id: prompt(&candidate.group_roleplay_prompt_source_id)
                 .or(prompt(&candidate.group_conversation_prompt_source_id)),
             presentation: candidate.chat_appearance.clone(),

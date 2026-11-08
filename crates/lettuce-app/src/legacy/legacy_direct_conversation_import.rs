@@ -1269,6 +1269,7 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
             speaker_selection: input.speaker_selection,
             disable_character_lorebooks: input.disable_character_lorebooks,
             disable_character_notes: None,
+            companion_mode: None,
             members_overridden: input.participant_overrides.members,
             muted_overridden: input.participant_overrides.muted,
             member_models_overridden: input.participant_overrides.member_models,

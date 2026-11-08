@@ -203,7 +203,7 @@ fn migration_30_makes_stored_groups_roleplay_only() {
         let old: Vec<_> = MIGRATIONS
             .iter()
             .copied()
-            .filter(|migration| migration.id <= 29)
+            .filter(|migration| migration.id <= 31)
             .collect();
         apply_migrations(&mut connection, &old).expect("old schema");
         let transaction = connection
@@ -387,6 +387,15 @@ fn migration_30_makes_stored_groups_roleplay_only() {
             )
             .expect("legacy override");
         transaction.commit().expect("commit");
+        connection
+            .execute_batch(
+                MIGRATIONS
+                    .iter()
+                    .find(|migration| migration.id == 30)
+                    .expect("migration 30")
+                    .sql,
+            )
+            .expect("migration 30");
     }
     let database = Database::open(&path).expect("upgrade");
     let connection = database.connection().expect("connection");
@@ -530,4 +539,42 @@ fn migration_25_upgrades_a_file_without_rewriting_existing_groups_or_checksums()
     }
     drop(database);
     std::fs::remove_file(path).expect("remove test database");
+}
+
+#[test]
+fn migration_31_defaults_existing_group_companion_mode_off() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let old: Vec<_> = MIGRATIONS
+        .iter()
+        .copied()
+        .filter(|migration| migration.id <= 30)
+        .collect();
+    apply_migrations(&mut connection, &old).expect("schema through migration 30");
+    let group_id = GroupId::new();
+    connection
+        .execute(
+            "INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,speaker_selection,memory_policy,disable_character_lorebooks,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Existing group','existing group','roleplay','inherit','heuristic','manual',1,'{\"format_version\":1,\"value\":{}}',17,100,200)",
+            params![group_id.to_string()],
+        )
+        .expect("existing group");
+    apply_migrations(&mut connection, &MIGRATIONS[..31]).expect("schema through migration 31");
+    let companion_mode: i64 = connection
+        .query_row(
+            "SELECT companion_mode FROM groups WHERE id = ?1",
+            [group_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("existing group companion mode");
+    assert_eq!(companion_mode, 0);
+    let override_column: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('conversation_settings') WHERE name = 'companion_mode'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("override column");
+    assert_eq!(override_column, 1);
+    let upgraded = recorded_migrations(&connection);
+    assert_eq!(upgraded.iter().filter(|entry| entry.0 == 31).count(), 1);
 }

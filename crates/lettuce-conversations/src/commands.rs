@@ -1175,6 +1175,8 @@ pub struct CurrentConversationSettingsPatch {
     /// to the group's.
     #[serde(default)]
     pub disable_character_notes: PatchValue<bool>,
+    #[serde(default)]
+    pub companion_mode: PatchValue<bool>,
     /// Group conversations only: the members and their muted flags follow
     /// the group again.
     #[serde(default)]
@@ -1209,6 +1211,11 @@ impl CurrentConversationSettingsPatch {
         if matches!(self.disable_character_notes, PatchValue::Clear) {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.disable_character_notes",
+            });
+        }
+        if matches!(self.companion_mode, PatchValue::Clear) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.companion_mode",
             });
         }
         if let PatchValue::Set(note) = &self.author_note {
@@ -1408,6 +1415,11 @@ impl CurrentConversationSettingsPatch {
             disable_character_notes: match self.disable_character_notes {
                 PatchValue::Keep => base.disable_character_notes,
                 PatchValue::Set(disabled) => Some(disabled),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
+            },
+            companion_mode: match self.companion_mode {
+                PatchValue::Keep => base.companion_mode,
+                PatchValue::Set(enabled) => Some(enabled),
                 PatchValue::Clear | PatchValue::UseLaunchDefault => None,
             },
             members_overridden: base.members_overridden && !self.follow_group_members,
@@ -1610,18 +1622,24 @@ mod tests {
                 disable_character_notes: PatchValue::Clear,
                 ..CurrentConversationSettingsPatch::default()
             },
+            CurrentConversationSettingsPatch {
+                companion_mode: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            },
         ] {
             assert!(patch.apply(None, None).is_err());
         }
         let set = CurrentConversationSettingsPatch {
             disable_character_lorebooks: PatchValue::Set(true),
             disable_character_notes: PatchValue::Set(true),
+            companion_mode: PatchValue::Set(true),
             ..CurrentConversationSettingsPatch::default()
         }
         .apply(None, None)
         .expect("set");
         assert_eq!(set.disable_character_lorebooks, Some(true));
         assert_eq!(set.disable_character_notes, Some(true));
+        assert_eq!(set.companion_mode, Some(true));
         let mut owned = set.clone();
         owned.members_overridden = true;
         owned.muted_overridden = true;
@@ -1629,6 +1647,7 @@ mod tests {
         let reset = CurrentConversationSettingsPatch {
             disable_character_lorebooks: PatchValue::UseLaunchDefault,
             disable_character_notes: PatchValue::UseLaunchDefault,
+            companion_mode: PatchValue::UseLaunchDefault,
             follow_group_members: true,
             ..CurrentConversationSettingsPatch::default()
         }
@@ -1636,6 +1655,7 @@ mod tests {
         .expect("reset");
         assert_eq!(reset.disable_character_lorebooks, None);
         assert_eq!(reset.disable_character_notes, None);
+        assert_eq!(reset.companion_mode, None);
         assert!(!reset.members_overridden && !reset.muted_overridden);
         assert!(reset.member_models_overridden);
         let models = CurrentConversationSettingsPatch {
@@ -1645,6 +1665,32 @@ mod tests {
         .apply(Some(&reset), Some(reset.revision))
         .expect("reset models");
         assert!(!models.member_models_overridden);
+    }
+
+    #[test]
+    fn companion_mode_override_cannot_be_cleared_and_resets_to_the_group() {
+        assert!(
+            CurrentConversationSettingsPatch {
+                companion_mode: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            }
+            .apply(None, None)
+            .is_err()
+        );
+        let owned = CurrentConversationSettingsPatch {
+            companion_mode: PatchValue::Set(true),
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(None, None)
+        .expect("set");
+        assert_eq!(owned.companion_mode, Some(true));
+        let reset = CurrentConversationSettingsPatch {
+            companion_mode: PatchValue::UseLaunchDefault,
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(Some(&owned), Some(owned.revision))
+        .expect("reset");
+        assert_eq!(reset.companion_mode, None);
     }
 
     #[test]

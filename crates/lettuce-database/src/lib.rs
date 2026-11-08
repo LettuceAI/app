@@ -218,6 +218,11 @@ const MIGRATION_30: Migration = Migration {
     sql: include_str!("../migrations/0030_roleplay_groups.sql"),
 };
 
+const MIGRATION_31: Migration = Migration {
+    id: 31,
+    sql: include_str!("../migrations/0031_group_companion_mode.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -249,6 +254,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_28,
     MIGRATION_29,
     MIGRATION_30,
+    MIGRATION_31,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

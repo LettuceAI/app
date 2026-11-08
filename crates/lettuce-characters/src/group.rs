@@ -44,6 +44,9 @@ pub struct GroupProfile {
     /// group's notes still apply.
     #[serde(default)]
     pub disable_character_notes: bool,
+    /// Members of the group's chats act as companions.
+    #[serde(default)]
+    pub companion_mode: bool,
     pub group_roleplay_prompt_id: Option<PromptDocumentId>,
     pub presentation: ChatAppearanceV1,
     #[serde(default)]
@@ -73,6 +76,7 @@ impl GroupProfile {
             disable_character_lorebooks: false,
             time_awareness: false,
             disable_character_notes: false,
+            companion_mode: false,
             group_roleplay_prompt_id: None,
             presentation: ChatAppearanceV1::default(),
             presentation_overrides: Some(std::collections::BTreeSet::new()),
@@ -177,6 +181,7 @@ mod tests {
             disable_character_lorebooks: false,
             time_awareness: false,
             disable_character_notes: false,
+            companion_mode: false,
             group_roleplay_prompt_id: None,
             presentation: ChatAppearanceV1::default(),
             presentation_overrides: None,

@@ -29,6 +29,7 @@ pub(crate) async fn draft(context: &ApiContext, character_id: String) -> dto::Gr
         disable_character_lorebooks: false,
         time_awareness: false,
         disable_character_notes: false,
+        companion_mode: false,
         group_roleplay_prompt_id: None,
         presentation: character.draft.presentation.chat_appearance,
         presentation_overrides: None,

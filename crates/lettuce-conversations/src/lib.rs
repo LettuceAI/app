@@ -1068,6 +1068,7 @@ mod tests {
             model_settings: PatchValue::Keep,
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
+            companion_mode: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2540,6 +2541,7 @@ mod tests {
             model_settings: PatchValue::Keep,
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
+            companion_mode: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2599,6 +2601,7 @@ mod tests {
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
             disable_character_lorebooks: None,
             disable_character_notes: None,
+            companion_mode: None,
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,
@@ -2648,6 +2651,7 @@ mod tests {
             model_settings: PatchValue::Keep,
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
+            companion_mode: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2679,6 +2683,7 @@ mod tests {
             model_settings: PatchValue::Keep,
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
+            companion_mode: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2722,6 +2727,7 @@ mod tests {
             model_settings: PatchValue::Keep,
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
+            companion_mode: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2861,6 +2867,7 @@ mod tests {
             model_settings: PatchValue::Keep,
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
+            companion_mode: Default::default(),
             follow_group_members: false,
             follow_group_member_models: false,
         };
@@ -2884,6 +2891,7 @@ mod tests {
         assert!(current.validate_against_kind(&direct.kind).is_ok());
         let mut direct_notes = current.clone();
         direct_notes.disable_character_notes = Some(true);
+        direct_notes.companion_mode = Some(true);
         assert!(direct_notes.validate_against_kind(&direct.kind).is_err());
         direct.kind = match direct.kind {
             ConversationKind::Direct(mut details) => {
@@ -2966,6 +2974,7 @@ mod tests {
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
             disable_character_lorebooks: None,
             disable_character_notes: None,
+            companion_mode: None,
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,

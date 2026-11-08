@@ -190,6 +190,67 @@ fn field(error: &dto::ApiError) -> Option<&str> {
     }
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn direct_background_follows_character_and_scene_until_overridden_then_resets() {
+    use lettuce_characters::{
+        CharacterMediaLink, CharacterMediaSlot, CharacterRepository, SceneAssetLink,
+        SceneAssetSlot, SceneRepository,
+    };
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let character_id = harness.character_id;
+    let character_image = image_asset(database);
+    let scene_image = image_asset(database);
+    let own_image = image_asset(database);
+    let character = CharacterRepository::get(database, character_id)
+        .expect("character").expect("exists").character;
+    let character = CharacterRepository::attach_media(
+        database, character_id, character.revision,
+        CharacterMediaLink { asset_id: character_image, slot: CharacterMediaSlot::Background, ordinal: 0 },
+        NOW,
+    ).expect("character background");
+    let scene = crate::launch::tests::text_scene(character_id, 0, "The garden.");
+    let scene_id = scene.id;
+    SceneRepository::add_scene(database, character_id, character.revision, scene, NOW)
+        .expect("scene");
+    let chat = crate::api::tests::launch(&harness, "direct-background").await;
+    let inherited = view(&harness, &chat).await;
+    assert_eq!(inherited.background.asset.map(|asset| asset.asset_id), id(character_image));
+    assert_eq!(inherited.background.source, dto::SettingSource::Character);
+    assert_eq!(listed_background(&harness, &chat).await, id(character_image));
+
+    let character = CharacterRepository::get(database, character_id)
+        .expect("character").expect("exists").character;
+    SceneRepository::replace_scene_assets(
+        database, character_id, character.revision, scene_id,
+        vec![SceneAssetLink { id: lettuce_types::SceneAssetLinkId::new(), asset_id: scene_image, slot: SceneAssetSlot::Background, ordinal: 0 }],
+        NOW,
+    ).expect("scene background");
+    let selected = update(&harness, &chat, inherited.settings_revision, dto::ConversationSettingsPatch {
+        scene: Some(dto::IdChange::Set { id: scene_id.to_string() }),
+        ..Default::default()
+    }).await.expect("select scene");
+    assert_eq!(selected.background.asset.map(|asset| asset.asset_id), id(scene_image));
+    assert_eq!(listed_background(&harness, &chat).await, id(scene_image));
+    let own = update(&harness, &chat, selected.settings_revision, dto::ConversationSettingsPatch {
+        background: Some(dto::BackgroundChange::Image { asset_id: own_image.to_string() }),
+        ..Default::default()
+    }).await.expect("own background");
+    assert_eq!(own.background.asset.map(|asset| asset.asset_id), id(own_image));
+    let hidden = update(&harness, &chat, own.settings_revision, dto::ConversationSettingsPatch {
+        background: Some(dto::BackgroundChange::Hidden), ..Default::default()
+    }).await.expect("hide background");
+    assert!(hidden.background.hidden);
+    assert!(hidden.background.asset.is_none());
+    assert_eq!(listed_background(&harness, &chat).await, None);
+    let reset = update(&harness, &chat, hidden.settings_revision, dto::ConversationSettingsPatch {
+        background: Some(dto::BackgroundChange::Reset), ..Default::default()
+    }).await.expect("reset background");
+    assert!(!reset.background.hidden);
+    assert_eq!(reset.background.asset.map(|asset| asset.asset_id), id(scene_image));
+    assert_eq!(listed_background(&harness, &chat).await, id(scene_image));
+}
+
 /// Each of the group's settings reaches an existing chat that does not set
 /// it; a key the chat set stays; a reset follows the group again.
 #[tokio::test(flavor = "multi_thread")]
@@ -990,6 +1051,78 @@ async fn settings_updates_resolve_ids_and_refuse_stale_revisions() {
     .await
     .expect("restore");
     assert!(restored.revision > archived.revision);
+}
+
+/// A group chat follows the group's companion mode until it sets its own.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_group_chat_follows_the_group_companion_mode_until_it_sets_its_own() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1)],
+        None,
+        |group| group.companion_mode = true,
+    );
+    let chat = launch_group(&harness, group_id, "companion-mode-launch").await;
+    let followed = view(&harness, &chat).await;
+    assert_eq!(
+        followed
+            .companion_mode
+            .map(|flag| (flag.value, flag.source)),
+        Some((true, dto::SettingSource::Group))
+    );
+    let own = update(
+        &harness,
+        &chat,
+        followed.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_mode: Some(dto::FlagChange::Set { value: false }),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect("own companion mode");
+    assert_eq!(
+        own.companion_mode.map(|flag| (flag.value, flag.source)),
+        Some((false, dto::SettingSource::Conversation))
+    );
+    let reset = update(
+        &harness,
+        &chat,
+        own.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_mode: Some(dto::FlagChange::Reset),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect("reset companion mode");
+    assert_eq!(
+        reset.companion_mode.map(|flag| (flag.value, flag.source)),
+        Some((true, dto::SettingSource::Group))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_direct_chat_rejects_a_companion_mode_override() {
+    let harness = harness(Reply::Text("Hello."));
+    let chat = crate::api::tests::launch(&harness, "companion-mode-direct-launch").await;
+    let current = view(&harness, &chat).await;
+    let error = update(
+        &harness,
+        &chat,
+        current.settings_revision,
+        dto::ConversationSettingsPatch {
+            companion_mode: Some(dto::FlagChange::Set { value: true }),
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect_err("direct companion mode");
+    assert_eq!(field(&error), Some("companion_mode"));
 }
 
 /// A one-to-one chat follows its character's memory mode every turn unless

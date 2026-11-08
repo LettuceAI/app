@@ -217,7 +217,7 @@ export async function selectScene(services: ConversationServices, message: Timel
 export function settingsPatch(change: Partial<ConversationSettingsPatch_Deserialize>): ConversationSettingsPatch_Deserialize {
   return {
     persona: null, prompt: null, lorebooks: null, model: null, background: null, scene: null, author_note: null,
-    speaker_selection: null, memory: null, disable_character_lorebooks: null, disable_character_notes: null, ...change,
+    speaker_selection: null, memory: null, disable_character_lorebooks: null, disable_character_notes: null, companion_mode: null, ...change,
   };
 }
 

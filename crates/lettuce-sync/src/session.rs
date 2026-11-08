@@ -548,17 +548,17 @@ mod tests {
         );
         assert_eq!(
             crate::CONVERSATION_SYNC_VERSION,
-            9,
-            "groups are roleplay-only"
+            10,
+            "group conversations carry a companion mode override"
         );
         assert_eq!(
             crate::GROUP_SYNC_VERSION,
-            5,
-            "a group is roleplay-only"
+            6,
+            "a group carries a companion mode"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "8ad781f6d0342fea8d0ae763edae16c613a3817cf23e05edf52319cc30f36481"
+            "2519ba23051f9181d09d4f36f720fefc2804cea34f6e5e1a54cdc0ff4137ce00"
         );
     }
 

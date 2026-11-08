@@ -759,6 +759,7 @@ mod tests {
         group.speaker_selection = SpeakerSelection::Director;
         group.time_awareness = true;
         group.disable_character_notes = true;
+        group.companion_mode = true;
         GroupRepository::create(
             backend.database(),
             CreateGroupPlan {
@@ -2190,7 +2191,11 @@ mod tests {
                 .authored
                 .groups
                 .iter()
-                .any(|details| details.group.time_awareness && details.group.disable_character_notes)
+                .any(|details| {
+                    details.group.time_awareness
+                        && details.group.disable_character_notes
+                        && details.group.companion_mode
+                })
         );
         assert_eq!(round_trip.asr_learning, restore_plan.graph.asr_learning);
         assert_eq!(

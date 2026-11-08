@@ -2094,7 +2094,7 @@ pub(crate) fn write_settings(
     if create {
         transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks, roleplay_prompt_json, roleplay_prompt_provenance, members_overridden, muted_overridden, member_models_overridden, disable_character_notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks, roleplay_prompt_json, roleplay_prompt_provenance, members_overridden, muted_overridden, member_models_overridden, disable_character_notes, companion_mode) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)",
                 params![
                     conversation_id.to_string(),
                     revision,
@@ -2129,6 +2129,7 @@ pub(crate) fn write_settings(
                     settings.muted_overridden,
                     settings.member_models_overridden,
                     settings.disable_character_notes,
+                    settings.companion_mode,
                 ],
             )
             .map_err(kernel::map_constraint)?;
@@ -2136,7 +2137,7 @@ pub(crate) fn write_settings(
     }
     let changed = transaction
         .execute(
-            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23, model_settings_json = ?24, background_asset_id = ?25, background_hidden = ?26, chat_mode = ?27, disable_character_lorebooks = ?28, roleplay_prompt_json = ?29, roleplay_prompt_provenance = ?30, members_overridden = ?31, muted_overridden = ?32, member_models_overridden = ?33, disable_character_notes = ?34 WHERE conversation_id = ?1 AND revision = ?20",
+            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23, model_settings_json = ?24, background_asset_id = ?25, background_hidden = ?26, chat_mode = ?27, disable_character_lorebooks = ?28, roleplay_prompt_json = ?29, roleplay_prompt_provenance = ?30, members_overridden = ?31, muted_overridden = ?32, member_models_overridden = ?33, disable_character_notes = ?34, companion_mode = ?35 WHERE conversation_id = ?1 AND revision = ?20",
             params![
                 conversation_id.to_string(),
                 revision,
@@ -2172,6 +2173,7 @@ pub(crate) fn write_settings(
                 settings.muted_overridden,
                 settings.member_models_overridden,
                 settings.disable_character_notes,
+                settings.companion_mode,
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -10045,6 +10047,7 @@ mod tests {
                             model_settings: PatchValue::Keep,
                             disable_character_lorebooks: Default::default(),
                             disable_character_notes: Default::default(),
+                            companion_mode: Default::default(),
                             follow_group_members: false,
                             follow_group_member_models: false,
                         },
@@ -17576,6 +17579,7 @@ mod tests {
                 model_settings: PatchValue::Keep,
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
+                companion_mode: Default::default(),
                 follow_group_members: false,
                 follow_group_member_models: false,
             }
@@ -18137,6 +18141,7 @@ mod tests {
                 speaker_selection: PatchValue::Keep,
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
+                companion_mode: Default::default(),
                 follow_group_members: false,
                 follow_group_member_models: false,
             }
@@ -18286,6 +18291,7 @@ mod tests {
                     speaker_selection: PatchValue::Keep,
                     disable_character_lorebooks: Default::default(),
                     disable_character_notes: Default::default(),
+                    companion_mode: Default::default(),
                     follow_group_members: false,
                     follow_group_member_models: false,
                 }
