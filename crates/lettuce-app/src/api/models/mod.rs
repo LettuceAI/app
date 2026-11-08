@@ -26,6 +26,8 @@ mod profiles_tests;
 mod tests;
 #[cfg(test)]
 mod memory_cycle_tests;
+#[cfg(test)]
+mod memory_capacity_tests;
 
 use std::{
     path::{Path, PathBuf},

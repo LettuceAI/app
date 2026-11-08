@@ -71,6 +71,12 @@ fn log_unsuccessful_settlement(job_id: lettuce_types::JobId, settled: &Companion
     }
 }
 
+enum MemoryPass {
+    Stopped,
+    Idle,
+    Progressed,
+}
+
 /// What keeps a forced memory cycle from starting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MemoryGate {
@@ -979,8 +985,8 @@ where
         Ok(())
     }
 
-    /// Runs passes until no turn asked for another or the conversation is
-    /// gone; a failed pass is logged.
+    /// Runs passes until no successful cycle or new turn can leave another
+    /// window due. Failed and idle passes wait for the next turn.
     #[allow(clippy::too_many_arguments)]
     pub async fn drive(
         &self,
@@ -999,7 +1005,7 @@ where
         );
         loop {
             scheduler.begin(conversation_id, branch_id);
-            if !self
+            match self
                 .run_pass(
                     conversation_id,
                     Some(branch_id),
@@ -1010,7 +1016,14 @@ where
                 )
                 .await
             {
-                return;
+                MemoryPass::Stopped => return,
+                MemoryPass::Idle => {}
+                MemoryPass::Progressed => {
+                    // Several turns can share one wake-up. A successful
+                    // cycle advances only one window, so check for the next
+                    // even when no turn arrived during this pass.
+                    scheduler.enqueue(conversation_id, branch_id);
+                }
             }
             if !scheduler.finish(conversation_id, branch_id) {
                 guard.release();
@@ -1182,15 +1195,15 @@ where
         lease_for: Duration,
         clock: &dyn lettuce_jobs::Clock,
         follow_ups: &dyn crate::CompanionFollowUps,
-    ) -> bool {
+    ) -> MemoryPass {
         let branch_id = match branch_id {
             Some(branch_id) => branch_id,
             None => match ConversationReader::get(self.repository, conversation_id) {
                 Ok(aggregate) => aggregate.conversation.active_branch_id,
-                Err(ConversationRepositoryError::NotFound) => return false,
+                Err(ConversationRepositoryError::NotFound) => return MemoryPass::Stopped,
                 Err(error) => {
                     tracing::warn!(%conversation_id, %error, "post-turn memory conversation could not be read");
-                    return true;
+                    return MemoryPass::Idle;
                 }
             },
         };
@@ -1205,19 +1218,21 @@ where
         ) {
             Ok(works) => works,
             Err(CompanionMemoryHostError::Conversation(ConversationRepositoryError::NotFound)) => {
-                return false;
+                return MemoryPass::Stopped;
             }
             Err(error) => {
                 tracing::warn!(%conversation_id, %error, "post-turn memory pass could not start");
-                return true;
+                return MemoryPass::Idle;
             }
         };
+        let mut progressed = false;
         for work in works {
             match self
                 .run_claimed(work, CancellationReason::User, clock.now())
                 .await
             {
                 Ok(settled) => {
+                    progressed |= matches!(&settled, CompanionMemorySettledWork::Succeeded { .. });
                     follow_ups
                         .after_memory(&settled, worker_id, lease_for, clock)
                         .await;
@@ -1227,7 +1242,7 @@ where
                 }
             }
         }
-        true
+        if progressed { MemoryPass::Progressed } else { MemoryPass::Idle }
     }
 
     fn queued_memory_jobs(
