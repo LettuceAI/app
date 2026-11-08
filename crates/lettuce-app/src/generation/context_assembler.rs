@@ -191,9 +191,7 @@ where
         snapshot.persona = persona.as_ref().map(crate::launch::documents::persona_body);
         let live_prompt = match &live_group {
             None => self.live_direct_prompt(&aggregate.conversation)?,
-            Some(group) => {
-                self.live_group_prompt(&aggregate.conversation, group, speaker_character)?
-            }
+            Some(_) => self.live_group_prompt(&aggregate.conversation, speaker_character)?,
         };
         let live_prompt = match &self.preview {
             Some(preview) => Some((preview.prompt.clone(), preview.name.clone())),
@@ -946,25 +944,16 @@ where
     fn live_group_prompt(
         &self,
         _conversation: &lettuce_conversations::Conversation,
-        live: &crate::generation::live_sources::LiveGroup,
         speaker: Option<CharacterId>,
     ) -> Result<Option<(PromptSnapshot, String)>, ContextAssemblyError> {
         let unavailable = || ContextAssemblyError::ConversationUnavailable;
-        let roleplay = live.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Roleplay;
         let member = speaker
             .map(|id| CharacterRepository::get(self.sources, id))
             .transpose()
             .map_err(|_| unavailable())?
             .flatten()
-            .and_then(|character| {
-                let defaults = character.character.defaults;
-                if roleplay {
-                    defaults.group_roleplay_prompt_id
-                } else {
-                    defaults.group_conversation_prompt_id
-                }
-            });
-        crate::launch::policy::group_prompt(self.sources, live.chat_mode, member)
+            .and_then(|character| character.character.defaults.group_roleplay_prompt_id);
+        crate::launch::policy::group_prompt(self.sources, member)
             .map_err(|_| unavailable())?
             .map(|document| {
                 prompt_document(
@@ -2648,9 +2637,6 @@ fn prompt_purpose(purpose: lettuce_conversations::PromptPurposeV1) -> PromptPurp
     match purpose {
         lettuce_conversations::PromptPurposeV1::DirectChat => PromptPurpose::DirectChat,
         lettuce_conversations::PromptPurposeV1::CompanionChat => PromptPurpose::CompanionChat,
-        lettuce_conversations::PromptPurposeV1::GroupChatConversational => {
-            PromptPurpose::GroupChatConversational
-        }
         lettuce_conversations::PromptPurposeV1::GroupChatRoleplay => {
             PromptPurpose::GroupChatRoleplay
         }

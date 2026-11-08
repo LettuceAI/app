@@ -131,10 +131,10 @@ pub fn character_plan_from_candidate<R: CharacterPlanResolver + ?Sized>(
                 })
                 .map(|starter| resolver.starter(starter.id)),
             direct_prompt_id: prompt(&candidate.defaults.direct_prompt_source_id),
-            group_conversation_prompt_id: prompt(
-                &candidate.defaults.group_conversation_prompt_source_id,
-            ),
-            group_roleplay_prompt_id: prompt(&candidate.defaults.group_roleplay_prompt_source_id),
+            group_roleplay_prompt_id: prompt(&candidate.defaults.group_roleplay_prompt_source_id)
+                .or(prompt(
+                    &candidate.defaults.group_conversation_prompt_source_id,
+                )),
             voice: candidate.defaults.voice.clone().map(|voice| match voice {
                 lettuce_characters::VoicePreference::VoiceProfile(id) => {
                     lettuce_characters::VoicePreference::VoiceProfile(resolver.voice_profile(id))

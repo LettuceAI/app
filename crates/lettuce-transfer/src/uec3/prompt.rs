@@ -40,9 +40,6 @@ impl TryFrom<lettuce_context::PromptPurpose> for PromptPurpose {
             lettuce_context::PromptPurpose::DirectChat => Self::DirectChat,
             lettuce_context::PromptPurpose::CompanionChat => Self::CompanionChat,
             lettuce_context::PromptPurpose::GroupChatRoleplay => Self::GroupChatRoleplay,
-            lettuce_context::PromptPurpose::GroupChatConversational => {
-                Self::GroupChatConversational
-            }
             lettuce_context::PromptPurpose::DynamicMemorySummarizer => {
                 Self::DynamicMemorySummarizer
             }
@@ -86,7 +83,7 @@ impl From<PromptPurpose> for lettuce_context::PromptPurpose {
             PromptPurpose::DirectChat => Self::DirectChat,
             PromptPurpose::CompanionChat => Self::CompanionChat,
             PromptPurpose::GroupChatRoleplay => Self::GroupChatRoleplay,
-            PromptPurpose::GroupChatConversational => Self::GroupChatConversational,
+            PromptPurpose::GroupChatConversational => Self::GroupChatRoleplay,
             PromptPurpose::DynamicMemorySummarizer => Self::DynamicMemorySummarizer,
             PromptPurpose::DynamicMemoryManager => Self::DynamicMemoryManager,
             PromptPurpose::ReplyHelperRoleplay => Self::ReplyHelperRoleplay,

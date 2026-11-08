@@ -4,7 +4,6 @@ export const KIND_LABEL: Record<Kind, string> = {
   direct_chat: "One-on-one chat",
   companion_chat: "Companion chat",
   group_chat_roleplay: "Group roleplay",
-  group_chat_conversational: "Group conversation",
   reply_helper_roleplay: "Help me reply, roleplay",
   reply_helper_conversational: "Help me reply, conversation",
   dynamic_memory_summarizer: "Memory summary",
@@ -29,7 +28,6 @@ export const KIND_PURPOSE: Record<Kind, string> = {
   direct_chat: "Talks as the character in one-on-one chats",
   companion_chat: "Talks as a companion, with feelings and memories",
   group_chat_roleplay: "Group chats that play out a scene",
-  group_chat_conversational: "Group chats that are just talk",
   reply_helper_roleplay: "Drafts your next message in a roleplay",
   reply_helper_conversational: "Drafts your next message in a conversation",
   dynamic_memory_summarizer: "Writes the running summary of a chat",
@@ -52,7 +50,7 @@ export const KIND_PURPOSE: Record<Kind, string> = {
 
 export type KindGroup = "chat" | "helpers" | "memory" | "lorebook" | "images" | "companion";
 export const KIND_GROUPS: readonly { id: KindGroup; label: string; kinds: readonly Kind[] }[] = [
-  { id: "chat", label: "Chat", kinds: ["direct_chat", "companion_chat", "group_chat_roleplay", "group_chat_conversational"] },
+  { id: "chat", label: "Chat", kinds: ["direct_chat", "companion_chat", "group_chat_roleplay"] },
   { id: "helpers", label: "Help me reply", kinds: ["reply_helper_roleplay", "reply_helper_conversational"] },
   { id: "memory", label: "Memory", kinds: ["dynamic_memory_summarizer", "dynamic_memory_manager"] },
   { id: "lorebook", label: "Lorebooks", kinds: ["lorebook_entry_writer", "lorebook_keyword_generator", "lorebook_generator_planner", "lorebook_generator_writer", "lorebook_generator_refine", "lorebook_generator_coherence"] },

@@ -112,6 +112,7 @@ pub struct CharacterBehavior {
 #[serde(rename_all = "camelCase")]
 pub struct CharacterPrompts {
     pub direct: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_conversation: Option<String>,
     pub group_roleplay: Option<String>,
 }

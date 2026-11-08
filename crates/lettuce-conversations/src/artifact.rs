@@ -873,9 +873,6 @@ pub fn conversation_settings_snapshot_references(
     if let Some(prompt) = &settings.prompt {
         refs.push(&prompt.snapshot_ref);
     }
-    if let Some(prompt) = &settings.roleplay_prompt {
-        refs.push(&prompt.snapshot_ref);
-    }
     if let Some(lorebooks) = &settings.lorebooks {
         refs.extend(lorebooks.iter().map(|book| &book.snapshot_ref));
     }
@@ -909,9 +906,6 @@ fn conversation_settings_patch_snapshot_references(
         refs.push(&voice.snapshot_ref);
     }
     if let PatchValue::Set(prompt) = &patch.prompt {
-        refs.push(&prompt.snapshot_ref);
-    }
-    if let PatchValue::Set(prompt) = &patch.roleplay_prompt {
         refs.push(&prompt.snapshot_ref);
     }
     if let PatchValue::Set(lorebooks) = &patch.lorebooks {

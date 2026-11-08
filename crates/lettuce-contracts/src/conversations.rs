@@ -1151,10 +1151,8 @@ pub struct ConversationSettingsView {
     pub settings_revision: Option<u64>,
     pub author_note: Option<String>,
     pub persona: SettingChoice,
-    /// The one-to-one prompt, or a group's conversation-mode prompt.
+    /// The one-to-one prompt.
     pub prompt: SettingChoice,
-    /// A group's roleplay-mode prompt.
-    pub roleplay_prompt: Option<SettingChoice>,
     pub lorebooks: SettingChoices,
     pub model: SettingChoice,
     pub background: SettingBackground,
@@ -1289,7 +1287,6 @@ pub struct ConversationSettingsPatch {
     pub time_awareness: Option<bool>,
     pub persona: Option<ChoiceChange>,
     pub prompt: Option<ChoiceChange>,
-    pub roleplay_prompt: Option<ChoiceChange>,
     pub lorebooks: Option<LorebooksChange>,
     pub model: Option<IdChange>,
     pub background: Option<BackgroundChange>,

@@ -102,7 +102,6 @@
     "prompts": "Промпты",
     "directPrompt": "Личные чаты",
     "groupRoleplayPrompt": "Групповая ролевая игра",
-    "groupConversationPrompt": "Групповой разговор",
     "companionPrompt": "Компаньон",
     "promptUnavailable": "Не удалось загрузить промпты"
   },

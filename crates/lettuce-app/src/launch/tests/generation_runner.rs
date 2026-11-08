@@ -9714,7 +9714,7 @@ async fn a_group_reasoning_condition_reads_only_the_models_own_setting() {
         database,
         lettuce_context::PromptMetadataDraft {
             name: "Group reasoning".into(),
-            purpose: PromptPurpose::GroupChatConversational,
+            purpose: PromptPurpose::GroupChatRoleplay,
             condense: false,
             behavior_version: PromptBehaviorVersion::LegacyV1,
         },
@@ -9743,10 +9743,10 @@ async fn a_group_reasoning_condition_reads_only_the_models_own_setting() {
             for member in &group.members {
                 let character = lettuce_characters::CharacterRepository::get(database, member.character_id).expect("character").expect("exists").character;
                 let mut defaults = character.defaults;
-                defaults.group_conversation_prompt_id = Some(prompt_id);
+                defaults.group_roleplay_prompt_id = Some(prompt_id);
                 lettuce_characters::CharacterRepository::update_defaults(database, member.character_id, character.revision, defaults, TimestampMillis::new(1_001)).expect("member group prompt");
             }
-            group.group_conversation_prompt_id = Some(prompt_id);
+            group.group_roleplay_prompt_id = Some(prompt_id);
             let model_id = GlobalSettingsStore::load(database)
                 .expect("settings")
                 .default_model_profile_id

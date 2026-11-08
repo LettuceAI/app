@@ -1181,10 +1181,6 @@ pub struct CurrentConversationSettingsPatch {
     /// to the group's method.
     #[serde(default)]
     pub speaker_selection: PatchValue<crate::snapshot::GroupSpeakerSelectionSnapshot>,
-    /// Group conversations only: the roleplay-mode prompt; `prompt` is the
-    /// conversation-mode one.
-    #[serde(default)]
-    pub roleplay_prompt: PatchValue<PromptLaunchSnapshot>,
     /// Group conversations only; it cannot be cleared, only set or returned
     /// to the group's.
     #[serde(default)]
@@ -1237,9 +1233,6 @@ impl CurrentConversationSettingsPatch {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.disable_character_notes",
             });
-        }
-        if let PatchValue::Set(prompt) = &self.roleplay_prompt {
-            prompt.validate()?;
         }
         if let PatchValue::Set(note) = &self.author_note {
             validate_text(
@@ -1395,12 +1388,6 @@ impl CurrentConversationSettingsPatch {
             base.speaker_selection_provenance,
             current.is_some(),
         );
-        let (roleplay_prompt, roleplay_prompt_provenance) = apply_value(
-            &self.roleplay_prompt,
-            base.roleplay_prompt.as_ref(),
-            base.roleplay_prompt_provenance,
-            current.is_some(),
-        );
         let result = crate::model::CurrentConversationSettings {
             companion_clock: match self.companion_clock {
                 PatchValue::Keep => base.companion_clock,
@@ -1451,8 +1438,6 @@ impl CurrentConversationSettingsPatch {
                 PatchValue::Set(disabled) => Some(disabled),
                 PatchValue::Clear | PatchValue::UseLaunchDefault => None,
             },
-            roleplay_prompt,
-            roleplay_prompt_provenance,
             members_overridden: base.members_overridden && !self.follow_group_members,
             muted_overridden: base.muted_overridden && !self.follow_group_members,
             member_models_overridden: base.member_models_overridden

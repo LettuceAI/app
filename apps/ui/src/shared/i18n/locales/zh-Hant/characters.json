@@ -96,7 +96,6 @@
     "prompts": "提示",
     "directPrompt": "一對一對話",
     "groupRoleplayPrompt": "群組角色扮演",
-    "groupConversationPrompt": "群組對話",
     "companionPrompt": "夥伴",
     "promptUnavailable": "無法載入提示"
   },

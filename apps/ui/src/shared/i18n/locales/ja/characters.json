@@ -96,7 +96,6 @@
     "prompts": "プロンプト",
     "directPrompt": "1対1のチャット",
     "groupRoleplayPrompt": "グループロールプレイ",
-    "groupConversationPrompt": "グループ会話",
     "companionPrompt": "コンパニオン",
     "promptUnavailable": "プロンプトを読み込めませんでした"
   },

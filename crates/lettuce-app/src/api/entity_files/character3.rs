@@ -298,8 +298,8 @@ pub(in crate::api) fn prepare(
             .map(|key| reference(&starter_ids, key))
             .transpose()?,
         direct_prompt_id: prompt(&card.behavior.prompts.direct)?,
-        group_conversation_prompt_id: prompt(&card.behavior.prompts.group_conversation)?,
-        group_roleplay_prompt_id: prompt(&card.behavior.prompts.group_roleplay)?,
+        group_roleplay_prompt_id: prompt(&card.behavior.prompts.group_roleplay)?
+            .or(prompt(&card.behavior.prompts.group_conversation)?),
         model_profile_id: import_model_hint(context, card.behavior.model.as_ref(), warnings)?,
         voice: import_voice(context, card.behavior.voice.provider.as_ref(), warnings)?,
         voice_autoplay: card.behavior.voice.autoplay,
@@ -477,7 +477,7 @@ pub(super) fn export(
     };
     let prompts = wire::CharacterPrompts {
         direct: prompt(character.defaults.direct_prompt_id)?,
-        group_conversation: prompt(character.defaults.group_conversation_prompt_id)?,
+        group_conversation: None,
         group_roleplay: prompt(character.defaults.group_roleplay_prompt_id)?,
     };
     let companion = export_companion(character.defaults.companion_soul.as_ref(), &mut prompt)?;

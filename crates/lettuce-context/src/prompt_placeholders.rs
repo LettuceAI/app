@@ -33,14 +33,6 @@ const DIRECT_CHAT: &[&str] = &[
     "{{content_rules}}",
     "{{scene_cast_lora}}",
 ];
-const GROUP_CHAT_CONVERSATIONAL: &[&str] = &[
-    "{{char.name}}",
-    "{{char.desc}}",
-    "{{persona.name}}",
-    "{{persona.desc}}",
-    "{{group_characters}}",
-    "{{scene_cast_lora}}",
-];
 const GROUP_CHAT_ROLEPLAY: &[&str] = &[
     "{{scene}}",
     "{{scene_direction}}",
@@ -175,7 +167,6 @@ fn groups(purpose: PromptPurpose) -> Vec<&'static [&'static str]> {
     match purpose {
         Purpose::Undefined | Purpose::RuntimeText => vec![
             DIRECT_CHAT,
-            GROUP_CHAT_CONVERSATIONAL,
             GROUP_CHAT_ROLEPLAY,
             MEMORY_SUMMARIZER,
             MEMORY_MANAGER,
@@ -188,7 +179,6 @@ fn groups(purpose: PromptPurpose) -> Vec<&'static [&'static str]> {
         ],
         Purpose::DirectChat | Purpose::CompanionChat => vec![DIRECT_CHAT],
         Purpose::GroupChatRoleplay => vec![GROUP_CHAT_ROLEPLAY],
-        Purpose::GroupChatConversational => vec![GROUP_CHAT_CONVERSATIONAL],
         Purpose::DynamicMemorySummarizer => vec![MEMORY_SUMMARIZER],
         Purpose::DynamicMemoryManager => vec![MEMORY_MANAGER],
         Purpose::ReplyHelperRoleplay | Purpose::ReplyHelperConversational => vec![REPLY_HELPER],
@@ -240,13 +230,6 @@ fn required(purpose: PromptPurpose) -> &'static [&'static str] {
             "{{group_characters}}",
             "{{context_summary}}",
             "{{key_memories}}",
-        ],
-        Purpose::GroupChatConversational => &[
-            "{{char.name}}",
-            "{{char.desc}}",
-            "{{persona.name}}",
-            "{{persona.desc}}",
-            "{{group_characters}}",
         ],
         Purpose::DynamicMemorySummarizer => &["{{prev_summary}}"],
         Purpose::DynamicMemoryManager => &["{{max_entries}}"],

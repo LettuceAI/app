@@ -208,6 +208,11 @@ const MIGRATION_28: Migration = Migration {
     sql: include_str!("../migrations/0028_group_companion.sql"),
 };
 
+const MIGRATION_29: Migration = Migration {
+    id: 29,
+    sql: include_str!("../migrations/0029_group_prompt.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -237,6 +242,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_26,
     MIGRATION_27,
     MIGRATION_28,
+    MIGRATION_29,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

@@ -470,12 +470,11 @@ describe("character creation", () => {
     expect(screen.queryByRole("button", { name: "Scene 2" })).toBeNull();
   });
 
-  it("keeps prompt slots separate and only shows the companion slot in companion mode", async () => {
+  it("shows exactly one group prompt setting and only shows the companion slot in companion mode", async () => {
     const catalog: PromptSummary[] = [
       { id: "direct-default", name: "Local RP Default", kind: "direct_chat", archived: false, origin: { type: "user" }, app_default: true, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
       { id: "direct-bundled", name: "Built-in RP", kind: "direct_chat", archived: false, origin: { type: "built_in", key: "prompt_app_default", protected: true, required: true, edited: false }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
       { id: "group-rp-default", name: "Group RP", kind: "group_chat_roleplay", archived: false, origin: { type: "built_in", key: "prompt_app_group_chat_roleplay", protected: true, required: true, edited: false }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
-      { id: "group-chat-default", name: "Group Chat", kind: "group_chat_conversational", archived: false, origin: { type: "built_in", key: "prompt_app_group_chat", protected: true, required: true, edited: false }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
       { id: "companion-default", name: "Companion Default", kind: "companion_chat", archived: false, origin: { type: "built_in", key: "prompt_app_companion", protected: true, required: true, edited: false }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
     ];
     const prompts = vi.fn(({ kind }: { kind?: PromptKind | null }) => ({ status: "ok" as const, data: { items: catalog.filter((entry) => entry.kind === kind), next_cursor: null } }));
@@ -484,8 +483,9 @@ describe("character creation", () => {
     expect((await screen.findByRole("radio", { name: "Roleplay" })).getAttribute("aria-checked")).toBe("true");
     await fillRequired();
     await waitFor(() => expect(screen.getByRole("button", { name: /^One-to-one chats/ }).textContent).toContain("Local RP Default"));
-    await waitFor(() => expect(screen.getByRole("button", { name: /^Group roleplay/ }).textContent).toContain("Group RP"));
-    await waitFor(() => expect(screen.getByRole("button", { name: /^Group conversation/ }).textContent).toContain("Group Chat"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Group chat prompt/ }).textContent).toContain("Group RP"));
+    expect(screen.getAllByRole("button", { name: /^Group chat prompt/ })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Group conversation/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Companion/ })).toBeNull();
     expect(prompts.mock.calls.some(([request]) => request.kind === "companion_chat")).toBe(false);
     const choose = async (slot: string, prompt: string) => {
@@ -496,8 +496,7 @@ describe("character creation", () => {
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     };
     await choose("One-to-one chats", "Local RP Default");
-    await choose("Group roleplay", "Group RP");
-    await choose("Group conversation", "Group Chat");
+    await choose("Group chat prompt", "Group RP");
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await screen.findByRole("textbox", { name: "Opening message" });
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -515,7 +514,7 @@ describe("character creation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Create character" }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save.mock.calls[0]![0].draft.defaults).toMatchObject({
-      interaction_mode: "companion", direct_prompt_id: "direct-default", group_roleplay_prompt_id: "group-rp-default", group_conversation_prompt_id: "group-chat-default",
+      interaction_mode: "companion", direct_prompt_id: "direct-default", group_roleplay_prompt_id: "group-rp-default",
       companion_soul: { prompting: { prompt_template_id: "companion-default", style_notes: "" } },
     });
   });

@@ -59,7 +59,7 @@ pub(crate) fn character_body(character: &Character) -> CharacterSnapshotBodyV1 {
         default_scene_id: defaults.default_scene_id,
         default_starter_id: defaults.default_starter_id,
         direct_prompt_id: defaults.direct_prompt_id,
-        group_conversation_prompt_id: defaults.group_conversation_prompt_id,
+        group_conversation_prompt_id: None,
         group_roleplay_prompt_id: defaults.group_roleplay_prompt_id,
         voice: defaults.voice.as_ref().map(|voice| match voice {
             VoicePreference::VoiceProfile(id) => {
@@ -418,7 +418,6 @@ pub(crate) const fn prompt_purpose(value: PromptPurpose) -> PromptPurposeV1 {
         PromptPurpose::DirectChat => PromptPurposeV1::DirectChat,
         PromptPurpose::CompanionChat => PromptPurposeV1::CompanionChat,
         PromptPurpose::GroupChatRoleplay => PromptPurposeV1::GroupChatRoleplay,
-        PromptPurpose::GroupChatConversational => PromptPurposeV1::GroupChatConversational,
         PromptPurpose::DynamicMemorySummarizer => PromptPurposeV1::DynamicMemorySummarizer,
         PromptPurpose::DynamicMemoryManager => PromptPurposeV1::DynamicMemoryManager,
         PromptPurpose::ReplyHelperRoleplay => PromptPurposeV1::ReplyHelperRoleplay,

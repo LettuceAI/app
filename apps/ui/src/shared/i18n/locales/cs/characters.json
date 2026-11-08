@@ -102,7 +102,6 @@
     "prompts": "Prompty",
     "directPrompt": "Chaty jedna na jednoho",
     "groupRoleplayPrompt": "Skupinový roleplay",
-    "groupConversationPrompt": "Skupinová konverzace",
     "companionPrompt": "Společník",
     "promptUnavailable": "Prompty se nepodařilo načíst"
   },

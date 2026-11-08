@@ -218,7 +218,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
     assert_eq!(launched.memory.mode, dto::MemoryMode::Manual);
 
     let persona = seed_persona(database, "Wren");
-    let talk = seed_prompt(database, "Talk", PromptPurpose::GroupChatConversational);
     let play = seed_prompt(database, "Play", PromptPurpose::GroupChatRoleplay);
     let book = seed_lorebook(database, "Lore");
     let model = seed_model(database, ProviderProtocol::Ollama, "member-model");
@@ -267,7 +266,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         database,
         group_id,
         group_revision(&harness, group_id),
-        Some(talk),
         Some(play),
         NOW,
     )
@@ -357,7 +355,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         Some((true, group))
     );
     assert_eq!(live.prompt, dto::SettingChoice { id: None, source: dto::SettingSource::Character });
-    assert_eq!(live.roleplay_prompt, None);
     assert_eq!(
         live.background
             .asset
@@ -501,7 +498,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         }
     );
     assert_eq!(kept.prompt, dto::SettingChoice { id: None, source: dto::SettingSource::Character });
-    assert_eq!(kept.roleplay_prompt, None);
     assert_eq!(
         (kept.lorebooks.ids.len(), kept.lorebooks.source),
         (0, conversation)
@@ -542,7 +538,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         dto::ConversationSettingsPatch {
             persona: Some(dto::ChoiceChange::Reset),
             prompt: Some(dto::ChoiceChange::Reset),
-            roleplay_prompt: Some(dto::ChoiceChange::Reset),
             lorebooks: Some(dto::LorebooksChange::Reset),
             background: Some(dto::BackgroundChange::Reset),
             scene: Some(dto::IdChange::Reset),
@@ -565,7 +560,6 @@ async fn a_group_chat_follows_each_group_setting_until_it_sets_the_key_itself() 
         }
     );
     assert_eq!(reset.prompt, dto::SettingChoice { id: None, source: dto::SettingSource::Character });
-    assert_eq!(reset.roleplay_prompt, None);
     assert_eq!(reset.lorebooks.ids, vec![book.to_string()]);
     assert_eq!(reset.background.source, group);
     assert_eq!(reset.scene.source, group);

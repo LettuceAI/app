@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(crate::CONVERSATION_MESSAGE_SYNC_VERSION, 5);
-        assert_eq!(crate::PROMPT_SYNC_VERSION, 2);
+        assert_eq!(crate::PROMPT_SYNC_VERSION, 3);
         assert_eq!(
             crate::JOB_USAGE_SYNC_VERSION,
             2,
@@ -543,22 +543,22 @@ mod tests {
         );
         assert_eq!(
             crate::CHARACTER_SYNC_VERSION,
-            5,
+            6,
             "time awareness is a character default and no longer part of the companion soul"
         );
         assert_eq!(
             crate::CONVERSATION_SYNC_VERSION,
-            7,
+            8,
             "a group conversation may override the character-notes switch"
         );
         assert_eq!(
             crate::GROUP_SYNC_VERSION,
-            3,
+            4,
             "a group carries a time awareness default and a character-notes switch"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "1f3935c5b5260454ab4c69ca186a76955c847f0fe335dd7dfe146cc9f92cdcfb"
+            "a1ea6821851318a68381d63d3c8b1294140d47342c0dafa3750ed413ae8c5ef3"
         );
     }
 

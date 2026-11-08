@@ -96,7 +96,6 @@
     "prompts": "Prompt",
     "directPrompt": "Obrolan pribadi",
     "groupRoleplayPrompt": "Roleplay grup",
-    "groupConversationPrompt": "Percakapan grup",
     "companionPrompt": "Companion",
     "promptUnavailable": "Tidak dapat memuat prompt"
   },

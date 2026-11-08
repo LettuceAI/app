@@ -783,13 +783,15 @@ impl GroupConversationDetails {
             });
         }
         self.group.validate()?;
-        let expected = match self.group.chat_mode {
-            GroupChatModeSnapshot::Conversation => PromptPurposeSnapshot::GroupConversational,
-            GroupChatModeSnapshot::Roleplay => PromptPurposeSnapshot::GroupRoleplay,
+        let group_purpose = |purpose| {
+            matches!(
+                purpose,
+                PromptPurposeSnapshot::GroupConversational | PromptPurposeSnapshot::GroupRoleplay
+            )
         };
         if let SnapshotSelection::Inherited(prompt) | SnapshotSelection::Explicit(prompt) =
             &self.group.prompt
-            && prompt.purpose != expected
+            && !group_purpose(prompt.purpose)
         {
             return Err(ValidationError::InvalidReference {
                 field: "group.prompt.purpose",
@@ -798,7 +800,7 @@ impl GroupConversationDetails {
         for member in &self.group.members {
             if let SnapshotSelection::Inherited(prompt) | SnapshotSelection::Explicit(prompt) =
                 &member.prompt
-                && prompt.purpose != expected
+                && !group_purpose(prompt.purpose)
             {
                 return Err(ValidationError::InvalidReference {
                     field: "group.member.prompt.purpose",

@@ -45,7 +45,6 @@ pub struct GroupProfile {
     /// group's notes still apply.
     #[serde(default)]
     pub disable_character_notes: bool,
-    pub group_conversation_prompt_id: Option<PromptDocumentId>,
     pub group_roleplay_prompt_id: Option<PromptDocumentId>,
     pub presentation: ChatAppearanceV1,
     #[serde(default)]
@@ -76,7 +75,6 @@ impl GroupProfile {
             disable_character_lorebooks: false,
             time_awareness: false,
             disable_character_notes: false,
-            group_conversation_prompt_id: None,
             group_roleplay_prompt_id: None,
             presentation: ChatAppearanceV1::default(),
             presentation_overrides: Some(std::collections::BTreeSet::new()),
@@ -182,7 +180,6 @@ mod tests {
             disable_character_lorebooks: false,
             time_awareness: false,
             disable_character_notes: false,
-            group_conversation_prompt_id: None,
             group_roleplay_prompt_id: None,
             presentation: ChatAppearanceV1::default(),
             presentation_overrides: None,

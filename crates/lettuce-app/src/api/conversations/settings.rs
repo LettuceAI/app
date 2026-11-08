@@ -200,7 +200,6 @@ pub(crate) fn settings_view(
                 author_note: own.and_then(|settings| settings.author_note.clone()),
                 persona: choice(persona, persona_source),
                 prompt,
-                roleplay_prompt: None,
                 lorebooks,
                 model,
                 background,
@@ -299,7 +298,6 @@ pub(crate) fn settings_view(
                 author_note: own.and_then(|settings| settings.author_note.clone()),
                 persona: choice(persona, persona_source),
                 prompt: choice::<PromptDocumentId>(None, dto::SettingSource::Character),
-                roleplay_prompt: None,
                 lorebooks,
                 model,
                 background,
@@ -812,10 +810,6 @@ fn settings_change(
         time_awareness: patch.time_awareness,
         persona: choice_change::<PersonaId>(patch.persona, "persona_id")?,
         prompt: choice_change::<PromptDocumentId>(patch.prompt, "prompt_id")?,
-        roleplay_prompt: choice_change::<PromptDocumentId>(
-            patch.roleplay_prompt,
-            "roleplay_prompt_id",
-        )?,
         lorebooks: patch
             .lorebooks
             .map(|change| {

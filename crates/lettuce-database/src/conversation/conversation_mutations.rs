@@ -2091,11 +2091,6 @@ pub(crate) fn write_settings(
     let lorebooks = settings.lorebooks.as_ref().map(slice::encode).transpose()?;
     let persona = settings.persona.as_ref().map(slice::encode).transpose()?;
     let scene = settings.scene.as_ref().map(slice::encode).transpose()?;
-    let roleplay_prompt = settings
-        .roleplay_prompt
-        .as_ref()
-        .map(slice::encode)
-        .transpose()?;
     if create {
         transaction
             .execute(
@@ -2128,8 +2123,8 @@ pub(crate) fn write_settings(
                     crate::conversation::conversation_vertical_slice::background_hidden(settings.background),
                     settings.chat_mode.map(slice::chat_mode_name),
                     settings.disable_character_lorebooks,
-                    roleplay_prompt,
-                    slice::provenance_name(settings.roleplay_prompt_provenance),
+                    Option::<String>::None,
+                    slice::provenance_name(lettuce_conversations::SettingProvenance::LaunchInherited),
                     settings.members_overridden,
                     settings.muted_overridden,
                     settings.member_models_overridden,
@@ -2171,8 +2166,8 @@ pub(crate) fn write_settings(
                     crate::conversation::conversation_vertical_slice::background_hidden(settings.background),
                 settings.chat_mode.map(slice::chat_mode_name),
                 settings.disable_character_lorebooks,
-                roleplay_prompt,
-                slice::provenance_name(settings.roleplay_prompt_provenance),
+                Option::<String>::None,
+                slice::provenance_name(lettuce_conversations::SettingProvenance::LaunchInherited),
                 settings.members_overridden,
                 settings.muted_overridden,
                 settings.member_models_overridden,
@@ -10048,7 +10043,6 @@ mod tests {
                             companion_clock: PatchValue::Keep,
                             background: PatchValue::Keep,
                             model_settings: PatchValue::Keep,
-                            roleplay_prompt: Default::default(),
                             chat_mode: Default::default(),
                             disable_character_lorebooks: Default::default(),
                             disable_character_notes: Default::default(),
@@ -17581,7 +17575,6 @@ mod tests {
                 companion_clock: PatchValue::Keep,
                 background: PatchValue::Keep,
                 model_settings: PatchValue::Keep,
-                roleplay_prompt: Default::default(),
                 chat_mode: Default::default(),
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
@@ -18144,7 +18137,6 @@ mod tests {
                 persona: PatchValue::Keep,
                 scene: PatchValue::Keep,
                 speaker_selection: PatchValue::Keep,
-                roleplay_prompt: Default::default(),
                 chat_mode: Default::default(),
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),
@@ -18260,17 +18252,24 @@ mod tests {
     }
 
     #[test]
-    fn group_conversational_settings_accept_prompt_but_reject_scene() {
+    fn group_settings_reject_prompt_and_scene() {
         let fixture = group_fixture();
+        assert!(matches!(
+            ConversationReader::get(&*fixture.database, fixture.conversation_id)
+                .expect("conversation")
+                .conversation
+                .kind,
+            ConversationKind::Group(_)
+        ));
         let prompt_id = lettuce_types::PromptDocumentId::new();
         let (prompt_ref, prompt_draft) =
             artifact(SnapshotSource::Prompt(prompt_id), b"group prompt");
         let prompt = lettuce_conversations::PromptLaunchSnapshot {
-            snapshot_ref: prompt_ref,
+            snapshot_ref: prompt_ref.clone(),
             source_id: prompt_id,
             source_revision: Revision::INITIAL,
             title: "Group prompt".into(),
-            purpose: lettuce_conversations::PromptPurposeSnapshot::GroupConversational,
+            purpose: lettuce_conversations::PromptPurposeSnapshot::GroupRoleplay,
         };
         let patch =
             |prompt: PatchValue<lettuce_conversations::PromptLaunchSnapshot>,
@@ -18288,7 +18287,6 @@ mod tests {
                     persona: PatchValue::Keep,
                     scene,
                     speaker_selection: PatchValue::Keep,
-                    roleplay_prompt: Default::default(),
                     chat_mode: Default::default(),
                     disable_character_lorebooks: Default::default(),
                     disable_character_notes: Default::default(),
@@ -18296,22 +18294,34 @@ mod tests {
                     follow_group_member_models: false,
                 }
             };
-        fixture
-            .database
-            .update_settings(
-                PreparedConversationSettingsUpdate::new(
-                    UpdateConversationSettings {
-                        conversation_id: fixture.conversation_id,
-                        expected_settings_revision: None,
-                        operation: token("group-settings-prompt", "34"),
-                        patch: patch(PatchValue::Set(prompt), PatchValue::Keep),
-                    },
-                    vec![prompt_draft],
-                )
-                .expect("prepared group prompt"),
-                TimestampMillis::new(20),
+        let result = fixture.database.update_settings(
+            PreparedConversationSettingsUpdate::new(
+                UpdateConversationSettings {
+                    conversation_id: fixture.conversation_id,
+                    expected_settings_revision: None,
+                    operation: token("group-settings-prompt", "34"),
+                    patch: patch(PatchValue::Set(prompt), PatchValue::Keep),
+                },
+                vec![prompt_draft],
             )
-            .expect("group prompt");
+            .expect("prepared group prompt"),
+            TimestampMillis::new(20),
+        );
+        assert!(
+            matches!(result, Err(ConversationRepositoryError::Invalid(_))),
+            "{result:?}"
+        );
+        let prompt_artifact_count: i64 = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT count(*) FROM conversation_snapshot_artifacts WHERE artifact_id = ?1",
+                [prompt_ref.artifact_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("prompt rollback");
+        assert_eq!(prompt_artifact_count, 0);
 
         let scene_id = lettuce_types::SceneId::new();
         let (scene_ref, scene_draft) = artifact(SnapshotSource::Scene(scene_id), b"group scene");
@@ -18325,7 +18335,7 @@ mod tests {
             PreparedConversationSettingsUpdate::new(
                 UpdateConversationSettings {
                     conversation_id: fixture.conversation_id,
-                    expected_settings_revision: Some(Revision::INITIAL),
+                    expected_settings_revision: None,
                     operation: token("group-settings-scene", "56"),
                     patch: CurrentConversationSettingsPatch {
                         chat_mode: PatchValue::Set(GroupChatModeSnapshot::Conversation),
@@ -18359,7 +18369,7 @@ mod tests {
                 PreparedConversationSettingsUpdate::new(
                     UpdateConversationSettings {
                         conversation_id: fixture.conversation_id,
-                        expected_settings_revision: Some(Revision::INITIAL),
+                        expected_settings_revision: None,
                         operation: token("group-settings-speaker", "78"),
                         patch: CurrentConversationSettingsPatch {
                             speaker_selection: PatchValue::Set(
@@ -18382,8 +18392,8 @@ mod tests {
             Some(lettuce_conversations::GroupSpeakerSelectionSnapshot::Director)
         );
         let settings = conversation.current_settings.expect("settings");
-        assert_eq!(settings.revision, Revision::new(2));
-        assert!(settings.prompt.is_some());
+        assert_eq!(settings.revision, Revision::INITIAL);
+        assert!(settings.prompt.is_none());
     }
 
     #[test]

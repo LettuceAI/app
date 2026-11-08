@@ -172,10 +172,9 @@ pub(crate) fn delete_prompt_in(
     let groups = transaction
         .prepare(
             "UPDATE groups SET \
-             group_conversation_prompt_id = CASE WHEN group_conversation_prompt_id = ?1 THEN NULL ELSE group_conversation_prompt_id END, \
              group_roleplay_prompt_id = CASE WHEN group_roleplay_prompt_id = ?1 THEN NULL ELSE group_roleplay_prompt_id END, \
              revision = revision + 1, updated_at = max(updated_at, ?2) \
-             WHERE group_conversation_prompt_id = ?1 OR group_roleplay_prompt_id = ?1 RETURNING id",
+             WHERE group_roleplay_prompt_id = ?1 RETURNING id",
         )
         .map_err(storage)?
         .query_map(params![id.to_string(), now.get()], |row| {
@@ -312,7 +311,7 @@ mod tests {
                     id.to_string(),
                     serde_json::json!({"format_version": 1, "value": defaults}).to_string(),
                     id_text(defaults.direct_prompt_id),
-                    id_text(defaults.group_conversation_prompt_id),
+                    None::<String>,
                     id_text(defaults.group_roleplay_prompt_id),
                 ],
             )
@@ -362,7 +361,7 @@ mod tests {
             .connection()
             .expect("lock")
             .execute(
-                "INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit',NULL,'llm','manual',0,?2,NULL,'{}',NULL,'image',NULL,1,1,1)",
+                "INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit',NULL,'llm','manual',0,NULL,?2,'{}',NULL,'image',NULL,1,1,1)",
                 params![id.to_string(), prompt_id.map(|id| id.to_string())],
             )
             .expect("group");
@@ -650,7 +649,6 @@ mod tests {
         let kept = prompt(&database, "Kept prompt");
         let mut defaults = CharacterDefaults {
             direct_prompt_id: Some(deleted.id),
-            group_conversation_prompt_id: Some(kept.id),
             group_roleplay_prompt_id: Some(deleted.id),
             ..CharacterDefaults::default()
         };
@@ -706,7 +704,7 @@ mod tests {
             .expect("character row");
         drop(loaded);
         assert_eq!(row.0, None);
-        assert_eq!(row.1, Some(kept.id.to_string()));
+        assert_eq!(row.1, None);
         assert_eq!(row.2, None);
         assert!(!row.3.contains(&deleted.id.to_string()));
         assert_eq!(starter_row(&database, starter_id).0, None);

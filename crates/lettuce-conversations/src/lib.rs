@@ -1081,7 +1081,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
@@ -2556,7 +2555,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
@@ -2620,8 +2618,6 @@ mod tests {
             chat_mode: None,
             disable_character_lorebooks: None,
             disable_character_notes: None,
-            roleplay_prompt: None,
-            roleplay_prompt_provenance: Default::default(),
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,
@@ -2669,7 +2665,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
@@ -2702,7 +2697,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
@@ -2747,7 +2741,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
@@ -2888,7 +2881,6 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
-            roleplay_prompt: Default::default(),
             chat_mode: Default::default(),
             disable_character_lorebooks: Default::default(),
             disable_character_notes: Default::default(),
@@ -2940,45 +2932,27 @@ mod tests {
         if let ConversationKind::Group(details) = &mut group_roleplay.kind {
             details.group.chat_mode = GroupChatModeSnapshot::Roleplay;
         }
-        let mut roleplay_in_conversation_slot = current.clone();
-        roleplay_in_conversation_slot
+        let mut roleplay_in_group = current.clone();
+        roleplay_in_group
             .prompt
             .as_mut()
             .expect("prompt")
             .purpose = PromptPurposeSnapshot::GroupRoleplay;
         assert!(
-            roleplay_in_conversation_slot
+            roleplay_in_group
                 .validate_against_kind(&group_roleplay.kind)
-                .is_err()
+                .is_err(),
+            "a group conversation has no prompt slot"
         );
-        let mut roleplay_settings = current.clone();
-        let mut roleplay_prompt = roleplay_settings.prompt.take().expect("prompt");
-        roleplay_prompt.purpose = PromptPurposeSnapshot::GroupRoleplay;
-        roleplay_settings.prompt_provenance = SettingProvenance::LaunchInherited;
-        roleplay_settings.roleplay_prompt = Some(roleplay_prompt.clone());
-        roleplay_settings.roleplay_prompt_provenance = SettingProvenance::CurrentOverride;
+        let mut group_settings = current.clone();
+        group_settings.prompt = None;
+        group_settings.prompt_provenance = SettingProvenance::LaunchInherited;
+        assert!(group_settings.validate_against_kind(&group.kind).is_ok());
         assert!(
-            roleplay_settings
-                .validate_against_kind(&group_roleplay.kind)
-                .is_ok()
-        );
-        assert!(
-            roleplay_settings.validate_against_kind(&group.kind).is_ok(),
-            "each chat mode keeps its own prompt slot"
-        );
-        let mut conversational = roleplay_prompt;
-        conversational.purpose = PromptPurposeSnapshot::GroupConversational;
-        roleplay_settings.prompt = Some(conversational);
-        roleplay_settings.prompt_provenance = SettingProvenance::CurrentOverride;
-        assert!(
-            roleplay_settings
+            group_settings
                 .validate_against_kind(&group_roleplay.kind)
                 .is_ok()
         );
-        let mut direct_roleplay = roleplay_settings.clone();
-        direct_roleplay.prompt = None;
-        direct_roleplay.prompt_provenance = SettingProvenance::LaunchInherited;
-        assert!(direct_roleplay.validate_against_kind(&direct.kind).is_err());
 
         let mut invalid = patch.clone();
         invalid.lorebooks = PatchValue::Set(Vec::new());
@@ -3038,8 +3012,6 @@ mod tests {
             chat_mode: None,
             disable_character_lorebooks: None,
             disable_character_notes: None,
-            roleplay_prompt: None,
-            roleplay_prompt_provenance: Default::default(),
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,

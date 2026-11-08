@@ -102,7 +102,6 @@
     "prompts": "Промпти",
     "directPrompt": "Чати віч-на-віч",
     "groupRoleplayPrompt": "Групова рольова гра",
-    "groupConversationPrompt": "Групова розмова",
     "companionPrompt": "Компаньйон",
     "promptUnavailable": "Не вдалося завантажити промпти"
   },

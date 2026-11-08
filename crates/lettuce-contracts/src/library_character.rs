@@ -749,9 +749,6 @@ pub struct LibraryCharacterDefaults {
     pub direct_prompt_id: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]
-    pub group_conversation_prompt_id: Option<String>,
-    #[serde(deserialize_with = "Option::deserialize")]
-    #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub group_roleplay_prompt_id: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<LibraryVoicePreference>))]

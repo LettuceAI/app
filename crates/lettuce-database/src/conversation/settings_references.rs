@@ -99,10 +99,7 @@ pub(crate) fn clear_prompt_overrides_in(
     now: TimestampMillis,
 ) -> Result<BTreeSet<ConversationId>, ConversationRepositoryError> {
     let mut changed = BTreeSet::new();
-    for (json_column, provenance_column) in [
-        ("prompt_json", "prompt_provenance"),
-        ("roleplay_prompt_json", "roleplay_prompt_provenance"),
-    ] {
+    for (json_column, provenance_column) in [("prompt_json", "prompt_provenance")] {
         let rows = transaction
             .prepare(&format!(
                 "SELECT conversation_id, {json_column} FROM conversation_settings WHERE {provenance_column} = 'current_override' AND instr({json_column}, ?1) > 0 ORDER BY conversation_id"

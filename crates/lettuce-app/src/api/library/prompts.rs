@@ -29,7 +29,6 @@ pub(super) const fn purpose(kind: dto::PromptKind) -> PromptPurpose {
         K::DirectChat => P::DirectChat,
         K::CompanionChat => P::CompanionChat,
         K::GroupChatRoleplay => P::GroupChatRoleplay,
-        K::GroupChatConversational => P::GroupChatConversational,
         K::DynamicMemorySummarizer => P::DynamicMemorySummarizer,
         K::DynamicMemoryManager => P::DynamicMemoryManager,
         K::ReplyHelperRoleplay => P::ReplyHelperRoleplay,
@@ -59,7 +58,6 @@ pub(in crate::api) const fn kind(purpose: PromptPurpose) -> dto::PromptKind {
         P::Undefined | P::DirectChat => K::DirectChat,
         P::CompanionChat => K::CompanionChat,
         P::GroupChatRoleplay => K::GroupChatRoleplay,
-        P::GroupChatConversational => K::GroupChatConversational,
         P::DynamicMemorySummarizer => K::DynamicMemorySummarizer,
         P::DynamicMemoryManager => K::DynamicMemoryManager,
         P::ReplyHelperRoleplay => K::ReplyHelperRoleplay,
@@ -1038,10 +1036,7 @@ fn sample_context(
         .as_ref()
         .map(|persona| persona.description.clone())
         .unwrap_or_default();
-    let group = matches!(
-        document.purpose,
-        PromptPurpose::GroupChatRoleplay | PromptPurpose::GroupChatConversational
-    );
+    let group = matches!(document.purpose, PromptPurpose::GroupChatRoleplay);
     let mut values = lettuce_context::PromptRenderValues {
         character_name: character_name.clone(),
         character_description: character_description.clone(),

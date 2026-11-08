@@ -54,10 +54,8 @@ pub struct ConversationSettingsChange {
     /// Turns time awareness on or off, keeping any stored override.
     pub time_awareness: Option<bool>,
     pub persona: Option<Choice<PersonaId>>,
-    /// The one-to-one prompt, or a group's conversation-mode prompt.
+    /// The one-to-one prompt.
     pub prompt: Option<Choice<PromptDocumentId>>,
-    /// A group's roleplay-mode prompt.
-    pub roleplay_prompt: Option<Choice<PromptDocumentId>>,
     pub lorebooks: Option<Change<Vec<LorebookId>>>,
     pub model: Option<Change<ModelProfileId>>,
     pub background: Option<BackgroundChange>,
@@ -216,7 +214,6 @@ impl Builder<'_> {
                 Ok(())
             }
         };
-        group_only("roleplay_prompt", change.roleplay_prompt.is_some())?;
         group_only("speaker_selection", change.speaker_selection.is_some())?;
         group_only("chat_mode", change.chat_mode.is_some())?;
         group_only(
@@ -234,9 +231,6 @@ impl Builder<'_> {
         }
         if group && matches!(change.prompt, Some(Choice::Set(_) | Choice::None)) {
             return Err(invalid("prompt"));
-        }
-        if group && matches!(change.roleplay_prompt, Some(Choice::Set(_) | Choice::None)) {
-            return Err(invalid("roleplay_prompt"));
         }
         let mut patch = CurrentConversationSettingsPatch::default();
         if change.time.is_some() || change.time_awareness.is_some() {
@@ -267,26 +261,16 @@ impl Builder<'_> {
             };
         }
         if let Some(choice) = change.prompt {
-            let (purposes, slot): (&[PromptPurpose], _) = if group {
-                (
-                    &[PromptPurpose::GroupChatConversational],
-                    PromptPurposeSnapshot::GroupConversational,
-                )
+            if group {
+                patch.prompt = PatchValue::UseLaunchDefault;
             } else {
-                (
+                patch.prompt = self.prompt_choice(
+                    choice,
                     &policy::DIRECT_SELECTION_PURPOSES,
                     PromptPurposeSnapshot::Direct,
-                )
-            };
-            patch.prompt = self.prompt_choice(choice, purposes, slot, "prompt_id")?;
-        }
-        if let Some(choice) = change.roleplay_prompt {
-            patch.roleplay_prompt = self.prompt_choice(
-                choice,
-                &[PromptPurpose::GroupChatRoleplay],
-                PromptPurposeSnapshot::GroupRoleplay,
-                "roleplay_prompt_id",
-            )?;
+                    "prompt_id",
+                )?;
+            }
         }
         if let Some(change) = &change.lorebooks {
             patch.lorebooks = match change {

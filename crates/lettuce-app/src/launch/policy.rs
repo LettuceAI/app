@@ -108,20 +108,16 @@ pub(crate) fn companion_prompt<S: PromptRepository + ?Sized>(
 /// The purposes a one-to-one chat's own prompt selection admits: direct and
 /// group chat templates and companion templates, rendered whatever their
 /// type.
-pub(crate) const DIRECT_SELECTION_PURPOSES: [PromptPurpose; 4] = [
+pub(crate) const DIRECT_SELECTION_PURPOSES: [PromptPurpose; 3] = [
     PromptPurpose::DirectChat,
     PromptPurpose::CompanionChat,
-    PromptPurpose::GroupChatConversational,
     PromptPurpose::GroupChatRoleplay,
 ];
 
 /// The purposes a starter's prompt admits: direct and group chat templates,
 /// rendered whatever their type.
-pub(crate) const STARTER_PROMPT_PURPOSES: [PromptPurpose; 3] = [
-    PromptPurpose::DirectChat,
-    PromptPurpose::GroupChatConversational,
-    PromptPurpose::GroupChatRoleplay,
-];
+pub(crate) const STARTER_PROMPT_PURPOSES: [PromptPurpose; 2] =
+    [PromptPurpose::DirectChat, PromptPurpose::GroupChatRoleplay];
 
 /// The direct-chat chain outside companion mode: the chat's selected prompt
 /// when it is an active document of a `DIRECT_SELECTION_PURPOSES` purpose,
@@ -184,35 +180,26 @@ pub(crate) fn direct_prompt_with_source<S: PromptRepository + ?Sized>(
 
 pub(crate) fn group_prompt<S: PromptRepository + ?Sized>(
     sources: &S,
-    chat_mode: GroupChatModeSnapshot,
     member: Option<PromptDocumentId>,
 ) -> Result<Option<PromptDocument>, PromptRepositoryError> {
-    Ok(group_prompt_with_source(sources, chat_mode, member)?.map(|(document, _)| document))
+    Ok(group_prompt_with_source(sources, member)?.map(|(document, _)| document))
 }
 
 pub(crate) fn group_prompt_with_source<S: PromptRepository + ?Sized>(
     sources: &S,
-    chat_mode: GroupChatModeSnapshot,
     member: Option<PromptDocumentId>,
 ) -> Result<Option<(PromptDocument, PromptSource)>, PromptRepositoryError> {
-    let (purpose, built_in) = match chat_mode {
-        GroupChatModeSnapshot::Conversation => (
-            PromptPurpose::GroupChatConversational,
-            crate::BuiltInPromptId::GroupChat,
-        ),
-        GroupChatModeSnapshot::Roleplay => (
-            PromptPurpose::GroupChatRoleplay,
-            crate::BuiltInPromptId::GroupChatRoleplay,
-        ),
-    };
     if let Some(prompt_id) = member
-        && let PromptLookupResult::Available { document } = sources.lookup_exact(prompt_id, purpose)? {
-            return Ok(Some((document, PromptSource::Character)));
+        && let PromptLookupResult::Available { document } =
+            sources.lookup_exact(prompt_id, PromptPurpose::GroupChatRoleplay)?
+    {
+        return Ok(Some((document, PromptSource::Character)));
     }
-    Ok(
-        crate::generation::built_in_prompts::active_built_in_prompt(sources, built_in)?
-            .map(|document| (document, PromptSource::AppDefault)),
-    )
+    Ok(crate::generation::built_in_prompts::active_built_in_prompt(
+        sources,
+        crate::BuiltInPromptId::GroupChatRoleplay,
+    )?
+    .map(|document| (document, PromptSource::AppDefault)))
 }
 
 /// The tail of the direct-chat chain: the app default prompt when it is an

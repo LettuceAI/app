@@ -28,7 +28,6 @@ pub enum BuiltInPromptId {
     LorebookGeneratorWriter,
     LorebookGeneratorRefine,
     LorebookGeneratorCoherence,
-    GroupChat,
     GroupChatRoleplay,
     AvatarGeneration,
     AvatarEdit,
@@ -48,7 +47,7 @@ pub enum BuiltInPromptId {
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 30] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -63,7 +62,6 @@ impl BuiltInPromptId {
         Self::LorebookGeneratorWriter,
         Self::LorebookGeneratorRefine,
         Self::LorebookGeneratorCoherence,
-        Self::GroupChat,
         Self::GroupChatRoleplay,
         Self::AvatarGeneration,
         Self::AvatarEdit,
@@ -99,7 +97,6 @@ impl BuiltInPromptId {
             Self::LorebookGeneratorWriter => "prompt_app_lorebook_generator_writer",
             Self::LorebookGeneratorRefine => "prompt_app_lorebook_generator_refine",
             Self::LorebookGeneratorCoherence => "prompt_app_lorebook_generator_coherence",
-            Self::GroupChat => "prompt_app_group_chat",
             Self::GroupChatRoleplay => "prompt_app_group_chat_roleplay",
             Self::AvatarGeneration => "prompt_app_avatar_generation",
             Self::AvatarEdit => "prompt_app_avatar_edit",
@@ -123,6 +120,7 @@ impl BuiltInPromptId {
     pub const fn aliases(self) -> &'static [&'static str] {
         match self {
             Self::LorebookEntryWriter => &["prompt_app_lorebook_entry_generator"],
+            Self::GroupChatRoleplay => &["prompt_app_group_chat"],
             _ => &[],
         }
     }
@@ -142,7 +140,6 @@ impl BuiltInPromptId {
             Self::LorebookGeneratorWriter => PromptPurpose::LorebookGeneratorWriter,
             Self::LorebookGeneratorRefine => PromptPurpose::LorebookGeneratorRefine,
             Self::LorebookGeneratorCoherence => PromptPurpose::LorebookGeneratorCoherence,
-            Self::GroupChat => PromptPurpose::GroupChatConversational,
             Self::GroupChatRoleplay => PromptPurpose::GroupChatRoleplay,
             Self::AvatarGeneration => PromptPurpose::AvatarGeneration,
             Self::AvatarEdit => PromptPurpose::AvatarEditRequest,
@@ -267,7 +264,6 @@ pub struct BuiltInPromptIds {
     pub lorebook_generator_writer: PromptDocumentId,
     pub lorebook_generator_refine: PromptDocumentId,
     pub lorebook_generator_coherence: PromptDocumentId,
-    pub group_chat: PromptDocumentId,
     pub group_chat_roleplay: PromptDocumentId,
     pub avatar_generation: PromptDocumentId,
     pub avatar_edit: PromptDocumentId,
@@ -319,7 +315,6 @@ impl BuiltInPromptIds {
             lorebook_generator_writer: required(BuiltInPromptId::LorebookGeneratorWriter),
             lorebook_generator_refine: required(BuiltInPromptId::LorebookGeneratorRefine),
             lorebook_generator_coherence: required(BuiltInPromptId::LorebookGeneratorCoherence),
-            group_chat: required(BuiltInPromptId::GroupChat),
             group_chat_roleplay: required(BuiltInPromptId::GroupChatRoleplay),
             avatar_generation: required(BuiltInPromptId::AvatarGeneration),
             avatar_edit: required(BuiltInPromptId::AvatarEdit),
@@ -356,7 +351,6 @@ impl BuiltInPromptIds {
             BuiltInPromptId::LorebookGeneratorWriter => self.lorebook_generator_writer,
             BuiltInPromptId::LorebookGeneratorRefine => self.lorebook_generator_refine,
             BuiltInPromptId::LorebookGeneratorCoherence => self.lorebook_generator_coherence,
-            BuiltInPromptId::GroupChat => self.group_chat,
             BuiltInPromptId::GroupChatRoleplay => self.group_chat_roleplay,
             BuiltInPromptId::AvatarGeneration => self.avatar_generation,
             BuiltInPromptId::AvatarEdit => self.avatar_edit,
@@ -575,7 +569,7 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
                     | "scene_cast_lora"
             )
         }
-        PromptPurpose::GroupChatRoleplay | PromptPurpose::GroupChatConversational => {
+        PromptPurpose::GroupChatRoleplay => {
             matches!(value, "group_characters" | "scene_cast_lora")
         }
         PromptPurpose::DynamicMemorySummarizer => {
@@ -1081,7 +1075,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 31);
+        assert_eq!(catalog.seeds().len(), 30);
 
         let actual = catalog
             .seeds()
@@ -1141,11 +1135,22 @@ mod tests {
             BuiltInPromptId::LorebookEntryWriter.aliases(),
             &["prompt_app_lorebook_entry_generator"]
         );
+        assert_eq!(
+            BuiltInPromptId::from_key_or_alias("prompt_app_group_chat"),
+            Some(BuiltInPromptId::GroupChatRoleplay)
+        );
+        assert_eq!(
+            BuiltInPromptId::GroupChatRoleplay.aliases(),
+            &["prompt_app_group_chat"]
+        );
         assert!(
             BuiltInPromptId::ALL
                 .iter()
                 .filter(|id| !id.aliases().is_empty())
-                .eq([&BuiltInPromptId::LorebookEntryWriter])
+                .eq([
+                    &BuiltInPromptId::LorebookEntryWriter,
+                    &BuiltInPromptId::GroupChatRoleplay,
+                ])
         );
     }
 
@@ -1181,7 +1186,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 31);
+        assert_eq!(calls[2].seeds.len(), 30);
     }
 
     #[test]

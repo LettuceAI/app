@@ -366,7 +366,7 @@ fn character_row(
 ) -> Result<Option<Character>, rusqlite::Error> {
     connection
         .query_row(
-            "SELECT status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at,voice_audio_provider_id,voice_provider_voice_id FROM characters WHERE id=?1",
+            "SELECT status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at,voice_audio_provider_id,voice_provider_voice_id FROM characters WHERE id=?1",
             [id.to_string()],
             |row| parse_character_row(row, id),
         )
@@ -411,30 +411,25 @@ fn parse_character_row(row: &Row<'_>, id: CharacterId) -> rusqlite::Result<Chara
                 .get::<_, Option<String>>(13)?
                 .map(parse_id)
                 .transpose()?
-        || defaults.group_conversation_prompt_id
+        || defaults.group_roleplay_prompt_id
             != row
                 .get::<_, Option<String>>(14)?
                 .map(parse_id)
                 .transpose()?
-        || defaults.group_roleplay_prompt_id
-            != row
-                .get::<_, Option<String>>(15)?
-                .map(parse_id)
-                .transpose()?
-        || defaults.voice_autoplay != (row.get::<_, i64>(18)? != 0)
+        || defaults.voice_autoplay != (row.get::<_, i64>(17)? != 0)
     {
         return Err(invalid());
     }
     let stored_voice_profile = row
-        .get::<_, Option<String>>(16)?
+        .get::<_, Option<String>>(15)?
         .map(parse_id)
         .transpose()?;
-    let stored_voice_legacy = row.get::<_, Option<String>>(17)?;
+    let stored_voice_legacy = row.get::<_, Option<String>>(16)?;
     let provider_id = row
-        .get::<_, Option<String>>(24)?
+        .get::<_, Option<String>>(23)?
         .map(parse_id)
         .transpose()?;
-    let provider_voice_id = row.get::<_, Option<String>>(25)?;
+    let provider_voice_id = row.get::<_, Option<String>>(24)?;
     let expected_voice = if let (Some(provider_id), Some(voice_id)) =
         (provider_id, provider_voice_id)
     {
@@ -471,8 +466,8 @@ fn parse_character_row(row: &Row<'_>, id: CharacterId) -> rusqlite::Result<Chara
         return Err(invalid());
     }
     let presentation: CharacterPresentationV1 =
-        decode(row.get::<_, String>(19)?, PRESENTATION_VERSION)?;
-    let recommendation: Option<ImageRecommendation> = match row.get::<_, Option<String>>(20)? {
+        decode(row.get::<_, String>(18)?, PRESENTATION_VERSION)?;
+    let recommendation: Option<ImageRecommendation> = match row.get::<_, Option<String>>(19)? {
         Some(payload) => decode(&payload, RECOMMENDATION_VERSION)?,
         None => None,
     };
@@ -485,9 +480,9 @@ fn parse_character_row(row: &Row<'_>, id: CharacterId) -> rusqlite::Result<Chara
         presentation,
         image_recommendation: recommendation,
         media: CharacterMedia::default(),
-        revision: rev(row.get(21)?)?,
-        created_at: TimestampMillis::new(row.get(22)?),
-        updated_at: TimestampMillis::new(row.get(23)?),
+        revision: rev(row.get(20)?)?,
+        created_at: TimestampMillis::new(row.get(21)?),
+        updated_at: TimestampMillis::new(row.get(22)?),
     };
     character.validate().map_err(|_| invalid())?;
     Ok(character)
@@ -782,7 +777,6 @@ fn duplicate_external_references(
     let mut prompts = BTreeSet::new();
     for prompt in [
         details.character.defaults.direct_prompt_id,
-        details.character.defaults.group_conversation_prompt_id,
         details.character.defaults.group_roleplay_prompt_id,
     ]
     .into_iter()
@@ -907,7 +901,7 @@ fn insert_character(tx: &Transaction<'_>, character: &Character) -> Result<(), R
             interaction_name(character.defaults.interaction_mode), memory_name(character.defaults.memory_policy),
             id_text(character.defaults.model_profile_id), id_text(character.defaults.default_scene_id),
             id_text(character.defaults.default_starter_id), id_text(character.defaults.direct_prompt_id),
-            id_text(character.defaults.group_conversation_prompt_id), id_text(character.defaults.group_roleplay_prompt_id),
+            None::<String>, id_text(character.defaults.group_roleplay_prompt_id),
             voice_profile_id, voice_legacy_locator, character.defaults.voice_autoplay,
             presentation, recommendation, sql_u64(character.revision.get())?, character.created_at.get(), character.updated_at.get(), voice_provider, voice_id
         ],
@@ -948,7 +942,7 @@ fn update_character_root(
             interaction_name(character.defaults.interaction_mode), memory_name(character.defaults.memory_policy),
             id_text(character.defaults.model_profile_id), id_text(character.defaults.default_scene_id),
             id_text(character.defaults.default_starter_id), id_text(character.defaults.direct_prompt_id),
-            id_text(character.defaults.group_conversation_prompt_id), id_text(character.defaults.group_roleplay_prompt_id),
+            None::<String>, id_text(character.defaults.group_roleplay_prompt_id),
             voice_profile_id, voice_legacy_locator, character.defaults.voice_autoplay,
             presentation, recommendation, sql_u64(character.revision.get())?, character.created_at.get(), character.updated_at.get(), voice_provider, voice_id
         ],
@@ -1636,7 +1630,7 @@ impl CharacterRepository for Database {
         };
         let (voice_provider, voice_id) = provider_voice_columns(&defaults);
         let was_shared = companion_soul_sharing_in(&tx, id).map_err(db_error)?;
-        tx.execute("UPDATE characters SET defaults_json=?2,interaction_mode=?3,memory_policy=?4,model_profile_id=?5,default_scene_id=?6,default_starter_id=?7,direct_prompt_id=?8,group_conversation_prompt_id=?9,group_roleplay_prompt_id=?10,voice_profile_id=?11,voice_legacy_locator=?12,voice_autoplay=?13,voice_audio_provider_id=?14,voice_provider_voice_id=?15 WHERE id=?1", params![id.to_string(), encode(&defaults, DEFAULTS_VERSION)?, interaction_name(defaults.interaction_mode), memory_name(defaults.memory_policy), id_text(defaults.model_profile_id), id_text(defaults.default_scene_id), id_text(defaults.default_starter_id), id_text(defaults.direct_prompt_id), id_text(defaults.group_conversation_prompt_id), id_text(defaults.group_roleplay_prompt_id), voice_profile_id, voice_legacy_locator, defaults.voice_autoplay, voice_provider, voice_id]).map_err(db_error)?;
+        tx.execute("UPDATE characters SET defaults_json=?2,interaction_mode=?3,memory_policy=?4,model_profile_id=?5,default_scene_id=?6,default_starter_id=?7,direct_prompt_id=?8,group_conversation_prompt_id=?9,group_roleplay_prompt_id=?10,voice_profile_id=?11,voice_legacy_locator=?12,voice_autoplay=?13,voice_audio_provider_id=?14,voice_provider_voice_id=?15 WHERE id=?1", params![id.to_string(), encode(&defaults, DEFAULTS_VERSION)?, interaction_name(defaults.interaction_mode), memory_name(defaults.memory_policy), id_text(defaults.model_profile_id), id_text(defaults.default_scene_id), id_text(defaults.default_starter_id), id_text(defaults.direct_prompt_id), None::<String>, id_text(defaults.group_roleplay_prompt_id), voice_profile_id, voice_legacy_locator, defaults.voice_autoplay, voice_provider, voice_id]).map_err(db_error)?;
         follow_soul_sharing(&tx, id, was_shared, &defaults, false, now)?;
         bump_root(&tx, id, expected_revision, now)?;
         let character = load_character(&tx, id)?;
@@ -1960,7 +1954,6 @@ impl CharacterDependencyReader for Database {
         prompts.extend(
             [
                 details.character.defaults.direct_prompt_id,
-                details.character.defaults.group_conversation_prompt_id,
                 details.character.defaults.group_roleplay_prompt_id,
             ]
             .into_iter()
@@ -3733,7 +3726,7 @@ pub(crate) fn clear_prompt_references_in(
     let mut changed = BTreeSet::new();
     let rows = tx
         .prepare(
-            "SELECT id,defaults_json FROM characters WHERE direct_prompt_id=?1 OR group_conversation_prompt_id=?1 OR group_roleplay_prompt_id=?1 OR instr(defaults_json,?1)>0 ORDER BY id",
+            "SELECT id,defaults_json FROM characters WHERE direct_prompt_id=?1 OR group_roleplay_prompt_id=?1 OR instr(defaults_json,?1)>0 ORDER BY id",
         )?
         .query_map([prompt_id.to_string()], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -3744,7 +3737,6 @@ pub(crate) fn clear_prompt_references_in(
         let mut touched = false;
         for selection in [
             &mut defaults.direct_prompt_id,
-            &mut defaults.group_conversation_prompt_id,
             &mut defaults.group_roleplay_prompt_id,
         ] {
             if *selection == Some(prompt_id) {
@@ -3767,7 +3759,7 @@ pub(crate) fn clear_prompt_references_in(
                 id,
                 encode(&defaults, DEFAULTS_VERSION).map_err(|_| invalid())?,
                 id_text(defaults.direct_prompt_id),
-                id_text(defaults.group_conversation_prompt_id),
+                None::<String>,
                 id_text(defaults.group_roleplay_prompt_id),
             ],
         )?;

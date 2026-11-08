@@ -167,12 +167,6 @@ pub struct CurrentConversationSettings {
     /// override of the group's; `None` follows the group.
     #[serde(default)]
     pub disable_character_notes: Option<bool>,
-    /// A group conversation's own roleplay-mode prompt; `prompt` holds the
-    /// conversation-mode one.
-    #[serde(default)]
-    pub roleplay_prompt: Option<crate::snapshot::PromptLaunchSnapshot>,
-    #[serde(default)]
-    pub roleplay_prompt_provenance: crate::commands::SettingProvenance,
     /// The participants' enabled flags are the conversation's own instead of
     /// the group's member list.
     #[serde(default)]
@@ -215,8 +209,6 @@ impl CurrentConversationSettings {
             chat_mode: None,
             disable_character_lorebooks: None,
             disable_character_notes: None,
-            roleplay_prompt: None,
-            roleplay_prompt_provenance: crate::commands::SettingProvenance::LaunchInherited,
             members_overridden: false,
             muted_overridden: false,
             member_models_overridden: false,
@@ -362,17 +354,6 @@ impl CurrentConversationSettings {
         if let Some(prompt) = &self.prompt {
             prompt.validate()?;
         }
-        if self.roleplay_prompt.is_some()
-            != (self.roleplay_prompt_provenance
-                == crate::commands::SettingProvenance::CurrentOverride)
-        {
-            return Err(ValidationError::InvalidReference {
-                field: "conversation_settings.roleplay_prompt_provenance",
-            });
-        }
-        if let Some(prompt) = &self.roleplay_prompt {
-            prompt.validate()?;
-        }
         if let Some(lorebooks) = &self.lorebooks {
             if lorebooks.is_empty() {
                 return Err(ValidationError::InvalidValue {
@@ -418,37 +399,29 @@ impl CurrentConversationSettings {
             });
         }
         if matches!(kind, ConversationKind::Direct(_))
-            && (self.roleplay_prompt_provenance
-                != crate::commands::SettingProvenance::LaunchInherited
-                || self.members_overridden
-                || self.muted_overridden
-                || self.member_models_overridden)
+            && (self.members_overridden || self.muted_overridden || self.member_models_overridden)
         {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.group_overrides",
             });
         }
-        let expected_prompt = match kind {
-            ConversationKind::Direct(_) => crate::snapshot::PromptPurposeSnapshot::Direct,
-            ConversationKind::Group(_) => {
-                crate::snapshot::PromptPurposeSnapshot::GroupConversational
+        match kind {
+            ConversationKind::Direct(_) => {
+                if self.prompt.as_ref().is_some_and(|prompt| {
+                    prompt.purpose != crate::snapshot::PromptPurposeSnapshot::Direct
+                }) {
+                    return Err(ValidationError::InvalidReference {
+                        field: "conversation_settings.prompt.purpose",
+                    });
+                }
             }
-        };
-        if self
-            .prompt
-            .as_ref()
-            .is_some_and(|prompt| prompt.purpose != expected_prompt)
-        {
-            return Err(ValidationError::InvalidReference {
-                field: "conversation_settings.prompt.purpose",
-            });
-        }
-        if self.roleplay_prompt.as_ref().is_some_and(|prompt| {
-            prompt.purpose != crate::snapshot::PromptPurposeSnapshot::GroupRoleplay
-        }) {
-            return Err(ValidationError::InvalidReference {
-                field: "conversation_settings.roleplay_prompt.purpose",
-            });
+            ConversationKind::Group(_) => {
+                if self.prompt.is_some() {
+                    return Err(ValidationError::InvalidReference {
+                        field: "conversation_settings.prompt",
+                    });
+                }
+            }
         }
         if matches!(kind, ConversationKind::Group(_))
             && self.chat_mode == Some(crate::snapshot::GroupChatModeSnapshot::Conversation)

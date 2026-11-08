@@ -98,7 +98,6 @@
     "prompts": "Prompts",
     "directPrompt": "Einzelchats",
     "groupRoleplayPrompt": "Gruppen-Rollenspiel",
-    "groupConversationPrompt": "Gruppengespräch",
     "companionPrompt": "Companion",
     "promptUnavailable": "Prompts konnten nicht geladen werden"
   },

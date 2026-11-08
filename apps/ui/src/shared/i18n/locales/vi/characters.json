@@ -96,7 +96,6 @@
     "prompts": "Lời nhắc",
     "directPrompt": "Trò chuyện riêng",
     "groupRoleplayPrompt": "Nhập vai nhóm",
-    "groupConversationPrompt": "Trò chuyện nhóm",
     "companionPrompt": "Bạn đồng hành",
     "promptUnavailable": "Không thể tải lời nhắc"
   },

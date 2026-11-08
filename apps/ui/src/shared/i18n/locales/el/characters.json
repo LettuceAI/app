@@ -98,7 +98,6 @@
     "prompts": "Προτροπές",
     "directPrompt": "Ατομικές συνομιλίες",
     "groupRoleplayPrompt": "Ομαδικό roleplay",
-    "groupConversationPrompt": "Ομαδική συνομιλία",
     "companionPrompt": "Σύντροφος",
     "promptUnavailable": "Δεν ήταν δυνατή η φόρτωση των προτροπών"
   },

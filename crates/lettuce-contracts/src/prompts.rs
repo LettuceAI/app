@@ -7,7 +7,6 @@ pub enum PromptKind {
     DirectChat,
     CompanionChat,
     GroupChatRoleplay,
-    GroupChatConversational,
     DynamicMemorySummarizer,
     DynamicMemoryManager,
     ReplyHelperRoleplay,

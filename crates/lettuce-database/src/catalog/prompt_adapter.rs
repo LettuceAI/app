@@ -131,7 +131,6 @@ fn purpose_name(value: PromptPurpose) -> Option<&'static str> {
         PromptPurpose::DirectChat => "direct_chat",
         PromptPurpose::CompanionChat => "companion_chat",
         PromptPurpose::GroupChatRoleplay => "group_chat_roleplay",
-        PromptPurpose::GroupChatConversational => "group_chat_conversational",
         PromptPurpose::DynamicMemorySummarizer => "dynamic_memory_summarizer",
         PromptPurpose::DynamicMemoryManager => "dynamic_memory_manager",
         PromptPurpose::ReplyHelperRoleplay => "reply_helper_roleplay",
@@ -158,8 +157,7 @@ pub(crate) fn purpose_from_name(value: &str) -> Result<PromptPurpose, rusqlite::
     match value {
         "direct_chat" => Ok(PromptPurpose::DirectChat),
         "companion_chat" => Ok(PromptPurpose::CompanionChat),
-        "group_chat_roleplay" => Ok(PromptPurpose::GroupChatRoleplay),
-        "group_chat_conversational" => Ok(PromptPurpose::GroupChatConversational),
+        "group_chat_roleplay" | "group_chat_conversational" => Ok(PromptPurpose::GroupChatRoleplay),
         "dynamic_memory_summarizer" => Ok(PromptPurpose::DynamicMemorySummarizer),
         "dynamic_memory_manager" => Ok(PromptPurpose::DynamicMemoryManager),
         "reply_helper_roleplay" => Ok(PromptPurpose::ReplyHelperRoleplay),
@@ -1359,35 +1357,26 @@ impl PromptDependencyReader for Database {
             return Err(PromptDependencyError::NotFound);
         }
         let mut references = Vec::new();
-        let mut character = tx.prepare("SELECT id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id FROM characters WHERE direct_prompt_id=?1 OR group_conversation_prompt_id=?1 OR group_roleplay_prompt_id=?1 ORDER BY id").map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?;
+        let mut character = tx.prepare("SELECT id,direct_prompt_id,group_roleplay_prompt_id FROM characters WHERE direct_prompt_id=?1 OR group_roleplay_prompt_id=?1 ORDER BY id").map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?;
         for row in character
             .query_map([prompt_id.to_string()], |row| {
                 let id: CharacterId = parse_id(row.get(0)?)?;
                 let direct: Option<String> = row.get(1)?;
-                let conversation: Option<String> = row.get(2)?;
-                let roleplay: Option<String> = row.get(3)?;
+                let roleplay: Option<String> = row.get(2)?;
                 Ok((
                     id,
                     direct.as_deref() == Some(&prompt_id.to_string()),
-                    conversation.as_deref() == Some(&prompt_id.to_string()),
                     roleplay.as_deref() == Some(&prompt_id.to_string()),
                 ))
             })
             .map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?
         {
-            let (id, direct, conversation, roleplay) =
+            let (id, direct, roleplay) =
                 row.map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?;
             if direct {
                 references.push(PromptReference {
                     owner: PromptReferenceOwner::Character(id),
                     purpose: PromptPurpose::DirectChat,
-                    prompt_id,
-                });
-            }
-            if conversation {
-                references.push(PromptReference {
-                    owner: PromptReferenceOwner::Character(id),
-                    purpose: PromptPurpose::GroupChatConversational,
                     prompt_id,
                 });
             }
@@ -1400,29 +1389,17 @@ impl PromptDependencyReader for Database {
             }
         }
         drop(character);
-        let mut groups = tx.prepare("SELECT id,group_conversation_prompt_id,group_roleplay_prompt_id FROM groups WHERE group_conversation_prompt_id=?1 OR group_roleplay_prompt_id=?1 ORDER BY id").map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?;
+        let mut groups = tx.prepare("SELECT id,group_roleplay_prompt_id FROM groups WHERE group_roleplay_prompt_id=?1 ORDER BY id").map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?;
         for row in groups
             .query_map([prompt_id.to_string()], |row| {
                 let id: GroupId = parse_id(row.get(0)?)?;
-                let conversation: Option<String> = row.get(1)?;
-                let roleplay: Option<String> = row.get(2)?;
-                Ok((
-                    id,
-                    conversation.as_deref() == Some(&prompt_id.to_string()),
-                    roleplay.as_deref() == Some(&prompt_id.to_string()),
-                ))
+                let roleplay: Option<String> = row.get(1)?;
+                Ok((id, roleplay.as_deref() == Some(&prompt_id.to_string())))
             })
             .map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?
         {
-            let (id, conversation, roleplay) =
+            let (id, roleplay) =
                 row.map_err(|error| PromptDependencyError::Failure(storage(error).to_string()))?;
-            if conversation {
-                references.push(PromptReference {
-                    owner: PromptReferenceOwner::Group(id),
-                    purpose: PromptPurpose::GroupChatConversational,
-                    prompt_id,
-                });
-            }
             if roleplay {
                 references.push(PromptReference {
                     owner: PromptReferenceOwner::Group(id),
@@ -2496,7 +2473,6 @@ mod tests {
             PromptPurpose::DirectChat,
             PromptPurpose::CompanionChat,
             PromptPurpose::GroupChatRoleplay,
-            PromptPurpose::GroupChatConversational,
             PromptPurpose::DynamicMemorySummarizer,
             PromptPurpose::DynamicMemoryManager,
             PromptPurpose::ReplyHelperRoleplay,
@@ -2851,13 +2827,13 @@ mod tests {
             let connection = database.connection().expect("lock");
             connection
                 .execute(
-                    "INSERT INTO characters(id,status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at) VALUES (?1,'active','Character',NULL,'character',NULL,'{}','{}','{}','roleplay','manual',NULL,NULL,NULL,?2,?2,?2,NULL,NULL,0,'{}',NULL,1,1,1)",
+                    "INSERT INTO characters(id,status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at) VALUES (?1,'active','Character',NULL,'character',NULL,'{}','{}','{}','roleplay','manual',NULL,NULL,NULL,?2,NULL,?2,NULL,NULL,0,'{}',NULL,1,1,1)",
                     params![character_id.to_string(), document.id.to_string()],
                 )
                 .expect("character reference");
             connection
                 .execute(
-                    "INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit',NULL,'llm','manual',0,?2,?2,'{}',NULL,'image',NULL,1,1,1)",
+                    "INSERT INTO groups(id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES (?1,'active','Group','group','conversation','inherit',NULL,'llm','manual',0,NULL,?2,'{}',NULL,'image',NULL,1,1,1)",
                     params![group_id.to_string(), document.id.to_string()],
                 )
                 .expect("group reference");
@@ -2869,7 +2845,7 @@ mod tests {
                 .expect("starter reference");
         }
         let references = database.references_to(document.id).expect("dependencies");
-        assert_eq!(references.len(), 6);
+        assert_eq!(references.len(), 4);
         assert_eq!(
             references
                 .iter()
@@ -2877,9 +2853,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 PromptPurpose::DirectChat,
-                PromptPurpose::GroupChatConversational,
                 PromptPurpose::GroupChatRoleplay,
-                PromptPurpose::GroupChatConversational,
                 PromptPurpose::GroupChatRoleplay,
                 PromptPurpose::DirectChat,
             ]

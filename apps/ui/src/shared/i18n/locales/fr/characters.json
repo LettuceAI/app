@@ -100,7 +100,6 @@
     "prompts": "Prompts",
     "directPrompt": "Discussions individuelles",
     "groupRoleplayPrompt": "Roleplay en groupe",
-    "groupConversationPrompt": "Conversation de groupe",
     "companionPrompt": "Compagnon",
     "promptUnavailable": "Impossible de charger les prompts"
   },

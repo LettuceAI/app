@@ -932,7 +932,6 @@ pub trait GroupRepository: Send + Sync {
         &self,
         id: GroupId,
         expected_revision: Revision,
-        conversation_prompt_id: Option<PromptDocumentId>,
         roleplay_prompt_id: Option<PromptDocumentId>,
         now: TimestampMillis,
     ) -> Result<GroupProfile, RepositoryError>;

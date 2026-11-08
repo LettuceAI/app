@@ -98,7 +98,6 @@
     "prompts": "Prompter",
     "directPrompt": "En-til-en-samtaler",
     "groupRoleplayPrompt": "Grupperollespill",
-    "groupConversationPrompt": "Gruppesamtale",
     "companionPrompt": "Kompanjong",
     "promptUnavailable": "Kunne ikke laste prompter"
   },

@@ -15,7 +15,7 @@ export function newGroupForm(presentation: LibraryChatAppearanceV1_Serialize, dy
     draft: {
       name: "", chat_mode: "conversation", speaker_selection: "llm", memory_policy: dynamicMemory ? "dynamic" : "manual",
       persona: { kind: "inherit" }, disable_character_lorebooks: false, time_awareness: false, disable_character_notes: false,
-      group_conversation_prompt_id: null, group_roleplay_prompt_id: null,
+      group_roleplay_prompt_id: null,
       presentation, presentation_overrides: [], members: [], background_asset_id: null, starting_scene: null,
     },
     background: null, lorebookIds: [], sceneSource: "none", notes: [],

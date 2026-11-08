@@ -60,6 +60,119 @@ fn migration_26_preserves_existing_content_and_database_guards() {
 }
 
 #[test]
+fn migration_29_consolidates_group_prompts() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let old: Vec<_> = MIGRATIONS
+        .iter()
+        .copied()
+        .filter(|migration| migration.id <= 28)
+        .collect();
+    apply_migrations(&mut connection, &old).expect("old schema");
+    connection
+        .execute_batch(
+            "BEGIN;
+             INSERT INTO prompt_documents (id,status,name,purpose,condense,behavior_version,provenance_kind,built_in_key,provenance_json,revision,created_at,updated_at) VALUES
+                ('conv-builtin','active','Group Chat (Conversation)','group_chat_conversational',0,'legacy_v1','built_in','prompt_app_group_chat','{}',1,0,0),
+                ('roleplay-builtin','active','Group Chat (Roleplay)','group_chat_roleplay',0,'legacy_v1','built_in','prompt_app_group_chat_roleplay','{}',1,0,0),
+                ('user-conv','active','Custom group prompt','group_chat_conversational',0,'legacy_v1','user',NULL,'{}',1,0,0);
+             INSERT INTO prompt_entries (id,prompt_id,name,role,content,enabled,injection_position,depth,system_prompt,ordinal,revision,created_at,updated_at) VALUES
+                ('entry-conv','conv-builtin','Task','system','hello',1,'relative',0,1,0,1,0,0);
+             INSERT INTO characters (id,status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at) VALUES
+                ('char-1','active','Character',NULL,'character',NULL,'{}','{}','{\"format_version\":1,\"value\":{\"interaction_mode\":\"roleplay\",\"memory_policy\":\"manual\",\"model_profile_id\":null,\"default_scene_id\":null,\"default_starter_id\":null,\"direct_prompt_id\":\"conv-builtin\",\"group_conversation_prompt_id\":\"user-conv\",\"group_roleplay_prompt_id\":null,\"voice\":null,\"voice_autoplay\":false}}','roleplay','manual',NULL,NULL,NULL,'conv-builtin','user-conv',NULL,NULL,NULL,0,'{}',NULL,1,0,0);
+             INSERT INTO groups (id,status,name,normalized_name,chat_mode,persona_selection_kind,persona_id,speaker_selection,memory_policy,disable_character_lorebooks,group_conversation_prompt_id,group_roleplay_prompt_id,presentation_json,background_asset_id,background_blob_kind,starting_scene_id,revision,created_at,updated_at) VALUES
+                ('group-1','active','Group','group','conversation','inherit',NULL,'llm','manual',0,'conv-builtin',NULL,'{}',NULL,'image',NULL,1,0,0);
+             INSERT INTO conversations (id,kind,lifecycle,title,active_branch_id,kind_json,revision,created_at,updated_at) VALUES
+                ('conv-group','group','active','Group','branch-group','{\"format_version\":1,\"value\":{}}',1,0,0);
+             INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,status,revision,created_at,updated_at) VALUES
+                ('conv-group','branch-group',NULL,'active',1,0,0);
+             INSERT INTO conversation_settings (conversation_id,revision,author_note_provenance,memory_provenance,model_provenance,voice_provenance,prompt_json,prompt_provenance,lorebooks_provenance,persona_provenance,scene_provenance,roleplay_prompt_json,roleplay_prompt_provenance,created_at,updated_at) VALUES
+                ('conv-group',1,'launch_inherited','launch_inherited','launch_inherited','launch_inherited','{\"format_version\":1,\"value\":{\"purpose\":\"group_conversational\"}}','current_override','launch_inherited','launch_inherited','launch_inherited','{\"format_version\":1,\"value\":{\"purpose\":\"group_roleplay\"}}','current_override',0,0);
+             COMMIT;",
+        )
+        .expect("old content");
+    apply_migrations(&mut connection, MIGRATIONS).expect("upgrade");
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT purpose FROM prompt_documents WHERE id='user-conv'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .expect("user document"),
+        "group_chat_roleplay"
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM prompt_documents WHERE built_in_key='prompt_app_group_chat'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .expect("conversational built-in"),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM prompt_entries WHERE prompt_id='conv-builtin'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .expect("dependent entries"),
+        0
+    );
+    let character: (Option<String>, Option<String>, String) = connection
+        .query_row(
+            "SELECT direct_prompt_id,group_roleplay_prompt_id,defaults_json FROM characters WHERE id='char-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("character");
+    assert_eq!(character.0.as_deref(), Some("roleplay-builtin"));
+    assert_eq!(character.1.as_deref(), Some("user-conv"));
+    assert!(!character.2.contains("group_conversation_prompt_id"));
+    assert_eq!(
+        connection
+            .query_row("SELECT group_conversation_prompt_id,group_roleplay_prompt_id FROM groups WHERE id='group-1'", [], |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)))
+            .expect("group"),
+        (None, Some("roleplay-builtin".to_owned()))
+    );
+    let settings: (Option<String>, String, Option<String>, String) = connection
+        .query_row(
+            "SELECT prompt_json,prompt_provenance,roleplay_prompt_json,roleplay_prompt_provenance FROM conversation_settings WHERE conversation_id='conv-group'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("settings");
+    assert_eq!(
+        settings,
+        (
+            None,
+            "launch_inherited".into(),
+            None,
+            "launch_inherited".into()
+        )
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT revision FROM conversations WHERE id='conv-group'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .expect("change feed revision"),
+        2
+    );
+    assert_eq!(
+        connection
+            .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+            .expect("integrity"),
+        "ok"
+    );
+}
+
+#[test]
 fn failed_table_rebuild_rolls_back_and_restores_foreign_keys() {
     let mut connection = Connection::open_in_memory().expect("database");
     configure(&connection, false).expect("configure");

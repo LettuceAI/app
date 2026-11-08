@@ -98,7 +98,6 @@
     "prompts": "Promptok",
     "directPrompt": "Egyéni beszélgetések",
     "groupRoleplayPrompt": "Csoportos szerepjáték",
-    "groupConversationPrompt": "Csoportos beszélgetés",
     "companionPrompt": "Társ",
     "promptUnavailable": "Nem sikerült betölteni a promptokat"
   },

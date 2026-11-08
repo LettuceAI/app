@@ -2926,10 +2926,6 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
         })
         .expect("prompt");
     let direct = edited.id;
-    let group = context
-        .backend()
-        .built_in_prompt_ids()
-        .get(crate::generation::built_in_prompts::BuiltInPromptId::GroupChat);
     let group_roleplay = context
         .backend()
         .built_in_prompt_ids()
@@ -2958,7 +2954,6 @@ async fn uec3_character_commands_round_trip_authored_graph_and_replay() {
             default_scene_id: Some(first),
             default_starter_id: Some(starter_ids[0]),
             direct_prompt_id: Some(direct),
-            group_conversation_prompt_id: Some(group),
             group_roleplay_prompt_id: Some(group_roleplay),
             voice_autoplay: true,
             memory_policy: MemoryPolicy::Dynamic,

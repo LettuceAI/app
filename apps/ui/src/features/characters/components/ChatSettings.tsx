@@ -16,7 +16,6 @@ export function PromptsGroup({ api, form, update }: StepProps) {
   return <ListGroup label={t("details.prompts")}>
     <PromptSetting api={api} promptKind="direct_chat" label={t("details.directPrompt")} value={defaults.direct_prompt_id} onChange={(direct_prompt_id) => setDefaults({ direct_prompt_id })} />
     <PromptSetting api={api} promptKind="group_chat_roleplay" label={t("details.groupRoleplayPrompt")} value={defaults.group_roleplay_prompt_id} onChange={(group_roleplay_prompt_id) => setDefaults({ group_roleplay_prompt_id })} />
-    <PromptSetting api={api} promptKind="group_chat_conversational" label={t("details.groupConversationPrompt")} value={defaults.group_conversation_prompt_id} onChange={(group_conversation_prompt_id) => setDefaults({ group_conversation_prompt_id })} />
     {defaults.interaction_mode === "companion" && <PromptSetting api={api} promptKind="companion_chat" label={t("details.companionPrompt")} value={defaults.companion_soul?.prompting.prompt_template_id ?? null} onChange={(prompt_template_id) => update((current) => {
       const config = current.draft.defaults.companion_soul;
       if (!config) return current;

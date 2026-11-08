@@ -4541,7 +4541,7 @@ fn override_conversation_prompt(
         source_revision: document.revision,
         title: document.name.clone(),
         purpose: if matches!(ConversationReader::get(database, conversation_id).expect("conversation").conversation.kind, ConversationKind::Group(_)) {
-            PromptPurposeSnapshot::GroupConversational
+            PromptPurposeSnapshot::GroupRoleplay
         } else { PromptPurposeSnapshot::Direct },
     };
     database
@@ -5768,21 +5768,15 @@ async fn a_chat_reads_its_persona_and_character_live_like_legacy_choose_persona(
 }
 
 #[tokio::test]
-async fn a_group_turn_reads_its_members_mode_and_lorebook_switch_live() {
+async fn a_group_turn_reads_its_members_and_lorebook_switch_live() {
     let database = database_with_builtins();
-    let conversational = prompt_with_text(
-        &database,
-        "Talk",
-        PromptPurpose::GroupChatConversational,
-        "Talk cast:\n{{group_characters}}",
-    );
     let roleplay = prompt_with_text(
         &database,
         "Play",
         PromptPurpose::GroupChatRoleplay,
         "Play cast:\n{{group_characters}}",
     );
-    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_conversation_prompt_id = Some(conversational); defaults.group_roleplay_prompt_id = Some(roleplay); });
+    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_roleplay_prompt_id = Some(roleplay); });
     let second = seed_named_character(&database, "Bea");
     let third = seed_named_character(&database, "Cy");
     let book = seed_lorebook(&database, "Ada lore");
@@ -5804,7 +5798,6 @@ async fn a_group_turn_reads_its_members_mode_and_lorebook_switch_live() {
         None,
         |group| {
             group.chat_mode = ChatMode::Conversation;
-            group.group_conversation_prompt_id = Some(conversational);
             group.group_roleplay_prompt_id = Some(roleplay);
         },
     );
@@ -5846,7 +5839,7 @@ async fn a_group_turn_reads_its_members_mode_and_lorebook_switch_live() {
     };
     let text = turn().await;
     assert!(
-        text.contains("Talk cast:\n- Bea: A member of the cast"),
+        text.contains("Play cast:\n- Bea: A member of the cast"),
         "{text}"
     );
     assert!(text.contains("Ada's harbour."), "{text}");
@@ -5920,10 +5913,10 @@ async fn a_group_launched_without_a_persona_follows_the_groups_later_persona() {
     let prompt_id = prompt_with_text(
         &database,
         "Group identity",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
         "User={{user}}",
     );
-    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_conversation_prompt_id = Some(prompt_id); });
+    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_roleplay_prompt_id = Some(prompt_id); });
     let second = seed_named_character(&database, "Bea");
     let group_id = seed_group(
         &database,
@@ -5931,7 +5924,7 @@ async fn a_group_launched_without_a_persona_follows_the_groups_later_persona() {
         None,
         |group| {
             group.chat_mode = ChatMode::Conversation;
-            group.group_conversation_prompt_id = Some(prompt_id);
+            group.group_roleplay_prompt_id = Some(prompt_id);
             group.persona = Selection::Disabled;
         },
     );
@@ -6210,7 +6203,14 @@ fn reset_conversation_prompt(
                 Vec::new(),
             )
             .expect("prepared prompt reset"),
-            TimestampMillis::new(NOW.get() + 6),
+            TimestampMillis::new(
+                ConversationReader::get(database, conversation_id)
+                    .expect("conversation")
+                    .conversation
+                    .updated_at
+                    .get()
+                    .max(NOW.get() + 6),
+            ),
         )
         .expect("reset conversation prompt");
 }
@@ -6540,10 +6540,10 @@ async fn a_group_turn_reads_its_prompt_and_lorebooks_live() {
     let group_prompt = prompt_with_text(
         &database,
         "Group",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
         "Group voice",
     );
-    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_conversation_prompt_id = Some(group_prompt); });
+    let first = seed_named_character_with(&database, "Ada", |defaults| { defaults.group_roleplay_prompt_id = Some(group_prompt); });
     let second = seed_named_character(&database, "Bea");
     let group_id = seed_group(
         &database,
@@ -6551,7 +6551,7 @@ async fn a_group_turn_reads_its_prompt_and_lorebooks_live() {
         None,
         |group| {
             group.chat_mode = ChatMode::Conversation;
-            group.group_conversation_prompt_id = Some(group_prompt);
+            group.group_roleplay_prompt_id = Some(group_prompt);
         },
     );
     let launched = ConversationLaunchPlanner::new(&database)
@@ -6650,15 +6650,12 @@ async fn a_group_turn_reads_its_prompt_and_lorebooks_live() {
     let (_, text) = assembled_prompt_with_text(&database, turn()).await;
     assert!(!text.contains("The group harbour."));
     assert!(text.contains("The speaker tide."));
-    let legacy = prompt_with_text(&database, "Legacy chat override", PromptPurpose::GroupChatConversational, "Legacy voice must never be used");
-    override_conversation_prompt(&database, conversation.id, legacy, "legacy-group-prompt");
-    let (prompt, text) = assembled_prompt_with_text(&database, turn()).await;
-    assert_eq!(prompt.map(|(id, _)| id), Some(group_prompt));
-    assert!(!text.contains("Legacy voice must never be used"));
-    disable_conversation_prompt(&database, conversation.id);
     let (prompt, _) = assembled_prompt_with_text(&database, turn()).await;
-    assert_eq!(prompt.map(|(id, _)| id), Some(group_prompt), "historical disabled prompt cannot disable the character prompt");
-
+    assert_eq!(
+        prompt.map(|(id, _)| id),
+        Some(group_prompt),
+        "a group keeps reading its member prompt live"
+    );
 }
 
 #[test]
@@ -7430,7 +7427,7 @@ fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
     let group = seed_prompt(
         &database,
         "Group prompt",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
     );
     let summarizer = seed_prompt(
         &database,
@@ -13126,6 +13123,12 @@ fn a_conversation_mode_group_opens_empty_even_with_a_starting_scene() {
     assert_eq!(details.group.chat_mode, GroupChatModeSnapshot::Conversation);
     assert_eq!(details.group.scene, SnapshotSelection::Disabled);
     assert!(plan.initial_timeline.entries.is_empty());
+    match &details.group.prompt {
+        SnapshotSelection::Inherited(prompt) => {
+            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupRoleplay);
+        }
+        other => panic!("expected the roleplay group prompt, got {other:?}"),
+    }
 }
 
 #[test]
@@ -13311,9 +13314,9 @@ fn a_group_prompt_never_falls_back_to_a_member_direct_prompt() {
                 prompt.source_id,
                 backend
                     .built_in_prompt_ids()
-                    .get(BuiltInPromptId::GroupChat)
+                    .get(BuiltInPromptId::GroupChatRoleplay)
             );
-            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupConversational);
+            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupRoleplay);
         }
         other => panic!("expected the built-in group prompt, got {other:?}"),
     }
@@ -13356,7 +13359,7 @@ fn legacy_group_prompt_defaults_are_ignored_even_when_active() {
     let authored = seed_prompt(
         database,
         "Group prompt",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
     );
     let first = seed_named_character(database, "Ada");
     let second = seed_named_character(database, "Bea");
@@ -13364,11 +13367,11 @@ fn legacy_group_prompt_defaults_are_ignored_even_when_active() {
         database,
         vec![member(first, 0), member(second, 1)],
         None,
-        |group| group.group_conversation_prompt_id = Some(authored),
+        |group| group.group_roleplay_prompt_id = Some(authored),
     );
     let plan = group_plan_for(database, &group_request(group_id, "group-prompt-authored"));
     match &group_details(&plan).group.prompt {
-        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, backend.built_in_prompt_ids().get(BuiltInPromptId::GroupChat)),
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, backend.built_in_prompt_ids().get(BuiltInPromptId::GroupChatRoleplay)),
         other => panic!("expected the built-in fallback, got {other:?}"),
     }
 
@@ -13379,7 +13382,7 @@ fn legacy_group_prompt_defaults_are_ignored_even_when_active() {
             prompt.source_id,
             backend
                 .built_in_prompt_ids()
-                .get(BuiltInPromptId::GroupChat)
+                .get(BuiltInPromptId::GroupChatRoleplay)
         ),
         other => panic!("expected the built-in group prompt, got {other:?}"),
     }
@@ -13396,7 +13399,7 @@ fn a_legacy_group_prompt_with_the_wrong_purpose_is_ignored() {
         database,
         vec![member(first, 0), member(second, 1)],
         None,
-        |group| group.group_conversation_prompt_id = Some(wrong),
+        |group| group.group_roleplay_prompt_id = Some(wrong),
     );
     ConversationLaunchPlanner::new(database)
         .prepare_group(&group_request(group_id, "group-prompt-wrong"), NOW)
@@ -14202,7 +14205,7 @@ fn a_missing_built_in_group_prompt_is_reported_instead_of_being_skipped() {
             )
             .expect_err("missing built-in prompt"),
         ConversationLaunchError::BuiltInPromptMissing {
-            purpose: PromptPurpose::GroupChatConversational
+            purpose: PromptPurpose::GroupChatRoleplay
         }
     );
 }
@@ -14425,21 +14428,15 @@ fn the_group_profile_persona_sits_between_the_request_and_the_application_defaul
 }
 
 #[test]
-fn a_member_carries_its_own_group_prompt_for_the_launched_mode() {
+fn a_member_carries_its_own_group_prompt_in_every_mode() {
     let backend = backend();
     let database = backend.database();
-    let conversational = seed_prompt(
-        database,
-        "Member conversational",
-        PromptPurpose::GroupChatConversational,
-    );
     let roleplay = seed_prompt(
         database,
         "Member roleplay",
         PromptPurpose::GroupChatRoleplay,
     );
     let first = seed_named_character_with(database, "Ada", |defaults| {
-        defaults.group_conversation_prompt_id = Some(conversational);
         defaults.group_roleplay_prompt_id = Some(roleplay);
     });
     let second = seed_named_character(database, "Bea");
@@ -14453,8 +14450,8 @@ fn a_member_carries_its_own_group_prompt_for_the_launched_mode() {
     let details = group_details(&plan);
     match &details.group.members[0].prompt {
         SnapshotSelection::Inherited(prompt) => {
-            assert_eq!(prompt.source_id, conversational);
-            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupConversational);
+            assert_eq!(prompt.source_id, roleplay);
+            assert_eq!(prompt.purpose, PromptPurposeSnapshot::GroupRoleplay);
         }
         other => panic!("expected the member group prompt, got {other:?}"),
     }
@@ -14486,10 +14483,10 @@ fn an_archived_member_prompt_degrades_while_dangling_and_mismatched_ones_error()
     let archived = seed_prompt(
         database,
         "Member archived",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
     );
     let first = seed_named_character_with(database, "Ada", |defaults| {
-        defaults.group_conversation_prompt_id = Some(archived);
+        defaults.group_roleplay_prompt_id = Some(archived);
     });
     let second = seed_named_character(database, "Bea");
     let group_id = seed_group(
@@ -14510,7 +14507,7 @@ fn an_archived_member_prompt_degrades_while_dangling_and_mismatched_ones_error()
 
     let dangling = lettuce_types::PromptDocumentId::new();
     let third = seed_named_character_with(database, "Cai", |defaults| {
-        defaults.group_conversation_prompt_id = Some(dangling);
+        defaults.group_roleplay_prompt_id = Some(dangling);
     });
     let dangling_group = seed_group(
         database,
@@ -14532,7 +14529,7 @@ fn an_archived_member_prompt_degrades_while_dangling_and_mismatched_ones_error()
 
     let wrong = seed_prompt(database, "Member direct", PromptPurpose::DirectChat);
     let fourth = seed_named_character_with(database, "Dee", |defaults| {
-        defaults.group_conversation_prompt_id = Some(wrong);
+        defaults.group_roleplay_prompt_id = Some(wrong);
     });
     let wrong_group = seed_group(
         database,
@@ -14558,19 +14555,19 @@ fn one_prompt_document_shared_by_members_and_the_group_is_staged_once() {
     let shared = seed_prompt(
         database,
         "Shared group prompt",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
     );
     let first = seed_named_character_with(database, "Ada", |defaults| {
-        defaults.group_conversation_prompt_id = Some(shared);
+        defaults.group_roleplay_prompt_id = Some(shared);
     });
     let second = seed_named_character_with(database, "Bea", |defaults| {
-        defaults.group_conversation_prompt_id = Some(shared);
+        defaults.group_roleplay_prompt_id = Some(shared);
     });
     let group_id = seed_group(
         database,
         vec![member(first, 0), member(second, 1)],
         None,
-        |group| group.group_conversation_prompt_id = Some(shared),
+        |group| group.group_roleplay_prompt_id = Some(shared),
     );
     let request = group_request(group_id, "group-prompt-shared");
     let plan = group_plan_for(database, &request);
@@ -14602,7 +14599,7 @@ fn changing_a_member_prompt_conflicts_on_the_same_operation_key() {
     let prompt_id = seed_prompt(
         database,
         "Member conversational",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
     );
     let first = seed_named_character(database, "Ada");
     let second = seed_named_character(database, "Bea");
@@ -14621,7 +14618,7 @@ fn changing_a_member_prompt_conflicts_on_the_same_operation_key() {
         .expect("character exists")
         .character
         .defaults;
-    defaults.group_conversation_prompt_id = Some(prompt_id);
+    defaults.group_roleplay_prompt_id = Some(prompt_id);
     CharacterRepository::update_defaults(database, first, Revision::INITIAL, defaults, NOW)
         .expect("update defaults");
     assert_eq!(
@@ -14639,22 +14636,22 @@ fn a_group_conversation_with_member_prompts_hydrates_from_the_database() {
     let member_prompt = seed_prompt(
         database,
         "Member conversational",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
     );
     let group_prompt = seed_prompt(
         database,
         "Group conversational",
-        PromptPurpose::GroupChatConversational,
+        PromptPurpose::GroupChatRoleplay,
     );
     let first = seed_named_character_with(database, "Ada", |defaults| {
-        defaults.group_conversation_prompt_id = Some(member_prompt);
+        defaults.group_roleplay_prompt_id = Some(member_prompt);
     });
     let second = seed_named_character(database, "Bea");
     let group_id = seed_group(
         database,
         vec![member(first, 0), member(second, 1)],
         None,
-        |group| group.group_conversation_prompt_id = Some(group_prompt),
+        |group| group.group_roleplay_prompt_id = Some(group_prompt),
     );
     let created = ConversationLaunchPlanner::new(database)
         .launch_group(&group_request(group_id, "group-member-prompt-hydrate"), NOW)
@@ -14672,7 +14669,7 @@ fn a_group_conversation_with_member_prompts_hydrates_from_the_database() {
     }
     assert_eq!(details.group.members[1].prompt, SnapshotSelection::Disabled);
     match &details.group.prompt {
-        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, backend.built_in_prompt_ids().get(BuiltInPromptId::GroupChat)),
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, backend.built_in_prompt_ids().get(BuiltInPromptId::GroupChatRoleplay)),
         other => panic!("expected the built-in fallback, got {other:?}"),
     }
 }

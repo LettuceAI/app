@@ -44,7 +44,7 @@ pub fn model_profile_sync_entity(id: ModelProfileId) -> Result<SyncEntity, SyncC
 
 pub const CHARACTER_SYNC_KIND: &str = "character";
 pub const CHARACTER_SYNC_SCHEMA: &str = "character.snapshot";
-pub const CHARACTER_SYNC_VERSION: u32 = 5;
+pub const CHARACTER_SYNC_VERSION: u32 = 6;
 
 /// The complete character aggregate: root, scenes, variants and starters.
 pub fn canonical_character_payload(
@@ -91,7 +91,7 @@ pub fn canonical_lorebook_bindings_payload(
 
 pub const PROMPT_SYNC_KIND: &str = "prompt";
 pub const PROMPT_SYNC_SCHEMA: &str = "prompt.snapshot";
-pub const PROMPT_SYNC_VERSION: u32 = 2;
+pub const PROMPT_SYNC_VERSION: u32 = 3;
 
 /// The complete prompt document with its ordered entries.
 pub fn canonical_prompt_payload(
@@ -105,7 +105,7 @@ pub fn canonical_prompt_payload(
 
 pub const GROUP_SYNC_KIND: &str = "group";
 pub const GROUP_SYNC_SCHEMA: &str = "group.snapshot";
-pub const GROUP_SYNC_VERSION: u32 = 3;
+pub const GROUP_SYNC_VERSION: u32 = 4;
 pub const GROUP_LOREBOOK_BINDINGS_SYNC_KIND: &str = "group_lorebook_bindings";
 
 /// The complete reusable group: profile, members and starting scene.
@@ -124,11 +124,11 @@ pub const APP_SETTINGS_SYNC_VERSION: u32 = 4;
 
 pub const CONVERSATION_SNAPSHOT_SYNC_KIND: &str = "conversation_snapshot";
 pub const CONVERSATION_SNAPSHOT_SYNC_SCHEMA: &str = "conversation.snapshot_artifact";
-pub const CONVERSATION_SNAPSHOT_SYNC_VERSION: u32 = 2;
+pub const CONVERSATION_SNAPSHOT_SYNC_VERSION: u32 = 3;
 
 pub const CONVERSATION_SYNC_KIND: &str = "conversation";
 pub const CONVERSATION_SYNC_SCHEMA: &str = "conversation.root";
-pub const CONVERSATION_SYNC_VERSION: u32 = 7;
+pub const CONVERSATION_SYNC_VERSION: u32 = 8;
 
 pub const CONVERSATION_MESSAGE_SYNC_KIND: &str = "conversation_message";
 pub const CONVERSATION_MESSAGE_SYNC_SCHEMA: &str = "conversation.message";

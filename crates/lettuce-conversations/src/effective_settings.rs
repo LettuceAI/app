@@ -506,19 +506,11 @@ mod tests {
         let cast_model = model(ModelProfileId::new());
         let group_prompt = prompt(
             PromptDocumentId::new(),
-            if mode == GroupChatModeSnapshot::Roleplay {
-                PromptPurposeSnapshot::GroupRoleplay
-            } else {
-                PromptPurposeSnapshot::GroupConversational
-            },
+            PromptPurposeSnapshot::GroupRoleplay,
         );
         let member_prompt = prompt(
             PromptDocumentId::new(),
-            if mode == GroupChatModeSnapshot::Roleplay {
-                PromptPurposeSnapshot::GroupRoleplay
-            } else {
-                PromptPurposeSnapshot::GroupConversational
-            },
+            PromptPurposeSnapshot::GroupRoleplay,
         );
         let group_book = lorebook(LorebookId::new(), "Group");
         let overlap_book = lorebook(LorebookId::new(), "Overlap");
@@ -652,7 +644,6 @@ mod tests {
                 companion_clock: PatchValue::Keep,
                 background: PatchValue::Keep,
                 model_settings: PatchValue::Keep,
-                roleplay_prompt: Default::default(),
                 chat_mode: Default::default(),
                 disable_character_lorebooks: Default::default(),
                 disable_character_notes: Default::default(),

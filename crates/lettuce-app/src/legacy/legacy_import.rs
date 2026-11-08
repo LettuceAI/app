@@ -1706,7 +1706,7 @@ mod tests {
             skipped: Vec::new(),
             prompts: vec![
                 candidate("prompt_app_default", PromptPurpose::DirectChat, 5),
-                candidate("prompt_app_group_chat", PromptPurpose::GroupChatConversational, 9),
+                candidate("prompt_app_group_chat_roleplay", PromptPurpose::GroupChatRoleplay, 9),
             ],
             default_prompt_source_id: Some("prompt_app_default".to_owned()),
             deprecated_system_prompt: None,
@@ -1773,8 +1773,8 @@ mod tests {
         ));
         assert!(unedited.entries.iter().all(|entry| entry.content != "Legacy text"));
         let edited = lookup(
-            destination("prompt_app_group_chat"),
-            PromptPurpose::GroupChatConversational,
+            destination("prompt_app_group_chat_roleplay"),
+            PromptPurpose::GroupChatRoleplay,
         );
         assert_eq!(edited.behavior_version, PromptBehaviorVersion::LegacyV1);
         assert_eq!(edited.entries[0].content, "Legacy text");

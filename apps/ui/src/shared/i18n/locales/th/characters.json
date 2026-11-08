@@ -96,7 +96,6 @@
     "prompts": "พรอมต์",
     "directPrompt": "แชทแบบหนึ่งต่อหนึ่ง",
     "groupRoleplayPrompt": "โรลเพลย์กลุ่ม",
-    "groupConversationPrompt": "บทสนทนากลุ่ม",
     "companionPrompt": "เพื่อนคู่ใจ",
     "promptUnavailable": "โหลดพรอมต์ไม่ได้"
   },

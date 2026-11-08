@@ -17,7 +17,7 @@ const reply = (scene_image: SceneImageView | null = null): TimelineMessage => ({
 });
 const settings = {
   conversation_id: "c1", kind: "direct", title: "Harbour", revision: 1, settings_revision: 1, author_note: null,
-  persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null, lorebooks: { ids: [], source: "app_default" },
+  persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, lorebooks: { ids: [], source: "app_default" },
   model: { id: "writer", source: "app_default" }, background: { asset: null, hidden: false, source: "app_default" },
   scene: { id: null, source: "app_default" }, memory: { mode: "disabled", source: "app_default" }, chat_mode: null,
   disable_character_lorebooks: null, disable_character_notes: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,

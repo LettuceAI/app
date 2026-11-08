@@ -24,7 +24,7 @@ use crate::BackupSection;
 
 const _: () = assert!(MAX_MEDIA_BLOB_BYTES <= crate::MAX_BACKUP_ENTRY_BYTES);
 
-pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 5;
+pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 6;
 pub const PROVIDER_BACKUP_FIXED_SECTIONS: usize = 13;
 /// Largest byte run one data document occupies in a single backup entry; a
 /// larger document continues in `<name>.part<N>` entries so no library size
@@ -1376,7 +1376,6 @@ fn validate_authored(
                 .is_some_and(|id| !profile_ids.contains_key(&id))
             || [
                 character.defaults.direct_prompt_id,
-                character.defaults.group_conversation_prompt_id,
                 character.defaults.group_roleplay_prompt_id,
             ]
             .into_iter()
@@ -1419,13 +1418,10 @@ fn validate_authored(
                         .is_some_and(|id| !profile_ids.contains_key(&id))
             })
             || matches!(group.persona, Selection::Explicit(id) if !persona_ids.contains(&id))
-            || [
-                group.group_conversation_prompt_id,
-                group.group_roleplay_prompt_id,
-            ]
-            .into_iter()
-            .flatten()
-            .any(|id| !prompt_ids.contains_key(&id))
+            || [group.group_roleplay_prompt_id]
+                .into_iter()
+                .flatten()
+                .any(|id| !prompt_ids.contains_key(&id))
         {
             return Err(ProviderBackupGraphError::InvalidGraph {
                 reason: "group is invalid, duplicated or references unknown characters, profiles, personas or prompts",

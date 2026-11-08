@@ -62,7 +62,6 @@ pub enum PromptPurpose {
     DirectChat,
     CompanionChat,
     GroupChatRoleplay,
-    GroupChatConversational,
     DynamicMemorySummarizer,
     DynamicMemoryManager,
     ReplyHelperRoleplay,
@@ -1644,7 +1643,7 @@ impl PromptVariable {
                         | Variable::SceneCastLoraKeywords
                 )
             }
-            Purpose::GroupChatRoleplay | Purpose::GroupChatConversational => matches!(
+            Purpose::GroupChatRoleplay => matches!(
                 self,
                 Variable::GroupCharacters | Variable::SceneCastLoraKeywords
             ),

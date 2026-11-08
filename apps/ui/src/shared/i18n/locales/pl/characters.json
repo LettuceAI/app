@@ -102,7 +102,6 @@
     "prompts": "Prompty",
     "directPrompt": "Czaty jeden na jeden",
     "groupRoleplayPrompt": "Grupowe odgrywanie ról",
-    "groupConversationPrompt": "Rozmowa grupowa",
     "companionPrompt": "Towarzysz",
     "promptUnavailable": "Nie udało się załadować promptów"
   },

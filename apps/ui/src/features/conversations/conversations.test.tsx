@@ -90,7 +90,6 @@ const settings: ConversationSettingsView = {
   author_note: null,
   persona: { id: null, source: "app_default" },
   prompt: { id: null, source: "app_default" },
-  roleplay_prompt: null,
   lorebooks: { ids: [], source: "app_default" },
   model: { id: "m1", source: "character" },
   background: { asset: null, hidden: false, source: "character" },

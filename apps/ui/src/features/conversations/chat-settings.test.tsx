@@ -30,7 +30,7 @@ function view(messages: TimelineMessage[], patch: Partial<ConversationView> = {}
 
 const settings: ConversationSettingsView = {
   conversation_id: "c1", kind: "direct", title: "Harbour", revision: 4, settings_revision: 2, author_note: null,
-  persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" }, roleplay_prompt: null,
+  persona: { id: null, source: "app_default" }, prompt: { id: null, source: "app_default" },
   lorebooks: { ids: [], source: "app_default" }, model: { id: "m1", source: "character" }, background: { asset: null, hidden: false, source: "character" },
   scene: { id: null, source: "app_default" }, memory: { mode: "manual", source: "app_default" }, chat_mode: null,
   disable_character_lorebooks: null, disable_character_notes: null, speaker_selection: null, members: null, model_settings: { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as never, time: { enabled: false, mode: "live", anchor_at: null, set_at: null, effective_at: 1_700_000_000_000 }, companion: false,
@@ -109,7 +109,7 @@ const panelCalls: MockCallHandlers = {
 describe("chat settings panel", () => {
   it("saves group member models, keeps failed pickers open and follows group inheritance without prompt overrides", async () => {
     const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" },
-      prompt: { id: null, source: "group" }, roleplay_prompt: { id: null, source: "group" },
+      prompt: { id: null, source: "group" },
       members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [
         { participant_id: "pc", character_id: "ch1", name: "Cassian", enabled: true, muted: false, model: { id: null, source: "character" } },
       ] },
@@ -126,7 +126,6 @@ describe("chat settings panel", () => {
       modelsList: () => ({ status: "ok", data: { models: [{ id: "m1", provider_account_id: "a", external_model_id: "x", display_name: "Vision", kind: "chat", config: {}, input_scopes: ["text", "image"], output_scopes: ["text"], revision: 1, created_at: 1, updated_at: 1 }], default_model_id: "m1", revision: 1 } }),
       conversationParticipantUpdate: participant, conversationSettingsUpdate: update,
       promptsList: () => ({ status: "ok", data: { items: [
-        { id: "p1", name: "Group dialogue", kind: "group_chat_conversational", archived: false, origin: { type: "user" }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
         { id: "p2", name: "Group story", kind: "group_chat_roleplay", archived: false, origin: { type: "user" }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },
       ], next_cursor: null } }),
     } });
@@ -233,7 +232,7 @@ describe("chat settings panel", () => {
     expect(screen.getAllByRole("button", { name: /^Scheduled notes/ })).toHaveLength(1);
     expect(screen.queryByRole("switch", { name: "Use character notes" })).toBeNull();
     cleanup();
-    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, roleplay_prompt: { id: null, source: "group" }, disable_character_notes: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
+    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, disable_character_notes: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
     const update = vi.fn<NonNullable<MockCallHandlers["conversationSettingsUpdate"]>>(() => ({ status: "ok", data: groupSettings }));
     await open({ path: "/chat/c1?panel=settings", calls: {
       ...panelCalls,
@@ -253,7 +252,7 @@ describe("chat settings panel", () => {
   });
 
   it("opens the group's notes from a group chat and saves a note aimed at one member", async () => {
-    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, roleplay_prompt: { id: null, source: "group" }, disable_character_notes: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
+    const groupSettings: ConversationSettingsView = { ...settings, kind: "group", model: { id: null, source: "group" }, prompt: { id: null, source: "group" }, disable_character_notes: { value: false, source: "group" }, members: { members_source: "conversation", muted_source: "conversation", models_source: "conversation", participants: [] } };
     const upsert = vi.fn<NonNullable<MockCallHandlers["groupNotesUpsert"]>>((request) => ({ status: "ok", data: { id: "n1", group_id: request.group_id, visible_to: request.visible_to, label: request.label, content: request.content, available_at: request.available_at, expires_at: null, recurrence: "none", recurrence_window_ms: null, enabled: true, created_at: 1, updated_at: 1 } }));
     await open({ path: "/chat/c1?panel=settings", calls: {
       ...panelCalls,

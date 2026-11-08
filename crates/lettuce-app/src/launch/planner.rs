@@ -990,8 +990,8 @@ where
         let scene_text = scene
             .value()
             .and_then(|value| policy::resolve_group_scene_text(value, variants));
-        let prompt = self.resolve_group_prompt(chat_mode)?;
-        let member_prompts = self.resolve_member_prompts(&characters, chat_mode)?;
+        let prompt = self.resolve_group_prompt()?;
+        let member_prompts = self.resolve_member_prompts(&characters)?;
 
         let group_bindings = if new_group {
             Vec::new()
@@ -1148,7 +1148,7 @@ where
                     source_id: document.id,
                     source_revision: document.revision,
                     title: document.name.clone(),
-                    purpose: group_prompt_purpose_snapshot(chat_mode),
+                    purpose: group_prompt_purpose_snapshot(),
                 },
             ));
             prompt_drafts.push(draft);
@@ -1430,30 +1430,22 @@ where
         Ok(Selected::Inherited(&starting.scene))
     }
 
-    fn resolve_group_prompt(
-        &self,
-        chat_mode: GroupChatModeSnapshot,
-    ) -> Result<Selected<PromptDocument>, ConversationLaunchError> {
-        let built_in = match chat_mode {
-            GroupChatModeSnapshot::Conversation => BuiltInPromptId::GroupChat,
-            GroupChatModeSnapshot::Roleplay => BuiltInPromptId::GroupChatRoleplay,
-        };
-        Ok(Selected::Inherited(self.built_in_prompt(built_in, group_prompt_purpose(chat_mode))?))
+    fn resolve_group_prompt(&self) -> Result<Selected<PromptDocument>, ConversationLaunchError> {
+        Ok(Selected::Inherited(self.built_in_prompt(
+            BuiltInPromptId::GroupChatRoleplay,
+            PromptPurpose::GroupChatRoleplay,
+        )?))
     }
 
     fn resolve_member_prompts(
         &self,
         characters: &[lettuce_characters::CharacterDetails],
-        chat_mode: GroupChatModeSnapshot,
     ) -> Result<Vec<Selected<PromptDocument>>, ConversationLaunchError> {
-        let purpose = group_prompt_purpose(chat_mode);
+        let purpose = PromptPurpose::GroupChatRoleplay;
         let mut resolved = Vec::with_capacity(characters.len());
         for details in characters {
             let defaults = &details.character.defaults;
-            let authored = match chat_mode {
-                GroupChatModeSnapshot::Conversation => defaults.group_conversation_prompt_id,
-                GroupChatModeSnapshot::Roleplay => defaults.group_roleplay_prompt_id,
-            };
+            let authored = defaults.group_roleplay_prompt_id;
             let Some(prompt_id) = authored else {
                 resolved.push(Selected::Disabled);
                 continue;
@@ -1557,18 +1549,8 @@ where
     }
 }
 
-const fn group_prompt_purpose(chat_mode: GroupChatModeSnapshot) -> PromptPurpose {
-    match chat_mode {
-        GroupChatModeSnapshot::Conversation => PromptPurpose::GroupChatConversational,
-        GroupChatModeSnapshot::Roleplay => PromptPurpose::GroupChatRoleplay,
-    }
-}
-
-const fn group_prompt_purpose_snapshot(chat_mode: GroupChatModeSnapshot) -> PromptPurposeSnapshot {
-    match chat_mode {
-        GroupChatModeSnapshot::Conversation => PromptPurposeSnapshot::GroupConversational,
-        GroupChatModeSnapshot::Roleplay => PromptPurposeSnapshot::GroupRoleplay,
-    }
+const fn group_prompt_purpose_snapshot() -> PromptPurposeSnapshot {
+    PromptPurposeSnapshot::GroupRoleplay
 }
 
 fn collect_prompt(

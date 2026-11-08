@@ -98,7 +98,6 @@
     "prompts": "Prompts",
     "directPrompt": "Eén-op-één-chats",
     "groupRoleplayPrompt": "Groepsroleplay",
-    "groupConversationPrompt": "Groepsgesprek",
     "companionPrompt": "Metgezel",
     "promptUnavailable": "Kon prompts niet laden"
   },

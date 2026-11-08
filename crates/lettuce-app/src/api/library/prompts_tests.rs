@@ -686,10 +686,10 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
             source_prompt_id: None,
             client_operation_id: "group-prompt".into(),
             prompt: dto::PromptInput {
-                kind: dto::PromptKind::GroupChatConversational,
+                kind: dto::PromptKind::GroupChatRoleplay,
                 ..input(
                     "Group",
-                    "{{char.name}} {{char.desc}} {{persona.name}} {{persona.desc}} Cast: {{group_characters}}",
+                    "{{char.name}} {{char.desc}} {{persona.name}} {{persona.desc}} Cast: {{group_characters}} {{scene}} {{scene_direction}} {{context_summary}} {{key_memories}}",
                 )
             },
         },

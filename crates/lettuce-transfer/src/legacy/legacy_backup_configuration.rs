@@ -1976,7 +1976,7 @@ pub fn legacy_prompt_purpose(value: &str) -> Option<PromptPurpose> {
         "directChat" => PromptPurpose::DirectChat,
         "companionChat" => PromptPurpose::CompanionChat,
         "groupChatRoleplay" => PromptPurpose::GroupChatRoleplay,
-        "groupChatConversational" => PromptPurpose::GroupChatConversational,
+        "groupChatConversational" => PromptPurpose::GroupChatRoleplay,
         "dynamicMemorySummarizer" => PromptPurpose::DynamicMemorySummarizer,
         "dynamicMemoryManager" => PromptPurpose::DynamicMemoryManager,
         "replyHelperRoleplay" => PromptPurpose::ReplyHelperRoleplay,

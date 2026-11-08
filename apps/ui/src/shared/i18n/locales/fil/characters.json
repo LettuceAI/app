@@ -98,7 +98,6 @@
     "prompts": "Mga Prompt",
     "directPrompt": "Mga one-to-one chat",
     "groupRoleplayPrompt": "Group roleplay",
-    "groupConversationPrompt": "Group conversation",
     "companionPrompt": "Companion",
     "promptUnavailable": "Hindi ma-load ang mga prompt"
   },

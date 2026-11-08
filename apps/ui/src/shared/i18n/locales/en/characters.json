@@ -97,8 +97,7 @@
     "recommended": "Recommended",
     "prompts": "Prompts",
     "directPrompt": "One-to-one chats",
-    "groupRoleplayPrompt": "Group roleplay",
-    "groupConversationPrompt": "Group conversation",
+    "groupRoleplayPrompt": "Group chat prompt",
     "companionPrompt": "Companion",
     "promptUnavailable": "Couldn’t load prompts"
   },

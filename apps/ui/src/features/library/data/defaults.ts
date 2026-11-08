@@ -27,7 +27,6 @@ export function newCharacterDraft(name: string, description: string): CharacterD
       default_scene_id: null,
       default_starter_id: null,
       direct_prompt_id: null,
-      group_conversation_prompt_id: null,
       group_roleplay_prompt_id: null,
       voice: null,
       voice_autoplay: false,

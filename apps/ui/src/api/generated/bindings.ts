@@ -2005,7 +2005,6 @@ export type ConversationSettingsPatch_Deserialize = {
 	time_awareness?: boolean | null,
 	persona: ChoiceChange | null,
 	prompt: ChoiceChange | null,
-	roleplay_prompt: ChoiceChange | null,
 	lorebooks: LorebooksChange | null,
 	model: IdChange | null,
 	background: BackgroundChange | null,
@@ -2031,7 +2030,6 @@ export type ConversationSettingsPatch_Serialize = {
 	time_awareness?: boolean,
 	persona: ChoiceChange | null,
 	prompt: ChoiceChange | null,
-	roleplay_prompt: ChoiceChange | null,
 	lorebooks: LorebooksChange | null,
 	model: IdChange | null,
 	background: BackgroundChange | null,
@@ -2098,10 +2096,8 @@ export type ConversationSettingsView_Deserialize = {
 	settings_revision: number | null,
 	author_note: string | null,
 	persona: SettingChoice,
-	/**  The one-to-one prompt, or a group's conversation-mode prompt. */
+	/**  The one-to-one prompt. */
 	prompt: SettingChoice,
-	/**  A group's roleplay-mode prompt. */
-	roleplay_prompt: SettingChoice | null,
 	lorebooks: SettingChoices,
 	model: SettingChoice,
 	background: SettingBackground_Deserialize,
@@ -2143,10 +2139,8 @@ export type ConversationSettingsView_Serialize = {
 	settings_revision: number | null,
 	author_note: string | null,
 	persona: SettingChoice,
-	/**  The one-to-one prompt, or a group's conversation-mode prompt. */
+	/**  The one-to-one prompt. */
 	prompt: SettingChoice,
-	/**  A group's roleplay-mode prompt. */
-	roleplay_prompt: SettingChoice | null,
 	lorebooks: SettingChoices,
 	model: SettingChoice,
 	background: SettingBackground_Serialize,
@@ -2589,7 +2583,6 @@ export type GroupDraft_Deserialize = {
 	disable_character_lorebooks: boolean,
 	time_awareness: boolean,
 	disable_character_notes: boolean,
-	group_conversation_prompt_id: string | null,
 	group_roleplay_prompt_id: string | null,
 	presentation: LibraryChatAppearanceV1_Deserialize,
 	presentation_overrides?: string[] | null,
@@ -2607,7 +2600,6 @@ export type GroupDraft_Serialize = {
 	disable_character_lorebooks: boolean,
 	time_awareness: boolean,
 	disable_character_notes: boolean,
-	group_conversation_prompt_id: string | null,
 	group_roleplay_prompt_id: string | null,
 	presentation: LibraryChatAppearanceV1_Serialize,
 	presentation_overrides?: string[] | null,
@@ -4669,7 +4661,6 @@ export type LibraryCharacterDefaults_Deserialize = {
 	default_scene_id: string | null,
 	default_starter_id: string | null,
 	direct_prompt_id: string | null,
-	group_conversation_prompt_id: string | null,
 	group_roleplay_prompt_id: string | null,
 	voice: LibraryVoicePreference_Deserialize | null,
 	voice_autoplay: boolean,
@@ -4684,7 +4675,6 @@ export type LibraryCharacterDefaults_Serialize = {
 	default_scene_id: string | null,
 	default_starter_id: string | null,
 	direct_prompt_id: string | null,
-	group_conversation_prompt_id: string | null,
 	group_roleplay_prompt_id: string | null,
 	voice: LibraryVoicePreference_Serialize | null,
 	voice_autoplay: boolean,
@@ -7424,7 +7414,7 @@ export type PromptInput = {
 	entries: PromptEntryInput[],
 };
 
-export type PromptKind = "direct_chat" | "companion_chat" | "group_chat_roleplay" | "group_chat_conversational" | "dynamic_memory_summarizer" | "dynamic_memory_manager" | "reply_helper_roleplay" | "reply_helper_conversational" | "lorebook_entry_writer" | "lorebook_keyword_generator" | "lorebook_generator_planner" | "lorebook_generator_writer" | "lorebook_generator_refine" | "lorebook_generator_coherence" | "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer" | "companion_soul_writer" | "companion_growthcycle" | "companion_consolidation" | "runtime_text";
+export type PromptKind = "direct_chat" | "companion_chat" | "group_chat_roleplay" | "dynamic_memory_summarizer" | "dynamic_memory_manager" | "reply_helper_roleplay" | "reply_helper_conversational" | "lorebook_entry_writer" | "lorebook_keyword_generator" | "lorebook_generator_planner" | "lorebook_generator_writer" | "lorebook_generator_refine" | "lorebook_generator_coherence" | "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer" | "companion_soul_writer" | "companion_growthcycle" | "companion_consolidation" | "runtime_text";
 
 export type PromptLorebookEntry = {
 	lorebook_id: string,

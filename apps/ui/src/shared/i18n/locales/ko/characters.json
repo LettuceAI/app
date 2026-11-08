@@ -96,7 +96,6 @@
     "prompts": "프롬프트",
     "directPrompt": "1:1 채팅",
     "groupRoleplayPrompt": "그룹 롤플레이",
-    "groupConversationPrompt": "그룹 대화",
     "companionPrompt": "동반자",
     "promptUnavailable": "프롬프트를 불러오지 못했어요"
   },

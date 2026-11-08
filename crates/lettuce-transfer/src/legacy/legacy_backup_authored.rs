@@ -924,7 +924,7 @@ pub(crate) fn map_character_row(
         (
             "group_chat_prompt_template_id",
             &mut group_conversation_prompt_source_id,
-            PromptPurpose::GroupChatConversational,
+            PromptPurpose::GroupChatRoleplay,
         ),
         (
             "group_chat_roleplay_prompt_template_id",
@@ -1531,7 +1531,7 @@ fn map_groups(
             (
                 "group_chat_prompt_template_id",
                 &mut group_conversation_prompt_source_id,
-                PromptPurpose::GroupChatConversational,
+                PromptPurpose::GroupChatRoleplay,
             ),
             (
                 "group_chat_roleplay_prompt_template_id",
@@ -1581,7 +1581,6 @@ fn map_groups(
             disable_character_lorebooks: row.disable_character_lorebooks,
             time_awareness: false,
             disable_character_notes: false,
-            group_conversation_prompt_id: None,
             group_roleplay_prompt_id: None,
             presentation: lettuce_characters::ChatAppearanceV1::default(),
             presentation_overrides: None,

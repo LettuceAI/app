@@ -196,7 +196,7 @@ mod tests {
                 .into_iter()
                 .chain(
                     [
-                        ("legacy-group-talk", PromptPurpose::GroupChatConversational),
+                        ("legacy-group-talk", PromptPurpose::GroupChatRoleplay),
                         ("legacy-group-play", PromptPurpose::GroupChatRoleplay),
                     ]
                     .map(|(source_id, purpose)| LegacyPromptCandidate {
@@ -404,6 +404,8 @@ mod tests {
                 interaction_mode: InteractionMode::Roleplay,
                 default_scene_id: None,
                 default_starter_source_id: None,
+                group_conversation_prompt_source_id: Some("legacy-group-talk".to_owned()),
+                group_roleplay_prompt_source_id: None,
                 companion_soul: None,
                 companion_prompt_source_id: None,
                 ..character.defaults.clone()
@@ -518,6 +520,17 @@ mod tests {
                 _ => None,
             })
             .expect("prompt assignment");
+        let group_prompt_id = admission
+            .assignments
+            .iter()
+            .find_map(|assignment| match assignment {
+                LegacyImportAssignment::Prompt {
+                    legacy_id,
+                    destination_id,
+                } if legacy_id == "legacy-group-talk" => Some(*destination_id),
+                _ => None,
+            })
+            .expect("group prompt assignment");
         let lorebook_id = admission
             .assignments
             .iter()
@@ -619,7 +632,16 @@ mod tests {
 
         let defaults = &details.character.defaults;
         assert_eq!(defaults.direct_prompt_id, Some(prompt_id));
-        assert_eq!(defaults.group_conversation_prompt_id, None);
+        let second_defaults = &CharacterRepository::get(backend.database(), character(second_id))
+            .expect("read second character")
+            .expect("second character exists")
+            .character
+            .defaults;
+        assert_eq!(
+            second_defaults.group_roleplay_prompt_id,
+            Some(group_prompt_id),
+            "a legacy conversation-only group prompt becomes the roleplay prompt"
+        );
         assert_eq!(
             defaults.default_scene_id,
             Some(SceneId::from_uuid(scope.uuid("scene", scene_id.as_uuid())))
@@ -669,7 +691,6 @@ mod tests {
         .expect("group exists");
         assert_eq!(group_details.group.members.len(), 2);
         assert!(group_details.group.members[1].muted);
-        assert_eq!(group_details.group.group_conversation_prompt_id, None);
         assert_eq!(
             group_details
                 .starting_scene
@@ -1529,31 +1550,13 @@ mod tests {
             Some(lettuce_conversations::GroupChatModeSnapshot::Conversation)
         );
         assert_eq!(own.disable_character_lorebooks, Some(true));
-        let assigned = |source: &str| {
-            admission
-                .assignments
-                .iter()
-                .find_map(|assignment| match assignment {
-                    LegacyImportAssignment::Prompt {
-                        legacy_id,
-                        destination_id,
-                    } if legacy_id == source => Some(*destination_id),
-                    _ => None,
-                })
-                .expect("group prompt assignment")
-        };
         assert_eq!(
             (own.prompt.as_ref(), own.prompt_provenance),
             (
                 None,
                 lettuce_conversations::SettingProvenance::LaunchInherited
             ),
-            "a conversation-mode prompt the session only took from its group follows the group"
-        );
-        assert_eq!(
-            own.roleplay_prompt.as_ref().map(|prompt| prompt.source_id),
-            Some(assigned("legacy-group-play")),
-            "the roleplay prompt the session set itself stays its own"
+            "a session prompt follows the group's single prompt"
         );
         let imported_group = GroupId::from_uuid(scope.uuid("group", group_id.as_uuid()));
         let revision = GroupRepository::get(backend.database(), imported_group)

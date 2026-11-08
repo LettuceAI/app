@@ -674,7 +674,6 @@ pub enum PromptPurposeV1 {
     DirectChat,
     CompanionChat,
     GroupChatRoleplay,
-    GroupChatConversational,
     DynamicMemorySummarizer,
     DynamicMemoryManager,
     ReplyHelperRoleplay,

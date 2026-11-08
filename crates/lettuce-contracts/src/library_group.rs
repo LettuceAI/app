@@ -48,9 +48,6 @@ pub struct GroupDraft {
     pub disable_character_notes: bool,
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]
-    pub group_conversation_prompt_id: Option<String>,
-    #[serde(deserialize_with = "Option::deserialize")]
-    #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub group_roleplay_prompt_id: Option<String>,
     pub presentation: crate::LibraryChatAppearanceV1,
     #[serde(default)]
