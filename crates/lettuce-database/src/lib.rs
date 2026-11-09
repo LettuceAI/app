@@ -330,6 +330,7 @@ fn decode_provider_config(payload: &str) -> Result<ProviderConfig, ()> {
             "merge_same_role_messages",
             "send_chat_template_kwargs",
             "tool_choice_mode",
+            "image",
         ][..],
     };
     let object = value.as_object().ok_or(())?;
@@ -460,6 +461,19 @@ impl Database {
             .map(write_fence::FileWriteAccess::fenced)
             .transpose()
             .map(|fenced| fenced.unwrap_or(false))
+    }
+
+    pub fn defer_wal_autocheckpoint(&self) -> Result<u32, DatabaseError> {
+        let connection = self.connection()?;
+        let pages = connection.query_row("PRAGMA wal_autocheckpoint", [], |row| row.get(0))?;
+        connection.pragma_update(None, "wal_autocheckpoint", 0)?;
+        Ok(pages)
+    }
+
+    pub fn resume_wal_autocheckpoint(&self, pages: u32) -> Result<(), DatabaseError> {
+        let connection = self.connection()?;
+        connection.pragma_update(None, "wal_autocheckpoint", pages)?;
+        Ok(())
     }
 
     fn connection(&self) -> Result<write_fence::DatabaseConnection<'_>, DatabaseError> {

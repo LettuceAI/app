@@ -5337,11 +5337,15 @@ async fn group_notes_reach_the_members_they_are_visible_to_with_the_speakers_own
         "inactive notes leave the prompt unchanged"
     );
 
+    let mut harbor = group_note(group_id, Vec::new(), "The harbor is closed.");
+    harbor.id = uuid::Uuid::from_u128(1);
     database
-        .upsert_group_note(group_note(group_id, Vec::new(), "The harbor is closed."))
+        .upsert_group_note(harbor)
         .expect("note for everyone");
+    let mut debt = group_note(group_id, vec![ada], "Ada owes a debt.");
+    debt.id = uuid::Uuid::from_u128(2);
     database
-        .upsert_group_note(group_note(group_id, vec![ada], "Ada owes a debt."))
+        .upsert_group_note(debt)
         .expect("note for Ada");
     database
         .upsert_scheduled_note(character_note(ada, "Ada keeps a diary."))
@@ -8706,6 +8710,7 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
 
 #[tokio::test]
 async fn staged_lorebook_admission_and_planning_are_restart_safe() {
+    Box::pin(async {
     use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger};
     let assert_evidence = |database: &lettuce_database::Database,
                            job_id,
@@ -11073,6 +11078,8 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
     assert_evidence(&database, retained.job_id, "gen-cancelled-response", 9);
     assert!(retained.planner_attempt.is_none());
     assert!(retained.project.outline.is_empty());
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -15645,10 +15652,16 @@ async fn starter_scene_image(edit_after_admission: bool) {
     .expect("follow-up")
     .expect("exists");
     assert_eq!(done.state, lettuce_conversations::SceneFollowUpState::Done);
-    assert_eq!(
-        *provider.prompts.lock().expect("prompts"),
-        vec!["A harbor at dusk".to_owned(), "A harbor at dusk".to_owned()]
-    );
+    let prompts = provider.prompts.lock().expect("prompts");
+    assert_eq!(prompts.len(), 2);
+    assert_eq!(prompts[0], prompts[1]);
+    for prompt in prompts.iter() {
+        assert_eq!(
+            prompt.matches("# Scene Request\nA harbor at dusk").count(),
+            1,
+            "{prompt}"
+        );
+    }
     let edited = ConversationReader::timeline_page(
         &database,
         conversation.id,

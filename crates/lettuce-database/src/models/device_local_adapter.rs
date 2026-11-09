@@ -35,7 +35,7 @@ impl Database {
             .to_str()
             .ok_or_else(|| rusqlite::Error::InvalidPath(previous.to_path_buf()))?;
         let mut connection = self.connection()?;
-        connection.execute("ATTACH DATABASE ?1 AS previous", [previous])?;
+        connection.execute("ATTACH DATABASE ?1 AS previous", [read_only_uri(previous)])?;
         let copied = (|| {
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -136,6 +136,27 @@ impl Database {
     }
 }
 
+fn read_only_uri(path: &str) -> String {
+    let mut uri = String::from("file:");
+    let bytes = path.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        uri.push('/');
+    }
+    for byte in path.bytes() {
+        if byte == b'\\' {
+            uri.push('/');
+        } else if byte.is_ascii_alphanumeric()
+            || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/' | b':')
+        {
+            uri.push(char::from(byte));
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri.push_str("?mode=ro");
+    uri
+}
+
 impl Database {
     /// Sets the patch's keys in this device's UI state in one transaction; a
     /// `null` value removes its key. Returns the state afterwards.
@@ -199,6 +220,20 @@ mod tests {
     use lettuce_types::{OperationId, TimestampMillis};
 
     use crate::Database;
+
+    use super::read_only_uri;
+
+    #[test]
+    fn read_only_uris_encode_paths_and_normalize_windows_separators() {
+        assert_eq!(
+            read_only_uri("/home/a b/old.db"),
+            "file:/home/a%20b/old.db?mode=ro"
+        );
+        assert_eq!(
+            read_only_uri("C:\\Users\\a\\old.db"),
+            "file:/C:/Users/a/old.db?mode=ro"
+        );
+    }
 
     #[test]
     fn a_ui_state_patch_sets_and_removes_keys_in_one_step() {

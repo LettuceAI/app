@@ -123,6 +123,17 @@ type RestoreOutcome = Result<Vec<dto::BackupWarning>, &'static str>;
 
 struct Work { claim: ClaimRef, cancellation: CancellationToken, password: Zeroizing<String>, detail: Detail }
 
+struct WalAutocheckpointGuard<'a> {
+    database: &'a Database,
+    pages: u32,
+}
+
+impl Drop for WalAutocheckpointGuard<'_> {
+    fn drop(&mut self) {
+        let _ = self.database.resume_wal_autocheckpoint(self.pages);
+    }
+}
+
 pub(super) fn claim_started(database: &Database, id: JobId, at: lettuce_types::TimestampMillis) -> Result<ClaimRef, ApiError> {
     let claim = database.claim(id, WorkerId::new(), at, Duration::from_secs(3600), &ResourceAvailability::all()).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable)?;
     database.append_and_transition(JobMutation::Start { claim: claim.claim.clone(), at }).map_err(IntoApiError::into_api_error)?;
@@ -272,12 +283,17 @@ impl Work {
             *current.lock().map_err(|_| unavailable())? = Some(owned);
             return Ok(());
         }
+        let database = context.backend().database();
+        let _wal_autocheckpoint = WalAutocheckpointGuard {
+            database,
+            pages: database.defer_wal_autocheckpoint().map_err(|_| unavailable())?,
+        };
         if stage == "switch" {
             crate::api::app::reset::host(context)?;
             context.flush_app_usage_for_reset()?;
         }
-        let job = context.backend().database().append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new(stage, stage == "switch").map_err(|_| unavailable())?, at: context.now() }).map_err(|failure| {
-            if failure == lettuce_jobs::StoreError::IllegalTransition && context.backend().database().get(self.claim.job_id).ok().flatten().is_some_and(|job| job.state == JobState::CancellationRequested) { error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled) }
+        let job = database.append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new(stage, stage == "switch").map_err(|_| unavailable())?, at: context.now() }).map_err(|failure| {
+            if failure == lettuce_jobs::StoreError::IllegalTransition && database.get(self.claim.job_id).ok().flatten().is_some_and(|job| job.state == JobState::CancellationRequested) { error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled) }
             else { failure.into_api_error() }
         })?;
         // Restore stages must reach the screen before their work starts. The
