@@ -1,4 +1,4 @@
-import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createBrowserHistory, createMemoryHistory, type RouterHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CharacterDraft_Serialize, CompanionEmotionVector, CompanionSoulView, CompanionStateView, ConversationSettingsView, ConversationView, GroupCompanionMemberEffectView, GroupCompanionMemberView, JobView_Serialize, MemoryCycleView, MemoryItemView, MemoryView, MessageCompanionEffect, SoulFactView, ThymosStatus, TimelineMessage } from "@/api/generated/bindings";
@@ -9,7 +9,6 @@ import { createTestI18n } from "@/shared/testing/i18n";
 import companionDraft from "./fixtures/character.json";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
-configure({ asyncUtilTimeout: 3000 });
 const histories: RouterHistory[] = [];
 afterEach(() => { cleanup(); histories.splice(0).forEach((history) => history.destroy()); });
 

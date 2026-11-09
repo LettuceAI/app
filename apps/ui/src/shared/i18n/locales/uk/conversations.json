@@ -1268,21 +1268,21 @@
     },
     "group": {
       "members": "Учасники",
-      "matrixCorner": "Щодо",
+      "matrixCorner": "Щодо кого",
       "withOthers": "З рештою",
       "towardOthers": "Як {{name}} бачить решту",
       "noStance": "Поки немає",
-      "noCheckpoint": "{{name}} ще не пройшов(-ла) жодного ходу. Це початкові значення.",
-      "stanceLabel": "{{from}} щодо {{to}}: {{band}}",
-      "stanceTitle": "{{from}} щодо {{to}}",
+      "noCheckpoint": "{{name}}: ще жодного ходу. Це початкові значення.",
+      "stanceLabel": "{{from}} → {{to}}: {{band}}",
+      "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Зачеплені: {{names}}",
       "you": "ви",
       "someone": "хтось",
-      "axisToward": "{{axis}} щодо {{target}}",
+      "axisToward": "{{axis}} ({{target}})",
       "feels": "Відчуває: {{emotion}}",
       "reason": {
-        "witnessed": "Був(-ла) свідком",
-        "addressed": "До нього звернулися",
+        "witnessed": "Свідок",
+        "addressed": "Звернення",
         "social_event": "Соціальна подія: {{kind}}"
       },
       "socialEvent": {

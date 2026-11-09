@@ -1268,21 +1268,21 @@
     },
     "group": {
       "members": "Участники",
-      "matrixCorner": "К",
+      "matrixCorner": "К кому",
       "withOthers": "С остальными",
       "towardOthers": "Как {{name}} видит остальных",
       "noStance": "Пока нет",
-      "noCheckpoint": "{{name}} ещё не прошёл(-ла) ни одного хода. Это начальные значения.",
-      "stanceLabel": "{{from}} к {{to}}: {{band}}",
-      "stanceTitle": "{{from}} к {{to}}",
+      "noCheckpoint": "{{name}}: ещё ни одного хода. Это начальные значения.",
+      "stanceLabel": "{{from}} → {{to}}: {{band}}",
+      "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Затронуты: {{names}}",
       "you": "вы",
       "someone": "кто-то",
-      "axisToward": "{{axis}} к {{target}}",
+      "axisToward": "{{axis}} ({{target}})",
       "feels": "Чувствует: {{emotion}}",
       "reason": {
-        "witnessed": "Был(а) свидетелем",
-        "addressed": "К нему обратились",
+        "witnessed": "Свидетель",
+        "addressed": "Обращение",
         "social_event": "Социальное событие: {{kind}}"
       },
       "socialEvent": {

@@ -1268,21 +1268,21 @@
     },
     "group": {
       "members": "Członkowie",
-      "matrixCorner": "Wobec",
+      "matrixCorner": "Wobec kogo",
       "withOthers": "Z pozostałymi",
       "towardOthers": "Jak {{name}} widzi pozostałych",
       "noStance": "Jeszcze brak",
-      "noCheckpoint": "{{name}} nie przeszedł(-ęła) jeszcze żadnej tury. To wartości początkowe.",
-      "stanceLabel": "{{from}} wobec {{to}}: {{band}}",
-      "stanceTitle": "{{from}} wobec {{to}}",
+      "noCheckpoint": "{{name}}: jeszcze żadnej tury. To wartości początkowe.",
+      "stanceLabel": "{{from}} → {{to}}: {{band}}",
+      "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Dotyczy: {{names}}",
       "you": "ty",
       "someone": "ktoś",
-      "axisToward": "{{axis}} wobec {{target}}",
+      "axisToward": "{{axis}} ({{target}})",
       "feels": "Czuje: {{emotion}}",
       "reason": {
-        "witnessed": "Był(a) tego świadkiem",
-        "addressed": "Ktoś się do tego zwrócił",
+        "witnessed": "Świadek",
+        "addressed": "Zwrócono się bezpośrednio",
         "social_event": "Zdarzenie społeczne: {{kind}}"
       },
       "socialEvent": {
