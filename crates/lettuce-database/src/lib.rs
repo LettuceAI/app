@@ -238,6 +238,11 @@ const MIGRATION_34: Migration = Migration {
     sql: include_str!("../migrations/0034_group_companion_memory_run.sql"),
 };
 
+const MIGRATION_35: Migration = Migration {
+    id: 35,
+    sql: include_str!("../migrations/0035_group_companion_growth.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -273,6 +278,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_32,
     MIGRATION_33,
     MIGRATION_34,
+    MIGRATION_35,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -535,7 +541,7 @@ fn apply_migrations(
         [], |row| row.get(0),
     )?;
     let mut rebuild = false;
-    for migration in migrations.iter().filter(|migration| matches!(migration.id, 26 | 27)) {
+    for migration in migrations.iter().filter(|migration| matches!(migration.id, 26 | 27 | 35)) {
         let applied = history_exists && connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE id = ?1)",
             [migration.id], |row| row.get::<_, bool>(0),

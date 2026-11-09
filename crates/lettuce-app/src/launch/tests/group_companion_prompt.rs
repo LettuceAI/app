@@ -772,3 +772,335 @@ async fn group_companion_shared_memory_visibility_follows_checkpoints() {
     let (bea_keys, _, _) = preview_memory_values(&backend, conversation.id, bea).await;
     assert!(bea_keys.contains("The group met at the harbor."));
 }
+
+fn growth_group_fixture(
+    operation_key: &str,
+    ada_soul: bool,
+    ada_share: bool,
+    bea_soul: bool,
+    bea_share: bool,
+) -> (
+    Database,
+    lettuce_conversations::Conversation,
+    CharacterId,
+    CharacterId,
+    MessageId,
+) {
+    let database = database_with_builtins();
+    let model_id = seed_model(
+        &database,
+        ProviderProtocol::Ollama,
+        &format!("{operation_key}-model"),
+    );
+    set_application_default_model(&database, model_id);
+    let first = seed_named_character_with(&database, "Ada", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+        defaults.interaction_mode = InteractionMode::Companion;
+        if ada_soul {
+            defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig {
+                share_soul_growth_across_chats: ada_share,
+                ..Default::default()
+            });
+        }
+    });
+    let second = seed_named_character_with(&database, "Bea", |defaults| {
+        defaults.model_profile_id = Some(model_id);
+        defaults.interaction_mode = InteractionMode::Companion;
+        if bea_soul {
+            defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig {
+                share_soul_growth_across_chats: bea_share,
+                ..Default::default()
+            });
+        }
+    });
+    let group_id = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| {
+            group.companion_mode = true;
+            group.memory_policy = MemoryPolicy::Dynamic;
+        },
+    );
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, operation_key), NOW)
+        .expect("launch group growth")
+        .value
+        .conversation;
+    let engine = group_companion_engine();
+    let coordinator = CompanionTurnCoordinator::new(&database, Some(&engine));
+    let sent = coordinator
+        .begin_send(
+            &direct_send_command(
+                &conversation,
+                &format!("{operation_key}-send"),
+                "Hello Ada and Bea.",
+            ),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send group growth message");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    cancel_started_group_turn(&database, &sent.value, operation_key, NOW.get() + 2);
+    let conversation = ConversationReader::get(&database, conversation.id)
+        .expect("conversation after send")
+        .conversation;
+    (database, conversation, first, second, user_message_id)
+}
+
+fn group_memory_result(
+    database: &Database,
+    conversation: &lettuce_conversations::Conversation,
+    source_message_id: MessageId,
+    seed: impl FnOnce(&Database),
+) -> crate::CompanionMemoryJobRunResult {
+    let model_id = GlobalSettingsStore::load(database)
+        .expect("settings")
+        .default_model_profile_id
+        .expect("default model");
+    let stored_profile = ModelProfileRepository::get(database, model_id)
+        .expect("profile")
+        .expect("profile exists");
+    let account = ProviderAccountRepository::get(database, stored_profile.provider_account_id)
+        .expect("account")
+        .expect("account exists");
+    let profile = ResolvedInferenceProfile {
+        chat_profile: lettuce_models::resolve_chat_profile(
+            &lettuce_models::ExpectedModelIdentity {
+                model_profile_id: stored_profile.id,
+                model_revision: stored_profile.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: stored_profile.external_model_id.clone(),
+                display_name: stored_profile.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: stored_profile.kind,
+            },
+            &stored_profile,
+            &account,
+            &lettuce_models::ChatParameterResolutionInput::default(),
+            &lettuce_models::ChatRequirements::default(),
+        )
+        .expect("resolve profile"),
+        tool_policy: ToolPolicy::Required,
+        output_policy: OutputPolicy::Plain,
+        safety_policy: SafetyContext::Standard,
+        correlation_id: None,
+    };
+    let memory =
+        MemoryRepository::get_for_branch(database, conversation.id, conversation.active_branch_id)
+            .expect("group memory")
+            .expect("group memory space");
+    let source = ConversationReader::timeline_page(
+        database,
+        conversation.id,
+        conversation.active_branch_id,
+        &PageRequest {
+            cursor: None,
+            limit: PageLimit::new(20),
+        },
+    )
+    .expect("group timeline")
+    .items
+    .into_iter()
+    .find(|item| item.message.id == source_message_id)
+    .expect("source message");
+    let admitted = database
+        .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+            run_id: DynamicMemoryRunId::new(),
+            attempt_id: DynamicMemoryAttemptId::new(),
+            conversation_id: conversation.id,
+            branch_id: conversation.active_branch_id,
+            space_id: memory.id,
+            cycle_start_change: None,
+            starting_memory: memory,
+            source_messages: vec![DynamicMemorySourceMessage {
+                message_id: source_message_id,
+                role: MessageRole::User,
+                render_source: source.message.active_render_source,
+                effective_time: source.message.effective_time,
+            }],
+            profile,
+            time_awareness_enabled: true,
+            supersession_enabled: true,
+            group_companion_members: Vec::new(),
+            structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 1,
+                start: 0,
+                end: 1,
+            },
+            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                lettuce_memory::DynamicMemoryToolOptions {
+                    group: true,
+                    supersession_enabled: true,
+                    require_source_message_id: true,
+                    group_companion: None,
+                },
+                &|key| key.to_owned(),
+            ),
+            job_id: JobId::new(),
+            job_attempt: None,
+            now: TimestampMillis::new(NOW.get() + 2),
+        })
+        .expect("group memory run");
+    let processing = database
+        .transition_dynamic_memory_attempt(
+            admitted.attempt.id,
+            admitted.attempt.revision,
+            DynamicMemoryAttemptStatus::Processing,
+            None,
+            TimestampMillis::new(NOW.get() + 2),
+        )
+        .expect("group memory processing");
+    seed(database);
+    let attempt = database
+        .transition_dynamic_memory_attempt(
+            processing.id,
+            processing.revision,
+            DynamicMemoryAttemptStatus::Succeeded,
+            None,
+            TimestampMillis::new(NOW.get() + 4),
+        )
+        .expect("group memory succeeded");
+    crate::CompanionMemoryJobRunResult {
+        dispatch: crate::CompanionPostTurnMemoryRunDispatch {
+            run: admitted.run,
+            attempt,
+            recovered: false,
+        },
+        first_round_replayed: false,
+        summary_replayed: false,
+        loop_result: crate::CompanionMemoryLoopResult {
+            summary: None,
+            completed_rounds: 0,
+            projection_repairs_pending: Vec::new(),
+        },
+        effects: Vec::new(),
+        fresh_memories: Vec::new(),
+    }
+}
+
+#[test]
+fn group_cycle_growth_admits_the_member_with_perspective_memories() {
+    for share in [true, false] {
+        let key = format!("group-growth-one-{share}");
+        let (database, conversation, ada, bea, user_message_id) =
+            growth_group_fixture(&key, true, share, true, true);
+        let ada_space = database
+            .ensure_perspective_space(conversation.id, conversation.active_branch_id, ada)
+            .expect("Ada perspective space");
+        database
+            .ensure_perspective_space(conversation.id, conversation.active_branch_id, bea)
+            .expect("Bea perspective space");
+        let result = group_memory_result(&database, &conversation, user_message_id, |database| {
+            seed_axis_zero_memory(
+                database,
+                ada_space,
+                "Ada noticed the tide turning.",
+                Some(user_message_id),
+            );
+        });
+        let admissions = crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &database)
+            .admit_group_after_memory(&result)
+            .expect("group growth admission");
+        assert_eq!(admissions.len(), 1);
+        let admission = &admissions[0];
+        assert_eq!(admission.run.character_id, ada);
+        assert_eq!(admission.job.kind, JobKind::CompanionGrowth);
+        assert_eq!(
+            admission.run.soul_owner(),
+            lettuce_companions::SoulOwner::for_conversation(ada, conversation.id, share)
+        );
+        assert_eq!(admission.run.conversation_id, conversation.id);
+        assert_eq!(admission.run.fresh_memories.len(), 1);
+        assert_eq!(
+            admission.run.fresh_memories[0].text,
+            "Ada noticed the tide turning."
+        );
+    }
+}
+
+#[test]
+fn group_cycle_growth_skips_a_member_without_a_companion_soul() {
+    let (database, conversation, ada, bea, user_message_id) =
+        growth_group_fixture("group-growth-no-soul", false, true, true, true);
+    let ada_space = database
+        .ensure_perspective_space(conversation.id, conversation.active_branch_id, ada)
+        .expect("Ada perspective space");
+    database
+        .ensure_perspective_space(conversation.id, conversation.active_branch_id, bea)
+        .expect("Bea perspective space");
+    let result = group_memory_result(&database, &conversation, user_message_id, |database| {
+        seed_axis_zero_memory(
+            database,
+            ada_space,
+            "Ada noticed the tide turning.",
+            Some(user_message_id),
+        );
+    });
+    assert!(
+        crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &database)
+            .admit_group_after_memory(&result)
+            .expect("group growth admission")
+            .is_empty()
+    );
+}
+
+#[test]
+fn group_cycle_growth_admits_each_member_once_for_the_same_memory_run() {
+    let (database, conversation, ada, bea, user_message_id) =
+        growth_group_fixture("group-growth-two", true, true, true, false);
+    let ada_space = database
+        .ensure_perspective_space(conversation.id, conversation.active_branch_id, ada)
+        .expect("Ada perspective space");
+    let bea_space = database
+        .ensure_perspective_space(conversation.id, conversation.active_branch_id, bea)
+        .expect("Bea perspective space");
+    let result = group_memory_result(&database, &conversation, user_message_id, |database| {
+        seed_axis_zero_memory(
+            database,
+            ada_space,
+            "Ada noticed the tide turning.",
+            Some(user_message_id),
+        );
+        seed_axis_zero_memory(
+            database,
+            bea_space,
+            "Bea heard the gulls.",
+            Some(user_message_id),
+        );
+    });
+    let coordinator = crate::CompanionGrowthJobAdmissionCoordinator::new(&database, &database);
+    let first = coordinator
+        .admit_group_after_memory(&result)
+        .expect("first group growth admission");
+    assert_eq!(
+        first
+            .iter()
+            .map(|admission| admission.run.character_id)
+            .collect::<Vec<_>>(),
+        [ada, bea]
+    );
+    assert!(first.iter().all(|admission| admission.created));
+    assert!(
+        first
+            .iter()
+            .all(|admission| admission.run.memory_run_id == result.dispatch.run.id)
+    );
+    let second = coordinator
+        .admit_group_after_memory(&result)
+        .expect("replayed group growth admission");
+    assert_eq!(second.len(), 2);
+    assert!(second.iter().all(|admission| !admission.created));
+    assert_eq!(
+        second
+            .iter()
+            .map(|admission| admission.job.id)
+            .collect::<Vec<_>>(),
+        first
+            .iter()
+            .map(|admission| admission.job.id)
+            .collect::<Vec<_>>()
+    );
+}

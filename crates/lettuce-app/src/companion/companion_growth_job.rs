@@ -1,15 +1,18 @@
-use lettuce_characters::{CharacterRepository, RepositoryError};
+use lettuce_characters::{CharacterRepository, GroupRepository, RepositoryError};
 use lettuce_companions::{
     CompanionGrowthRun, CompanionGrowthRunRepository, CompanionGrowthRunRepositoryError,
-    GrowthMemoryEvidence, MAX_GROWTH_MEMORIES, SoulOwner, SoulRepository, SoulRepositoryError,
+    GroupCompanionRepository, GrowthMemoryEvidence, MAX_GROWTH_MEMORIES, SoulOwner, SoulRepository,
+    SoulRepositoryError,
 };
-use lettuce_conversations::{ConversationKind, ConversationReader, ConversationRepositoryError};
+use lettuce_conversations::{
+    Conversation, ConversationKind, ConversationReader, ConversationRepositoryError,
+};
 use lettuce_jobs::{
     CancellationPolicy, IdempotencyKey, JobKind, JobPriority, JobSnapshot, JobSpec, JobStore,
     JobSubject, OutcomeRef, RecoveryPolicy, ResourceClass, StoreError, SubjectKind,
 };
-use lettuce_memory::DynamicMemoryAttemptStatus;
-use lettuce_types::OperationRecordId;
+use lettuce_memory::{DynamicMemoryAttemptStatus, MemoryItem, MemoryRepository};
+use lettuce_types::{CharacterId, OperationRecordId, TimestampMillis};
 use uuid::Uuid;
 
 use crate::CompanionMemoryJobRunResult;
@@ -29,6 +32,8 @@ pub enum CompanionGrowthJobAdmissionError {
     Conversation(#[from] ConversationRepositoryError),
     #[error("companion growth character read failed: {0}")]
     Character(#[from] RepositoryError),
+    #[error("companion growth memory read failed: {0}")]
+    Memory(#[from] lettuce_memory::MemoryRepositoryError),
     #[error("companion growth Soul read failed: {0:?}")]
     Soul(SoulRepositoryError),
     #[error("companion growth job admission failed: {0}")]
@@ -55,6 +60,9 @@ impl<'a, R: ?Sized, J: ?Sized> CompanionGrowthJobAdmissionCoordinator<'a, R, J> 
 impl<
     R: ConversationReader
         + CharacterRepository
+        + GroupRepository
+        + GroupCompanionRepository
+        + MemoryRepository
         + lettuce_companions::CompanionStateRepository
         + SoulRepository
         + CompanionGrowthRunRepository
@@ -112,19 +120,175 @@ impl<
             .defaults
             .companion_soul
             .unwrap_or_default();
+        let created_at = clock.effective_now(result.dispatch.attempt.finished_at.ok_or(
+            CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: "the memory attempt has no finish time".to_owned(),
+            },
+        )?);
         let idempotency_key =
             IdempotencyKey::new(format!("companion-growth-{}", result.dispatch.run.id)).map_err(
                 |error| CompanionGrowthJobAdmissionError::InvalidSource {
                     reason: error.to_string(),
                 },
             )?;
-        let subject = JobSubject::new(
-            SubjectKind::Conversation,
-            conversation.conversation.id.to_string(),
+        let admission = self.admit_growth(
+            result,
+            &conversation.conversation,
+            character_id,
+            &config,
+            character.character.profile.name,
+            &result.fresh_memories,
+            created_at,
+            idempotency_key,
+        )?;
+        Ok(Some(admission))
+    }
+
+    pub fn admit_group_after_memory(
+        &self,
+        result: &CompanionMemoryJobRunResult,
+    ) -> Result<Vec<CompanionGrowthJobAdmission>, CompanionGrowthJobAdmissionError> {
+        if result.dispatch.attempt.status != DynamicMemoryAttemptStatus::Succeeded
+            || result.dispatch.attempt.run_id != result.dispatch.run.id
+        {
+            return Err(CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: "growth result's attempt did not succeed for its run".to_owned(),
+            });
+        }
+        let conversation =
+            ConversationReader::get(self.sources, result.dispatch.run.conversation_id)?;
+        if !conversation.conversation.kind.is_group() {
+            return Ok(Vec::new());
+        }
+        let companion = crate::generation::live_sources::live_companion_mode(
+            self.sources,
+            &conversation.conversation,
         )
         .map_err(|error| CompanionGrowthJobAdmissionError::InvalidSource {
-            reason: error.to_string(),
+            reason: format!("{error:?}"),
         })?;
+        if !companion {
+            return Ok(Vec::new());
+        }
+        let clock = crate::companion::companion_clock::conversation_clock_context(
+            self.sources,
+            &conversation.conversation,
+        )
+        .map_err(|error| CompanionGrowthJobAdmissionError::InvalidSource {
+            reason: format!("{error:?}"),
+        })?;
+        let finished_at = result.dispatch.attempt.finished_at.ok_or(
+            CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: "the memory attempt has no finish time".to_owned(),
+            },
+        )?;
+        let started_at = result.dispatch.attempt.started_at.ok_or(
+            CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: "the memory attempt has no start time".to_owned(),
+            },
+        )?;
+        let created_at = clock.effective_now(finished_at);
+        let source_messages = result
+            .dispatch
+            .run
+            .source_messages
+            .iter()
+            .map(|source| source.message_id)
+            .collect::<std::collections::HashSet<_>>();
+        let mut participants = conversation
+            .conversation
+            .participants
+            .iter()
+            .collect::<Vec<_>>();
+        participants.sort_by_key(|participant| participant.ordinal);
+        let mut admissions = Vec::new();
+        for participant in participants {
+            if !participant.enabled {
+                continue;
+            }
+            let lettuce_conversations::ParticipantSource::Character(character_id) =
+                participant.source
+            else {
+                continue;
+            };
+            let character = CharacterRepository::get(self.sources, character_id)?.ok_or(
+                CompanionGrowthJobAdmissionError::InvalidSource {
+                    reason: "a character of the group is missing".to_owned(),
+                },
+            )?;
+            let Some(config) = character.character.defaults.companion_soul else {
+                continue;
+            };
+            let space_id = match GroupCompanionRepository::perspective_space(
+                self.sources,
+                conversation.conversation.id,
+                result.dispatch.run.branch_id,
+                character_id,
+            )
+            .map_err(|error| CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: format!("{error:?}"),
+            })? {
+                Some(space_id) => space_id,
+                None => continue,
+            };
+            let Some(snapshot) = MemoryRepository::get(self.sources, space_id)? else {
+                continue;
+            };
+            let fresh_memories = snapshot
+                .items
+                .iter()
+                .filter(|memory| {
+                    memory
+                        .source_message_id
+                        .is_some_and(|id| source_messages.contains(&id))
+                        && memory.created_at >= started_at
+                        && memory.superseded_by.is_none()
+                        && memory.superseded_at.is_none()
+                        && !memory.text.trim().is_empty()
+                })
+                .take(MAX_GROWTH_MEMORIES)
+                .cloned()
+                .collect::<Vec<_>>();
+            if fresh_memories.is_empty() {
+                continue;
+            }
+            let idempotency_key = IdempotencyKey::new(format!(
+                "companion-growth-{}-{character_id}",
+                result.dispatch.run.id
+            ))
+            .map_err(|error| CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: error.to_string(),
+            })?;
+            admissions.push(self.admit_growth(
+                result,
+                &conversation.conversation,
+                character_id,
+                &config,
+                character.character.profile.name,
+                &fresh_memories,
+                created_at,
+                idempotency_key,
+            )?);
+        }
+        Ok(admissions)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn admit_growth(
+        &self,
+        result: &CompanionMemoryJobRunResult,
+        conversation: &Conversation,
+        character_id: CharacterId,
+        config: &lettuce_companions::CompanionSoulConfig,
+        companion_name: String,
+        fresh_memories: &[MemoryItem],
+        created_at: TimestampMillis,
+        idempotency_key: IdempotencyKey,
+    ) -> Result<CompanionGrowthJobAdmission, CompanionGrowthJobAdmissionError> {
+        let subject = JobSubject::new(SubjectKind::Conversation, conversation.id.to_string())
+            .map_err(|error| CompanionGrowthJobAdmissionError::InvalidSource {
+                reason: error.to_string(),
+            })?;
         let admitted = self
             .jobs
             .create_or_get(
@@ -148,11 +312,11 @@ impl<
         if !admitted.created {
             match self.sources.load_companion_growth_run(admitted.job.id) {
                 Ok(run) => {
-                    return Ok(Some(CompanionGrowthJobAdmission {
+                    return Ok(CompanionGrowthJobAdmission {
                         run,
                         job: admitted.job,
                         created: false,
-                    }));
+                    });
                 }
                 Err(CompanionGrowthRunRepositoryError::NotFound) => {}
                 Err(error) => return Err(CompanionGrowthJobAdmissionError::Run(error)),
@@ -160,29 +324,23 @@ impl<
         }
         let owner = SoulOwner::for_conversation(
             character_id,
-            conversation.conversation.id,
+            conversation.id,
             config.share_soul_growth_across_chats,
         );
-        let created_at = clock.effective_now(result.dispatch.attempt.finished_at.ok_or(
-            CompanionGrowthJobAdmissionError::InvalidSource {
-                reason: "the memory attempt has no finish time".to_owned(),
-            },
-        )?);
-        let soul = self.soul_or_default(owner, &config, created_at)?;
+        let soul = self.soul_or_default(owner, config, created_at)?;
         let run = self
             .sources
             .admit_companion_growth_run(CompanionGrowthRun {
                 job_id: admitted.job.id,
-                conversation_id: conversation.conversation.id,
+                conversation_id: conversation.id,
                 character_id,
                 memory_run_id: result.dispatch.run.id,
                 memory_attempt_id: result.dispatch.attempt.id,
                 profile: self.growth_profile(&result.dispatch.run.profile)?,
-                companion_name: character.character.profile.name,
-                authored_soul: config.soul,
+                companion_name,
+                authored_soul: config.soul.clone(),
                 soul,
-                fresh_memories: result
-                    .fresh_memories
+                fresh_memories: fresh_memories
                     .iter()
                     .map(|memory| GrowthMemoryEvidence {
                         id: memory.id.to_string(),
@@ -198,11 +356,11 @@ impl<
                 soul_conversation_id: owner.conversation_id(),
             })
             .map_err(CompanionGrowthJobAdmissionError::Run)?;
-        Ok(Some(CompanionGrowthJobAdmission {
+        Ok(CompanionGrowthJobAdmission {
             run,
             job: admitted.job,
             created: admitted.created,
-        }))
+        })
     }
 
     /// The Soul the conversation grows, created from the companion settings

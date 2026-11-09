@@ -9,7 +9,8 @@ use lettuce_conversations::{
 };
 use lettuce_types::{
     CharacterId, ContentHash, ConversationBranchId, ConversationId, ConversationParticipantId,
-    GroupId, Revision, SnapshotArtifactId, TimestampMillis,
+    DynamicMemoryAttemptId, DynamicMemoryRunId, GroupId, JobId, MemorySpaceId, Revision,
+    SnapshotArtifactId, TimestampMillis,
 };
 use rusqlite::{Connection, params};
 
@@ -678,4 +679,226 @@ fn migration_33_adds_group_companion_memory_spaces() {
     );
     let upgraded = recorded_migrations(&connection);
     assert_eq!(upgraded.iter().filter(|entry| entry.0 == 33).count(), 1);
+}
+
+#[test]
+fn migration_35_allows_one_growth_run_per_member_of_a_memory_run() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let old: Vec<_> = MIGRATIONS
+        .iter()
+        .copied()
+        .filter(|migration| migration.id <= 34)
+        .collect();
+    apply_migrations(&mut connection, &old).expect("schema through migration 34");
+    connection
+        .execute_batch("BEGIN")
+        .expect("begin growth fixture");
+
+    let conversation_id = ConversationId::new();
+    let branch_id = ConversationBranchId::new();
+    let space_id = MemorySpaceId::new();
+    let run_id = DynamicMemoryRunId::new();
+    let attempt_id = DynamicMemoryAttemptId::new();
+    let first = CharacterId::new();
+    let second = CharacterId::new();
+    let growth_job = JobId::new();
+    let other_growth_job = JobId::new();
+    let duplicate_growth_job = JobId::new();
+    let consolidation_job = JobId::new();
+    let memory_job = JobId::new();
+
+    for (character, name) in [(&first, "Ada"), (&second, "Bea")] {
+        connection
+            .execute(
+                "INSERT INTO characters (id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) VALUES (?1,'active',?2,?3,'{}','{}','{}','companion','manual',0,'{}',1,1,1)",
+                params![character.to_string(), name, name.to_lowercase()],
+            )
+            .expect("character");
+    }
+    connection
+        .execute(
+            "INSERT INTO conversations (id,kind,lifecycle,title,active_branch_id,kind_json,revision,created_at,updated_at) VALUES (?1,'direct','active','Growth',?2,'{\"format_version\":1,\"value\":{\"kind\":\"direct\"}}',1,1,1)",
+            params![conversation_id.to_string(), branch_id.to_string()],
+        )
+        .expect("conversation");
+    connection
+        .execute(
+            "INSERT INTO conversation_branches (conversation_id,id,status,revision,created_at,updated_at) VALUES (?1,?2,'active',1,1,1)",
+            params![conversation_id.to_string(), branch_id.to_string()],
+        )
+        .expect("branch");
+    connection
+        .execute(
+            "INSERT INTO memory_spaces (id,revision) VALUES (?1,1)",
+            [space_id.to_string()],
+        )
+        .expect("memory space");
+    connection
+        .execute(
+            "INSERT INTO conversation_memory_spaces (conversation_id,branch_id,space_id,pooled) VALUES (?1,?2,?3,0)",
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                space_id.to_string()
+            ],
+        )
+        .expect("memory binding");
+    connection
+        .execute(
+            "INSERT INTO dynamic_memory_runs (id,conversation_id,branch_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at) VALUES (?1,?2,?3,?4,0,0,'xml',1,0,1,'{\"format_version\":1,\"value\":{}}','{\"format_version\":1,\"value\":{}}','{\"format_version\":1,\"value\":{\"definitions\":[]}}',1)",
+            params![
+                run_id.to_string(),
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                space_id.to_string()
+            ],
+        )
+        .expect("memory run");
+    connection
+        .execute(
+            "INSERT INTO dynamic_memory_run_attempts (job_attempt,run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,started_at,finished_at,updated_at) VALUES (NULL,?1,?2,0,NULL,?3,'succeeded',NULL,1,1,2,3,3)",
+            params![
+                run_id.to_string(),
+                attempt_id.to_string(),
+                memory_job.to_string()
+            ],
+        )
+        .expect("memory attempt");
+    for job in [&growth_job, &other_growth_job, &duplicate_growth_job] {
+        connection
+            .execute(
+                "INSERT INTO jobs (id,idempotency_key,kind,subject_kind,subject_id,state,priority,parent_id,lease_expires_at,created_at,updated_at,spec_json,snapshot_json) VALUES (?1,NULL,'companion_growth','conversation',?2,'queued','background',NULL,NULL,1,1,'{}','{}')",
+                params![job.to_string(), conversation_id.to_string()],
+            )
+            .expect("growth job");
+    }
+    connection
+        .execute(
+            "INSERT INTO jobs (id,idempotency_key,kind,subject_kind,subject_id,state,priority,parent_id,lease_expires_at,created_at,updated_at,spec_json,snapshot_json) VALUES (?1,NULL,'companion_consolidation','conversation',?2,'queued','background',NULL,NULL,1,1,'{}','{}')",
+            params![consolidation_job.to_string(), conversation_id.to_string()],
+        )
+        .expect("consolidation job");
+    fn insert_growth(
+        connection: &Connection,
+        job: &JobId,
+        character: CharacterId,
+        operation: &str,
+        conversation_id: ConversationId,
+        run_id: DynamicMemoryRunId,
+        attempt_id: DynamicMemoryAttemptId,
+    ) -> rusqlite::Result<usize> {
+        connection.execute(
+            "INSERT INTO companion_growth_runs (job_id,conversation_id,character_id,memory_run_id,memory_attempt_id,operation_id,expected_soul_revision,created_at,run_json,proposal_checkpoint_json,reduced_at) VALUES (?1,?2,?3,?4,?5,?6,1,1,'{}',NULL,NULL)",
+            params![
+                job.to_string(),
+                conversation_id.to_string(),
+                character.to_string(),
+                run_id.to_string(),
+                attempt_id.to_string(),
+                operation
+            ],
+        )
+    }
+    insert_growth(
+        &connection,
+        &growth_job,
+        first,
+        "growth-operation-one",
+        conversation_id,
+        run_id,
+        attempt_id,
+    )
+    .expect("existing growth run");
+    connection
+        .execute(
+            "INSERT INTO companion_consolidation_runs (job_id,growth_job_id,conversation_id,character_id,operation_id,expected_soul_revision,created_at,run_json,proposal_checkpoint_json,reduced_at) VALUES (?1,?2,?3,?4,'consolidation-operation',1,1,'{}',NULL,NULL)",
+            params![
+                consolidation_job.to_string(),
+                growth_job.to_string(),
+                conversation_id.to_string(),
+                first.to_string()
+            ],
+        )
+        .expect("consolidation run");
+    connection
+        .execute_batch("COMMIT")
+        .expect("commit growth fixture");
+
+    apply_migrations(&mut connection, MIGRATIONS).expect("upgrade");
+    let surviving: (String, String, String) = connection
+        .query_row(
+            "SELECT character_id,memory_run_id,memory_attempt_id FROM companion_growth_runs WHERE job_id = ?1",
+            [growth_job.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("existing growth run survived");
+    assert_eq!(
+        surviving,
+        (
+            first.to_string(),
+            run_id.to_string(),
+            attempt_id.to_string()
+        )
+    );
+    let consolidation_growth: String = connection
+        .query_row(
+            "SELECT growth_job_id FROM companion_consolidation_runs WHERE job_id = ?1",
+            [consolidation_job.to_string()],
+            |row| row.get(0),
+        )
+        .expect("consolidation run still references its growth run");
+    assert_eq!(consolidation_growth, growth_job.to_string());
+
+    insert_growth(
+        &connection,
+        &other_growth_job,
+        second,
+        "growth-operation-two",
+        conversation_id,
+        run_id,
+        attempt_id,
+    )
+    .expect("a second member may grow from the same memory run");
+    assert!(
+        insert_growth(
+            &connection,
+            &duplicate_growth_job,
+            first,
+            "growth-operation-three",
+            conversation_id,
+            run_id,
+            attempt_id,
+        )
+        .is_err(),
+        "one member may not grow twice from the same memory run"
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM companion_growth_runs WHERE memory_run_id = ?1",
+                [run_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("growth run count"),
+        2
+    );
+    assert!(
+        connection
+            .prepare("PRAGMA foreign_key_check")
+            .expect("foreign key check")
+            .query([])
+            .expect("foreign key rows")
+            .next()
+            .expect("next")
+            .is_none()
+    );
+    assert_eq!(
+        connection
+            .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+            .expect("integrity"),
+        "ok"
+    );
+    let upgraded = recorded_migrations(&connection);
+    assert_eq!(upgraded.iter().filter(|entry| entry.0 == 35).count(), 1);
 }

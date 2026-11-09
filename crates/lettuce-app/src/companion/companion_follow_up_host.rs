@@ -31,10 +31,13 @@ pub trait CompanionFollowUps: Send + Sync {
 pub trait CompanionFollowUpSources:
     ConversationReader
     + lettuce_characters::CharacterRepository
+    + lettuce_characters::GroupRepository
     + lettuce_companions::CompanionStateRepository
+    + lettuce_companions::GroupCompanionRepository
     + SoulRepository
     + CompanionGrowthRunRepository
     + CompanionConsolidationRunRepository
+    + lettuce_memory::MemoryRepository
     + ProviderReplayArtifactPort
     + lettuce_usage::JobUsageLedger
     + crate::generation::runtime_text::RuntimeTextSource
@@ -49,10 +52,13 @@ pub trait CompanionFollowUpSources:
 impl<T> CompanionFollowUpSources for T where
     T: ConversationReader
         + lettuce_characters::CharacterRepository
+        + lettuce_characters::GroupRepository
         + lettuce_companions::CompanionStateRepository
+        + lettuce_companions::GroupCompanionRepository
         + SoulRepository
         + CompanionGrowthRunRepository
         + CompanionConsolidationRunRepository
+        + lettuce_memory::MemoryRepository
         + ProviderReplayArtifactPort
         + lettuce_usage::JobUsageLedger
         + crate::generation::runtime_text::RuntimeTextSource
@@ -317,6 +323,33 @@ where
         let CompanionMemorySettledWork::Succeeded { result, .. } = settled else {
             return;
         };
+        let group = match ConversationReader::get(self.sources, result.dispatch.run.conversation_id)
+        {
+            Ok(conversation) => conversation.conversation.kind.is_group(),
+            Err(error) => {
+                tracing::warn!(%error, "could not read the conversation for growth after memory");
+                return;
+            }
+        };
+        if group {
+            let Some(prompt) = self.prompt(BuiltInPromptId::CompanionGrowthcycle) else {
+                return;
+            };
+            match CompanionGrowthJobAdmissionCoordinator::new(self.sources, self.sources)
+                .admit_group_after_memory(result)
+            {
+                Ok(admissions) => {
+                    for admission in admissions {
+                        self.run_growth(admission.job.id, &prompt, worker_id, lease_for, clock)
+                            .await;
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "could not admit group growth after memory");
+                }
+            }
+            return;
+        }
         if result.fresh_memories.is_empty() {
             return;
         }
