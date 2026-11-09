@@ -934,6 +934,7 @@
       "userEdited": "Anda mengedit memori yang ditulisnya, jadi tidak dapat diurungkan.",
       "undoTitle": "Urungkan pembaruan untuk {{window}}?",
       "undoBody": "Memori yang ditambahkan dihapus dan yang diubah kembali. Edit Anda sendiri dipertahankan.",
+      "undoBodyGroupCompanion": "Catatan tiap anggota dari sudut pandangnya sendiri juga dihapus. Perubahan hubungan dari momen sosial tetap ada.",
       "undoConfirm": "Urungkan pembaruan",
       "keep": "Pertahankan",
       "undone": "Pembaruan diurungkan",

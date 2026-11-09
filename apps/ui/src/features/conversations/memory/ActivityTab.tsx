@@ -7,6 +7,7 @@ import { FailureState } from "@/shared/ui/FailureState";
 
 export interface ActivityTabProps {
   companion?: boolean;
+  companionGroup?: boolean;
   cycles: readonly MemoryCycleView[];
   hasMore: boolean;
   loadingMore: boolean;
@@ -17,7 +18,7 @@ export interface ActivityTabProps {
   onRevert: (cycle: MemoryCycleView) => Promise<boolean>;
 }
 
-export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRetry, onLoadMore, onRevert, companion = false }: ActivityTabProps) {
+export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRetry, onLoadMore, onRevert, companion = false, companionGroup = false }: ActivityTabProps) {
   const { t, i18n } = useTranslation("conversations");
   const [reverting, setReverting] = useState<string | null>(null);
   const when = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" });
@@ -32,7 +33,7 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
   const askRevert = async (cycle: MemoryCycleView) => {
     const sure = await confirm({
       title: t(companion ? "companion.activity.undoTitle" : "memory.activity.undoTitle", { window: windowText(cycle) }),
-      message: t(companion ? "companion.activity.undoBody" : "memory.activity.undoBody"),
+      message: companionGroup ? `${t("memory.activity.undoBody")} ${t("memory.activity.undoBodyGroupCompanion")}` : t(companion ? "companion.activity.undoBody" : "memory.activity.undoBody"),
       confirmLabel: t(companion ? "companion.activity.undoConfirm" : "memory.activity.undoConfirm"),
       cancelLabel: t("memory.activity.keep"),
       destructive: true,

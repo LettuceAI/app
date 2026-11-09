@@ -955,6 +955,7 @@
       "userEdited": "You edited a memory it wrote, so it can't be undone.",
       "undoTitle": "Undo the update for {{window}}?",
       "undoBody": "Memories it added are removed and the ones it changed come back. Your own edits are kept.",
+      "undoBodyGroupCompanion": "It also removes what each member noted from their own view. Relationship changes from social moments stay.",
       "undoConfirm": "Undo update",
       "keep": "Keep",
       "undone": "Update undone",

@@ -222,6 +222,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
           onRetry={() => void (cycles.isFetchNextPageError ? cycles.fetchNextPage() : cycles.refetch())}
           onLoadMore={() => void cycles.fetchNextPage()}
           onRevert={revert}
+          companionGroup={companionGroup}
         />
       ) : pinned.isError ? (
         <FailureState error={pinned.error} onRetry={() => void pinned.refetch()} />

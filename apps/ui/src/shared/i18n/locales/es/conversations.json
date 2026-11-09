@@ -976,6 +976,7 @@
       "userEdited": "Editaste una memoria que escribió, así que no se puede deshacer.",
       "undoTitle": "¿Deshacer la actualización de {{window}}?",
       "undoBody": "Se eliminan las memorias que añadió y vuelven las que cambió. Tus propias ediciones se conservan.",
+      "undoBodyGroupCompanion": "También se quita lo que cada miembro anotó desde su propio punto de vista. Los cambios de relación por momentos sociales se mantienen.",
       "undoConfirm": "Deshacer actualización",
       "keep": "Conservar",
       "undone": "Actualización deshecha",

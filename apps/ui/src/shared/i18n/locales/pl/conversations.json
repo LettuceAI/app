@@ -997,6 +997,7 @@
       "userEdited": "Edytowałeś wspomnienie, które napisała, więc nie można tego cofnąć.",
       "undoTitle": "Cofnąć aktualizację dla {{window}}?",
       "undoBody": "Dodane przez nią wspomnienia zostaną usunięte, a zmienione wrócą. Twoje własne zmiany zostaną zachowane.",
+      "undoBodyGroupCompanion": "Usuwa też to, co każdy członek zanotował z własnej perspektywy. Zmiany w relacjach wynikające z sytuacji społecznych zostają.",
       "undoConfirm": "Cofnij aktualizację",
       "keep": "Zachowaj",
       "undone": "Cofnięto aktualizację",

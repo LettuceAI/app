@@ -955,6 +955,7 @@
       "userEdited": "Du hast eine von ihr geschriebene Erinnerung bearbeitet, daher kann sie nicht rückgängig gemacht werden.",
       "undoTitle": "Aktualisierung für {{window}} rückgängig machen?",
       "undoBody": "Die von ihr hinzugefügten Erinnerungen werden entfernt und die geänderten kommen zurück. Deine eigenen Änderungen bleiben.",
+      "undoBodyGroupCompanion": "Auch was jedes Mitglied aus seiner eigenen Sicht notiert hat, wird entfernt. Beziehungsänderungen durch soziale Momente bleiben.",
       "undoConfirm": "Aktualisierung rückgängig machen",
       "keep": "Behalten",
       "undone": "Aktualisierung rückgängig gemacht",

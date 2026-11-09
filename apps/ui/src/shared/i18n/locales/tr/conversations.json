@@ -955,6 +955,7 @@
       "userEdited": "Yazdığı bir anıyı düzenlediniz, bu yüzden geri alınamaz.",
       "undoTitle": "{{window}} güncellemesi geri alınsın mı?",
       "undoBody": "Eklediği anılar kaldırılır ve değiştirdikleri geri döner. Kendi düzenlemeleriniz korunur.",
+      "undoBodyGroupCompanion": "Her üyenin kendi bakışından not ettikleri de kaldırılır. Sosyal anlardan gelen ilişki değişiklikleri kalır.",
       "undoConfirm": "Güncellemeyi geri al",
       "keep": "Tut",
       "undone": "Güncelleme geri alındı",

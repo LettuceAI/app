@@ -877,6 +877,8 @@ pub enum MemoryToolOutcome {
         id: MemoryId,
         short_id: MemoryShortId,
         text: String,
+        #[serde(default)]
+        pool_id: Option<MemoryId>,
     },
     SocialEventRecorded,
     StoppedAfterDone,
@@ -3045,6 +3047,31 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_stored_perspective_outcome_without_a_pool_id_deserializes() {
+        let character_id = lettuce_types::CharacterId::new();
+        let id = MemoryId::new();
+        let short_id = MemoryShortId::derived(id);
+        let outcome: MemoryToolOutcome = serde_json::from_value(json!({
+            "status": "perspective_created",
+            "character_id": character_id.to_string(),
+            "id": id.to_string(),
+            "short_id": short_id.get(),
+            "text": "Ada thinks Bea was covering for Cole."
+        }))
+        .expect("stored outcome");
+        assert_eq!(
+            outcome,
+            MemoryToolOutcome::PerspectiveCreated {
+                character_id,
+                id,
+                short_id,
+                text: "Ada thinks Bea was covering for Cole.".into(),
+                pool_id: None,
+            }
+        );
     }
 
     #[test]

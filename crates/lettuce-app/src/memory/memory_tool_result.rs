@@ -437,6 +437,7 @@ mod tests {
                 id: MemoryId::new(),
                 short_id: short,
                 text: "Ada thinks Bea was covering for Cole.".into(),
+                pool_id: None,
             },
         );
         assert_eq!(

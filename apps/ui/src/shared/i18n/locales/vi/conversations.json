@@ -934,6 +934,7 @@
       "userEdited": "Bạn đã sửa một ký ức do lần này viết nên không thể hoàn tác.",
       "undoTitle": "Hoàn tác lần cập nhật cho {{window}}?",
       "undoBody": "Các ký ức được thêm sẽ bị xóa và những ký ức bị thay đổi sẽ trở lại. Chỉnh sửa của bạn được giữ.",
+      "undoBodyGroupCompanion": "Những gì mỗi thành viên ghi nhận từ góc nhìn riêng cũng bị xóa. Các thay đổi quan hệ từ những khoảnh khắc xã hội vẫn được giữ.",
       "undoConfirm": "Hoàn tác cập nhật",
       "keep": "Giữ",
       "undone": "Đã hoàn tác cập nhật",

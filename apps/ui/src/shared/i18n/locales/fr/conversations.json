@@ -976,6 +976,7 @@
       "userEdited": "Vous avez modifié un souvenir qu'il a écrit, elle ne peut donc pas être annulée.",
       "undoTitle": "Annuler la mise à jour pour {{window}} ?",
       "undoBody": "Les souvenirs qu'elle a ajoutés sont supprimés et ceux qu'elle a modifiés reviennent. Vos propres modifications sont conservées.",
+      "undoBodyGroupCompanion": "Ce que chaque membre a noté de son propre point de vue est aussi retiré. Les changements de relation issus des moments sociaux restent.",
       "undoConfirm": "Annuler la mise à jour",
       "keep": "Conserver",
       "undone": "Mise à jour annulée",

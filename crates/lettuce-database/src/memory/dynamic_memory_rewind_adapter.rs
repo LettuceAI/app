@@ -1,4 +1,7 @@
-use std::{collections::HashSet, str::FromStr};
+use std::{
+    collections::{BTreeMap, HashSet},
+    str::FromStr,
+};
 
 use lettuce_conversations::{
     ConversationRepositoryError, DescendantPolicy, TombstoneMessageResult,
@@ -8,7 +11,7 @@ use lettuce_memory::{
     DynamicMemorySuffixRewindRepository, MemoryChangeSet, MemoryRepositoryError, MemorySummary,
     PendingSuffixRewind, PendingSuffixRewindRepository,
 };
-use lettuce_types::{DynamicMemoryRunId, OperationId, Revision};
+use lettuce_types::{DynamicMemoryRunId, MemoryId, MemorySpaceId, OperationId, Revision};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
@@ -283,6 +286,7 @@ pub(crate) fn undo_events(
     let retained = super::memory_manual_adapter::retained_history_in(transaction, current.id, manual)
         .map_err(memory_error)?;
     let mut events = Vec::new();
+    let mut perspective_removals = BTreeMap::<MemorySpaceId, Vec<MemoryId>>::new();
     for run_id in run_ids {
         let run = dynamic_memory_run_adapter::load_run_in(transaction, run_id).map_err(storage)?;
         let rows = transaction.prepare("SELECT result.outcome_json,result.settled_at,settlement.resulting_memory_revision,result.ordinal FROM dynamic_memory_background_tool_results result JOIN dynamic_memory_background_round_settlements settlement ON settlement.run_id=result.run_id AND settlement.attempt_id=result.attempt_id AND settlement.round_ordinal=result.round_ordinal WHERE result.run_id=?1 GROUP BY result.round_ordinal,result.ordinal ORDER BY result.round_ordinal,result.ordinal").and_then(|mut statement| statement.query_map([run_id.to_string()], |row| Ok((row.get::<_, String>(0)?,row.get::<_, i64>(1)?,row.get::<_, i64>(2)?,row.get::<_, i64>(3)?)))?.collect::<rusqlite::Result<Vec<_>>>()).map_err(storage)?;
@@ -310,15 +314,37 @@ pub(crate) fn undo_events(
                     before.retain(|value| value.id != item.id);
                 }
             }
-            events.push((
-                at,
-                revision,
-                ordinal,
-                Undo::Tool {
-                    before,
-                    outcome: decode_versioned(&json, JSON_VERSION).map_err(storage)?,
-                },
-            ));
+            let outcome: lettuce_memory::MemoryToolOutcome =
+                decode_versioned(&json, JSON_VERSION).map_err(storage)?;
+            if let lettuce_memory::MemoryToolOutcome::PerspectiveCreated {
+                character_id,
+                id,
+                pool_id,
+                ..
+            } = &outcome
+            {
+                if let Some(space_id) = memory_adapter::perspective_space_in(
+                    transaction,
+                    run.conversation_id,
+                    run.branch_id,
+                    *character_id,
+                )
+                .map_err(memory_error)?
+                {
+                    perspective_removals.entry(space_id).or_default().push(*id);
+                }
+                if let Some(pool_id) = pool_id
+                    && let Some(space_id) =
+                        memory_adapter::companion_pool_space_in(transaction, *character_id)
+                            .map_err(memory_error)?
+                {
+                    perspective_removals
+                        .entry(space_id)
+                        .or_default()
+                        .push(*pool_id);
+                }
+            }
+            events.push((at, revision, ordinal, Undo::Tool { before, outcome }));
         }
     }
     for edit in manual {
@@ -345,18 +371,47 @@ pub(crate) fn undo_events(
             }
         }
     }
-    if items == current.items && !always_apply {
-        return Ok(current.clone());
+    let updated = if items == current.items && !always_apply {
+        current.clone()
+    } else {
+        memory_adapter::compare_and_apply_in(
+            transaction,
+            &MemoryChangeSet {
+                space_id: current.id,
+                expected_revision: current.revision,
+                items,
+            },
+        )
+        .map_err(memory_error)?
+    };
+    for (space_id, ids) in perspective_removals {
+        let Some(snapshot) = memory_adapter::get_in(transaction, space_id).map_err(memory_error)?
+        else {
+            continue;
+        };
+        let edited =
+            memory_adapter::manual_edited_items_in(transaction, space_id, Revision::INITIAL)
+                .map_err(memory_error)?;
+        let items = snapshot
+            .items
+            .iter()
+            .filter(|item| !ids.contains(&item.id) || edited.contains(&item.id))
+            .cloned()
+            .collect::<Vec<_>>();
+        if items.len() == snapshot.items.len() {
+            continue;
+        }
+        memory_adapter::compare_and_apply_in(
+            transaction,
+            &MemoryChangeSet {
+                space_id,
+                expected_revision: snapshot.revision,
+                items,
+            },
+        )
+        .map_err(memory_error)?;
     }
-    memory_adapter::compare_and_apply_in(
-        transaction,
-        &MemoryChangeSet {
-            space_id: current.id,
-            expected_revision: current.revision,
-            items,
-        },
-    )
-    .map_err(memory_error)
+    Ok(updated)
 }
 
 impl PendingSuffixRewindRepository for Database {

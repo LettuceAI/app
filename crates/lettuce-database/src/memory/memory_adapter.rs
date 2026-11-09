@@ -268,6 +268,47 @@ pub(crate) fn branch_space_id_in(
         .transpose()
 }
 
+/// Resolves one member's perspective space on a branch.
+pub(crate) fn perspective_space_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    character_id: lettuce_types::CharacterId,
+) -> Result<Option<MemorySpaceId>, MemoryRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT space_id FROM group_companion_memory_spaces
+              WHERE conversation_id = ?1 AND branch_id = ?2 AND character_id = ?3",
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                character_id.to_string()
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .map(|value| value.parse().map_err(storage))
+        .transpose()
+}
+
+/// Resolves a companion character's shared memory pool.
+pub(crate) fn companion_pool_space_in(
+    transaction: &Transaction<'_>,
+    character_id: lettuce_types::CharacterId,
+) -> Result<Option<MemorySpaceId>, MemoryRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT space_id FROM companion_memory_pools WHERE character_id = ?1",
+            [character_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .map(|value| value.parse().map_err(storage))
+        .transpose()
+}
+
 /// Whether `space_id` is writable on `branch_id`: its branch space or one of
 /// its members' perspective spaces.
 pub(crate) fn space_is_on_branch_in(

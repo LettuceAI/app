@@ -934,6 +934,7 @@
       "userEdited": "你編輯過它撰寫的記憶，因此無法復原。",
       "undoTitle": "要復原 {{window}} 的更新嗎？",
       "undoBody": "它新增的記憶會被移除，它變更的記憶會還原。你自己的編輯會保留。",
+      "undoBodyGroupCompanion": "每位成員從自己視角記下的內容也會被移除。社交時刻帶來的關係變化會保留。",
       "undoConfirm": "復原更新",
       "keep": "保留",
       "undone": "已復原更新",

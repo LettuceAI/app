@@ -976,6 +976,7 @@
       "userEdited": "Você editou uma memória que ela escreveu, então não pode ser desfeita.",
       "undoTitle": "Desfazer a atualização de {{window}}?",
       "undoBody": "As memórias que ela adicionou são removidas e as que ela alterou voltam. Suas próprias edições são mantidas.",
+      "undoBodyGroupCompanion": "O que cada membro anotou do próprio ponto de vista também é removido. As mudanças de relação vindas de momentos sociais permanecem.",
       "undoConfirm": "Desfazer atualização",
       "keep": "Manter",
       "undone": "Atualização desfeita",

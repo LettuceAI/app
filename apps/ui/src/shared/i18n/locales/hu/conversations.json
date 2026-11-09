@@ -955,6 +955,7 @@
       "userEdited": "Szerkesztettél egy általa írt memóriát, ezért nem vonható vissza.",
       "undoTitle": "Visszavonod a(z) {{window}} frissítését?",
       "undoBody": "Az általa hozzáadott memóriák eltávolításra kerülnek, a módosítottak visszaállnak. A saját szerkesztéseid megmaradnak.",
+      "undoBodyGroupCompanion": "Az is törlődik, amit az egyes tagok a saját nézőpontjukból feljegyeztek. A társas pillanatokból eredő kapcsolati változások megmaradnak.",
       "undoConfirm": "Frissítés visszavonása",
       "keep": "Megtartás",
       "undone": "Frissítés visszavonva",

@@ -997,6 +997,7 @@
       "userEdited": "Upravil jsi paměť, kterou napsala, takže ji nelze vrátit.",
       "undoTitle": "Vrátit aktualizaci pro {{window}}?",
       "undoBody": "Paměti, které přidala, se odeberou a změněné se vrátí zpět. Tvoje vlastní úpravy zůstanou.",
+      "undoBodyGroupCompanion": "Odstraní se i to, co si každý člen poznamenal ze svého pohledu. Změny vztahů ze společenských chvil zůstanou.",
       "undoConfirm": "Vrátit aktualizaci",
       "keep": "Ponechat",
       "undone": "Aktualizace vrácena",

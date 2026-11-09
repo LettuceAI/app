@@ -934,6 +934,7 @@
       "userEdited": "你编辑过它写入的一条记忆，因此无法撤销。",
       "undoTitle": "撤销 {{window}} 的更新？",
       "undoBody": "它添加的记忆会被移除，它更改的记忆会恢复。你自己的编辑会保留。",
+      "undoBodyGroupCompanion": "每位成员从自己视角记下的内容也会被移除。社交时刻带来的关系变化会保留。",
       "undoConfirm": "撤销更新",
       "keep": "保留",
       "undone": "更新已撤销",

@@ -955,6 +955,7 @@
       "userEdited": "Du redigerte et minne den skrev, så den kan ikke angres.",
       "undoTitle": "Angre oppdateringen for {{window}}?",
       "undoBody": "Minner den la til, fjernes, og de den endret, kommer tilbake. Dine egne endringer beholdes.",
+      "undoBodyGroupCompanion": "Det hvert medlem noterte fra sitt eget ståsted fjernes også. Endringer i forholdet fra sosiale øyeblikk blir værende.",
       "undoConfirm": "Angre oppdatering",
       "keep": "Behold",
       "undone": "Oppdateringen er angret",

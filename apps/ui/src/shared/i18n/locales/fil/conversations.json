@@ -955,6 +955,7 @@
       "userEdited": "Binago mo ang isang memory na isinulat nito, kaya hindi ito ma-undo.",
       "undoTitle": "I-undo ang update para sa {{window}}?",
       "undoBody": "Tatanggalin ang mga memory na idinagdag nito at ibabalik ang mga binago nito. Naitatabi ang sarili mong mga edit.",
+      "undoBodyGroupCompanion": "Inaalis din ang itinala ng bawat miyembro mula sa sarili nilang pananaw. Mananatili ang mga pagbabago sa relasyon mula sa mga sosyal na sandali.",
       "undoConfirm": "I-undo ang update",
       "keep": "Panatilihin",
       "undone": "Na-undo ang update",

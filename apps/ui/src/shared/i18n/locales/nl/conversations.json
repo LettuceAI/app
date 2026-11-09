@@ -955,6 +955,7 @@
       "userEdited": "Je hebt een herinnering die het schreef bewerkt, dus het kan niet ongedaan worden gemaakt.",
       "undoTitle": "De update voor {{window}} ongedaan maken?",
       "undoBody": "Herinneringen die het toevoegde worden verwijderd en de gewijzigde komen terug. Je eigen bewerkingen blijven bewaard.",
+      "undoBodyGroupCompanion": "Wat elk lid vanuit zijn eigen blik heeft genoteerd, wordt ook verwijderd. Relatieveranderingen door sociale momenten blijven.",
       "undoConfirm": "Update ongedaan maken",
       "keep": "Behouden",
       "undone": "Update ongedaan gemaakt",

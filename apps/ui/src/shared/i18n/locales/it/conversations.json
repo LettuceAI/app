@@ -976,6 +976,7 @@
       "userEdited": "Hai modificato un ricordo che ha scritto, quindi non può essere annullato.",
       "undoTitle": "Annullare l'aggiornamento per {{window}}?",
       "undoBody": "I ricordi aggiunti vengono rimossi e quelli modificati tornano come prima. Le tue modifiche vengono conservate.",
+      "undoBodyGroupCompanion": "Viene rimosso anche ciò che ogni membro ha annotato dal proprio punto di vista. I cambiamenti di relazione dovuti ai momenti sociali restano.",
       "undoConfirm": "Annulla aggiornamento",
       "keep": "Mantieni",
       "undone": "Aggiornamento annullato",

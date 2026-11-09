@@ -784,6 +784,15 @@ describe("group companion member memory", () => {
     expect(tabNames()).toEqual(["Memories", "Activity", "Pinned"]);
   });
 
+  it("says what undoing a companion-mode group update keeps", async () => {
+    const world = { cycles: [cycle("r3", { window_start: 41, window_end: 60, label: "41-60", actions: [{ kind: "created", memory_id: "m1", text: "Ada and Bea made up." }], revertable: true })] };
+    await open({ world, calls: groupCalls(true, { revision: 7, items: [] }, []) });
+    fireEvent.click(await screen.findByRole("tab", { name: /^Activity/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Messages 41 to 60/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo this update" }));
+    expect(await screen.findByText("Memories it added are removed and the ones it changed come back. Your own edits are kept. It also removes what each member noted from their own view. Relationship changes from social moments stay.")).toBeTruthy();
+  });
+
   it("loads the chosen member's own memory without the Activity tab", async () => {
     const asked: Record<string, unknown>[] = [];
     const { runtime } = await open({ calls: groupCalls(true, { revision: 7, items: [item("m1", "Ada likes rain.")] }, asked) });

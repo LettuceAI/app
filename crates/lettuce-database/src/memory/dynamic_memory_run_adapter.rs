@@ -1396,6 +1396,35 @@ impl GroupCompanionMemoryRoundWriter for Database {
                 now,
             );
             append_space_item_in(&transaction, &snapshot, &item)?;
+            let mut pool_copy_id = None;
+            if outputs.write_back.contains(&memory.character_id) {
+                let pool_space = transaction
+                    .query_row(
+                        "SELECT space_id FROM companion_memory_pools WHERE character_id = ?1",
+                        [memory.character_id.to_string()],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+                    .map_err(storage)?;
+                if let Some(pool_space) = pool_space {
+                    let pool_space = MemorySpaceId::from_str(&pool_space).map_err(storage)?;
+                    let pool = crate::memory::memory_adapter::get_in(&transaction, pool_space)
+                        .map_err(storage)?
+                        .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
+                    let pool_item = perspective_memory_item(
+                        &pool.items,
+                        &memory.text,
+                        memory.category,
+                        memory.important,
+                        memory.source_message_id,
+                        source.role,
+                        memory.observed_at,
+                        now,
+                    );
+                    append_space_item_in(&transaction, &pool, &pool_item)?;
+                    pool_copy_id = Some(pool_item.id);
+                }
+            }
             set_result_outcome(
                 &mut commit.results,
                 &result_index,
@@ -1405,36 +1434,9 @@ impl GroupCompanionMemoryRoundWriter for Database {
                     id: item.id,
                     short_id: item.short_id,
                     text: item.text.clone(),
+                    pool_id: pool_copy_id,
                 },
             );
-            if outputs.write_back.contains(&memory.character_id) {
-                let pool_id = transaction
-                    .query_row(
-                        "SELECT space_id FROM companion_memory_pools WHERE character_id = ?1",
-                        [memory.character_id.to_string()],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()
-                    .map_err(storage)?;
-                let Some(pool_id) = pool_id else {
-                    continue;
-                };
-                let pool_id = MemorySpaceId::from_str(&pool_id).map_err(storage)?;
-                let pool = crate::memory::memory_adapter::get_in(&transaction, pool_id)
-                    .map_err(storage)?
-                    .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
-                let pool_item = perspective_memory_item(
-                    &pool.items,
-                    &memory.text,
-                    memory.category,
-                    memory.important,
-                    memory.source_message_id,
-                    source.role,
-                    memory.observed_at,
-                    now,
-                );
-                append_space_item_in(&transaction, &pool, &pool_item)?;
-            }
         }
         if !outputs.social_events.is_empty() {
             let path = conversation_query::timeline_items_after(

@@ -972,8 +972,9 @@ mod tests {
         DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
         DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryRunRepository,
         DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat, MemoryCategory,
-        MemoryChangeSet, MemoryItem, MemoryRepository, MemorySpaceSnapshot, MemoryToolOutcome,
-        MemoryToolResult, MemoryToolSkipReason, NewDynamicMemoryInferenceRound,
+        MemoryChangeSet, MemoryCycleRevert, MemoryFieldChange, MemoryItem, MemoryManualEdit,
+        MemoryManualMutation, MemoryRepository, MemoryRepositoryError, MemorySpaceSnapshot,
+        MemoryToolOutcome, MemoryToolResult, MemoryToolSkipReason, NewDynamicMemoryInferenceRound,
         NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score,
     };
     use lettuce_types::{
@@ -1957,6 +1958,444 @@ mod tests {
             MemoryToolOutcome::PerspectiveCreated { character_id, .. }
                 if character_id == first
         ));
+    }
+
+    #[derive(Debug)]
+    enum RevertFailure {
+        Revert,
+        Operation,
+    }
+
+    impl From<crate::ApiOperationError> for RevertFailure {
+        fn from(_: crate::ApiOperationError) -> Self {
+            Self::Operation
+        }
+    }
+
+    impl From<lettuce_memory::MemoryCycleRevertError> for RevertFailure {
+        fn from(_: lettuce_memory::MemoryCycleRevertError) -> Self {
+            Self::Revert
+        }
+    }
+
+    impl From<MemoryRepositoryError> for RevertFailure {
+        fn from(_: MemoryRepositoryError) -> Self {
+            Self::Operation
+        }
+    }
+
+    struct CompanionMemoryRound {
+        run_id: DynamicMemoryRunId,
+        shared: MemorySpaceId,
+        pool: MemorySpaceId,
+        message_id: MessageId,
+        perspective: MemorySpaceId,
+    }
+
+    fn companion_memory_round_with_social_event(fixture: &HydratedFixture) -> CompanionMemoryRound {
+        let [first, second] = fixture.characters;
+        let message_id = fixture.message_id;
+        write_checkpoints(
+            &fixture.database,
+            fixture.conversation_id,
+            message_id,
+            &[
+                checkpoint(message_id, first, second, "first", Vec::new()),
+                checkpoint(message_id, second, first, "second", Vec::new()),
+            ],
+        );
+        let shared = MemorySpaceId::new();
+        let pool = MemorySpaceId::new();
+        MemoryRepository::create(
+            &fixture.database,
+            MemorySpaceSnapshot {
+                id: shared,
+                revision: Revision::INITIAL,
+                items: Vec::new(),
+            },
+        )
+        .expect("shared space");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_memory_spaces
+                 (conversation_id, branch_id, space_id, pooled)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![
+                    fixture.conversation_id.to_string(),
+                    fixture.branch_id.to_string(),
+                    shared.to_string()
+                ],
+            )
+            .expect("shared binding");
+        MemoryRepository::create(
+            &fixture.database,
+            MemorySpaceSnapshot {
+                id: pool,
+                revision: Revision::INITIAL,
+                items: Vec::new(),
+            },
+        )
+        .expect("pool space");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO companion_memory_pools (character_id, space_id) VALUES (?1, ?2)",
+                params![first.to_string(), pool.to_string()],
+            )
+            .expect("pool row");
+
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        fixture
+            .database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id,
+                attempt_id,
+                conversation_id: fixture.conversation_id,
+                branch_id: fixture.branch_id,
+                space_id: shared,
+                starting_memory: fixture
+                    .database
+                    .get(shared)
+                    .expect("memory")
+                    .expect("space"),
+                cycle_start_change: None,
+                source_messages: vec![DynamicMemorySourceMessage {
+                    message_id,
+                    role: MessageRole::User,
+                    render_source: fixture.render_source,
+                    effective_time: TimestampMillis::new(10),
+                }],
+                profile: profile(),
+                time_awareness_enabled: false,
+                supersession_enabled: false,
+                group_companion_members: vec![("m1".into(), first), ("m2".into(), second)],
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 1,
+                    start: 0,
+                    end: 1,
+                },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: true,
+                        supersession_enabled: false,
+                        require_source_message_id: false,
+                        group_companion: Some(vec!["m1".into(), "m2".into()]),
+                    },
+                    &|key| key.to_owned(),
+                ),
+                job_id: JobId::new(),
+                job_attempt: None,
+                now: TimestampMillis::new(10),
+            })
+            .expect("admit run");
+        let processing = fixture
+            .database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                Revision::new(1),
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(10),
+            )
+            .expect("start attempt");
+
+        let shared_call = ToolExecutionId::new();
+        let perspective_call = ToolExecutionId::new();
+        let social_call = ToolExecutionId::new();
+        fixture
+            .database
+            .admit_dynamic_memory_inference_round(
+                run_id,
+                attempt_id,
+                0,
+                0,
+                NewDynamicMemoryInferenceRound {
+                    ordinal: 0,
+                    kind: DynamicMemoryRoundKind::Manager,
+                    request_context: lettuce_conversations::ProviderNeutralContext {
+                        messages: Vec::new(),
+                        attributions: Default::default(),
+                        budget: Default::default(),
+                    },
+                    parts: Vec::new(),
+                    provider_replay: None,
+                    usage: None,
+                    finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                    provider_request_id: None,
+                    calls: vec![
+                        round_call(
+                            shared_call,
+                            "create_memory",
+                            json!({"text":"The group agreed on tea","category":"plot_event","source_message_id":message_id.to_string()}),
+                        ),
+                        round_call(
+                            perspective_call,
+                            "create_perspective_memory",
+                            json!({"member":"m1","text":"Ada thinks Bea was covering for Cole.","category":"relationship","source_message_id":message_id.to_string()}),
+                        ),
+                        round_call(
+                            social_call,
+                            "record_social_event",
+                            json!({"kind":"support","from":"m1","to":"m2","source_message_id":message_id.to_string()}),
+                        ),
+                    ],
+                    admitted_at: TimestampMillis::new(10),
+                },
+            )
+            .expect("round");
+        let item = shared_item("The group agreed on tea", message_id);
+        let event = GroupSocialEvent {
+            kind: "support".into(),
+            from: Some(first),
+            to: second,
+            source_message_id: message_id,
+        };
+        let commit = DynamicMemoryBackgroundRoundCommit {
+            run_id,
+            attempt_id,
+            round_ordinal: 0,
+            space_id: shared,
+            expected_memory_revision: Revision::INITIAL,
+            change: Some(MemoryChangeSet {
+                space_id: shared,
+                expected_revision: Revision::INITIAL,
+                items: vec![item.clone()],
+            }),
+            results: vec![
+                MemoryToolResult {
+                    execution_id: shared_call,
+                    outcome: MemoryToolOutcome::Created {
+                        id: item.id,
+                        short_id: item.short_id,
+                        memories: Vec::new(),
+                    },
+                },
+                MemoryToolResult {
+                    execution_id: perspective_call,
+                    outcome: MemoryToolOutcome::Done { summary: None },
+                },
+                MemoryToolResult {
+                    execution_id: social_call,
+                    outcome: MemoryToolOutcome::Done { summary: None },
+                },
+            ],
+        };
+        let outputs = GroupCompanionRoundOutputs {
+            members: vec![
+                (first, CompanionSoulConfig::default()),
+                (second, CompanionSoulConfig::default()),
+            ],
+            perspective_memories: vec![GroupPerspectiveMemory {
+                execution_id: perspective_call,
+                character_id: first,
+                text: "Ada thinks Bea was covering for Cole.".into(),
+                category: MemoryCategory::Relationship,
+                important: false,
+                source_message_id: message_id,
+                observed_at: TimestampMillis::new(10),
+            }],
+            write_back: vec![first],
+            social_events: vec![(social_call, event)],
+        };
+        fixture
+            .database
+            .commit_group_companion_memory_round(
+                commit,
+                outputs,
+                &social_catalog(),
+                TimestampMillis::new(11),
+            )
+            .expect("commit round");
+        fixture
+            .database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                processing.revision,
+                DynamicMemoryAttemptStatus::Succeeded,
+                None,
+                TimestampMillis::new(12),
+            )
+            .expect("finish attempt");
+        let perspective = fixture
+            .database
+            .perspective_space(fixture.conversation_id, fixture.branch_id, first)
+            .expect("perspective space")
+            .expect("perspective binding");
+        CompanionMemoryRound {
+            run_id,
+            shared,
+            pool,
+            message_id,
+            perspective,
+        }
+    }
+
+    fn revert_companion_round(
+        fixture: &HydratedFixture,
+        round: &CompanionMemoryRound,
+        at: i64,
+    ) -> Result<lettuce_memory::MemoryCycleRevertRecord, RevertFailure> {
+        let revision = fixture
+            .database
+            .get(round.shared)
+            .expect("memory")
+            .expect("space")
+            .revision;
+        fixture.database.commit_api_operation(
+            "memory_cycle_revert",
+            "companion-revert",
+            "digest",
+            TimestampMillis::new(at),
+            |scope| {
+                scope
+                    .revert_memory_cycle(&MemoryCycleRevert {
+                        conversation_id: fixture.conversation_id,
+                        run_id: round.run_id,
+                        expected_revision: revision,
+                        at: TimestampMillis::new(at),
+                    })
+                    .map_err(RevertFailure::from)
+            },
+        )
+    }
+
+    #[test]
+    fn reverting_a_companion_round_removes_its_perspective_and_pool_items() {
+        let fixture = hydrated_group_fixture();
+        let round = companion_memory_round_with_social_event(&fixture);
+        revert_companion_round(&fixture, &round, 20).expect("revert");
+        assert!(
+            fixture
+                .database
+                .get(round.shared)
+                .expect("shared")
+                .expect("space")
+                .items
+                .is_empty()
+        );
+        assert!(
+            fixture
+                .database
+                .get(round.perspective)
+                .expect("perspective")
+                .expect("space")
+                .items
+                .is_empty()
+        );
+        assert!(
+            fixture
+                .database
+                .get(round.pool)
+                .expect("pool")
+                .expect("space")
+                .items
+                .is_empty()
+        );
+        let checkpoints = fixture
+            .database
+            .checkpoints_for_message(fixture.conversation_id, round.message_id)
+            .expect("checkpoints");
+        let target = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == fixture.characters[1])
+            .expect("target checkpoint");
+        assert!(
+            target
+                .effects
+                .iter()
+                .any(|effect| { effect.reason == GroupCompanionEffectReason::SocialEvent })
+        );
+    }
+
+    #[test]
+    fn reverting_a_companion_round_keeps_a_manually_edited_perspective_item() {
+        let fixture = hydrated_group_fixture();
+        let round = companion_memory_round_with_social_event(&fixture);
+        let perspective = fixture
+            .database
+            .get(round.perspective)
+            .expect("perspective")
+            .expect("space");
+        assert_eq!(perspective.items.len(), 1);
+        let conversation_revision = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT revision FROM conversations WHERE id = ?1",
+                [fixture.conversation_id.to_string()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("conversation revision");
+        let edit = MemoryManualEdit {
+            id: lettuce_types::OperationId::new(),
+            conversation_id: fixture.conversation_id,
+            branch_id: fixture.branch_id,
+            conversation_revision: Revision::new(
+                u64::try_from(conversation_revision).expect("revision"),
+            ),
+            expected_revision: perspective.revision,
+            space_id: round.perspective,
+            context_revisions: Vec::new(),
+            mutation: MemoryManualMutation::Update {
+                memory_id: perspective.items[0].id,
+                text: Some("Ada thinks Bea covered for Cole.".into()),
+                category: MemoryFieldChange::Keep,
+                observed_at: MemoryFieldChange::Keep,
+                token_count: None,
+            },
+            at: TimestampMillis::new(12),
+        };
+        fixture
+            .database
+            .commit_api_operation::<lettuce_memory::MemoryManualHistory, RevertFailure>(
+                "memory_update",
+                "edit-perspective",
+                "digest",
+                edit.at,
+                |scope| {
+                    scope
+                        .apply_memory_manual_edit(&edit, None)
+                        .map_err(RevertFailure::from)
+                },
+            )
+            .expect("edit perspective");
+        revert_companion_round(&fixture, &round, 20).expect("revert");
+        let perspective = fixture
+            .database
+            .get(round.perspective)
+            .expect("perspective")
+            .expect("space");
+        assert_eq!(perspective.items.len(), 1);
+        assert_eq!(
+            perspective.items[0].text,
+            "Ada thinks Bea covered for Cole."
+        );
+        assert!(
+            fixture
+                .database
+                .get(round.pool)
+                .expect("pool")
+                .expect("space")
+                .items
+                .is_empty()
+        );
+        assert!(
+            fixture
+                .database
+                .get(round.shared)
+                .expect("shared")
+                .expect("space")
+                .items
+                .is_empty()
+        );
     }
 
     fn artifact(
