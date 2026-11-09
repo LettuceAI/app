@@ -1190,6 +1190,30 @@
         "witnessed": "이 일을 목격함",
         "addressed": "말을 걸어옴",
         "social_event": "사회적 사건: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "사과",
+        "support": "지지",
+        "defense": "편들기",
+        "insult": "모욕",
+        "betrayal": "배신",
+        "confession": "고백",
+        "rejection": "거절",
+        "reconciliation": "화해",
+        "teasing": "놀림",
+        "gratitude": "감사",
+        "compliment": "칭찬",
+        "flirting": "플러팅",
+        "affection": "애정 표현",
+        "forgiveness": "용서",
+        "promise": "약속",
+        "sacrifice": "희생",
+        "broken_promise": "약속 어김",
+        "deception": "기만",
+        "accusation": "비난",
+        "dismissal": "무시",
+        "exclusion": "따돌림",
+        "threat": "위협"
       }
     }
   }

@@ -1221,6 +1221,30 @@
         "witnessed": "यह देखा",
         "addressed": "संबोधित किया गया",
         "social_event": "सामाजिक घटना: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "माफ़ी",
+        "support": "समर्थन",
+        "defense": "बचाव",
+        "insult": "अपमान",
+        "betrayal": "विश्वासघात",
+        "confession": "स्वीकारोक्ति",
+        "rejection": "अस्वीकार",
+        "reconciliation": "सुलह",
+        "teasing": "चिढ़ाना",
+        "gratitude": "आभार",
+        "compliment": "तारीफ़",
+        "flirting": "फ़्लर्ट",
+        "affection": "स्नेह",
+        "forgiveness": "क्षमा",
+        "promise": "वादा",
+        "sacrifice": "त्याग",
+        "broken_promise": "टूटा वादा",
+        "deception": "धोखा",
+        "accusation": "आरोप",
+        "dismissal": "अनदेखी",
+        "exclusion": "बहिष्कार",
+        "threat": "धमकी"
       }
     }
   }

@@ -1252,6 +1252,30 @@
         "witnessed": "A été témoin",
         "addressed": "S'est fait interpeller",
         "social_event": "Événement social : {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "excuses",
+        "support": "soutien",
+        "defense": "défense",
+        "insult": "insulte",
+        "betrayal": "trahison",
+        "confession": "confession",
+        "rejection": "rejet",
+        "reconciliation": "réconciliation",
+        "teasing": "taquinerie",
+        "gratitude": "gratitude",
+        "compliment": "compliment",
+        "flirting": "flirt",
+        "affection": "tendresse",
+        "forgiveness": "pardon",
+        "promise": "promesse",
+        "sacrifice": "sacrifice",
+        "broken_promise": "promesse rompue",
+        "deception": "tromperie",
+        "accusation": "accusation",
+        "dismissal": "rebuffade",
+        "exclusion": "exclusion",
+        "threat": "menace"
       }
     }
   }

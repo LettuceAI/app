@@ -1221,6 +1221,30 @@
         "witnessed": "Το είδε",
         "addressed": "Του μίλησαν",
         "social_event": "Κοινωνικό γεγονός: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "συγγνώμη",
+        "support": "υποστήριξη",
+        "defense": "υπεράσπιση",
+        "insult": "προσβολή",
+        "betrayal": "προδοσία",
+        "confession": "εξομολόγηση",
+        "rejection": "απόρριψη",
+        "reconciliation": "συμφιλίωση",
+        "teasing": "πείραγμα",
+        "gratitude": "ευγνωμοσύνη",
+        "compliment": "φιλοφρόνηση",
+        "flirting": "φλερτ",
+        "affection": "τρυφερότητα",
+        "forgiveness": "συγχώρεση",
+        "promise": "υπόσχεση",
+        "sacrifice": "θυσία",
+        "broken_promise": "αθετημένη υπόσχεση",
+        "deception": "εξαπάτηση",
+        "accusation": "κατηγορία",
+        "dismissal": "αδιαφορία",
+        "exclusion": "αποκλεισμός",
+        "threat": "απειλή"
       }
     }
   }

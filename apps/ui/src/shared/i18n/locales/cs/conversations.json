@@ -1283,6 +1283,30 @@
         "witnessed": "Svědek události",
         "addressed": "Osloveno",
         "social_event": "Společenská událost: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "omluva",
+        "support": "podpora",
+        "defense": "obrana",
+        "insult": "urážka",
+        "betrayal": "zrada",
+        "confession": "přiznání",
+        "rejection": "odmítnutí",
+        "reconciliation": "usmíření",
+        "teasing": "škádlení",
+        "gratitude": "vděčnost",
+        "compliment": "kompliment",
+        "flirting": "flirt",
+        "affection": "náklonnost",
+        "forgiveness": "odpuštění",
+        "promise": "slib",
+        "sacrifice": "oběť",
+        "broken_promise": "porušený slib",
+        "deception": "klam",
+        "accusation": "obvinění",
+        "dismissal": "odbytí",
+        "exclusion": "vyloučení",
+        "threat": "výhrůžka"
       }
     }
   }

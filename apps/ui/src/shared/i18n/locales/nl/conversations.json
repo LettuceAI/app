@@ -1221,6 +1221,30 @@
         "witnessed": "Was hierbij aanwezig",
         "addressed": "Werd aangesproken",
         "social_event": "Sociale gebeurtenis: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "excuses",
+        "support": "steun",
+        "defense": "verdediging",
+        "insult": "belediging",
+        "betrayal": "verraad",
+        "confession": "bekentenis",
+        "rejection": "afwijzing",
+        "reconciliation": "verzoening",
+        "teasing": "plagen",
+        "gratitude": "dankbaarheid",
+        "compliment": "compliment",
+        "flirting": "flirten",
+        "affection": "genegenheid",
+        "forgiveness": "vergeving",
+        "promise": "belofte",
+        "sacrifice": "opoffering",
+        "broken_promise": "gebroken belofte",
+        "deception": "misleiding",
+        "accusation": "beschuldiging",
+        "dismissal": "afwimpelen",
+        "exclusion": "buitensluiten",
+        "threat": "dreiging"
       }
     }
   }

@@ -1190,6 +1190,30 @@
         "witnessed": "Menyaksikan ini",
         "addressed": "Diajak bicara",
         "social_event": "Peristiwa sosial: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "permintaan maaf",
+        "support": "dukungan",
+        "defense": "pembelaan",
+        "insult": "hinaan",
+        "betrayal": "pengkhianatan",
+        "confession": "pengakuan",
+        "rejection": "penolakan",
+        "reconciliation": "berbaikan",
+        "teasing": "candaan",
+        "gratitude": "rasa terima kasih",
+        "compliment": "pujian",
+        "flirting": "rayuan",
+        "affection": "kasih sayang",
+        "forgiveness": "pemaafan",
+        "promise": "janji",
+        "sacrifice": "pengorbanan",
+        "broken_promise": "janji yang diingkari",
+        "deception": "penipuan",
+        "accusation": "tuduhan",
+        "dismissal": "pengabaian",
+        "exclusion": "pengucilan",
+        "threat": "ancaman"
       }
     }
   }

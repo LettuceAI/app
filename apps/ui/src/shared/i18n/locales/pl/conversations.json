@@ -1283,6 +1283,30 @@
         "witnessed": "Był(a) tego świadkiem",
         "addressed": "Ktoś się do tego zwrócił",
         "social_event": "Zdarzenie społeczne: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "przeprosiny",
+        "support": "wsparcie",
+        "defense": "obrona",
+        "insult": "obelga",
+        "betrayal": "zdrada",
+        "confession": "wyznanie",
+        "rejection": "odrzucenie",
+        "reconciliation": "pojednanie",
+        "teasing": "droczenie się",
+        "gratitude": "wdzięczność",
+        "compliment": "komplement",
+        "flirting": "flirt",
+        "affection": "czułość",
+        "forgiveness": "przebaczenie",
+        "promise": "obietnica",
+        "sacrifice": "poświęcenie",
+        "broken_promise": "złamana obietnica",
+        "deception": "oszustwo",
+        "accusation": "oskarżenie",
+        "dismissal": "zbycie",
+        "exclusion": "wykluczenie",
+        "threat": "groźba"
       }
     }
   }

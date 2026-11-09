@@ -428,7 +428,7 @@ const groupView = (): ConversationView => ({ ...conversation(), kind: "group", t
 const groupSettings = (on: boolean): ConversationSettingsView => ({ ...settings(), kind: "group", companion: false, companion_mode: { value: on, source: "group" }, members: { members_source: "group", muted_source: "group", models_source: "group", participants: [] } });
 const groupEffects = (): GroupCompanionMemberEffectView[] => [{ character_id: "ca", display_name: "Ada", effects: [
   { reason: "addressed", social_event: null, target: { kind: "persona" }, relationship: { closeness: 0.04, trust: null, affection: null, tension: -0.05, stability: null }, felt: vector({ warmth: 0.12 }) },
-  { reason: "social_event", social_event: "party", target: { kind: "character", character_id: "cb" }, relationship: { closeness: 0.02, trust: null, affection: null, tension: null, stability: null }, felt: vector() },
+  { reason: "social_event", social_event: "broken_promise", target: { kind: "character", character_id: "cb" }, relationship: { closeness: 0.02, trust: null, affection: null, tension: null, stability: null }, felt: vector() },
 ] }];
 const groupCalls = (on = true, souls: string[] = []): MockCallHandlers => ({
   conversationOpen: () => ok(groupView()),
@@ -481,7 +481,7 @@ describe("group companion chat", () => {
     expect(within(sheet).getByText("Ada")).toBeTruthy();
     expect(within(sheet).getByText("Was addressed")).toBeTruthy();
     expect(within(sheet).getByText("Closeness toward you")).toBeTruthy();
-    expect(within(sheet).getByText("Social event: party")).toBeTruthy();
+    expect(within(sheet).getByText("Social event: broken promise")).toBeTruthy();
     expect(within(sheet).getByText("Closeness toward Bea")).toBeTruthy();
     expect(within(sheet).getByText("Feels Warmth")).toBeTruthy();
     expect(app.called("messageCompanionEffect")).toHaveLength(0);

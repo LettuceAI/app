@@ -1221,6 +1221,30 @@
         "witnessed": "Buna tanık oldu",
         "addressed": "Kendisine seslenildi",
         "social_event": "Sosyal olay: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "özür",
+        "support": "destek",
+        "defense": "savunma",
+        "insult": "hakaret",
+        "betrayal": "ihanet",
+        "confession": "itiraf",
+        "rejection": "reddetme",
+        "reconciliation": "barışma",
+        "teasing": "takılma",
+        "gratitude": "minnet",
+        "compliment": "iltifat",
+        "flirting": "flört",
+        "affection": "sevgi gösterisi",
+        "forgiveness": "affetme",
+        "promise": "söz",
+        "sacrifice": "fedakârlık",
+        "broken_promise": "tutulmayan söz",
+        "deception": "kandırma",
+        "accusation": "suçlama",
+        "dismissal": "geçiştirme",
+        "exclusion": "dışlama",
+        "threat": "tehdit"
       }
     }
   }

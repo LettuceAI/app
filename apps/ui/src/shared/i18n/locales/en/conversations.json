@@ -1221,6 +1221,30 @@
         "witnessed": "Witnessed this",
         "addressed": "Was addressed",
         "social_event": "Social event: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "apology",
+        "support": "support",
+        "defense": "defense",
+        "insult": "insult",
+        "betrayal": "betrayal",
+        "confession": "confession",
+        "rejection": "rejection",
+        "reconciliation": "reconciliation",
+        "teasing": "teasing",
+        "gratitude": "gratitude",
+        "compliment": "compliment",
+        "flirting": "flirting",
+        "affection": "affection",
+        "forgiveness": "forgiveness",
+        "promise": "promise",
+        "sacrifice": "sacrifice",
+        "broken_promise": "broken promise",
+        "deception": "deception",
+        "accusation": "accusation",
+        "dismissal": "dismissal",
+        "exclusion": "exclusion",
+        "threat": "threat"
       }
     }
   }

@@ -1283,6 +1283,30 @@
         "witnessed": "Був(-ла) свідком",
         "addressed": "До нього звернулися",
         "social_event": "Соціальна подія: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "вибачення",
+        "support": "підтримка",
+        "defense": "захист",
+        "insult": "образа",
+        "betrayal": "зрада",
+        "confession": "зізнання",
+        "rejection": "відмова",
+        "reconciliation": "примирення",
+        "teasing": "жартування",
+        "gratitude": "вдячність",
+        "compliment": "комплімент",
+        "flirting": "флірт",
+        "affection": "ніжність",
+        "forgiveness": "прощення",
+        "promise": "обіцянка",
+        "sacrifice": "жертва",
+        "broken_promise": "порушена обіцянка",
+        "deception": "обман",
+        "accusation": "звинувачення",
+        "dismissal": "нехтування",
+        "exclusion": "виключення",
+        "threat": "погроза"
       }
     }
   }

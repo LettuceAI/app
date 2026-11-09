@@ -1283,6 +1283,30 @@
         "witnessed": "Был(а) свидетелем",
         "addressed": "К нему обратились",
         "social_event": "Социальное событие: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "извинение",
+        "support": "поддержка",
+        "defense": "защита",
+        "insult": "оскорбление",
+        "betrayal": "предательство",
+        "confession": "признание",
+        "rejection": "отказ",
+        "reconciliation": "примирение",
+        "teasing": "подшучивание",
+        "gratitude": "благодарность",
+        "compliment": "комплимент",
+        "flirting": "флирт",
+        "affection": "нежность",
+        "forgiveness": "прощение",
+        "promise": "обещание",
+        "sacrifice": "жертва",
+        "broken_promise": "нарушенное обещание",
+        "deception": "обман",
+        "accusation": "обвинение",
+        "dismissal": "пренебрежение",
+        "exclusion": "исключение",
+        "threat": "угроза"
       }
     }
   }

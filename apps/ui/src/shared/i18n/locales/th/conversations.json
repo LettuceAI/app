@@ -1190,6 +1190,30 @@
         "witnessed": "เห็นเหตุการณ์นี้",
         "addressed": "ถูกพูดด้วย",
         "social_event": "เหตุการณ์ทางสังคม: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "ขอโทษ",
+        "support": "สนับสนุน",
+        "defense": "ปกป้อง",
+        "insult": "ดูถูก",
+        "betrayal": "ทรยศ",
+        "confession": "สารภาพ",
+        "rejection": "ปฏิเสธ",
+        "reconciliation": "คืนดี",
+        "teasing": "แซว",
+        "gratitude": "ขอบคุณ",
+        "compliment": "ชมเชย",
+        "flirting": "จีบ",
+        "affection": "แสดงความรัก",
+        "forgiveness": "ให้อภัย",
+        "promise": "สัญญา",
+        "sacrifice": "เสียสละ",
+        "broken_promise": "ผิดสัญญา",
+        "deception": "หลอกลวง",
+        "accusation": "กล่าวหา",
+        "dismissal": "เมินเฉย",
+        "exclusion": "กีดกัน",
+        "threat": "ข่มขู่"
       }
     }
   }

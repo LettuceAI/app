@@ -1221,6 +1221,30 @@
         "witnessed": "Var vitne til dette",
         "addressed": "Ble tiltalt",
         "social_event": "Sosial hendelse: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "unnskyldning",
+        "support": "støtte",
+        "defense": "forsvar",
+        "insult": "fornærmelse",
+        "betrayal": "svik",
+        "confession": "tilståelse",
+        "rejection": "avvisning",
+        "reconciliation": "forsoning",
+        "teasing": "erting",
+        "gratitude": "takknemlighet",
+        "compliment": "kompliment",
+        "flirting": "flørting",
+        "affection": "hengivenhet",
+        "forgiveness": "tilgivelse",
+        "promise": "løfte",
+        "sacrifice": "offer",
+        "broken_promise": "brutt løfte",
+        "deception": "bedrag",
+        "accusation": "anklage",
+        "dismissal": "avfeiing",
+        "exclusion": "utestengelse",
+        "threat": "trussel"
       }
     }
   }

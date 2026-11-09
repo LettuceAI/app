@@ -1221,6 +1221,30 @@
         "witnessed": "Hat das miterlebt",
         "addressed": "Wurde angesprochen",
         "social_event": "Soziales Ereignis: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "Entschuldigung",
+        "support": "Unterstützung",
+        "defense": "Verteidigung",
+        "insult": "Beleidigung",
+        "betrayal": "Verrat",
+        "confession": "Geständnis",
+        "rejection": "Zurückweisung",
+        "reconciliation": "Versöhnung",
+        "teasing": "Necken",
+        "gratitude": "Dankbarkeit",
+        "compliment": "Kompliment",
+        "flirting": "Flirt",
+        "affection": "Zuneigung",
+        "forgiveness": "Vergebung",
+        "promise": "Versprechen",
+        "sacrifice": "Opfer",
+        "broken_promise": "gebrochenes Versprechen",
+        "deception": "Täuschung",
+        "accusation": "Anschuldigung",
+        "dismissal": "Abweisung",
+        "exclusion": "Ausgrenzung",
+        "threat": "Drohung"
       }
     }
   }

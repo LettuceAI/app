@@ -25,7 +25,7 @@ function EffectBlock({ effect, participants }: { effect: GroupCompanionEffectVie
   const target = effect.target === null ? null : effect.target.kind === "persona" ? t("companion.group.you") : participants.find((participant) => participant.character_id === (effect.target?.kind === "character" ? effect.target.character_id : null))?.name ?? t("companion.group.someone");
   const bond = effect.relationship === null ? [] : changedAxes(effect.relationship);
   const felt = numericEntries(effect.felt).filter(([, value]) => value !== 0);
-  const reason = effect.reason === "social_event" ? t("companion.group.reason.social_event", { kind: effect.social_event ?? "" }) : t(`companion.group.reason.${effect.reason}`);
+  const reason = effect.reason === "social_event" ? t("companion.group.reason.social_event", { kind: effect.social_event === null ? "" : t(`companion.group.socialEvent.${effect.social_event}`, { defaultValue: effect.social_event }) }) : t(`companion.group.reason.${effect.reason}`);
   return <ListGroup label={reason}>
     {bond.map(([axis, value]) => <ListRow key={axis} title={t("companion.group.axisToward", { axis: t(`companion.axes.${axis}.label`), target: target ?? "" })} className="py-2.5" trailing={<Text as="span" variant="body" className={cn("tabular-nums", (axis === "tension" ? value < 0 : value > 0) ? "text-accent" : "text-danger")}>{signed(value, i18n.language)}</Text>} />)}
     {felt.map(([emotion, value]) => <ListRow key={emotion} title={t("companion.group.feels", { emotion: t(`companion.emotions.${emotion}`) })} className="py-2.5" trailing={<Text as="span" variant="body" className={cn("tabular-nums", value > 0 ? "text-fg" : "text-fg-3")}>{signed(value, i18n.language)}</Text>} />)}

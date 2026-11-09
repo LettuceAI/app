@@ -1190,6 +1190,30 @@
         "witnessed": "これを目撃した",
         "addressed": "話しかけられた",
         "social_event": "社会的イベント: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "謝罪",
+        "support": "支え",
+        "defense": "擁護",
+        "insult": "侮辱",
+        "betrayal": "裏切り",
+        "confession": "告白",
+        "rejection": "拒絶",
+        "reconciliation": "仲直り",
+        "teasing": "からかい",
+        "gratitude": "感謝",
+        "compliment": "褒め言葉",
+        "flirting": "口説き",
+        "affection": "愛情表現",
+        "forgiveness": "許し",
+        "promise": "約束",
+        "sacrifice": "自己犠牲",
+        "broken_promise": "約束破り",
+        "deception": "欺き",
+        "accusation": "非難",
+        "dismissal": "あしらい",
+        "exclusion": "仲間外れ",
+        "threat": "脅し"
       }
     }
   }

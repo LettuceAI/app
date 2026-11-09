@@ -1190,6 +1190,30 @@
         "witnessed": "目睹了此事",
         "addressed": "被人搭話",
         "social_event": "社交事件：{{kind}}"
+      },
+      "socialEvent": {
+        "apology": "道歉",
+        "support": "支持",
+        "defense": "維護",
+        "insult": "侮辱",
+        "betrayal": "背叛",
+        "confession": "坦白",
+        "rejection": "拒絕",
+        "reconciliation": "和解",
+        "teasing": "調侃",
+        "gratitude": "感謝",
+        "compliment": "稱讚",
+        "flirting": "調情",
+        "affection": "親暱",
+        "forgiveness": "原諒",
+        "promise": "承諾",
+        "sacrifice": "犧牲",
+        "broken_promise": "違背承諾",
+        "deception": "欺騙",
+        "accusation": "指責",
+        "dismissal": "敷衍",
+        "exclusion": "排擠",
+        "threat": "威脅"
       }
     }
   }

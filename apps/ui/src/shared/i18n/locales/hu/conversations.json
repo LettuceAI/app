@@ -1221,6 +1221,30 @@
         "witnessed": "Szemtanúja volt",
         "addressed": "Megszólították",
         "social_event": "Társas esemény: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "bocsánatkérés",
+        "support": "támogatás",
+        "defense": "védelem",
+        "insult": "sértés",
+        "betrayal": "árulás",
+        "confession": "vallomás",
+        "rejection": "elutasítás",
+        "reconciliation": "kibékülés",
+        "teasing": "ugratás",
+        "gratitude": "hála",
+        "compliment": "bók",
+        "flirting": "flört",
+        "affection": "gyengédség",
+        "forgiveness": "megbocsátás",
+        "promise": "ígéret",
+        "sacrifice": "áldozat",
+        "broken_promise": "megszegett ígéret",
+        "deception": "megtévesztés",
+        "accusation": "vád",
+        "dismissal": "lerázás",
+        "exclusion": "kirekesztés",
+        "threat": "fenyegetés"
       }
     }
   }

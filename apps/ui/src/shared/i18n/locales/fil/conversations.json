@@ -1221,6 +1221,30 @@
         "witnessed": "Nasaksihan ito",
         "addressed": "Kinausap",
         "social_event": "Social event: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "paghingi ng tawad",
+        "support": "suporta",
+        "defense": "pagtatanggol",
+        "insult": "insulto",
+        "betrayal": "pagtataksil",
+        "confession": "pagtatapat",
+        "rejection": "pagtanggi",
+        "reconciliation": "pagkakasundo",
+        "teasing": "panunukso",
+        "gratitude": "pasasalamat",
+        "compliment": "papuri",
+        "flirting": "paglalandi",
+        "affection": "paglalambing",
+        "forgiveness": "pagpapatawad",
+        "promise": "pangako",
+        "sacrifice": "sakripisyo",
+        "broken_promise": "sinirang pangako",
+        "deception": "panlilinlang",
+        "accusation": "paratang",
+        "dismissal": "pagbalewala",
+        "exclusion": "pag-etsapuwera",
+        "threat": "banta"
       }
     }
   }

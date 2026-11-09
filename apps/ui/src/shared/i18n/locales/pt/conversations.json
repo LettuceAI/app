@@ -1252,6 +1252,30 @@
         "witnessed": "Presenciou isto",
         "addressed": "Foi abordado",
         "social_event": "Evento social: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "pedido de desculpas",
+        "support": "apoio",
+        "defense": "defesa",
+        "insult": "insulto",
+        "betrayal": "traição",
+        "confession": "confissão",
+        "rejection": "rejeição",
+        "reconciliation": "reconciliação",
+        "teasing": "provocação",
+        "gratitude": "gratidão",
+        "compliment": "elogio",
+        "flirting": "flerte",
+        "affection": "carinho",
+        "forgiveness": "perdão",
+        "promise": "promessa",
+        "sacrifice": "sacrifício",
+        "broken_promise": "promessa quebrada",
+        "deception": "engano",
+        "accusation": "acusação",
+        "dismissal": "desdém",
+        "exclusion": "exclusão",
+        "threat": "ameaça"
       }
     }
   }

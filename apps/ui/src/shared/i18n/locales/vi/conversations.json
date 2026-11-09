@@ -1190,6 +1190,30 @@
         "witnessed": "Đã chứng kiến việc này",
         "addressed": "Được nhắc đến",
         "social_event": "Sự kiện xã hội: {{kind}}"
+      },
+      "socialEvent": {
+        "apology": "xin lỗi",
+        "support": "ủng hộ",
+        "defense": "bênh vực",
+        "insult": "xúc phạm",
+        "betrayal": "phản bội",
+        "confession": "thổ lộ",
+        "rejection": "từ chối",
+        "reconciliation": "làm lành",
+        "teasing": "trêu chọc",
+        "gratitude": "biết ơn",
+        "compliment": "khen ngợi",
+        "flirting": "tán tỉnh",
+        "affection": "âu yếm",
+        "forgiveness": "tha thứ",
+        "promise": "hứa hẹn",
+        "sacrifice": "hy sinh",
+        "broken_promise": "thất hứa",
+        "deception": "lừa dối",
+        "accusation": "buộc tội",
+        "dismissal": "gạt bỏ",
+        "exclusion": "cô lập",
+        "threat": "đe dọa"
       }
     }
   }
