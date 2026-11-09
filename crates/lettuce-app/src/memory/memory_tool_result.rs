@@ -84,6 +84,10 @@ pub(crate) fn legacy_memory_tool_output(
             "status": "recorded",
             "name": call.name,
         }),
+        MemoryToolOutcome::AudienceCorrected { .. } => json!({
+            "status": "recorded",
+            "name": call.name,
+        }),
         MemoryToolOutcome::Done { .. }
         | MemoryToolOutcome::StoppedAfterDone
         | MemoryToolOutcome::Rejected { .. } => {
@@ -457,6 +461,22 @@ mod tests {
             json!({
                 "status": "recorded",
                 "name": "record_social_event",
+            })
+        );
+        let audience = render(
+            &call("correct_audience", json!({})),
+            MemoryToolOutcome::AudienceCorrected {
+                character_id: CharacterId::new(),
+                message_id: lettuce_types::MessageId::new(),
+                heard: false,
+                scope: lettuce_memory::AudienceScope::Onward,
+            },
+        );
+        assert_eq!(
+            audience.value,
+            json!({
+                "status": "recorded",
+                "name": "correct_audience",
             })
         );
         let replay = render(

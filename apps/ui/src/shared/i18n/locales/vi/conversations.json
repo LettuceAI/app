@@ -1180,6 +1180,7 @@
       "towardOthers": "Cách {{name}} nhìn những người khác",
       "noStance": "Chưa có",
       "noCheckpoint": "{{name}} chưa trải qua lượt nào. Đây là các giá trị ban đầu.",
+      "notFollowing": "{{name}} hiện không theo dõi cuộc trò chuyện và sẽ không biết những gì được nói cho đến khi nói lại hoặc được đánh dấu quay lại.",
       "stanceLabel": "{{from}} đối với {{to}}: {{band}}",
       "stanceTitle": "{{from}} đối với {{to}}",
       "effectSummary": "Bị ảnh hưởng: {{names}}",
@@ -1216,6 +1217,19 @@
         "exclusion": "cô lập",
         "threat": "đe dọa"
       }
+    },
+    "audience": {
+      "title": "Ai đã nghe điều này",
+      "nobody": "Không ai",
+      "body": "Thành viên đã nghe một tin nhắn có thể nhớ và phản ứng với nó. Mô hình bộ nhớ sẽ sửa điều này khi đọc; thay đổi của bạn ở đây luôn được ưu tiên.",
+      "scope": "Áp dụng cho",
+      "scopeMessage": "Tin nhắn này",
+      "scopeOnward": "Từ đây trở đi",
+      "scopeMessageBody": "Chỉ tin nhắn này, như lời thì thầm",
+      "scopeOnwardBody": "Tin này và các tin sau, cho đến khi nói lại",
+      "speaker": "Đã viết tin nhắn này",
+      "awayAfter": "Không theo dõi sau tin này",
+      "heard": "{{name}} đã nghe điều này"
     }
   }
 }

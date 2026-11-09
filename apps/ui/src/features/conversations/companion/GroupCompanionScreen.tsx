@@ -66,6 +66,7 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
         <SectionHead title={t("companion.bond")} right={member.relationship.last_interaction_at > 0 ? t("companion.lastTalked", { when: relativeTime(member.relationship.last_interaction_at, undefined, i18n.language).toLowerCase() }) : undefined} />
         {soul.isPending ? <Skeleton className="h-28 w-full" /> : soul.isError && soul.data === undefined ? <FailureState error={soul.error} onRetry={() => void soul.refetch()} size="sm" /> : soul.data ? <div className="grid grid-cols-2 gap-2 @2xl:grid-cols-3 @6xl:grid-cols-5"><BondTiles state={member} defaults={soul.data.config.relationship_defaults} narrow={phone} /></div> : null}
         {!member.has_checkpoint && <Text variant="hint" className="mt-2 px-1">{t("companion.group.noCheckpoint", { name: member.display_name })}</Text>}
+        {!member.following && <Text variant="hint" className="mt-2 px-1">{t("companion.group.notFollowing", { name: member.display_name })}</Text>}
       </section>
       <section>
         <SectionHead title={t("companion.engine")} />

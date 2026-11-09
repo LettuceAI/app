@@ -647,6 +647,43 @@ fn hide_ada_from_user_message_checkpoints(
     .expect("replace user message checkpoints");
 }
 
+fn mark_member_left_audience(
+    database: &Database,
+    conversation: &lettuce_conversations::Conversation,
+    message_id: MessageId,
+    member: CharacterId,
+    _speaker: CharacterId,
+) {
+    let now = TimestampMillis::new(NOW.get() + 4);
+    let result = database
+        .commit_api_operation(
+            "group_message_audience_set",
+            "group-companion-audience-left",
+            "group-companion-audience-left-digest",
+            now,
+            |scope| {
+                scope
+                    .apply_group_audience_correction(
+                        conversation.id,
+                        conversation.active_branch_id,
+                        message_id,
+                        member,
+                        false,
+                        lettuce_memory::AudienceScope::Onward,
+                        now,
+                    )
+                    .map(|(outcome, _)| match outcome {
+                        lettuce_database::AudienceCorrectionOutcome::Applied => 0_u8,
+                        lettuce_database::AudienceCorrectionOutcome::AlreadyApplied => 1,
+                        lettuce_database::AudienceCorrectionOutcome::Invalid => 2,
+                        lettuce_database::AudienceCorrectionOutcome::UserSet => 3,
+                    })
+            },
+        )
+        .expect("mark member away");
+    assert_eq!(result, 0);
+}
+
 async fn preview_memory_values(
     backend: &AppBackend,
     conversation_id: lettuce_types::ConversationId,
@@ -771,6 +808,151 @@ async fn group_companion_shared_memory_visibility_follows_checkpoints() {
     assert!(!ada_keys.contains("The group met at the harbor."));
     let (bea_keys, _, _) = preview_memory_values(&backend, conversation.id, bea).await;
     assert!(bea_keys.contains("The group met at the harbor."));
+}
+
+#[tokio::test]
+async fn group_companion_shared_memory_visibility_follows_the_audience() {
+    let (backend, conversation, ada, bea, user_message_id) =
+        companion_memory_group("group-companion-memory-audience", false);
+    let database = backend.database();
+    let shared =
+        MemoryRepository::get_for_branch(database, conversation.id, conversation.active_branch_id)
+            .expect("shared memory")
+            .expect("shared space");
+    seed_axis_zero_memory(
+        database,
+        shared.id,
+        "The group met at the harbor.",
+        Some(user_message_id),
+    );
+    mark_member_left_audience(database, &conversation, user_message_id, bea, ada);
+
+    let (ada_keys, _, _) = preview_memory_values(&backend, conversation.id, ada).await;
+    assert!(ada_keys.contains("The group met at the harbor."));
+    let (bea_keys, _, _) = preview_memory_values(&backend, conversation.id, bea).await;
+    assert!(!bea_keys.contains("The group met at the harbor."));
+}
+
+#[tokio::test]
+async fn group_companion_turn_start_skips_away_members_until_they_speak() {
+    let (backend, conversation, ada, bea) =
+        companion_prompt_group("group-companion-turn-audience", true);
+    let database = backend.database();
+    let engine = group_companion_engine();
+    let coordinator = CompanionTurnCoordinator::new(database, Some(&engine));
+    let sent = coordinator
+        .begin_send(
+            &direct_send_command(
+                &conversation,
+                "group-companion-turn-audience-send",
+                "Hello Ada and Bea.",
+            ),
+            TimestampMillis::new(NOW.get() + 1),
+            &CancellationToken::new(),
+        )
+        .expect("send");
+    let user_message_id = group_companion_user_message_id(&sent.value);
+    cancel_started_group_turn(
+        database,
+        &sent.value,
+        "group-companion-turn-audience",
+        NOW.get() + 2,
+    );
+    mark_member_left_audience(database, &conversation, user_message_id, ada, bea);
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after audience change")
+        .conversation;
+    let second = coordinator
+        .begin_send(
+            &direct_send_command(
+                &current,
+                "group-companion-turn-audience-send-two",
+                "Only Bea is here.",
+            ),
+            TimestampMillis::new(NOW.get() + 3),
+            &CancellationToken::new(),
+        )
+        .expect("second send");
+    let second_user_message_id = group_companion_user_message_id(&second.value);
+    cancel_started_group_turn(
+        database,
+        &second.value,
+        "group-companion-turn-audience-two",
+        NOW.get() + 4,
+    );
+    let checkpoints = database
+        .checkpoints_for_message(conversation.id, second_user_message_id)
+        .expect("second user message checkpoints");
+    assert!(
+        !checkpoints
+            .iter()
+            .any(|checkpoint| checkpoint.character_id == ada)
+    );
+    assert!(
+        checkpoints
+            .iter()
+            .any(|checkpoint| checkpoint.character_id == bea)
+    );
+
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation before Ada speaks")
+        .conversation;
+    let ada_speaker = group_companion_participant(&current, ada);
+    let continued = coordinator
+        .begin_continue(
+            &group_companion_continue_command(
+                &current,
+                ada_speaker,
+                "group-companion-turn-audience-ada-speaks",
+            ),
+            TimestampMillis::new(NOW.get() + 5),
+            &CancellationToken::new(),
+        )
+        .expect("continue as Ada");
+    let model = group_companion_participant_model(&current, ada_speaker);
+    let finalized = finalize_group_reply(
+        database,
+        &continued.value,
+        model,
+        "I am back.",
+        "group-companion-turn-audience-ada-speaks",
+        NOW.get() + 6,
+    );
+    let assistant_message_id = finalized.value.assistant_message.id;
+    let current = ConversationReader::get(database, conversation.id)
+        .expect("conversation after Ada speaks")
+        .conversation;
+    let bea_speaker = group_companion_participant(&current, bea);
+    let witnessing = coordinator
+        .begin_continue(
+            &group_companion_continue_command(
+                &current,
+                bea_speaker,
+                "group-companion-turn-audience-witness",
+            ),
+            TimestampMillis::new(NOW.get() + 7),
+            &CancellationToken::new(),
+        )
+        .expect("witness Ada's reply");
+    cancel_started_group_turn(
+        database,
+        &witnessing.value,
+        "group-companion-turn-audience-witness",
+        NOW.get() + 8,
+    );
+    let checkpoints = database
+        .checkpoints_for_message(conversation.id, assistant_message_id)
+        .expect("assistant message checkpoints");
+    assert!(
+        checkpoints
+            .iter()
+            .any(|checkpoint| checkpoint.character_id == ada)
+    );
+    assert!(
+        checkpoints
+            .iter()
+            .any(|checkpoint| checkpoint.character_id == bea)
+    );
 }
 
 fn growth_group_fixture(

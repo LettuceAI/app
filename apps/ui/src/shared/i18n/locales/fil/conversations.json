@@ -1211,6 +1211,7 @@
       "towardOthers": "Paano nakikita ni {{name}} ang iba",
       "noStance": "Wala pa",
       "noCheckpoint": "Wala pang naranasang turn si {{name}}. Ito ang mga panimulang halaga.",
+      "notFollowing": "Hindi sumusubaybay si {{name}} sa usapan ngayon at hindi malalaman ang sinasabi hanggang magsalita ulit o mamarkahang bumalik.",
       "stanceLabel": "{{from}} papunta kay {{to}}: {{band}}",
       "stanceTitle": "{{from}} papunta kay {{to}}",
       "effectSummary": "Apektado: {{names}}",
@@ -1247,6 +1248,19 @@
         "exclusion": "pag-etsapuwera",
         "threat": "banta"
       }
+    },
+    "audience": {
+      "title": "Sino ang nakarinig nito",
+      "nobody": "Wala",
+      "body": "Ang mga miyembrong nakarinig ng mensahe ay maaaring maalala ito at tumugon dito. Itinatama ito ng memory model habang nagbabasa; laging nananaig ang mga pagbabago mo rito.",
+      "scope": "Ilapat sa",
+      "scopeMessage": "Mensaheng ito",
+      "scopeOnward": "Mula rito",
+      "scopeMessageBody": "Ito lang, parang bulong",
+      "scopeOnwardBody": "Ito at ang mga susunod, hanggang magsalita ulit",
+      "speaker": "Sumulat ng mensaheng ito",
+      "awayAfter": "Hindi na sumusubaybay pagkatapos nito",
+      "heard": "Narinig ito ni {{name}}"
     }
   }
 }

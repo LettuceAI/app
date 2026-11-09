@@ -576,6 +576,12 @@ pub async fn group_companion_state_get(
             let checkpoints =
                 GroupCompanionRepository::latest_checkpoints(database, conversation_id, &path)
                     .map_err(group_repository_error)?;
+            let branch_audience = GroupCompanionRepository::branch_audience(
+                database,
+                conversation_id,
+                conversation.active_branch_id,
+            )
+            .map_err(group_repository_error)?;
             let persona_id = lettuce_conversations::effective_persona(&conversation)
                 .map(|persona| persona.source_id);
             let mut members = Vec::new();
@@ -607,6 +613,7 @@ pub async fn group_companion_state_get(
                     participant_id: participant.id.to_string(),
                     display_name: participant.display_name.clone(),
                     has_checkpoint: checkpoint.is_some(),
+                    following: !branch_audience.away.contains(&character_id),
                     relationship: relationship_view(&relationship),
                     expressed: emotion_view(&emotions.expressed),
                     felt: emotion_view(&emotions.felt),
@@ -662,23 +669,12 @@ pub async fn group_companion_message_effects(
             .map_err(group_repository_error)?;
             Ok(checkpoints
                 .into_iter()
-                .filter(|checkpoint| !checkpoint.effects.is_empty())
-                .map(|checkpoint| dto::GroupCompanionMemberEffectView {
-                    character_id: checkpoint.character_id.to_string(),
-                    display_name: conversation
-                        .participants
-                        .iter()
-                        .find(|participant| {
-                            participant.source
-                                == ParticipantSource::Character(checkpoint.character_id)
-                        })
-                        .map(|participant| participant.display_name.clone())
-                        .unwrap_or_default(),
-                    effects: checkpoint
+                .filter_map(|checkpoint| {
+                    let effects = checkpoint
                         .effects
                         .iter()
-                        .map(|effect| dto::GroupCompanionEffectView {
-                            reason: match effect.reason {
+                        .filter_map(|effect| {
+                            let reason = match effect.reason {
                                 GroupCompanionEffectReason::Witnessed => {
                                     dto::GroupCompanionEffectReason::Witnessed
                                 }
@@ -688,36 +684,168 @@ pub async fn group_companion_message_effects(
                                 GroupCompanionEffectReason::SocialEvent => {
                                     dto::GroupCompanionEffectReason::SocialEvent
                                 }
-                            },
-                            social_event: effect.social_event.clone(),
-                            target: effect.relationship_change.as_ref().map(|change| {
-                                match change.target {
-                                    GroupCompanionTarget::Persona { .. } => {
-                                        dto::GroupCompanionEffectTarget::Persona
-                                    }
-                                    GroupCompanionTarget::Character { character_id } => {
-                                        dto::GroupCompanionEffectTarget::Character {
-                                            character_id: character_id.to_string(),
+                                GroupCompanionEffectReason::Unheard
+                                | GroupCompanionEffectReason::LeftAudience
+                                | GroupCompanionEffectReason::Overheard
+                                | GroupCompanionEffectReason::JoinedAudience => return None,
+                            };
+                            Some(dto::GroupCompanionEffectView {
+                                reason,
+                                social_event: effect.social_event.clone(),
+                                target: effect.relationship_change.as_ref().map(|change| {
+                                    match change.target {
+                                        GroupCompanionTarget::Persona { .. } => {
+                                            dto::GroupCompanionEffectTarget::Persona
+                                        }
+                                        GroupCompanionTarget::Character { character_id } => {
+                                            dto::GroupCompanionEffectTarget::Character {
+                                                character_id: character_id.to_string(),
+                                            }
                                         }
                                     }
-                                }
-                            }),
-                            relationship: effect.relationship_change.as_ref().map(|change| {
-                                dto::RelationshipChange {
-                                    closeness: change.delta.closeness,
-                                    trust: change.delta.trust,
-                                    affection: change.delta.affection,
-                                    tension: change.delta.tension,
-                                    stability: change.delta.stability,
-                                }
-                            }),
-                            felt: emotion_change(&effect.emotion_delta.felt),
+                                }),
+                                relationship: effect.relationship_change.as_ref().map(|change| {
+                                    dto::RelationshipChange {
+                                        closeness: change.delta.closeness,
+                                        trust: change.delta.trust,
+                                        affection: change.delta.affection,
+                                        tension: change.delta.tension,
+                                        stability: change.delta.stability,
+                                    }
+                                }),
+                                felt: emotion_change(&effect.emotion_delta.felt),
+                            })
                         })
-                        .collect(),
+                        .collect::<Vec<_>>();
+                    (!effects.is_empty()).then(|| dto::GroupCompanionMemberEffectView {
+                        character_id: checkpoint.character_id.to_string(),
+                        display_name: conversation
+                            .participants
+                            .iter()
+                            .find(|participant| {
+                                participant.source
+                                    == ParticipantSource::Character(checkpoint.character_id)
+                            })
+                            .map(|participant| participant.display_name.clone())
+                            .unwrap_or_default(),
+                        effects,
+                    })
                 })
                 .collect())
         })
         .await
+}
+
+fn audience_view(
+    entries: Vec<lettuce_companions::GroupMessageAudienceMember>,
+    conversation: &Conversation,
+) -> Vec<dto::GroupMessageAudienceMemberView> {
+    entries
+        .into_iter()
+        .map(|entry| dto::GroupMessageAudienceMemberView {
+            character_id: entry.character_id.to_string(),
+            display_name: conversation
+                .participants
+                .iter()
+                .find(|participant| {
+                    participant.source == ParticipantSource::Character(entry.character_id)
+                })
+                .map(|participant| participant.display_name.clone())
+                .unwrap_or_default(),
+            heard: entry.heard,
+            away_after: entry.away_after,
+        })
+        .collect()
+}
+
+pub async fn group_message_audience_get(
+    context: &ApiContext,
+    request: dto::GroupMessageAudienceGetRequest,
+) -> Result<Vec<dto::GroupMessageAudienceMemberView>, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let conversation = live_conversation(database, conversation_id)?;
+            let entries = database
+                .group_message_audience(
+                    conversation_id,
+                    conversation.active_branch_id,
+                    message_id,
+                )
+                .map_err(group_repository_error)?;
+            Ok(audience_view(entries, &conversation))
+        })
+        .await
+}
+
+pub async fn group_message_audience_set(
+    context: &ApiContext,
+    request: dto::GroupMessageAudienceSetRequest,
+) -> Result<Vec<dto::GroupMessageAudienceMemberView>, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
+    let character_id: CharacterId = parse_id(&request.character_id, "character_id")?;
+    let heard = request.heard;
+    let scope = match request.scope {
+        dto::GroupAudienceScope::Message => lettuce_memory::AudienceScope::Message,
+        dto::GroupAudienceScope::Onward => lettuce_memory::AudienceScope::Onward,
+    };
+    let key = request.client_operation_id.clone();
+    controlled_atomic(
+        context,
+        "group_message_audience_set",
+        &key,
+        &request,
+        move |context| {
+            let database = context.backend().database();
+            let conversation = live_conversation(database, conversation_id)?;
+            let branch_id = conversation.active_branch_id;
+            let names = conversation
+                .participants
+                .iter()
+                .filter_map(|participant| match participant.source {
+                    ParticipantSource::Character(character_id) => {
+                        Some((character_id, participant.display_name.clone()))
+                    }
+                    ParticipantSource::User | ParticipantSource::System => None,
+                })
+                .collect::<Vec<_>>();
+            Ok((branch_id, names, context.now()))
+        },
+        move |scope_transaction, (branch_id, names, now)| {
+            let (outcome, entries) = scope_transaction.apply_group_audience_correction(
+                conversation_id,
+                branch_id,
+                message_id,
+                character_id,
+                heard,
+                scope,
+                now,
+            )?;
+            if outcome == lettuce_database::AudienceCorrectionOutcome::Invalid {
+                return Err(EditFailure(invalid_field(
+                    "message_id",
+                    "the correction does not change who heard the message",
+                )));
+            }
+            Ok(entries
+                .into_iter()
+                .map(|entry| dto::GroupMessageAudienceMemberView {
+                    character_id: entry.character_id.to_string(),
+                    display_name: names
+                        .iter()
+                        .find(|(member, _)| *member == entry.character_id)
+                        .map(|(_, name)| name.clone())
+                        .unwrap_or_default(),
+                    heard: entry.heard,
+                    away_after: entry.away_after,
+                })
+                .collect())
+        },
+    )
+    .await
 }
 
 /// The companion's authored Soul configuration together with the growth of

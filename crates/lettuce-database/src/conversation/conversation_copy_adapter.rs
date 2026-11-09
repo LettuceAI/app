@@ -1164,6 +1164,7 @@ mod tests {
                 emotion_delta: lettuce_companions::CompanionEmotionDelta::default(),
                 relationship_change: None,
                 signal_changes: lettuce_companions::CompanionSignalChanges::default(),
+                by_user: false,
             }],
             created_at: TimestampMillis::new(10),
         };

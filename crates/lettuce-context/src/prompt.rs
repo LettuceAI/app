@@ -1152,6 +1152,7 @@ pub enum PromptVariable {
     ScheduledNotes,
     GroupCharacters,
     GroupCompanionMembers,
+    GroupCompanionHeard,
     PreviousSummary,
     Character,
     MaxEntries,
@@ -1313,6 +1314,7 @@ impl PromptVariable {
             Self::ScheduledNotes => "{{scheduled_notes}}",
             Self::GroupCharacters => "{{group_characters}}",
             Self::GroupCompanionMembers => "{{group_companion_members}}",
+            Self::GroupCompanionHeard => "{{group_companion_heard}}",
             Self::PreviousSummary => "{{prev_summary}}",
             Self::Character => "{{character}}",
             Self::MaxEntries => "{{max_entries}}",
@@ -1473,6 +1475,7 @@ impl PromptVariable {
         Self::ScheduledNotes,
         Self::GroupCharacters,
         Self::GroupCompanionMembers,
+        Self::GroupCompanionHeard,
         Self::PreviousSummary,
         Self::Character,
         Self::MaxEntries,
@@ -1677,6 +1680,7 @@ impl PromptVariable {
                     | Variable::CurrentMemoryTokens
                     | Variable::HotTokenBudget
                     | Variable::GroupCompanionMembers
+                    | Variable::GroupCompanionHeard
             ),
             Purpose::ReplyHelperRoleplay | Purpose::ReplyHelperConversational => {
                 matches!(self, Variable::CurrentDraft)

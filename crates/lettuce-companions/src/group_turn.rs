@@ -193,6 +193,7 @@ pub fn reduce_group_event(
                 delta: seed.relationship_delta,
             }),
             signal_changes: seed.signal_changes,
+            by_user: false,
         };
         step.checkpoints.push(GroupCompanionCheckpoint {
             message_id: event.message_id,

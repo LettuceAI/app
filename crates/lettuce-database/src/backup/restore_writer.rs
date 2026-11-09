@@ -1325,6 +1325,7 @@ pub(crate) mod tests {
                 emotion_delta: CompanionEmotionDelta::default(),
                 relationship_change: None,
                 signal_changes: CompanionSignalChanges::default(),
+                by_user: false,
             }],
             created_at: TimestampMillis::new(10),
         };

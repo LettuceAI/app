@@ -1180,6 +1180,7 @@
       "towardOthers": "Cara {{name}} memandang yang lain",
       "noStance": "Belum ada",
       "noCheckpoint": "{{name}} belum menjalani giliran apa pun. Ini adalah nilai awal.",
+      "notFollowing": "{{name}} sedang tidak mengikuti percakapan dan tidak akan tahu apa yang dikatakan sampai berbicara lagi atau ditandai kembali.",
       "stanceLabel": "{{from}} terhadap {{to}}: {{band}}",
       "stanceTitle": "{{from}} terhadap {{to}}",
       "effectSummary": "Terpengaruh: {{names}}",
@@ -1216,6 +1217,19 @@
         "exclusion": "pengucilan",
         "threat": "ancaman"
       }
+    },
+    "audience": {
+      "title": "Siapa yang mendengar ini",
+      "nobody": "Tidak ada",
+      "body": "Anggota yang mendengar sebuah pesan bisa mengingatnya dan bereaksi. Model memori memperbaikinya saat membaca; perubahanmu di sini selalu diutamakan.",
+      "scope": "Terapkan ke",
+      "scopeMessage": "Pesan ini",
+      "scopeOnward": "Mulai dari sini",
+      "scopeMessageBody": "Hanya pesan ini, seperti bisikan",
+      "scopeOnwardBody": "Pesan ini dan berikutnya, sampai berbicara lagi",
+      "speaker": "Menulis pesan ini",
+      "awayAfter": "Tidak mengikuti setelah ini",
+      "heard": "{{name}} mendengar ini"
     }
   }
 }

@@ -1,4 +1,7 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use chrono::{Local, LocalResult, TimeZone};
+use lettuce_companions::GroupCompanionRepository;
 use lettuce_context::{
     LifecycleStatus, PromptDocument, PromptEntryChatMode, PromptEntryInfoSource, PromptEntryRole,
     PromptPurpose, PromptRenderContext, PromptRenderError, PromptRenderValues, PromptVariable,
@@ -21,8 +24,8 @@ use lettuce_memory::{
     memory_operations_fallback_prompt_key, parse_memory_operations_from_text,
 };
 use lettuce_types::{
-    DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, RequestId,
-    TimestampMillis, ToolExecutionId,
+    DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, MessageId,
+    RequestId, TimestampMillis, ToolExecutionId,
 };
 use lettuce_usage::JobUsageLedger;
 
@@ -84,6 +87,7 @@ impl<
         + ProviderReplayArtifactPort
         + JobUsageLedger
         + crate::generation::runtime_text::RuntimeTextSource
+        + GroupCompanionRepository
         + ?Sized,
     C: ConversationReader + ?Sized,
     I: InferencePort + ?Sized,
@@ -175,7 +179,7 @@ impl<
                     })
                     .map(|participant| participant.display_name.clone())
                     .unwrap_or_else(|| label.clone());
-                (label.clone(), name)
+                (label.clone(), *character_id, name)
             })
             .collect::<Vec<_>>();
         let text = crate::generation::runtime_text::RuntimeText::load(
@@ -185,6 +189,16 @@ impl<
         .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
             reason: format!("memory runtime prompt text could not be loaded: {error}"),
         })?;
+        let source_audiences = if run.group_companion_members.is_empty() {
+            BTreeMap::new()
+        } else {
+            self.repository
+                .branch_audience(run.conversation_id, run.branch_id)
+                .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                    reason: format!("the group message audience could not be read: {error:?}"),
+                })?
+                .audience
+        };
         let request = build_first_request(
             &run,
             &attempt,
@@ -194,6 +208,7 @@ impl<
             policy,
             &memory,
             &sources,
+            &source_audiences,
             &group_companion_members,
             aggregate.conversation.kind.is_group(),
             aggregate.conversation.participants.len(),
@@ -666,7 +681,8 @@ fn build_first_request(
     policy: &MemoryPolicy,
     memory: &MemorySpaceSnapshot,
     sources: &[MaterializedSource],
-    group_companion_members: &[(String, String)],
+    source_audiences: &BTreeMap<MessageId, BTreeSet<lettuce_types::CharacterId>>,
+    group_companion_members: &[(String, lettuce_types::CharacterId, String)],
     is_group: bool,
     participant_count: usize,
     handle: &JobHandle,
@@ -723,29 +739,69 @@ fn build_first_request(
     }
     let transcript = sources
         .iter()
-        .map(|source| {
+        .map(|source| -> Result<String, CompanionMemoryInferenceError> {
             let role = match source.role {
                 MessageRole::User => "user",
                 MessageRole::Assistant => "assistant",
                 _ => unreachable!("source roles were validated"),
             };
-            if run.time_awareness_enabled {
+            let heard = if group_companion_members.is_empty() {
+                String::new()
+            } else {
+                let labels = group_companion_members
+                    .iter()
+                    .filter(|(_, character_id, _)| {
+                        source_audiences
+                            .get(&source.message_id)
+                            .is_some_and(|members| members.contains(character_id))
+                    })
+                    .map(|(label, _, _)| label.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                text.render_with(
+                    "memory_transcript_heard",
+                    [(PromptVariable::GroupCompanionHeard, labels)],
+                )
+                .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                    reason: format!("memory transcript heard text could not be rendered: {error}"),
+                })?
+            };
+            Ok(if run.time_awareness_enabled {
                 let timestamp = format_message_timestamp(source.effective_time);
                 if source.text.is_empty() {
-                    format!("[message:{}] {role}: {timestamp}", source.message_id)
-                } else {
+                    if heard.is_empty() {
+                        format!("[message:{}] {role}: {timestamp}", source.message_id)
+                    } else {
+                        format!(
+                            "[message:{}] {} {role}: {timestamp}",
+                            source.message_id, heard
+                        )
+                    }
+                } else if heard.is_empty() {
                     format!(
                         "[message:{}] {role}: {timestamp} {}",
                         source.message_id, source.text
                     )
+                } else {
+                    format!(
+                        "[message:{}] {} {role}: {timestamp} {}",
+                        source.message_id, heard, source.text
+                    )
                 }
-            } else if !run.group_companion_members.is_empty() {
-                format!("[message:{}] {role}: {}", source.message_id, source.text)
+            } else if !group_companion_members.is_empty() {
+                if heard.is_empty() {
+                    format!("[message:{}] {role}: {}", source.message_id, source.text)
+                } else {
+                    format!(
+                        "[message:{}] {} {role}: {}",
+                        source.message_id, heard, source.text
+                    )
+                }
             } else {
                 format!("{role}: {}", source.text)
-            }
+            })
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>, CompanionMemoryInferenceError>>()?
         .join("\n");
     let memory_lines = memory
         .items
@@ -775,7 +831,7 @@ fn build_first_request(
             PromptVariable::GroupCompanionMembers,
             group_companion_members
                 .iter()
-                .map(|(label, name)| format!("- {label}: {name}"))
+                .map(|(label, _, name)| format!("- {label}: {name}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
         );
@@ -1652,6 +1708,7 @@ mod tests {
             &policy,
             &memory,
             &sources,
+            &BTreeMap::new(),
             &[],
             false,
             2,
@@ -1717,6 +1774,7 @@ mod tests {
             &policy,
             &memory,
             &sources,
+            &BTreeMap::new(),
             &[],
             true,
             2,
@@ -1768,6 +1826,7 @@ mod tests {
             &policy,
             &memory,
             &sources,
+            &BTreeMap::new(),
             &[],
             false,
             2,
@@ -1846,6 +1905,7 @@ mod tests {
                 &policy,
                 &memory,
                 &sources,
+                &BTreeMap::new(),
                 &[],
                 group,
                 2,

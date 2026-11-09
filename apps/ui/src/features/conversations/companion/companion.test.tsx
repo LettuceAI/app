@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createBrowserHistory, createMemoryHistory, type RouterHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CharacterDraft_Serialize, CompanionEmotionVector, CompanionSoulView, CompanionStateView, ConversationSettingsView, ConversationView, GroupCompanionMemberEffectView, GroupCompanionMemberView, JobView_Serialize, MemoryCycleView, MemoryItemView, MemoryView, MessageCompanionEffect, SoulFactView, ThymosStatus, TimelineMessage } from "@/api/generated/bindings";
+import type { CharacterDraft_Serialize, CompanionEmotionVector, CompanionSoulView, CompanionStateView, ConversationSettingsView, ConversationView, GroupCompanionMemberEffectView, GroupCompanionMemberView, GroupMessageAudienceMemberView, JobView_Serialize, MemoryCycleView, MemoryItemView, MemoryView, MessageCompanionEffect, SoulFactView, ThymosStatus, TimelineMessage } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -330,6 +330,8 @@ describe("companion chat", () => {
   it("dismisses the top confirmation before its memory sheet on browser back", async () => {
     const app = await open({ browser: true });
     fireEvent.click(await screen.findByRole("tab", { name: /^Memories/ }));
+    await waitFor(() => expect(app.runtime.router.state.status).toBe("idle"));
+    await waitFor(() => expect(app.runtime.router.state.location.search).toEqual({ tab: "memories" }));
     fireEvent.click(await screen.findByRole("button", { name: /We went running/ }));
     const memory = await screen.findByRole("dialog", { name: "Memory" });
     fireEvent.click(within(memory).getByRole("button", { name: "Delete" }));
@@ -418,7 +420,7 @@ describe("companion chat", () => {
   });
 });
 
-const groupMember = (id: string, name: string, patch: Partial<GroupCompanionMemberView> = {}): GroupCompanionMemberView => ({ character_id: id, participant_id: `p${id}`, display_name: name, has_checkpoint: true, relationship: { closeness: 0.3, trust: 0.2, affection: 0.1, tension: 0.05, stability: 0.6, interaction_count: 12, last_interaction_at: NOW }, expressed: vector({ warmth: 0.5 }), felt: vector({ calm: 0.4 }), member_relationships: [], ...patch });
+const groupMember = (id: string, name: string, patch: Partial<GroupCompanionMemberView> = {}): GroupCompanionMemberView => ({ character_id: id, participant_id: `p${id}`, display_name: name, has_checkpoint: true, following: true, relationship: { closeness: 0.3, trust: 0.2, affection: 0.1, tension: 0.05, stability: 0.6, interaction_count: 12, last_interaction_at: NOW }, expressed: vector({ warmth: 0.5 }), felt: vector({ calm: 0.4 }), member_relationships: [], ...patch });
 const groupMembers = (): GroupCompanionMemberView[] => [
   groupMember("ca", "Ada", { member_relationships: [{ target_character_id: "cb", closeness: 0.8, trust: 0.4, affection: 0.2, tension: 0.1 }] }),
   groupMember("cb", "Bea", { has_checkpoint: false, relationship: { closeness: 0.7, trust: 0.2, affection: 0.1, tension: 0.05, stability: 0.6, interaction_count: 0, last_interaction_at: 0 } }),
@@ -470,6 +472,24 @@ describe("group companion chat", () => {
     await open({ path: "/chat/c1", calls: groupCalls(false) });
     await screen.findByText("A reply.");
     expect(screen.queryByRole("button", { name: "Companion" })).toBeNull();
+  });
+
+  it("shows who heard a message and corrects it from here on", async () => {
+    const audience = (bea: boolean): GroupMessageAudienceMemberView[] => [
+      { character_id: "ca", display_name: "Ada", heard: true, away_after: false },
+      { character_id: "cb", display_name: "Bea", heard: bea, away_after: !bea },
+    ];
+    const asked: Record<string, unknown>[] = [];
+    let beaHeard = true;
+    await open({ path: "/chat/c1", calls: { ...groupCalls(), groupMessageAudienceGet: () => ok(audience(beaHeard)), groupMessageAudienceSet: (request) => { asked.push(request); beaHeard = false; return ok(audience(beaHeard)); } } });
+    fireEvent.contextMenu(await screen.findByText("A reply."));
+    fireEvent.click(await screen.findByRole("button", { name: /Who heard this/ }));
+    const sheet = await screen.findByRole("dialog", { name: "Who heard this" });
+    fireEvent.click(within(sheet).getByRole("radio", { name: "From here on" }));
+    fireEvent.click(within(sheet).getByRole("switch", { name: "Bea heard this" }));
+    await waitFor(() => expect(asked).toHaveLength(1));
+    expect(asked[0]).toMatchObject({ conversation_id: "c1", character_id: "cb", heard: false, scope: "onward" });
+    expect(await within(sheet).findByText("Not following after this")).toBeTruthy();
   });
 
   it("lists who a message affected and what it did to each member", async () => {

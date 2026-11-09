@@ -49,7 +49,8 @@ pub use character_notes::{
 pub use companion::{
     companion_soul_get, companion_soul_growth_clear, companion_soul_growth_lock,
     companion_soul_growth_remove, companion_soul_writer_run, companion_state_get,
-    group_companion_message_effects, group_companion_state_get,
+    group_companion_message_effects, group_companion_state_get, group_message_audience_get,
+    group_message_audience_set,
 };
 pub use context::{ApiContext, ApiContextParts, ApiDatabaseFiles, ApiMediaStore};
 pub use conversations::branches::{

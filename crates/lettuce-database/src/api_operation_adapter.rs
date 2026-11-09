@@ -149,6 +149,58 @@ impl Database {
 }
 
 impl ApiOperationTransaction<'_, '_> {
+    pub fn apply_group_audience_correction(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        message_id: lettuce_types::MessageId,
+        character_id: lettuce_types::CharacterId,
+        heard: bool,
+        scope: lettuce_memory::AudienceScope,
+        now: TimestampMillis,
+    ) -> Result<
+        (
+            crate::AudienceCorrectionOutcome,
+            Vec<lettuce_companions::GroupMessageAudienceMember>,
+        ),
+        ApiOperationError,
+    > {
+        let outcome = crate::conversation::group_companion_adapter::apply_audience_correction_in(
+            self.transaction,
+            conversation_id,
+            branch_id,
+            message_id,
+            character_id,
+            heard,
+            scope,
+            lettuce_companions::AudienceCorrectionOrigin::User,
+            now,
+        )
+        .map_err(|_| ApiOperationError::Storage {
+            reason: "group audience correction failed",
+        })?;
+        if outcome == crate::AudienceCorrectionOutcome::Applied {
+            crate::conversation::conversation_mutation_kernel::bump_conversation(
+                self.transaction,
+                conversation_id,
+                now,
+            )
+            .map_err(|_| ApiOperationError::Storage {
+                reason: "the conversation revision could not be advanced",
+            })?;
+        }
+        let audience = crate::conversation::group_companion_adapter::group_message_audience_in(
+            self.transaction,
+            conversation_id,
+            branch_id,
+            message_id,
+        )
+        .map_err(|_| ApiOperationError::Storage {
+            reason: "group message audience could not be read",
+        })?;
+        Ok((outcome, audience))
+    }
+
     pub fn create_lorebook(
         &self,
         metadata: lettuce_context::LorebookMetadataDraft,

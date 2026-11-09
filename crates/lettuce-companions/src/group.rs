@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use lettuce_conversations::{
     ContinueConversation, ContinueConversationResult, ConversationRepositoryError,
@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CompanionEmotionDelta, CompanionSignalBundle, CompanionSignalChanges, CompanionSoulConfig,
-    EmotionalState, GroupCompanionMemberState, GroupCompanionStep, GroupSocialEvent,
-    GroupSocialEventCatalog, RelationshipDelta, RelationshipState,
+    EmotionalState, GroupBranchAudience, GroupCompanionMemberState, GroupCompanionStep,
+    GroupSocialEvent, GroupSocialEventCatalog, RelationshipDelta, RelationshipState,
 };
 
 const MAX_SIGNAL_BYTES: usize = 256;
@@ -38,6 +38,10 @@ pub enum GroupCompanionEffectReason {
     Witnessed,
     Addressed,
     SocialEvent,
+    Unheard,
+    LeftAudience,
+    Overheard,
+    JoinedAudience,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,6 +59,14 @@ pub struct GroupCompanionEffect {
     pub emotion_delta: CompanionEmotionDelta,
     pub relationship_change: Option<GroupCompanionRelationshipChange>,
     pub signal_changes: CompanionSignalChanges,
+    #[serde(default)]
+    pub by_user: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudienceCorrectionOrigin {
+    Model,
+    User,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +116,18 @@ pub trait GroupCompanionRepository: Send + Sync {
         path: &[MessageId],
     ) -> Result<Vec<(MessageId, GroupCompanionMessageSource)>, GroupCompanionRepositoryError>;
 
+    fn checkpoints_for_path(
+        &self,
+        conversation_id: ConversationId,
+        path: &[MessageId],
+    ) -> Result<Vec<GroupCompanionCheckpoint>, GroupCompanionRepositoryError>;
+
+    fn branch_audience(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+    ) -> Result<GroupBranchAudience, GroupCompanionRepositoryError>;
+
     fn persona_relationship(
         &self,
         character_id: CharacterId,
@@ -143,8 +167,9 @@ pub trait GroupCompanionRepository: Send + Sync {
     fn message_presence(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         path: &[MessageId],
-    ) -> Result<Vec<(MessageId, CharacterId)>, GroupCompanionRepositoryError>;
+    ) -> Result<BTreeMap<MessageId, BTreeSet<CharacterId>>, GroupCompanionRepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -165,6 +190,15 @@ pub struct GroupCompanionRoundOutputs {
     /// Members whose companion pool also receives their perspective memories.
     pub write_back: Vec<CharacterId>,
     pub social_events: Vec<(ToolExecutionId, GroupSocialEvent)>,
+    pub audience_corrections: Vec<(ToolExecutionId, GroupAudienceCorrection)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupAudienceCorrection {
+    pub character_id: CharacterId,
+    pub message_id: MessageId,
+    pub heard: bool,
+    pub scope: lettuce_memory::AudienceScope,
 }
 
 pub trait GroupCompanionMemoryRoundWriter: Send + Sync {
@@ -344,6 +378,7 @@ mod tests {
                 added: vec!["emotion:warmth".into()],
                 removed: vec!["emotion:hurt".into()],
             },
+            by_user: false,
         }
     }
 
@@ -383,6 +418,19 @@ mod tests {
     #[test]
     fn valid_checkpoint_passes() {
         assert_eq!(checkpoint().validate(), Ok(()));
+    }
+
+    #[test]
+    fn effects_without_by_user_still_decode_as_model_effects() {
+        let mut value =
+            serde_json::to_value(effect(GroupCompanionEffectReason::Witnessed)).expect("effect");
+        value
+            .as_object_mut()
+            .expect("object")
+            .remove("by_user")
+            .expect("by_user");
+        let effect = serde_json::from_value::<GroupCompanionEffect>(value).expect("legacy effect");
+        assert!(!effect.by_user);
     }
 
     #[test]

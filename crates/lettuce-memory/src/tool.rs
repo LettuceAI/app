@@ -15,7 +15,7 @@ const MAX_DONE_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_SUPERSEDED_MEMORIES: usize = 40;
 
 /// Runtime catalog keys for the text the memory tool contract sends to a model.
-pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 25] = [
+pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 29] = [
     "memory_create_tool",
     "memory_create_tool_group",
     "memory_create_tool_group_companion",
@@ -30,6 +30,10 @@ pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 25] = [
     "memory_social_kind_parameter",
     "memory_social_from_parameter",
     "memory_social_to_parameter",
+    "memory_audience_tool",
+    "memory_audience_member_parameter",
+    "memory_audience_heard_parameter",
+    "memory_audience_scope_parameter",
     "memory_delete_tool",
     "memory_delete_text_parameter",
     "memory_delete_text_parameter_group",
@@ -42,6 +46,13 @@ pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 25] = [
     "memory_done_tool",
     "memory_done_summary_parameter",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudienceScope {
+    Message,
+    Onward,
+}
 
 /// The closed social event kinds; the bundled social event catalog defines
 /// exactly these, in this order.
@@ -199,6 +210,35 @@ pub fn dynamic_memory_tool_request_for_run(
             }),
             version: TOOL_VERSION,
         });
+        definitions.push(ToolDefinition {
+            name: "correct_audience".to_string(),
+            description: Some(text("memory_audience_tool")),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "member": {
+                        "type": "string",
+                        "enum": companion_members,
+                        "description": text("memory_audience_member_parameter")
+                    },
+                    "heard": {
+                        "type": "boolean",
+                        "description": text("memory_audience_heard_parameter")
+                    },
+                    "scope": {
+                        "type": "string",
+                        "enum": ["message", "onward"],
+                        "description": text("memory_audience_scope_parameter")
+                    },
+                    "source_message_id": {
+                        "type": "string",
+                        "description": text("memory_source_message_parameter")
+                    }
+                },
+                "required": ["member", "heard", "scope", "source_message_id"]
+            }),
+            version: TOOL_VERSION,
+        });
     }
     definitions.extend([
         ToolDefinition {
@@ -301,6 +341,12 @@ pub enum MemoryToolArguments {
         from: String,
         to: String,
         source_message_id: Option<MessageId>,
+    },
+    CorrectAudience {
+        member: String,
+        heard: bool,
+        scope: AudienceScope,
+        source_message_id: MessageId,
     },
     DeleteMemory {
         target: MemoryReference,
@@ -546,6 +592,36 @@ impl MemoryToolArguments {
                     source_message_id,
                 })
             }
+            "correct_audience" => {
+                let member = required_string(object, "member")?;
+                let heard = object
+                    .get("heard")
+                    .and_then(Value::as_bool)
+                    .ok_or(MemoryToolError::MissingField("heard"))?;
+                let scope = match required_string(object, "scope")?.trim() {
+                    "message" => AudienceScope::Message,
+                    "onward" => AudienceScope::Onward,
+                    _ => {
+                        return Err(MemoryToolError::InvalidField {
+                            field: "scope",
+                            reason: "expected message or onward".into(),
+                        });
+                    }
+                };
+                let source_message_id = required_string(object, "source_message_id")?
+                    .trim()
+                    .parse::<MessageId>()
+                    .map_err(|_| MemoryToolError::InvalidField {
+                        field: "source_message_id",
+                        reason: "expected a message id".into(),
+                    })?;
+                Ok(Self::CorrectAudience {
+                    member,
+                    heard,
+                    scope,
+                    source_message_id,
+                })
+            }
             "delete_memory" => {
                 let target = MemoryReference(required_string(object, "text")?);
                 let confidence = object
@@ -715,6 +791,7 @@ pub fn undo_memory_tool_outcomes(
             | MemoryToolOutcome::Skipped { .. }
             | MemoryToolOutcome::PerspectiveCreated { .. }
             | MemoryToolOutcome::SocialEventRecorded
+            | MemoryToolOutcome::AudienceCorrected { .. }
             | MemoryToolOutcome::StoppedAfterDone => {}
         }
     }
@@ -881,6 +958,12 @@ pub enum MemoryToolOutcome {
         pool_id: Option<MemoryId>,
     },
     SocialEventRecorded,
+    AudienceCorrected {
+        character_id: CharacterId,
+        message_id: MessageId,
+        heard: bool,
+        scope: AudienceScope,
+    },
     StoppedAfterDone,
 }
 
@@ -1037,6 +1120,9 @@ impl MemoryToolReducer {
                         },
                     },
                     MemoryToolArguments::RecordSocialEvent { .. } => MemoryToolOutcome::Skipped {
+                        reason: MemoryToolSkipReason::UnsupportedTool,
+                    },
+                    MemoryToolArguments::CorrectAudience { .. } => MemoryToolOutcome::Skipped {
                         reason: MemoryToolSkipReason::UnsupportedTool,
                     },
                     MemoryToolArguments::PinMemory { target } => {
@@ -1845,6 +1931,7 @@ mod tests {
                 "create_memory",
                 "create_perspective_memory",
                 "record_social_event",
+                "correct_audience",
                 "delete_memory",
                 "pin_memory",
                 "unpin_memory",
@@ -1891,6 +1978,25 @@ mod tests {
             social.parameters["properties"]["to"]["enum"],
             json!(["m1", "m2"])
         );
+        let audience = request
+            .definitions
+            .iter()
+            .find(|definition| definition.name == "correct_audience")
+            .expect("audience tool");
+        assert_eq!(
+            audience.parameters["properties"]["member"]["enum"],
+            json!(["m1", "m2"])
+        );
+        assert_eq!(
+            audience.parameters["properties"]["scope"]["enum"],
+            json!(["message", "onward"])
+        );
+        let audience_required = audience.parameters["required"]
+            .as_array()
+            .expect("audience required");
+        for field in ["member", "heard", "scope", "source_message_id"] {
+            assert!(audience_required.iter().any(|value| value == field));
+        }
 
         let plain = tool_request(true, false, false);
         assert!(
@@ -1905,6 +2011,12 @@ mod tests {
                 .iter()
                 .any(|definition| definition.name == "record_social_event")
         );
+        assert!(
+            !plain
+                .definitions
+                .iter()
+                .any(|definition| definition.name == "correct_audience")
+        );
         let create_required = plain.definitions[0].parameters["required"]
             .as_array()
             .expect("plain create required");
@@ -1912,6 +2024,26 @@ mod tests {
             !create_required
                 .iter()
                 .any(|field| field == "source_message_id")
+        );
+    }
+
+    #[test]
+    fn correct_audience_arguments_parse_all_fields() {
+        let message_id = MessageId::new();
+        let arguments = json!({
+            "member": "m2",
+            "heard": false,
+            "scope": "onward",
+            "source_message_id": message_id.to_string(),
+        });
+        assert_eq!(
+            MemoryToolArguments::parse("correct_audience", &arguments).expect("arguments"),
+            MemoryToolArguments::CorrectAudience {
+                member: "m2".into(),
+                heard: false,
+                scope: super::AudienceScope::Onward,
+                source_message_id: message_id,
+            }
         );
     }
 

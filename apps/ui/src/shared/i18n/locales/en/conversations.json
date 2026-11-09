@@ -1211,6 +1211,7 @@
       "towardOthers": "How {{name}} sees the others",
       "noStance": "None yet",
       "noCheckpoint": "{{name}} has not been through a turn yet. These are the starting values.",
+      "notFollowing": "{{name}} is not following the conversation right now and won't know what is said until speaking again or being marked back.",
       "stanceLabel": "{{from}} toward {{to}}: {{band}}",
       "stanceTitle": "{{from}} toward {{to}}",
       "effectSummary": "Affected: {{names}}",
@@ -1247,6 +1248,19 @@
         "exclusion": "exclusion",
         "threat": "threat"
       }
+    },
+    "audience": {
+      "title": "Who heard this",
+      "nobody": "No one",
+      "body": "Members who heard a message can recall it and react to it. The memory model corrects this as it reads; your changes here always win.",
+      "scope": "Apply to",
+      "scopeMessage": "This message",
+      "scopeOnward": "From here on",
+      "scopeMessageBody": "Only this message, like a whisper",
+      "scopeOnwardBody": "This and later messages, until they speak again",
+      "speaker": "Wrote this message",
+      "awayAfter": "Not following after this",
+      "heard": "{{name}} heard this"
     }
   }
 }

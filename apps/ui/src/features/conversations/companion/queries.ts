@@ -23,6 +23,13 @@ export function groupCompanionEffectsQuery(api: ApiClient, conversationId: strin
   });
 }
 
+export function groupMessageAudienceQuery(api: ApiClient, conversationId: string, messageId: string) {
+  return queryOptions({
+    queryKey: queryKeys.companions.groupAudience(conversationId, messageId),
+    queryFn: () => api.call("groupMessageAudienceGet", { conversation_id: conversationId, message_id: messageId }),
+  });
+}
+
 export function companionSoulQuery(api: ApiClient, conversationId: string, characterId: string | null) {
   return queryOptions({
     queryKey: queryKeys.companions.soul(conversationId, characterId ?? ""),

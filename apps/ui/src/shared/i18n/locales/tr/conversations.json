@@ -1211,6 +1211,7 @@
       "towardOthers": "{{name}} diğerlerini nasıl görüyor",
       "noStance": "Henüz yok",
       "noCheckpoint": "{{name}} henüz hiçbir turdan geçmedi. Bunlar başlangıç değerleri.",
+      "notFollowing": "{{name}} şu an konuşmayı takip etmiyor; tekrar konuşana ya da geri işaretlenene kadar söylenenleri bilmeyecek.",
       "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Etkilenenler: {{names}}",
@@ -1247,6 +1248,19 @@
         "exclusion": "dışlama",
         "threat": "tehdit"
       }
+    },
+    "audience": {
+      "title": "Bunu kim duydu",
+      "nobody": "Kimse",
+      "body": "Bir mesajı duyan üyeler onu hatırlayabilir ve ona tepki verebilir. Memory modeli okurken bunu düzeltir; buradaki değişikliklerin her zaman önceliklidir.",
+      "scope": "Uygula",
+      "scopeMessage": "Bu mesaj",
+      "scopeOnward": "Bundan sonra",
+      "scopeMessageBody": "Sadece bu mesaj, fısıltı gibi",
+      "scopeOnwardBody": "Bu ve sonraki mesajlar, tekrar konuşana kadar",
+      "speaker": "Bu mesajı yazdı",
+      "awayAfter": "Bundan sonra takip etmiyor",
+      "heard": "{{name}} bunu duydu"
     }
   }
 }

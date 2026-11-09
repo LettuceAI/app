@@ -34,6 +34,26 @@ pub async fn group_companion_message_effects(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn group_message_audience_get(
+    context: State<'_, ApiContextSlot>,
+    request: dto::GroupMessageAudienceGetRequest,
+) -> Result<Vec<dto::GroupMessageAudienceMemberView>, ApiError> {
+    let context = context.snapshot()?;
+    api::group_message_audience_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn group_message_audience_set(
+    context: State<'_, ApiContextSlot>,
+    request: dto::GroupMessageAudienceSetRequest,
+) -> Result<Vec<dto::GroupMessageAudienceMemberView>, ApiError> {
+    let context = context.snapshot()?;
+    api::group_message_audience_set(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn companion_soul_get(
     context: State<'_, ApiContextSlot>,
     request: dto::CompanionSoulGetRequest,

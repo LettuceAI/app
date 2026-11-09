@@ -360,6 +360,23 @@ pub(crate) fn undo_events(
     for (_, revision, _, event) in events.into_iter().rev() {
         match event {
             Undo::Tool { before, outcome } => {
+                if let lettuce_memory::MemoryToolOutcome::AudienceCorrected {
+                    character_id,
+                    message_id,
+                    heard,
+                    scope,
+                } = &outcome
+                {
+                    crate::conversation::group_companion_adapter::remove_audience_correction_in(
+                        transaction,
+                        conversation_id,
+                        *message_id,
+                        *character_id,
+                        *heard,
+                        *scope,
+                    )
+                    .map_err(storage)?;
+                }
                 let settled_revision = Revision::new(u64::try_from(revision).map_err(storage)?);
                 lettuce_memory::undo_memory_tool_outcomes_preserving(
                     &mut items, &before, &[outcome], settled_revision, &retained,

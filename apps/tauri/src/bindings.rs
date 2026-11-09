@@ -315,6 +315,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::companion::companion_state_get,
             commands::companion::group_companion_state_get,
             commands::companion::group_companion_message_effects,
+            commands::companion::group_message_audience_get,
+            commands::companion::group_message_audience_set,
             commands::companion::companion_soul_get,
             commands::companion::companion_soul_growth_clear,
             commands::companion::companion_soul_growth_remove,

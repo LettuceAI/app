@@ -1211,6 +1211,7 @@
       "towardOthers": "Hvordan {{name}} ser de andre",
       "noStance": "Ingen ennå",
       "noCheckpoint": "{{name}} har ikke vært gjennom noen tur ennå. Dette er startverdiene.",
+      "notFollowing": "{{name}} følger ikke samtalen nå og vet ikke hva som blir sagt før hen snakker igjen eller blir markert tilbake.",
       "stanceLabel": "{{from}} mot {{to}}: {{band}}",
       "stanceTitle": "{{from}} mot {{to}}",
       "effectSummary": "Berørt: {{names}}",
@@ -1247,6 +1248,19 @@
         "exclusion": "utestengelse",
         "threat": "trussel"
       }
+    },
+    "audience": {
+      "title": "Hvem hørte dette",
+      "nobody": "Ingen",
+      "body": "Medlemmer som hørte en melding, kan huske den og reagere på den. Minnemodellen retter dette mens den leser; endringene dine her vinner alltid.",
+      "scope": "Bruk på",
+      "scopeMessage": "Denne meldingen",
+      "scopeOnward": "Herfra",
+      "scopeMessageBody": "Bare denne meldingen, som en hvisking",
+      "scopeOnwardBody": "Denne og senere meldinger, til hen snakker igjen",
+      "speaker": "Skrev denne meldingen",
+      "awayAfter": "Følger ikke med etter dette",
+      "heard": "{{name}} hørte dette"
     }
   }
 }

@@ -1273,6 +1273,7 @@
       "towardOthers": "Jak {{name}} vidí ostatní",
       "noStance": "Zatím žádný",
       "noCheckpoint": "{{name}}: zatím žádné kolo. Toto jsou počáteční hodnoty.",
+      "notFollowing": "{{name}}: teď mimo rozhovor. Co zazní, se k této postavě nedostane do její další promluvy nebo nového označení.",
       "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Dotčení: {{names}}",
@@ -1309,6 +1310,19 @@
         "exclusion": "vyloučení",
         "threat": "výhrůžka"
       }
+    },
+    "audience": {
+      "title": "Kdo to slyšel",
+      "nobody": "Nikdo",
+      "body": "Členové, kteří zprávu slyšeli, si ji mohou pamatovat a reagovat na ni. Model paměti to při čtení opravuje; tvoje změny zde mají vždy přednost.",
+      "scope": "Použít na",
+      "scopeMessage": "Tuto zprávu",
+      "scopeOnward": "Od teď",
+      "scopeMessageBody": "Jen tato zpráva, jako šepot",
+      "scopeOnwardBody": "Tato a další zprávy, do další promluvy",
+      "speaker": "Autor této zprávy",
+      "awayAfter": "Potom nesleduje",
+      "heard": "{{name}}: slyší to"
     }
   }
 }

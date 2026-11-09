@@ -1180,6 +1180,7 @@
       "towardOthers": "{{name}}이(가) 다른 구성원을 보는 방식",
       "noStance": "아직 없음",
       "noCheckpoint": "{{name}}은(는) 아직 턴을 거치지 않았어요. 시작 값이에요.",
+      "notFollowing": "{{name}}은(는) 지금 대화를 따라가지 않으며, 다시 말하거나 돌아온 것으로 표시되기 전까지 오가는 말을 알지 못합니다.",
       "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "영향받음: {{names}}",
@@ -1216,6 +1217,19 @@
         "exclusion": "따돌림",
         "threat": "위협"
       }
+    },
+    "audience": {
+      "title": "누가 이걸 들었나요",
+      "nobody": "아무도 없음",
+      "body": "메시지를 들은 멤버는 그것을 기억하고 반응할 수 있습니다. 메모리 모델이 읽으면서 이를 수정하지만, 여기서의 변경이 항상 우선합니다.",
+      "scope": "적용 범위",
+      "scopeMessage": "이 메시지",
+      "scopeOnward": "여기부터",
+      "scopeMessageBody": "이 메시지만 (귓속말처럼)",
+      "scopeOnwardBody": "이 메시지와 이후, 다시 말할 때까지",
+      "speaker": "이 메시지를 씀",
+      "awayAfter": "이후로 대화를 따라가지 않음",
+      "heard": "{{name}}이(가) 이걸 들음"
     }
   }
 }

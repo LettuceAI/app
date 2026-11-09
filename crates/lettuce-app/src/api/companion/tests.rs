@@ -301,6 +301,68 @@ async fn group_companion_state_lists_members_with_and_without_a_checkpoint() {
 }
 
 #[tokio::test]
+async fn group_message_audience_get_and_set_round_trip_and_replay() {
+    let harness = harness(Reply::Text("Hello."));
+    let (group_id, ada, bea) = companion_group(&harness, true);
+    let chat = launch_group_chat(&harness, group_id, "group-audience-launch").await;
+    let message_id = send_with_checkpoints(&harness, &chat, ada, "Hello Ada.");
+
+    let before = group_message_audience_get(
+        &harness.context,
+        dto::GroupMessageAudienceGetRequest {
+            conversation_id: chat.clone(),
+            message_id: message_id.to_string(),
+        },
+    )
+    .await
+    .expect("audience");
+    assert_eq!(before.len(), 2);
+    assert_eq!(before[0].character_id, ada.to_string());
+    assert!(before[0].heard);
+    assert_eq!(before[1].character_id, bea.to_string());
+    assert!(!before[1].heard);
+
+    let request = dto::GroupMessageAudienceSetRequest {
+        conversation_id: chat.clone(),
+        message_id: message_id.to_string(),
+        character_id: bea.to_string(),
+        heard: true,
+        scope: dto::GroupAudienceScope::Message,
+        client_operation_id: "group-audience-set".into(),
+    };
+    let after = group_message_audience_set(&harness.context, request.clone())
+        .await
+        .expect("set audience");
+    assert!(
+        after
+            .iter()
+            .any(|member| member.character_id == bea.to_string() && member.heard)
+    );
+    assert_eq!(
+        group_message_audience_set(&harness.context, request)
+            .await
+            .expect("replay"),
+        after
+    );
+
+    let invalid = dto::GroupMessageAudienceSetRequest {
+        conversation_id: chat,
+        message_id: message_id.to_string(),
+        character_id: ada.to_string(),
+        heard: true,
+        scope: dto::GroupAudienceScope::Message,
+        client_operation_id: "group-audience-invalid".into(),
+    };
+    assert_eq!(
+        group_message_audience_set(&harness.context, invalid)
+            .await
+            .expect_err("invalid correction")
+            .code,
+        ApiErrorCode::InvalidInput
+    );
+}
+
+#[tokio::test]
 async fn group_companion_state_is_none_without_companion_mode_or_for_other_chats() {
     let harness = harness(Reply::Text("reply"));
     let (group_id, _, _) = companion_group(&harness, false);

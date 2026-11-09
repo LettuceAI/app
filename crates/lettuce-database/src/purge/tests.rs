@@ -364,6 +364,7 @@ fn character_purge_removes_group_companion_checkpoints_and_relationships_toward_
             added: vec![signal.into()],
             removed: Vec::new(),
         },
+        by_user: false,
     };
     let checkpoint = |character_id, target_character_id, signal: &str| GroupCompanionCheckpoint {
         message_id,

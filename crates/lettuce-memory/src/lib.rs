@@ -57,8 +57,8 @@ pub use text::{
     MemoryTextProblem, collapse_whitespace, normalize_llm_output_text, normalize_memory_text,
 };
 pub use tool::{
-    CategoryArgument, CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS, DuplicateKind,
-    DynamicMemoryToolOptions, ListedMemory, MemoryBatchResult, MemoryCycleBudget,
+    AudienceScope, CategoryArgument, CreateMemoryPreparation, DYNAMIC_MEMORY_TOOL_TEXT_KEYS,
+    DuplicateKind, DynamicMemoryToolOptions, ListedMemory, MemoryBatchResult, MemoryCycleBudget,
     MemoryCycleFinish, MemoryCycleStart, MemoryReference, MemoryToolArguments, MemoryToolCall,
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
     MemoryToolSkipReason, SOCIAL_EVENT_KINDS, SemanticDuplicateEvidence, SoftDeleteReason,

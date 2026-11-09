@@ -1211,6 +1211,7 @@
       "towardOthers": "Hogyan látja {{name}} a többieket",
       "noStance": "Még nincs",
       "noCheckpoint": "{{name}} még nem élt át egyetlen kört sem. Ezek a kezdőértékek.",
+      "notFollowing": "{{name}} most nem követi a beszélgetést, és nem tudja, mi hangzik el, amíg újra meg nem szólal vagy vissza nem jelölik.",
       "stanceLabel": "{{from}} {{to}} iránt: {{band}}",
       "stanceTitle": "{{from}} {{to}} iránt",
       "effectSummary": "Érintettek: {{names}}",
@@ -1247,6 +1248,19 @@
         "exclusion": "kirekesztés",
         "threat": "fenyegetés"
       }
+    },
+    "audience": {
+      "title": "Ki hallotta ezt",
+      "nobody": "Senki",
+      "body": "Az üzenetet hallott tagok emlékezhetnek rá és reagálhatnak rá. Az emlékezetmodell olvasás közben javítja ezt; az itteni módosításaid mindig elsőbbséget élveznek.",
+      "scope": "Alkalmazás erre",
+      "scopeMessage": "Ez az üzenet",
+      "scopeOnward": "Innentől",
+      "scopeMessageBody": "Csak ez az üzenet, mint egy suttogás",
+      "scopeOnwardBody": "Ez és a későbbi üzenetek, amíg újra meg nem szólal",
+      "speaker": "Ezt az üzenetet írta",
+      "awayAfter": "Ezután nem követi",
+      "heard": "{{name}} hallotta ezt"
     }
   }
 }

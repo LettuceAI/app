@@ -5,7 +5,7 @@ use lettuce_companions::{
     CompanionStateRepository, GroupCompanionAuthor, GroupCompanionEvent, GroupCompanionMember,
     GroupCompanionMemberState, GroupCompanionMessageSource, GroupCompanionRepository,
     GroupCompanionRepositoryError, GroupCompanionUserEvent, PreparedGroupCompanionTurn,
-    reduce_group_event,
+    group_audience_away, reduce_group_event,
 };
 use lettuce_conversations::{
     ConversationAggregate, ConversationKind, ConversationOverviewReader, ConversationParticipant,
@@ -72,10 +72,6 @@ where
         member_names.push((character_id, participant.display_name.clone()));
         members.push((character_id, config));
     }
-    let present = members
-        .iter()
-        .map(|(character_id, _)| *character_id)
-        .collect::<Vec<_>>();
     let path = read_path(sources, aggregate)?;
     let path_ids = path.iter().map(|item| item.message.id).collect::<Vec<_>>();
     let checkpoint_sources = sources
@@ -141,6 +137,19 @@ where
         .iter()
         .map(|item| author_of(item, &aggregate.conversation.participants, persona_id))
         .collect::<Vec<_>>();
+    let author_map = authors
+        .iter()
+        .enumerate()
+        .filter_map(|(index, author)| match author {
+            GroupCompanionAuthor::Member { character_id } => {
+                Some((path[index].message.id, *character_id))
+            }
+            GroupCompanionAuthor::Persona { .. } => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let branch_audience = sources
+        .branch_audience(conversation_id, aggregate.conversation.active_branch_id)
+        .map_err(repository_error)?;
     let pending_ids = path[pending_start..]
         .iter()
         .map(|item| item.message.id)
@@ -163,6 +172,22 @@ where
         let item = &path[index];
         let text = classification_text(item_parts(item));
         let author = authors[index];
+        let away = group_audience_away(
+            &path_ids[..index],
+            &author_map,
+            &branch_audience.checkpoints,
+        );
+        let mut present = members
+            .iter()
+            .map(|(character_id, _)| *character_id)
+            .filter(|character_id| !away.contains(character_id))
+            .collect::<Vec<_>>();
+        if let GroupCompanionAuthor::Member { character_id } = author
+            && members.iter().any(|(member, _)| *member == character_id)
+            && !present.contains(&character_id)
+        {
+            present.push(character_id);
+        }
         let addressed = addressed_members(
             &text,
             &member_names,
@@ -221,9 +246,15 @@ where
             .map_err(|_| CompanionTurnError::CharacterMissing)?
             .effective_now(now);
             let author = GroupCompanionAuthor::Persona { persona_id };
+            let away = group_audience_away(&path_ids, &author_map, &branch_audience.checkpoints);
+            let present = members
+                .iter()
+                .map(|(character_id, _)| *character_id)
+                .filter(|character_id| !away.contains(character_id))
+                .collect::<Vec<_>>();
             let addressed = addressed_members(text, &member_names, &present, author, None);
             Some(GroupCompanionUserEvent {
-                present: present.clone(),
+                present,
                 addressed,
                 signals: classification_signals(emotion, text, cancellation, conversation_id)?,
                 at: effective_now,

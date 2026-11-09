@@ -145,6 +145,7 @@ fn effect(target: CharacterId, signal: &str) -> GroupCompanionEffect {
             added: vec![signal.into()],
             removed: Vec::new(),
         },
+        by_user: false,
     }
 }
 

@@ -1242,6 +1242,7 @@
       "towardOthers": "Come {{name}} vede gli altri",
       "noStance": "Ancora nessuna",
       "noCheckpoint": "{{name}} non ha ancora vissuto nessun turno. Questi sono i valori iniziali.",
+      "notFollowing": "{{name}} al momento non segue la conversazione e non saprà cosa viene detto finché non parla di nuovo o finché il ritorno non viene segnato.",
       "stanceLabel": "{{from}} verso {{to}}: {{band}}",
       "stanceTitle": "{{from}} verso {{to}}",
       "effectSummary": "Coinvolti: {{names}}",
@@ -1278,6 +1279,19 @@
         "exclusion": "esclusione",
         "threat": "minaccia"
       }
+    },
+    "audience": {
+      "title": "Chi ha sentito questo",
+      "nobody": "Nessuno",
+      "body": "I membri che hanno sentito un messaggio possono ricordarlo e reagire. Il modello di memoria lo corregge mentre legge; le tue modifiche qui hanno sempre la precedenza.",
+      "scope": "Applica a",
+      "scopeMessage": "Questo messaggio",
+      "scopeOnward": "Da qui in poi",
+      "scopeMessageBody": "Solo questo messaggio, come un sussurro",
+      "scopeOnwardBody": "Questo e i successivi, finché non parla di nuovo",
+      "speaker": "Ha scritto questo messaggio",
+      "awayAfter": "Non segue dopo questo",
+      "heard": "{{name}} ha sentito questo"
     }
   }
 }

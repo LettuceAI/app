@@ -300,6 +300,8 @@ export const commands = {
 	companionStateGet: (request: CompanionStateGetRequest) => typedError<CompanionStateView | null, ApiError_Serialize>(__TAURI_INVOKE("companion_state_get", { request })),
 	groupCompanionStateGet: (request: GroupCompanionStateGetRequest) => typedError<GroupCompanionStateView | null, ApiError_Serialize>(__TAURI_INVOKE("group_companion_state_get", { request })),
 	groupCompanionMessageEffects: (request: GroupCompanionMessageEffectsRequest) => typedError<GroupCompanionMemberEffectView[], ApiError_Serialize>(__TAURI_INVOKE("group_companion_message_effects", { request })),
+	groupMessageAudienceGet: (request: GroupMessageAudienceGetRequest) => typedError<GroupMessageAudienceMemberView[], ApiError_Serialize>(__TAURI_INVOKE("group_message_audience_get", { request })),
+	groupMessageAudienceSet: (request: GroupMessageAudienceSetRequest) => typedError<GroupMessageAudienceMemberView[], ApiError_Serialize>(__TAURI_INVOKE("group_message_audience_set", { request })),
 	companionSoulGet: (request: CompanionSoulGetRequest) => typedError<CompanionSoulView, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_get", { request })),
 	companionSoulGrowthClear: (request: CompanionSoulGrowthClearRequest) => typedError<number, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_clear", { request })),
 	companionSoulGrowthRemove: (request: CompanionSoulGrowthRemoveRequest) => typedError<boolean, ApiError_Serialize>(__TAURI_INVOKE("companion_soul_growth_remove", { request })),
@@ -2586,6 +2588,8 @@ export type GroupCompanionMemberEffectView = {
 	effects: GroupCompanionEffectView[],
 };
 
+export type GroupAudienceScope = "message" | "onward";
+
 /**
  *  One member of a companion-mode group chat: its latest state on the active
  *  branch (the initial state while it has no checkpoint), its relationship
@@ -2597,6 +2601,7 @@ export type GroupCompanionMemberView = {
 	participant_id: string,
 	display_name: string,
 	has_checkpoint: boolean,
+	following: boolean,
 	relationship: CompanionRelationshipView,
 	expressed: CompanionEmotionVector,
 	felt: CompanionEmotionVector,
@@ -2611,6 +2616,27 @@ export type GroupCompanionMemoryGetRequest = {
 export type GroupCompanionMessageEffectsRequest = {
 	conversation_id: string,
 	message_id: string,
+};
+
+export type GroupMessageAudienceGetRequest = {
+	conversation_id: string,
+	message_id: string,
+};
+
+export type GroupMessageAudienceMemberView = {
+	character_id: string,
+	display_name: string,
+	heard: boolean,
+	away_after: boolean,
+};
+
+export type GroupMessageAudienceSetRequest = {
+	conversation_id: string,
+	message_id: string,
+	character_id: string,
+	heard: boolean,
+	scope: GroupAudienceScope,
+	client_operation_id: string,
 };
 
 export type GroupCompanionStateGetRequest = {

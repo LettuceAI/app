@@ -1273,6 +1273,7 @@
       "towardOthers": "Jak {{name}} widzi pozostałych",
       "noStance": "Jeszcze brak",
       "noCheckpoint": "{{name}}: jeszcze żadnej tury. To wartości początkowe.",
+      "notFollowing": "{{name}}: teraz poza rozmową. To, co padnie, nie dotrze do tej postaci przed jej kolejną wypowiedzią lub ponownym oznaczeniem.",
       "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Dotyczy: {{names}}",
@@ -1309,6 +1310,19 @@
         "exclusion": "wykluczenie",
         "threat": "groźba"
       }
+    },
+    "audience": {
+      "title": "Kto to słyszał",
+      "nobody": "Nikt",
+      "body": "Członkowie, którzy słyszeli wiadomość, mogą ją pamiętać i na nią reagować. Model pamięci poprawia to podczas czytania; Twoje zmiany tutaj zawsze mają pierwszeństwo.",
+      "scope": "Zastosuj do",
+      "scopeMessage": "Ta wiadomość",
+      "scopeOnward": "Od teraz",
+      "scopeMessageBody": "Tylko ta wiadomość, jak szept",
+      "scopeOnwardBody": "Ta i kolejne wiadomości, do ponownej wypowiedzi",
+      "speaker": "Autor tej wiadomości",
+      "awayAfter": "Potem nie śledzi rozmowy",
+      "heard": "{{name}}: słyszy to"
     }
   }
 }

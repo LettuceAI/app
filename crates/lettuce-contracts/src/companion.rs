@@ -324,6 +324,7 @@ pub struct GroupCompanionMemberView {
     pub participant_id: String,
     pub display_name: String,
     pub has_checkpoint: bool,
+    pub following: bool,
     pub relationship: CompanionRelationshipView,
     pub expressed: CompanionEmotionVector,
     pub felt: CompanionEmotionVector,
@@ -343,6 +344,44 @@ pub struct GroupCompanionStateView {
 pub struct GroupCompanionMessageEffectsRequest {
     pub conversation_id: String,
     pub message_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupMessageAudienceGetRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum GroupAudienceScope {
+    Message,
+    Onward,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupMessageAudienceSetRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub character_id: String,
+    pub heard: bool,
+    pub scope: GroupAudienceScope,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupMessageAudienceMemberView {
+    pub character_id: String,
+    pub display_name: String,
+    pub heard: bool,
+    pub away_after: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

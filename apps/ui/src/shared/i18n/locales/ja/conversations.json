@@ -1180,6 +1180,7 @@
       "towardOthers": "{{name}}から見たほかのメンバー",
       "noStance": "まだありません",
       "noCheckpoint": "{{name}}はまだターンを経験していません。これは初期値です。",
+      "notFollowing": "{{name}}は今会話を追っていません。再び話すか、戻ったと記録されるまで、話された内容を知りません。",
       "stanceLabel": "{{from}}から{{to}}へ: {{band}}",
       "stanceTitle": "{{from}}から{{to}}へ",
       "effectSummary": "影響を受けた人: {{names}}",
@@ -1216,6 +1217,19 @@
         "exclusion": "仲間外れ",
         "threat": "脅し"
       }
+    },
+    "audience": {
+      "title": "これを聞いた人",
+      "nobody": "誰もいない",
+      "body": "メッセージを聞いたメンバーはそれを覚え、反応できます。メモリーモデルが読みながら修正しますが、ここでの変更が常に優先されます。",
+      "scope": "適用範囲",
+      "scopeMessage": "このメッセージ",
+      "scopeOnward": "ここから先",
+      "scopeMessageBody": "このメッセージだけ（ささやきなど）",
+      "scopeOnwardBody": "このメッセージ以降、再び話すまで",
+      "speaker": "このメッセージを書いた",
+      "awayAfter": "この後は会話を追っていない",
+      "heard": "{{name}}はこれを聞いた"
     }
   }
 }

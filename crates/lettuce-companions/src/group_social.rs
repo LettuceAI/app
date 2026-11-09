@@ -98,10 +98,12 @@ pub struct GroupSocialOutcome {
     pub dropped: Vec<(GroupSocialEvent, GroupSocialDropReason)>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn apply_group_social_events(
     members: &[GroupCompanionMember<'_>],
     path: &[MessageId],
     checkpoints: &[GroupCompanionCheckpoint],
+    audience: &BTreeMap<MessageId, BTreeSet<CharacterId>>,
     persona_relationships: &BTreeMap<CharacterId, RelationshipState>,
     already_applied: &BTreeSet<GroupSocialEvent>,
     events: &[GroupSocialEvent],
@@ -149,7 +151,10 @@ pub fn apply_group_social_events(
                 .push((event.clone(), GroupSocialDropReason::NotOnPath));
             continue;
         };
-        if !has_checkpoint(checkpoints, event.source_message_id, event.to) {
+        if !audience
+            .get(&event.source_message_id)
+            .is_some_and(|members| members.contains(&event.to))
+        {
             outcome
                 .dropped
                 .push((event.clone(), GroupSocialDropReason::TargetNotPresent));
@@ -238,6 +243,7 @@ pub fn apply_group_social_events(
                     delta: relationship_delta,
                 }),
                 signal_changes: seed.signal_changes,
+                by_user: false,
             });
         }
 
@@ -247,7 +253,10 @@ pub fn apply_group_social_events(
                 if witness == event.to || event.from == Some(witness) {
                     continue;
                 }
-                if !has_checkpoint(checkpoints, event.source_message_id, witness) {
+                if !audience
+                    .get(&event.source_message_id)
+                    .is_some_and(|members| members.contains(&witness))
+                {
                     continue;
                 }
                 let Some(latest) = latest_checkpoint_index(&working, &path_position, witness)
@@ -267,6 +276,7 @@ pub fn apply_group_social_events(
                         emotion_delta: seed.emotion_delta,
                         relationship_change: None,
                         signal_changes: seed.signal_changes,
+                        by_user: false,
                     });
                 }
             }
@@ -355,16 +365,6 @@ fn relationship_in_range(relationship: &RelationshipDelta) -> bool {
 
 fn signed(value: f64) -> bool {
     value.is_finite() && (-1.0..=1.0).contains(&value)
-}
-
-fn has_checkpoint(
-    checkpoints: &[GroupCompanionCheckpoint],
-    message_id: MessageId,
-    character_id: CharacterId,
-) -> bool {
-    checkpoints.iter().any(|checkpoint| {
-        checkpoint.message_id == message_id && checkpoint.character_id == character_id
-    })
 }
 
 fn checkpoint_index(
@@ -575,17 +575,30 @@ mod tests {
         }
     }
 
-    fn find_checkpoint<'a>(
-        checkpoints: &'a [GroupCompanionCheckpoint],
+    fn find_checkpoint(
+        checkpoints: &[GroupCompanionCheckpoint],
         message_id: MessageId,
         character_id: CharacterId,
-    ) -> &'a GroupCompanionCheckpoint {
+    ) -> &GroupCompanionCheckpoint {
         checkpoints
             .iter()
             .find(|checkpoint| {
                 checkpoint.message_id == message_id && checkpoint.character_id == character_id
             })
             .expect("checkpoint")
+    }
+
+    fn audience(
+        checkpoints: &[GroupCompanionCheckpoint],
+    ) -> BTreeMap<MessageId, BTreeSet<CharacterId>> {
+        let mut audience: BTreeMap<MessageId, BTreeSet<CharacterId>> = BTreeMap::new();
+        for checkpoint in checkpoints {
+            audience
+                .entry(checkpoint.message_id)
+                .or_default()
+                .insert(checkpoint.character_id);
+        }
+        audience
     }
 
     fn find_stance(
@@ -619,6 +632,7 @@ mod tests {
             &members,
             &path,
             &original,
+            &audience(&original),
             &BTreeMap::new(),
             &BTreeSet::new(),
             std::slice::from_ref(&event),
@@ -691,6 +705,7 @@ mod tests {
             &members,
             &path,
             &original,
+            &audience(&original),
             &BTreeMap::new(),
             &BTreeSet::new(),
             &[event],
@@ -754,6 +769,7 @@ mod tests {
             &members,
             &path,
             &checkpoints,
+            &audience(&checkpoints),
             &BTreeMap::new(),
             &already_applied,
             &events,
@@ -795,6 +811,7 @@ mod tests {
             &members,
             &path,
             &checkpoints,
+            &audience(&checkpoints),
             &BTreeMap::new(),
             &BTreeSet::from([event.clone()]),
             &[event.clone(), event.clone()],
@@ -813,6 +830,7 @@ mod tests {
             &members,
             &path,
             &checkpoints,
+            &audience(&checkpoints),
             &BTreeMap::new(),
             &BTreeSet::new(),
             &[event.clone(), event.clone()],
@@ -844,6 +862,7 @@ mod tests {
             &members,
             &path,
             &checkpoints,
+            &audience(&checkpoints),
             &BTreeMap::new(),
             &BTreeSet::new(),
             &[event],
@@ -894,6 +913,7 @@ mod tests {
             &members,
             &path,
             &checkpoints,
+            &audience(&checkpoints),
             &BTreeMap::new(),
             &BTreeSet::new(),
             &[second.clone(), first.clone()],

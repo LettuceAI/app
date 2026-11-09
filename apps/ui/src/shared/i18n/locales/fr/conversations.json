@@ -1242,6 +1242,7 @@
       "towardOthers": "Comment {{name}} voit les autres",
       "noStance": "Aucun pour l'instant",
       "noCheckpoint": "{{name}} n'a pas encore vécu de tour. Ce sont les valeurs de départ.",
+      "notFollowing": "{{name}} ne suit pas la conversation en ce moment et ne saura pas ce qui se dit avant de reparler ou que son retour soit indiqué.",
       "stanceLabel": "{{from}} envers {{to}} : {{band}}",
       "stanceTitle": "{{from}} envers {{to}}",
       "effectSummary": "Concernés : {{names}}",
@@ -1278,6 +1279,19 @@
         "exclusion": "exclusion",
         "threat": "menace"
       }
+    },
+    "audience": {
+      "title": "Qui a entendu ceci",
+      "nobody": "Personne",
+      "body": "Les membres qui ont entendu un message peuvent s'en souvenir et y réagir. Le modèle de mémoire corrige cela en lisant ; vos changements ici priment toujours.",
+      "scope": "Appliquer à",
+      "scopeMessage": "Ce message",
+      "scopeOnward": "À partir d'ici",
+      "scopeMessageBody": "Seulement ce message, comme un murmure",
+      "scopeOnwardBody": "Ce message et les suivants, jusqu'à ce que la personne reparle",
+      "speaker": "A écrit ce message",
+      "awayAfter": "Ne suit plus après ceci",
+      "heard": "{{name}} a entendu ceci"
     }
   }
 }

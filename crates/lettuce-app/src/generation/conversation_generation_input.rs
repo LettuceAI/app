@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     time::Duration,
 };
 
@@ -2582,7 +2582,7 @@ where
             .collect::<Vec<_>>();
         let presence = self
             .repository
-            .message_presence(shape.conversation_id, &path)
+            .message_presence(shape.conversation_id, shape.branch_id, &path)
             .map_err(companion_space_error)?;
         let mut visible = memory.clone();
         retain_visible_shared_items(&mut visible, &presence, speaker);
@@ -2634,18 +2634,14 @@ fn companion_space_error(
 
 fn retain_visible_shared_items(
     memory: &mut MemorySpaceSnapshot,
-    presence: &[(lettuce_types::MessageId, CharacterId)],
+    presence: &BTreeMap<lettuce_types::MessageId, BTreeSet<CharacterId>>,
     speaker: CharacterId,
 ) {
-    let mut present = HashMap::<lettuce_types::MessageId, HashSet<CharacterId>>::new();
-    for (message_id, character_id) in presence {
-        present.entry(*message_id).or_default().insert(*character_id);
-    }
     memory.items.retain(|item| {
         let Some(message_id) = item.source_message_id else {
             return true;
         };
-        match present.get(&message_id) {
+        match presence.get(&message_id) {
             Some(characters) => characters.contains(&speaker),
             None => true,
         }
@@ -4294,7 +4290,10 @@ mod tests {
         };
         super::retain_visible_shared_items(
             &mut memory,
-            &[(attended, speaker), (missed, other)],
+            &std::collections::BTreeMap::from([
+                (attended, std::collections::BTreeSet::from([speaker])),
+                (missed, std::collections::BTreeSet::from([other])),
+            ]),
             speaker,
         );
         assert_eq!(
@@ -4304,7 +4303,10 @@ mod tests {
         let mut missing_speaker = memory.clone();
         super::retain_visible_shared_items(
             &mut missing_speaker,
-            &[(attended, other), (missed, other)],
+            &std::collections::BTreeMap::from([
+                (attended, std::collections::BTreeSet::from([other])),
+                (missed, std::collections::BTreeSet::from([other])),
+            ]),
             speaker,
         );
         assert_eq!(

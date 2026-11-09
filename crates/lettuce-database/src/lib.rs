@@ -37,6 +37,7 @@ mod legacy;
 mod api_operation_adapter;
 mod tool_arguments;
 pub use api_operation_adapter::{ApiOperationError, ApiOperationTransaction};
+pub use conversation::group_companion_adapter::AudienceCorrectionOutcome;
 pub use conversation::conversation_copy_adapter::ConversationCopyLaunch;
 mod purge;
 

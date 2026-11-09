@@ -364,6 +364,7 @@ fn action(outcome: &MemoryToolOutcome) -> dto::MemoryCycleAction {
             (K::Created, None, Some(text.clone()))
         }
         MemoryToolOutcome::SocialEventRecorded => (K::Done, None, None),
+        MemoryToolOutcome::AudienceCorrected { .. } => (K::Done, None, None),
         MemoryToolOutcome::Done { .. } => (K::Done, None, None),
         MemoryToolOutcome::Rejected { .. } => (K::Rejected, None, None),
         MemoryToolOutcome::Skipped { .. } => (K::Skipped, None, None),
@@ -467,7 +468,11 @@ pub async fn memory_cycles(
                             .results
                             .iter()
                             .filter(|result| {
-                                !matches!(result.outcome, MemoryToolOutcome::SocialEventRecorded)
+                                !matches!(
+                                    result.outcome,
+                                    MemoryToolOutcome::SocialEventRecorded
+                                        | MemoryToolOutcome::AudienceCorrected { .. }
+                                )
                             })
                             .map(|result| action(&result.outcome))
                             .collect(),

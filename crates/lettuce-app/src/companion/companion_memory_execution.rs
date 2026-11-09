@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use lettuce_characters::{CharacterRepository, GroupRepository};
 use lettuce_companions::{
-    GroupCompanionMemoryRoundWriter, GroupCompanionRepository, GroupCompanionRoundOutputs,
-    GroupPerspectiveMemory, GroupSocialEvent,
+    GroupAudienceCorrection, GroupCompanionMemoryRoundWriter, GroupCompanionRepository,
+    GroupCompanionRoundOutputs, GroupPerspectiveMemory, GroupSocialEvent,
 };
 use lettuce_conversations::ConversationReader;
 use lettuce_embeddings::MemoryEmbeddingRepository;
@@ -427,6 +427,7 @@ where
     }
     let mut perspective_memories = Vec::new();
     let mut social_events = Vec::new();
+    let mut audience_corrections = Vec::new();
     for call in calls {
         match &call.arguments {
             MemoryToolArguments::CreatePerspectiveMemory {
@@ -530,6 +531,30 @@ where
                     },
                 ));
             }
+            MemoryToolArguments::CorrectAudience {
+                member,
+                heard,
+                scope,
+                source_message_id,
+            } => {
+                let Some(character_id) = labels.get(member.as_str()).copied() else {
+                    set_skipped(
+                        results,
+                        call.execution_id,
+                        MemoryToolSkipReason::MalformedArguments,
+                    );
+                    continue;
+                };
+                audience_corrections.push((
+                    call.execution_id,
+                    GroupAudienceCorrection {
+                        character_id,
+                        message_id: *source_message_id,
+                        heard: *heard,
+                        scope: *scope,
+                    },
+                ));
+            }
             _ => {}
         }
     }
@@ -538,6 +563,7 @@ where
         perspective_memories,
         write_back,
         social_events,
+        audience_corrections,
     })
 }
 

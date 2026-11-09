@@ -5,6 +5,7 @@
 mod consolidation;
 mod effect;
 mod group;
+mod group_audience;
 mod group_social;
 mod group_turn;
 mod growth;
@@ -18,6 +19,7 @@ mod state;
 pub use consolidation::*;
 pub use effect::*;
 pub use group::*;
+pub use group_audience::*;
 pub use group_social::*;
 pub use group_turn::*;
 pub use growth::*;

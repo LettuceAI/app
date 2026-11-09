@@ -79,6 +79,7 @@ export const queryKeys = {
     group: (conversationId: string) => ["companions", "group", conversationId] as const,
     groupState: (conversationId: string) => ["companions", "group", conversationId, "state"] as const,
     groupEffects: (conversationId: string, messageId: string) => ["companions", "group", conversationId, "effects", messageId] as const,
+    groupAudience: (conversationId: string, messageId: string) => ["companions", "group", conversationId, "audience", messageId] as const,
   },
   characterNotes: {
     all: ["character-notes"] as const,

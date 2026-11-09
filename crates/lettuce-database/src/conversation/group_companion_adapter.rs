@@ -1,19 +1,23 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::str::FromStr;
 
 use lettuce_companions::{
-    EmotionalState, GroupCompanionAuthor, GroupCompanionCheckpoint, GroupCompanionEffect,
-    GroupCompanionEvent, GroupCompanionMember, GroupCompanionMessageSource,
-    GroupCompanionRepository, GroupCompanionRepositoryError, GroupCompanionTurnWriter,
-    GroupMemberRelationship, PreparedGroupCompanionTurn, RelationshipState, reduce_group_event,
+    AudienceCorrectionOrigin, CompanionEmotionDelta, CompanionSignalChanges, EmotionVector,
+    EmotionalState, GroupBranchAudience, GroupCompanionAuthor, GroupCompanionCheckpoint,
+    GroupCompanionEffect, GroupCompanionEffectReason, GroupCompanionEvent, GroupCompanionMember,
+    GroupCompanionMessageSource, GroupCompanionRepository, GroupCompanionRepositoryError,
+    GroupCompanionTurnWriter, GroupMemberRelationship, GroupMessageAudienceMember,
+    PreparedGroupCompanionTurn, RelationshipState, group_audience_away, group_message_audience,
+    reduce_group_event,
 };
 use lettuce_conversations::{
     ContinueConversation, ContinueConversationResult, ConversationRepositoryError,
     SendConversation, SendConversationResult,
 };
+use lettuce_memory::AudienceScope;
 use lettuce_types::{
-    CharacterId, ConversationBranchId, ConversationId, MemorySpaceId, MessageCandidateId,
-    MessageId, MessageRevisionId, PersonaId, Revision, TimestampMillis,
+    CharacterId, ConversationBranchId, ConversationId, ConversationParticipantId, MemorySpaceId,
+    MessageCandidateId, MessageId, MessageRevisionId, PersonaId, Revision, TimestampMillis,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
@@ -314,6 +318,24 @@ impl GroupCompanionRepository for Database {
             .collect()
     }
 
+    fn checkpoints_for_path(
+        &self,
+        conversation_id: ConversationId,
+        path: &[MessageId],
+    ) -> Result<Vec<GroupCompanionCheckpoint>, Error> {
+        let connection = self.connection().map_err(failure)?;
+        load_checkpoints_for_path_in(&connection, conversation_id, path)
+    }
+
+    fn branch_audience(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+    ) -> Result<GroupBranchAudience, Error> {
+        let connection = self.connection().map_err(failure)?;
+        branch_audience_connection(&connection, conversation_id, branch_id)
+    }
+
     fn persona_relationship(
         &self,
         character_id: CharacterId,
@@ -470,33 +492,30 @@ impl GroupCompanionRepository for Database {
     fn message_presence(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         path: &[MessageId],
-    ) -> Result<Vec<(MessageId, CharacterId)>, Error> {
-        let path = serde_json::to_string(&path.iter().map(ToString::to_string).collect::<Vec<_>>())
-            .map_err(corrupt)?;
+    ) -> Result<BTreeMap<MessageId, BTreeSet<CharacterId>>, Error> {
         let connection = self.connection().map_err(failure)?;
-        let mut statement = connection
-            .prepare(
-                "SELECT DISTINCT c.message_id, c.character_id
-                 FROM group_companion_checkpoints c
-                 JOIN json_each(?2) p ON p.value = c.message_id
-                 WHERE c.conversation_id = ?1
-                 ORDER BY p.key, c.character_id",
-            )
-            .map_err(failure)?;
-        statement
-            .query_map(params![conversation_id.to_string(), path], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(failure)?
-            .map(|row| {
-                let (message_id, character_id) = row.map_err(failure)?;
-                Ok((
-                    MessageId::from_str(&message_id).map_err(corrupt)?,
-                    CharacterId::from_str(&character_id).map_err(corrupt)?,
-                ))
-            })
-            .collect()
+        let audience = branch_audience_connection(&connection, conversation_id, branch_id)?;
+        let mut presence = BTreeMap::new();
+        for message_id in path {
+            if let Some(members) = audience.audience.get(message_id) {
+                presence.insert(*message_id, members.clone());
+            }
+        }
+        Ok(presence)
+    }
+}
+
+impl Database {
+    pub fn group_message_audience(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        message_id: MessageId,
+    ) -> Result<Vec<GroupMessageAudienceMember>, GroupCompanionRepositoryError> {
+        let connection = self.connection().map_err(failure)?;
+        group_message_audience_connection(&connection, conversation_id, branch_id, message_id)
     }
 }
 
@@ -567,6 +586,359 @@ pub(crate) fn load_checkpoints_for_path_in(
             .map_err(failure)?
     };
     load_checkpoints(connection, conversation_id, rows)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudienceCorrectionOutcome {
+    Applied,
+    AlreadyApplied,
+    Invalid,
+    UserSet,
+}
+
+pub(crate) fn branch_audience_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<GroupBranchAudience, Error> {
+    let mut participants = BTreeMap::new();
+    {
+        let mut statement = transaction
+            .prepare(
+                "SELECT id, source_id FROM conversation_participants
+                 WHERE conversation_id = ?1 AND role = 'character'
+                   AND source_kind = 'character'",
+            )
+            .map_err(failure)?;
+        for row in statement
+            .query_map([conversation_id.to_string()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(failure)?
+        {
+            let (participant_id, character_id) = row.map_err(failure)?;
+            participants.insert(
+                ConversationParticipantId::from_str(&participant_id).map_err(corrupt)?,
+                CharacterId::from_str(&character_id).map_err(corrupt)?,
+            );
+        }
+    }
+    let rows = {
+        let mut statement = transaction
+            .prepare(
+                "WITH RECURSIVE ancestry(id) AS (
+                   SELECT coalesce(head_message_id, fork_message_id)
+                   FROM conversation_branches
+                   WHERE conversation_id = ?1 AND id = ?2
+                     AND coalesce(head_message_id, fork_message_id) IS NOT NULL
+                   UNION ALL
+                   SELECT m.parent_message_id FROM conversation_messages AS m
+                   JOIN ancestry ON m.id = ancestry.id
+                   WHERE m.conversation_id = ?1 AND m.parent_message_id IS NOT NULL
+                 )
+                 SELECT m.id, m.author_participant_id
+                 FROM conversation_messages AS m JOIN ancestry ON ancestry.id = m.id
+                 WHERE m.conversation_id = ?1 AND m.visibility = 'visible'
+                   AND m.role IN ('user', 'assistant')
+                 ORDER BY m.timeline_ordinal",
+            )
+            .map_err(failure)?;
+        statement
+            .query_map(
+                params![conversation_id.to_string(), branch_id.to_string()],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .map_err(failure)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(failure)?
+    };
+    let mut path = Vec::new();
+    let mut authors = BTreeMap::new();
+    for (message_id, participant_id) in rows {
+        let message_id = MessageId::from_str(&message_id).map_err(corrupt)?;
+        path.push(message_id);
+        let Some(participant_id) = participant_id else {
+            continue;
+        };
+        let participant_id =
+            ConversationParticipantId::from_str(&participant_id).map_err(corrupt)?;
+        if let Some(character_id) = participants.get(&participant_id) {
+            authors.insert(message_id, *character_id);
+        }
+    }
+    let checkpoints = load_checkpoints_for_path_in(transaction, conversation_id, &path)?;
+    let audience = group_message_audience(&path, &authors, &checkpoints);
+    let away = group_audience_away(&path, &authors, &checkpoints);
+    Ok(GroupBranchAudience {
+        path,
+        authors,
+        checkpoints,
+        audience,
+        away,
+    })
+}
+
+pub(crate) fn branch_audience_connection(
+    connection: &Connection,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<GroupBranchAudience, Error> {
+    let transaction = connection.unchecked_transaction().map_err(failure)?;
+    branch_audience_in(&transaction, conversation_id, branch_id)
+}
+
+fn enabled_character_members(
+    connection: &Connection,
+    conversation_id: ConversationId,
+) -> Result<Vec<CharacterId>, Error> {
+    let mut statement = connection
+        .prepare(
+            "SELECT source_id FROM conversation_participants
+             WHERE conversation_id = ?1 AND role = 'character'
+               AND source_kind = 'character' AND enabled = 1
+             ORDER BY ordinal",
+        )
+        .map_err(failure)?;
+    statement
+        .query_map([conversation_id.to_string()], |row| row.get::<_, String>(0))
+        .map_err(failure)?
+        .map(|row| {
+            let value = row.map_err(failure)?;
+            CharacterId::from_str(&value).map_err(corrupt)
+        })
+        .collect()
+}
+
+pub(crate) fn group_message_audience_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    message_id: MessageId,
+) -> Result<Vec<GroupMessageAudienceMember>, Error> {
+    let branch = branch_audience_in(transaction, conversation_id, branch_id)?;
+    let position = branch
+        .path
+        .iter()
+        .position(|value| *value == message_id)
+        .ok_or_else(|| invalid("the message is not on the branch's visible path"))?;
+    let away_after = group_audience_away(
+        &branch.path[..=position],
+        &branch.authors,
+        &branch.checkpoints,
+    );
+    let heard = branch
+        .audience
+        .get(&message_id)
+        .cloned()
+        .unwrap_or_default();
+    enabled_character_members(transaction, conversation_id).map(|members| {
+        members
+            .into_iter()
+            .map(|character_id| GroupMessageAudienceMember {
+                character_id,
+                heard: heard.contains(&character_id),
+                away_after: away_after.contains(&character_id),
+            })
+            .collect()
+    })
+}
+
+fn group_message_audience_connection(
+    connection: &Connection,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    message_id: MessageId,
+) -> Result<Vec<GroupMessageAudienceMember>, Error> {
+    let transaction = connection.unchecked_transaction().map_err(failure)?;
+    group_message_audience_in(&transaction, conversation_id, branch_id, message_id)
+}
+
+fn audience_effect(reason: GroupCompanionEffectReason, by_user: bool) -> GroupCompanionEffect {
+    GroupCompanionEffect {
+        reason,
+        social_event: None,
+        emotion_delta: CompanionEmotionDelta::default(),
+        relationship_change: None,
+        signal_changes: CompanionSignalChanges::default(),
+        by_user,
+    }
+}
+
+fn is_audience_effect(reason: GroupCompanionEffectReason) -> bool {
+    matches!(
+        reason,
+        GroupCompanionEffectReason::Unheard
+            | GroupCompanionEffectReason::LeftAudience
+            | GroupCompanionEffectReason::Overheard
+            | GroupCompanionEffectReason::JoinedAudience
+    )
+}
+
+fn default_emotional_state() -> EmotionalState {
+    EmotionalState {
+        felt: EmotionVector::default(),
+        expressed: EmotionVector::default(),
+        blocked: EmotionVector::default(),
+        momentum: EmotionVector::default(),
+        active_drivers: Vec::new(),
+        confidence: 0.5,
+        updated_at: TimestampMillis::UNIX_EPOCH,
+    }
+}
+
+pub(crate) fn apply_audience_correction_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    message_id: MessageId,
+    character_id: CharacterId,
+    heard: bool,
+    scope: AudienceScope,
+    origin: AudienceCorrectionOrigin,
+    now: TimestampMillis,
+) -> Result<AudienceCorrectionOutcome, Error> {
+    let member = transaction
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM conversation_participants
+                WHERE conversation_id = ?1 AND role = 'character'
+                  AND source_kind = 'character' AND source_id = ?2
+             )",
+            params![conversation_id.to_string(), character_id.to_string()],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(failure)?;
+    if !member {
+        return Ok(AudienceCorrectionOutcome::Invalid);
+    }
+    let branch = branch_audience_in(transaction, conversation_id, branch_id)?;
+    let Some(position) = branch.path.iter().position(|value| *value == message_id) else {
+        return Ok(AudienceCorrectionOutcome::Invalid);
+    };
+    if branch.authors.get(&message_id) == Some(&character_id) {
+        return Ok(AudienceCorrectionOutcome::Invalid);
+    }
+    let reason = match (heard, scope) {
+        (false, AudienceScope::Message) => GroupCompanionEffectReason::Unheard,
+        (false, AudienceScope::Onward) => GroupCompanionEffectReason::LeftAudience,
+        (true, AudienceScope::Message) => GroupCompanionEffectReason::Overheard,
+        (true, AudienceScope::Onward) => GroupCompanionEffectReason::JoinedAudience,
+    };
+    let checkpoint = branch.checkpoints.iter().find(|checkpoint| {
+        checkpoint.message_id == message_id && checkpoint.character_id == character_id
+    });
+    if origin == AudienceCorrectionOrigin::Model
+        && checkpoint.is_some_and(|checkpoint| {
+            checkpoint
+                .effects
+                .iter()
+                .any(|effect| is_audience_effect(effect.reason) && effect.by_user)
+        })
+    {
+        return Ok(AudienceCorrectionOutcome::UserSet);
+    }
+    if checkpoint.is_some_and(|checkpoint| {
+        checkpoint
+            .effects
+            .iter()
+            .any(|effect| effect.reason == reason)
+    }) {
+        return Ok(AudienceCorrectionOutcome::AlreadyApplied);
+    }
+    let mut working = branch.checkpoints.clone();
+    if let Some(checkpoint) = working.iter_mut().find(|checkpoint| {
+        checkpoint.message_id == message_id && checkpoint.character_id == character_id
+    }) {
+        checkpoint
+            .effects
+            .retain(|effect| !is_audience_effect(effect.reason));
+        checkpoint.effects.push(audience_effect(
+            reason,
+            origin == AudienceCorrectionOrigin::User,
+        ));
+    } else if heard {
+        let prior = branch
+            .checkpoints
+            .iter()
+            .filter(|checkpoint| checkpoint.character_id == character_id)
+            .filter_map(|checkpoint| {
+                branch
+                    .path
+                    .iter()
+                    .position(|value| *value == checkpoint.message_id)
+                    .filter(|prior| *prior < position)
+                    .map(|prior| (prior, checkpoint))
+            })
+            .max_by_key(|(prior, _)| *prior)
+            .map(|(_, checkpoint)| checkpoint);
+        working.push(GroupCompanionCheckpoint {
+            message_id,
+            character_id,
+            source: load_message_source(transaction, conversation_id, message_id)?,
+            emotional_state: prior
+                .map(|checkpoint| checkpoint.emotional_state.clone())
+                .unwrap_or_else(default_emotional_state),
+            member_relationships: prior
+                .map(|checkpoint| checkpoint.member_relationships.clone())
+                .unwrap_or_default(),
+            effects: vec![audience_effect(
+                reason,
+                origin == AudienceCorrectionOrigin::User,
+            )],
+            created_at: now,
+        });
+    } else {
+        return Ok(AudienceCorrectionOutcome::Invalid);
+    }
+    let audience = group_message_audience(&branch.path, &branch.authors, &working);
+    let away = group_audience_away(&branch.path, &branch.authors, &working);
+    let previous_heard = branch
+        .audience
+        .get(&message_id)
+        .cloned()
+        .unwrap_or_default();
+    let next_heard = audience.get(&message_id).cloned().unwrap_or_default();
+    if previous_heard == next_heard && branch.away == away {
+        return Ok(AudienceCorrectionOutcome::Invalid);
+    }
+    let updated = working
+        .into_iter()
+        .filter(|checkpoint| checkpoint.message_id == message_id)
+        .collect::<Vec<_>>();
+    replace_message_checkpoints_in(transaction, conversation_id, message_id, &updated)?;
+    Ok(AudienceCorrectionOutcome::Applied)
+}
+
+pub(crate) fn remove_audience_correction_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+    character_id: CharacterId,
+    heard: bool,
+    scope: AudienceScope,
+) -> Result<(), Error> {
+    let reason = match (heard, scope) {
+        (false, AudienceScope::Message) => GroupCompanionEffectReason::Unheard,
+        (false, AudienceScope::Onward) => GroupCompanionEffectReason::LeftAudience,
+        (true, AudienceScope::Message) => GroupCompanionEffectReason::Overheard,
+        (true, AudienceScope::Onward) => GroupCompanionEffectReason::JoinedAudience,
+    };
+    let mut checkpoints =
+        load_checkpoints_for_message_in(transaction, conversation_id, message_id)?;
+    let Some(checkpoint) = checkpoints
+        .iter_mut()
+        .find(|checkpoint| checkpoint.character_id == character_id)
+    else {
+        return Ok(());
+    };
+    let before = checkpoint.effects.len();
+    checkpoint
+        .effects
+        .retain(|effect| effect.reason != reason || effect.by_user);
+    if checkpoint.effects.len() == before {
+        return Ok(());
+    }
+    replace_message_checkpoints_in(transaction, conversation_id, message_id, &checkpoints)
 }
 
 pub(crate) fn load_persona_relationship_in(
@@ -1117,6 +1489,16 @@ mod tests {
             )
             .expect("message");
             tx.execute(
+                "UPDATE conversation_branches SET head_message_id = ?3
+                 WHERE conversation_id = ?1 AND id = ?2",
+                params![
+                    self.conversation_id.to_string(),
+                    self.branch_id.to_string(),
+                    message_id.to_string()
+                ],
+            )
+            .expect("branch head");
+            tx.execute(
                 "INSERT INTO conversation_message_revisions (
                    conversation_id, id, message_id, branch_id, sequence, parts_json,
                    authored_at
@@ -1196,6 +1578,7 @@ mod tests {
                 added: vec![signal.into()],
                 removed: Vec::new(),
             },
+            by_user: false,
         }
     }
 
@@ -1720,6 +2103,15 @@ mod tests {
         let fixture = Fixture::new();
         let [first, second] = fixture.characters;
         let message_id = fixture.append_message(false, 1, 10);
+        write_checkpoints(
+            &fixture.database,
+            fixture.conversation_id,
+            message_id,
+            &[
+                checkpoint(message_id, first, second, "first", Vec::new()),
+                checkpoint(message_id, second, first, "second", Vec::new()),
+            ],
+        );
         let shared = MemorySpaceId::new();
         let pool = MemorySpaceId::new();
         MemoryRepository::create(
@@ -1908,6 +2300,7 @@ mod tests {
             }],
             write_back: vec![first],
             social_events: Vec::new(),
+            audience_corrections: Vec::new(),
         };
         let settlement = fixture
             .database
@@ -1958,6 +2351,608 @@ mod tests {
             MemoryToolOutcome::PerspectiveCreated { character_id, .. }
                 if character_id == first
         ));
+    }
+
+    #[test]
+    fn companion_audience_correction_drops_later_perspective_and_social_events() {
+        let fixture = hydrated_group_fixture();
+        let [first, second] = fixture.characters;
+        let aggregate = lettuce_conversations::ConversationReader::get(
+            &fixture.database,
+            fixture.conversation_id,
+        )
+        .expect("conversation");
+        let user = aggregate
+            .conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::User)
+            .expect("user participant");
+        let appended = ConversationRepository::append_message(
+            &fixture.database,
+            &AppendMessage {
+                conversation_id: fixture.conversation_id,
+                branch_id: fixture.branch_id,
+                expected_revision: aggregate.conversation.revision,
+                operation: OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new("audience-second").expect("key"),
+                    request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                },
+                message: MessageDraft {
+                    role: MessageRole::User,
+                    author_participant_id: Some(user.id),
+                    parts: vec![MessagePart::Text {
+                        text: "Later".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(3),
+        )
+        .expect("second message")
+        .value;
+        let later_message_id = appended.id;
+        write_checkpoints(
+            &fixture.database,
+            fixture.conversation_id,
+            fixture.message_id,
+            &[
+                checkpoint(fixture.message_id, first, second, "first", Vec::new()),
+                checkpoint(fixture.message_id, second, first, "second", Vec::new()),
+            ],
+        );
+        write_checkpoints(
+            &fixture.database,
+            fixture.conversation_id,
+            later_message_id,
+            &[
+                checkpoint(later_message_id, first, second, "first", Vec::new()),
+                checkpoint(later_message_id, second, first, "second", Vec::new()),
+            ],
+        );
+        let shared = MemorySpaceId::new();
+        MemoryRepository::create(
+            &fixture.database,
+            MemorySpaceSnapshot {
+                id: shared,
+                revision: Revision::INITIAL,
+                items: Vec::new(),
+            },
+        )
+        .expect("shared space");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_memory_spaces
+                 (conversation_id, branch_id, space_id, pooled)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![
+                    fixture.conversation_id.to_string(),
+                    fixture.branch_id.to_string(),
+                    shared.to_string()
+                ],
+            )
+            .expect("shared binding");
+
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        fixture
+            .database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id,
+                attempt_id,
+                conversation_id: fixture.conversation_id,
+                branch_id: fixture.branch_id,
+                space_id: shared,
+                starting_memory: fixture
+                    .database
+                    .get(shared)
+                    .expect("memory")
+                    .expect("space"),
+                cycle_start_change: None,
+                source_messages: vec![
+                    DynamicMemorySourceMessage {
+                        message_id: fixture.message_id,
+                        role: MessageRole::User,
+                        render_source: fixture.render_source,
+                        effective_time: TimestampMillis::new(2),
+                    },
+                    DynamicMemorySourceMessage {
+                        message_id: later_message_id,
+                        role: MessageRole::User,
+                        render_source: appended.active_render_source,
+                        effective_time: TimestampMillis::new(3),
+                    },
+                ],
+                profile: profile(),
+                time_awareness_enabled: false,
+                supersession_enabled: false,
+                group_companion_members: vec![("m1".into(), first), ("m2".into(), second)],
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 0,
+                    end: 2,
+                },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: true,
+                        supersession_enabled: false,
+                        require_source_message_id: false,
+                        group_companion: Some(vec!["m1".into(), "m2".into()]),
+                    },
+                    &|key| key.to_owned(),
+                ),
+                job_id: JobId::new(),
+                job_attempt: None,
+                now: TimestampMillis::new(10),
+            })
+            .expect("admit run");
+        let processing = fixture
+            .database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                Revision::new(1),
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(10),
+            )
+            .expect("start attempt");
+
+        let correction_call = ToolExecutionId::new();
+        let perspective_call = ToolExecutionId::new();
+        let social_call = ToolExecutionId::new();
+        admit_social_round(
+            &fixture.database,
+            run_id,
+            attempt_id,
+            0,
+            0,
+            vec![
+                round_call(
+                    correction_call,
+                    "correct_audience",
+                    json!({
+                        "member": "m2",
+                        "heard": false,
+                        "scope": "onward",
+                        "source_message_id": fixture.message_id.to_string()
+                    }),
+                ),
+                round_call(
+                    perspective_call,
+                    "create_perspective_memory",
+                    json!({
+                        "member": "m2",
+                        "text": "Bea missed this.",
+                        "category": "relationship",
+                        "source_message_id": later_message_id.to_string()
+                    }),
+                ),
+                round_call(
+                    social_call,
+                    "record_social_event",
+                    json!({
+                        "kind": "support",
+                        "from": "m1",
+                        "to": "m2",
+                        "source_message_id": later_message_id.to_string()
+                    }),
+                ),
+            ],
+            TimestampMillis::new(10),
+        );
+        let event = GroupSocialEvent {
+            kind: "support".into(),
+            from: Some(first),
+            to: second,
+            source_message_id: later_message_id,
+        };
+        let settlement = fixture
+            .database
+            .commit_group_companion_memory_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id,
+                    round_ordinal: 0,
+                    space_id: shared,
+                    expected_memory_revision: Revision::INITIAL,
+                    change: None,
+                    results: vec![
+                        MemoryToolResult {
+                            execution_id: correction_call,
+                            outcome: MemoryToolOutcome::Done { summary: None },
+                        },
+                        MemoryToolResult {
+                            execution_id: perspective_call,
+                            outcome: MemoryToolOutcome::Done { summary: None },
+                        },
+                        MemoryToolResult {
+                            execution_id: social_call,
+                            outcome: MemoryToolOutcome::Done { summary: None },
+                        },
+                    ],
+                },
+                GroupCompanionRoundOutputs {
+                    members: vec![
+                        (first, CompanionSoulConfig::default()),
+                        (second, CompanionSoulConfig::default()),
+                    ],
+                    perspective_memories: vec![GroupPerspectiveMemory {
+                        execution_id: perspective_call,
+                        character_id: second,
+                        text: "Bea missed this.".into(),
+                        category: MemoryCategory::Relationship,
+                        important: false,
+                        source_message_id: later_message_id,
+                        observed_at: TimestampMillis::new(3),
+                    }],
+                    write_back: Vec::new(),
+                    social_events: vec![(social_call, event)],
+                    audience_corrections: vec![(
+                        correction_call,
+                        lettuce_companions::GroupAudienceCorrection {
+                            character_id: second,
+                            message_id: fixture.message_id,
+                            heard: false,
+                            scope: lettuce_memory::AudienceScope::Onward,
+                        },
+                    )],
+                },
+                &social_catalog(),
+                TimestampMillis::new(11),
+            )
+            .expect("commit audience round");
+        assert!(matches!(
+            settlement.results[0].outcome,
+            MemoryToolOutcome::AudienceCorrected {
+                character_id,
+                message_id,
+                heard: false,
+                scope: lettuce_memory::AudienceScope::Onward,
+            } if character_id == second && message_id == fixture.message_id
+        ));
+        assert_eq!(
+            settlement.results[1].outcome,
+            MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::MalformedArguments
+            }
+        );
+        assert_eq!(
+            settlement.results[2].outcome,
+            MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::MalformedArguments
+            }
+        );
+        let checkpoints = fixture
+            .database
+            .checkpoints_for_message(fixture.conversation_id, fixture.message_id)
+            .expect("first checkpoints");
+        let target = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == second)
+            .expect("target checkpoint");
+        assert!(
+            target
+                .effects
+                .iter()
+                .any(|effect| effect.reason == GroupCompanionEffectReason::LeftAudience)
+        );
+        let later = fixture
+            .database
+            .checkpoints_for_message(fixture.conversation_id, later_message_id)
+            .expect("later checkpoints");
+        let target = later
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == second)
+            .expect("later target checkpoint");
+        assert!(
+            !target
+                .effects
+                .iter()
+                .any(|effect| effect.reason == GroupCompanionEffectReason::SocialEvent)
+        );
+        let perspective = fixture
+            .database
+            .perspective_space(fixture.conversation_id, fixture.branch_id, second)
+            .expect("perspective space");
+        assert!(perspective.is_none());
+
+        let replay_call = ToolExecutionId::new();
+        admit_social_round(
+            &fixture.database,
+            run_id,
+            attempt_id,
+            1,
+            3,
+            vec![round_call(
+                replay_call,
+                "correct_audience",
+                json!({
+                    "member": "m2",
+                    "heard": false,
+                    "scope": "onward",
+                    "source_message_id": fixture.message_id.to_string()
+                }),
+            )],
+            TimestampMillis::new(11),
+        );
+        let replay = fixture
+            .database
+            .commit_group_companion_memory_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id,
+                    round_ordinal: 1,
+                    space_id: shared,
+                    expected_memory_revision: settlement.resulting_memory_revision,
+                    change: None,
+                    results: vec![MemoryToolResult {
+                        execution_id: replay_call,
+                        outcome: MemoryToolOutcome::Done { summary: None },
+                    }],
+                },
+                GroupCompanionRoundOutputs {
+                    members: vec![
+                        (first, CompanionSoulConfig::default()),
+                        (second, CompanionSoulConfig::default()),
+                    ],
+                    perspective_memories: Vec::new(),
+                    write_back: Vec::new(),
+                    social_events: Vec::new(),
+                    audience_corrections: vec![(
+                        replay_call,
+                        lettuce_companions::GroupAudienceCorrection {
+                            character_id: second,
+                            message_id: fixture.message_id,
+                            heard: false,
+                            scope: lettuce_memory::AudienceScope::Onward,
+                        },
+                    )],
+                },
+                &social_catalog(),
+                TimestampMillis::new(12),
+            )
+            .expect("replay audience correction");
+        assert_eq!(
+            replay.results[0].outcome,
+            MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::AlreadyApplied
+            }
+        );
+        {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("transaction");
+            let user_outcome = apply_audience_correction_in(
+                &transaction,
+                fixture.conversation_id,
+                fixture.branch_id,
+                fixture.message_id,
+                second,
+                false,
+                AudienceScope::Message,
+                AudienceCorrectionOrigin::User,
+                TimestampMillis::new(13),
+            )
+            .expect("apply user correction");
+            assert_eq!(user_outcome, AudienceCorrectionOutcome::Applied);
+            transaction.commit().expect("commit");
+        }
+        let blocked_call = ToolExecutionId::new();
+        admit_social_round(
+            &fixture.database,
+            run_id,
+            attempt_id,
+            2,
+            4,
+            vec![round_call(
+                blocked_call,
+                "correct_audience",
+                json!({
+                    "member": "m2",
+                    "heard": false,
+                    "scope": "onward",
+                    "source_message_id": fixture.message_id.to_string()
+                }),
+            )],
+            TimestampMillis::new(13),
+        );
+        let blocked = fixture
+            .database
+            .commit_group_companion_memory_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id,
+                    round_ordinal: 2,
+                    space_id: shared,
+                    expected_memory_revision: replay.resulting_memory_revision,
+                    change: None,
+                    results: vec![MemoryToolResult {
+                        execution_id: blocked_call,
+                        outcome: MemoryToolOutcome::Done { summary: None },
+                    }],
+                },
+                GroupCompanionRoundOutputs {
+                    members: vec![
+                        (first, CompanionSoulConfig::default()),
+                        (second, CompanionSoulConfig::default()),
+                    ],
+                    perspective_memories: Vec::new(),
+                    write_back: Vec::new(),
+                    social_events: Vec::new(),
+                    audience_corrections: vec![(
+                        blocked_call,
+                        lettuce_companions::GroupAudienceCorrection {
+                            character_id: second,
+                            message_id: fixture.message_id,
+                            heard: false,
+                            scope: lettuce_memory::AudienceScope::Onward,
+                        },
+                    )],
+                },
+                &social_catalog(),
+                TimestampMillis::new(14),
+            )
+            .expect("commit blocked audience correction");
+        assert_eq!(
+            blocked.results[0].outcome,
+            MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::UserEdited
+            }
+        );
+        let checkpoints = fixture
+            .database
+            .checkpoints_for_message(fixture.conversation_id, fixture.message_id)
+            .expect("user-corrected checkpoints");
+        let target = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == second)
+            .expect("target checkpoint");
+        assert!(target.effects.iter().any(|effect| {
+            effect.reason == GroupCompanionEffectReason::Unheard && effect.by_user
+        }));
+        assert!(
+            !target
+                .effects
+                .iter()
+                .any(|effect| effect.reason == GroupCompanionEffectReason::LeftAudience)
+        );
+        fixture
+            .database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                processing.revision,
+                DynamicMemoryAttemptStatus::Succeeded,
+                None,
+                TimestampMillis::new(15),
+            )
+            .expect("finish attempt");
+        revert_companion_round(
+            &fixture,
+            &CompanionMemoryRound {
+                run_id,
+                shared,
+                pool: MemorySpaceId::new(),
+                message_id: fixture.message_id,
+                perspective: MemorySpaceId::new(),
+            },
+            20,
+        )
+        .expect("revert audience round");
+        let checkpoints = fixture
+            .database
+            .checkpoints_for_message(fixture.conversation_id, fixture.message_id)
+            .expect("reverted checkpoints");
+        let target = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == second)
+            .expect("target checkpoint");
+        assert!(
+            !target
+                .effects
+                .iter()
+                .any(|effect| effect.reason == GroupCompanionEffectReason::LeftAudience)
+        );
+        assert!(target.effects.iter().any(|effect| {
+            effect.reason == GroupCompanionEffectReason::Unheard && effect.by_user
+        }));
+    }
+
+    #[test]
+    fn audience_correction_inserts_a_carrying_checkpoint() {
+        let fixture = hydrated_group_fixture();
+        let [first, second] = fixture.characters;
+        let aggregate = lettuce_conversations::ConversationReader::get(
+            &fixture.database,
+            fixture.conversation_id,
+        )
+        .expect("conversation");
+        let user = aggregate
+            .conversation
+            .participants
+            .iter()
+            .find(|participant| participant.role == ParticipantRole::User)
+            .expect("user participant");
+        let appended = ConversationRepository::append_message(
+            &fixture.database,
+            &AppendMessage {
+                conversation_id: fixture.conversation_id,
+                branch_id: fixture.branch_id,
+                expected_revision: aggregate.conversation.revision,
+                operation: OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new("audience-carry").expect("key"),
+                    request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
+                },
+                message: MessageDraft {
+                    role: MessageRole::User,
+                    author_participant_id: Some(user.id),
+                    parts: vec![MessagePart::Text {
+                        text: "Later".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(3),
+        )
+        .expect("second message")
+        .value;
+        let first_checkpoint = checkpoint(fixture.message_id, second, first, "second", Vec::new());
+        write_checkpoints(
+            &fixture.database,
+            fixture.conversation_id,
+            fixture.message_id,
+            &[first_checkpoint.clone()],
+        );
+        write_checkpoints(
+            &fixture.database,
+            fixture.conversation_id,
+            appended.id,
+            &[checkpoint(appended.id, first, second, "first", Vec::new())],
+        );
+        let mut connection = fixture.database.connection().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        let outcome = apply_audience_correction_in(
+            &transaction,
+            fixture.conversation_id,
+            fixture.branch_id,
+            appended.id,
+            second,
+            true,
+            AudienceScope::Message,
+            AudienceCorrectionOrigin::Model,
+            TimestampMillis::new(20),
+        )
+        .expect("apply correction");
+        assert_eq!(outcome, AudienceCorrectionOutcome::Applied);
+        let checkpoints =
+            load_checkpoints_for_message_in(&transaction, fixture.conversation_id, appended.id)
+                .expect("checkpoints");
+        transaction.commit().expect("commit");
+        let inserted = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == second)
+            .expect("inserted checkpoint");
+        assert_eq!(inserted.effects.len(), 1);
+        assert_eq!(
+            inserted.effects[0].reason,
+            GroupCompanionEffectReason::Overheard
+        );
+        assert_eq!(inserted.emotional_state, first_checkpoint.emotional_state);
+        assert_eq!(
+            inserted.member_relationships,
+            first_checkpoint.member_relationships
+        );
+        assert_eq!(inserted.created_at, TimestampMillis::new(20));
     }
 
     #[derive(Debug)]
@@ -2203,6 +3198,7 @@ mod tests {
             }],
             write_back: vec![first],
             social_events: vec![(social_call, event)],
+            audience_corrections: Vec::new(),
         };
         fixture
             .database
@@ -2816,6 +3812,7 @@ mod tests {
                     perspective_memories: Vec::new(),
                     write_back: Vec::new(),
                     social_events: vec![(first_call, event.clone())],
+                    audience_corrections: Vec::new(),
                 },
                 &social_catalog(),
                 TimestampMillis::new(11),
@@ -2888,6 +3885,7 @@ mod tests {
                     perspective_memories: Vec::new(),
                     write_back: Vec::new(),
                     social_events: vec![(replay_call, event)],
+                    audience_corrections: Vec::new(),
                 },
                 &social_catalog(),
                 TimestampMillis::new(12),
@@ -2976,6 +3974,7 @@ mod tests {
                             },
                         ),
                     ],
+                    audience_corrections: Vec::new(),
                 },
                 &social_catalog(),
                 TimestampMillis::new(13),

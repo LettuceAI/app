@@ -1346,6 +1346,53 @@ impl GroupCompanionMemoryRoundWriter for Database {
             .enumerate()
             .map(|(position, result)| (result.execution_id, position))
             .collect::<BTreeMap<_, _>>();
+        for (execution_id, correction) in &outputs.audience_corrections {
+            let outcome =
+                crate::conversation::group_companion_adapter::apply_audience_correction_in(
+                    &transaction,
+                    run.conversation_id,
+                    run.branch_id,
+                    correction.message_id,
+                    correction.character_id,
+                    correction.heard,
+                    correction.scope,
+                    lettuce_companions::AudienceCorrectionOrigin::Model,
+                    now,
+                )
+                .map_err(|error| {
+                    storage_because("a group audience correction could not be applied")(error)
+                })?;
+            let result = match outcome {
+                crate::AudienceCorrectionOutcome::Applied => {
+                    MemoryToolOutcome::AudienceCorrected {
+                        character_id: correction.character_id,
+                        message_id: correction.message_id,
+                        heard: correction.heard,
+                        scope: correction.scope,
+                    }
+                }
+                crate::AudienceCorrectionOutcome::AlreadyApplied => MemoryToolOutcome::Skipped {
+                    reason: MemoryToolSkipReason::AlreadyApplied,
+                },
+                crate::AudienceCorrectionOutcome::Invalid => MemoryToolOutcome::Skipped {
+                    reason: MemoryToolSkipReason::MalformedArguments,
+                },
+                crate::AudienceCorrectionOutcome::UserSet => MemoryToolOutcome::Skipped {
+                    reason: MemoryToolSkipReason::UserEdited,
+                },
+            };
+            set_result_outcome(&mut commit.results, &result_index, *execution_id, result);
+        }
+        let branch_audience =
+            crate::conversation::group_companion_adapter::branch_audience_in(
+                &transaction,
+                run.conversation_id,
+                run.branch_id,
+            )
+            .map_err(|error| {
+                storage_because("the group audience could not be read")(error)
+            })?;
+        let audience = &branch_audience.audience;
         let mut spaces = BTreeMap::new();
         for memory in &outputs.perspective_memories {
             let source = run
@@ -1363,6 +1410,20 @@ impl GroupCompanionMemoryRoundWriter for Database {
                 );
                 continue;
             };
+            if !audience
+                .get(&memory.source_message_id)
+                .is_some_and(|members| members.contains(&memory.character_id))
+            {
+                set_result_outcome(
+                    &mut commit.results,
+                    &result_index,
+                    memory.execution_id,
+                    MemoryToolOutcome::Skipped {
+                        reason: MemoryToolSkipReason::MalformedArguments,
+                    },
+                );
+                continue;
+            }
             let space_id = match spaces.get(&memory.character_id) {
                 Some(space_id) => *space_id,
                 None => {
@@ -1540,6 +1601,7 @@ impl GroupCompanionMemoryRoundWriter for Database {
                 &members,
                 &path,
                 &checkpoints,
+                audience,
                 &persona_relationships,
                 &already_applied,
                 &events,

@@ -1211,6 +1211,7 @@
       "towardOthers": "Wie {{name}} die anderen sieht",
       "noStance": "Noch keine",
       "noCheckpoint": "{{name}} hat noch keine Runde erlebt. Das sind die Startwerte.",
+      "notFollowing": "{{name}} folgt dem Gespräch gerade nicht und erfährt nichts vom Gesagten, bis {{name}} wieder spricht oder zurück markiert wird.",
       "stanceLabel": "{{from}} gegenüber {{to}}: {{band}}",
       "stanceTitle": "{{from}} gegenüber {{to}}",
       "effectSummary": "Betroffen: {{names}}",
@@ -1247,6 +1248,19 @@
         "exclusion": "Ausgrenzung",
         "threat": "Drohung"
       }
+    },
+    "audience": {
+      "title": "Wer das gehört hat",
+      "nobody": "Niemand",
+      "body": "Mitglieder, die eine Nachricht gehört haben, können sich daran erinnern und darauf reagieren. Das Gedächtnismodell korrigiert das beim Lesen; deine Änderungen hier haben immer Vorrang.",
+      "scope": "Anwenden auf",
+      "scopeMessage": "Diese Nachricht",
+      "scopeOnward": "Ab hier",
+      "scopeMessageBody": "Nur diese Nachricht, wie ein Flüstern",
+      "scopeOnwardBody": "Diese und spätere Nachrichten, bis wieder gesprochen wird",
+      "speaker": "Hat diese Nachricht geschrieben",
+      "awayAfter": "Folgt danach nicht mehr",
+      "heard": "{{name}} hat das gehört"
     }
   }
 }

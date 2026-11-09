@@ -1211,6 +1211,7 @@
       "towardOthers": "Hoe {{name}} de anderen ziet",
       "noStance": "Nog geen",
       "noCheckpoint": "{{name}} heeft nog geen beurt meegemaakt. Dit zijn de beginwaarden.",
+      "notFollowing": "{{name}} volgt het gesprek nu niet en weet niet wat er gezegd wordt tot {{name}} weer spreekt of terug wordt gemarkeerd.",
       "stanceLabel": "{{from}} richting {{to}}: {{band}}",
       "stanceTitle": "{{from}} richting {{to}}",
       "effectSummary": "Betrokken: {{names}}",
@@ -1247,6 +1248,19 @@
         "exclusion": "buitensluiten",
         "threat": "dreiging"
       }
+    },
+    "audience": {
+      "title": "Wie dit hoorde",
+      "nobody": "Niemand",
+      "body": "Leden die een bericht hoorden, kunnen het onthouden en erop reageren. Het geheugenmodel corrigeert dit tijdens het lezen; jouw wijzigingen hier gaan altijd voor.",
+      "scope": "Toepassen op",
+      "scopeMessage": "Dit bericht",
+      "scopeOnward": "Vanaf hier",
+      "scopeMessageBody": "Alleen dit bericht, zoals gefluister",
+      "scopeOnwardBody": "Dit en latere berichten, tot er weer gesproken wordt",
+      "speaker": "Schreef dit bericht",
+      "awayAfter": "Volgt hierna niet",
+      "heard": "{{name}} hoorde dit"
     }
   }
 }

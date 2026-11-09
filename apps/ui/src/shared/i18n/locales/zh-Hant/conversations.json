@@ -1180,6 +1180,7 @@
       "towardOthers": "{{name}} 如何看待其他人",
       "noStance": "尚無",
       "noCheckpoint": "{{name}} 還沒有經歷過任何回合。這些是初始值。",
+      "notFollowing": "{{name}}目前沒有在聽對話，在再次發言或被標記回來之前，不會知道說了什麼。",
       "stanceLabel": "{{from}} 對 {{to}}：{{band}}",
       "stanceTitle": "{{from}} 對 {{to}}",
       "effectSummary": "受影響：{{names}}",
@@ -1216,6 +1217,19 @@
         "exclusion": "排擠",
         "threat": "威脅"
       }
+    },
+    "audience": {
+      "title": "誰聽到了這則",
+      "nobody": "沒有人",
+      "body": "聽到某則訊息的成員可以記住並回應它。記憶模型會在閱讀時修正這一點；你在這裡的修改永遠優先。",
+      "scope": "套用於",
+      "scopeMessage": "這則訊息",
+      "scopeOnward": "從這裡開始",
+      "scopeMessageBody": "僅這則訊息，像是悄悄話",
+      "scopeOnwardBody": "這則及之後的訊息，直到再次發言",
+      "speaker": "寫了這則訊息",
+      "awayAfter": "此後未在聽",
+      "heard": "{{name}}聽到了這則"
     }
   }
 }

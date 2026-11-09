@@ -604,6 +604,7 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
                 | "current_memory_tokens"
                 | "hot_token_budget"
                 | "group_companion_members"
+                | "group_companion_heard"
         ),
         PromptPurpose::ReplyHelperRoleplay | PromptPurpose::ReplyHelperConversational => {
             value == "current_draft"
@@ -723,6 +724,7 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "scheduled_notes"
             | "group_characters"
             | "group_companion_members"
+            | "group_companion_heard"
             | "prev_summary"
             | "character"
             | "max_entries"
@@ -1496,6 +1498,7 @@ mod tests {
             "memory_skip_social_event_recorded",
             "memory_skip_duplicate_semantic",
             "memory_skip_duplicate_overlap",
+            "memory_transcript_heard",
         ];
         for key in lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS
             .into_iter()
