@@ -867,7 +867,9 @@
       "reasoningEffort": {
         "low": "Alacsony",
         "medium": "Közepes",
-        "high": "Magas"
+        "high": "Magas",
+        "xhigh": "Nagyon magas",
+        "max": "Maximális"
       },
       "promptCachingEnabled": {
         "disabled": "Ki",

@@ -867,7 +867,9 @@
       "reasoningEffort": {
         "low": "Laag",
         "medium": "Middel",
-        "high": "Hoog"
+        "high": "Hoog",
+        "xhigh": "Zeer hoog",
+        "max": "Maximaal"
       },
       "promptCachingEnabled": {
         "disabled": "Uit",

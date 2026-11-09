@@ -684,6 +684,8 @@ fn reasoning_budget(effort: ReasoningEffort) -> u32 {
         ReasoningEffort::Low => 2_048,
         ReasoningEffort::Medium => 8_192,
         ReasoningEffort::High => 16_384,
+        ReasoningEffort::XHigh => 32_768,
+        ReasoningEffort::Max => 65_536,
     }
 }
 

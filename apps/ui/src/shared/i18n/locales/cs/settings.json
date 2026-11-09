@@ -881,7 +881,9 @@
       "reasoningEffort": {
         "low": "Nízká",
         "medium": "Střední",
-        "high": "Vysoká"
+        "high": "Vysoká",
+        "xhigh": "Velmi vysoká",
+        "max": "Maximální"
       },
       "promptCachingEnabled": {
         "disabled": "Vypnuto",

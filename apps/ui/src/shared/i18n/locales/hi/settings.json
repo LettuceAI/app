@@ -867,7 +867,9 @@
       "reasoningEffort": {
         "low": "कम",
         "medium": "मध्यम",
-        "high": "ज़्यादा"
+        "high": "ज़्यादा",
+        "xhigh": "बहुत ज़्यादा",
+        "max": "अधिकतम"
       },
       "promptCachingEnabled": {
         "disabled": "बंद",

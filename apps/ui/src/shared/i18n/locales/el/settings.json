@@ -867,7 +867,9 @@
       "reasoningEffort": {
         "low": "Χαμηλή",
         "medium": "Μεσαία",
-        "high": "Υψηλή"
+        "high": "Υψηλή",
+        "xhigh": "Πολύ υψηλή",
+        "max": "Μέγιστη"
       },
       "promptCachingEnabled": {
         "disabled": "Ανενεργή",

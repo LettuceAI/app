@@ -30,6 +30,7 @@ export function editorSections(kind: EditorKind, openRouter: boolean): EditorSec
       group("sampler", ["ollamaMinP", "ollamaTypicalP", "ollamaTfsZ", "ollamaRepeatPenalty", "ollamaSeed", "ollamaStop"]),
       group("mirostat", ["ollamaMirostat", "ollamaMirostatTau", "ollamaMirostatEta"]),
     ], true),
+    section("reasoning", [{ toggle: "reasoningEnabled", fields: ["reasoningEffort"] }]),
     section("server", [{ fields: ["ollamaNumCtx", "ollamaNumPredict", "ollamaNumKeep"] }, group("hardware", ["ollamaNumGpu", "ollamaNumThread", "ollamaNumBatch"])]),
   ];
   if (kind === "local") return [
@@ -40,8 +41,8 @@ export function editorSections(kind: EditorKind, openRouter: boolean): EditorSec
       group("dry", ["llamaDryMultiplier", "llamaDryBase", "llamaDryAllowedLength", "llamaDryPenaltyLastN", "llamaDrySequenceBreakers"]),
       group("xtc", ["llamaXtcProbability", "llamaXtcThreshold"]),
       group("adaptive", ["llamaAdaptiveTarget", "llamaAdaptiveDecay"]),
-      group("reasoning", ["reasoningEnabled", "forceGemma4Reasoning"]),
     ], true),
+    section("reasoning", [{ toggle: "reasoningEnabled", fields: ["reasoningEffort", "reasoningBudgetTokens"] }, group("compatibility", ["forceSendThinkingState", "forceGemma4Reasoning"])]),
     section("memory", [
       { fields: ["contextLength"] },
       group("kv", ["llamaKvType", "llamaKvTypeK", "llamaKvTypeV", "llamaKvPlacement", "llamaSwaFull", "llamaFlashAttention"]),

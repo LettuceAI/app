@@ -8711,7 +8711,7 @@ export type SettingsPromptCaching = "disabled" | { enabled: {
 
 export type SettingsPureMode = "off" | "standard" | "strict" | "low";
 
-export type SettingsReasoningEffort = "low" | "medium" | "high";
+export type SettingsReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export type SettingsReasoningMode = "disabled" | "enabled";
 

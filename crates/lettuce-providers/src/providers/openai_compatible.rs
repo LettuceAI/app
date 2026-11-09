@@ -676,7 +676,9 @@ const fn reasoning_effort(effort: ReasoningEffort) -> &'static str {
     match effort {
         ReasoningEffort::Low => "low",
         ReasoningEffort::Medium => "medium",
-        ReasoningEffort::High => "high",
+        // The OpenAI reasoning_effort field accepts low/medium/high; XHigh and Max
+        // clamp to "high" and take their extra budget from the resolved budget.
+        ReasoningEffort::High | ReasoningEffort::XHigh | ReasoningEffort::Max => "high",
     }
 }
 

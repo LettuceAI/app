@@ -860,7 +860,9 @@
       "reasoningEffort": {
         "low": "ต่ำ",
         "medium": "กลาง",
-        "high": "สูง"
+        "high": "สูง",
+        "xhigh": "สูงมาก",
+        "max": "สูงสุด"
       },
       "promptCachingEnabled": {
         "disabled": "ปิด",

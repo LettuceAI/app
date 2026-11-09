@@ -1307,7 +1307,9 @@ const fn gemini_reasoning_level(effort: ReasoningEffort) -> &'static str {
     match effort {
         ReasoningEffort::Low => "LOW",
         ReasoningEffort::Medium => "MEDIUM",
-        ReasoningEffort::High => "HIGH",
+        // Gemini's thinking level tops out at HIGH; XHigh/Max clamp to it and take
+        // their extra depth from the resolved thinking budget.
+        ReasoningEffort::High | ReasoningEffort::XHigh | ReasoningEffort::Max => "HIGH",
     }
 }
 

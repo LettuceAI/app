@@ -895,7 +895,9 @@
       "reasoningEffort": {
         "low": "Düşük",
         "medium": "Orta",
-        "high": "Yüksek"
+        "high": "Yüksek",
+        "xhigh": "Çok yüksek",
+        "max": "En yüksek"
       },
       "promptCachingEnabled": {
         "disabled": "Kapalı",

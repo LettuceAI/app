@@ -309,6 +309,9 @@ pub enum SettingsReasoningEffort {
     Low,
     Medium,
     High,
+    #[serde(rename = "xhigh")]
+    XHigh,
+    Max,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -655,7 +655,8 @@ fn ollama_think(parameters: &lettuce_models::ResolvedChatParameters) -> Option<O
         Some(effort) => OllamaThink::Effort(match effort {
             ReasoningEffort::Low => "low",
             ReasoningEffort::Medium => "medium",
-            ReasoningEffort::High => "high",
+            // Ollama's think API tops out at "high"; XHigh/Max clamp to it.
+            ReasoningEffort::High | ReasoningEffort::XHigh | ReasoningEffort::Max => "high",
         }),
         None => OllamaThink::Enabled(true),
     })

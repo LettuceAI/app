@@ -867,7 +867,9 @@
       "reasoningEffort": {
         "low": "Mababa",
         "medium": "Katamtaman",
-        "high": "Mataas"
+        "high": "Mataas",
+        "xhigh": "Napakataas",
+        "max": "Maximum"
       },
       "promptCachingEnabled": {
         "disabled": "Naka-off",

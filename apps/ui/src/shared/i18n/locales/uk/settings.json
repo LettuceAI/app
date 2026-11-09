@@ -881,7 +881,9 @@
       "reasoningEffort": {
         "low": "Низьке",
         "medium": "Середнє",
-        "high": "Високе"
+        "high": "Високе",
+        "xhigh": "Дуже високе",
+        "max": "Максимум"
       },
       "promptCachingEnabled": {
         "disabled": "Вимкнено",

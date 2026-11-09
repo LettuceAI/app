@@ -198,7 +198,9 @@ export const editorFields = {
     "options": [
       "low",
       "medium",
-      "high"
+      "high",
+      "xhigh",
+      "max"
     ]
   },
   "reasoningBudgetTokens": {

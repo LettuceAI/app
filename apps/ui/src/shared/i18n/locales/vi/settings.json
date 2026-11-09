@@ -860,7 +860,9 @@
       "reasoningEffort": {
         "low": "Thấp",
         "medium": "Vừa",
-        "high": "Cao"
+        "high": "Cao",
+        "xhigh": "Rất cao",
+        "max": "Tối đa"
       },
       "promptCachingEnabled": {
         "disabled": "Tắt",
