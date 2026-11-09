@@ -1,0 +1,1 @@
+ALTER TABLE dynamic_memory_runs ADD COLUMN group_companion_members_json TEXT NOT NULL DEFAULT '[]';

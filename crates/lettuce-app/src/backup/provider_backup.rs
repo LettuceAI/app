@@ -1575,6 +1575,7 @@ mod tests {
                 profile: dynamic_profile.clone(),
                 time_awareness_enabled: true,
                 supersession_enabled: true,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Json,
                 summary_window: DynamicMemorySummaryWindow {
                     message_interval: 1,
@@ -1586,6 +1587,7 @@ mod tests {
                         group: false,
                         supersession_enabled: true,
                         require_source_message_id: true,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -1667,6 +1669,7 @@ mod tests {
                 profile: dynamic_profile,
                 time_awareness_enabled: false,
                 supersession_enabled: false,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: DynamicMemorySummaryWindow {
                     message_interval: 1,
@@ -1678,6 +1681,7 @@ mod tests {
                         group: false,
                         supersession_enabled: false,
                         require_source_message_id: false,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),

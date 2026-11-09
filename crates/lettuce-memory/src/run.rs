@@ -5,8 +5,8 @@ use lettuce_conversations::{
     ReplayRetention, ResolvedInferenceProfile, ToolPolicy, ToolRequest,
 };
 use lettuce_types::{
-    ConversationBranchId, ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId, JobId,
-    MemorySpaceId, MessageId, Revision, TimestampMillis, ToolExecutionId,
+    CharacterId, ConversationBranchId, ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId,
+    JobId, MemorySpaceId, MessageId, Revision, TimestampMillis, ToolExecutionId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -119,6 +119,8 @@ pub struct DynamicMemoryRun {
     pub profile: ResolvedInferenceProfile,
     pub time_awareness_enabled: bool,
     pub supersession_enabled: bool,
+    #[serde(default)]
+    pub group_companion_members: Vec<(String, CharacterId)>,
     pub structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
     pub summary_window: DynamicMemorySummaryWindow,
     pub tool_request: ToolRequest,
@@ -161,14 +163,38 @@ impl DynamicMemoryRun {
                 reason: "inference profile does not require tool calls",
             });
         }
-        if ![false, true].into_iter().any(|group| {
+        let companion_labels = self
+            .group_companion_members
+            .iter()
+            .map(|(label, _)| label.clone())
+            .collect::<Vec<_>>();
+        let options = if companion_labels.is_empty() {
+            vec![
+                DynamicMemoryToolOptions {
+                    group: false,
+                    supersession_enabled: self.supersession_enabled,
+                    require_source_message_id: self.time_awareness_enabled,
+                    group_companion: None,
+                },
+                DynamicMemoryToolOptions {
+                    group: true,
+                    supersession_enabled: self.supersession_enabled,
+                    require_source_message_id: self.time_awareness_enabled,
+                    group_companion: None,
+                },
+            ]
+        } else {
+            vec![DynamicMemoryToolOptions {
+                group: true,
+                supersession_enabled: self.supersession_enabled,
+                require_source_message_id: self.time_awareness_enabled,
+                group_companion: Some(companion_labels),
+            }]
+        };
+        if !options.into_iter().any(|options| {
             dynamic_memory_tool_shape(&self.tool_request)
                 == dynamic_memory_tool_shape(&dynamic_memory_tool_request_for_run(
-                    DynamicMemoryToolOptions {
-                        group,
-                        supersession_enabled: self.supersession_enabled,
-                        require_source_message_id: self.time_awareness_enabled,
-                    },
+                    options,
                     &|key| key.to_owned(),
                 ))
         }) {
@@ -213,6 +239,7 @@ pub struct NewDynamicMemoryRunAttempt {
     pub profile: ResolvedInferenceProfile,
     pub time_awareness_enabled: bool,
     pub supersession_enabled: bool,
+    pub group_companion_members: Vec<(String, CharacterId)>,
     pub structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
     pub summary_window: DynamicMemorySummaryWindow,
     /// The memory tool contract with its catalog texts, frozen with the run.

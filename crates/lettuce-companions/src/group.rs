@@ -6,14 +6,14 @@ use lettuce_conversations::{
 };
 use lettuce_types::{
     CharacterId, ConversationBranchId, ConversationId, MemorySpaceId, MessageCandidateId,
-    MessageId, MessageRevisionId, PersonaId, Revision, TimestampMillis,
+    MessageId, MessageRevisionId, PersonaId, Revision, TimestampMillis, ToolExecutionId,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     CompanionEmotionDelta, CompanionSignalBundle, CompanionSignalChanges, CompanionSoulConfig,
-    EmotionalState, GroupCompanionMemberState, GroupCompanionStep, RelationshipDelta,
-    RelationshipState,
+    EmotionalState, GroupCompanionMemberState, GroupCompanionStep, GroupSocialEvent,
+    GroupSocialEventCatalog, RelationshipDelta, RelationshipState,
 };
 
 const MAX_SIGNAL_BYTES: usize = 256;
@@ -145,6 +145,39 @@ pub trait GroupCompanionRepository: Send + Sync {
         conversation_id: ConversationId,
         path: &[MessageId],
     ) -> Result<Vec<(MessageId, CharacterId)>, GroupCompanionRepositoryError>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupPerspectiveMemory {
+    pub execution_id: ToolExecutionId,
+    pub character_id: CharacterId,
+    pub text: String,
+    pub category: lettuce_memory::MemoryCategory,
+    pub important: bool,
+    pub source_message_id: MessageId,
+    pub observed_at: TimestampMillis,
+}
+
+#[derive(Debug, Clone)]
+pub struct GroupCompanionRoundOutputs {
+    pub members: Vec<(CharacterId, CompanionSoulConfig)>,
+    pub perspective_memories: Vec<GroupPerspectiveMemory>,
+    /// Members whose companion pool also receives their perspective memories.
+    pub write_back: Vec<CharacterId>,
+    pub social_events: Vec<(ToolExecutionId, GroupSocialEvent)>,
+}
+
+pub trait GroupCompanionMemoryRoundWriter: Send + Sync {
+    fn commit_group_companion_memory_round(
+        &self,
+        commit: lettuce_memory::DynamicMemoryBackgroundRoundCommit,
+        outputs: GroupCompanionRoundOutputs,
+        catalog: &GroupSocialEventCatalog,
+        now: TimestampMillis,
+    ) -> Result<
+        lettuce_memory::DynamicMemoryBackgroundRoundSettlement,
+        lettuce_memory::DynamicMemoryRunRepositoryError,
+    >;
 }
 
 #[derive(Debug, Clone, PartialEq)]

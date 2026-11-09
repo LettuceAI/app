@@ -61,7 +61,7 @@ pub use tool::{
     DynamicMemoryToolOptions, ListedMemory, MemoryBatchResult, MemoryCycleBudget,
     MemoryCycleFinish, MemoryCycleStart, MemoryReference, MemoryToolArguments, MemoryToolCall,
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
-    MemoryToolSkipReason, SemanticDuplicateEvidence, SoftDeleteReason,
+    MemoryToolSkipReason, SOCIAL_EVENT_KINDS, SemanticDuplicateEvidence, SoftDeleteReason,
     dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape, list_memories,
     skip_user_edited_calls, undo_memory_tool_outcomes, undo_memory_tool_outcomes_preserving,
 };

@@ -360,6 +360,10 @@ fn action(outcome: &MemoryToolOutcome) -> dto::MemoryCycleAction {
         MemoryToolOutcome::Pinned { id, .. } => (K::Pinned, Some(id.to_string()), None),
         MemoryToolOutcome::Unpinned { id, .. } => (K::Unpinned, Some(id.to_string()), None),
         MemoryToolOutcome::TargetNotFound { .. } => (K::TargetNotFound, None, None),
+        MemoryToolOutcome::PerspectiveCreated { text, .. } => {
+            (K::Created, None, Some(text.clone()))
+        }
+        MemoryToolOutcome::SocialEventRecorded => (K::Done, None, None),
         MemoryToolOutcome::Done { .. } => (K::Done, None, None),
         MemoryToolOutcome::Rejected { .. } => (K::Rejected, None, None),
         MemoryToolOutcome::Skipped { .. } => (K::Skipped, None, None),
@@ -462,6 +466,9 @@ pub async fn memory_cycles(
                         actions: cycle
                             .results
                             .iter()
+                            .filter(|result| {
+                                !matches!(result.outcome, MemoryToolOutcome::SocialEventRecorded)
+                            })
                             .map(|result| action(&result.outcome))
                             .collect(),
                         reverted: cycle.reverted,

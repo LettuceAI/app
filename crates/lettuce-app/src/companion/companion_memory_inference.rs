@@ -7,7 +7,7 @@ use lettuce_context::{
 use lettuce_conversations::{
     ContextAttributions, ContextBudgetReport, ConversationReader, ConversationRepositoryError,
     FinishReason, GenerationOperation, InferenceOutcome, InferencePort, InferenceRequest,
-    MessagePart, MessageRenderSource, MessageRole, PortError, PromptAttribution,
+    MessagePart, MessageRenderSource, MessageRole, ParticipantSource, PortError, PromptAttribution,
     ProviderContextPart, ProviderNeutralContext, ProviderNeutralMessage,
     ProviderReplayArtifactPort, ToolPolicy,
 };
@@ -162,6 +162,22 @@ impl<
             });
         }
         let sources = materialize_sources(self.conversations, &run)?;
+        let group_companion_members = run
+            .group_companion_members
+            .iter()
+            .map(|(label, character_id)| {
+                let name = aggregate
+                    .conversation
+                    .participants
+                    .iter()
+                    .find(|participant| {
+                        participant.source == ParticipantSource::Character(*character_id)
+                    })
+                    .map(|participant| participant.display_name.clone())
+                    .unwrap_or_else(|| label.clone());
+                (label.clone(), name)
+            })
+            .collect::<Vec<_>>();
         let text = crate::generation::runtime_text::RuntimeText::load(
             self.repository,
             crate::BuiltInPromptId::MemoryRuntime,
@@ -178,6 +194,7 @@ impl<
             policy,
             &memory,
             &sources,
+            &group_companion_members,
             aggregate.conversation.kind.is_group(),
             aggregate.conversation.participants.len(),
             handle,
@@ -649,6 +666,7 @@ fn build_first_request(
     policy: &MemoryPolicy,
     memory: &MemorySpaceSnapshot,
     sources: &[MaterializedSource],
+    group_companion_members: &[(String, String)],
     is_group: bool,
     participant_count: usize,
     handle: &JobHandle,
@@ -721,6 +739,8 @@ fn build_first_request(
                         source.message_id, source.text
                     )
                 }
+            } else if !run.group_companion_members.is_empty() {
+                format!("[message:{}] {role}: {}", source.message_id, source.text)
             } else {
                 format!("{role}: {}", source.text)
             }
@@ -750,6 +770,16 @@ fn build_first_request(
         PromptVariable::HotTokenBudget,
         policy.hot_token_budget.to_string(),
     );
+    if !group_companion_members.is_empty() {
+        values.purpose_values.insert(
+            PromptVariable::GroupCompanionMembers,
+            group_companion_members
+                .iter()
+                .map(|(label, name)| format!("- {label}: {name}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
     if run.time_awareness_enabled {
         crate::companion::companion_memory_summary::insert_time_values(&mut values, now);
     }
@@ -1518,6 +1548,7 @@ mod tests {
                 profile: profile(),
                 time_awareness_enabled: false,
                 supersession_enabled: false,
+                group_companion_members: Vec::new(),
                 structured_fallback_format:
                     lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
@@ -1621,6 +1652,7 @@ mod tests {
             &policy,
             &memory,
             &sources,
+            &[],
             false,
             2,
             &handle,
@@ -1685,6 +1717,7 @@ mod tests {
             &policy,
             &memory,
             &sources,
+            &[],
             true,
             2,
             &handle,
@@ -1735,6 +1768,7 @@ mod tests {
             &policy,
             &memory,
             &sources,
+            &[],
             false,
             2,
             &handle,
@@ -1812,6 +1846,7 @@ mod tests {
                 &policy,
                 &memory,
                 &sources,
+                &[],
                 group,
                 2,
                 &handle,

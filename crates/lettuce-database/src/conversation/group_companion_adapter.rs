@@ -500,6 +500,108 @@ impl GroupCompanionRepository for Database {
     }
 }
 
+pub(crate) fn ensure_perspective_space_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    character_id: CharacterId,
+) -> Result<MemorySpaceId, Error> {
+    let existing = transaction
+        .query_row(
+            "SELECT space_id FROM group_companion_memory_spaces
+             WHERE conversation_id = ?1 AND branch_id = ?2 AND character_id = ?3",
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                character_id.to_string()
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(failure)?;
+    if let Some(value) = existing {
+        return MemorySpaceId::from_str(&value).map_err(corrupt);
+    }
+    crate::memory::memory_adapter::create_perspective_space_in(
+        transaction,
+        conversation_id,
+        branch_id,
+        character_id,
+    )
+    .map_err(failure)
+}
+
+pub(crate) fn load_checkpoints_for_path_in(
+    connection: &Connection,
+    conversation_id: ConversationId,
+    path: &[MessageId],
+) -> Result<Vec<GroupCompanionCheckpoint>, Error> {
+    let path = serde_json::to_string(&path.iter().map(ToString::to_string).collect::<Vec<_>>())
+        .map_err(corrupt)?;
+    let rows = {
+        let mut statement = connection
+            .prepare(
+                "SELECT c.message_id, c.character_id, c.source_revision_id,
+                        c.source_candidate_id, c.emotional_state_json,
+                        c.member_relationships_json, c.created_at
+                 FROM group_companion_checkpoints c
+                 JOIN json_each(?2) p ON p.value = c.message_id
+                 WHERE c.conversation_id = ?1
+                 ORDER BY p.key, c.character_id",
+            )
+            .map_err(failure)?;
+        statement
+            .query_map(params![conversation_id.to_string(), path], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                ))
+            })
+            .map_err(failure)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(failure)?
+    };
+    load_checkpoints(connection, conversation_id, rows)
+}
+
+pub(crate) fn load_persona_relationship_in(
+    connection: &Connection,
+    character_id: CharacterId,
+    persona_id: Option<PersonaId>,
+) -> Result<Option<(Revision, RelationshipState)>, Error> {
+    connection
+        .query_row(
+            "SELECT closeness, trust, affection, tension, stability, interaction_count,
+                    last_interaction_at, revision
+             FROM companion_relationship_states
+             WHERE character_id = ?1 AND persona_key = ?2",
+            params![character_id.to_string(), persona_key(persona_id)],
+            |row| {
+                Ok((
+                    RelationshipState {
+                        closeness: row.get(0)?,
+                        trust: row.get(1)?,
+                        affection: row.get(2)?,
+                        tension: row.get(3)?,
+                        stability: row.get(4)?,
+                        interaction_count: row.get(5)?,
+                        last_interaction_at: TimestampMillis::new(row.get(6)?),
+                    },
+                    row.get::<_, i64>(7)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(corrupt)?
+        .map(|(state, revision)| Ok((parse_revision(revision)?, state)))
+        .transpose()
+}
+
 #[allow(dead_code)]
 pub(crate) fn replace_message_checkpoints_in(
     tx: &Transaction<'_>,
@@ -847,13 +949,40 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+    use crate::memory::dynamic_memory_run_adapter::tests::profile;
     use lettuce_companions::{
         CompanionEmotionDelta, CompanionSignalChanges, CompanionSoulConfig, EmotionVector,
-        GroupCompanionEffectReason, GroupCompanionRelationshipChange, GroupCompanionStep,
-        GroupCompanionTarget, RelationshipDelta, RelationshipState,
+        GroupCompanionEffectReason, GroupCompanionMemoryRoundWriter,
+        GroupCompanionRelationshipChange, GroupCompanionRoundOutputs, GroupCompanionStep,
+        GroupCompanionTarget, GroupPerspectiveMemory, GroupSocialEvent, GroupSocialEventCatalog,
+        RelationshipDelta, RelationshipState,
     };
-    use lettuce_types::{ConversationBranchId, ConversationParticipantId};
+    use lettuce_conversations::{
+        AppendMessage, ArtifactCodec, ArtifactRetention, CharacterLaunchSnapshot,
+        ConversationCreator, ConversationKind, ConversationParticipantDraft,
+        ConversationRepository, CreateConversationPlan, GroupChatModeSnapshot,
+        GroupConversationDetails, GroupLaunchSnapshot, GroupMemberLaunchSnapshot,
+        GroupParticipantPolicyDocument, GroupParticipantPolicySnapshot,
+        GroupSpeakerSelectionSnapshot, InitialTimelineDraft, MessageDraft, MessagePart,
+        MessageRenderSource, MessageRole, MessageVisibility, OperationToken, ParticipantRole,
+        ParticipantSource, PreparedConversationLaunch, ProposedToolCall, ProtectedArtifactBytes,
+        ProtectedSnapshotRef, SnapshotArtifactDraft, SnapshotSelection, SnapshotSource,
+    };
+    use lettuce_memory::{
+        DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
+        DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryRunRepository,
+        DynamicMemorySourceMessage, DynamicMemoryStructuredFallbackFormat, MemoryCategory,
+        MemoryChangeSet, MemoryItem, MemoryRepository, MemorySpaceSnapshot, MemoryToolOutcome,
+        MemoryToolResult, MemoryToolSkipReason, NewDynamicMemoryInferenceRound,
+        NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score,
+    };
+    use lettuce_types::{
+        CharacterId, ContentHash, ConversationBranchId, ConversationParticipantId,
+        DynamicMemoryAttemptId, DynamicMemoryRunId, GroupId, JobId, MemoryId, MessageRevisionId,
+        SnapshotArtifactId, ToolExecutionId,
+    };
     use rusqlite::TransactionBehavior;
+    use serde_json::json;
 
     struct Fixture {
         database: Database,
@@ -1530,5 +1659,912 @@ mod tests {
                 .expect("unshared pool"),
             None
         );
+    }
+
+    fn round_call(
+        id: ToolExecutionId,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> NewDynamicMemoryToolCall {
+        NewDynamicMemoryToolCall {
+            id,
+            definition_version: 1,
+            call: ProposedToolCall {
+                provider_call_id: None,
+                name: name.into(),
+                arguments,
+                raw_arguments: None,
+                provider_replay: None,
+            },
+        }
+    }
+
+    fn social_catalog() -> GroupSocialEventCatalog {
+        GroupSocialEventCatalog::from_json(
+            r#"{"version":1,"kinds":[{"kind":"support","emotion":{"warmth":0.1,"trust":0.0,"calm":0.0,"vulnerability":0.0,"longing":0.0,"hurt":0.0,"tension":0.0,"irritation":0.0,"affectionIntensity":0.0,"reassuranceNeed":0.0},"relationship":{"closeness":0.1,"trust":0.0,"affection":0.0,"tension":0.0,"stability":0.0},"witness_emotion":null}]}"#,
+        )
+        .expect("social catalog")
+    }
+
+    fn shared_item(text: &str, source_message_id: MessageId) -> MemoryItem {
+        let id = MemoryId::new();
+        MemoryItem {
+            id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
+            text: text.into(),
+            origin: lettuce_memory::MemoryOrigin::Model,
+            category: Some(MemoryCategory::PlotEvent),
+            source_message_id: Some(source_message_id),
+            source_role: Some(MessageRole::User),
+            observed_at: Some(TimestampMillis::new(10)),
+            observed_time_precision: Some("turn".into()),
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: Some(4),
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::FULL,
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(10),
+            last_accessed_at: TimestampMillis::new(10),
+        }
+    }
+
+    #[test]
+    fn companion_memory_round_commits_perspective_and_pool_items() {
+        let fixture = Fixture::new();
+        let [first, second] = fixture.characters;
+        let message_id = fixture.append_message(false, 1, 10);
+        let shared = MemorySpaceId::new();
+        let pool = MemorySpaceId::new();
+        MemoryRepository::create(
+            &fixture.database,
+            MemorySpaceSnapshot {
+                id: shared,
+                revision: Revision::INITIAL,
+                items: Vec::new(),
+            },
+        )
+        .expect("shared space");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_memory_spaces
+                 (conversation_id, branch_id, space_id, pooled)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![
+                    fixture.conversation_id.to_string(),
+                    fixture.branch_id.to_string(),
+                    shared.to_string()
+                ],
+            )
+            .expect("shared binding");
+        MemoryRepository::create(
+            &fixture.database,
+            MemorySpaceSnapshot {
+                id: pool,
+                revision: Revision::INITIAL,
+                items: Vec::new(),
+            },
+        )
+        .expect("pool space");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO companion_memory_pools (character_id, space_id) VALUES (?1, ?2)",
+                params![first.to_string(), pool.to_string()],
+            )
+            .expect("pool row");
+
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let revision_id = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT active_revision_id FROM conversation_messages
+                 WHERE conversation_id = ?1 AND id = ?2",
+                params![fixture.conversation_id.to_string(), message_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("message revision")
+            .parse::<MessageRevisionId>()
+            .expect("revision id");
+        let admission = NewDynamicMemoryRunAttempt {
+            run_id,
+            attempt_id,
+            conversation_id: fixture.conversation_id,
+            branch_id: fixture.branch_id,
+            space_id: shared,
+            starting_memory: fixture
+                .database
+                .get(shared)
+                .expect("memory")
+                .expect("space"),
+            cycle_start_change: None,
+            source_messages: vec![DynamicMemorySourceMessage {
+                message_id,
+                role: MessageRole::User,
+                render_source: MessageRenderSource::Revision(revision_id),
+                effective_time: TimestampMillis::new(10),
+            }],
+            profile: profile(),
+            time_awareness_enabled: false,
+            supersession_enabled: false,
+            group_companion_members: vec![("m1".into(), first), ("m2".into(), second)],
+            structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+            summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 1,
+                start: 0,
+                end: 1,
+            },
+            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                lettuce_memory::DynamicMemoryToolOptions {
+                    group: true,
+                    supersession_enabled: false,
+                    require_source_message_id: false,
+                    group_companion: Some(vec!["m1".into(), "m2".into()]),
+                },
+                &|key| key.to_owned(),
+            ),
+            job_id: JobId::new(),
+            job_attempt: None,
+            now: TimestampMillis::new(10),
+        };
+        fixture
+            .database
+            .admit_dynamic_memory_run_attempt(admission)
+            .expect("admit run");
+        fixture
+            .database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                Revision::new(1),
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(10),
+            )
+            .expect("start attempt");
+
+        let shared_call = ToolExecutionId::new();
+        let perspective_call = ToolExecutionId::new();
+        let round = NewDynamicMemoryInferenceRound {
+            ordinal: 0,
+            kind: DynamicMemoryRoundKind::Manager,
+            request_context: lettuce_conversations::ProviderNeutralContext {
+                messages: Vec::new(),
+                attributions: Default::default(),
+                budget: Default::default(),
+            },
+            parts: Vec::new(),
+            provider_replay: None,
+            usage: None,
+            finish_reason: DynamicMemoryRoundFinishReason::Stop,
+            provider_request_id: None,
+            calls: vec![
+                round_call(
+                    shared_call,
+                    "create_memory",
+                    json!({"text":"The group agreed on tea","category":"plot_event","source_message_id":message_id.to_string()}),
+                ),
+                round_call(
+                    perspective_call,
+                    "create_perspective_memory",
+                    json!({"member":"m1","text":"Ada thinks Bea was covering for Cole.","category":"relationship","source_message_id":message_id.to_string()}),
+                ),
+            ],
+            admitted_at: TimestampMillis::new(10),
+        };
+        fixture
+            .database
+            .admit_dynamic_memory_inference_round(run_id, attempt_id, 0, 0, round)
+            .expect("round");
+
+        let commit = DynamicMemoryBackgroundRoundCommit {
+            run_id,
+            attempt_id,
+            round_ordinal: 0,
+            space_id: shared,
+            expected_memory_revision: Revision::INITIAL,
+            change: Some(MemoryChangeSet {
+                space_id: shared,
+                expected_revision: Revision::INITIAL,
+                items: vec![shared_item("The group agreed on tea", message_id)],
+            }),
+            results: vec![
+                MemoryToolResult {
+                    execution_id: shared_call,
+                    outcome: MemoryToolOutcome::Done { summary: None },
+                },
+                MemoryToolResult {
+                    execution_id: perspective_call,
+                    outcome: MemoryToolOutcome::Done { summary: None },
+                },
+            ],
+        };
+        let outputs = GroupCompanionRoundOutputs {
+            members: vec![
+                (first, CompanionSoulConfig::default()),
+                (second, CompanionSoulConfig::default()),
+            ],
+            perspective_memories: vec![GroupPerspectiveMemory {
+                execution_id: perspective_call,
+                character_id: first,
+                text: "Ada thinks Bea was covering for Cole.".into(),
+                category: MemoryCategory::Relationship,
+                important: false,
+                source_message_id: message_id,
+                observed_at: TimestampMillis::new(10),
+            }],
+            write_back: vec![first],
+            social_events: Vec::new(),
+        };
+        let settlement = fixture
+            .database
+            .commit_group_companion_memory_round(
+                commit,
+                outputs,
+                &social_catalog(),
+                TimestampMillis::new(11),
+            )
+            .expect("commit round");
+
+        assert_eq!(
+            fixture
+                .database
+                .get(shared)
+                .expect("shared")
+                .expect("space")
+                .items
+                .len(),
+            1
+        );
+        let perspective = fixture
+            .database
+            .ensure_perspective_space(fixture.conversation_id, fixture.branch_id, first)
+            .expect("perspective space");
+        let perspective_items = fixture
+            .database
+            .get(perspective)
+            .expect("perspective")
+            .expect("space")
+            .items;
+        assert_eq!(perspective_items.len(), 1);
+        assert_eq!(perspective_items[0].source_message_id, Some(message_id));
+        assert_eq!(
+            perspective_items[0].category,
+            Some(MemoryCategory::Relationship)
+        );
+        let pool_items = fixture
+            .database
+            .get(pool)
+            .expect("pool")
+            .expect("space")
+            .items;
+        assert_eq!(pool_items.len(), 1);
+        assert_eq!(pool_items[0].text, perspective_items[0].text);
+        assert!(matches!(
+            settlement.results[1].outcome,
+            MemoryToolOutcome::PerspectiveCreated { character_id, .. }
+                if character_id == first
+        ));
+    }
+
+    fn artifact(
+        source: SnapshotSource,
+        payload: &[u8],
+    ) -> (ProtectedSnapshotRef, SnapshotArtifactDraft) {
+        let artifact_id = SnapshotArtifactId::new();
+        let bytes = ProtectedArtifactBytes::new(payload.to_vec()).expect("bytes");
+        let reference = ProtectedSnapshotRef {
+            source,
+            source_revision: Revision::INITIAL,
+            artifact_id,
+            digest: bytes.digest(),
+            schema_version: 1,
+            byte_size: u64::try_from(bytes.len()).expect("size"),
+        };
+        let draft = SnapshotArtifactDraft {
+            source,
+            source_revision: Revision::INITIAL,
+            artifact_id,
+            digest: reference.digest.clone(),
+            schema_version: 1,
+            byte_size: reference.byte_size,
+            codec: ArtifactCodec::Json,
+            retention: ArtifactRetention::Conversation,
+            bytes,
+        };
+        (reference, draft)
+    }
+
+    fn create_companion_character(database: &Database, id: CharacterId, name: &str) {
+        let character = lettuce_characters::Character::new(
+            id,
+            lettuce_characters::CharacterProfile {
+                name: name.into(),
+                nickname: None,
+                description: None,
+                definition: Some("A companion".into()),
+                design_description: None,
+                scenario: None,
+            },
+            lettuce_characters::CharacterProvenance::default(),
+            lettuce_characters::CharacterDefaults {
+                interaction_mode: lettuce_characters::InteractionMode::Companion,
+                companion_soul: Some(CompanionSoulConfig::default()),
+                ..Default::default()
+            },
+            lettuce_characters::CharacterPresentationV1::default(),
+            None,
+            lettuce_characters::CharacterMedia::default(),
+            TimestampMillis::new(1),
+        )
+        .expect("character");
+        lettuce_characters::CharacterRepository::create(
+            database,
+            lettuce_characters::CreateCharacterPlan {
+                character,
+                scenes: Vec::new(),
+                variants: Vec::new(),
+                starters: Vec::new(),
+            },
+        )
+        .expect("create character");
+    }
+
+    struct HydratedFixture {
+        database: Database,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        characters: [CharacterId; 2],
+        message_id: MessageId,
+        render_source: MessageRenderSource,
+    }
+
+    fn hydrated_group_fixture() -> HydratedFixture {
+        let database = Database::open_in_memory().expect("database");
+        let group_id = GroupId::new();
+        let first = CharacterId::new();
+        let second = CharacterId::new();
+        create_companion_character(&database, first, "First");
+        create_companion_character(&database, second, "Second");
+        let (group_ref, group_draft) = artifact(SnapshotSource::Group(group_id), b"group");
+        let (first_ref, first_draft) = artifact(SnapshotSource::Character(first), b"first");
+        let (second_ref, second_draft) = artifact(SnapshotSource::Character(second), b"second");
+        let user_participant = ConversationParticipantId::new();
+        let first_participant = ConversationParticipantId::new();
+        let second_participant = ConversationParticipantId::new();
+        let member = |snapshot_ref: ProtectedSnapshotRef,
+                      source_id: CharacterId,
+                      name: &str,
+                      ordinal: u32| GroupMemberLaunchSnapshot {
+            character: CharacterLaunchSnapshot {
+                snapshot_ref,
+                source_id,
+                source_revision: Revision::INITIAL,
+                name: name.into(),
+                nickname: None,
+            },
+            ordinal,
+            enabled: true,
+            muted: false,
+            model_override: SnapshotSelection::Disabled,
+            lorebooks: SnapshotSelection::Explicit(Vec::new()),
+            prompt: SnapshotSelection::Disabled,
+        };
+        let policy = |participant_id: ConversationParticipantId| GroupParticipantPolicySnapshot {
+            participant_id,
+            enabled: true,
+            muted: false,
+            model_override: SnapshotSelection::Disabled,
+        };
+        let conversation_id = ConversationId::new();
+        let plan = CreateConversationPlan {
+            current_settings: None,
+            conversation_id,
+            title: "Group".into(),
+            kind: ConversationKind::Group(GroupConversationDetails {
+                format_version: 1,
+                group: GroupLaunchSnapshot {
+                    snapshot_ref: group_ref,
+                    source_id: group_id,
+                    source_revision: Revision::INITIAL,
+                    name: "Cast".into(),
+                    members: vec![
+                        member(first_ref, first, "First", 0),
+                        member(second_ref, second, "Second", 1),
+                    ],
+                    chat_mode: GroupChatModeSnapshot::Conversation,
+                    speaker_selection: GroupSpeakerSelectionSnapshot::RoundRobin,
+                    speaker_selection_model: None,
+                    memory: SnapshotSelection::Disabled,
+                    disable_character_lorebook: false,
+                    persona: SnapshotSelection::Disabled,
+                    scene: SnapshotSelection::Disabled,
+                    prompt: SnapshotSelection::Disabled,
+                    lorebooks: SnapshotSelection::Explicit(Vec::new()),
+                    model: SnapshotSelection::Disabled,
+                },
+                initial_participant_policy: GroupParticipantPolicyDocument {
+                    members: vec![policy(first_participant), policy(second_participant)],
+                    revision: Revision::INITIAL,
+                    created_at: TimestampMillis::new(1),
+                    updated_at: TimestampMillis::new(1),
+                },
+            }),
+            participants: vec![
+                ConversationParticipantDraft {
+                    id: user_participant,
+                    role: ParticipantRole::User,
+                    ordinal: 0,
+                    source: ParticipantSource::User,
+                    enabled: true,
+                    muted: false,
+                    display_name: "User".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+                ConversationParticipantDraft {
+                    id: first_participant,
+                    role: ParticipantRole::Character,
+                    ordinal: 1,
+                    source: ParticipantSource::Character(first),
+                    enabled: true,
+                    muted: false,
+                    display_name: "First".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+                ConversationParticipantDraft {
+                    id: second_participant,
+                    role: ParticipantRole::Character,
+                    ordinal: 2,
+                    source: ParticipantSource::Character(second),
+                    enabled: true,
+                    muted: false,
+                    display_name: "Second".into(),
+                    authored_description: None,
+                    model_selection: SnapshotSelection::Disabled,
+                },
+            ],
+            initial_timeline: InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
+            operation: OperationToken {
+                key: lettuce_jobs::IdempotencyKey::new("create-group").expect("key"),
+                request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
+            },
+        };
+        let launch =
+            PreparedConversationLaunch::new(plan, vec![group_draft, first_draft, second_draft])
+                .expect("prepared launch");
+        let created = ConversationCreator::create(&database, launch, TimestampMillis::new(1))
+            .expect("create group")
+            .value;
+        let branch_id = created.conversation.active_branch_id;
+        let appended = ConversationRepository::append_message(
+            &database,
+            &AppendMessage {
+                conversation_id,
+                branch_id,
+                expected_revision: created.conversation.revision,
+                operation: OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new("append-first").expect("key"),
+                    request_digest: ContentHash::parse("ef".repeat(32)).expect("digest"),
+                },
+                message: MessageDraft {
+                    role: MessageRole::User,
+                    author_participant_id: Some(user_participant),
+                    parts: vec![MessagePart::Text {
+                        text: "Hello".into(),
+                    }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+            },
+            TimestampMillis::new(2),
+        )
+        .expect("message");
+        HydratedFixture {
+            database,
+            conversation_id,
+            branch_id,
+            characters: [first, second],
+            message_id: appended.value.id,
+            render_source: appended.value.active_render_source,
+        }
+    }
+
+    fn write_checkpoints(
+        database: &Database,
+        conversation_id: ConversationId,
+        message_id: MessageId,
+        checkpoints: &[GroupCompanionCheckpoint],
+    ) {
+        let mut connection = database.connection().expect("connection");
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        replace_message_checkpoints_in(&tx, conversation_id, message_id, checkpoints)
+            .expect("replace checkpoints");
+        tx.commit().expect("commit");
+    }
+
+    fn admit_social_round(
+        database: &Database,
+        run_id: DynamicMemoryRunId,
+        attempt_id: DynamicMemoryAttemptId,
+        ordinal: u8,
+        next_call_ordinal: u16,
+        calls: Vec<NewDynamicMemoryToolCall>,
+        admitted_at: TimestampMillis,
+    ) {
+        database
+            .admit_dynamic_memory_inference_round(
+                run_id,
+                attempt_id,
+                ordinal,
+                next_call_ordinal,
+                NewDynamicMemoryInferenceRound {
+                    ordinal,
+                    kind: DynamicMemoryRoundKind::Manager,
+                    request_context: lettuce_conversations::ProviderNeutralContext {
+                        messages: Vec::new(),
+                        attributions: Default::default(),
+                        budget: Default::default(),
+                    },
+                    parts: Vec::new(),
+                    provider_replay: None,
+                    usage: None,
+                    finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                    provider_request_id: None,
+                    calls,
+                    admitted_at,
+                },
+            )
+            .expect("round");
+    }
+
+    #[test]
+    fn companion_social_round_changes_only_the_target_and_replays_as_recorded() {
+        let fixture = hydrated_group_fixture();
+        let [first, second] = fixture.characters;
+        write_checkpoints(
+            &fixture.database,
+            fixture.conversation_id,
+            fixture.message_id,
+            &[
+                checkpoint(fixture.message_id, first, second, "first", Vec::new()),
+                checkpoint(fixture.message_id, second, first, "second", Vec::new()),
+            ],
+        );
+        let shared = MemorySpaceId::new();
+        MemoryRepository::create(
+            &fixture.database,
+            MemorySpaceSnapshot {
+                id: shared,
+                revision: Revision::INITIAL,
+                items: Vec::new(),
+            },
+        )
+        .expect("shared space");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_memory_spaces
+                 (conversation_id, branch_id, space_id, pooled)
+                 VALUES (?1, ?2, ?3, 0)",
+                params![
+                    fixture.conversation_id.to_string(),
+                    fixture.branch_id.to_string(),
+                    shared.to_string()
+                ],
+            )
+            .expect("shared binding");
+
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        fixture
+            .database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id,
+                attempt_id,
+                conversation_id: fixture.conversation_id,
+                branch_id: fixture.branch_id,
+                space_id: shared,
+                starting_memory: fixture
+                    .database
+                    .get(shared)
+                    .expect("memory")
+                    .expect("space"),
+                cycle_start_change: None,
+                source_messages: vec![DynamicMemorySourceMessage {
+                    message_id: fixture.message_id,
+                    role: MessageRole::User,
+                    render_source: fixture.render_source,
+                    effective_time: TimestampMillis::new(2),
+                }],
+                profile: profile(),
+                time_awareness_enabled: false,
+                supersession_enabled: false,
+                group_companion_members: vec![("m1".into(), first), ("m2".into(), second)],
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 1,
+                    start: 0,
+                    end: 1,
+                },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: true,
+                        supersession_enabled: false,
+                        require_source_message_id: false,
+                        group_companion: Some(vec!["m1".into(), "m2".into()]),
+                    },
+                    &|key| key.to_owned(),
+                ),
+                job_id: JobId::new(),
+                job_attempt: None,
+                now: TimestampMillis::new(10),
+            })
+            .expect("admit run");
+        fixture
+            .database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                Revision::new(1),
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(10),
+            )
+            .expect("start attempt");
+
+        let event = GroupSocialEvent {
+            kind: "support".into(),
+            from: Some(first),
+            to: second,
+            source_message_id: fixture.message_id,
+        };
+        let first_call = ToolExecutionId::new();
+        admit_social_round(
+            &fixture.database,
+            run_id,
+            attempt_id,
+            0,
+            0,
+            vec![round_call(
+                first_call,
+                "record_social_event",
+                json!({"kind":"support","from":"m1","to":"m2","source_message_id":fixture.message_id.to_string()}),
+            )],
+            TimestampMillis::new(10),
+        );
+        let members = vec![
+            (first, CompanionSoulConfig::default()),
+            (second, CompanionSoulConfig::default()),
+        ];
+        let settlement = fixture
+            .database
+            .commit_group_companion_memory_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id,
+                    round_ordinal: 0,
+                    space_id: shared,
+                    expected_memory_revision: Revision::INITIAL,
+                    change: None,
+                    results: vec![MemoryToolResult {
+                        execution_id: first_call,
+                        outcome: MemoryToolOutcome::Done { summary: None },
+                    }],
+                },
+                GroupCompanionRoundOutputs {
+                    members: members.clone(),
+                    perspective_memories: Vec::new(),
+                    write_back: Vec::new(),
+                    social_events: vec![(first_call, event.clone())],
+                },
+                &social_catalog(),
+                TimestampMillis::new(11),
+            )
+            .expect("record social event");
+        assert!(matches!(
+            settlement.results[0].outcome,
+            MemoryToolOutcome::SocialEventRecorded
+        ));
+        let checkpoints = fixture
+            .database
+            .checkpoints_for_message(fixture.conversation_id, fixture.message_id)
+            .expect("checkpoints");
+        let target = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == second)
+            .expect("target checkpoint");
+        assert_eq!(target.effects.len(), 1);
+        assert_eq!(
+            target.effects[0].reason,
+            GroupCompanionEffectReason::SocialEvent
+        );
+        assert_eq!(
+            target.effects[0]
+                .relationship_change
+                .as_ref()
+                .expect("relationship change")
+                .target,
+            GroupCompanionTarget::Character {
+                character_id: first
+            }
+        );
+        let other = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == first)
+            .expect("other checkpoint");
+        assert!(other.effects.is_empty());
+
+        let replay_call = ToolExecutionId::new();
+        admit_social_round(
+            &fixture.database,
+            run_id,
+            attempt_id,
+            1,
+            1,
+            vec![round_call(
+                replay_call,
+                "record_social_event",
+                json!({"kind":"support","from":"m1","to":"m2","source_message_id":fixture.message_id.to_string()}),
+            )],
+            TimestampMillis::new(11),
+        );
+        let replay = fixture
+            .database
+            .commit_group_companion_memory_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id,
+                    round_ordinal: 1,
+                    space_id: shared,
+                    expected_memory_revision: settlement.resulting_memory_revision,
+                    change: None,
+                    results: vec![MemoryToolResult {
+                        execution_id: replay_call,
+                        outcome: MemoryToolOutcome::Done { summary: None },
+                    }],
+                },
+                GroupCompanionRoundOutputs {
+                    members: members.clone(),
+                    perspective_memories: Vec::new(),
+                    write_back: Vec::new(),
+                    social_events: vec![(replay_call, event)],
+                },
+                &social_catalog(),
+                TimestampMillis::new(12),
+            )
+            .expect("replay social event");
+        assert_eq!(
+            replay.results[0].outcome,
+            MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::AlreadyApplied
+            }
+        );
+        let replayed = fixture
+            .database
+            .checkpoints_for_message(fixture.conversation_id, fixture.message_id)
+            .expect("checkpoints");
+        let target = replayed
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == second)
+            .expect("target checkpoint");
+        assert_eq!(target.effects.len(), 1);
+
+        let unknown_call = ToolExecutionId::new();
+        let valid_call = ToolExecutionId::new();
+        admit_social_round(
+            &fixture.database,
+            run_id,
+            attempt_id,
+            2,
+            2,
+            vec![
+                round_call(
+                    unknown_call,
+                    "record_social_event",
+                    json!({"kind":"nonsense","from":"m1","to":"m2","source_message_id":fixture.message_id.to_string()}),
+                ),
+                round_call(
+                    valid_call,
+                    "record_social_event",
+                    json!({"kind":"support","from":"m2","to":"m1","source_message_id":fixture.message_id.to_string()}),
+                ),
+            ],
+            TimestampMillis::new(12),
+        );
+        let mixed = fixture
+            .database
+            .commit_group_companion_memory_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id,
+                    round_ordinal: 2,
+                    space_id: shared,
+                    expected_memory_revision: replay.resulting_memory_revision,
+                    change: None,
+                    results: vec![
+                        MemoryToolResult {
+                            execution_id: unknown_call,
+                            outcome: MemoryToolOutcome::Done { summary: None },
+                        },
+                        MemoryToolResult {
+                            execution_id: valid_call,
+                            outcome: MemoryToolOutcome::Done { summary: None },
+                        },
+                    ],
+                },
+                GroupCompanionRoundOutputs {
+                    members,
+                    perspective_memories: Vec::new(),
+                    write_back: Vec::new(),
+                    social_events: vec![
+                        (
+                            unknown_call,
+                            GroupSocialEvent {
+                                kind: "nonsense".into(),
+                                from: Some(first),
+                                to: second,
+                                source_message_id: fixture.message_id,
+                            },
+                        ),
+                        (
+                            valid_call,
+                            GroupSocialEvent {
+                                kind: "support".into(),
+                                from: Some(second),
+                                to: first,
+                                source_message_id: fixture.message_id,
+                            },
+                        ),
+                    ],
+                },
+                &social_catalog(),
+                TimestampMillis::new(13),
+            )
+            .expect("mixed social round");
+        assert!(matches!(
+            mixed.results[0].outcome,
+            MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::MalformedArguments
+            }
+        ));
+        assert!(matches!(
+            mixed.results[1].outcome,
+            MemoryToolOutcome::SocialEventRecorded
+        ));
+        let checkpoints = fixture
+            .database
+            .checkpoints_for_message(fixture.conversation_id, fixture.message_id)
+            .expect("checkpoints");
+        let first_target = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == first)
+            .expect("first checkpoint");
+        assert_eq!(first_target.effects.len(), 1);
+        let second_target = checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.character_id == second)
+            .expect("second checkpoint");
+        assert_eq!(second_target.effects.len(), 1);
     }
 }

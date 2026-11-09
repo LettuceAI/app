@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
+use lettuce_characters::GroupRepository;
 use lettuce_companions::CompanionTurnEffectStatus;
 use lettuce_conversations::{
     ConversationReader, ConversationRepositoryError, MessageRenderSource, MessageRole,
-    MessageVisibility, ResolvedInferenceProfile,
+    MessageVisibility, ParticipantSource, ResolvedInferenceProfile,
 };
 use lettuce_jobs::{JobKind, SubjectKind, handle::JobHandle};
 use lettuce_memory::{
@@ -55,6 +56,7 @@ impl<
     R: DynamicMemoryRunRepository
         + MemoryRepository
         + MemorySummaryRepository
+        + GroupRepository
         + crate::generation::runtime_text::RuntimeTextSource
         + ?Sized,
     C: ConversationReader + ?Sized,
@@ -186,19 +188,53 @@ impl<
                     admission.batch.branch_id,
                     expected_messages,
                 )?;
-                let group = self
+                let aggregate = self
                     .conversations
                     .get(conversation_id)
-                    .map_err(CompanionPostTurnMemoryRunError::Conversation)?
-                    .conversation
-                    .kind
-                    .is_group();
+                    .map_err(CompanionPostTurnMemoryRunError::Conversation)?;
+                let group = aggregate.conversation.kind.is_group();
+                let companion = group
+                    && crate::generation::live_sources::live_companion_mode(
+                        self.repository,
+                        &aggregate.conversation,
+                    )
+                    .map_err(|error| {
+                        CompanionPostTurnMemoryRunError::InvalidAdmission {
+                            reason: format!("companion mode could not be resolved: {error}"),
+                        }
+                    })?;
+                let group_companion_members = if companion {
+                    let mut participants = aggregate
+                        .conversation
+                        .participants
+                        .iter()
+                        .collect::<Vec<_>>();
+                    participants.sort_by_key(|participant| participant.ordinal);
+                    participants
+                        .into_iter()
+                        .filter(|participant| participant.enabled)
+                        .filter_map(|participant| match participant.source {
+                            ParticipantSource::Character(character_id) => Some(character_id),
+                            _ => None,
+                        })
+                        .enumerate()
+                        .map(|(index, character_id)| (format!("m{}", index + 1), character_id))
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
                 let tool_request = memory_tool_request(
                     self.repository,
                     lettuce_memory::DynamicMemoryToolOptions {
                         group,
                         supersession_enabled,
                         require_source_message_id: time_awareness_enabled,
+                        group_companion: companion.then(|| {
+                            group_companion_members
+                                .iter()
+                                .map(|(label, _)| label.clone())
+                                .collect()
+                        }),
                     },
                 )?;
                 let attempt_id = stable_attempt_id(run_id, 0, handle.id());
@@ -247,6 +283,7 @@ impl<
                         profile,
                         time_awareness_enabled,
                         supersession_enabled,
+                        group_companion_members,
                         structured_fallback_format,
                         summary_window,
                         tool_request,
@@ -418,6 +455,7 @@ pub(crate) fn test_memory_tool_request(
             group: false,
             supersession_enabled,
             require_source_message_id,
+            group_companion: None,
         },
         &|key| key.to_owned(),
     )
@@ -824,6 +862,7 @@ pub(crate) mod tests {
                 profile: input.profile,
                 time_awareness_enabled: input.time_awareness_enabled,
                 supersession_enabled: input.supersession_enabled,
+                group_companion_members: input.group_companion_members,
                 structured_fallback_format: input.structured_fallback_format,
                 summary_window: input.summary_window,
                 tool_request: input.tool_request,
@@ -1136,6 +1175,168 @@ pub(crate) mod tests {
             },
             job: admitted.job,
             created: admitted.created,
+        }
+    }
+
+    impl GroupRepository for Repository {
+        fn create(
+            &self,
+            _plan: lettuce_characters::CreateGroupPlan,
+        ) -> Result<lettuce_characters::GroupDetails, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn get(
+            &self,
+            _id: lettuce_types::GroupId,
+        ) -> Result<Option<lettuce_characters::GroupDetails>, lettuce_characters::RepositoryError>
+        {
+            Ok(None)
+        }
+        fn search(
+            &self,
+            _request: lettuce_characters::GroupSearch,
+            _page: PageRequest,
+        ) -> Result<
+            lettuce_types::Page<lettuce_characters::GroupLibraryItem>,
+            lettuce_characters::RepositoryError,
+        > {
+            unimplemented!()
+        }
+        fn rename(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _name: String,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_persona(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _persona: lettuce_characters::Selection<lettuce_types::PersonaId>,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_speaker_selection(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _selection: lettuce_characters::SpeakerSelection,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_memory_policy(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _policy: lettuce_characters::MemoryPolicy,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_disable_character_lorebooks(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _disabled: bool,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_prompt_defaults(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _roleplay_prompt_id: Option<lettuce_types::PromptDocumentId>,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_presentation(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _presentation: lettuce_characters::ChatAppearanceV1,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_background(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _asset_id: Option<lettuce_types::AssetId>,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_starting_scene(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _starting_scene: Option<lettuce_characters::GroupStartingScene>,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupDetails, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn replace_members(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _members: Vec<lettuce_characters::GroupMember>,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn reorder_member(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _character_id: lettuce_types::CharacterId,
+            _target_ordinal: u32,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_member_muted(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _character_id: lettuce_types::CharacterId,
+            _muted: bool,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn set_member_model_override(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _character_id: lettuce_types::CharacterId,
+            _model_profile_id: Option<lettuce_types::ModelProfileId>,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn archive(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
+        }
+        fn restore(
+            &self,
+            _id: lettuce_types::GroupId,
+            _expected_revision: lettuce_types::Revision,
+            _now: TimestampMillis,
+        ) -> Result<lettuce_characters::GroupProfile, lettuce_characters::RepositoryError> {
+            unimplemented!()
         }
     }
 

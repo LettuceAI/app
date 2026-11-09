@@ -2883,6 +2883,7 @@ version = "3.0.0"
 dependencies = [
  "chrono",
  "lettuce-conversations",
+ "lettuce-memory",
  "lettuce-types",
  "quick-xml 0.38.4",
  "serde",

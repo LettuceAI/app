@@ -20,6 +20,7 @@ pub enum BuiltInPromptId {
     DynamicSummary,
     DynamicMemory,
     DynamicMemoryLocal,
+    GroupCompanionMemory,
     ReplyHelper,
     ReplyHelperConversational,
     LorebookEntryWriter,
@@ -48,13 +49,14 @@ pub enum BuiltInPromptId {
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 32] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
         Self::DynamicSummary,
         Self::DynamicMemory,
         Self::DynamicMemoryLocal,
+        Self::GroupCompanionMemory,
         Self::ReplyHelper,
         Self::ReplyHelperConversational,
         Self::LorebookEntryWriter,
@@ -91,6 +93,7 @@ impl BuiltInPromptId {
             Self::DynamicSummary => "prompt_app_dynamic_summary",
             Self::DynamicMemory => "prompt_app_dynamic_memory",
             Self::DynamicMemoryLocal => "prompt_app_dynamic_memory_local",
+            Self::GroupCompanionMemory => "prompt_app_group_companion_memory",
             Self::ReplyHelper => "prompt_app_help_me_reply",
             Self::ReplyHelperConversational => "prompt_app_help_me_reply_conversational",
             Self::LorebookEntryWriter => "prompt_app_lorebook_entry_writer",
@@ -134,7 +137,9 @@ impl BuiltInPromptId {
             Self::AppDefault | Self::LocalRoleplay => PromptPurpose::DirectChat,
             Self::Companion => PromptPurpose::CompanionChat,
             Self::DynamicSummary => PromptPurpose::DynamicMemorySummarizer,
-            Self::DynamicMemory | Self::DynamicMemoryLocal => PromptPurpose::DynamicMemoryManager,
+            Self::DynamicMemory | Self::DynamicMemoryLocal | Self::GroupCompanionMemory => {
+                PromptPurpose::DynamicMemoryManager
+            }
             Self::ReplyHelper => PromptPurpose::ReplyHelperRoleplay,
             Self::ReplyHelperConversational => PromptPurpose::ReplyHelperConversational,
             Self::LorebookEntryWriter => PromptPurpose::LorebookEntryWriter,
@@ -259,6 +264,7 @@ pub struct BuiltInPromptIds {
     pub dynamic_summary: PromptDocumentId,
     pub dynamic_memory: PromptDocumentId,
     pub dynamic_memory_local: PromptDocumentId,
+    pub group_companion_memory: PromptDocumentId,
     pub reply_helper: PromptDocumentId,
     pub reply_helper_conversational: PromptDocumentId,
     pub lorebook_entry_writer: PromptDocumentId,
@@ -311,6 +317,7 @@ impl BuiltInPromptIds {
             dynamic_summary: required(BuiltInPromptId::DynamicSummary),
             dynamic_memory: required(BuiltInPromptId::DynamicMemory),
             dynamic_memory_local: required(BuiltInPromptId::DynamicMemoryLocal),
+            group_companion_memory: required(BuiltInPromptId::GroupCompanionMemory),
             reply_helper: required(BuiltInPromptId::ReplyHelper),
             reply_helper_conversational: required(BuiltInPromptId::ReplyHelperConversational),
             lorebook_entry_writer: required(BuiltInPromptId::LorebookEntryWriter),
@@ -348,6 +355,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::DynamicSummary => self.dynamic_summary,
             BuiltInPromptId::DynamicMemory => self.dynamic_memory,
             BuiltInPromptId::DynamicMemoryLocal => self.dynamic_memory_local,
+            BuiltInPromptId::GroupCompanionMemory => self.group_companion_memory,
             BuiltInPromptId::ReplyHelper => self.reply_helper,
             BuiltInPromptId::ReplyHelperConversational => self.reply_helper_conversational,
             BuiltInPromptId::LorebookEntryWriter => self.lorebook_entry_writer,
@@ -592,7 +600,10 @@ fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
         }
         PromptPurpose::DynamicMemoryManager => matches!(
             value,
-            "max_entries" | "current_memory_tokens" | "hot_token_budget"
+            "max_entries"
+                | "current_memory_tokens"
+                | "hot_token_budget"
+                | "group_companion_members"
         ),
         PromptPurpose::ReplyHelperRoleplay | PromptPurpose::ReplyHelperConversational => {
             value == "current_draft"
@@ -711,6 +722,7 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "companion_member_name"
             | "scheduled_notes"
             | "group_characters"
+            | "group_companion_members"
             | "prev_summary"
             | "character"
             | "max_entries"
@@ -1094,7 +1106,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 31);
+        assert_eq!(catalog.seeds().len(), 32);
 
         let actual = catalog
             .seeds()
@@ -1205,7 +1217,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 31);
+        assert_eq!(calls[2].seeds.len(), 32);
     }
 
     #[test]
@@ -1481,6 +1493,7 @@ mod tests {
             "memory_skip_unsupported_tool",
             "memory_skip_target_not_found",
             "memory_skip_duplicate_text",
+            "memory_skip_social_event_recorded",
             "memory_skip_duplicate_semantic",
             "memory_skip_duplicate_overlap",
         ];

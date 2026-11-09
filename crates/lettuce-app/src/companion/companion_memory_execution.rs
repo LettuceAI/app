@@ -1,15 +1,23 @@
 use std::collections::{HashMap, HashSet};
 
+use lettuce_characters::{CharacterRepository, GroupRepository};
+use lettuce_companions::{
+    GroupCompanionMemoryRoundWriter, GroupCompanionRepository, GroupCompanionRoundOutputs,
+    GroupPerspectiveMemory, GroupSocialEvent,
+};
+use lettuce_conversations::ConversationReader;
 use lettuce_embeddings::MemoryEmbeddingRepository;
 use lettuce_jobs::{Claim, handle::JobHandle};
 use lettuce_memory::{
-    DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
+    CategoryArgument, DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
     DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
     DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, MemoryCycleBudget, MemoryPolicy,
     MemoryRepository, MemoryRepositoryError, MemoryToolArguments, MemoryToolCall, MemoryToolError,
-    MemoryToolReducer,
+    MemoryToolOutcome, MemoryToolReducer, MemoryToolResult, MemoryToolSkipReason,
 };
-use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, MemoryId, TimestampMillis};
+use lettuce_types::{
+    DynamicMemoryAttemptId, DynamicMemoryRunId, MemoryId, TimestampMillis, ToolExecutionId,
+};
 
 use crate::{
     DynamicMemoryCreatePreparer, DynamicMemoryPreparationError, MemoryCreateSeed,
@@ -40,7 +48,15 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: ?Sized> CompanionMemoryRoundExecu
 
 impl<
     E: MemoryEmbeddingEngine + ?Sized,
-    R: DynamicMemoryRunRepository + MemoryRepository + MemoryEmbeddingRepository + ?Sized,
+    R: DynamicMemoryRunRepository
+        + MemoryRepository
+        + MemoryEmbeddingRepository
+        + CharacterRepository
+        + GroupRepository
+        + GroupCompanionRepository
+        + GroupCompanionMemoryRoundWriter
+        + ConversationReader
+        + ?Sized,
 > CompanionMemoryRoundExecutor<'_, E, R>
 {
     #[allow(clippy::too_many_arguments)]
@@ -130,7 +146,7 @@ impl<
                 reason: "stored round does not match the attempt, run, ordinal or has no calls",
             });
         }
-        let snapshot = self.repository.get(run.space_id)?.ok_or(
+        let snapshot = MemoryRepository::get(self.repository, run.space_id)?.ok_or(
             CompanionMemoryRoundExecutionError::InvalidOwnership {
                 reason: "memory space of the run does not exist",
             },
@@ -161,6 +177,7 @@ impl<
             &run.source_messages,
             run.time_awareness_enabled,
             run.supersession_enabled,
+            !run.group_companion_members.is_empty(),
             &prepared,
         )?;
         let edited = self
@@ -187,19 +204,38 @@ impl<
             hard_deletes_used,
         );
         let reduction = MemoryToolReducer.reduce_round(&snapshot, policy, budget, &calls)?;
-        let settlement = self.repository.commit_dynamic_memory_background_round(
-            DynamicMemoryBackgroundRoundCommit {
-                run_id,
-                attempt_id,
-                round_ordinal,
-                space_id: run.space_id,
-                expected_memory_revision: snapshot.revision,
-                change: reduction.change.clone(),
-                results: reduction.results.clone(),
-            },
-            now,
-        )?;
-        let stored = self.repository.get(run.space_id)?.ok_or(
+        let mut results = reduction.results.clone();
+        let settlement = if run.group_companion_members.is_empty() {
+            self.repository.commit_dynamic_memory_background_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id,
+                    round_ordinal,
+                    space_id: run.space_id,
+                    expected_memory_revision: snapshot.revision,
+                    change: reduction.change.clone(),
+                    results,
+                },
+                now,
+            )?
+        } else {
+            let outputs = group_companion_outputs(self.repository, &run, &calls, &mut results)?;
+            self.repository.commit_group_companion_memory_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id,
+                    attempt_id,
+                    round_ordinal,
+                    space_id: run.space_id,
+                    expected_memory_revision: snapshot.revision,
+                    change: reduction.change.clone(),
+                    results,
+                },
+                outputs,
+                crate::companion::social_event_catalog::social_event_catalog(),
+                now,
+            )?
+        };
+        let stored = MemoryRepository::get(self.repository, run.space_id)?.ok_or(
             CompanionMemoryRoundExecutionError::InvalidOwnership {
                 reason: "memory space of the run is gone after the round commit",
             },
@@ -234,6 +270,7 @@ fn prepare_background_calls(
     sources: &[lettuce_memory::DynamicMemorySourceMessage],
     time_awareness_enabled: bool,
     supersession_enabled: bool,
+    group_companion: bool,
     prepared_creates: &[PreparedMemoryCreate],
 ) -> Result<Vec<MemoryToolCall>, CompanionMemoryRoundExecutionError> {
     let mut preparations = prepared_creates
@@ -266,7 +303,7 @@ fn prepare_background_calls(
             if !supersession_enabled {
                 supersedes.clear();
             }
-            if time_awareness_enabled {
+            if time_awareness_enabled || group_companion {
                 if source_message_id.is_none_or(|message_id| {
                     !sources.iter().any(|source| source.message_id == message_id)
                 }) {
@@ -316,6 +353,194 @@ fn prepare_background_calls(
     Ok(results)
 }
 
+fn set_skipped(
+    results: &mut [MemoryToolResult],
+    execution_id: ToolExecutionId,
+    reason: MemoryToolSkipReason,
+) {
+    if let Some(result) = results
+        .iter_mut()
+        .find(|result| result.execution_id == execution_id)
+    {
+        result.outcome = MemoryToolOutcome::Skipped { reason };
+    }
+}
+
+fn group_companion_outputs<R>(
+    repository: &R,
+    run: &lettuce_memory::DynamicMemoryRun,
+    calls: &[MemoryToolCall],
+    results: &mut [MemoryToolResult],
+) -> Result<GroupCompanionRoundOutputs, CompanionMemoryRoundExecutionError>
+where
+    R: CharacterRepository
+        + GroupRepository
+        + GroupCompanionRepository
+        + ConversationReader
+        + ?Sized,
+{
+    let labels = run
+        .group_companion_members
+        .iter()
+        .map(|(label, character_id)| (label.as_str(), *character_id))
+        .collect::<HashMap<_, _>>();
+    let sources = run
+        .source_messages
+        .iter()
+        .map(|source| (source.message_id, source.effective_time))
+        .collect::<HashMap<_, _>>();
+    let mut members = Vec::new();
+    for (_, character_id) in &run.group_companion_members {
+        let Some(details) = CharacterRepository::get(repository, *character_id)
+            .map_err(CompanionMemoryRoundExecutionError::Character)?
+        else {
+            continue;
+        };
+        members.push((
+            *character_id,
+            details
+                .character
+                .defaults
+                .companion_soul
+                .clone()
+                .unwrap_or_default(),
+        ));
+    }
+    let aggregate = ConversationReader::get(repository, run.conversation_id)
+        .map_err(CompanionMemoryRoundExecutionError::Conversation)?;
+    let write_back_enabled = crate::generation::live_sources::live_companion_memory_write_back(
+        repository,
+        &aggregate.conversation,
+    )
+    .map_err(CompanionMemoryRoundExecutionError::Character)?;
+    let mut write_back = Vec::new();
+    if write_back_enabled {
+        for (_, character_id) in &run.group_companion_members {
+            if repository
+                .companion_pool_space(*character_id)
+                .map_err(CompanionMemoryRoundExecutionError::GroupCompanion)?
+                .is_some()
+            {
+                write_back.push(*character_id);
+            }
+        }
+    }
+    let mut perspective_memories = Vec::new();
+    let mut social_events = Vec::new();
+    for call in calls {
+        match &call.arguments {
+            MemoryToolArguments::CreatePerspectiveMemory {
+                member,
+                text,
+                category,
+                important,
+                source_message_id,
+            } => {
+                let Some(character_id) = labels.get(member.as_str()).copied() else {
+                    set_skipped(
+                        results,
+                        call.execution_id,
+                        MemoryToolSkipReason::MalformedArguments,
+                    );
+                    continue;
+                };
+                let category = match category {
+                    CategoryArgument::Tagged { category } => *category,
+                    CategoryArgument::Missing => {
+                        set_skipped(
+                            results,
+                            call.execution_id,
+                            MemoryToolSkipReason::MissingCategory,
+                        );
+                        continue;
+                    }
+                    CategoryArgument::Invalid => {
+                        set_skipped(
+                            results,
+                            call.execution_id,
+                            MemoryToolSkipReason::InvalidCategory,
+                        );
+                        continue;
+                    }
+                };
+                let Some(source_message_id) =
+                    (*source_message_id).filter(|message_id| sources.contains_key(message_id))
+                else {
+                    set_skipped(
+                        results,
+                        call.execution_id,
+                        MemoryToolSkipReason::MalformedArguments,
+                    );
+                    continue;
+                };
+                perspective_memories.push(GroupPerspectiveMemory {
+                    execution_id: call.execution_id,
+                    character_id,
+                    text: text.clone(),
+                    category,
+                    important: *important,
+                    source_message_id,
+                    observed_at: sources[&source_message_id],
+                });
+            }
+            MemoryToolArguments::RecordSocialEvent {
+                kind,
+                from,
+                to,
+                source_message_id,
+            } => {
+                let Some(to) = labels.get(to.as_str()).copied() else {
+                    set_skipped(
+                        results,
+                        call.execution_id,
+                        MemoryToolSkipReason::MalformedArguments,
+                    );
+                    continue;
+                };
+                let from = if from == "user" {
+                    None
+                } else {
+                    let Some(character_id) = labels.get(from.as_str()).copied() else {
+                        set_skipped(
+                            results,
+                            call.execution_id,
+                            MemoryToolSkipReason::MalformedArguments,
+                        );
+                        continue;
+                    };
+                    Some(character_id)
+                };
+                let Some(source_message_id) =
+                    (*source_message_id).filter(|message_id| sources.contains_key(message_id))
+                else {
+                    set_skipped(
+                        results,
+                        call.execution_id,
+                        MemoryToolSkipReason::MalformedArguments,
+                    );
+                    continue;
+                };
+                social_events.push((
+                    call.execution_id,
+                    GroupSocialEvent {
+                        kind: kind.clone(),
+                        from,
+                        to,
+                        source_message_id,
+                    },
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(GroupCompanionRoundOutputs {
+        members,
+        perspective_memories,
+        write_back,
+        social_events,
+    })
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionMemoryRoundExecutionError {
     #[error("background memory round ownership is invalid: {reason}")]
@@ -332,6 +557,12 @@ pub enum CompanionMemoryRoundExecutionError {
     Preparation(#[from] DynamicMemoryPreparationError),
     #[error("background memory tool reduction failed: {0}")]
     Tool(#[from] MemoryToolError),
+    #[error("background memory character lookup failed: {0:?}")]
+    Character(lettuce_characters::RepositoryError),
+    #[error("background memory conversation lookup failed: {0}")]
+    Conversation(lettuce_conversations::ConversationRepositoryError),
+    #[error("background memory group companion lookup failed: {0:?}")]
+    GroupCompanion(lettuce_companions::GroupCompanionRepositoryError),
 }
 
 #[cfg(test)]
@@ -464,6 +695,7 @@ mod tests {
                     }],
                     true,
                     true,
+                    false,
                     &prepared,
                 )
                 .expect("calls"),
@@ -550,6 +782,7 @@ mod tests {
             &sources,
             true,
             true,
+            false,
             &[PreparedMemoryCreate {
                 execution_id: call.id,
                 preparation: CreateMemoryPreparation {
@@ -595,6 +828,7 @@ mod tests {
             &sources,
             true,
             true,
+            false,
             &[PreparedMemoryCreate {
                 execution_id: unanchored.id,
                 preparation: CreateMemoryPreparation {
@@ -623,6 +857,7 @@ mod tests {
         let calls = prepare_background_calls(
             &round,
             &sources,
+            false,
             false,
             false,
             &[PreparedMemoryCreate {

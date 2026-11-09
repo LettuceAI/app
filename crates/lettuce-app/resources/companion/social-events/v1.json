@@ -241,6 +241,287 @@
         "warmth": 0.03,
         "calm": 0.02
       }
+    },
+    {
+      "kind": "compliment",
+      "emotion": {
+        "warmth": 0.07,
+        "trust": 0.03,
+        "calm": 0.03,
+        "hurt": -0.03,
+        "tension": -0.02,
+        "affectionIntensity": 0.04,
+        "reassuranceNeed": -0.03
+      },
+      "relationship": {
+        "closeness": 0.04,
+        "trust": 0.03,
+        "affection": 0.06,
+        "tension": -0.03,
+        "stability": 0.02
+      },
+      "witness_emotion": {
+        "warmth": 0.02
+      }
+    },
+    {
+      "kind": "flirting",
+      "emotion": {
+        "warmth": 0.06,
+        "calm": -0.02,
+        "vulnerability": 0.04,
+        "longing": 0.06,
+        "tension": 0.03,
+        "affectionIntensity": 0.08,
+        "reassuranceNeed": 0.02
+      },
+      "relationship": {
+        "closeness": 0.05,
+        "trust": 0.01,
+        "affection": 0.08,
+        "tension": 0.03,
+        "stability": 0.0
+      },
+      "witness_emotion": {
+        "tension": 0.02
+      }
+    },
+    {
+      "kind": "affection",
+      "emotion": {
+        "warmth": 0.1,
+        "trust": 0.05,
+        "calm": 0.06,
+        "vulnerability": 0.03,
+        "longing": 0.03,
+        "hurt": -0.05,
+        "tension": -0.05,
+        "affectionIntensity": 0.08,
+        "reassuranceNeed": -0.03
+      },
+      "relationship": {
+        "closeness": 0.08,
+        "trust": 0.04,
+        "affection": 0.09,
+        "tension": -0.04,
+        "stability": 0.04
+      },
+      "witness_emotion": {
+        "warmth": 0.03
+      }
+    },
+    {
+      "kind": "forgiveness",
+      "emotion": {
+        "warmth": 0.08,
+        "trust": 0.06,
+        "calm": 0.1,
+        "vulnerability": 0.02,
+        "hurt": -0.1,
+        "tension": -0.1,
+        "irritation": -0.05,
+        "reassuranceNeed": -0.05
+      },
+      "relationship": {
+        "closeness": 0.06,
+        "trust": 0.08,
+        "affection": 0.05,
+        "tension": -0.12,
+        "stability": 0.07
+      },
+      "witness_emotion": {
+        "warmth": 0.03,
+        "tension": -0.04
+      }
+    },
+    {
+      "kind": "promise",
+      "emotion": {
+        "warmth": 0.05,
+        "trust": 0.07,
+        "calm": 0.04,
+        "vulnerability": 0.02,
+        "longing": 0.02,
+        "tension": -0.03,
+        "reassuranceNeed": -0.04
+      },
+      "relationship": {
+        "closeness": 0.04,
+        "trust": 0.07,
+        "affection": 0.03,
+        "tension": -0.02,
+        "stability": 0.06
+      },
+      "witness_emotion": {
+        "warmth": 0.02
+      }
+    },
+    {
+      "kind": "sacrifice",
+      "emotion": {
+        "warmth": 0.12,
+        "trust": 0.1,
+        "calm": 0.04,
+        "vulnerability": 0.04,
+        "longing": 0.03,
+        "hurt": -0.05,
+        "tension": -0.04,
+        "affectionIntensity": 0.06,
+        "reassuranceNeed": -0.03
+      },
+      "relationship": {
+        "closeness": 0.1,
+        "trust": 0.12,
+        "affection": 0.1,
+        "tension": -0.05,
+        "stability": 0.07
+      },
+      "witness_emotion": {
+        "warmth": 0.04,
+        "trust": 0.02
+      }
+    },
+    {
+      "kind": "broken_promise",
+      "emotion": {
+        "warmth": -0.08,
+        "trust": -0.12,
+        "calm": -0.06,
+        "vulnerability": 0.05,
+        "hurt": 0.1,
+        "tension": 0.08,
+        "irritation": 0.08,
+        "reassuranceNeed": 0.06
+      },
+      "relationship": {
+        "closeness": -0.06,
+        "trust": -0.13,
+        "affection": -0.05,
+        "tension": 0.1,
+        "stability": -0.1
+      },
+      "witness_emotion": {
+        "trust": -0.03,
+        "tension": 0.02
+      }
+    },
+    {
+      "kind": "deception",
+      "emotion": {
+        "warmth": -0.08,
+        "trust": -0.14,
+        "calm": -0.06,
+        "vulnerability": 0.05,
+        "hurt": 0.08,
+        "tension": 0.1,
+        "irritation": 0.08,
+        "reassuranceNeed": 0.05
+      },
+      "relationship": {
+        "closeness": -0.07,
+        "trust": -0.14,
+        "affection": -0.06,
+        "tension": 0.1,
+        "stability": -0.08
+      },
+      "witness_emotion": {
+        "trust": -0.04,
+        "tension": 0.03
+      }
+    },
+    {
+      "kind": "accusation",
+      "emotion": {
+        "warmth": -0.06,
+        "trust": -0.06,
+        "calm": -0.08,
+        "vulnerability": 0.04,
+        "hurt": 0.07,
+        "tension": 0.12,
+        "irritation": 0.1,
+        "reassuranceNeed": 0.03
+      },
+      "relationship": {
+        "closeness": -0.05,
+        "trust": -0.07,
+        "affection": -0.04,
+        "tension": 0.12,
+        "stability": -0.05
+      },
+      "witness_emotion": {
+        "tension": 0.04
+      }
+    },
+    {
+      "kind": "dismissal",
+      "emotion": {
+        "warmth": -0.06,
+        "trust": -0.03,
+        "calm": -0.03,
+        "vulnerability": 0.03,
+        "hurt": 0.06,
+        "tension": 0.04,
+        "irritation": 0.06,
+        "reassuranceNeed": 0.05
+      },
+      "relationship": {
+        "closeness": -0.05,
+        "trust": -0.03,
+        "affection": -0.04,
+        "tension": 0.05,
+        "stability": -0.03
+      },
+      "witness_emotion": {
+        "tension": 0.01
+      }
+    },
+    {
+      "kind": "exclusion",
+      "emotion": {
+        "warmth": -0.07,
+        "trust": -0.05,
+        "calm": -0.04,
+        "vulnerability": 0.06,
+        "longing": 0.04,
+        "hurt": 0.09,
+        "tension": 0.05,
+        "irritation": 0.04,
+        "reassuranceNeed": 0.08
+      },
+      "relationship": {
+        "closeness": -0.08,
+        "trust": -0.05,
+        "affection": -0.04,
+        "tension": 0.06,
+        "stability": -0.05
+      },
+      "witness_emotion": {
+        "tension": 0.02
+      }
+    },
+    {
+      "kind": "threat",
+      "emotion": {
+        "warmth": -0.1,
+        "trust": -0.12,
+        "calm": -0.12,
+        "vulnerability": 0.08,
+        "hurt": 0.06,
+        "tension": 0.15,
+        "irritation": 0.07,
+        "reassuranceNeed": 0.07
+      },
+      "relationship": {
+        "closeness": -0.08,
+        "trust": -0.12,
+        "affection": -0.08,
+        "tension": 0.15,
+        "stability": -0.08
+      },
+      "witness_emotion": {
+        "calm": -0.04,
+        "tension": 0.05
+      }
     }
   ]
 }

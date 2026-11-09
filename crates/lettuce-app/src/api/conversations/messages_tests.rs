@@ -560,6 +560,7 @@ async fn memory_chat_with(harness: &Harness, key: &str, with_lead: bool) -> Memo
             profile: crate::companion::companion_memory_run::tests::profile(),
             time_awareness_enabled: false,
             supersession_enabled: false,
+            group_companion_members: Vec::new(),
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 1,
@@ -571,6 +572,7 @@ async fn memory_chat_with(harness: &Harness, key: &str, with_lead: bool) -> Memo
                     group: false,
                     supersession_enabled: false,
                     require_source_message_id: false,
+                    group_companion: None,
                 },
                 &|key| key.to_owned(),
             ),
@@ -2620,6 +2622,7 @@ fn extra_memory_run(
             profile: crate::companion::companion_memory_run::tests::profile(),
             time_awareness_enabled: false,
             supersession_enabled: false,
+            group_companion_members: Vec::new(),
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 1,
@@ -2631,6 +2634,7 @@ fn extra_memory_run(
                     group: false,
                     supersession_enabled: false,
                     require_source_message_id: false,
+                    group_companion: None,
                 },
                 &|key| key.to_owned(),
             ),

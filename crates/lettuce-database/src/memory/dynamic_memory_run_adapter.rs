@@ -1,6 +1,14 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
-use lettuce_conversations::{InferenceUsage, MessageRenderSource, ProposedToolCall};
+use lettuce_companions::{
+    GroupCompanionEffectReason, GroupCompanionMember, GroupCompanionMemoryRoundWriter,
+    GroupCompanionRoundOutputs, GroupSocialDropReason, GroupSocialEvent, GroupSocialEventCatalog,
+};
+use lettuce_conversations::{
+    InferenceUsage, MessageRenderSource, MessageRole, MessageVisibility, ProposedToolCall,
+    effective_persona,
+};
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
     DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
@@ -10,10 +18,14 @@ use lettuce_memory::{
     DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
     DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryCheckpoint,
     DynamicMemorySummaryCommit, DynamicMemorySummaryWindow, DynamicMemoryToolCallEvidence,
-    MemoryRepositoryError, MemorySummary, MemoryToolResult, NewDynamicMemoryAttemptRecovery,
-    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    MemoryCategory, MemoryItem, MemoryOrigin, MemoryRepositoryError, MemoryShortId, MemorySummary,
+    MemoryToolOutcome, MemoryToolResult, MemoryToolSkipReason, NewDynamicMemoryAttemptRecovery,
+    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, Score,
 };
-use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, Revision, TimestampMillis};
+use lettuce_types::{
+    DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, MemoryId, MemorySpaceId, MessageId,
+    Revision, TimestampMillis, ToolExecutionId,
+};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
@@ -147,7 +159,7 @@ pub(crate) fn load_run_in(
 ) -> Result<DynamicMemoryRun, DynamicMemoryRunRepositoryError> {
     let mut run = connection
         .query_row(
-            "SELECT conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id \
+            "SELECT conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id,group_companion_members_json \
              FROM dynamic_memory_runs WHERE id=?1",
             [id.to_string()],
             |row| {
@@ -158,6 +170,10 @@ pub(crate) fn load_run_in(
                     space_id: parse_id(row.get(1)?)?,
                     time_awareness_enabled: row.get(2)?,
                     supersession_enabled: row.get(3)?,
+                    group_companion_members: serde_json::from_str(
+                        &row.get::<_, String>(13)?,
+                    )
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     structured_fallback_format: parse_fallback_format(&row.get::<_, String>(4)?)?,
                     summary_window: DynamicMemorySummaryWindow {
                         message_interval: u32::try_from(row.get::<_, i64>(5)?)
@@ -851,8 +867,8 @@ pub(crate) fn insert_restored_run_in(
     transaction
         .execute(
             "INSERT INTO dynamic_memory_runs \
-             (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+             (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id,group_companion_members_json) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
             params![
                 run.id.to_string(),
                 run.conversation_id.to_string(),
@@ -868,6 +884,7 @@ pub(crate) fn insert_restored_run_in(
                 encode_versioned(&run.tool_request, JSON_VERSION).map_err(storage)?,
                 run.created_at.get(),
                 run.branch_id.to_string(),
+                serde_json::to_string(&run.group_companion_members).map_err(storage)?,
             ],
         )
         .map_err(storage)?;
@@ -1093,6 +1110,512 @@ fn record_changed_items_in(
     Ok(())
 }
 
+fn commit_dynamic_memory_background_round_in(
+    transaction: &Transaction<'_>,
+    commit: DynamicMemoryBackgroundRoundCommit,
+    at: TimestampMillis,
+) -> Result<DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRunRepositoryError> {
+    if commit.results.is_empty()
+        || commit.change.as_ref().is_some_and(|change| {
+            change.space_id != commit.space_id
+                || change.expected_revision != commit.expected_memory_revision
+                || change.validate().is_err()
+        })
+    {
+        return Err(DynamicMemoryRunRepositoryError::Invalid {
+            reason: "background round has no results or an inconsistent memory change",
+        });
+    }
+    let digest = background_change_digest(&commit.change)?;
+    if let Some((stored, stored_digest)) = load_background_settlement_in(
+        transaction,
+        commit.run_id,
+        commit.attempt_id,
+        commit.round_ordinal,
+    )? {
+        if stored.space_id == commit.space_id
+            && stored.expected_memory_revision == commit.expected_memory_revision
+            && stored.results == commit.results
+            && stored_digest == digest
+        {
+            return Ok(stored);
+        }
+        return Err(DynamicMemoryRunRepositoryError::Conflict);
+    }
+    let run = load_run_in(transaction, commit.run_id)?;
+    let attempt = load_attempt_in(transaction, commit.attempt_id)?;
+    ensure_attempt_job_in(transaction, &attempt, at)?;
+    let rounds = list_rounds_in(transaction, commit.run_id, commit.attempt_id)?;
+    let round = rounds
+        .get(usize::from(commit.round_ordinal))
+        .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
+    if run.space_id != commit.space_id
+        || attempt.run_id != run.id
+        || attempt.status != DynamicMemoryAttemptStatus::Processing
+        || round.ordinal != commit.round_ordinal
+        || round.calls.len() != commit.results.len()
+        || round
+            .calls
+            .iter()
+            .zip(&commit.results)
+            .any(|(call, result)| call.id != result.execution_id)
+    {
+        return Err(DynamicMemoryRunRepositoryError::Conflict);
+    }
+    let current = crate::memory::memory_adapter::get_in(transaction, commit.space_id)
+        .map_err(storage)?
+        .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
+    if current.revision != commit.expected_memory_revision {
+        return Err(DynamicMemoryRunRepositoryError::Conflict);
+    }
+    let resulting = match &commit.change {
+        Some(change) => crate::memory::memory_adapter::compare_and_apply_in(transaction, change)
+            .map_err(storage)?,
+        None => current.clone(),
+    };
+    record_changed_items_in(transaction, run.id, &current, &resulting)?;
+    transaction
+        .execute(
+            "INSERT INTO dynamic_memory_background_round_settlements \
+             (run_id,attempt_id,round_ordinal,space_id,expected_memory_revision,\
+              resulting_memory_revision,change_digest,settled_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![
+                commit.run_id.to_string(),
+                commit.attempt_id.to_string(),
+                i64::from(commit.round_ordinal),
+                commit.space_id.to_string(),
+                sql_u64(commit.expected_memory_revision.get())?,
+                sql_u64(resulting.revision.get())?,
+                digest,
+                at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    for (call, result) in round.calls.iter().zip(&commit.results) {
+        transaction
+            .execute(
+                "INSERT INTO dynamic_memory_background_tool_results \
+                 (run_id,attempt_id,round_ordinal,call_id,ordinal,outcome_json,settled_at) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![
+                    commit.run_id.to_string(),
+                    commit.attempt_id.to_string(),
+                    i64::from(commit.round_ordinal),
+                    result.execution_id.to_string(),
+                    i64::from(call.ordinal),
+                    encode_versioned(&result.outcome, JSON_VERSION).map_err(storage)?,
+                    at.get(),
+                ],
+            )
+            .map_err(storage)?;
+    }
+    load_background_settlement_in(
+        transaction,
+        commit.run_id,
+        commit.attempt_id,
+        commit.round_ordinal,
+    )?
+    .map(|(settlement, _)| settlement)
+    .ok_or(DynamicMemoryRunRepositoryError::Storage {
+        reason: "background round settlement is missing after commit",
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn perspective_memory_item(
+    items: &[MemoryItem],
+    text: &str,
+    category: MemoryCategory,
+    important: bool,
+    source_message_id: MessageId,
+    source_role: MessageRole,
+    observed_at: TimestampMillis,
+    now: TimestampMillis,
+) -> MemoryItem {
+    let id = MemoryId::new();
+    let short_id = MemoryShortId::allocate(id, |candidate| {
+        items.iter().any(|item| item.short_id == candidate)
+    });
+    MemoryItem {
+        id,
+        short_id,
+        text: text.to_string(),
+        origin: MemoryOrigin::Model,
+        category: Some(category),
+        source_message_id: Some(source_message_id),
+        source_role: Some(source_role),
+        observed_at: Some(observed_at),
+        observed_time_precision: Some("turn".to_string()),
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: Vec::new(),
+        token_count: None,
+        is_cold: false,
+        is_pinned: important,
+        importance: Score::FULL,
+        persistence_importance: Score::FULL,
+        prompt_importance: Score::FULL,
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 0,
+        created_at: now,
+        last_accessed_at: now,
+    }
+}
+
+fn append_space_item_in(
+    transaction: &Transaction<'_>,
+    space: &lettuce_memory::MemorySpaceSnapshot,
+    item: &MemoryItem,
+) -> Result<Revision, DynamicMemoryRunRepositoryError> {
+    let ordinal = i64::try_from(space.items.len()).map_err(storage)?;
+    crate::memory::memory_adapter::insert_item_at(transaction, space.id, ordinal, item)
+        .map_err(storage)?;
+    let next = space
+        .revision
+        .next()
+        .map_err(|_| DynamicMemoryRunRepositoryError::Invalid {
+            reason: "a memory space revision overflowed",
+        })?;
+    let updated = transaction
+        .execute(
+            "UPDATE memory_spaces SET revision = ?2 WHERE id = ?1 AND revision = ?3",
+            params![
+                space.id.to_string(),
+                sql_u64(next.get())?,
+                sql_u64(space.revision.get())?,
+            ],
+        )
+        .map_err(storage)?;
+    if updated != 1 {
+        return Err(DynamicMemoryRunRepositoryError::Conflict);
+    }
+    Ok(next)
+}
+
+fn social_drop_skip_reason(reason: GroupSocialDropReason) -> MemoryToolSkipReason {
+    match reason {
+        GroupSocialDropReason::AlreadyApplied => MemoryToolSkipReason::AlreadyApplied,
+        GroupSocialDropReason::UnknownKind
+        | GroupSocialDropReason::UnknownMember
+        | GroupSocialDropReason::SelfTarget
+        | GroupSocialDropReason::NotOnPath
+        | GroupSocialDropReason::TargetNotPresent => MemoryToolSkipReason::MalformedArguments,
+    }
+}
+
+fn set_result_outcome(
+    results: &mut [MemoryToolResult],
+    index: &BTreeMap<ToolExecutionId, usize>,
+    execution_id: ToolExecutionId,
+    outcome: MemoryToolOutcome,
+) {
+    if let Some(position) = index.get(&execution_id) {
+        results[*position].outcome = outcome;
+    }
+}
+
+impl GroupCompanionMemoryRoundWriter for Database {
+    fn commit_group_companion_memory_round(
+        &self,
+        mut commit: DynamicMemoryBackgroundRoundCommit,
+        outputs: GroupCompanionRoundOutputs,
+        catalog: &GroupSocialEventCatalog,
+        now: TimestampMillis,
+    ) -> Result<DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRunRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        if load_background_settlement_in(
+            &transaction,
+            commit.run_id,
+            commit.attempt_id,
+            commit.round_ordinal,
+        )?
+        .is_some()
+        {
+            let stored = commit_dynamic_memory_background_round_in(&transaction, commit, now)?;
+            transaction.commit().map_err(storage)?;
+            return Ok(stored);
+        }
+        let run = load_run_in(&transaction, commit.run_id)?;
+        let result_index = commit
+            .results
+            .iter()
+            .enumerate()
+            .map(|(position, result)| (result.execution_id, position))
+            .collect::<BTreeMap<_, _>>();
+        let mut spaces = BTreeMap::new();
+        for memory in &outputs.perspective_memories {
+            let source = run
+                .source_messages
+                .iter()
+                .find(|source| source.message_id == memory.source_message_id);
+            let Some(source) = source else {
+                set_result_outcome(
+                    &mut commit.results,
+                    &result_index,
+                    memory.execution_id,
+                    MemoryToolOutcome::Skipped {
+                        reason: MemoryToolSkipReason::MalformedArguments,
+                    },
+                );
+                continue;
+            };
+            let space_id = match spaces.get(&memory.character_id) {
+                Some(space_id) => *space_id,
+                None => {
+                    let space_id =
+                        crate::conversation::group_companion_adapter::ensure_perspective_space_in(
+                            &transaction,
+                            run.conversation_id,
+                            run.branch_id,
+                            memory.character_id,
+                        )
+                        .map_err(|error| {
+                            storage_because("a perspective memory space could not be created")(
+                                error,
+                            )
+                        })?;
+                    spaces.insert(memory.character_id, space_id);
+                    space_id
+                }
+            };
+            let snapshot = crate::memory::memory_adapter::get_in(&transaction, space_id)
+                .map_err(storage)?
+                .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
+            let item = perspective_memory_item(
+                &snapshot.items,
+                &memory.text,
+                memory.category,
+                memory.important,
+                memory.source_message_id,
+                source.role,
+                memory.observed_at,
+                now,
+            );
+            append_space_item_in(&transaction, &snapshot, &item)?;
+            set_result_outcome(
+                &mut commit.results,
+                &result_index,
+                memory.execution_id,
+                MemoryToolOutcome::PerspectiveCreated {
+                    character_id: memory.character_id,
+                    id: item.id,
+                    short_id: item.short_id,
+                    text: item.text.clone(),
+                },
+            );
+            if outputs.write_back.contains(&memory.character_id) {
+                let pool_id = transaction
+                    .query_row(
+                        "SELECT space_id FROM companion_memory_pools WHERE character_id = ?1",
+                        [memory.character_id.to_string()],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+                    .map_err(storage)?;
+                let Some(pool_id) = pool_id else {
+                    continue;
+                };
+                let pool_id = MemorySpaceId::from_str(&pool_id).map_err(storage)?;
+                let pool = crate::memory::memory_adapter::get_in(&transaction, pool_id)
+                    .map_err(storage)?
+                    .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
+                let pool_item = perspective_memory_item(
+                    &pool.items,
+                    &memory.text,
+                    memory.category,
+                    memory.important,
+                    memory.source_message_id,
+                    source.role,
+                    memory.observed_at,
+                    now,
+                );
+                append_space_item_in(&transaction, &pool, &pool_item)?;
+            }
+        }
+        if !outputs.social_events.is_empty() {
+            let path = conversation_query::timeline_items_after(
+                &transaction,
+                run.conversation_id,
+                run.branch_id,
+                -1,
+            )
+            .map_err(|error| storage_because("the run branch timeline could not be read")(error))?
+            .into_iter()
+            .filter(|item| {
+                item.message.visibility == MessageVisibility::Visible
+                    && matches!(
+                        item.message.role,
+                        MessageRole::User | MessageRole::Assistant
+                    )
+            })
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>();
+            let checkpoints =
+                crate::conversation::group_companion_adapter::load_checkpoints_for_path_in(
+                    &transaction,
+                    run.conversation_id,
+                    &path,
+                )
+                .map_err(|error| {
+                    storage_because("group companion checkpoints could not be read")(error)
+                })?;
+            let conversation =
+                crate::conversation::conversation_vertical_slice::hydrate_conversation(
+                    &transaction,
+                    run.conversation_id,
+                    || {},
+                )
+                .map_err(|error| {
+                    storage_because("the run conversation could not be read")(error)
+                })?;
+            let persona_id =
+                effective_persona(&conversation.conversation).map(|persona| persona.source_id);
+            let mut persona_relationships = BTreeMap::new();
+            let mut persona_revisions = BTreeMap::new();
+            for (character_id, _) in &outputs.members {
+                let stored =
+                    crate::conversation::group_companion_adapter::load_persona_relationship_in(
+                        &transaction,
+                        *character_id,
+                        persona_id,
+                    )
+                    .map_err(|error| {
+                        storage_because("a persona relationship could not be read")(error)
+                    })?;
+                match stored {
+                    Some((revision, state)) => {
+                        persona_relationships.insert(*character_id, state);
+                        persona_revisions.insert(*character_id, Some(revision));
+                    }
+                    None => {
+                        persona_revisions.insert(*character_id, None);
+                    }
+                }
+            }
+            let mut already_applied = BTreeSet::new();
+            for checkpoint in &checkpoints {
+                for effect in &checkpoint.effects {
+                    if effect.reason != GroupCompanionEffectReason::SocialEvent {
+                        continue;
+                    }
+                    let (Some(kind), Some(change)) =
+                        (&effect.social_event, &effect.relationship_change)
+                    else {
+                        continue;
+                    };
+                    let from = match change.target {
+                        lettuce_companions::GroupCompanionTarget::Character { character_id } => {
+                            Some(character_id)
+                        }
+                        lettuce_companions::GroupCompanionTarget::Persona { .. } => None,
+                    };
+                    already_applied.insert(GroupSocialEvent {
+                        kind: kind.clone(),
+                        from,
+                        to: checkpoint.character_id,
+                        source_message_id: checkpoint.message_id,
+                    });
+                }
+            }
+            let members = outputs
+                .members
+                .iter()
+                .map(|(character_id, config)| GroupCompanionMember {
+                    character_id: *character_id,
+                    config,
+                })
+                .collect::<Vec<_>>();
+            let events = outputs
+                .social_events
+                .iter()
+                .map(|(_, event)| event.clone())
+                .collect::<Vec<_>>();
+            let outcome = lettuce_companions::apply_group_social_events(
+                &members,
+                &path,
+                &checkpoints,
+                &persona_relationships,
+                &already_applied,
+                &events,
+                catalog,
+            );
+            for (message_id, checkpoints) in &outcome.checkpoints {
+                crate::conversation::group_companion_adapter::replace_message_checkpoints_in(
+                    &transaction,
+                    run.conversation_id,
+                    *message_id,
+                    checkpoints,
+                )
+                .map_err(|error| {
+                    storage_because("group companion checkpoints could not be written")(error)
+                })?;
+            }
+            let mut last_persona_relationships = BTreeMap::new();
+            for (character_id, state) in &outcome.persona_relationships {
+                last_persona_relationships.insert(*character_id, state.clone());
+            }
+            for (character_id, state) in last_persona_relationships {
+                crate::conversation::group_companion_adapter::write_persona_relationship_in(
+                    &transaction,
+                    character_id,
+                    persona_id,
+                    persona_revisions.get(&character_id).copied().flatten(),
+                    &state,
+                    now,
+                )
+                .map_err(|error| {
+                    storage_because("a persona relationship could not be written")(error)
+                })?;
+            }
+            let mut execution_ids = BTreeMap::<GroupSocialEvent, Vec<ToolExecutionId>>::new();
+            for (execution_id, event) in &outputs.social_events {
+                execution_ids
+                    .entry(event.clone())
+                    .or_default()
+                    .push(*execution_id);
+            }
+            let mut dropped_ids = BTreeSet::new();
+            for (event, reason) in &outcome.dropped {
+                let Some(ids) = execution_ids.get_mut(event) else {
+                    continue;
+                };
+                let Some(execution_id) = ids.pop() else {
+                    continue;
+                };
+                dropped_ids.insert(execution_id);
+                set_result_outcome(
+                    &mut commit.results,
+                    &result_index,
+                    execution_id,
+                    MemoryToolOutcome::Skipped {
+                        reason: social_drop_skip_reason(*reason),
+                    },
+                );
+            }
+            for ids in execution_ids.values() {
+                for execution_id in ids {
+                    if dropped_ids.contains(execution_id) {
+                        continue;
+                    }
+                    set_result_outcome(
+                        &mut commit.results,
+                        &result_index,
+                        *execution_id,
+                        MemoryToolOutcome::SocialEventRecorded,
+                    );
+                }
+            }
+        }
+        let stored = commit_dynamic_memory_background_round_in(&transaction, commit, now)?;
+        transaction.commit().map_err(storage)?;
+        Ok(stored)
+    }
+}
+
 impl DynamicMemoryRunRepository for Database {
     fn apply_dynamic_memory_cycle_finish(
         &self,
@@ -1172,6 +1695,7 @@ impl DynamicMemoryRunRepository for Database {
             profile: input.profile,
             time_awareness_enabled: input.time_awareness_enabled,
             supersession_enabled: input.supersession_enabled,
+            group_companion_members: input.group_companion_members,
             structured_fallback_format: input.structured_fallback_format,
             summary_window: input.summary_window,
             tool_request: input.tool_request,
@@ -1251,8 +1775,8 @@ impl DynamicMemoryRunRepository for Database {
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_runs \
-                 (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+                 (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id,group_companion_members_json) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
                 params![
                     requested_run.id.to_string(),
                     requested_run.conversation_id.to_string(),
@@ -1269,6 +1793,8 @@ impl DynamicMemoryRunRepository for Database {
                     encode_versioned(&requested_run.tool_request, JSON_VERSION).map_err(storage)?,
                     requested_run.created_at.get(),
                     requested_run.branch_id.to_string(),
+                    serde_json::to_string(&requested_run.group_companion_members)
+                        .map_err(storage)?,
                 ],
             )
             .map_err(|error| match error.sqlite_error_code() {
@@ -1746,118 +2272,11 @@ impl DynamicMemoryRunRepository for Database {
         commit: DynamicMemoryBackgroundRoundCommit,
         at: TimestampMillis,
     ) -> Result<DynamicMemoryBackgroundRoundSettlement, DynamicMemoryRunRepositoryError> {
-        if commit.results.is_empty()
-            || commit.change.as_ref().is_some_and(|change| {
-                change.space_id != commit.space_id
-                    || change.expected_revision != commit.expected_memory_revision
-                    || change.validate().is_err()
-            })
-        {
-            return Err(DynamicMemoryRunRepositoryError::Invalid {
-                reason: "background round has no results or an inconsistent memory change",
-            });
-        }
-        let digest = background_change_digest(&commit.change)?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        if let Some((stored, stored_digest)) = load_background_settlement_in(
-            &transaction,
-            commit.run_id,
-            commit.attempt_id,
-            commit.round_ordinal,
-        )? {
-            if stored.space_id == commit.space_id
-                && stored.expected_memory_revision == commit.expected_memory_revision
-                && stored.results == commit.results
-                && stored_digest == digest
-            {
-                transaction.commit().map_err(storage)?;
-                return Ok(stored);
-            }
-            return Err(DynamicMemoryRunRepositoryError::Conflict);
-        }
-        let run = load_run_in(&transaction, commit.run_id)?;
-        let attempt = load_attempt_in(&transaction, commit.attempt_id)?;
-        ensure_attempt_job_in(&transaction, &attempt, at)?;
-        let rounds = list_rounds_in(&transaction, commit.run_id, commit.attempt_id)?;
-        let round = rounds
-            .get(usize::from(commit.round_ordinal))
-            .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
-        if run.space_id != commit.space_id
-            || attempt.run_id != run.id
-            || attempt.status != DynamicMemoryAttemptStatus::Processing
-            || round.ordinal != commit.round_ordinal
-            || round.calls.len() != commit.results.len()
-            || round
-                .calls
-                .iter()
-                .zip(&commit.results)
-                .any(|(call, result)| call.id != result.execution_id)
-        {
-            return Err(DynamicMemoryRunRepositoryError::Conflict);
-        }
-        let current = crate::memory::memory_adapter::get_in(&transaction, commit.space_id)
-            .map_err(storage)?
-            .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
-        if current.revision != commit.expected_memory_revision {
-            return Err(DynamicMemoryRunRepositoryError::Conflict);
-        }
-        let resulting = match &commit.change {
-            Some(change) => {
-                crate::memory::memory_adapter::compare_and_apply_in(&transaction, change)
-                    .map_err(storage)?
-            }
-            None => current.clone(),
-        };
-        record_changed_items_in(&transaction, run.id, &current, &resulting)?;
-        transaction
-            .execute(
-                "INSERT INTO dynamic_memory_background_round_settlements \
-                 (run_id,attempt_id,round_ordinal,space_id,expected_memory_revision,\
-                  resulting_memory_revision,change_digest,settled_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                params![
-                    commit.run_id.to_string(),
-                    commit.attempt_id.to_string(),
-                    i64::from(commit.round_ordinal),
-                    commit.space_id.to_string(),
-                    sql_u64(commit.expected_memory_revision.get())?,
-                    sql_u64(resulting.revision.get())?,
-                    digest,
-                    at.get(),
-                ],
-            )
-            .map_err(storage)?;
-        for (call, result) in round.calls.iter().zip(&commit.results) {
-            transaction
-                .execute(
-                    "INSERT INTO dynamic_memory_background_tool_results \
-                     (run_id,attempt_id,round_ordinal,call_id,ordinal,outcome_json,settled_at) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                    params![
-                        commit.run_id.to_string(),
-                        commit.attempt_id.to_string(),
-                        i64::from(commit.round_ordinal),
-                        result.execution_id.to_string(),
-                        i64::from(call.ordinal),
-                        encode_versioned(&result.outcome, JSON_VERSION).map_err(storage)?,
-                        at.get(),
-                    ],
-                )
-                .map_err(storage)?;
-        }
-        let stored = load_background_settlement_in(
-            &transaction,
-            commit.run_id,
-            commit.attempt_id,
-            commit.round_ordinal,
-        )?
-        .map(|(settlement, _)| settlement)
-        .ok_or(DynamicMemoryRunRepositoryError::Storage {
-            reason: "background round settlement is missing after commit",
-        })?;
+        let stored = commit_dynamic_memory_background_round_in(&transaction, commit, at)?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -2034,12 +2453,12 @@ pub(crate) mod tests {
     use lettuce_memory::{
         DynamicMemoryApprovalRepository, DynamicMemoryAttemptFailureCode,
         DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
-        DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryRunRepository,
-        DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
+        DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind, DynamicMemoryRun,
+        DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError, DynamicMemorySourceMessage,
         DynamicMemoryStructuredFallbackFormat, DynamicMemorySuffixRewind,
         DynamicMemorySuffixRewindError, DynamicMemorySuffixRewindRepository,
         DynamicMemorySummaryCommit, MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository,
-        MemorySummaryRepository, MemoryToolOutcome, MemoryToolResult,
+        MemorySpaceSnapshot, MemorySummaryRepository, MemoryToolOutcome, MemoryToolResult,
         NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound,
         NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall, Score,
     };
@@ -3698,6 +4117,7 @@ pub(crate) mod tests {
                 profile: profile(),
                 time_awareness_enabled: true,
                 supersession_enabled: true,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                     message_interval: 2,
@@ -3709,6 +4129,7 @@ pub(crate) mod tests {
                         group: false,
                         supersession_enabled: true,
                         require_source_message_id: true,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -3911,6 +4332,7 @@ pub(crate) mod tests {
                 profile: profile(),
                 time_awareness_enabled: false,
                 supersession_enabled: false,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                     message_interval: 2,
@@ -3922,6 +4344,7 @@ pub(crate) mod tests {
                         group: false,
                         supersession_enabled: false,
                         require_source_message_id: false,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -4170,6 +4593,7 @@ pub(crate) mod tests {
                 profile: profile(),
                 time_awareness_enabled: false,
                 supersession_enabled: false,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                     message_interval: 2,
@@ -4181,6 +4605,7 @@ pub(crate) mod tests {
                         group: false,
                         supersession_enabled: false,
                         require_source_message_id: false,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -4242,6 +4667,7 @@ pub(crate) mod tests {
                 profile: profile(),
                 time_awareness_enabled: true,
                 supersession_enabled: true,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                     message_interval: 2,
@@ -4253,6 +4679,7 @@ pub(crate) mod tests {
                         group: false,
                         supersession_enabled: true,
                         require_source_message_id: true,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -4322,6 +4749,7 @@ pub(crate) mod tests {
                 profile: profile(),
                 time_awareness_enabled: true,
                 supersession_enabled: true,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                     message_interval: 2,
@@ -4333,6 +4761,7 @@ pub(crate) mod tests {
                         group: false,
                         supersession_enabled: true,
                         require_source_message_id: true,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -4616,6 +5045,7 @@ pub(crate) mod tests {
                 profile: profile(),
                 time_awareness_enabled: true,
                 supersession_enabled: true,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                     message_interval: 2,
@@ -4627,6 +5057,7 @@ pub(crate) mod tests {
                         group: false,
                         supersession_enabled: true,
                         require_source_message_id: true,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -4824,6 +5255,7 @@ pub(crate) mod tests {
                 profile: profile(),
                 time_awareness_enabled: true,
                 supersession_enabled: true,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                     message_interval: 2,
@@ -4835,6 +5267,7 @@ pub(crate) mod tests {
                         group: false,
                         supersession_enabled: true,
                         require_source_message_id: true,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -5049,6 +5482,7 @@ pub(crate) mod tests {
             profile: profile(),
             time_awareness_enabled: true,
             supersession_enabled: true,
+            group_companion_members: Vec::new(),
             structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
             summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 2,
@@ -5060,6 +5494,7 @@ pub(crate) mod tests {
                     group: false,
                     supersession_enabled: true,
                     require_source_message_id: true,
+                    group_companion: None,
                 },
                 &|key| key.to_owned(),
             ),
@@ -5298,5 +5733,55 @@ pub(crate) mod tests {
         assert_eq!(visible_counts(&database, conversation_id), before);
         assert_eq!(before, (2, 0));
         assert_eq!(parent.status, DynamicMemoryAttemptStatus::Processing);
+    }
+
+    #[test]
+    fn stored_runs_without_group_companion_members_still_deserialize_and_validate() {
+        let space_id = MemorySpaceId::new();
+        let run = DynamicMemoryRun {
+            id: DynamicMemoryRunId::new(),
+            conversation_id: ConversationId::new(),
+            branch_id: ConversationBranchId::new(),
+            space_id,
+            starting_memory: MemorySpaceSnapshot {
+                id: space_id,
+                revision: Revision::INITIAL,
+                items: Vec::new(),
+            },
+            source_messages: vec![DynamicMemorySourceMessage {
+                message_id: MessageId::new(),
+                role: MessageRole::User,
+                render_source: MessageRenderSource::Revision(MessageRevisionId::new()),
+                effective_time: TimestampMillis::new(1),
+            }],
+            profile: profile(),
+            time_awareness_enabled: false,
+            supersession_enabled: false,
+            group_companion_members: Vec::new(),
+            structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+            summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 1,
+                start: 0,
+                end: 1,
+            },
+            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                lettuce_memory::DynamicMemoryToolOptions {
+                    group: false,
+                    supersession_enabled: false,
+                    require_source_message_id: false,
+                    group_companion: None,
+                },
+                &|key| key.to_owned(),
+            ),
+            created_at: TimestampMillis::new(1),
+        };
+        let mut value = serde_json::to_value(&run).expect("serialize run");
+        value
+            .as_object_mut()
+            .expect("run object")
+            .remove("group_companion_members");
+        let restored: DynamicMemoryRun = serde_json::from_value(value).expect("deserialize run");
+        assert!(restored.group_companion_members.is_empty());
+        restored.validate().expect("old run validates");
     }
 }

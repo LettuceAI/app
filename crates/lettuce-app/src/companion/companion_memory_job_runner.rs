@@ -65,6 +65,11 @@ impl<
         + MemorySummaryRepository
         + lettuce_memory::MemoryTokenCountRepository
         + MemoryEmbeddingRepository
+        + lettuce_characters::CharacterRepository
+        + lettuce_characters::GroupRepository
+        + lettuce_companions::GroupCompanionRepository
+        + lettuce_companions::GroupCompanionMemoryRoundWriter
+        + lettuce_conversations::ConversationReader
         + ProviderReplayArtifactPort
         + JobUsageLedger
         + JobStore

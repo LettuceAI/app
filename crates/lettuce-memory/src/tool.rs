@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use lettuce_conversations::{ToolChoice, ToolDefinition, ToolRequest};
-use lettuce_types::{MemoryId, MessageId, TimestampMillis, ToolExecutionId};
+use lettuce_types::{CharacterId, MemoryId, MessageId, TimestampMillis, ToolExecutionId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -15,14 +15,21 @@ const MAX_DONE_SUMMARY_BYTES: usize = 64 * 1024;
 const MAX_SUPERSEDED_MEMORIES: usize = 40;
 
 /// Runtime catalog keys for the text the memory tool contract sends to a model.
-pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 18] = [
+pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 25] = [
     "memory_create_tool",
     "memory_create_tool_group",
+    "memory_create_tool_group_companion",
     "memory_text_parameter",
     "memory_important_parameter",
     "memory_category_parameter",
     "memory_source_message_parameter",
     "memory_supersedes_parameter",
+    "memory_perspective_tool",
+    "memory_perspective_member_parameter",
+    "memory_social_event_tool",
+    "memory_social_kind_parameter",
+    "memory_social_from_parameter",
+    "memory_social_to_parameter",
     "memory_delete_tool",
     "memory_delete_text_parameter",
     "memory_delete_text_parameter_group",
@@ -36,13 +43,41 @@ pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 18] = [
     "memory_done_summary_parameter",
 ];
 
+/// The closed social event kinds; the bundled social event catalog defines
+/// exactly these, in this order.
+pub const SOCIAL_EVENT_KINDS: [&str; 22] = [
+    "apology",
+    "support",
+    "defense",
+    "insult",
+    "betrayal",
+    "confession",
+    "rejection",
+    "reconciliation",
+    "teasing",
+    "gratitude",
+    "compliment",
+    "flirting",
+    "affection",
+    "forgiveness",
+    "promise",
+    "sacrifice",
+    "broken_promise",
+    "deception",
+    "accusation",
+    "dismissal",
+    "exclusion",
+    "threat",
+];
+
 /// Which memory tool contract a run uses. Group chats use the group contract,
 /// which has no source attribution or supersession.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicMemoryToolOptions {
     pub group: bool,
     pub supersession_enabled: bool,
     pub require_source_message_id: bool,
+    pub group_companion: Option<Vec<String>>,
 }
 
 /// The memory tool contract; `text` resolves a runtime catalog key.
@@ -52,6 +87,8 @@ pub fn dynamic_memory_tool_request_for_run(
     text: &dyn Fn(&str) -> String,
 ) -> ToolRequest {
     let variant = |direct: &str, group: &str| text(if options.group { group } else { direct });
+    let companion = options.group_companion.as_deref();
+    let companion_members = companion.unwrap_or_default();
     let mut create_properties = json!({
         "text": { "type": "string", "description": text("memory_text_parameter") },
         "important": { "type": "boolean", "description": text("memory_important_parameter") },
@@ -61,13 +98,13 @@ pub fn dynamic_memory_tool_request_for_run(
             "description": text("memory_category_parameter")
         }
     });
-    if !options.group {
+    if !options.group || companion.is_some() {
         create_properties["source_message_id"] = json!({
             "type": "string",
             "description": text("memory_source_message_parameter")
         });
     }
-    if options.supersession_enabled && !options.group {
+    if options.supersession_enabled && !options.group && companion.is_none() {
         create_properties["supersedes"] = json!({
             "type": "array",
             "items": { "type": "string" },
@@ -75,9 +112,14 @@ pub fn dynamic_memory_tool_request_for_run(
         });
     }
     let mut create_required = vec!["text", "category"];
-    if options.require_source_message_id && !options.group {
+    if companion.is_some() || (options.require_source_message_id && !options.group) {
         create_required.push("source_message_id");
     }
+    let create_description = if companion.is_some() {
+        text("memory_create_tool_group_companion")
+    } else {
+        variant("memory_create_tool", "memory_create_tool_group")
+    };
     let id_parameter = |key: &str| {
         json!({
             "type": "object",
@@ -87,68 +129,130 @@ pub fn dynamic_memory_tool_request_for_run(
             "required": ["id"]
         })
     };
+    let mut definitions = vec![ToolDefinition {
+        name: "create_memory".to_string(),
+        description: Some(create_description),
+        parameters: json!({
+            "type": "object",
+            "properties": create_properties,
+            "required": create_required
+        }),
+        version: TOOL_VERSION,
+    }];
+    if companion.is_some() {
+        let mut actor_labels = companion_members.to_vec();
+        actor_labels.push("user".to_string());
+        definitions.push(ToolDefinition {
+            name: "create_perspective_memory".to_string(),
+            description: Some(text("memory_perspective_tool")),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "member": {
+                        "type": "string",
+                        "enum": companion_members,
+                        "description": text("memory_perspective_member_parameter")
+                    },
+                    "text": { "type": "string", "description": text("memory_text_parameter") },
+                    "category": {
+                        "type": "string",
+                        "enum": ["character_trait", "relationship", "plot_event", "world_detail", "preference", "other"],
+                        "description": text("memory_category_parameter")
+                    },
+                    "important": { "type": "boolean", "description": text("memory_important_parameter") },
+                    "source_message_id": {
+                        "type": "string",
+                        "description": text("memory_source_message_parameter")
+                    }
+                },
+                "required": ["member", "text", "category", "source_message_id"]
+            }),
+            version: TOOL_VERSION,
+        });
+        definitions.push(ToolDefinition {
+            name: "record_social_event".to_string(),
+            description: Some(text("memory_social_event_tool")),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": SOCIAL_EVENT_KINDS,
+                        "description": text("memory_social_kind_parameter")
+                    },
+                    "from": {
+                        "type": "string",
+                        "enum": actor_labels,
+                        "description": text("memory_social_from_parameter")
+                    },
+                    "to": {
+                        "type": "string",
+                        "enum": companion_members,
+                        "description": text("memory_social_to_parameter")
+                    },
+                    "source_message_id": {
+                        "type": "string",
+                        "description": text("memory_source_message_parameter")
+                    }
+                },
+                "required": ["kind", "from", "to", "source_message_id"]
+            }),
+            version: TOOL_VERSION,
+        });
+    }
+    definitions.extend([
+        ToolDefinition {
+            name: "delete_memory".to_string(),
+            description: Some(text("memory_delete_tool")),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": variant(
+                            "memory_delete_text_parameter",
+                            "memory_delete_text_parameter_group",
+                        )
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": text("memory_delete_confidence_parameter")
+                    }
+                },
+                "required": ["text"]
+            }),
+            version: TOOL_VERSION,
+        },
+        ToolDefinition {
+            name: "pin_memory".to_string(),
+            description: Some(variant("memory_pin_tool", "memory_pin_tool_group")),
+            parameters: id_parameter("memory_pin_id_parameter"),
+            version: TOOL_VERSION,
+        },
+        ToolDefinition {
+            name: "unpin_memory".to_string(),
+            description: Some(text("memory_unpin_tool")),
+            parameters: id_parameter("memory_unpin_id_parameter"),
+            version: TOOL_VERSION,
+        },
+        ToolDefinition {
+            name: "done".to_string(),
+            description: Some(text("memory_done_tool")),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": text("memory_done_summary_parameter")
+                    }
+                },
+                "required": []
+            }),
+            version: TOOL_VERSION,
+        },
+    ]);
     ToolRequest {
-        definitions: vec![
-            ToolDefinition {
-                name: "create_memory".to_string(),
-                description: Some(variant("memory_create_tool", "memory_create_tool_group")),
-                parameters: json!({
-                    "type": "object",
-                    "properties": create_properties,
-                    "required": create_required
-                }),
-                version: TOOL_VERSION,
-            },
-            ToolDefinition {
-                name: "delete_memory".to_string(),
-                description: Some(text("memory_delete_tool")),
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "text": {
-                            "type": "string",
-                            "description": variant(
-                                "memory_delete_text_parameter",
-                                "memory_delete_text_parameter_group",
-                            )
-                        },
-                        "confidence": {
-                            "type": "number",
-                            "description": text("memory_delete_confidence_parameter")
-                        }
-                    },
-                    "required": ["text"]
-                }),
-                version: TOOL_VERSION,
-            },
-            ToolDefinition {
-                name: "pin_memory".to_string(),
-                description: Some(variant("memory_pin_tool", "memory_pin_tool_group")),
-                parameters: id_parameter("memory_pin_id_parameter"),
-                version: TOOL_VERSION,
-            },
-            ToolDefinition {
-                name: "unpin_memory".to_string(),
-                description: Some(text("memory_unpin_tool")),
-                parameters: id_parameter("memory_unpin_id_parameter"),
-                version: TOOL_VERSION,
-            },
-            ToolDefinition {
-                name: "done".to_string(),
-                description: Some(text("memory_done_tool")),
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "summary": {
-                            "type": "string",
-                            "description": text("memory_done_summary_parameter")
-                        }
-                    },
-                    "required": []
-                }),
-                version: TOOL_VERSION,
-            },
-        ],
+        definitions,
         choice: ToolChoice::Required,
     }
 }
@@ -184,6 +288,19 @@ pub enum MemoryToolArguments {
         important: bool,
         source_message_id: Option<MessageId>,
         supersedes: Vec<MemoryReference>,
+    },
+    CreatePerspectiveMemory {
+        member: String,
+        text: String,
+        category: CategoryArgument,
+        important: bool,
+        source_message_id: Option<MessageId>,
+    },
+    RecordSocialEvent {
+        kind: String,
+        from: String,
+        to: String,
+        source_message_id: Option<MessageId>,
     },
     DeleteMemory {
         target: MemoryReference,
@@ -231,6 +348,7 @@ pub enum MemoryToolSkipReason {
     UnsupportedTool,
     MalformedArguments,
     UserEdited,
+    AlreadyApplied,
 }
 
 /// A memory as the model named it: a six-digit short id, a stable id, or (for
@@ -379,6 +497,53 @@ impl MemoryToolArguments {
                     important,
                     source_message_id,
                     supersedes,
+                })
+            }
+            "create_perspective_memory" => {
+                let member = required_string(object, "member")?;
+                let text = crate::normalize_memory_text(&required_string(object, "text")?)
+                    .map_err(MemoryToolError::Text)?;
+                let category = match object
+                    .get("category")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|category| !category.is_empty())
+                {
+                    None => CategoryArgument::Missing,
+                    Some(category) => MemoryCategory::parse(category)
+                        .map_or(CategoryArgument::Invalid, |category| {
+                            CategoryArgument::Tagged { category }
+                        }),
+                };
+                let important = object
+                    .get("important")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let source_message_id = object
+                    .get("source_message_id")
+                    .and_then(Value::as_str)
+                    .and_then(|value| value.trim().parse().ok());
+                Ok(Self::CreatePerspectiveMemory {
+                    member,
+                    text: text.trim().to_string(),
+                    category,
+                    important,
+                    source_message_id,
+                })
+            }
+            "record_social_event" => {
+                let kind = required_string(object, "kind")?;
+                let from = required_string(object, "from")?;
+                let to = required_string(object, "to")?;
+                let source_message_id = object
+                    .get("source_message_id")
+                    .and_then(Value::as_str)
+                    .and_then(|value| value.trim().parse().ok());
+                Ok(Self::RecordSocialEvent {
+                    kind,
+                    from,
+                    to,
+                    source_message_id,
                 })
             }
             "delete_memory" => {
@@ -548,6 +713,8 @@ pub fn undo_memory_tool_outcomes(
             | MemoryToolOutcome::Done { .. }
             | MemoryToolOutcome::Rejected { .. }
             | MemoryToolOutcome::Skipped { .. }
+            | MemoryToolOutcome::PerspectiveCreated { .. }
+            | MemoryToolOutcome::SocialEventRecorded
             | MemoryToolOutcome::StoppedAfterDone => {}
         }
     }
@@ -567,28 +734,45 @@ pub fn undo_memory_tool_outcomes_preserving(
         let skip = match outcome {
             MemoryToolOutcome::Created { id, .. } => {
                 items.iter().any(|item| item.id == *id)
-                    && retained_item_edits(retained, settled_revision, *id).next().is_some()
+                    && retained_item_edits(retained, settled_revision, *id)
+                        .next()
+                        .is_some()
             }
             MemoryToolOutcome::Deleted { id, .. } => {
                 retained_item_edits(retained, settled_revision, *id)
                     .any(|edit| matches!(edit.edit.mutation, MemoryManualMutation::Delete { .. }))
             }
             MemoryToolOutcome::SoftDeleted { id, .. } => {
-                retained_item_edits(retained, settled_revision, *id).any(|edit| matches!(
-                    edit.edit.mutation,
-                    MemoryManualMutation::Temperature { .. } | MemoryManualMutation::Pin { pinned: true, .. }
-                        | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }
-                ))
+                retained_item_edits(retained, settled_revision, *id).any(|edit| {
+                    matches!(
+                        edit.edit.mutation,
+                        MemoryManualMutation::Temperature { .. }
+                            | MemoryManualMutation::Pin { pinned: true, .. }
+                            | MemoryManualMutation::Add { .. }
+                            | MemoryManualMutation::Delete { .. }
+                    )
+                })
             }
             MemoryToolOutcome::Pinned { id, .. } | MemoryToolOutcome::Unpinned { id, .. } => {
-                let pin_owned = retained_item_edits(retained, settled_revision, *id).any(|edit| matches!(
-                    edit.edit.mutation,
-                    MemoryManualMutation::Pin { .. } | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }
-                ));
+                let pin_owned = retained_item_edits(retained, settled_revision, *id).any(|edit| {
+                    matches!(
+                        edit.edit.mutation,
+                        MemoryManualMutation::Pin { .. }
+                            | MemoryManualMutation::Add { .. }
+                            | MemoryManualMutation::Delete { .. }
+                    )
+                });
                 let unpinned = matches!(outcome, MemoryToolOutcome::Unpinned { .. });
-                let cold_owned = unpinned && retained_item_edits(retained, settled_revision, *id)
-                    .any(|edit| matches!(edit.edit.mutation, MemoryManualMutation::Temperature { cold: true, .. }));
-                if unpinned && !pin_owned && !cold_owned
+                let cold_owned = unpinned
+                    && retained_item_edits(retained, settled_revision, *id).any(|edit| {
+                        matches!(
+                            edit.edit.mutation,
+                            MemoryManualMutation::Temperature { cold: true, .. }
+                        )
+                    });
+                if unpinned
+                    && !pin_owned
+                    && !cold_owned
                     && let Some(item) = items.iter_mut().find(|item| item.id == *id)
                 {
                     item.is_cold = false;
@@ -611,7 +795,11 @@ fn retained_item_edits(
 ) -> impl Iterator<Item = &crate::MemoryManualHistory> {
     retained.iter().filter(move |edit| {
         edit.resulting_revision > settled_revision
-            && edit.before_item.iter().chain(&edit.after_item).any(|item| item.id == id)
+            && edit
+                .before_item
+                .iter()
+                .chain(&edit.after_item)
+                .any(|item| item.id == id)
     })
 }
 
@@ -684,6 +872,13 @@ pub enum MemoryToolOutcome {
     Skipped {
         reason: MemoryToolSkipReason,
     },
+    PerspectiveCreated {
+        character_id: CharacterId,
+        id: MemoryId,
+        short_id: MemoryShortId,
+        text: String,
+    },
+    SocialEventRecorded,
     StoppedAfterDone,
 }
 
@@ -827,6 +1022,21 @@ impl MemoryToolReducer {
                         hard_delete_limit,
                         &mut hard_delete_count,
                     ),
+                    MemoryToolArguments::CreatePerspectiveMemory { category, .. } => match category
+                    {
+                        CategoryArgument::Missing => MemoryToolOutcome::Skipped {
+                            reason: MemoryToolSkipReason::MissingCategory,
+                        },
+                        CategoryArgument::Invalid => MemoryToolOutcome::Skipped {
+                            reason: MemoryToolSkipReason::InvalidCategory,
+                        },
+                        CategoryArgument::Tagged { .. } => MemoryToolOutcome::Skipped {
+                            reason: MemoryToolSkipReason::UnsupportedTool,
+                        },
+                    },
+                    MemoryToolArguments::RecordSocialEvent { .. } => MemoryToolOutcome::Skipped {
+                        reason: MemoryToolSkipReason::UnsupportedTool,
+                    },
                     MemoryToolArguments::PinMemory { target } => {
                         apply_pin(&mut items, target, true)
                     }
@@ -1350,7 +1560,8 @@ mod tests {
         dynamic_memory_tool_request_for_run, undo_memory_tool_outcomes,
     };
     use crate::{
-        MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot, Score,
+        MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot,
+        SOCIAL_EVENT_KINDS, Score,
     };
 
     fn tool_request(
@@ -1363,6 +1574,7 @@ mod tests {
                 group,
                 supersession_enabled,
                 require_source_message_id,
+                group_companion: None,
             },
             &|key| key.to_owned(),
         )
@@ -1605,6 +1817,99 @@ mod tests {
             tool_request(false, false, false).definitions[0].parameters["properties"]
                 .get("supersedes")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn companion_group_contract_adds_perspective_and_social_tools() {
+        let request = dynamic_memory_tool_request_for_run(
+            DynamicMemoryToolOptions {
+                group: true,
+                supersession_enabled: false,
+                require_source_message_id: false,
+                group_companion: Some(vec!["m1".to_owned(), "m2".to_owned()]),
+            },
+            &|key| key.to_owned(),
+        );
+        assert!(request.validate().is_ok());
+        let names = request
+            .definitions
+            .iter()
+            .map(|definition| definition.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "create_memory",
+                "create_perspective_memory",
+                "record_social_event",
+                "delete_memory",
+                "pin_memory",
+                "unpin_memory",
+                "done",
+            ]
+        );
+        let create_required = request.definitions[0].parameters["required"]
+            .as_array()
+            .expect("create required");
+        assert!(
+            create_required
+                .iter()
+                .any(|field| field == "source_message_id")
+        );
+        let perspective = request
+            .definitions
+            .iter()
+            .find(|definition| definition.name == "create_perspective_memory")
+            .expect("perspective tool");
+        assert_eq!(
+            perspective.parameters["properties"]["member"]["enum"],
+            json!(["m1", "m2"])
+        );
+        let perspective_required = perspective.parameters["required"]
+            .as_array()
+            .expect("perspective required");
+        for field in ["member", "text", "category", "source_message_id"] {
+            assert!(perspective_required.iter().any(|value| value == field));
+        }
+        let social = request
+            .definitions
+            .iter()
+            .find(|definition| definition.name == "record_social_event")
+            .expect("social tool");
+        assert_eq!(
+            social.parameters["properties"]["kind"]["enum"],
+            json!(SOCIAL_EVENT_KINDS)
+        );
+        assert_eq!(
+            social.parameters["properties"]["from"]["enum"],
+            json!(["m1", "m2", "user"])
+        );
+        assert_eq!(
+            social.parameters["properties"]["to"]["enum"],
+            json!(["m1", "m2"])
+        );
+
+        let plain = tool_request(true, false, false);
+        assert!(
+            !plain
+                .definitions
+                .iter()
+                .any(|definition| definition.name == "create_perspective_memory")
+        );
+        assert!(
+            !plain
+                .definitions
+                .iter()
+                .any(|definition| definition.name == "record_social_event")
+        );
+        let create_required = plain.definitions[0].parameters["required"]
+            .as_array()
+            .expect("plain create required");
+        assert!(
+            !create_required
+                .iter()
+                .any(|field| field == "source_message_id")
         );
     }
 

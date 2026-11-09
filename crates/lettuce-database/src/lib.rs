@@ -233,6 +233,11 @@ const MIGRATION_33: Migration = Migration {
     sql: include_str!("../migrations/0033_group_companion_memory_spaces.sql"),
 };
 
+const MIGRATION_34: Migration = Migration {
+    id: 34,
+    sql: include_str!("../migrations/0034_group_companion_memory_run.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -267,6 +272,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_31,
     MIGRATION_32,
     MIGRATION_33,
+    MIGRATION_34,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

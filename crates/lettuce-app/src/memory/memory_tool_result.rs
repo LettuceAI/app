@@ -75,6 +75,15 @@ pub(crate) fn legacy_memory_tool_output(
                 MemoryToolSkipReason::MissingCategory | MemoryToolSkipReason::InvalidCategory
             ),
         ),
+        MemoryToolOutcome::PerspectiveCreated { short_id, .. } => json!({
+            "status": "created",
+            "name": call.name,
+            "memoryId": short_id.to_string(),
+        }),
+        MemoryToolOutcome::SocialEventRecorded => json!({
+            "status": "recorded",
+            "name": call.name,
+        }),
         MemoryToolOutcome::Done { .. }
         | MemoryToolOutcome::StoppedAfterDone
         | MemoryToolOutcome::Rejected { .. } => {
@@ -178,6 +187,7 @@ fn skip_reason(
         MemoryToolSkipReason::UnsupportedTool => "memory_skip_unsupported_tool",
         MemoryToolSkipReason::MalformedArguments => "memory_skip_malformed_arguments",
         MemoryToolSkipReason::UserEdited => "memory_skip_user_edited",
+        MemoryToolSkipReason::AlreadyApplied => "memory_skip_social_event_recorded",
     };
     text.render_with(key, [])
 }
@@ -185,7 +195,7 @@ fn skip_reason(
 #[cfg(test)]
 mod tests {
     use lettuce_memory::{MemoryShortId, Score, SoftDeleteReason};
-    use lettuce_types::{MemoryId, ToolExecutionId};
+    use lettuce_types::{CharacterId, MemoryId, ToolExecutionId};
 
     use super::*;
 
@@ -414,6 +424,49 @@ mod tests {
         assert_eq!(
             memory_id_line(&text, short(42), "Mira likes tea"),
             Err(RuntimeTextError::Unavailable)
+        );
+    }
+
+    #[test]
+    fn companion_results_report_perspective_and_social_status() {
+        let short = short(42);
+        let perspective = render(
+            &call("create_perspective_memory", json!({})),
+            MemoryToolOutcome::PerspectiveCreated {
+                character_id: CharacterId::new(),
+                id: MemoryId::new(),
+                short_id: short,
+                text: "Ada thinks Bea was covering for Cole.".into(),
+            },
+        );
+        assert_eq!(
+            perspective.value,
+            json!({
+                "status": "created",
+                "name": "create_perspective_memory",
+                "memoryId": short.to_string(),
+            })
+        );
+        let social = render(
+            &call("record_social_event", json!({})),
+            MemoryToolOutcome::SocialEventRecorded,
+        );
+        assert_eq!(
+            social.value,
+            json!({
+                "status": "recorded",
+                "name": "record_social_event",
+            })
+        );
+        let replay = render(
+            &call("record_social_event", json!({})),
+            MemoryToolOutcome::Skipped {
+                reason: MemoryToolSkipReason::AlreadyApplied,
+            },
+        );
+        assert_eq!(
+            replay.value["reason"],
+            "already recorded (this social moment was recorded in an earlier round)"
         );
     }
 

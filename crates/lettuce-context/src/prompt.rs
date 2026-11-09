@@ -1151,6 +1151,7 @@ pub enum PromptVariable {
     CompanionPrivateMemories,
     ScheduledNotes,
     GroupCharacters,
+    GroupCompanionMembers,
     PreviousSummary,
     Character,
     MaxEntries,
@@ -1311,6 +1312,7 @@ impl PromptVariable {
             Self::CompanionPrivateMemories => "{{companion_private_memories}}",
             Self::ScheduledNotes => "{{scheduled_notes}}",
             Self::GroupCharacters => "{{group_characters}}",
+            Self::GroupCompanionMembers => "{{group_companion_members}}",
             Self::PreviousSummary => "{{prev_summary}}",
             Self::Character => "{{character}}",
             Self::MaxEntries => "{{max_entries}}",
@@ -1470,6 +1472,7 @@ impl PromptVariable {
         Self::CompanionPrivateMemories,
         Self::ScheduledNotes,
         Self::GroupCharacters,
+        Self::GroupCompanionMembers,
         Self::PreviousSummary,
         Self::Character,
         Self::MaxEntries,
@@ -1670,7 +1673,10 @@ impl PromptVariable {
             }
             Purpose::DynamicMemoryManager => matches!(
                 self,
-                Variable::MaxEntries | Variable::CurrentMemoryTokens | Variable::HotTokenBudget
+                Variable::MaxEntries
+                    | Variable::CurrentMemoryTokens
+                    | Variable::HotTokenBudget
+                    | Variable::GroupCompanionMembers
             ),
             Purpose::ReplyHelperRoleplay | Purpose::ReplyHelperConversational => {
                 matches!(self, Variable::CurrentDraft)

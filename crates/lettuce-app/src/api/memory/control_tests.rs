@@ -410,6 +410,7 @@ async fn recorded_cycle(
             profile: crate::companion::companion_memory_run::tests::profile(),
             time_awareness_enabled: false,
             supersession_enabled: false,
+            group_companion_members: Vec::new(),
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 2,
@@ -421,6 +422,7 @@ async fn recorded_cycle(
                     group: false,
                     supersession_enabled: false,
                     require_source_message_id: false,
+                    group_companion: None,
                 },
                 &|key| key.to_owned(),
             ),
@@ -1461,6 +1463,7 @@ async fn open_round_with_decay(
             profile: crate::companion::companion_memory_run::tests::profile(),
             time_awareness_enabled: false,
             supersession_enabled: false,
+            group_companion_members: Vec::new(),
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 2,
@@ -1472,6 +1475,7 @@ async fn open_round_with_decay(
                     group: false,
                     supersession_enabled: false,
                     require_source_message_id: false,
+                    group_companion: None,
                 },
                 &|key| key.to_owned(),
             ),

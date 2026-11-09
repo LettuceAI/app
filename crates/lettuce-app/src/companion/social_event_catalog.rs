@@ -18,21 +18,10 @@ mod tests {
     use super::*;
     use lettuce_companions::{EmotionVector, RelationshipDelta};
 
-    const EXPECTED_KINDS: [&str; 10] = [
-        "apology",
-        "support",
-        "defense",
-        "insult",
-        "betrayal",
-        "confession",
-        "rejection",
-        "reconciliation",
-        "teasing",
-        "gratitude",
-    ];
+    use lettuce_memory::SOCIAL_EVENT_KINDS as EXPECTED_KINDS;
 
     #[test]
-    fn bundled_catalog_loads_with_the_ten_kinds_and_moderate_values() {
+    fn bundled_catalog_defines_the_tool_kinds_with_moderate_values() {
         let resource: serde_json::Value =
             serde_json::from_str(SOCIAL_EVENT_CATALOG_JSON).expect("JSON");
         assert_eq!(resource["version"], 1);

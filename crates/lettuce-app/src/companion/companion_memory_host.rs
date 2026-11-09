@@ -178,6 +178,8 @@ pub trait CompanionMemoryHostSources:
     + CompanionStateRepository
     + lettuce_characters::CharacterRepository
     + lettuce_characters::GroupRepository
+    + lettuce_companions::GroupCompanionRepository
+    + lettuce_companions::GroupCompanionMemoryRoundWriter
     + GlobalSettingsStore
     + ConversationReader
     + ModelProfileRepository
@@ -206,6 +208,8 @@ impl<T> CompanionMemoryHostSources for T where
         + CompanionStateRepository
         + lettuce_characters::CharacterRepository
         + lettuce_characters::GroupRepository
+        + lettuce_companions::GroupCompanionRepository
+        + lettuce_companions::GroupCompanionMemoryRoundWriter
         + GlobalSettingsStore
         + ConversationReader
         + ModelProfileRepository
@@ -788,7 +792,15 @@ where
                 },
             )
         })?;
-        let manager_prompt = if account.protocol == ProviderProtocol::LlamaCpp {
+        let group_companion = group
+            && crate::generation::live_sources::live_companion_mode(
+                self.repository,
+                &aggregate.conversation,
+            )
+            .map_err(CompanionMemoryHostError::Character)?;
+        let manager_prompt = if group_companion {
+            BuiltInPromptId::GroupCompanionMemory
+        } else if account.protocol == ProviderProtocol::LlamaCpp {
             BuiltInPromptId::DynamicMemoryLocal
         } else {
             BuiltInPromptId::DynamicMemory
@@ -801,12 +813,16 @@ where
             Some(document) => document,
             None => self.built_in_prompt(BuiltInPromptId::DynamicSummary)?,
         };
-        let memory_prompt = match self.prompt_override(
-            overrides.manager_prompt_id,
-            PromptPurpose::DynamicMemoryManager,
-        )? {
-            Some(document) => document,
-            None => self.built_in_prompt(manager_prompt)?,
+        let memory_prompt = if group_companion {
+            self.built_in_prompt(BuiltInPromptId::GroupCompanionMemory)?
+        } else {
+            match self.prompt_override(
+                overrides.manager_prompt_id,
+                PromptPurpose::DynamicMemoryManager,
+            )? {
+                Some(document) => document,
+                None => self.built_in_prompt(manager_prompt)?,
+            }
         };
         let score = |basis_points| {
             lettuce_memory::Score::from_basis_points(basis_points).ok_or(

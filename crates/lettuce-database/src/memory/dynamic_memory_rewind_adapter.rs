@@ -857,6 +857,7 @@ mod manual_undo_tests {
                 profile: super::super::dynamic_memory_run_adapter::tests::profile(),
                 time_awareness_enabled: false,
                 supersession_enabled: false,
+                group_companion_members: Vec::new(),
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Json,
                 summary_window: DynamicMemorySummaryWindow {
                     message_interval: 2,
@@ -868,6 +869,7 @@ mod manual_undo_tests {
                         group: false,
                         supersession_enabled: false,
                         require_source_message_id: false,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),

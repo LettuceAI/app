@@ -3496,6 +3496,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             profile: profile.clone(),
             time_awareness_enabled: false,
             supersession_enabled: false,
+            group_companion_members: Vec::new(),
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 1,
@@ -3507,6 +3508,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     group: false,
                     supersession_enabled: false,
                     require_source_message_id: false,
+                    group_companion: None,
                 },
                 &|key| key.to_owned(),
             ),
@@ -3619,6 +3621,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 profile: profile.clone(),
                 time_awareness_enabled: false,
                 supersession_enabled: false,
+                group_companion_members: Vec::new(),
                 structured_fallback_format:
                     lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
@@ -3631,6 +3634,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                         group: false,
                         supersession_enabled: false,
                         require_source_message_id: false,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),
@@ -12227,6 +12231,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             profile,
             time_awareness_enabled: false,
             supersession_enabled: false,
+            group_companion_members: Vec::new(),
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                 message_interval: 1,

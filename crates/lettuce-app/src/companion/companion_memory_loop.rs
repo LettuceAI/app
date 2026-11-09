@@ -46,6 +46,11 @@ impl<
     R: DynamicMemoryRunRepository
         + MemoryRepository
         + MemoryEmbeddingRepository
+        + lettuce_characters::CharacterRepository
+        + lettuce_characters::GroupRepository
+        + lettuce_companions::GroupCompanionRepository
+        + lettuce_companions::GroupCompanionMemoryRoundWriter
+        + lettuce_conversations::ConversationReader
         + ProviderReplayArtifactPort
         + JobUsageLedger
         + crate::generation::runtime_text::RuntimeTextSource

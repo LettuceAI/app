@@ -15359,6 +15359,7 @@ mod tests {
                 profile: crate::memory::dynamic_memory_run_adapter::tests::profile(),
                 time_awareness_enabled: false,
                 supersession_enabled: false,
+                group_companion_members: Vec::new(),
                 structured_fallback_format:
                     lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
@@ -15371,6 +15372,7 @@ mod tests {
                         group: false,
                         supersession_enabled: false,
                         require_source_message_id: false,
+                        group_companion: None,
                     },
                     &|key| key.to_owned(),
                 ),

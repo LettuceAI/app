@@ -759,6 +759,7 @@ mod tests {
             profile: profile(),
             time_awareness_enabled: false,
             supersession_enabled: false,
+            group_companion_members: Vec::new(),
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Json,
             summary_window: DynamicMemorySummaryWindow {
                 message_interval: 4,
