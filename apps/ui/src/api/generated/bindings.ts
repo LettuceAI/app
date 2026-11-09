@@ -2565,6 +2565,8 @@ export type GradientColor = {
 	hex: string,
 };
 
+export type GroupAudienceScope = "message" | "onward";
+
 export type GroupCompanionEffectReason = "witnessed" | "addressed" | "social_event";
 
 export type GroupCompanionEffectTarget = { kind: "persona" } | { kind: "character"; character_id: string };
@@ -2587,8 +2589,6 @@ export type GroupCompanionMemberEffectView = {
 	display_name: string,
 	effects: GroupCompanionEffectView[],
 };
-
-export type GroupAudienceScope = "message" | "onward";
 
 /**
  *  One member of a companion-mode group chat: its latest state on the active
@@ -2616,27 +2616,6 @@ export type GroupCompanionMemoryGetRequest = {
 export type GroupCompanionMessageEffectsRequest = {
 	conversation_id: string,
 	message_id: string,
-};
-
-export type GroupMessageAudienceGetRequest = {
-	conversation_id: string,
-	message_id: string,
-};
-
-export type GroupMessageAudienceMemberView = {
-	character_id: string,
-	display_name: string,
-	heard: boolean,
-	away_after: boolean,
-};
-
-export type GroupMessageAudienceSetRequest = {
-	conversation_id: string,
-	message_id: string,
-	character_id: string,
-	heard: boolean,
-	scope: GroupAudienceScope,
-	client_operation_id: string,
 };
 
 export type GroupCompanionStateGetRequest = {
@@ -2765,6 +2744,27 @@ export type GroupMembersSettings = {
 	muted_source: SettingSource,
 	models_source: SettingSource,
 	participants: ParticipantSettings[],
+};
+
+export type GroupMessageAudienceGetRequest = {
+	conversation_id: string,
+	message_id: string,
+};
+
+export type GroupMessageAudienceMemberView = {
+	character_id: string,
+	display_name: string,
+	heard: boolean,
+	away_after: boolean,
+};
+
+export type GroupMessageAudienceSetRequest = {
+	conversation_id: string,
+	message_id: string,
+	character_id: string,
+	heard: boolean,
+	scope: GroupAudienceScope,
+	client_operation_id: string,
 };
 
 export type GroupNoteDeleteRequest = {
