@@ -31,3 +31,8 @@ export const stanceAxes = ["closeness", "trust", "affection", "tension"] as cons
 export function closenessBand(value: number): "low" | "mid" | "high" {
   return value < -1 / 3 ? "low" : value > 1 / 3 ? "high" : "mid";
 }
+
+/** Whether an effect changed anything a person can see: a bond axis or a feeling. */
+export function changesSomething(effect: { relationship: RelationshipChange | null; felt: Record<string, number | null> }): boolean {
+  return (effect.relationship !== null && changedAxes(effect.relationship).length > 0) || numericEntries(effect.felt).some(([, value]) => value !== 0);
+}

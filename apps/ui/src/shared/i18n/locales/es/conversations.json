@@ -1209,8 +1209,7 @@
       "memoryCount_many": "{{count}} memorias",
       "memoryCount_other": "{{count}} memorias",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "No hay cambios que mostrar",
-      "quote": "«{{text}}»"
+      "none": "No hay cambios que mostrar"
     },
     "activity": {
       "undo": "Deshacer esta actualización",
@@ -1283,15 +1282,17 @@
     "audience": {
       "title": "Quién escuchó esto",
       "nobody": "Nadie",
-      "body": "Los miembros que escucharon un mensaje pueden recordarlo y reaccionar a él. El modelo de memoria lo corrige al leer; tus cambios aquí siempre tienen prioridad.",
-      "scope": "Aplicar a",
-      "scopeMessage": "Este mensaje",
-      "scopeOnward": "De aquí en adelante",
-      "scopeMessageBody": "Solo este mensaje, como un susurro",
-      "scopeOnwardBody": "Este y los siguientes, hasta que vuelva a hablar",
       "speaker": "Escribió este mensaje",
       "awayAfter": "No sigue después de esto",
-      "heard": "{{name}} escuchó esto"
+      "statusHeard": "Escuchó esto",
+      "statusMissed": "No escuchó esto",
+      "heardBadge": "Escuchado",
+      "missedBadge": "Perdido",
+      "missOne": "No escuchó este",
+      "missOnward": "Dejó de seguir aquí",
+      "hearOne": "Escuchó este",
+      "hearOnward": "Vuelve a seguir desde aquí",
+      "hint": "El modelo de memoria lo corrige al leer. Tus cambios siempre tienen prioridad."
     }
   }
 }

@@ -1240,8 +1240,7 @@
       "memoryCount_many": "{{count}} wspomnień",
       "memoryCount_other": "{{count}} wspomnienia",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Brak zmian do pokazania",
-      "quote": "„{{text}}”"
+      "none": "Brak zmian do pokazania"
     },
     "activity": {
       "undo": "Cofnij tę aktualizację",
@@ -1314,15 +1313,17 @@
     "audience": {
       "title": "Kto to słyszał",
       "nobody": "Nikt",
-      "body": "Członkowie, którzy słyszeli wiadomość, mogą ją pamiętać i na nią reagować. Model pamięci poprawia to podczas czytania; Twoje zmiany tutaj zawsze mają pierwszeństwo.",
-      "scope": "Zastosuj do",
-      "scopeMessage": "Ta wiadomość",
-      "scopeOnward": "Od teraz",
-      "scopeMessageBody": "Tylko ta wiadomość, jak szept",
-      "scopeOnwardBody": "Ta i kolejne wiadomości, do ponownej wypowiedzi",
       "speaker": "Autor tej wiadomości",
       "awayAfter": "Potem nie śledzi rozmowy",
-      "heard": "{{name}}: słyszy to"
+      "statusHeard": "Słyszy to",
+      "statusMissed": "Nie słyszy tego",
+      "heardBadge": "Słyszy",
+      "missedBadge": "Pominięte",
+      "missOne": "Nie słyszy tej wiadomości",
+      "missOnward": "Od tego miejsca poza rozmową",
+      "hearOne": "Słyszy tę wiadomość",
+      "hearOnward": "Od tego miejsca znów w rozmowie",
+      "hint": "Model pamięci poprawia to podczas czytania. Twoje zmiany zawsze mają pierwszeństwo."
     }
   }
 }

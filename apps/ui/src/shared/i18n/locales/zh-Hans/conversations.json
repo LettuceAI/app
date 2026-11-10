@@ -1147,8 +1147,7 @@
       "invalidated": "这些变化已不再适用于此回复。",
       "memoryCount_other": "{{count}} 条记忆",
       "axisSummary": "{{axis}} {{value}}",
-      "none": "没有可显示的变化",
-      "quote": "“{{text}}”"
+      "none": "没有可显示的变化"
     },
     "activity": {
       "undo": "撤销此更新",
@@ -1221,15 +1220,17 @@
     "audience": {
       "title": "谁听到了这条",
       "nobody": "没有人",
-      "body": "听到某条消息的成员可以记住并回应它。记忆模型会在阅读时修正这一点；你在这里的修改始终优先。",
-      "scope": "应用于",
-      "scopeMessage": "这条消息",
-      "scopeOnward": "从这里开始",
-      "scopeMessageBody": "仅这条消息，比如悄悄话",
-      "scopeOnwardBody": "这条及之后的消息，直到再次发言",
       "speaker": "写了这条消息",
       "awayAfter": "此后未在听",
-      "heard": "{{name}}听到了这条"
+      "statusHeard": "听到了这条",
+      "statusMissed": "没听到这条",
+      "heardBadge": "听到",
+      "missedBadge": "错过",
+      "missOne": "没听到这条",
+      "missOnward": "从这里起不在听",
+      "hearOne": "听到了这条",
+      "hearOnward": "从这里起重新在听",
+      "hint": "记忆模型会在阅读时修正这一点。你的修改始终优先。"
     }
   }
 }

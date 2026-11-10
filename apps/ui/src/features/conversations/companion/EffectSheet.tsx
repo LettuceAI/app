@@ -20,6 +20,8 @@ export function CompanionEffectRow({ api, conversationId, message, onOpen }: { a
   const parts = changedAxes(value.relationship).slice(0, 2).map(([axis, delta]) => t("companion.effect.axisSummary", { value: signed(delta, i18n.language), axis: t(`companion.axes.${axis}.label`).toLowerCase() }));
   const memories = value.memories_added.length + value.memories_updated.length + value.memories_superseded.length;
   if (memories > 0) parts.push(t("companion.effect.memoryCount", { count: memories }));
+  const quiet = value.status === "ready" && value.summary === null && parts.length === 0 && numericEntries(value.felt).every(([, delta]) => delta === 0) && value.signals_added.length === 0 && value.signals_removed.length === 0;
+  if (quiet) return null;
   const description = value.status === "processing" ? t("companion.effect.processing") : value.status === "failed" ? t("companion.effect.failed") : value.status === "invalidated" ? t("companion.effect.invalidated") : value.summary ?? (parts.join(", ") || t("companion.effect.none"));
   return <ListGroup><ListRowButton icon={<Sprout size={icon.lg} />} title={t("companion.effect.title")} description={description} onClick={onOpen} /></ListGroup>;
 }
@@ -47,7 +49,7 @@ export function EffectSheet({ api, conversationId, message, open, onClose }: { a
   const { t } = useTranslation("conversations");
   const effect = useQuery({ ...companionEffectQuery(api, conversationId, message.id), enabled: open });
   useOverlayBack(open, onClose);
-  return <Sheet open={open} onClose={onClose} placement="auto" size="md" title={t("companion.effect.title")} description={textOf(message) ? <span className="line-clamp-2">{t("companion.effect.quote", { text: textOf(message) })}</span> : undefined}>
+  return <Sheet open={open} onClose={onClose} placement="auto" size="md" title={t("companion.effect.title")} description={textOf(message) ? <span className="line-clamp-2 italic">{textOf(message).trim()}</span> : undefined}>
     {effect.isPending ? <Skeleton className="h-20 w-full" /> : effect.isError ? <FailureState error={effect.error} onRetry={() => void effect.refetch()} /> : effect.data === null ? <Text variant="hint">{t("companion.effect.none")}</Text> : <EffectDetails effect={effect.data} />}
   </Sheet>;
 }

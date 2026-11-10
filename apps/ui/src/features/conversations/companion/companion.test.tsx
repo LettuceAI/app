@@ -496,11 +496,23 @@ describe("group companion chat", () => {
     fireEvent.contextMenu(await screen.findByText("A reply."));
     fireEvent.click(await screen.findByRole("button", { name: /Who heard this/ }));
     const sheet = await screen.findByRole("dialog", { name: "Who heard this" });
-    fireEvent.click(within(sheet).getByRole("radio", { name: "From here on" }));
-    fireEvent.click(within(sheet).getByRole("switch", { name: "Bea heard this" }));
+    expect(within(sheet).getAllByText("Heard")).toHaveLength(2);
+    fireEvent.click(within(sheet).getByRole("button", { name: /^Bea/ }));
+    fireEvent.click(await within(sheet).findByRole("button", { name: "Stopped following here" }));
     await waitFor(() => expect(asked).toHaveLength(1));
     expect(asked[0]).toMatchObject({ conversation_id: "c1", character_id: "cb", heard: false, scope: "onward" });
-    expect(await within(sheet).findByText("Not following after this")).toBeTruthy();
+    expect(await within(sheet).findByText("Didn't hear this · Not following after this")).toBeTruthy();
+  });
+
+  it("hides the group effect row when a message changed nothing anyone can see", async () => {
+    const quiet = (): GroupCompanionMemberEffectView[] => [{ character_id: "ca", display_name: "Ada", effects: [{ reason: "witnessed", social_event: null, target: null, relationship: null, felt: vector() }] }];
+    let served = 0;
+    await open({ path: "/chat/c1", calls: { ...groupCalls(), groupCompanionMessageEffects: () => { served += 1; return ok(quiet()); } } });
+    fireEvent.contextMenu(await screen.findByText("A reply."));
+    await screen.findByRole("button", { name: /^Copy/ });
+    await waitFor(() => expect(served).toBeGreaterThan(0));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(screen.queryByRole("button", { name: /What this reply changed/ })).toBeNull();
   });
 
   it("lists who a message affected and what it did to each member", async () => {

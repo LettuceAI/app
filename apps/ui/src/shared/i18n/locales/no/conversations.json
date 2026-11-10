@@ -1178,8 +1178,7 @@
       "memoryCount_one": "{{count}} minne",
       "memoryCount_other": "{{count}} minner",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Ingen endringer å vise",
-      "quote": "«{{text}}»"
+      "none": "Ingen endringer å vise"
     },
     "activity": {
       "undo": "Angre denne oppdateringen",
@@ -1252,15 +1251,17 @@
     "audience": {
       "title": "Hvem hørte dette",
       "nobody": "Ingen",
-      "body": "Medlemmer som hørte en melding, kan huske den og reagere på den. Minnemodellen retter dette mens den leser; endringene dine her vinner alltid.",
-      "scope": "Bruk på",
-      "scopeMessage": "Denne meldingen",
-      "scopeOnward": "Herfra",
-      "scopeMessageBody": "Bare denne meldingen, som en hvisking",
-      "scopeOnwardBody": "Denne og senere meldinger, til hen snakker igjen",
       "speaker": "Skrev denne meldingen",
       "awayAfter": "Følger ikke med etter dette",
-      "heard": "{{name}} hørte dette"
+      "statusHeard": "Hørte dette",
+      "statusMissed": "Hørte ikke dette",
+      "heardBadge": "Hørt",
+      "missedBadge": "Gikk glipp av",
+      "missOne": "Hørte ikke denne",
+      "missOnward": "Sluttet å følge med her",
+      "hearOne": "Hørte denne",
+      "hearOnward": "Følger med igjen herfra",
+      "hint": "Minnemodellen retter dette mens den leser. Endringene dine vinner alltid."
     }
   }
 }

@@ -1147,8 +1147,7 @@
       "invalidated": "Các thay đổi này không còn áp dụng cho câu trả lời này.",
       "memoryCount_other": "{{count}} ký ức",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Không có thay đổi để hiện",
-      "quote": "“{{text}}”"
+      "none": "Không có thay đổi để hiện"
     },
     "activity": {
       "undo": "Hoàn tác lần cập nhật này",
@@ -1221,15 +1220,17 @@
     "audience": {
       "title": "Ai đã nghe điều này",
       "nobody": "Không ai",
-      "body": "Thành viên đã nghe một tin nhắn có thể nhớ và phản ứng với nó. Mô hình bộ nhớ sẽ sửa điều này khi đọc; thay đổi của bạn ở đây luôn được ưu tiên.",
-      "scope": "Áp dụng cho",
-      "scopeMessage": "Tin nhắn này",
-      "scopeOnward": "Từ đây trở đi",
-      "scopeMessageBody": "Chỉ tin nhắn này, như lời thì thầm",
-      "scopeOnwardBody": "Tin này và các tin sau, cho đến khi nói lại",
       "speaker": "Đã viết tin nhắn này",
       "awayAfter": "Không theo dõi sau tin này",
-      "heard": "{{name}} đã nghe điều này"
+      "statusHeard": "Đã nghe điều này",
+      "statusMissed": "Không nghe điều này",
+      "heardBadge": "Đã nghe",
+      "missedBadge": "Bỏ lỡ",
+      "missOne": "Không nghe tin này",
+      "missOnward": "Ngừng theo dõi từ đây",
+      "hearOne": "Đã nghe tin này",
+      "hearOnward": "Theo dõi lại từ đây",
+      "hint": "Mô hình bộ nhớ sửa điều này khi đọc. Thay đổi của bạn luôn được ưu tiên."
     }
   }
 }

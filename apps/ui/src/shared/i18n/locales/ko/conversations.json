@@ -1147,8 +1147,7 @@
       "invalidated": "이 변경은 더 이상 이 답장에 적용되지 않아요.",
       "memoryCount_other": "기억 {{count}}개",
       "axisSummary": "{{axis}} {{value}}",
-      "none": "보여 줄 변경이 없어요",
-      "quote": "“{{text}}”"
+      "none": "보여 줄 변경이 없어요"
     },
     "activity": {
       "undo": "이 업데이트 취소",
@@ -1221,15 +1220,17 @@
     "audience": {
       "title": "누가 이걸 들었나요",
       "nobody": "아무도 없음",
-      "body": "메시지를 들은 멤버는 그것을 기억하고 반응할 수 있습니다. 메모리 모델이 읽으면서 이를 수정하지만, 여기서의 변경이 항상 우선합니다.",
-      "scope": "적용 범위",
-      "scopeMessage": "이 메시지",
-      "scopeOnward": "여기부터",
-      "scopeMessageBody": "이 메시지만 (귓속말처럼)",
-      "scopeOnwardBody": "이 메시지와 이후, 다시 말할 때까지",
       "speaker": "이 메시지를 씀",
       "awayAfter": "이후로 대화를 따라가지 않음",
-      "heard": "{{name}}이(가) 이걸 들음"
+      "statusHeard": "이걸 들음",
+      "statusMissed": "이걸 듣지 못함",
+      "heardBadge": "들음",
+      "missedBadge": "놓침",
+      "missOne": "이 메시지는 듣지 못함",
+      "missOnward": "여기서부터 따라가지 않음",
+      "hearOne": "이 메시지는 들음",
+      "hearOnward": "여기서부터 다시 따라감",
+      "hint": "메모리 모델이 읽으면서 이를 수정합니다. 직접 바꾼 내용이 항상 우선합니다."
     }
   }
 }

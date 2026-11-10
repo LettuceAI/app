@@ -1178,8 +1178,7 @@
       "memoryCount_one": "{{count}} anı",
       "memoryCount_other": "{{count}} anı",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Gösterilecek değişiklik yok",
-      "quote": "“{{text}}”"
+      "none": "Gösterilecek değişiklik yok"
     },
     "activity": {
       "undo": "Bu güncellemeyi geri al",
@@ -1252,15 +1251,17 @@
     "audience": {
       "title": "Bunu kim duydu",
       "nobody": "Kimse",
-      "body": "Bir mesajı duyan üyeler onu hatırlayabilir ve ona tepki verebilir. Memory modeli okurken bunu düzeltir; buradaki değişikliklerin her zaman önceliklidir.",
-      "scope": "Uygula",
-      "scopeMessage": "Bu mesaj",
-      "scopeOnward": "Bundan sonra",
-      "scopeMessageBody": "Sadece bu mesaj, fısıltı gibi",
-      "scopeOnwardBody": "Bu ve sonraki mesajlar, tekrar konuşana kadar",
       "speaker": "Bu mesajı yazdı",
       "awayAfter": "Bundan sonra takip etmiyor",
-      "heard": "{{name}} bunu duydu"
+      "statusHeard": "Bunu duydu",
+      "statusMissed": "Bunu duymadı",
+      "heardBadge": "Duydu",
+      "missedBadge": "Kaçırdı",
+      "missOne": "Bunu duymadı",
+      "missOnward": "Burada takibi bıraktı",
+      "hearOne": "Bunu duydu",
+      "hearOnward": "Buradan itibaren yine takip ediyor",
+      "hint": "Memory modeli okurken bunu düzeltir. Senin değişikliklerin her zaman önceliklidir."
     }
   }
 }

@@ -1178,8 +1178,7 @@
       "memoryCount_one": "{{count}} Erinnerung",
       "memoryCount_other": "{{count}} Erinnerungen",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Keine Änderungen anzuzeigen",
-      "quote": "„{{text}}“"
+      "none": "Keine Änderungen anzuzeigen"
     },
     "activity": {
       "undo": "Diese Aktualisierung rückgängig machen",
@@ -1252,15 +1251,17 @@
     "audience": {
       "title": "Wer das gehört hat",
       "nobody": "Niemand",
-      "body": "Mitglieder, die eine Nachricht gehört haben, können sich daran erinnern und darauf reagieren. Das Gedächtnismodell korrigiert das beim Lesen; deine Änderungen hier haben immer Vorrang.",
-      "scope": "Anwenden auf",
-      "scopeMessage": "Diese Nachricht",
-      "scopeOnward": "Ab hier",
-      "scopeMessageBody": "Nur diese Nachricht, wie ein Flüstern",
-      "scopeOnwardBody": "Diese und spätere Nachrichten, bis wieder gesprochen wird",
       "speaker": "Hat diese Nachricht geschrieben",
       "awayAfter": "Folgt danach nicht mehr",
-      "heard": "{{name}} hat das gehört"
+      "statusHeard": "Hat das gehört",
+      "statusMissed": "Hat das nicht gehört",
+      "heardBadge": "Gehört",
+      "missedBadge": "Verpasst",
+      "missOne": "Hat diese nicht gehört",
+      "missOnward": "Folgt ab hier nicht mehr",
+      "hearOne": "Hat diese gehört",
+      "hearOnward": "Folgt ab hier wieder",
+      "hint": "Das Gedächtnismodell korrigiert das beim Lesen. Deine Änderungen haben immer Vorrang."
     }
   }
 }

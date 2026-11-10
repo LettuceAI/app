@@ -1240,8 +1240,7 @@
       "memoryCount_many": "{{count}} paměti",
       "memoryCount_other": "{{count}} pamětí",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Žádné změny k zobrazení",
-      "quote": "„{{text}}“"
+      "none": "Žádné změny k zobrazení"
     },
     "activity": {
       "undo": "Vrátit tuhle aktualizaci",
@@ -1314,15 +1313,17 @@
     "audience": {
       "title": "Kdo to slyšel",
       "nobody": "Nikdo",
-      "body": "Členové, kteří zprávu slyšeli, si ji mohou pamatovat a reagovat na ni. Model paměti to při čtení opravuje; tvoje změny zde mají vždy přednost.",
-      "scope": "Použít na",
-      "scopeMessage": "Tuto zprávu",
-      "scopeOnward": "Od teď",
-      "scopeMessageBody": "Jen tato zpráva, jako šepot",
-      "scopeOnwardBody": "Tato a další zprávy, do další promluvy",
       "speaker": "Autor této zprávy",
       "awayAfter": "Potom nesleduje",
-      "heard": "{{name}}: slyší to"
+      "statusHeard": "Slyší to",
+      "statusMissed": "Neslyší to",
+      "heardBadge": "Slyší",
+      "missedBadge": "Zmeškáno",
+      "missOne": "Tuto zprávu neslyší",
+      "missOnward": "Od tohoto místa mimo rozhovor",
+      "hearOne": "Tuto zprávu slyší",
+      "hearOnward": "Od tohoto místa znovu v rozhovoru",
+      "hint": "Model paměti to při čtení opravuje. Tvoje změny mají vždy přednost."
     }
   }
 }

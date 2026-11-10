@@ -1147,8 +1147,7 @@
       "invalidated": "這些變更已不再適用於此回覆。",
       "memoryCount_other": "{{count}} 則記憶",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "沒有可顯示的變更",
-      "quote": "「{{text}}」"
+      "none": "沒有可顯示的變更"
     },
     "activity": {
       "undo": "復原此更新",
@@ -1221,15 +1220,17 @@
     "audience": {
       "title": "誰聽到了這則",
       "nobody": "沒有人",
-      "body": "聽到某則訊息的成員可以記住並回應它。記憶模型會在閱讀時修正這一點；你在這裡的修改永遠優先。",
-      "scope": "套用於",
-      "scopeMessage": "這則訊息",
-      "scopeOnward": "從這裡開始",
-      "scopeMessageBody": "僅這則訊息，像是悄悄話",
-      "scopeOnwardBody": "這則及之後的訊息，直到再次發言",
       "speaker": "寫了這則訊息",
       "awayAfter": "此後未在聽",
-      "heard": "{{name}}聽到了這則"
+      "statusHeard": "聽到了這則",
+      "statusMissed": "沒聽到這則",
+      "heardBadge": "聽到",
+      "missedBadge": "錯過",
+      "missOne": "沒聽到這則",
+      "missOnward": "從這裡起不在聽",
+      "hearOne": "聽到了這則",
+      "hearOnward": "從這裡起重新在聽",
+      "hint": "記憶模型會在閱讀時修正這一點。你的修改永遠優先。"
     }
   }
 }

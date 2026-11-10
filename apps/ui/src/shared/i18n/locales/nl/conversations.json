@@ -1178,8 +1178,7 @@
       "memoryCount_one": "{{count}} herinnering",
       "memoryCount_other": "{{count}} herinneringen",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Geen veranderingen om te tonen",
-      "quote": "“{{text}}”"
+      "none": "Geen veranderingen om te tonen"
     },
     "activity": {
       "undo": "Deze update ongedaan maken",
@@ -1252,15 +1251,17 @@
     "audience": {
       "title": "Wie dit hoorde",
       "nobody": "Niemand",
-      "body": "Leden die een bericht hoorden, kunnen het onthouden en erop reageren. Het geheugenmodel corrigeert dit tijdens het lezen; jouw wijzigingen hier gaan altijd voor.",
-      "scope": "Toepassen op",
-      "scopeMessage": "Dit bericht",
-      "scopeOnward": "Vanaf hier",
-      "scopeMessageBody": "Alleen dit bericht, zoals gefluister",
-      "scopeOnwardBody": "Dit en latere berichten, tot er weer gesproken wordt",
       "speaker": "Schreef dit bericht",
       "awayAfter": "Volgt hierna niet",
-      "heard": "{{name}} hoorde dit"
+      "statusHeard": "Hoorde dit",
+      "statusMissed": "Hoorde dit niet",
+      "heardBadge": "Gehoord",
+      "missedBadge": "Gemist",
+      "missOne": "Hoorde deze niet",
+      "missOnward": "Volgt vanaf hier niet meer",
+      "hearOne": "Hoorde deze",
+      "hearOnward": "Volgt vanaf hier weer",
+      "hint": "Het geheugenmodel corrigeert dit tijdens het lezen. Jouw wijzigingen gaan altijd voor."
     }
   }
 }

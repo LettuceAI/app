@@ -1178,8 +1178,7 @@
       "memoryCount_one": "{{count}} memory",
       "memoryCount_other": "{{count}} memory",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Walang pagbabagong maipapakita",
-      "quote": "“{{text}}”"
+      "none": "Walang pagbabagong maipapakita"
     },
     "activity": {
       "undo": "I-undo ang update na ito",
@@ -1252,15 +1251,17 @@
     "audience": {
       "title": "Sino ang nakarinig nito",
       "nobody": "Wala",
-      "body": "Ang mga miyembrong nakarinig ng mensahe ay maaaring maalala ito at tumugon dito. Itinatama ito ng memory model habang nagbabasa; laging nananaig ang mga pagbabago mo rito.",
-      "scope": "Ilapat sa",
-      "scopeMessage": "Mensaheng ito",
-      "scopeOnward": "Mula rito",
-      "scopeMessageBody": "Ito lang, parang bulong",
-      "scopeOnwardBody": "Ito at ang mga susunod, hanggang magsalita ulit",
       "speaker": "Sumulat ng mensaheng ito",
       "awayAfter": "Hindi na sumusubaybay pagkatapos nito",
-      "heard": "Narinig ito ni {{name}}"
+      "statusHeard": "Narinig ito",
+      "statusMissed": "Hindi narinig ito",
+      "heardBadge": "Narinig",
+      "missedBadge": "Hindi narinig",
+      "missOne": "Hindi narinig ang mensaheng ito",
+      "missOnward": "Tumigil sumubaybay dito",
+      "hearOne": "Narinig ang mensaheng ito",
+      "hearOnward": "Sumusubaybay ulit mula rito",
+      "hint": "Itinatama ito ng memory model habang nagbabasa. Laging nananaig ang mga pagbabago mo."
     }
   }
 }

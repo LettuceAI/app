@@ -1147,8 +1147,7 @@
       "invalidated": "Perubahan ini tidak lagi berlaku untuk balasan ini.",
       "memoryCount_other": "{{count}} memori",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Tidak ada perubahan untuk ditampilkan",
-      "quote": "“{{text}}”"
+      "none": "Tidak ada perubahan untuk ditampilkan"
     },
     "activity": {
       "undo": "Urungkan pembaruan ini",
@@ -1221,15 +1220,17 @@
     "audience": {
       "title": "Siapa yang mendengar ini",
       "nobody": "Tidak ada",
-      "body": "Anggota yang mendengar sebuah pesan bisa mengingatnya dan bereaksi. Model memori memperbaikinya saat membaca; perubahanmu di sini selalu diutamakan.",
-      "scope": "Terapkan ke",
-      "scopeMessage": "Pesan ini",
-      "scopeOnward": "Mulai dari sini",
-      "scopeMessageBody": "Hanya pesan ini, seperti bisikan",
-      "scopeOnwardBody": "Pesan ini dan berikutnya, sampai berbicara lagi",
       "speaker": "Menulis pesan ini",
       "awayAfter": "Tidak mengikuti setelah ini",
-      "heard": "{{name}} mendengar ini"
+      "statusHeard": "Mendengar ini",
+      "statusMissed": "Tidak mendengar ini",
+      "heardBadge": "Didengar",
+      "missedBadge": "Terlewat",
+      "missOne": "Tidak mendengar pesan ini",
+      "missOnward": "Berhenti mengikuti di sini",
+      "hearOne": "Mendengar pesan ini",
+      "hearOnward": "Mengikuti lagi dari sini",
+      "hint": "Model memori memperbaikinya saat membaca. Perubahanmu selalu diutamakan."
     }
   }
 }

@@ -1178,8 +1178,7 @@
       "memoryCount_one": "{{count}} memória",
       "memoryCount_other": "{{count}} memória",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Nincs megjeleníthető változás",
-      "quote": "„{{text}}”"
+      "none": "Nincs megjeleníthető változás"
     },
     "activity": {
       "undo": "Frissítés visszavonása",
@@ -1252,15 +1251,17 @@
     "audience": {
       "title": "Ki hallotta ezt",
       "nobody": "Senki",
-      "body": "Az üzenetet hallott tagok emlékezhetnek rá és reagálhatnak rá. Az emlékezetmodell olvasás közben javítja ezt; az itteni módosításaid mindig elsőbbséget élveznek.",
-      "scope": "Alkalmazás erre",
-      "scopeMessage": "Ez az üzenet",
-      "scopeOnward": "Innentől",
-      "scopeMessageBody": "Csak ez az üzenet, mint egy suttogás",
-      "scopeOnwardBody": "Ez és a későbbi üzenetek, amíg újra meg nem szólal",
       "speaker": "Ezt az üzenetet írta",
       "awayAfter": "Ezután nem követi",
-      "heard": "{{name}} hallotta ezt"
+      "statusHeard": "Hallotta",
+      "statusMissed": "Nem hallotta",
+      "heardBadge": "Hallotta",
+      "missedBadge": "Lemaradt",
+      "missOne": "Ezt nem hallotta",
+      "missOnward": "Innen nem követi",
+      "hearOne": "Ezt hallotta",
+      "hearOnward": "Innen újra követi",
+      "hint": "Az emlékezetmodell olvasás közben javítja ezt. A te módosításaid mindig elsőbbséget élveznek."
     }
   }
 }

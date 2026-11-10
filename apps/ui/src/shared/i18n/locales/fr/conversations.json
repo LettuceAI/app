@@ -1209,8 +1209,7 @@
       "memoryCount_many": "{{count}} souvenirs",
       "memoryCount_other": "{{count}} souvenirs",
       "axisSummary": "{{value}} {{axis}}",
-      "none": "Aucun changement à afficher",
-      "quote": "« {{text}} »"
+      "none": "Aucun changement à afficher"
     },
     "activity": {
       "undo": "Annuler cette mise à jour",
@@ -1283,15 +1282,17 @@
     "audience": {
       "title": "Qui a entendu ceci",
       "nobody": "Personne",
-      "body": "Les membres qui ont entendu un message peuvent s'en souvenir et y réagir. Le modèle de mémoire corrige cela en lisant ; vos changements ici priment toujours.",
-      "scope": "Appliquer à",
-      "scopeMessage": "Ce message",
-      "scopeOnward": "À partir d'ici",
-      "scopeMessageBody": "Seulement ce message, comme un murmure",
-      "scopeOnwardBody": "Ce message et les suivants, jusqu'à ce que la personne reparle",
       "speaker": "A écrit ce message",
       "awayAfter": "Ne suit plus après ceci",
-      "heard": "{{name}} a entendu ceci"
+      "statusHeard": "A entendu ceci",
+      "statusMissed": "N'a pas entendu ceci",
+      "heardBadge": "Entendu",
+      "missedBadge": "Manqué",
+      "missOne": "N'a pas entendu celui-ci",
+      "missOnward": "Ne suit plus à partir d'ici",
+      "hearOne": "A entendu celui-ci",
+      "hearOnward": "Suit de nouveau à partir d'ici",
+      "hint": "Le modèle de mémoire corrige cela en lisant. Vos changements priment toujours."
     }
   }
 }

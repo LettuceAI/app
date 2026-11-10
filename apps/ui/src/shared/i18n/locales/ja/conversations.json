@@ -1147,8 +1147,7 @@
       "invalidated": "これらの変更はこの返信にはもう適用されません。",
       "memoryCount_other": "{{count}}件のメモリ",
       "axisSummary": "{{axis}} {{value}}",
-      "none": "表示する変更はありません",
-      "quote": "「{{text}}」"
+      "none": "表示する変更はありません"
     },
     "activity": {
       "undo": "この更新を元に戻す",
@@ -1221,15 +1220,17 @@
     "audience": {
       "title": "これを聞いた人",
       "nobody": "誰もいない",
-      "body": "メッセージを聞いたメンバーはそれを覚え、反応できます。メモリーモデルが読みながら修正しますが、ここでの変更が常に優先されます。",
-      "scope": "適用範囲",
-      "scopeMessage": "このメッセージ",
-      "scopeOnward": "ここから先",
-      "scopeMessageBody": "このメッセージだけ（ささやきなど）",
-      "scopeOnwardBody": "このメッセージ以降、再び話すまで",
       "speaker": "このメッセージを書いた",
       "awayAfter": "この後は会話を追っていない",
-      "heard": "{{name}}はこれを聞いた"
+      "statusHeard": "これを聞いた",
+      "statusMissed": "これを聞いていない",
+      "heardBadge": "聞いた",
+      "missedBadge": "聞き逃した",
+      "missOne": "このメッセージは聞いていない",
+      "missOnward": "ここから会話を追っていない",
+      "hearOne": "このメッセージは聞いた",
+      "hearOnward": "ここからまた会話を追っている",
+      "hint": "メモリーモデルが読みながら修正します。あなたの変更が常に優先されます。"
     }
   }
 }
