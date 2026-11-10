@@ -107,7 +107,8 @@
     "afterBody": "Send legger bare til meldingen din. Trykk på en karakters avatar for å få dem til å svare umiddelbart.",
     "order": "Talerekkefølge",
     "orderBody": "Brukes når alle tar turer. Dra for å endre.",
-    "memory": "Minne"
+    "memory": "Minne",
+    "mode": "Chatmodus"
   },
   "speaker": {
     "llm": "LLM",
@@ -167,7 +168,6 @@
     "models": "Modeller",
     "characterModel": "Karakternes modell",
     "characterModelBody": "Det deres egne innstillinger sier",
-    "companionMode": "Kompanjongmodus",
     "companionModeOn": "Medlemmene beholder følelser og relasjoner som endrer seg etter hvert som samtalen går",
     "companionModeOff": "Medlemmene svarer uten sporede følelser eller relasjoner",
     "personalMemories": "Ta med minner fra direktesamtaler",
@@ -255,5 +255,9 @@
     "whoSeesHint": "Bare karakterene du velger, leser dette notatet.",
     "everyone": "Hvert medlem leser dette notatet. Velg karakterer for å begrense det.",
     "everyoneShort": "Alle"
+  },
+  "mode": {
+    "roleplay": "Rollespill",
+    "companion": "Companion"
   }
 }

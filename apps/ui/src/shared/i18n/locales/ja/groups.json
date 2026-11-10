@@ -102,7 +102,8 @@
     "afterBody": "送信はメッセージを追加するだけです。キャラクターのアバターをタップするとすぐに応答させられます。",
     "order": "発言順",
     "orderBody": "全員が順番に話すときに使われます。ドラッグで変更できます。",
-    "memory": "メモリ"
+    "memory": "メモリ",
+    "mode": "チャットモード"
   },
   "speaker": {
     "llm": "LLM",
@@ -161,7 +162,6 @@
     "models": "モデル",
     "characterModel": "キャラクターのモデル",
     "characterModelBody": "それぞれの設定に従います",
-    "companionMode": "コンパニオンモード",
     "companionModeOn": "メンバーは、チャットが進むにつれて変化する感情や関係を保ちます",
     "companionModeOff": "メンバーは、感情や関係を追跡せずに返答します",
     "personalMemories": "ダイレクトチャットのメモリを持ち込む",
@@ -247,5 +247,9 @@
     "whoSeesHint": "選んだキャラクターだけがこのノートを読みます。",
     "everyone": "すべてのメンバーがこのノートを読みます。制限するにはキャラクターを選んでください。",
     "everyoneShort": "全員"
+  },
+  "mode": {
+    "roleplay": "ロールプレイ",
+    "companion": "コンパニオン"
   }
 }

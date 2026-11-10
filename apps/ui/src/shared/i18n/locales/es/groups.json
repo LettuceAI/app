@@ -112,7 +112,8 @@
     "afterBody": "Enviar solo añade tu mensaje. Toca el avatar de un personaje para que responda al instante.",
     "order": "Orden de intervención",
     "orderBody": "Se usa cuando todos hablan por turnos. Arrastra para cambiarlo.",
-    "memory": "Memoria"
+    "memory": "Memoria",
+    "mode": "Modo de chat"
   },
   "speaker": {
     "llm": "LLM",
@@ -173,7 +174,6 @@
     "models": "Modelos",
     "characterModel": "Modelo del personaje",
     "characterModelBody": "Lo que digan sus propios ajustes",
-    "companionMode": "Modo compañero",
     "companionModeOn": "Los miembros mantienen emociones y relaciones que cambian a medida que avanza el chat",
     "companionModeOff": "Los miembros responden sin emociones ni relaciones registradas",
     "personalMemories": "Traer memorias de chats directos",
@@ -263,5 +263,9 @@
     "whoSeesHint": "Solo los personajes que elijas leen esta nota.",
     "everyone": "Todos los miembros leen esta nota. Elige personajes para limitarla.",
     "everyoneShort": "Todos"
+  },
+  "mode": {
+    "roleplay": "Rol",
+    "companion": "Compañero"
   }
 }

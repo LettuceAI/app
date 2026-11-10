@@ -107,7 +107,8 @@
     "afterBody": "Send only adds your message. Tap a character's avatar to make them respond instantly.",
     "order": "Speaking order",
     "orderBody": "Used when everyone takes turns. Drag to change it.",
-    "memory": "Memory"
+    "memory": "Memory",
+    "mode": "Chat mode"
   },
   "speaker": {
     "llm": "LLM",
@@ -167,7 +168,6 @@
     "models": "Models",
     "characterModel": "Character's model",
     "characterModelBody": "Whatever their own settings say",
-    "companionMode": "Companion mode",
     "companionModeOn": "Members keep emotions and relationships that change as the chat goes on",
     "companionModeOff": "Members answer without tracked emotions or relationships",
     "personalMemories": "Bring direct-chat memories",
@@ -255,5 +255,9 @@
     "whoSeesHint": "Only the characters you pick read this note.",
     "everyone": "Every member reads this note. Pick characters to limit it.",
     "everyoneShort": "Everyone"
+  },
+  "mode": {
+    "roleplay": "Roleplay",
+    "companion": "Companion"
   }
 }

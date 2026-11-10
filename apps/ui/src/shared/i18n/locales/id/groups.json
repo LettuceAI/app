@@ -102,7 +102,8 @@
     "afterBody": "Kirim hanya menambahkan pesan Anda. Ketuk avatar karakter agar mereka langsung merespons.",
     "order": "Urutan bicara",
     "orderBody": "Digunakan saat semua bergiliran. Seret untuk mengubahnya.",
-    "memory": "Memori"
+    "memory": "Memori",
+    "mode": "Mode obrolan"
   },
   "speaker": {
     "llm": "LLM",
@@ -161,7 +162,6 @@
     "models": "Model",
     "characterModel": "Model karakter",
     "characterModelBody": "Sesuai pengaturan mereka sendiri",
-    "companionMode": "Mode Companion",
     "companionModeOn": "Anggota menyimpan emosi dan hubungan yang berubah seiring obrolan berjalan",
     "companionModeOff": "Anggota menjawab tanpa emosi atau hubungan yang dilacak",
     "personalMemories": "Bawa memori dari obrolan langsung",
@@ -247,5 +247,9 @@
     "whoSeesHint": "Hanya karakter yang Anda pilih yang membaca catatan ini.",
     "everyone": "Setiap anggota membaca catatan ini. Pilih karakter untuk membatasinya.",
     "everyoneShort": "Semua orang"
+  },
+  "mode": {
+    "roleplay": "Roleplay",
+    "companion": "Pendamping"
   }
 }

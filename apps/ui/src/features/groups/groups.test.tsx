@@ -378,7 +378,7 @@ describe("group time awareness and notes", () => {
       groupGet: () => ({ status: "ok", data: current }),
       characterGet: ({ character_id }) => ({ status: "ok", data: { id: character_id, draft: { ...characterDraft, profile: { ...characterDraft.profile, name: cast.find((item) => item.id === character_id)?.name ?? character_id }, defaults: character_id === "b" ? withSoul : { ...characterDraft.defaults, companion_soul: null } }, archived: false, assets: [], revision: 1, created_at: 1, updated_at: 1 } as never }),
     });
-    const companionMode = await screen.findByRole("switch", { name: "Companion mode" });
+    const companionMode = await screen.findByRole("radio", { name: /^Companion/ });
     expect(companionMode.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(companionMode);
     const dialog = await screen.findByRole("dialog", { name: "No Soul written" });
@@ -386,7 +386,7 @@ describe("group time awareness and notes", () => {
     expect(within(dialog).queryByRole("button", { name: "Edit the Soul of Bram" })).toBeNull();
     fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "No Soul written" })).toBeNull());
-    expect(screen.getByRole("switch", { name: "Companion mode" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: /^Companion/ }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save.mock.calls[0]![0].draft).toMatchObject({ companion_mode: true });
@@ -409,7 +409,7 @@ describe("group time awareness and notes", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save.mock.calls[0]![0].draft).toMatchObject({ companion_personal_memories: false, companion_memory_write_back: true });
-    fireEvent.click(screen.getByRole("switch", { name: "Companion mode" }));
+    fireEvent.click(screen.getByRole("radio", { name: /^Roleplay/ }));
     await waitFor(() => expect(screen.queryByRole("switch", { name: "Bring direct-chat memories" })).toBeNull());
     expect(screen.queryByRole("switch", { name: "Write back to direct chats" })).toBeNull();
   });
@@ -420,9 +420,7 @@ describe("group time awareness and notes", () => {
     fireEvent.click(screen.getByText("Bram").closest("button")!);
     fireEvent.click(screen.getByRole("button", { name: "Continue to setup" }));
     await screen.findByRole("textbox", { name: "Group name" });
-    fireEvent.click(screen.getByRole("button", { name: "Continue to scene" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Continue to extras" }));
-    fireEvent.click(await screen.findByRole("switch", { name: "Companion mode" }));
+    fireEvent.click(await screen.findByRole("radio", { name: /^Companion/ }));
     const dialog = await screen.findByRole("dialog", { name: "No Soul written" });
     expect(within(dialog).getByText(/No Soul is written for: Aria and Bram\./)).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: /Edit the Soul of/ })).toBeNull();

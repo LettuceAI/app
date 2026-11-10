@@ -117,7 +117,8 @@
     "afterBody": "Wyślij tylko dodaje twoją wiadomość. Dotknij awatara postaci, aby odpowiedziała natychmiast.",
     "order": "Kolejność mówienia",
     "orderBody": "Używana, gdy każdy mówi po kolei. Przeciągnij, aby zmienić.",
-    "memory": "Pamięć"
+    "memory": "Pamięć",
+    "mode": "Tryb czatu"
   },
   "speaker": {
     "llm": "LLM",
@@ -179,7 +180,6 @@
     "models": "Modele",
     "characterModel": "Model postaci",
     "characterModelBody": "Zgodnie z ich własnymi ustawieniami",
-    "companionMode": "Tryb towarzysza",
     "companionModeOn": "Członkowie zachowują emocje i relacje, które zmieniają się w miarę trwania czatu",
     "companionModeOff": "Członkowie odpowiadają bez śledzonych emocji i relacji",
     "personalMemories": "Przynoś wspomnienia z czatów bezpośrednich",
@@ -271,5 +271,9 @@
     "whoSeesHint": "Tylko wybrane postacie czytają tę notatkę.",
     "everyone": "Każdy członek czyta tę notatkę. Wybierz postacie, aby to ograniczyć.",
     "everyoneShort": "Wszyscy"
+  },
+  "mode": {
+    "roleplay": "Odgrywanie ról",
+    "companion": "Towarzysz"
   }
 }

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Avatar, Card, Field, Input, ReorderableList, Text } from "@lettuceai/crisp";
 import { castQuery } from "../data/queries";
-import { BackgroundGroup, SpeakerGroup, MemoryGroup } from "./GroupFields";
+import { BackgroundGroup, MemoryGroup, ModeGroup, SpeakerGroup } from "./GroupFields";
 import type { StepProps } from "./MembersStep";
 
 export function SetupStep({ api, form, update, fallbackName, dynamicMemory }: StepProps & { fallbackName: string; dynamicMemory: boolean }) {
@@ -14,6 +14,7 @@ export function SetupStep({ api, form, update, fallbackName, dynamicMemory }: St
     <div className="space-y-6">
       <Field label={t("setup.name")} hint={t("setup.nameHint")}><Input data-autofocus value={draft.name} placeholder={fallbackName} onChange={(event) => setDraft({ name: event.target.value })} /></Field>
       <BackgroundGroup api={api} form={form} update={update} />
+      <ModeGroup api={api} form={form} update={update} />
     </div>
     <div className="space-y-6">
       <SpeakerGroup api={api} form={form} update={update} />

@@ -107,7 +107,8 @@
     "afterBody": "A Küldés csak hozzáadja az üzeneted. Koppints egy karakter avatarjára, hogy azonnal válaszoljon.",
     "order": "Beszélési sorrend",
     "orderBody": "Akkor használjuk, amikor mindenki sorra kerül. Húzd az átrendezéshez.",
-    "memory": "Memória"
+    "memory": "Memória",
+    "mode": "Csevegési mód"
   },
   "speaker": {
     "llm": "LLM",
@@ -167,7 +168,6 @@
     "models": "Modellek",
     "characterModel": "Karakter modellje",
     "characterModelBody": "Ahogy a saját beállításai mondják",
-    "companionMode": "Társ mód",
     "companionModeOn": "A tagok érzelmei és kapcsolatai a beszélgetés előrehaladtával változnak",
     "companionModeOff": "A tagok követett érzelmek és kapcsolatok nélkül válaszolnak",
     "personalMemories": "Közvetlen csevegések memóriáinak behozása",
@@ -255,5 +255,9 @@
     "whoSeesHint": "Csak az általad kiválasztott karakterek olvassák el ezt a jegyzetet.",
     "everyone": "Minden tag elolvassa ezt a jegyzetet. Válassz karaktereket a korlátozáshoz.",
     "everyoneShort": "Mindenki"
+  },
+  "mode": {
+    "roleplay": "Szerepjáték",
+    "companion": "Társ"
   }
 }

@@ -107,7 +107,8 @@
     "afterBody": "Verzenden voegt alleen je bericht toe. Tik op de avatar van een karakter om hen direct te laten reageren.",
     "order": "Spreekvolgorde",
     "orderBody": "Gebruikt wanneer iedereen om de beurt gaat. Sleep om te wijzigen.",
-    "memory": "Geheugen"
+    "memory": "Geheugen",
+    "mode": "Chatmodus"
   },
   "speaker": {
     "llm": "LLM",
@@ -167,7 +168,6 @@
     "models": "Modellen",
     "characterModel": "Model van het karakter",
     "characterModelBody": "Wat hun eigen instellingen zeggen",
-    "companionMode": "Metgezelmodus",
     "companionModeOn": "Leden houden emoties en relaties die veranderen naarmate de chat vordert",
     "companionModeOff": "Leden antwoorden zonder bijgehouden emoties of relaties",
     "personalMemories": "Herinneringen uit privéchats meenemen",
@@ -255,5 +255,9 @@
     "whoSeesHint": "Alleen de karakters die je kiest lezen deze notitie.",
     "everyone": "Elk lid leest deze notitie. Kies karakters om het te beperken.",
     "everyoneShort": "Iedereen"
+  },
+  "mode": {
+    "roleplay": "Rollenspel",
+    "companion": "Companion"
   }
 }

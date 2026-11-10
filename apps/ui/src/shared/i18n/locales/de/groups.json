@@ -107,7 +107,8 @@
     "afterBody": "Senden fügt nur deine Nachricht hinzu. Tippe auf den Avatar eines Charakters, damit er sofort antwortet.",
     "order": "Sprechreihenfolge",
     "orderBody": "Wird verwendet, wenn alle der Reihe nach drangenommen werden. Zum Ändern ziehen.",
-    "memory": "Speicher"
+    "memory": "Speicher",
+    "mode": "Chatmodus"
   },
   "speaker": {
     "llm": "LLM",
@@ -167,7 +168,6 @@
     "models": "Modelle",
     "characterModel": "Modell des Charakters",
     "characterModelBody": "Was auch immer in den eigenen Einstellungen steht",
-    "companionMode": "Companion-Modus",
     "companionModeOn": "Mitglieder behalten Emotionen und Beziehungen, die sich im Verlauf des Chats verändern",
     "companionModeOff": "Mitglieder antworten ohne verfolgte Emotionen oder Beziehungen",
     "personalMemories": "Erinnerungen aus Einzelchats einbeziehen",
@@ -255,5 +255,9 @@
     "whoSeesHint": "Nur die Charaktere, die du auswählst, lesen diese Notiz.",
     "everyone": "Jedes Mitglied liest diese Notiz. Wähle Charaktere, um sie einzuschränken.",
     "everyoneShort": "Alle"
+  },
+  "mode": {
+    "roleplay": "Rollenspiel",
+    "companion": "Companion"
   }
 }

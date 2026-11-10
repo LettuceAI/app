@@ -102,7 +102,8 @@
     "afterBody": "Gửi chỉ thêm tin nhắn của bạn. Chạm vào ảnh đại diện của nhân vật để họ trả lời ngay.",
     "order": "Thứ tự nói",
     "orderBody": "Dùng khi mọi người thay phiên nhau. Kéo để thay đổi.",
-    "memory": "Bộ nhớ"
+    "memory": "Bộ nhớ",
+    "mode": "Chế độ trò chuyện"
   },
   "speaker": {
     "llm": "LLM",
@@ -161,7 +162,6 @@
     "models": "Mô hình",
     "characterModel": "Mô hình của nhân vật",
     "characterModelBody": "Theo cài đặt riêng của họ",
-    "companionMode": "Chế độ bạn đồng hành",
     "companionModeOn": "Các thành viên giữ cảm xúc và mối quan hệ thay đổi theo diễn biến cuộc trò chuyện",
     "companionModeOff": "Các thành viên trả lời mà không theo dõi cảm xúc hay mối quan hệ",
     "personalMemories": "Mang theo ký ức từ chat trực tiếp",
@@ -247,5 +247,9 @@
     "whoSeesHint": "Chỉ những nhân vật bạn chọn mới đọc ghi chú này.",
     "everyone": "Mọi thành viên đều đọc ghi chú này. Chọn nhân vật để giới hạn.",
     "everyoneShort": "Mọi người"
+  },
+  "mode": {
+    "roleplay": "Nhập vai",
+    "companion": "Bạn đồng hành"
   }
 }

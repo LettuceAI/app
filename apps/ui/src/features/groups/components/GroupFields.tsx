@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { pickImage } from "@/entities/image-input";
-import { Brain, Check, Hand, Image, RefreshCw, Scale } from "lucide-react";
+import { Brain, Check, Drama, Hand, Image, RefreshCw, Scale, Sprout } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, icon, ListGroup, ListRow, ListRowButton, Segmented, toast } from "@lettuceai/crisp";
+import { Button, icon, ListGroup, ListRow, ListRowButton, Segmented, Switch, toast } from "@lettuceai/crisp";
+import { useMissingSoulWarning } from "@/features/conversations";
 import { isApiFailure } from "@/api/client";
 import type { SpeakerSelectionMethod } from "@/api/generated/bindings";
 import type { StepProps } from "./MembersStep";
@@ -44,4 +45,27 @@ export function MemoryGroup({ form, update, dynamicMemory }: StepProps & { dynam
   const draft = form.draft;
   const setDraft = (patch: Partial<typeof draft>) => update((current) => ({ ...current, draft: { ...current.draft, ...patch } }));
   return <ListGroup label={t("setup.memory")}>{(["dynamic", "manual"] as const).map((policy) => <ListRowButton key={policy} role="radio" aria-checked={draft.memory_policy === policy} disabled={policy === "dynamic" && !dynamicMemory} title={t(`memory.${policy}`)} description={t(policy === "dynamic" && !dynamicMemory ? "memory.unavailable" : `memory.${policy}Body`)} chevron={false} trailing={draft.memory_policy === policy ? <Check size={icon.md} /> : undefined} onClick={() => setDraft({ memory_policy: policy })} />)}</ListGroup>;
+}
+
+export function ModeGroup({ api, form, update, editable = false }: StepProps & { editable?: boolean }) {
+  const { t } = useTranslation("groups");
+  const soulWarning = useMissingSoulWarning(api, { editable });
+  const draft = form.draft;
+  const setDraft = (patch: Partial<typeof draft>) => update((current) => ({ ...current, draft: { ...current.draft, ...patch } }));
+  const choose = (companion_mode: boolean) => {
+    if (companion_mode === draft.companion_mode) return;
+    setDraft({ companion_mode });
+    if (companion_mode) void soulWarning.warn(draft.members.map((member) => member.character_id));
+  };
+  return <>
+    <ListGroup label={t("setup.mode")}>
+      <ListRowButton role="radio" aria-checked={!draft.companion_mode} icon={<Drama size={icon.lg} />} title={t("mode.roleplay")} description={t("extras.companionModeOff")} chevron={false} trailing={!draft.companion_mode ? <Check size={icon.md} /> : undefined} onClick={() => choose(false)} />
+      <ListRowButton role="radio" aria-checked={draft.companion_mode} icon={<Sprout size={icon.lg} />} title={t("mode.companion")} description={t("extras.companionModeOn")} chevron={false} trailing={draft.companion_mode ? <Check size={icon.md} /> : undefined} onClick={() => choose(true)} />
+      {draft.companion_mode && <>
+        <ListRow title={t("extras.personalMemories")} description={t(draft.companion_personal_memories ? "extras.personalMemoriesOn" : "extras.personalMemoriesOff")} trailing={<Switch checked={draft.companion_personal_memories} aria-label={t("extras.personalMemories")} onChange={(companion_personal_memories) => setDraft({ companion_personal_memories })} />} />
+        <ListRow title={t("extras.memoryWriteBack")} description={t(draft.companion_memory_write_back ? "extras.memoryWriteBackOn" : "extras.memoryWriteBackOff")} trailing={<Switch checked={draft.companion_memory_write_back} aria-label={t("extras.memoryWriteBack")} onChange={(companion_memory_write_back) => setDraft({ companion_memory_write_back })} />} />
+      </>}
+    </ListGroup>
+    {soulWarning.dialog}
+  </>;
 }

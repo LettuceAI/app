@@ -112,7 +112,8 @@
     "afterBody": "Envoyer ajoute seulement votre message. Touchez l'avatar d'un personnage pour le faire répondre immédiatement.",
     "order": "Ordre de parole",
     "orderBody": "Utilisé quand chacun parle à tour de rôle. Faites glisser pour le modifier.",
-    "memory": "Mémoire"
+    "memory": "Mémoire",
+    "mode": "Mode de discussion"
   },
   "speaker": {
     "llm": "LLM",
@@ -173,7 +174,6 @@
     "models": "Modèles",
     "characterModel": "Modèle du personnage",
     "characterModelBody": "Selon ses propres paramètres",
-    "companionMode": "Mode compagnon",
     "companionModeOn": "Les membres gardent des émotions et des relations qui évoluent au fil de la discussion",
     "companionModeOff": "Les membres répondent sans émotions ni relations suivies",
     "personalMemories": "Apporter les souvenirs des discussions directes",
@@ -263,5 +263,9 @@
     "whoSeesHint": "Seuls les personnages que vous choisissez lisent cette note.",
     "everyone": "Chaque membre lit cette note. Choisissez des personnages pour la limiter.",
     "everyoneShort": "Tout le monde"
+  },
+  "mode": {
+    "roleplay": "Jeu de rôle",
+    "companion": "Compagnon"
   }
 }

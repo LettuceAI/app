@@ -102,7 +102,8 @@
     "afterBody": "发送只会加入你的消息。点按角色的头像可让其立即回复。",
     "order": "发言顺序",
     "orderBody": "用于轮流发言时。拖动可更改。",
-    "memory": "记忆"
+    "memory": "记忆",
+    "mode": "聊天模式"
   },
   "speaker": {
     "llm": "LLM",
@@ -161,7 +162,6 @@
     "models": "模型",
     "characterModel": "角色模型",
     "characterModelBody": "按角色自己的设置",
-    "companionMode": "伙伴模式",
     "companionModeOn": "成员会保留随聊天推进而变化的情绪和关系",
     "companionModeOff": "成员回应时不追踪情绪和关系",
     "personalMemories": "带入私聊记忆",
@@ -247,5 +247,9 @@
     "whoSeesHint": "只有你选择的角色会读到这条笔记。",
     "everyone": "所有成员都会读到这条笔记。选择角色可限制范围。",
     "everyoneShort": "所有人"
+  },
+  "mode": {
+    "roleplay": "角色扮演",
+    "companion": "陪伴"
   }
 }

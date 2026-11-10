@@ -107,7 +107,8 @@
     "afterBody": "Nagdadagdag lang ng mensahe mo ang Send. I-tap ang avatar ng karakter para agad silang tumugon.",
     "order": "Pagkakasunod-sunod ng pagsasalita",
     "orderBody": "Ginagamit kapag naghahalinhinan ang lahat. I-drag para baguhin.",
-    "memory": "Memory"
+    "memory": "Memory",
+    "mode": "Mode ng chat"
   },
   "speaker": {
     "llm": "LLM",
@@ -167,7 +168,6 @@
     "models": "Mga Modelo",
     "characterModel": "Modelo ng karakter",
     "characterModelBody": "Kung ano ang sinasabi ng sarili nilang settings",
-    "companionMode": "Companion mode",
     "companionModeOn": "Nananatili sa mga kasapi ang mga emosyon at relasyong nagbabago habang tumatagal ang chat",
     "companionModeOff": "Sumasagot ang mga kasapi nang walang sinusubaybayang emosyon o relasyon",
     "personalMemories": "Isama ang mga memory ng direktang chat",
@@ -255,5 +255,9 @@
     "whoSeesHint": "Ang mga karakter na pipiliin mo lang ang makakabasa ng talang ito.",
     "everyone": "Binabasa ng bawat kasapi ang talang ito. Pumili ng karakter para limitahan ito.",
     "everyoneShort": "Lahat"
+  },
+  "mode": {
+    "roleplay": "Roleplay",
+    "companion": "Companion"
   }
 }

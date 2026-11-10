@@ -107,7 +107,8 @@
     "afterBody": "Gönder yalnızca mesajınızı ekler. Anında yanıt vermeleri için bir karakterin avatarına dokunun.",
     "order": "Konuşma sırası",
     "orderBody": "Herkes sırayla konuştuğunda kullanılır. Değiştirmek için sürükleyin.",
-    "memory": "Hafıza"
+    "memory": "Hafıza",
+    "mode": "Sohbet modu"
   },
   "speaker": {
     "llm": "LLM",
@@ -167,7 +168,6 @@
     "models": "Modeller",
     "characterModel": "Karakterin modeli",
     "characterModelBody": "Kendi ayarlarında ne yazıyorsa o",
-    "companionMode": "Yoldaş modu",
     "companionModeOn": "Üyeler, sohbet ilerledikçe değişen duygular ve ilişkiler taşır",
     "companionModeOff": "Üyeler, takip edilen duygular veya ilişkiler olmadan yanıt verir",
     "personalMemories": "Doğrudan sohbet anılarını getir",
@@ -255,5 +255,9 @@
     "whoSeesHint": "Bu notu yalnızca seçtiğiniz karakterler okur.",
     "everyone": "Bu notu her üye okur. Sınırlamak için karakter seçin.",
     "everyoneShort": "Herkes"
+  },
+  "mode": {
+    "roleplay": "Roleplay",
+    "companion": "Companion"
   }
 }
