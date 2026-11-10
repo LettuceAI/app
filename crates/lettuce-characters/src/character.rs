@@ -162,6 +162,8 @@ pub struct CharacterDefaults {
 /// The stored shape of [`CharacterDefaults`]. A companion soul written
 /// before time awareness became a character setting carries `timeAwareness`
 /// inside the soul; decoding lifts it into the character setting.
+/// A row written before groups had one prompt may still carry
+/// `group_conversation_prompt_id`; it fills an empty roleplay group prompt.
 /// The stored document is JSON, which this record relies on; it is not a
 /// bincode type.
 #[derive(Deserialize)]
@@ -174,6 +176,8 @@ struct CharacterDefaultsRecord {
     default_starter_id: Option<ConversationStarterId>,
     direct_prompt_id: Option<PromptDocumentId>,
     group_roleplay_prompt_id: Option<PromptDocumentId>,
+    #[serde(default)]
+    group_conversation_prompt_id: Option<PromptDocumentId>,
     voice: Option<VoicePreference>,
     voice_autoplay: bool,
     #[serde(default)]
@@ -211,7 +215,9 @@ impl TryFrom<CharacterDefaultsRecord> for CharacterDefaults {
             default_scene_id: record.default_scene_id,
             default_starter_id: record.default_starter_id,
             direct_prompt_id: record.direct_prompt_id,
-            group_roleplay_prompt_id: record.group_roleplay_prompt_id,
+            group_roleplay_prompt_id: record
+                .group_roleplay_prompt_id
+                .or(record.group_conversation_prompt_id),
             voice: record.voice,
             voice_autoplay: record.voice_autoplay,
             companion_soul,
@@ -650,6 +656,20 @@ mod tests {
         ))
         .expect("decode mixed row");
         assert!(both.time_awareness);
+    }
+
+    #[test]
+    fn an_old_group_conversation_prompt_fills_an_empty_group_roleplay_prompt() {
+        let prompt = lettuce_types::PromptDocumentId::new();
+        let mut row = defaults_json(None, None);
+        row["group_conversation_prompt_id"] = serde_json::Value::Null;
+        let kept: CharacterDefaults = serde_json::from_value(row.clone()).expect("decode null key");
+        assert_eq!(kept.group_roleplay_prompt_id, None);
+        row["group_conversation_prompt_id"] = serde_json::json!(prompt.to_string());
+        let filled: CharacterDefaults = serde_json::from_value(row).expect("decode old prompt");
+        assert_eq!(filled.group_roleplay_prompt_id, Some(prompt));
+        let reencoded = serde_json::to_value(&filled).expect("encode");
+        assert!(reencoded.get("group_conversation_prompt_id").is_none());
     }
 
     #[test]
