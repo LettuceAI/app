@@ -58,6 +58,7 @@ pub use conversations::branches::{
     conversation_branch_select, conversation_branches,
 };
 pub use conversations::delete::conversation_delete;
+pub use conversations::dev_seed::dev_conversation_seed;
 pub use conversations::messages::{
     conversation_message_count, conversation_messages_around, conversation_pinned_messages,
     conversation_search, memory_rewind_retry, message_candidate_select, message_candidates,

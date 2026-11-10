@@ -785,6 +785,60 @@ pub struct ConversationAddSystemMessageRequest {
     pub client_operation_id: String,
 }
 
+/// Creates a chat with ready-made history for testing. Only available in
+/// developer mode.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct DevConversationSeedRequest {
+    pub target: DevSeedTarget,
+    pub title: String,
+    pub lines: Vec<DevSeedLine>,
+    /// Direct companion chats only; the starting relationship instead of the
+    /// character's defaults.
+    pub relationship: Option<DevSeedRelationship>,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DevSeedTarget {
+    Direct { character_id: String },
+    Group { group_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct DevSeedLine {
+    /// None is the user; otherwise a character id that is a member of the
+    /// target.
+    pub speaker_character_id: Option<String>,
+    pub text: String,
+    /// How long before now this line was written; lines must be in
+    /// non-increasing order.
+    pub minutes_ago: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct DevSeedRelationship {
+    pub closeness: f64,
+    pub trust: f64,
+    pub affection: f64,
+    pub tension: f64,
+    pub stability: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct DevConversationSeeded {
+    pub conversation_id: String,
+}
+
 /// A queued turn; its stream is the channel the request passed in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]

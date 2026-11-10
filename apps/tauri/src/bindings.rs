@@ -98,6 +98,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::conversations::conversation_retry,
             commands::conversations::conversation_add_user_message,
             commands::conversations::conversation_add_system_message,
+            commands::developer::dev_conversation_seed,
             commands::conversations::generation_cancel,
             commands::conversations::conversation_help_me_reply,
             commands::conversations::message_scene_image_approve,

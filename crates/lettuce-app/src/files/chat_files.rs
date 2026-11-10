@@ -289,13 +289,7 @@ where
             [only] => return self.prepare_direct(chat, None, Some(*only), now),
             _ => {}
         }
-        let title = chat
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.get("character_name"))
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|title| !title.is_empty())
+        let title = group_chat_title(&chat)
             .unwrap_or("Imported Group Chat")
             .to_owned();
         let group = lettuce_characters::CreateGroupPlan {
@@ -317,30 +311,84 @@ where
             .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
             starting_scene: None,
         };
+        let record = self.group_record(
+            &chat,
+            &speakers,
+            title,
+            group.group.id,
+            Some(lettuce_characters::GroupDetails {
+                group: group.group.clone(),
+                starting_scene: None,
+            }),
+            now,
+        )?;
+        Ok(PreparedChatFile {
+            group: Some(group),
+            record,
+            companion: None,
+        })
+    }
+
+    /// A transcript as a chat of the stored group `group_id`, launched the
+    /// way a new chat of that group is. Every assistant speaker must map in
+    /// `speakers` to one of the group's members.
+    pub fn prepare_existing_group(
+        &self,
+        chat: lettuce_transfer::ChatJsonl,
+        speakers: &std::collections::BTreeMap<String, CharacterId>,
+        group_id: lettuce_types::GroupId,
+        now: TimestampMillis,
+    ) -> Result<PreparedChatFile, ChatFileError> {
+        let unmapped = chat
+            .speakers()
+            .into_iter()
+            .filter(|speaker| !speakers.contains_key(speaker))
+            .collect::<Vec<_>>();
+        if !unmapped.is_empty() {
+            return Err(ChatFileError::UnresolvedParticipants(unmapped.join(", ")));
+        }
+        let title = group_chat_title(&chat).unwrap_or_default().to_owned();
+        let record = self.group_record(&chat, speakers, title, group_id, None, now)?;
+        Ok(PreparedChatFile {
+            group: None,
+            record,
+            companion: None,
+        })
+    }
+
+    /// Plans a chat of `group_id` (the stored group, or `provided` when the
+    /// group is created with it) and records the transcript in it, each
+    /// assistant line authored by the member its speaker maps to.
+    fn group_record(
+        &self,
+        chat: &lettuce_transfer::ChatJsonl,
+        speakers: &std::collections::BTreeMap<String, CharacterId>,
+        title: String,
+        group_id: lettuce_types::GroupId,
+        provided: Option<lettuce_characters::GroupDetails>,
+        now: TimestampMillis,
+    ) -> Result<lettuce_transfer::LegacyConversationRecord, ChatFileError> {
         let source_id = Uuid::new_v4().to_string();
         let scope = LegacyIdScope::new();
         let context = ImportContext::fresh(scope);
-        let (plan, mut snapshots) = ConversationLaunchPlanner::new(self.sources)
-            .prepare_new_group(
-                &crate::GroupConversationLaunchRequest {
-                    format_version: crate::GROUP_LAUNCH_REQUEST_FORMAT_V1,
-                    title,
-                    user: legacy_user(),
-                    group_id: group.group.id,
-                    persona: persona_selection(false, None, &context)?,
-                    operation_key: lettuce_conversations::IdempotencyKey::new(format!(
-                        "chat-import.{}",
-                        scope.source("conversation", &source_id)
-                    ))
-                    .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-                },
-                lettuce_characters::GroupDetails {
-                    group: group.group.clone(),
-                    starting_scene: None,
-                },
-                now,
-            )?
-            .into_parts();
+        let request = crate::GroupConversationLaunchRequest {
+            format_version: crate::GROUP_LAUNCH_REQUEST_FORMAT_V1,
+            title,
+            user: legacy_user(),
+            group_id,
+            persona: persona_selection(false, None, &context)?,
+            operation_key: lettuce_conversations::IdempotencyKey::new(format!(
+                "chat-import.{}",
+                scope.source("conversation", &source_id)
+            ))
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+        };
+        let planner = ConversationLaunchPlanner::new(self.sources);
+        let prepared = match provided {
+            Some(group) => planner.prepare_new_group(&request, group, now)?,
+            None => planner.prepare_group(&request, now)?,
+        };
+        let (plan, mut snapshots) = prepared.into_parts();
         let authors = plan
             .participants
             .iter()
@@ -351,6 +399,14 @@ where
                 _ => None,
             })
             .collect::<std::collections::BTreeMap<_, _>>();
+        let outside = speakers
+            .iter()
+            .filter(|(_, character)| !authors.contains_key(*character))
+            .map(|(speaker, _)| speaker.as_str())
+            .collect::<Vec<_>>();
+        if !outside.is_empty() {
+            return Err(ChatFileError::UnresolvedParticipants(outside.join(", ")));
+        }
         let ConversationKind::Group(details) = &plan.kind else {
             return Err(LegacyImportRepositoryError::InvalidInput.into());
         };
@@ -382,7 +438,7 @@ where
                 .iter()
                 .find_map(|member| selected_model(&member.model_override))
         });
-        let lines = imported_lines(&chat);
+        let lines = imported_lines(chat);
         let author = |message: &lettuce_transfer::ChatJsonlMessage| {
             (message.role == ChatJsonlRole::Assistant)
                 .then_some(message.name.as_ref())
@@ -454,12 +510,18 @@ where
             },
             &context,
         )?;
-        Ok(PreparedChatFile {
-            group: Some(group),
-            record,
-            companion: None,
-        })
+        Ok(record)
     }
+}
+
+/// The transcript header's non-blank `character_name`.
+fn group_chat_title(chat: &lettuce_transfer::ChatJsonl) -> Option<&str> {
+    chat.metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("character_name"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
 }
 
 /// The transcript's messages that have content, their swipes as variants

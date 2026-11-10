@@ -9,6 +9,9 @@ mod copy_scene_tests;
 pub(in crate::api) mod delete;
 #[cfg(test)]
 pub(crate) mod delete_tests;
+pub(super) mod dev_seed;
+#[cfg(test)]
+mod dev_seed_tests;
 pub(super) mod feed;
 #[cfg(test)]
 mod help_me_reply_tests;

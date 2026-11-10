@@ -83,6 +83,7 @@ export const commands = {
 	conversationRetry: (request: ConversationRetryRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_retry", { request, onEvent })),
 	conversationAddUserMessage: (request: ConversationAddUserMessageRequest) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_add_user_message", { request })),
 	conversationAddSystemMessage: (request: ConversationAddSystemMessageRequest_Deserialize) => typedError<MessageChanged_Serialize, ApiError_Serialize>(__TAURI_INVOKE("conversation_add_system_message", { request })),
+	devConversationSeed: (request: DevConversationSeedRequest) => typedError<DevConversationSeeded, ApiError_Serialize>(__TAURI_INVOKE("dev_conversation_seed", { request })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationHelpMeReply: (request: ConversationHelpMeReplyRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("conversation_help_me_reply", { request })),
 	messageSceneImageApprove: (request: MessageSceneImageApproveRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("message_scene_image_approve", { request })),
@@ -2332,6 +2333,50 @@ export type DatabaseFileView = {
 	deletable: boolean,
 	error: DatabaseFileError | null,
 };
+
+/**
+ *  Creates a chat with ready-made history for testing. Only available in
+ *  developer mode.
+ */
+export type DevConversationSeedRequest = {
+	target: DevSeedTarget,
+	title: string,
+	lines: DevSeedLine[],
+	/**
+	 *  Direct companion chats only; the starting relationship instead of the
+	 *  character's defaults.
+	 */
+	relationship: DevSeedRelationship | null,
+	client_operation_id: string,
+};
+
+export type DevConversationSeeded = {
+	conversation_id: string,
+};
+
+export type DevSeedLine = {
+	/**
+	 *  None is the user; otherwise a character id that is a member of the
+	 *  target.
+	 */
+	speaker_character_id: string | null,
+	text: string,
+	/**
+	 *  How long before now this line was written; lines must be in
+	 *  non-increasing order.
+	 */
+	minutes_ago: number,
+};
+
+export type DevSeedRelationship = {
+	closeness: number | null,
+	trust: number | null,
+	affection: number | null,
+	tension: number | null,
+	stability: number | null,
+};
+
+export type DevSeedTarget = { type: "direct"; character_id: string } | { type: "group"; group_id: string };
 
 export type DictationCancelRequest = {
 	capture_id: string,

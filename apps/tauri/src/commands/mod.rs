@@ -7,6 +7,7 @@ pub mod characters;
 pub mod library;
 pub mod companion;
 pub mod conversations;
+pub mod developer;
 pub mod files;
 pub mod hugging_face;
 pub mod image;
