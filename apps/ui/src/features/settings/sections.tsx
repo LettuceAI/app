@@ -154,6 +154,7 @@ export const builtSettingsSections: ReadonlySet<SettingsSectionId> = new Set([
   "speech",
   "security",
   "reset",
+  "developer",
 ]);
 
 export function isSettingsSection(value: string): value is SettingsSectionId {

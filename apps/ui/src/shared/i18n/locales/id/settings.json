@@ -531,7 +531,24 @@
     "reportProblem": "Laporkan masalah",
     "reportProblemBody": "Membuka issue GitHub dengan versi Anda terisi",
     "copyDetails": "Salin untuk laporan bug",
-    "copied": "Tersalin"
+    "copied": "Tersalin",
+    "advanced": "Lanjutan",
+    "developerMode": "Aktifkan mode pengembang",
+    "developerModeBody": "Menampilkan halaman Pengembang di pengaturan",
+    "developerModeOn": "Mode pengembang aktif",
+    "developerModeOnBody": "Halaman Pengembang ditampilkan di pengaturan",
+    "developerModeTurnOff": "Matikan"
+  },
+  "developer": {
+    "group": "Obrolan uji",
+    "templates": {
+      "roleplay": { "title": "Obrolan roleplay", "description": "Satu karakter, satu persona, dan obrolan dengan riwayat" },
+      "companion": { "title": "Obrolan pendamping, terisi", "description": "Seorang pendamping dengan jiwa, hubungan, riwayat, dan kenangan" },
+      "group": { "title": "Obrolan grup", "description": "Tiga karakter dalam grup dengan riwayat" },
+      "group_companion": { "title": "Obrolan grup pendamping", "description": "Tiga pendamping dengan jiwa dalam grup pendamping dengan riwayat" },
+      "roleplay_widgets": { "title": "Obrolan roleplay dengan widget", "description": "Obrolan roleplay dengan semua widget di samping obrolan" },
+      "companion_widgets": { "title": "Obrolan pendamping dengan widget", "description": "Obrolan pendamping dengan semua widget, termasuk status pendamping dan memori" }
+    }
   },
   "manage": {
     "add": "Tambah",

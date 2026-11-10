@@ -2,7 +2,8 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { cn, motion as m, NavLabel, useNavExpanded } from "@lettuceai/crisp";
 import { builtSettingsSections, settingsGroups, type SettingsSectionId } from "./sections";
-import { settingsSectionAvailable, useSettingsNavigation } from "./use-settings-navigation";
+import { useDeveloperMode } from "./data";
+import { settingsSectionAvailable, settingsSectionVisible, useSettingsNavigation } from "./use-settings-navigation";
 
 /** The settings groups drawn like the home sidebar's recent chats: headings fold away, icons keep the rail slot. */
 export function SidebarSettings({
@@ -14,6 +15,7 @@ export function SidebarSettings({
 }) {
   const { t } = useTranslation("settings");
   const navigation = useSettingsNavigation(onOpen);
+  const developerMode = useDeveloperMode();
   const open = useNavExpanded();
   const reduced = useReducedMotion();
   const spring = reduced ? { duration: 0 } : m.sidebar;
@@ -38,7 +40,7 @@ export function SidebarSettings({
             {t(`groups.${group.id}`)}
           </motion.h2>
           <div className="space-y-0.5">
-            {group.sections.map((section) => {
+            {group.sections.filter((section) => settingsSectionVisible(section, developerMode)).map((section) => {
               const current = section.id === active;
               const built = settingsSectionAvailable(
                 section,

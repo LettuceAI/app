@@ -531,7 +531,24 @@
     "reportProblem": "回報問題",
     "reportProblemBody": "開啟已填好版本資訊的 GitHub issue",
     "copyDetails": "複製以供錯誤回報",
-    "copied": "已複製"
+    "copied": "已複製",
+    "advanced": "進階",
+    "developerMode": "開啟開發者模式",
+    "developerModeBody": "在設定中顯示開發者頁面",
+    "developerModeOn": "開發者模式已開啟",
+    "developerModeOnBody": "設定中已顯示開發者頁面",
+    "developerModeTurnOff": "關閉"
+  },
+  "developer": {
+    "group": "測試聊天",
+    "templates": {
+      "roleplay": { "title": "角色扮演聊天", "description": "一個角色、一個人設和一段有歷史的聊天" },
+      "companion": { "title": "夥伴聊天（已填入）", "description": "一個有靈魂、關係、歷史和記憶的夥伴" },
+      "group": { "title": "群聊", "description": "一個有歷史的群組，含三個角色" },
+      "group_companion": { "title": "夥伴群聊", "description": "一個有歷史的夥伴群組，含三個有靈魂的夥伴" },
+      "roleplay_widgets": { "title": "有小工具的角色扮演聊天", "description": "聊天旁放有全部小工具的角色扮演聊天" },
+      "companion_widgets": { "title": "有小工具的夥伴聊天", "description": "放有全部小工具的夥伴聊天，包括夥伴狀態和記憶" }
+    }
   },
   "manage": {
     "add": "新增",

@@ -531,7 +531,24 @@
     "reportProblem": "Báo cáo sự cố",
     "reportProblemBody": "Mở một issue GitHub với phiên bản của bạn được điền sẵn",
     "copyDetails": "Sao chép để báo lỗi",
-    "copied": "Đã sao chép"
+    "copied": "Đã sao chép",
+    "advanced": "Nâng cao",
+    "developerMode": "Bật chế độ nhà phát triển",
+    "developerModeBody": "Hiển thị trang Nhà phát triển trong cài đặt",
+    "developerModeOn": "Chế độ nhà phát triển đang bật",
+    "developerModeOnBody": "Trang Nhà phát triển đang hiển thị trong cài đặt",
+    "developerModeTurnOff": "Tắt"
+  },
+  "developer": {
+    "group": "Trò chuyện thử nghiệm",
+    "templates": {
+      "roleplay": { "title": "Trò chuyện nhập vai", "description": "Một nhân vật, một persona và một cuộc trò chuyện có lịch sử" },
+      "companion": { "title": "Trò chuyện với bạn đồng hành, đã điền", "description": "Một bạn đồng hành có Soul, mối quan hệ, lịch sử và ký ức" },
+      "group": { "title": "Trò chuyện nhóm", "description": "Ba nhân vật trong một nhóm có lịch sử" },
+      "group_companion": { "title": "Trò chuyện nhóm bạn đồng hành", "description": "Ba bạn đồng hành có Soul trong một nhóm bạn đồng hành có lịch sử" },
+      "roleplay_widgets": { "title": "Trò chuyện nhập vai với tiện ích", "description": "Cuộc trò chuyện nhập vai với mọi tiện ích bên cạnh khung chat" },
+      "companion_widgets": { "title": "Trò chuyện với bạn đồng hành và tiện ích", "description": "Cuộc trò chuyện với bạn đồng hành có mọi tiện ích, gồm cả trạng thái bạn đồng hành và bộ nhớ" }
+    }
   },
   "manage": {
     "add": "Thêm",

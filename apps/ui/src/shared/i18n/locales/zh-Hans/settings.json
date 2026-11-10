@@ -531,7 +531,24 @@
     "reportProblem": "报告问题",
     "reportProblemBody": "打开已填写版本信息的 GitHub issue",
     "copyDetails": "复制用于问题报告",
-    "copied": "已复制"
+    "copied": "已复制",
+    "advanced": "高级",
+    "developerMode": "开启开发者模式",
+    "developerModeBody": "在设置中显示开发者页面",
+    "developerModeOn": "开发者模式已开启",
+    "developerModeOnBody": "设置中已显示开发者页面",
+    "developerModeTurnOff": "关闭"
+  },
+  "developer": {
+    "group": "测试聊天",
+    "templates": {
+      "roleplay": { "title": "角色扮演聊天", "description": "一个角色、一个人设和一段带历史的聊天" },
+      "companion": { "title": "伙伴聊天（已填充）", "description": "一个带有灵魂、关系、历史和记忆的伙伴" },
+      "group": { "title": "群聊", "description": "一个带历史的群组，含三个角色" },
+      "group_companion": { "title": "伙伴群聊", "description": "一个带历史的伙伴群组，含三个有灵魂的伙伴" },
+      "roleplay_widgets": { "title": "带小组件的角色扮演聊天", "description": "聊天旁放有全部小组件的角色扮演聊天" },
+      "companion_widgets": { "title": "带小组件的伙伴聊天", "description": "放有全部小组件的伙伴聊天，包括伙伴状态和记忆" }
+    }
   },
   "manage": {
     "add": "添加",

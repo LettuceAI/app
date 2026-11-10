@@ -535,7 +535,24 @@
     "reportProblem": "Ein Problem melden",
     "reportProblemBody": "Öffnet ein GitHub-Issue mit deiner eingetragenen Version",
     "copyDetails": "Für einen Fehlerbericht kopieren",
-    "copied": "Kopiert"
+    "copied": "Kopiert",
+    "advanced": "Erweitert",
+    "developerMode": "Entwicklermodus aktivieren",
+    "developerModeBody": "Zeigt die Seite Entwickler in den Einstellungen",
+    "developerModeOn": "Entwicklermodus ist aktiv",
+    "developerModeOnBody": "Die Seite Entwickler wird in den Einstellungen angezeigt",
+    "developerModeTurnOff": "Deaktivieren"
+  },
+  "developer": {
+    "group": "Test-Chats",
+    "templates": {
+      "roleplay": { "title": "Rollenspiel-Chat", "description": "Eine Figur, eine Persona und ein Chat mit Verlauf" },
+      "companion": { "title": "Begleiter-Chat, befüllt", "description": "Ein Begleiter mit Soul, Beziehung, Verlauf und Erinnerungen" },
+      "group": { "title": "Gruppenchat", "description": "Drei Figuren in einer Gruppe mit Verlauf" },
+      "group_companion": { "title": "Begleiter-Gruppenchat", "description": "Drei Begleiter mit Soul in einer Begleitergruppe mit Verlauf" },
+      "roleplay_widgets": { "title": "Rollenspiel-Chat mit Widgets", "description": "Der Rollenspiel-Chat mit allen Widgets neben dem Chat" },
+      "companion_widgets": { "title": "Begleiter-Chat mit Widgets", "description": "Der Begleiter-Chat mit allen Widgets, auch Begleiterstatus und Erinnerungen" }
+    }
   },
   "manage": {
     "add": "Hinzufügen",

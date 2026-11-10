@@ -9,3 +9,4 @@ export { modelsQuery } from "./data/queries";
 export { useChatModels, type ChatModel } from "./data/use-models";
 export { ParticipantsBar } from "./components/ParticipantsBar";
 export { useMissingSouls, useMissingSoulWarning } from "./companion/missing-soul";
+export { createActionsPreset, createWidgetNode, type DefaultLabel, type WidgetNode, type WidgetSlots, type WidgetType } from "./widgets/nodes";

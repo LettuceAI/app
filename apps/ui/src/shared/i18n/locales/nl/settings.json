@@ -535,7 +535,24 @@
     "reportProblem": "Een probleem melden",
     "reportProblemBody": "Opent een GitHub-issue met je versie ingevuld",
     "copyDetails": "Kopiëren voor een bugrapport",
-    "copied": "Gekopieerd"
+    "copied": "Gekopieerd",
+    "advanced": "Geavanceerd",
+    "developerMode": "Ontwikkelaarsmodus aanzetten",
+    "developerModeBody": "Toont de pagina Ontwikkelaar in de instellingen",
+    "developerModeOn": "Ontwikkelaarsmodus staat aan",
+    "developerModeOnBody": "De pagina Ontwikkelaar wordt getoond in de instellingen",
+    "developerModeTurnOff": "Uitzetten"
+  },
+  "developer": {
+    "group": "Testchats",
+    "templates": {
+      "roleplay": { "title": "Rollenspelchat", "description": "Een personage, een persona en een chat met geschiedenis" },
+      "companion": { "title": "Metgezelchat, gevuld", "description": "Een metgezel met een ziel, relatie, geschiedenis en herinneringen" },
+      "group": { "title": "Groepschat", "description": "Drie personages in een groep met geschiedenis" },
+      "group_companion": { "title": "Metgezel-groepschat", "description": "Drie metgezellen met een ziel in een metgezelgroep met geschiedenis" },
+      "roleplay_widgets": { "title": "Rollenspelchat met widgets", "description": "De rollenspelchat met alle widgets naast de chat" },
+      "companion_widgets": { "title": "Metgezelchat met widgets", "description": "De metgezelchat met alle widgets, inclusief metgezelstatus en geheugen" }
+    }
   },
   "manage": {
     "add": "Toevoegen",

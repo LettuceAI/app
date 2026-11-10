@@ -535,7 +535,24 @@
     "reportProblem": "Report a problem",
     "reportProblemBody": "Opens a GitHub issue with your version filled in",
     "copyDetails": "Copy for a bug report",
-    "copied": "Copied"
+    "copied": "Copied",
+    "advanced": "Advanced",
+    "developerMode": "Turn on developer mode",
+    "developerModeBody": "Shows the Developer page in settings",
+    "developerModeOn": "Developer mode is on",
+    "developerModeOnBody": "The Developer page is shown in settings",
+    "developerModeTurnOff": "Turn off"
+  },
+  "developer": {
+    "group": "Test chats",
+    "templates": {
+      "roleplay": { "title": "Roleplay chat", "description": "A character, a persona and a chat with history" },
+      "companion": { "title": "Companion chat, filled", "description": "A companion with a Soul, a relationship, history and memories" },
+      "group": { "title": "Group chat", "description": "Three characters in a group with history" },
+      "group_companion": { "title": "Companion group chat", "description": "Three companions with Souls in a companion group with history" },
+      "roleplay_widgets": { "title": "Roleplay chat with widgets", "description": "The roleplay chat with every widget placed beside the chat" },
+      "companion_widgets": { "title": "Companion chat with widgets", "description": "The companion chat with every widget, including companion state and memory" }
+    }
   },
   "manage": {
     "add": "Add",

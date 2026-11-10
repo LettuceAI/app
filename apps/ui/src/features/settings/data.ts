@@ -18,6 +18,10 @@ export function useSettingsLayout() {
   const standalone = phone || data?.ui_state.sidebarOnDetailPages === false;
   return { phone, standalone, back: standalone ? { onBack: () => void navigate({ to: "/settings" }), backLabel: t("title") } : {} };
 }
+export function useDeveloperMode() {
+  const api = useSettingsApi();
+  return useQuery({ queryKey: queryKeys.settings.detail(), queryFn: () => api.call("settingsGet"), select: (settings) => settings.global.developer_mode_enabled }).data === true;
+}
 export function useProviderData() {
   const api = useSettingsApi();
   const accounts = useQuery({ queryKey: queryKeys.providers.accounts(), queryFn: () => api.call("providerAccountsList") });

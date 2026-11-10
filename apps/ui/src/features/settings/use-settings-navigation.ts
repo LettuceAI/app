@@ -32,6 +32,10 @@ export function useSettingsNavigation(onOpen: (id: SettingsSectionId) => void) {
   return { open, openWhatsNew, openSetupGuide, externalPending: external.isPending };
 }
 
+export function settingsSectionVisible(section: SettingsSection, developerMode: boolean): boolean {
+  return section.id !== "developer" || developerMode;
+}
+
 export function settingsSectionAvailable(section: SettingsSection, built: boolean): boolean {
   return built || !!section.externalUrl || section.id === "whatsNew" || section.id === "guide";
 }

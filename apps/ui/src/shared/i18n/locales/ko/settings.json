@@ -531,7 +531,24 @@
     "reportProblem": "문제 신고",
     "reportProblemBody": "버전이 채워진 GitHub 이슈를 열어요",
     "copyDetails": "버그 신고용으로 복사",
-    "copied": "복사됨"
+    "copied": "복사됨",
+    "advanced": "고급",
+    "developerMode": "개발자 모드 켜기",
+    "developerModeBody": "설정에 개발자 페이지를 표시해요",
+    "developerModeOn": "개발자 모드가 켜져 있어요",
+    "developerModeOnBody": "설정에 개발자 페이지가 표시돼요",
+    "developerModeTurnOff": "끄기"
+  },
+  "developer": {
+    "group": "테스트 채팅",
+    "templates": {
+      "roleplay": { "title": "롤플레이 채팅", "description": "캐릭터, 페르소나, 기록이 있는 채팅" },
+      "companion": { "title": "컴패니언 채팅, 채워진 상태", "description": "소울, 관계, 기록, 기억을 가진 컴패니언" },
+      "group": { "title": "그룹 채팅", "description": "기록이 있는 그룹의 캐릭터 세 명" },
+      "group_companion": { "title": "컴패니언 그룹 채팅", "description": "기록이 있는 컴패니언 그룹의 소울을 가진 컴패니언 세 명" },
+      "roleplay_widgets": { "title": "위젯이 있는 롤플레이 채팅", "description": "채팅 옆에 모든 위젯을 둔 롤플레이 채팅" },
+      "companion_widgets": { "title": "위젯이 있는 컴패니언 채팅", "description": "컴패니언 상태와 메모리를 포함한 모든 위젯을 둔 컴패니언 채팅" }
+    }
   },
   "manage": {
     "add": "추가",

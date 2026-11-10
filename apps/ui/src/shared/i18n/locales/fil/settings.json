@@ -535,7 +535,24 @@
     "reportProblem": "Mag-report ng problema",
     "reportProblemBody": "Magbubukas ng GitHub issue na may nakalagay nang version mo",
     "copyDetails": "Kopyahin para sa bug report",
-    "copied": "Nakopya"
+    "copied": "Nakopya",
+    "advanced": "Advanced",
+    "developerMode": "I-on ang developer mode",
+    "developerModeBody": "Ipinapakita ang pahina ng Developer sa settings",
+    "developerModeOn": "Naka-on ang developer mode",
+    "developerModeOnBody": "Ipinapakita ang pahina ng Developer sa settings",
+    "developerModeTurnOff": "I-off"
+  },
+  "developer": {
+    "group": "Mga test chat",
+    "templates": {
+      "roleplay": { "title": "Roleplay chat", "description": "Isang karakter, isang persona at isang chat na may history" },
+      "companion": { "title": "Companion chat, may laman", "description": "Isang companion na may Soul, relasyon, history at mga alaala" },
+      "group": { "title": "Group chat", "description": "Tatlong karakter sa isang grupo na may history" },
+      "group_companion": { "title": "Companion group chat", "description": "Tatlong companion na may Soul sa isang companion group na may history" },
+      "roleplay_widgets": { "title": "Roleplay chat na may mga widget", "description": "Ang roleplay chat na may lahat ng widget sa tabi ng chat" },
+      "companion_widgets": { "title": "Companion chat na may mga widget", "description": "Ang companion chat na may lahat ng widget, kasama ang companion state at memory" }
+    }
   },
   "manage": {
     "add": "Idagdag",

@@ -2,8 +2,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ListGroup, ListRowButton, Page } from "@lettuceai/crisp";
 import { builtSettingsSections, settingsGroups } from "./sections";
-import { useSettingsLayout } from "./data";
-import { settingsSectionAvailable, useSettingsNavigation } from "./use-settings-navigation";
+import { useDeveloperMode, useSettingsLayout } from "./data";
+import { settingsSectionAvailable, settingsSectionVisible, useSettingsNavigation } from "./use-settings-navigation";
 import { ArrowUpRight } from "lucide-react";
 import { icon } from "@lettuceai/crisp";
 
@@ -12,6 +12,7 @@ export function SettingsIndexPage() {
   const { t } = useTranslation("settings");
   const { t: common } = useTranslation();
   const { standalone } = useSettingsLayout();
+  const developerMode = useDeveloperMode();
   const navigate = useNavigate();
   const navigation = useSettingsNavigation(
     (id) => void navigate({ to: "/settings/$section", params: { section: id } }),
@@ -26,7 +27,7 @@ export function SettingsIndexPage() {
     >
       {settingsGroups.map((group) => (
         <ListGroup key={group.id} label={t(`groups.${group.id}`)}>
-          {group.sections.map((section) => {
+          {group.sections.filter((section) => settingsSectionVisible(section, developerMode)).map((section) => {
             const built = settingsSectionAvailable(section, builtSettingsSections.has(section.id));
             return (
               <ListRowButton

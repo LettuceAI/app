@@ -535,7 +535,24 @@
     "reportProblem": "Rapporter et problem",
     "reportProblemBody": "Åpner en GitHub-sak med versjonen din fylt inn",
     "copyDetails": "Kopier for en feilrapport",
-    "copied": "Kopiert"
+    "copied": "Kopiert",
+    "advanced": "Avansert",
+    "developerMode": "Slå på utviklermodus",
+    "developerModeBody": "Viser Utvikler-siden i innstillingene",
+    "developerModeOn": "Utviklermodus er på",
+    "developerModeOnBody": "Utvikler-siden vises i innstillingene",
+    "developerModeTurnOff": "Slå av"
+  },
+  "developer": {
+    "group": "Testchatter",
+    "templates": {
+      "roleplay": { "title": "Rollespillchat", "description": "En karakter, en persona og en chat med historikk" },
+      "companion": { "title": "Følgesvenn-chat, utfylt", "description": "En følgesvenn med sjel, forhold, historikk og minner" },
+      "group": { "title": "Gruppechat", "description": "Tre karakterer i en gruppe med historikk" },
+      "group_companion": { "title": "Følgesvenn-gruppechat", "description": "Tre følgesvenner med sjel i en følgesvenngruppe med historikk" },
+      "roleplay_widgets": { "title": "Rollespillchat med widgeter", "description": "Rollespillchatten med alle widgeter ved siden av chatten" },
+      "companion_widgets": { "title": "Følgesvenn-chat med widgeter", "description": "Følgesvenn-chatten med alle widgeter, inkludert følgesvennstatus og minne" }
+    }
   },
   "manage": {
     "add": "Legg til",

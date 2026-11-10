@@ -543,7 +543,24 @@
     "reportProblem": "Zgłoś problem",
     "reportProblemBody": "Otwiera zgłoszenie na GitHubie z wpisaną wersją",
     "copyDetails": "Kopiuj do zgłoszenia błędu",
-    "copied": "Skopiowano"
+    "copied": "Skopiowano",
+    "advanced": "Zaawansowane",
+    "developerMode": "Włącz tryb programisty",
+    "developerModeBody": "Pokazuje stronę Programista w ustawieniach",
+    "developerModeOn": "Tryb programisty jest włączony",
+    "developerModeOnBody": "Strona Programista jest widoczna w ustawieniach",
+    "developerModeTurnOff": "Wyłącz"
+  },
+  "developer": {
+    "group": "Czaty testowe",
+    "templates": {
+      "roleplay": { "title": "Czat fabularny", "description": "Postać, persona i czat z historią" },
+      "companion": { "title": "Czat z towarzyszem, wypełniony", "description": "Towarzysz z Duszą, relacją, historią i wspomnieniami" },
+      "group": { "title": "Czat grupowy", "description": "Trzy postacie w grupie z historią" },
+      "group_companion": { "title": "Czat grupowy z towarzyszami", "description": "Trzech towarzyszy z Duszami w grupie towarzyszy z historią" },
+      "roleplay_widgets": { "title": "Czat fabularny z widżetami", "description": "Czat fabularny ze wszystkimi widżetami obok czatu" },
+      "companion_widgets": { "title": "Czat z towarzyszem z widżetami", "description": "Czat z towarzyszem ze wszystkimi widżetami, także ze stanem towarzysza i pamięcią" }
+    }
   },
   "manage": {
     "add": "Dodaj",

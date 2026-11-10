@@ -535,7 +535,24 @@
     "reportProblem": "समस्या रिपोर्ट करें",
     "reportProblemBody": "आपका संस्करण भरकर GitHub इश्यू खोलता है",
     "copyDetails": "बग रिपोर्ट के लिए कॉपी करें",
-    "copied": "कॉपी हो गया"
+    "copied": "कॉपी हो गया",
+    "advanced": "उन्नत",
+    "developerMode": "डेवलपर मोड चालू करें",
+    "developerModeBody": "सेटिंग्स में डेवलपर पेज दिखाता है",
+    "developerModeOn": "डेवलपर मोड चालू है",
+    "developerModeOnBody": "सेटिंग्स में डेवलपर पेज दिखाया जा रहा है",
+    "developerModeTurnOff": "बंद करें"
+  },
+  "developer": {
+    "group": "टेस्ट चैट",
+    "templates": {
+      "roleplay": { "title": "रोलप्ले चैट", "description": "एक किरदार, एक पर्सोना और इतिहास वाली चैट" },
+      "companion": { "title": "साथी चैट, भरी हुई", "description": "आत्मा, रिश्ते, इतिहास और यादों वाला एक साथी" },
+      "group": { "title": "ग्रुप चैट", "description": "इतिहास वाले ग्रुप में तीन किरदार" },
+      "group_companion": { "title": "साथी ग्रुप चैट", "description": "इतिहास वाले साथी ग्रुप में आत्मा वाले तीन साथी" },
+      "roleplay_widgets": { "title": "विजेट वाली रोलप्ले चैट", "description": "चैट के बगल में सभी विजेट के साथ रोलप्ले चैट" },
+      "companion_widgets": { "title": "विजेट वाली साथी चैट", "description": "साथी की स्थिति और मेमोरी सहित सभी विजेट के साथ साथी चैट" }
+    }
   },
   "manage": {
     "add": "जोड़ें",

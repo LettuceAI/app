@@ -543,7 +543,24 @@
     "reportProblem": "Nahlásit problém",
     "reportProblemBody": "Otevře issue na GitHubu s vyplněnou verzí",
     "copyDetails": "Kopírovat pro hlášení chyby",
-    "copied": "Zkopírováno"
+    "copied": "Zkopírováno",
+    "advanced": "Pokročilé",
+    "developerMode": "Zapnout vývojářský režim",
+    "developerModeBody": "Zobrazí stránku Vývojář v nastavení",
+    "developerModeOn": "Vývojářský režim je zapnutý",
+    "developerModeOnBody": "Stránka Vývojář je zobrazena v nastavení",
+    "developerModeTurnOff": "Vypnout"
+  },
+  "developer": {
+    "group": "Testovací chaty",
+    "templates": {
+      "roleplay": { "title": "Chat na hrdiny", "description": "Postava, persona a chat s historií" },
+      "companion": { "title": "Chat s parťákem, vyplněný", "description": "Parťák s Duší, vztahem, historií a vzpomínkami" },
+      "group": { "title": "Skupinový chat", "description": "Tři postavy ve skupině s historií" },
+      "group_companion": { "title": "Skupinový chat s parťáky", "description": "Tři parťáci s Dušemi ve skupině s parťáky a s historií" },
+      "roleplay_widgets": { "title": "Chat na hrdiny s widgety", "description": "Chat na hrdiny se všemi widgety vedle chatu" },
+      "companion_widgets": { "title": "Chat s parťákem s widgety", "description": "Chat s parťákem se všemi widgety včetně stavu parťáka a paměti" }
+    }
   },
   "manage": {
     "add": "Přidat",

@@ -531,7 +531,24 @@
     "reportProblem": "รายงานปัญหา",
     "reportProblemBody": "เปิด GitHub issue พร้อมเวอร์ชันของคุณ",
     "copyDetails": "คัดลอกสำหรับรายงานบั๊ก",
-    "copied": "คัดลอกแล้ว"
+    "copied": "คัดลอกแล้ว",
+    "advanced": "ขั้นสูง",
+    "developerMode": "เปิดโหมดนักพัฒนา",
+    "developerModeBody": "แสดงหน้านักพัฒนาในการตั้งค่า",
+    "developerModeOn": "โหมดนักพัฒนาเปิดอยู่",
+    "developerModeOnBody": "หน้านักพัฒนาแสดงอยู่ในการตั้งค่า",
+    "developerModeTurnOff": "ปิด"
+  },
+  "developer": {
+    "group": "แชตทดสอบ",
+    "templates": {
+      "roleplay": { "title": "แชตสวมบทบาท", "description": "ตัวละคร เพอร์โซนา และแชตที่มีประวัติ" },
+      "companion": { "title": "แชตคู่หู แบบมีข้อมูล", "description": "คู่หูที่มี Soul ความสัมพันธ์ ประวัติ และความทรงจำ" },
+      "group": { "title": "แชตกลุ่ม", "description": "ตัวละครสามตัวในกลุ่มที่มีประวัติ" },
+      "group_companion": { "title": "แชตกลุ่มคู่หู", "description": "คู่หูที่มี Soul สามตัวในกลุ่มคู่หูที่มีประวัติ" },
+      "roleplay_widgets": { "title": "แชตสวมบทบาทพร้อมวิดเจ็ต", "description": "แชตสวมบทบาทที่มีวิดเจ็ตทั้งหมดอยู่ข้างแชต" },
+      "companion_widgets": { "title": "แชตคู่หูพร้อมวิดเจ็ต", "description": "แชตคู่หูที่มีวิดเจ็ตทั้งหมด รวมถึงสถานะคู่หูและความจำ" }
+    }
   },
   "manage": {
     "add": "เพิ่ม",

@@ -535,7 +535,24 @@
     "reportProblem": "Hiba jelentése",
     "reportProblemBody": "GitHub-hibajegyet nyit a verzióddal kitöltve",
     "copyDetails": "Másolás hibajelentéshez",
-    "copied": "Másolva"
+    "copied": "Másolva",
+    "advanced": "Haladó",
+    "developerMode": "Fejlesztői mód bekapcsolása",
+    "developerModeBody": "Megjeleníti a Fejlesztő oldalt a beállításokban",
+    "developerModeOn": "A fejlesztői mód be van kapcsolva",
+    "developerModeOnBody": "A Fejlesztő oldal megjelenik a beállításokban",
+    "developerModeTurnOff": "Kikapcsolás"
+  },
+  "developer": {
+    "group": "Tesztcsetek",
+    "templates": {
+      "roleplay": { "title": "Szerepjátékos csevegés", "description": "Egy karakter, egy persona és egy előzményekkel rendelkező csevegés" },
+      "companion": { "title": "Társ csevegés, kitöltve", "description": "Egy társ lélekkel, kapcsolattal, előzményekkel és emlékekkel" },
+      "group": { "title": "Csoportos csevegés", "description": "Három karakter egy csoportban, előzményekkel" },
+      "group_companion": { "title": "Társ csoportos csevegés", "description": "Három társ lélekkel egy társcsoportban, előzményekkel" },
+      "roleplay_widgets": { "title": "Szerepjátékos csevegés widgetekkel", "description": "A szerepjátékos csevegés az összes widgettel a csevegés mellett" },
+      "companion_widgets": { "title": "Társ csevegés widgetekkel", "description": "A társ csevegés az összes widgettel, a társ állapotával és a memóriával együtt" }
+    }
   },
   "manage": {
     "add": "Hozzáadás",

@@ -539,7 +539,24 @@
     "reportProblem": "Relatar um problema",
     "reportProblemBody": "Abre uma issue no GitHub com sua versão preenchida",
     "copyDetails": "Copiar para um relato de bug",
-    "copied": "Copiado"
+    "copied": "Copiado",
+    "advanced": "Avançado",
+    "developerMode": "Ativar o modo de desenvolvedor",
+    "developerModeBody": "Mostra a página Desenvolvedor nas configurações",
+    "developerModeOn": "O modo de desenvolvedor está ativado",
+    "developerModeOnBody": "A página Desenvolvedor é mostrada nas configurações",
+    "developerModeTurnOff": "Desativar"
+  },
+  "developer": {
+    "group": "Chats de teste",
+    "templates": {
+      "roleplay": { "title": "Chat de roleplay", "description": "Um personagem, uma persona e um chat com histórico" },
+      "companion": { "title": "Chat de companheiro, preenchido", "description": "Um companheiro com Soul, relação, histórico e memórias" },
+      "group": { "title": "Chat em grupo", "description": "Três personagens em um grupo com histórico" },
+      "group_companion": { "title": "Chat em grupo de companheiros", "description": "Três companheiros com Soul em um grupo de companheiros com histórico" },
+      "roleplay_widgets": { "title": "Chat de roleplay com widgets", "description": "O chat de roleplay com todos os widgets ao lado do chat" },
+      "companion_widgets": { "title": "Chat de companheiro com widgets", "description": "O chat de companheiro com todos os widgets, incluindo estado do companheiro e memória" }
+    }
   },
   "manage": {
     "add": "Adicionar",

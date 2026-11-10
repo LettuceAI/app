@@ -531,7 +531,24 @@
     "reportProblem": "問題を報告",
     "reportProblemBody": "バージョン入りのGitHub Issueを開きます",
     "copyDetails": "バグレポート用にコピー",
-    "copied": "コピーしました"
+    "copied": "コピーしました",
+    "advanced": "詳細設定",
+    "developerMode": "開発者モードをオンにする",
+    "developerModeBody": "設定に開発者ページを表示します",
+    "developerModeOn": "開発者モードはオンです",
+    "developerModeOnBody": "設定に開発者ページが表示されています",
+    "developerModeTurnOff": "オフにする"
+  },
+  "developer": {
+    "group": "テストチャット",
+    "templates": {
+      "roleplay": { "title": "ロールプレイチャット", "description": "キャラクター、ペルソナ、履歴のあるチャット" },
+      "companion": { "title": "コンパニオンチャット（入力済み）", "description": "ソウル、関係、履歴、記憶を持つコンパニオン" },
+      "group": { "title": "グループチャット", "description": "履歴のあるグループに3人のキャラクター" },
+      "group_companion": { "title": "コンパニオングループチャット", "description": "履歴のあるコンパニオングループにソウルを持つ3人のコンパニオン" },
+      "roleplay_widgets": { "title": "ウィジェット付きロールプレイチャット", "description": "チャットの横にすべてのウィジェットを置いたロールプレイチャット" },
+      "companion_widgets": { "title": "ウィジェット付きコンパニオンチャット", "description": "コンパニオンの状態とメモリを含むすべてのウィジェットを置いたコンパニオンチャット" }
+    }
   },
   "manage": {
     "add": "追加",

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useNavigate, useRouteContext } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
@@ -25,23 +25,44 @@ import {
   Switch,
 } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
+import { queryKeys } from "@/api/query-keys";
 import { openExternalUrl } from "@/api/external-links";
 import { FailureState } from "@/shared/ui/FailureState";
 import { lettuceLogo } from "@/shared/assets";
 import { projectLinks } from "@/shared/links";
-import { useSettingsLayout } from "./data";
+import { useSettingsApi, useSettingsLayout } from "./data";
 import { useSettingsNavigation } from "./use-settings-navigation";
+import { useSettingsWrite } from "./use-settings-write";
 
 export function AboutPage() {
   const { t } = useTranslation("settings");
   const { t: common } = useTranslation();
-  const api = useRouteContext({ from: "__root__", select: (context) => context.api });
+  const api = useSettingsApi();
   const navigate = useNavigate();
   const { openWhatsNew } = useSettingsNavigation(
     (id) => void navigate({ to: "/settings/$section", params: { section: id } }),
   );
   const status = useQuery(appStatusQuery(api));
   const { standalone: tabs } = useSettingsLayout();
+  const settings = useQuery({ queryKey: queryKeys.settings.detail(), queryFn: () => api.call("settingsGet") });
+  const write = useSettingsWrite(api);
+  const developerMode = useMutation({
+    mutationFn: (enabled: boolean) =>
+      write((latest) =>
+        latest.global.developer_mode_enabled === enabled
+          ? null
+          : {
+              section: "general",
+              pure_mode: null,
+              analytics_enabled: null,
+              update_checks_enabled: null,
+              developer_mode_enabled: enabled,
+              auto_download_character_card_avatars: null,
+              manual_mode_context_window: null,
+              lorebook_scan_depth: null,
+            },
+      ),
+  });
   const [copied, setCopied] = useState<"version" | "details" | null>(null);
   const externalLink = useMutation({ mutationFn: (url: string) => openExternalUrl(url) });
   const openLink = (url: string) => externalLink.mutate(url);
@@ -273,6 +294,33 @@ export function AboutPage() {
                   </section>
                 </div>
               </div>
+
+              <ListGroup label={t("about.advanced")}>
+                {settings.data?.global.developer_mode_enabled ? (
+                  <ListRow
+                    title={t("about.developerModeOn")}
+                    description={t("about.developerModeOnBody")}
+                    trailing={
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={developerMode.isPending}
+                        onClick={() => developerMode.mutate(false)}
+                      >
+                        {t("about.developerModeTurnOff")}
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <ListRowButton
+                    title={t("about.developerMode")}
+                    description={t("about.developerModeBody")}
+                    chevron={false}
+                    disabled={!settings.data || developerMode.isPending}
+                    onClick={() => developerMode.mutate(true)}
+                  />
+                )}
+              </ListGroup>
 
               <p className="pt-2 text-center text-xs leading-relaxed text-fg-3">
                 {t("about.credits")}

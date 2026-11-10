@@ -535,7 +535,24 @@
     "reportProblem": "Sorun bildir",
     "reportProblemBody": "Sürümünüz doldurulmuş halde bir GitHub sorunu açar",
     "copyDetails": "Hata raporu için kopyala",
-    "copied": "Kopyalandı"
+    "copied": "Kopyalandı",
+    "advanced": "Gelişmiş",
+    "developerMode": "Geliştirici modunu aç",
+    "developerModeBody": "Ayarlarda Geliştirici sayfasını gösterir",
+    "developerModeOn": "Geliştirici modu açık",
+    "developerModeOnBody": "Geliştirici sayfası ayarlarda gösteriliyor",
+    "developerModeTurnOff": "Kapat"
+  },
+  "developer": {
+    "group": "Test sohbetleri",
+    "templates": {
+      "roleplay": { "title": "Rol yapma sohbeti", "description": "Bir karakter, bir persona ve geçmişi olan bir sohbet" },
+      "companion": { "title": "Yoldaş sohbeti, dolu", "description": "Soul, ilişki, geçmiş ve anıları olan bir yoldaş" },
+      "group": { "title": "Grup sohbeti", "description": "Geçmişi olan bir grupta üç karakter" },
+      "group_companion": { "title": "Yoldaş grup sohbeti", "description": "Geçmişi olan bir yoldaş grubunda Soul sahibi üç yoldaş" },
+      "roleplay_widgets": { "title": "Widget'lı rol yapma sohbeti", "description": "Tüm widget'ların sohbetin yanında olduğu rol yapma sohbeti" },
+      "companion_widgets": { "title": "Widget'lı yoldaş sohbeti", "description": "Yoldaş durumu ve bellek dahil tüm widget'ların olduğu yoldaş sohbeti" }
+    }
   },
   "manage": {
     "add": "Ekle",

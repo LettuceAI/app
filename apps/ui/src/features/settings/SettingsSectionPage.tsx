@@ -16,6 +16,7 @@ import { BackupPage } from "./backup/BackupPage";
 import { ResetPage } from "./reset/ResetPage";
 import { SecurityPage } from "./security/SecurityPage";
 import { CustomizationPage } from "./customization/CustomizationPage";
+import { DeveloperPage } from "./developer/DeveloperPage";
 
 /** The page of one settings section; the route only lets through sections that have one. */
 export function SettingsSectionPage() {
@@ -36,5 +37,6 @@ export function SettingsSectionPage() {
   if (section === "backup") return <BackupPage />;
   if (section === "reset") return <ResetPage />;
   if (section === "security") return <SecurityPage />;
+  if (section === "developer") return <DeveloperPage />;
   return section === "about" ? <AboutPage /> : null;
 }

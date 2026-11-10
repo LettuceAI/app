@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { appStatusQuery } from "@/api/app-status-query";
+import { queryKeys } from "@/api/query-keys";
 import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { CreateCharacterPage, EditCharacterPage } from "@/features/characters";
@@ -381,9 +382,18 @@ const settingsSectionRoute = createRoute({
       ? { civitaiModel: search.civitaiModel }
       : {}),
   }),
-  beforeLoad: ({ params }) => {
+  beforeLoad: ({ params, context }) => {
     if (!isSettingsSection(params.section) || !builtSettingsSections.has(params.section))
       throw notFound();
+    if (params.section !== "developer") return;
+    return context.queryClient
+      .ensureQueryData({
+        queryKey: queryKeys.settings.detail(),
+        queryFn: () => context.api.call("settingsGet"),
+      })
+      .then((settings) => {
+        if (!settings.global.developer_mode_enabled) throw notFound();
+      });
   },
   component: SettingsSectionPage,
 });

@@ -539,7 +539,24 @@
     "reportProblem": "Signaler un problème",
     "reportProblemBody": "Ouvre un ticket GitHub avec votre version renseignée",
     "copyDetails": "Copier pour un rapport de bug",
-    "copied": "Copié"
+    "copied": "Copié",
+    "advanced": "Avancé",
+    "developerMode": "Activer le mode développeur",
+    "developerModeBody": "Affiche la page Développeur dans les réglages",
+    "developerModeOn": "Le mode développeur est activé",
+    "developerModeOnBody": "La page Développeur est affichée dans les réglages",
+    "developerModeTurnOff": "Désactiver"
+  },
+  "developer": {
+    "group": "Chats de test",
+    "templates": {
+      "roleplay": { "title": "Chat de jeu de rôle", "description": "Un personnage, un persona et un chat avec historique" },
+      "companion": { "title": "Chat de compagnon, rempli", "description": "Un compagnon avec une âme, une relation, un historique et des souvenirs" },
+      "group": { "title": "Chat de groupe", "description": "Trois personnages dans un groupe avec historique" },
+      "group_companion": { "title": "Chat de groupe de compagnons", "description": "Trois compagnons avec une âme dans un groupe de compagnons avec historique" },
+      "roleplay_widgets": { "title": "Chat de jeu de rôle avec widgets", "description": "Le chat de jeu de rôle avec tous les widgets à côté du chat" },
+      "companion_widgets": { "title": "Chat de compagnon avec widgets", "description": "Le chat de compagnon avec tous les widgets, dont l'état du compagnon et la mémoire" }
+    }
   },
   "manage": {
     "add": "Ajouter",
