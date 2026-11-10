@@ -444,7 +444,7 @@ describe("memory", () => {
 });
 
 describe("completion and skip", () => {
-  it.each([false, true])("requires a chat model before setup can finish (only image model: %s)", async (imageOnly) => {
+  it.each([false, true])("warns before skipping without a chat model (only image model: %s)", async (imageOnly) => {
     const finish = vi.fn();
     await renderApp({ calls: {
       modelsList: () => ({ status: "ok", data: { models: imageOnly ? [modelView({ kind: "image", output_scopes: ["image"] })] : [], default_model_id: null, revision: 1 } }),
@@ -453,8 +453,9 @@ describe("completion and skip", () => {
     await click("Other options");
     await click(/Skip setup/);
     expect(await screen.findByRole("button", { name: "Connect an AI" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Skip anyway" })).toBeNull();
     expect(finish).not.toHaveBeenCalled();
+    await click("Skip anyway");
+    await waitFor(() => expect(finish).toHaveBeenCalledTimes(1));
   });
   it("writes the completion state once and refreshes app status", async () => {
     const ui = vi.fn((request: { patch: Record<string, unknown> }) => ({

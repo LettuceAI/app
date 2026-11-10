@@ -165,6 +165,8 @@ export function OnboardingPage() {
     setSkipWarning(true);
   });
 
+  const skipAnyway = useAction(finishApp);
+
   const changeLanguage = async (locale: string) => {
     await api.call("appUiStateUpdate", { patch: { locale } });
     await i18n.changeLanguage(locale);
@@ -469,6 +471,9 @@ export function OnboardingPage() {
             setSkipWarning(false);
             dispatch({ type: "go", step: "connect" });
           }}
+          onSkip={skipAnyway.run}
+          skipping={skipAnyway.busy}
+          error={skipAnyway.error}
         />
         <MemoryDownloadSheet
           open={memorySheet}
