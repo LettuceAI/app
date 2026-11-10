@@ -778,7 +778,7 @@
       "llamaChatTemplatePreset": "Plantilla",
       "llamaChatTemplateOverride": "Plantilla personalizada",
       "llamaMmprojPath": "Proyector de visión",
-      "forceGemma4Reasoning": "Forzar el pensamiento de Gemma 4",
+      "reasoningPrefill": "Prefijo de razonamiento",
       "llamaStreamingEnabled": "Mostrar las respuestas en directo",
       "llamaRawCompletionFallback": "Recurrir a completado sin formato",
       "llamaStrictMode": "Modo estricto",
@@ -840,6 +840,7 @@
       "llamaKvTypeV": "Tipo de caché de valores"
     },
     "hints": {
+      "reasoningPrefill": "Rara vez necesario: prueba primero con Desactivado. Gemma es para los primeros modelos Gemma 4 y <think> para modelos de razonamiento antiguos (p. ej. Qwen 3.5); los modelos nuevos lo hacen solos.",
       "temperature": "Un valor más alto da más variedad",
       "llamaSamplerProfile": "Un punto de partida que los campos de abajo ajustan",
       "llamaTopNSigma": "Umbral de desviación estándar de los logits; -1 lo desactiva",
@@ -877,6 +878,10 @@
         "high": "Alto",
         "xhigh": "Muy alto",
         "max": "Máximo"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Desactivado",
@@ -1204,6 +1209,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Desactivado",
       "llamaThreads": "Automático",
       "llamaThreadsBatch": "Automático",
       "llamaRopeFreqBase": "Del modelo",

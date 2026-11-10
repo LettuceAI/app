@@ -514,8 +514,17 @@ pub struct SettingsLlamaCppSettings {
     pub dflash_min_probability: Option<f64>,
     pub dflash_model_path: Option<String>,
     pub streaming_enabled: Option<bool>,
-    pub force_gemma4_reasoning: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_prefill: Option<SettingsForcedReasoningPrefill>,
     pub sampler: SettingsLlamaSamplerSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsForcedReasoningPrefill {
+    Gemma,
+    Think,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

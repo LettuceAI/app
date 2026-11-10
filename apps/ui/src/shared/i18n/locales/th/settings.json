@@ -764,7 +764,7 @@
       "llamaChatTemplatePreset": "เทมเพลต",
       "llamaChatTemplateOverride": "เทมเพลตกำหนดเอง",
       "llamaMmprojPath": "ตัวฉายภาพ",
-      "forceGemma4Reasoning": "บังคับการคิดของ Gemma 4",
+      "reasoningPrefill": "พรีฟิลการให้เหตุผล",
       "llamaStreamingEnabled": "แสดงคำตอบแบบเรียลไทม์",
       "llamaRawCompletionFallback": "ถอยไปใช้ raw completion",
       "llamaStrictMode": "โหมดเข้มงวด",
@@ -826,6 +826,7 @@
       "llamaKvTypeV": "ประเภทแคชค่า"
     },
     "hints": {
+      "reasoningPrefill": "ไม่ค่อยจำเป็น — ลองปิดก่อน Gemma สำหรับโมเดล Gemma 4 รุ่นแรก และ <think> สำหรับโมเดลให้เหตุผลรุ่นเก่า (เช่น Qwen 3.5) โมเดลใหม่จัดการเองได้",
       "temperature": "สูงขึ้นจะหลากหลายขึ้น",
       "llamaSamplerProfile": "จุดเริ่มต้นที่ฟิลด์ด้านล่างปรับ",
       "llamaTopNSigma": "เกณฑ์ส่วนเบี่ยงเบนมาตรฐานของ logit; -1 ปิด",
@@ -863,6 +864,10 @@
         "high": "สูง",
         "xhigh": "สูงมาก",
         "max": "สูงสุด"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "ปิด",
@@ -1190,6 +1195,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "ปิด",
       "llamaThreads": "อัตโนมัติ",
       "llamaThreadsBatch": "อัตโนมัติ",
       "llamaRopeFreqBase": "จากโมเดล",

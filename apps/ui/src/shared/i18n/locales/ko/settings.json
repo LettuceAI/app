@@ -764,7 +764,7 @@
       "llamaChatTemplatePreset": "템플릿",
       "llamaChatTemplateOverride": "사용자 지정 템플릿",
       "llamaMmprojPath": "비전 프로젝터",
-      "forceGemma4Reasoning": "Gemma 4 사고 강제",
+      "reasoningPrefill": "추론 프리필",
       "llamaStreamingEnabled": "답장 스트리밍",
       "llamaRawCompletionFallback": "원시 완성으로 대체",
       "llamaStrictMode": "엄격 모드",
@@ -826,6 +826,7 @@
       "llamaKvTypeV": "값 캐시 유형"
     },
     "hints": {
+      "reasoningPrefill": "거의 필요 없음 — 먼저 끄기로 시도하세요. Gemma는 초기 Gemma 4 모델, <think>는 구형 추론 모델(예: Qwen 3.5)용이며, 최신 모델은 스스로 처리합니다.",
       "temperature": "높을수록 다양해져요",
       "llamaSamplerProfile": "아래 필드가 조정하는 시작점",
       "llamaTopNSigma": "로짓 표준편차 임계값, -1이면 끔",
@@ -863,6 +864,10 @@
         "high": "높음",
         "xhigh": "매우 높음",
         "max": "최대"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "끔",
@@ -1190,6 +1195,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "끄기",
       "llamaThreads": "자동",
       "llamaThreadsBatch": "자동",
       "llamaRopeFreqBase": "모델에서",

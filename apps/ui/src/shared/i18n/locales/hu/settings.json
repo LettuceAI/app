@@ -771,7 +771,7 @@
       "llamaChatTemplatePreset": "Sablon",
       "llamaChatTemplateOverride": "Egyéni sablon",
       "llamaMmprojPath": "Látásprojektor",
-      "forceGemma4Reasoning": "Gemma 4 gondolkodás kényszerítése",
+      "reasoningPrefill": "Gondolkodás-előtöltés",
       "llamaStreamingEnabled": "Válaszok folyamatos megjelenítése",
       "llamaRawCompletionFallback": "Visszaesés nyers kiegészítésre",
       "llamaStrictMode": "Szigorú mód",
@@ -833,6 +833,7 @@
       "llamaKvTypeV": "Érték-gyorsítótár típusa"
     },
     "hints": {
+      "reasoningPrefill": "Ritkán kell – előbb próbáld Ki állásban. A Gemma a korai Gemma 4 modellekhez, a <think> régebbi gondolkodó modellekhez való (pl. Qwen 3.5); az újabb modellek maguktól megoldják.",
       "temperature": "A magasabb változatosabb",
       "llamaSamplerProfile": "Kiindulópont, amelyet az alábbi mezők módosítanak",
       "llamaTopNSigma": "Logit szórási küszöb; -1 kikapcsolja",
@@ -870,6 +871,10 @@
         "high": "Magas",
         "xhigh": "Nagyon magas",
         "max": "Maximális"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Ki",
@@ -1197,6 +1202,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Ki",
       "llamaThreads": "Automatikus",
       "llamaThreadsBatch": "Automatikus",
       "llamaRopeFreqBase": "A modellből",

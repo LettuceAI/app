@@ -102,9 +102,7 @@ pub fn resolve_llama_settings(
         dflash_min_probability: pick!(dflash_min_probability),
         dflash_model_path: pick!(dflash_model_path),
         streaming_enabled: pick!(streaming_enabled),
-        force_gemma4_reasoning: model
-            .force_gemma4_reasoning
-            .or(input.session.force_gemma4_reasoning),
+        reasoning_prefill: model.reasoning_prefill.or(input.session.reasoning_prefill),
         sampler: LlamaSamplerSettings {
             profile: pick!(sampler.profile),
             order: pick!(sampler.order),
@@ -177,31 +175,49 @@ mod tests {
     use crate::{LlamaKvType, LlamaSamplerProfile};
 
     #[test]
-    fn forced_gemma4_reasoning_takes_the_model_then_the_session_and_never_the_app() {
-        let resolve = |model: Option<bool>, session: Option<bool>, global: Option<bool>| {
+    fn a_legacy_force_gemma4_boolean_migrates_to_the_gemma_prefill_on_read() {
+        let migrated = |forced: bool| -> Option<crate::ForcedReasoningPrefill> {
+            serde_json::from_value::<LlamaCppSettings>(
+                serde_json::json!({ "force_gemma4_reasoning": forced }),
+            )
+            .expect("llama settings")
+            .reasoning_prefill
+        };
+        assert_eq!(migrated(true), Some(crate::ForcedReasoningPrefill::Gemma));
+        // There is no explicit-off state anymore; `false` carries no forced prefill.
+        assert_eq!(migrated(false), None);
+    }
+
+    #[test]
+    fn the_prefill_takes_the_model_then_the_session_and_never_the_app() {
+        use crate::ForcedReasoningPrefill::{Gemma, Think};
+        let resolve = |model: Option<crate::ForcedReasoningPrefill>,
+                       session: Option<crate::ForcedReasoningPrefill>,
+                       global: Option<crate::ForcedReasoningPrefill>| {
             resolve_llama_settings(
                 &LlamaCppSettings {
-                    force_gemma4_reasoning: model,
+                    reasoning_prefill: model,
                     ..LlamaCppSettings::default()
                 },
                 &LlamaResolutionInput {
                     session: LlamaCppSettings {
-                        force_gemma4_reasoning: session,
+                        reasoning_prefill: session,
                         ..LlamaCppSettings::default()
                     },
                     global: LlamaCppSettings {
-                        force_gemma4_reasoning: global,
+                        reasoning_prefill: global,
                         ..LlamaCppSettings::default()
                     },
                     memory_sampler: None,
                 },
             )
             .settings
-            .force_gemma4_reasoning
+            .reasoning_prefill
         };
-        assert_eq!(resolve(Some(false), Some(true), None), Some(false));
-        assert_eq!(resolve(None, Some(true), None), Some(true));
-        assert_eq!(resolve(None, None, Some(true)), None);
+        assert_eq!(resolve(Some(Think), Some(Gemma), None), Some(Think));
+        assert_eq!(resolve(None, Some(Gemma), None), Some(Gemma));
+        // The app/global layer never forces the prefill.
+        assert_eq!(resolve(None, None, Some(Gemma)), None);
     }
 
     #[test]

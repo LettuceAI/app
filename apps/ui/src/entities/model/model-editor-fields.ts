@@ -470,10 +470,14 @@ export const editorFields = {
     "key": "mmproj_path",
     "type": "file"
   },
-  "forceGemma4Reasoning": {
+  "reasoningPrefill": {
     "store": "llama",
-    "key": "force_gemma4_reasoning",
-    "type": "switch"
+    "key": "reasoning_prefill",
+    "type": "select",
+    "options": [
+      "gemma",
+      "think"
+    ]
   },
   "llamaStreamingEnabled": {
     "store": "llama",

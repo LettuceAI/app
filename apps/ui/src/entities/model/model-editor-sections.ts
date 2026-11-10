@@ -42,7 +42,7 @@ export function editorSections(kind: EditorKind, openRouter: boolean): EditorSec
       group("xtc", ["llamaXtcProbability", "llamaXtcThreshold"]),
       group("adaptive", ["llamaAdaptiveTarget", "llamaAdaptiveDecay"]),
     ], true),
-    section("reasoning", [{ toggle: "reasoningEnabled", fields: ["reasoningEffort", "reasoningBudgetTokens"] }, group("compatibility", ["forceSendThinkingState", "forceGemma4Reasoning"])]),
+    section("reasoning", [{ toggle: "reasoningEnabled", fields: ["reasoningEffort", "reasoningBudgetTokens", "reasoningPrefill"] }, group("compatibility", ["forceSendThinkingState"])]),
     section("memory", [
       { fields: ["contextLength"] },
       group("kv", ["llamaKvType", "llamaKvTypeK", "llamaKvTypeV", "llamaKvPlacement", "llamaSwaFull", "llamaFlashAttention"]),

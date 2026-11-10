@@ -20,7 +20,7 @@ const local: Partial<Record<FieldId, unknown>> = {
   llamaKvType: "f16", llamaKvTypeK: "f16", llamaKvTypeV: "f16", llamaBatchSize: 512,
   llamaMtpEnabled: false, llamaDflashEnabled: false, llamaMtpDraftTokens: 4, llamaDflashDraftTokens: 4,
   llamaDflashMinProbability: 0.55, llamaMtpPlacement: "auto", llamaMultiGpuEnabled: false,
-  llamaGpuDistributionMode: "balanced", llamaCpuLayers: 0, llamaStreamingEnabled: true, forceGemma4Reasoning: false, llamaRawCompletionFallback: false, llamaStrictMode: false,
+  llamaGpuDistributionMode: "balanced", llamaCpuLayers: 0, llamaStreamingEnabled: true, llamaRawCompletionFallback: false, llamaStrictMode: false,
 };
 
 export function runtimeFieldDefault(kind: EditorKind, id: FieldId, config: ModelConfig, defaults: SettingsModelSettingsLayer | undefined, layer: Layer, imageProfile?: ImageBundleProfile): unknown {

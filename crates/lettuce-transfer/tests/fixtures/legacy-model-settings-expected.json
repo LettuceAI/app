@@ -1010,7 +1010,6 @@
     "dflash_min_probability": 0.7,
     "dflash_model_path": "/d-dflash.gguf",
     "flash_attention": "auto",
-    "force_gemma4_reasoning": null,
     "gpu_device_ids": [
       0,
       1

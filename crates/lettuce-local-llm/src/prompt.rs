@@ -116,18 +116,52 @@ pub struct BuiltPrompt {
     pub tool_template_diagnostics: Option<String>,
 }
 
-/// The reply prefill that opens Gemma4's thought channel.
-pub const GEMMA4_REASONING_PREFILL: &str = "<|channel>thought\n";
+/// Which forced-reasoning prefill opens the reply's thought block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReasoningPrefill {
+    /// Gemma's channel format: `<|think|>` system marker, `<|channel>thought`
+    /// reply prefill, closed by `<channel|>`.
+    Gemma,
+    /// The generic `<think>` … `</think>` format (DeepSeek-R1, Qwen/QwQ, GLM-4):
+    /// no system marker, the reply prefill alone opens the block.
+    Think,
+}
 
-/// The marker that closes Gemma4's thought channel.
-pub const GEMMA4_REASONING_CLOSE: &str = "<channel|>";
+impl ReasoningPrefill {
+    /// Marker prepended to the leading system message so the chat template
+    /// opens thinking; `None` when the format needs no system marker.
+    #[must_use]
+    pub const fn system_opener(self) -> Option<&'static str> {
+        match self {
+            Self::Gemma => Some("<|think|>\n"),
+            Self::Think => None,
+        }
+    }
 
-/// The messages with the think marker at the start of the first system
-/// message, which is added when there is none: Gemma templates accept only
-/// one leading system message.
+    /// The reply prefill that opens the thought block.
+    #[must_use]
+    pub const fn prefill(self) -> &'static str {
+        match self {
+            Self::Gemma => "<|channel>thought\n",
+            Self::Think => "<think>\n",
+        }
+    }
+
+    /// The marker that closes the thought block.
+    #[must_use]
+    pub const fn close(self) -> &'static str {
+        match self {
+            Self::Gemma => "<channel|>",
+            Self::Think => "</think>",
+        }
+    }
+}
+
+/// The messages with `opener` at the start of the first system message, which
+/// is added when there is none: Gemma templates accept only one leading system
+/// message.
 #[must_use]
-pub fn prepend_reasoning_system_prefix(messages: &[Value]) -> Vec<Value> {
-    const THINK_OPENER: &str = "<|think|>\n";
+pub fn prepend_reasoning_system_prefix(messages: &[Value], opener: &str) -> Vec<Value> {
     let mut out = messages.to_vec();
     if let Some(system) = out
         .iter_mut()
@@ -135,21 +169,21 @@ pub fn prepend_reasoning_system_prefix(messages: &[Value]) -> Vec<Value> {
     {
         match system.get("content").cloned() {
             Some(Value::String(text)) => {
-                system["content"] = Value::String(format!("{THINK_OPENER}{text}"));
+                system["content"] = Value::String(format!("{opener}{text}"));
             }
             Some(Value::Array(mut parts)) => {
                 parts.insert(
                     0,
-                    serde_json::json!({ "type": "text", "text": THINK_OPENER }),
+                    serde_json::json!({ "type": "text", "text": opener }),
                 );
                 system["content"] = Value::Array(parts);
             }
-            _ => system["content"] = Value::String(THINK_OPENER.to_string()),
+            _ => system["content"] = Value::String(opener.to_string()),
         }
     } else {
         out.insert(
             0,
-            serde_json::json!({ "role": "system", "content": THINK_OPENER }),
+            serde_json::json!({ "role": "system", "content": opener }),
         );
     }
     out
@@ -722,22 +756,31 @@ mod tests {
 
     #[test]
     fn the_think_marker_opens_the_first_system_message() {
-        let text = prepend_reasoning_system_prefix(&[
-            json!({"role": "user", "content": "hi"}),
-            json!({"role": "system", "content": "Be kind."}),
-            json!({"role": "system", "content": "Second."}),
-        ]);
+        let opener = ReasoningPrefill::Gemma.system_opener().expect("gemma opener");
+        let text = prepend_reasoning_system_prefix(
+            &[
+                json!({"role": "user", "content": "hi"}),
+                json!({"role": "system", "content": "Be kind."}),
+                json!({"role": "system", "content": "Second."}),
+            ],
+            opener,
+        );
         assert_eq!(text[1]["content"], "<|think|>\nBe kind.");
         assert_eq!(text[2]["content"], "Second.");
-        let parts = prepend_reasoning_system_prefix(&[json!({
-            "role": "system",
-            "content": [{"type": "text", "text": "Be kind."}]
-        })]);
+        let parts = prepend_reasoning_system_prefix(
+            &[json!({
+                "role": "system",
+                "content": [{"type": "text", "text": "Be kind."}]
+            })],
+            opener,
+        );
         assert_eq!(parts[0]["content"][0]["text"], "<|think|>\n");
         assert_eq!(parts[0]["content"][1]["text"], "Be kind.");
-        let none = prepend_reasoning_system_prefix(&[json!({"role": "user", "content": "hi"})]);
+        let none =
+            prepend_reasoning_system_prefix(&[json!({"role": "user", "content": "hi"})], opener);
         assert_eq!(none[0], json!({"role": "system", "content": "<|think|>\n"}));
-        let empty = prepend_reasoning_system_prefix(&[json!({"role": "system", "content": null})]);
+        let empty =
+            prepend_reasoning_system_prefix(&[json!({"role": "system", "content": null})], opener);
         assert_eq!(empty[0]["content"], "<|think|>\n");
     }
 

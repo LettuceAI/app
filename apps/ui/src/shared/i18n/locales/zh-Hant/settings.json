@@ -764,7 +764,7 @@
       "llamaChatTemplatePreset": "模板",
       "llamaChatTemplateOverride": "自訂模板",
       "llamaMmprojPath": "視覺投影器",
-      "forceGemma4Reasoning": "強制 Gemma 4 思考",
+      "reasoningPrefill": "推理預填充",
       "llamaStreamingEnabled": "即時顯示回覆",
       "llamaRawCompletionFallback": "退回原始補全",
       "llamaStrictMode": "嚴格模式",
@@ -826,6 +826,7 @@
       "llamaKvTypeV": "值快取類型"
     },
     "hints": {
+      "reasoningPrefill": "很少需要——請先用關閉。Gemma 適用於早期 Gemma 4 模型，<think> 適用於較舊的推理模型（如 Qwen 3.5）；較新的模型會自行開啟推理。",
       "temperature": "數值越高變化越大",
       "llamaSamplerProfile": "下方欄位會依此起始值調整",
       "llamaTopNSigma": "Logit 標準差閾值；-1 表示關閉",
@@ -863,6 +864,10 @@
         "high": "高",
         "xhigh": "超高",
         "max": "最大"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "關閉",
@@ -1190,6 +1195,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "關閉",
       "llamaThreads": "自動",
       "llamaThreadsBatch": "自動",
       "llamaRopeFreqBase": "從模型",

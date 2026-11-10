@@ -771,7 +771,7 @@
       "llamaChatTemplatePreset": "Vorlage",
       "llamaChatTemplateOverride": "Benutzerdefinierte Vorlage",
       "llamaMmprojPath": "Vision-Projektor",
-      "forceGemma4Reasoning": "Gemma-4-Denken erzwingen",
+      "reasoningPrefill": "Reasoning-Prefill",
       "llamaStreamingEnabled": "Antworten streamen",
       "llamaRawCompletionFallback": "Auf Roh-Completion zurückfallen",
       "llamaStrictMode": "Strikter Modus",
@@ -833,6 +833,7 @@
       "llamaKvTypeV": "Wert-Cache-Typ"
     },
     "hints": {
+      "reasoningPrefill": "Selten nötig – zuerst mit Aus probieren. Gemma ist für frühe Gemma-4-Modelle, <think> für ältere Reasoning-Modelle (z. B. Qwen-3.5-Ära); neuere Modelle öffnen das Reasoning selbst.",
       "temperature": "Höher ist abwechslungsreicher",
       "llamaSamplerProfile": "Ein Ausgangspunkt, den die Felder unten anpassen",
       "llamaTopNSigma": "Schwelle der Logit-Standardabweichung; -1 schaltet sie aus",
@@ -870,6 +871,10 @@
         "high": "Hoch",
         "xhigh": "Sehr hoch",
         "max": "Maximal"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Aus",
@@ -1197,6 +1202,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Aus",
       "llamaThreads": "Automatisch",
       "llamaThreadsBatch": "Automatisch",
       "llamaRopeFreqBase": "Aus dem Modell",

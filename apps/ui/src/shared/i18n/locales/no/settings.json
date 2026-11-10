@@ -771,7 +771,7 @@
       "llamaChatTemplatePreset": "Mal",
       "llamaChatTemplateOverride": "Egendefinert mal",
       "llamaMmprojPath": "Visjonsprojektor",
-      "forceGemma4Reasoning": "Tving Gemma 4-tenking",
+      "reasoningPrefill": "Resonnering-prefill",
       "llamaStreamingEnabled": "Svar i sanntid",
       "llamaRawCompletionFallback": "Fall tilbake til rå fullføring",
       "llamaStrictMode": "Streng modus",
@@ -833,6 +833,7 @@
       "llamaKvTypeV": "Verdicachetype"
     },
     "hints": {
+      "reasoningPrefill": "Sjelden nødvendig – prøv Av først. Gemma er for tidlige Gemma 4-modeller og <think> for eldre resonneringsmodeller (f.eks. Qwen 3.5); nyere modeller gjør det selv.",
       "temperature": "Høyere gir mer variasjon",
       "llamaSamplerProfile": "Et utgangspunkt som feltene nedenfor justerer",
       "llamaTopNSigma": "Terskel for standardavvik i logit; -1 slår det av",
@@ -870,6 +871,10 @@
         "high": "Høy",
         "xhigh": "Svært høy",
         "max": "Maksimum"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Av",
@@ -1197,6 +1202,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Av",
       "llamaThreads": "Automatisk",
       "llamaThreadsBatch": "Automatisk",
       "llamaRopeFreqBase": "Fra modellen",

@@ -771,7 +771,7 @@
       "llamaChatTemplatePreset": "Sjabloon",
       "llamaChatTemplateOverride": "Aangepast sjabloon",
       "llamaMmprojPath": "Visieprojector",
-      "forceGemma4Reasoning": "Gemma 4-denken forceren",
+      "reasoningPrefill": "Redeneer-prefill",
       "llamaStreamingEnabled": "Antwoorden live tonen",
       "llamaRawCompletionFallback": "Terugvallen op raw completion",
       "llamaStrictMode": "Strikte modus",
@@ -833,6 +833,7 @@
       "llamaKvTypeV": "Cachetype voor waarden"
     },
     "hints": {
+      "reasoningPrefill": "Zelden nodig — probeer eerst Uit. Gemma is voor vroege Gemma 4-modellen en <think> voor oudere redeneermodellen (bijv. Qwen 3.5); nieuwere modellen doen dit zelf.",
       "temperature": "Hoger is gevarieerder",
       "llamaSamplerProfile": "Een startpunt dat de velden hieronder aanpassen",
       "llamaTopNSigma": "Drempel voor standaardafwijking van logits; -1 schakelt het uit",
@@ -870,6 +871,10 @@
         "high": "Hoog",
         "xhigh": "Zeer hoog",
         "max": "Maximaal"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Uit",
@@ -1197,6 +1202,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Uit",
       "llamaThreads": "Automatisch",
       "llamaThreadsBatch": "Automatisch",
       "llamaRopeFreqBase": "Van het model",

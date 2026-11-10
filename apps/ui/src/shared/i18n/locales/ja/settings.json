@@ -764,7 +764,7 @@
       "llamaChatTemplatePreset": "テンプレート",
       "llamaChatTemplateOverride": "カスタムテンプレート",
       "llamaMmprojPath": "ビジョンプロジェクター",
-      "forceGemma4Reasoning": "Gemma 4の思考を強制",
+      "reasoningPrefill": "推論プリフィル",
       "llamaStreamingEnabled": "返信をストリーミング",
       "llamaRawCompletionFallback": "生の補完にフォールバック",
       "llamaStrictMode": "厳格モード",
@@ -826,6 +826,7 @@
       "llamaKvTypeV": "値キャッシュタイプ"
     },
     "hints": {
+      "reasoningPrefill": "ほとんど不要 — まずオフで試してください。Gemma は初期の Gemma 4 モデル、<think> は古い推論モデル（例: Qwen 3.5）向けで、新しいモデルは自分で推論を開始します。",
       "temperature": "高いほど多様",
       "llamaSamplerProfile": "以下のフィールドで調整する出発点",
       "llamaTopNSigma": "Logit標準偏差のしきい値。-1でオフ",
@@ -863,6 +864,10 @@
         "high": "高",
         "xhigh": "超高",
         "max": "最大"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "オフ",
@@ -1190,6 +1195,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "オフ",
       "llamaThreads": "自動",
       "llamaThreadsBatch": "自動",
       "llamaRopeFreqBase": "モデルから",

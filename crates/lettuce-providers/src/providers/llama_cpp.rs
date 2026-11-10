@@ -366,7 +366,14 @@ fn generation_request(
             enable_thinking,
             chat_template_kwargs,
             parallel_tool_calls: tools.is_some(),
-            force_gemma4_reasoning: llama.settings.force_gemma4_reasoning == Some(true),
+            reasoning_prefill: llama.settings.reasoning_prefill.map(|prefill| match prefill {
+                lettuce_models::ForcedReasoningPrefill::Gemma => {
+                    lettuce_local_llm::prompt::ReasoningPrefill::Gemma
+                }
+                lettuce_models::ForcedReasoningPrefill::Think => {
+                    lettuce_local_llm::prompt::ReasoningPrefill::Think
+                }
+            }),
         },
         sampling: sampling(parameters, llama),
         runtime: runtime_input(settings),

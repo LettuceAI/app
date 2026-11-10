@@ -656,6 +656,7 @@ impl From<ModelProfileConfigRecord> for ModelProfileConfig {
             feature_parameters.lorebook_generator.parameters = parameters;
         }
         let _ = record.legacy_advanced_settings;
+        // `LlamaCppSettings` migrates its own legacy `force_gemma4_reasoning` field.
         Self {
             chat_parameters: record.chat_parameters,
             feature_parameters,
@@ -837,6 +838,36 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<super::ModelProfileConfig>(rewritten).expect("reread"),
             config
+        );
+    }
+
+    #[test]
+    fn the_legacy_force_gemma4_boolean_migrates_to_the_gemma_prefill() {
+        let mut stored = serde_json::to_value(super::ModelProfileConfig {
+            chat_parameters: Default::default(),
+            feature_parameters: Default::default(),
+            capabilities: super::ModelCapabilities::default(),
+            llama_cpp: Default::default(),
+            stable_diffusion: Default::default(),
+        })
+        .expect("config JSON");
+        stored.as_object_mut().expect("object").insert(
+            "llama_cpp".into(),
+            serde_json::json!({ "force_gemma4_reasoning": true }),
+        );
+        let config: super::ModelProfileConfig =
+            serde_json::from_value(stored).expect("old config reads");
+        assert_eq!(
+            config.llama_cpp.reasoning_prefill,
+            Some(crate::local_runtime::ForcedReasoningPrefill::Gemma)
+        );
+        // The legacy boolean never round-trips back into storage.
+        let rewritten = serde_json::to_value(&config).expect("rewritten config");
+        let llama = rewritten.get("llama_cpp").expect("llama_cpp");
+        assert!(llama.get("force_gemma4_reasoning").is_none());
+        assert_eq!(
+            llama.get("reasoning_prefill"),
+            Some(&serde_json::json!("gemma"))
         );
     }
 

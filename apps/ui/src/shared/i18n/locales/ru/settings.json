@@ -785,7 +785,7 @@
       "llamaChatTemplatePreset": "Шаблон",
       "llamaChatTemplateOverride": "Свой шаблон",
       "llamaMmprojPath": "Проектор зрения",
-      "forceGemma4Reasoning": "Принудительное размышление Gemma 4",
+      "reasoningPrefill": "Префилл рассуждений",
       "llamaStreamingEnabled": "Потоковые ответы",
       "llamaRawCompletionFallback": "Откат к сырому завершению",
       "llamaStrictMode": "Строгий режим",
@@ -847,6 +847,7 @@
       "llamaKvTypeV": "Тип кэша значений"
     },
     "hints": {
+      "reasoningPrefill": "Редко нужно — сначала попробуйте Выкл. Gemma — для ранних моделей Gemma 4, <think> — для старых рассуждающих моделей (напр. Qwen 3.5); новые модели делают это сами.",
       "temperature": "Выше — более разнообразно",
       "llamaSamplerProfile": "Отправная точка, которую настраивают поля ниже",
       "llamaTopNSigma": "Порог стандартного отклонения логитов; -1 отключает",
@@ -884,6 +885,10 @@
         "high": "Высокое",
         "xhigh": "Очень высокое",
         "max": "Максимум"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Выкл.",
@@ -1211,6 +1216,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Выкл.",
       "llamaThreads": "Автоматически",
       "llamaThreadsBatch": "Автоматически",
       "llamaRopeFreqBase": "Из модели",

@@ -50,9 +50,9 @@ pub struct LlamaReasoningInput {
     pub enable_thinking: Option<bool>,
     pub chat_template_kwargs: Option<Map<String, Value>>,
     pub parallel_tool_calls: bool,
-    /// Gemma4-series forced reasoning: the system prompt opens with the think
-    /// marker and the reply starts inside the thought channel.
-    pub force_gemma4_reasoning: bool,
+    /// Forced reasoning: when set, the system prompt opens with the format's
+    /// think marker and the reply starts inside its thought block.
+    pub reasoning_prefill: Option<crate::prompt::ReasoningPrefill>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

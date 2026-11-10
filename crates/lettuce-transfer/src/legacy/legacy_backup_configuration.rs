@@ -5251,7 +5251,10 @@ mod tests {
         );
         assert_eq!(llama.sampler.adaptive_target, Some(0.4));
         assert_eq!(llama.sampler.adaptive_decay, None);
-        assert_eq!(llama.force_gemma4_reasoning, Some(true));
+        assert_eq!(
+            llama.reasoning_prefill,
+            Some(lettuce_models::ForcedReasoningPrefill::Gemma)
+        );
         let diffusion = &parameters.stable_diffusion;
         assert_eq!(diffusion.steps, Some(28));
         assert_eq!(

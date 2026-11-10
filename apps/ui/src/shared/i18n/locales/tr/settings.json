@@ -799,7 +799,7 @@
       "llamaChatTemplatePreset": "Şablon",
       "llamaChatTemplateOverride": "Özel şablon",
       "llamaMmprojPath": "Görü projektörü",
-      "forceGemma4Reasoning": "Gemma 4 düşünmesini zorla",
+      "reasoningPrefill": "Akıl yürütme ön doldurma",
       "llamaStreamingEnabled": "Yanıtları canlı göster",
       "llamaRawCompletionFallback": "Ham tamamlamaya geri dön",
       "llamaStrictMode": "Katı mod",
@@ -861,6 +861,7 @@
       "llamaKvTypeV": "Değer önbellek türü"
     },
     "hints": {
+      "reasoningPrefill": "Nadiren gerekir — önce Kapalı'yı deneyin. Gemma erken Gemma 4 modelleri, <think> eski akıl yürütme modelleri (ör. Qwen 3.5) içindir; yeni modeller bunu kendisi yapar.",
       "temperature": "Yüksek değer daha çeşitli",
       "llamaSamplerProfile": "Aşağıdaki alanların ayarladığı bir başlangıç noktası",
       "llamaTopNSigma": "Logit standart sapma eşiği; -1 kapatır",
@@ -898,6 +899,10 @@
         "high": "Yüksek",
         "xhigh": "Çok yüksek",
         "max": "En yüksek"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Kapalı",
@@ -1225,6 +1230,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Kapalı",
       "llamaThreads": "Otomatik",
       "llamaThreadsBatch": "Otomatik",
       "llamaRopeFreqBase": "Modelden",

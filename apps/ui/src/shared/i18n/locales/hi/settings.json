@@ -771,7 +771,7 @@
       "llamaChatTemplatePreset": "टेम्पलेट",
       "llamaChatTemplateOverride": "कस्टम टेम्पलेट",
       "llamaMmprojPath": "विज़न प्रोजेक्टर",
-      "forceGemma4Reasoning": "Gemma 4 सोच को बाध्य करें",
+      "reasoningPrefill": "रीज़निंग प्रीफ़िल",
       "llamaStreamingEnabled": "जवाब लाइव दिखाएँ",
       "llamaRawCompletionFallback": "कच्चे कम्प्लीशन पर लौटें",
       "llamaStrictMode": "सख्त मोड",
@@ -833,6 +833,7 @@
       "llamaKvTypeV": "वैल्यू कैश प्रकार"
     },
     "hints": {
+      "reasoningPrefill": "शायद ही कभी ज़रूरत — पहले बंद आज़माएँ। Gemma शुरुआती Gemma 4 मॉडल के लिए और <think> पुराने रीज़निंग मॉडल (जैसे Qwen 3.5) के लिए है; नए मॉडल यह स्वयं करते हैं।",
       "temperature": "ज़्यादा मतलब ज़्यादा विविध",
       "llamaSamplerProfile": "एक शुरुआती बिंदु जिसे नीचे के फ़ील्ड बदलते हैं",
       "llamaTopNSigma": "लॉजिट मानक विचलन सीमा; -1 इसे बंद करता है",
@@ -870,6 +871,10 @@
         "high": "ज़्यादा",
         "xhigh": "बहुत ज़्यादा",
         "max": "अधिकतम"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "बंद",
@@ -1197,6 +1202,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "बंद",
       "llamaThreads": "ऑटोमैटिक",
       "llamaThreadsBatch": "ऑटोमैटिक",
       "llamaRopeFreqBase": "मॉडल से",

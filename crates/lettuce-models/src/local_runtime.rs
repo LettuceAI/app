@@ -245,8 +245,19 @@ pub enum LlamaMtpPlacement {
 
 /// Per-model llama.cpp load, placement and template settings, owned by the
 /// model editor. Runtime sizing formulas consume them unchanged.
+/// Which forced-reasoning prefill opens the reply's thought block for a local
+/// model. `None` (the field absent) means no forced reasoning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForcedReasoningPrefill {
+    /// Gemma's channel format.
+    Gemma,
+    /// The generic `<think>` … `</think>` format.
+    Think,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "LlamaCppSettingsRecord")]
 pub struct LlamaCppSettings {
     #[serde(default)]
     pub gpu_layers: Option<u32>,
@@ -320,12 +331,150 @@ pub struct LlamaCppSettings {
     pub dflash_model_path: Option<String>,
     #[serde(default)]
     pub streaming_enabled: Option<bool>,
-    /// Gemma4-series forced reasoning; the model's value wins over the
-    /// session's and app settings have none.
-    #[serde(default)]
-    pub force_gemma4_reasoning: Option<bool>,
+    /// Forced-reasoning prefill; the model's value wins over the session's and
+    /// app settings have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_prefill: Option<ForcedReasoningPrefill>,
     #[serde(default)]
     pub sampler: LlamaSamplerSettings,
+}
+
+/// The stored shape of [`LlamaCppSettings`]. Configs written before the
+/// reasoning-prefill dropdown carry the legacy `force_gemma4_reasoning` boolean,
+/// which migrates to the Gemma prefill here and is never written back; this runs
+/// on every deserialize (model profile, session/app layer, uec3, standalone).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LlamaCppSettingsRecord {
+    #[serde(default)]
+    gpu_layers: Option<u32>,
+    #[serde(default)]
+    multi_gpu_enabled: Option<bool>,
+    #[serde(default)]
+    gpu_device_ids: Option<Vec<u32>>,
+    #[serde(default)]
+    gpu_distribution_mode: Option<LlamaGpuDistributionMode>,
+    #[serde(default)]
+    gpu_manual_layers: Option<Vec<LlamaGpuLayerAssignment>>,
+    #[serde(default)]
+    cpu_layers: Option<u32>,
+    #[serde(default)]
+    kv_placement: Option<LlamaKvPlacement>,
+    #[serde(default)]
+    main_gpu: Option<u32>,
+    #[serde(default)]
+    single_gpu_device_id: Option<u32>,
+    #[serde(default)]
+    priority_vram_limit_bytes: Option<u64>,
+    #[serde(default)]
+    threads: Option<u32>,
+    #[serde(default)]
+    threads_batch: Option<u32>,
+    #[serde(default)]
+    rope_freq_base: Option<f64>,
+    #[serde(default)]
+    rope_freq_scale: Option<f64>,
+    #[serde(default)]
+    offload_kqv: Option<bool>,
+    #[serde(default)]
+    batch_size: Option<u32>,
+    #[serde(default)]
+    ubatch_size: Option<u32>,
+    #[serde(default)]
+    kv_type: Option<LlamaKvType>,
+    #[serde(default)]
+    kv_type_k: Option<LlamaKvType>,
+    #[serde(default)]
+    kv_type_v: Option<LlamaKvType>,
+    #[serde(default)]
+    flash_attention: Option<LlamaFlashAttention>,
+    #[serde(default)]
+    swa_full: Option<bool>,
+    #[serde(default)]
+    chat_template_override: Option<String>,
+    #[serde(default)]
+    chat_template_preset: Option<String>,
+    #[serde(default)]
+    mmproj_path: Option<String>,
+    #[serde(default)]
+    raw_completion_fallback: Option<bool>,
+    #[serde(default)]
+    strict_mode: Option<bool>,
+    #[serde(default)]
+    mtp_enabled: Option<bool>,
+    #[serde(default)]
+    mtp_placement: Option<LlamaMtpPlacement>,
+    #[serde(default)]
+    mtp_draft_tokens: Option<u32>,
+    #[serde(default)]
+    mtp_model_path: Option<String>,
+    #[serde(default)]
+    dflash_enabled: Option<bool>,
+    #[serde(default)]
+    dflash_draft_tokens: Option<u32>,
+    #[serde(default)]
+    dflash_min_probability: Option<f64>,
+    #[serde(default)]
+    dflash_model_path: Option<String>,
+    #[serde(default)]
+    streaming_enabled: Option<bool>,
+    #[serde(default)]
+    reasoning_prefill: Option<ForcedReasoningPrefill>,
+    /// Legacy boolean that forced Gemma's reasoning prefill (migrated below).
+    #[serde(default)]
+    force_gemma4_reasoning: Option<bool>,
+    #[serde(default)]
+    sampler: LlamaSamplerSettings,
+}
+
+impl From<LlamaCppSettingsRecord> for LlamaCppSettings {
+    fn from(record: LlamaCppSettingsRecord) -> Self {
+        Self {
+            gpu_layers: record.gpu_layers,
+            multi_gpu_enabled: record.multi_gpu_enabled,
+            gpu_device_ids: record.gpu_device_ids,
+            gpu_distribution_mode: record.gpu_distribution_mode,
+            gpu_manual_layers: record.gpu_manual_layers,
+            cpu_layers: record.cpu_layers,
+            kv_placement: record.kv_placement,
+            main_gpu: record.main_gpu,
+            single_gpu_device_id: record.single_gpu_device_id,
+            priority_vram_limit_bytes: record.priority_vram_limit_bytes,
+            threads: record.threads,
+            threads_batch: record.threads_batch,
+            rope_freq_base: record.rope_freq_base,
+            rope_freq_scale: record.rope_freq_scale,
+            offload_kqv: record.offload_kqv,
+            batch_size: record.batch_size,
+            ubatch_size: record.ubatch_size,
+            kv_type: record.kv_type,
+            kv_type_k: record.kv_type_k,
+            kv_type_v: record.kv_type_v,
+            flash_attention: record.flash_attention,
+            swa_full: record.swa_full,
+            chat_template_override: record.chat_template_override,
+            chat_template_preset: record.chat_template_preset,
+            mmproj_path: record.mmproj_path,
+            raw_completion_fallback: record.raw_completion_fallback,
+            strict_mode: record.strict_mode,
+            mtp_enabled: record.mtp_enabled,
+            mtp_placement: record.mtp_placement,
+            mtp_draft_tokens: record.mtp_draft_tokens,
+            mtp_model_path: record.mtp_model_path,
+            dflash_enabled: record.dflash_enabled,
+            dflash_draft_tokens: record.dflash_draft_tokens,
+            dflash_min_probability: record.dflash_min_probability,
+            dflash_model_path: record.dflash_model_path,
+            streaming_enabled: record.streaming_enabled,
+            // Mini-migration: the legacy boolean becomes the Gemma prefill, then
+            // is dropped so it never round-trips back into storage.
+            reasoning_prefill: record.reasoning_prefill.or_else(|| {
+                (record.force_gemma4_reasoning == Some(true))
+                    .then_some(ForcedReasoningPrefill::Gemma)
+            }),
+            sampler: record.sampler,
+        }
+    }
 }
 
 impl LlamaCppSettings {

@@ -8727,7 +8727,7 @@ export type SettingsLlamaCppSettings = {
 	dflash_min_probability: number | null,
 	dflash_model_path: string | null,
 	streaming_enabled: boolean | null,
-	force_gemma4_reasoning: boolean | null,
+	reasoning_prefill: SettingsForcedReasoningPrefill | null,
 	sampler: SettingsLlamaSamplerSettings,
 };
 
@@ -8844,6 +8844,7 @@ export type SettingsPromptCaching = "disabled" | { enabled: {
 export type SettingsPureMode = "off" | "standard" | "strict" | "low";
 
 export type SettingsReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type SettingsForcedReasoningPrefill = "gemma" | "think";
 
 export type SettingsReasoningMode = "disabled" | "enabled";
 

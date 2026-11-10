@@ -785,7 +785,7 @@
       "llamaChatTemplatePreset": "Шаблон",
       "llamaChatTemplateOverride": "Власний шаблон",
       "llamaMmprojPath": "Проєктор бачення",
-      "forceGemma4Reasoning": "Примусово вмикати міркування Gemma 4",
+      "reasoningPrefill": "Префіл міркувань",
       "llamaStreamingEnabled": "Показувати відповіді в міру написання",
       "llamaRawCompletionFallback": "Повертатися до сирого завершення",
       "llamaStrictMode": "Суворий режим",
@@ -847,6 +847,7 @@
       "llamaKvTypeV": "Тип кешу значень"
     },
     "hints": {
+      "reasoningPrefill": "Рідко потрібно — спершу спробуйте Вимк. Gemma — для ранніх моделей Gemma 4, <think> — для старих моделей міркування (напр. Qwen 3.5); новіші моделі роблять це самі.",
       "temperature": "Вище — більше різноманіття",
       "llamaSamplerProfile": "Відправна точка, яку коригують поля нижче",
       "llamaTopNSigma": "Поріг стандартного відхилення логітів; -1 вимикає",
@@ -884,6 +885,10 @@
         "high": "Високе",
         "xhigh": "Дуже високе",
         "max": "Максимум"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Вимкнено",
@@ -1211,6 +1216,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Вимк.",
       "llamaThreads": "Автоматично",
       "llamaThreadsBatch": "Автоматично",
       "llamaRopeFreqBase": "З моделі",

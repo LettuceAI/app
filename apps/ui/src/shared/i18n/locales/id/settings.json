@@ -764,7 +764,7 @@
       "llamaChatTemplatePreset": "Templat",
       "llamaChatTemplateOverride": "Templat kustom",
       "llamaMmprojPath": "Proyektor visi",
-      "forceGemma4Reasoning": "Paksa pemikiran Gemma 4",
+      "reasoningPrefill": "Prefill penalaran",
       "llamaStreamingEnabled": "Tampilkan balasan secara langsung",
       "llamaRawCompletionFallback": "Beralih ke completion mentah",
       "llamaStrictMode": "Mode ketat",
@@ -826,6 +826,7 @@
       "llamaKvTypeV": "Jenis cache nilai"
     },
     "hints": {
+      "reasoningPrefill": "Jarang diperlukan — coba Nonaktif dulu. Gemma untuk model Gemma 4 awal dan <think> untuk model penalaran lama (mis. Qwen 3.5); model baru melakukannya sendiri.",
       "temperature": "Semakin tinggi semakin bervariasi",
       "llamaSamplerProfile": "Titik awal yang disesuaikan kolom di bawah",
       "llamaTopNSigma": "Ambang simpangan baku logit; -1 mematikannya",
@@ -863,6 +864,10 @@
         "high": "Tinggi",
         "xhigh": "Sangat tinggi",
         "max": "Maksimum"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Mati",
@@ -1190,6 +1195,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Nonaktif",
       "llamaThreads": "Otomatis",
       "llamaThreadsBatch": "Otomatis",
       "llamaRopeFreqBase": "Dari model",

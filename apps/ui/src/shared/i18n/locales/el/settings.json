@@ -771,7 +771,7 @@
       "llamaChatTemplatePreset": "Πρότυπο",
       "llamaChatTemplateOverride": "Προσαρμοσμένο πρότυπο",
       "llamaMmprojPath": "Projector όρασης",
-      "forceGemma4Reasoning": "Εξαναγκασμός σκέψης Gemma 4",
+      "reasoningPrefill": "Προπλήρωση συλλογισμού",
       "llamaStreamingEnabled": "Ζωντανή εμφάνιση απαντήσεων",
       "llamaRawCompletionFallback": "Εναλλαγή σε ακατέργαστη ολοκλήρωση",
       "llamaStrictMode": "Αυστηρή λειτουργία",
@@ -833,6 +833,7 @@
       "llamaKvTypeV": "Τύπος cache τιμών"
     },
     "hints": {
+      "reasoningPrefill": "Σπάνια χρειάζεται — δοκιμάστε πρώτα Ανενεργό. Το Gemma είναι για πρώιμα μοντέλα Gemma 4 και το <think> για παλιότερα μοντέλα συλλογισμού (π.χ. Qwen 3.5)· τα νεότερα μοντέλα το κάνουν μόνα τους.",
       "temperature": "Υψηλότερη = πιο ποικίλο",
       "llamaSamplerProfile": "Σημείο εκκίνησης που προσαρμόζουν τα παρακάτω πεδία",
       "llamaTopNSigma": "Όριο τυπικής απόκλισης logit· -1 το απενεργοποιεί",
@@ -870,6 +871,10 @@
         "high": "Υψηλή",
         "xhigh": "Πολύ υψηλή",
         "max": "Μέγιστη"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Ανενεργή",
@@ -1197,6 +1202,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Ανενεργό",
       "llamaThreads": "Αυτόματο",
       "llamaThreadsBatch": "Αυτόματο",
       "llamaRopeFreqBase": "Από το μοντέλο",

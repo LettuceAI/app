@@ -778,7 +778,7 @@
       "llamaChatTemplatePreset": "Modèle de discussion",
       "llamaChatTemplateOverride": "Modèle personnalisé",
       "llamaMmprojPath": "Projecteur visuel",
-      "forceGemma4Reasoning": "Forcer la réflexion de Gemma 4",
+      "reasoningPrefill": "Préremplissage du raisonnement",
       "llamaStreamingEnabled": "Afficher les réponses en direct",
       "llamaRawCompletionFallback": "Revenir à la complétion brute",
       "llamaStrictMode": "Mode strict",
@@ -840,6 +840,7 @@
       "llamaKvTypeV": "Type de cache des valeurs"
     },
     "hints": {
+      "reasoningPrefill": "Rarement nécessaire — essayez d'abord Désactivé. Gemma convient aux premiers modèles Gemma 4 et <think> aux anciens modèles de raisonnement (p. ex. Qwen 3.5) ; les modèles récents s'en chargent seuls.",
       "temperature": "Plus élevé = plus varié",
       "llamaSamplerProfile": "Un point de départ que les champs ci-dessous ajustent",
       "llamaTopNSigma": "Seuil d'écart-type des logits ; -1 le désactive",
@@ -877,6 +878,10 @@
         "high": "Élevé",
         "xhigh": "Très élevé",
         "max": "Maximum"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Désactivé",
@@ -1204,6 +1209,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Désactivé",
       "llamaThreads": "Automatique",
       "llamaThreadsBatch": "Automatique",
       "llamaRopeFreqBase": "Depuis le modèle",

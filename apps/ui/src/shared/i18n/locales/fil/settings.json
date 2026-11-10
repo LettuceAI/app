@@ -771,7 +771,7 @@
       "llamaChatTemplatePreset": "Template",
       "llamaChatTemplateOverride": "Custom template",
       "llamaMmprojPath": "Vision projector",
-      "forceGemma4Reasoning": "Pilitin ang Gemma 4 thinking",
+      "reasoningPrefill": "Reasoning prefill",
       "llamaStreamingEnabled": "Ipakita ang mga tugon nang live",
       "llamaRawCompletionFallback": "Bumalik sa raw completion",
       "llamaStrictMode": "Strict mode",
@@ -833,6 +833,7 @@
       "llamaKvTypeV": "Value cache type"
     },
     "hints": {
+      "reasoningPrefill": "Bihirang kailanganin — subukan muna ang Naka-off. Ang Gemma ay para sa maagang Gemma 4 na modelo at ang <think> para sa mas lumang reasoning na modelo (hal. Qwen 3.5); kaya na ito ng mga bagong modelo.",
       "temperature": "Mas mataas, mas iba-iba",
       "llamaSamplerProfile": "Panimulang punto na inaayos ng mga field sa ibaba",
       "llamaTopNSigma": "Threshold ng logit standard deviation; -1 ang nagpapatay nito",
@@ -870,6 +871,10 @@
         "high": "Mataas",
         "xhigh": "Napakataas",
         "max": "Maximum"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Naka-off",
@@ -1197,6 +1202,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Naka-off",
       "llamaThreads": "Awtomatiko",
       "llamaThreadsBatch": "Awtomatiko",
       "llamaRopeFreqBase": "Mula sa modelo",

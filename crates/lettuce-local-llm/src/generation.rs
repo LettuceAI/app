@@ -54,10 +54,10 @@ use crate::offload::{
     select_mtp_gpu_device,
 };
 use crate::prompt::{
-    BuiltPrompt, GEMMA4_REASONING_CLOSE, GEMMA4_REASONING_PREFILL, OpenAICompatPromptOptions,
-    PromptRequest, add_bos_label, build_prompt, inject_media_markers,
-    model_tokenizer_add_bos_label, model_tokenizer_adds_bos, prepend_reasoning_system_prefix,
-    prompt_add_bos_reason, prompt_mode_label, resolve_prompt_add_bos, token_piece_bytes,
+    BuiltPrompt, OpenAICompatPromptOptions, PromptRequest, ReasoningPrefill, add_bos_label,
+    build_prompt, inject_media_markers, model_tokenizer_add_bos_label, model_tokenizer_adds_bos,
+    prepend_reasoning_system_prefix, prompt_add_bos_reason, prompt_mode_label,
+    resolve_prompt_add_bos, token_piece_bytes,
 };
 use crate::request::{
     IncrementalStopMatcher, LlamaGenerationRequest, ResolvedRuntime, ResolvedSampling,
@@ -940,8 +940,12 @@ fn generate(
     } else {
         Cow::Owned(inject_media_markers(&request.messages))
     };
-    if request.reasoning.force_gemma4_reasoning {
-        prompt_messages = Cow::Owned(prepend_reasoning_system_prefix(&prompt_messages));
+    if let Some(opener) = request
+        .reasoning
+        .reasoning_prefill
+        .and_then(ReasoningPrefill::system_opener)
+    {
+        prompt_messages = Cow::Owned(prepend_reasoning_system_prefix(&prompt_messages, opener));
     }
     let requested_context = request.requested_context();
     let max_tokens = request.max_tokens();
@@ -2049,10 +2053,10 @@ impl Run<'_> {
                 options: &self.options,
             },
         )?;
-        if self.request.reasoning.force_gemma4_reasoning {
-            built_prompt.prompt.push_str(GEMMA4_REASONING_PREFILL);
+        if let Some(prefill) = self.request.reasoning.reasoning_prefill {
+            built_prompt.prompt.push_str(prefill.prefill());
             tracing::info!(
-                prefill = GEMMA4_REASONING_PREFILL,
+                prefill = prefill.prefill(),
                 "forced reasoning prefill appended to prompt"
             );
         }
@@ -2929,8 +2933,8 @@ impl Run<'_> {
         );
         let mut sampler = built_sampler.sampler;
         let stream = self.request.stream;
-        let mut thinking = if self.request.reasoning.force_gemma4_reasoning {
-            ThinkingTagParser::starting_in_reasoning(GEMMA4_REASONING_CLOSE)
+        let mut thinking = if let Some(prefill) = self.request.reasoning.reasoning_prefill {
+            ThinkingTagParser::starting_in_reasoning(prefill.close())
         } else {
             ThinkingTagParser::default()
         };
@@ -3288,11 +3292,11 @@ impl Run<'_> {
             .map(ToOwned::to_owned);
         let raw_content = extract_text_content(self.final_message.get("content"));
         let content = raw_content.as_deref().filter(|value| !value.is_empty());
-        let normalized = if self.request.reasoning.force_gemma4_reasoning {
+        let normalized = if let Some(prefill) = self.request.reasoning.reasoning_prefill {
             normalize_thinking_content_starting_in_reasoning(
                 content,
                 explicit_reasoning.as_deref(),
-                GEMMA4_REASONING_CLOSE,
+                prefill.close(),
             )
         } else {
             normalize_thinking_content(content, explicit_reasoning.as_deref())

@@ -38,6 +38,9 @@ pub struct PortableLlamaCppSettings {
     pub dflash_draft_tokens: Option<u32>,
     pub dflash_min_probability: Option<f64>,
     pub streaming_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_prefill: Option<ForcedReasoningPrefill>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force_gemma4_reasoning: Option<bool>,
     #[serde(with = "WireLlamaSamplerSettings")]
     pub sampler: LlamaSamplerSettings,
@@ -82,7 +85,8 @@ impl From<&LlamaCppSettings> for PortableLlamaCppSettings {
             dflash_draft_tokens: value.dflash_draft_tokens,
             dflash_min_probability: value.dflash_min_probability,
             streaming_enabled: value.streaming_enabled,
-            force_gemma4_reasoning: value.force_gemma4_reasoning,
+            reasoning_prefill: value.reasoning_prefill,
+            force_gemma4_reasoning: None,
             sampler: value.sampler.clone(),
         }
     }
@@ -126,7 +130,9 @@ impl From<PortableLlamaCppSettings> for LlamaCppSettings {
             dflash_draft_tokens: value.dflash_draft_tokens,
             dflash_min_probability: value.dflash_min_probability,
             streaming_enabled: value.streaming_enabled,
-            force_gemma4_reasoning: value.force_gemma4_reasoning,
+            reasoning_prefill: value.reasoning_prefill.or_else(|| {
+                (value.force_gemma4_reasoning == Some(true)).then_some(ForcedReasoningPrefill::Gemma)
+            }),
             sampler: value.sampler,
             mmproj_path: None,
             mtp_model_path: None,

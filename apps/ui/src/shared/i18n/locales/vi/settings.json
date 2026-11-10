@@ -764,7 +764,7 @@
       "llamaChatTemplatePreset": "Mẫu",
       "llamaChatTemplateOverride": "Mẫu tùy chỉnh",
       "llamaMmprojPath": "Bộ chiếu thị giác",
-      "forceGemma4Reasoning": "Buộc Gemma 4 suy nghĩ",
+      "reasoningPrefill": "Prefill suy luận",
       "llamaStreamingEnabled": "Hiện câu trả lời trực tiếp",
       "llamaRawCompletionFallback": "Dự phòng hoàn thành thô",
       "llamaStrictMode": "Chế độ nghiêm ngặt",
@@ -826,6 +826,7 @@
       "llamaKvTypeV": "Loại bộ nhớ đệm giá trị"
     },
     "hints": {
+      "reasoningPrefill": "Hiếm khi cần — hãy thử Tắt trước. Gemma dành cho model Gemma 4 đời đầu và <think> cho model suy luận cũ (vd. Qwen 3.5); model mới tự xử lý.",
       "temperature": "Cao hơn thì đa dạng hơn",
       "llamaSamplerProfile": "Điểm khởi đầu để các trường bên dưới điều chỉnh",
       "llamaTopNSigma": "Ngưỡng độ lệch chuẩn logit; -1 để tắt",
@@ -863,6 +864,10 @@
         "high": "Cao",
         "xhigh": "Rất cao",
         "max": "Tối đa"
+      },
+      "reasoningPrefill": {
+        "gemma": "Gemma",
+        "think": "<think>"
       },
       "promptCachingEnabled": {
         "disabled": "Tắt",
@@ -1190,6 +1195,7 @@
       }
     },
     "placeholders": {
+      "reasoningPrefill": "Tắt",
       "llamaThreads": "Tự động",
       "llamaThreadsBatch": "Tự động",
       "llamaRopeFreqBase": "Từ mô hình",

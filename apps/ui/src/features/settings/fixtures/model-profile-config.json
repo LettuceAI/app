@@ -1419,7 +1419,7 @@
     "dflash_draft_tokens": 4,
     "dflash_min_probability": 0.5,
     "streaming_enabled": true,
-    "force_gemma4_reasoning": true,
+    "reasoning_prefill": "gemma",
     "sampler": {
       "profile": "balanced",
       "order": [

@@ -5,7 +5,8 @@ use lettuce_models::{
     LlamaCppSettings, LlamaFlashAttention, LlamaGpuDistributionMode, LlamaGpuLayerAssignment,
     LlamaKvPlacement, LlamaKvType, LlamaMtpPlacement, LlamaSamplerProfile, LlamaSamplerSettings,
     LlamaSamplerStage, OllamaOptionOverrides, OllamaOptions, OpenRouterOptions, ParameterOverride,
-    PromptCacheRetention, PromptCaching, ReasoningEffort, ReasoningMode, StableDiffusionCacheMode,
+    ForcedReasoningPrefill, PromptCacheRetention, PromptCaching, ReasoningEffort, ReasoningMode,
+    StableDiffusionCacheMode,
     StableDiffusionCppBinding, StableDiffusionLora, StableDiffusionOffloadMode,
     StableDiffusionSettings,
 };
@@ -436,7 +437,10 @@ fn llama_cpp(reader: &mut Reader<'_>) -> LlamaCppSettings {
         dflash_min_probability: reader.f64("llamaDflashMinProbability", 0.0, 1.0),
         dflash_model_path: reader.text("llamaDflashModelPath"),
         streaming_enabled: reader.bool("llamaStreamingEnabled"),
-        force_gemma4_reasoning: reader.bool("forceGemma4Reasoning"),
+        reasoning_prefill: reader
+            .bool("forceGemma4Reasoning")
+            .filter(|forced| *forced)
+            .map(|_| ForcedReasoningPrefill::Gemma),
         sampler: llama_sampler(reader),
     }
 }
@@ -677,7 +681,7 @@ pub(crate) fn legacy_settings_layer(
             "reasoningBudgetTokens",
             "forceGemma4Reasoning",
         ]);
-        llama_cpp.force_gemma4_reasoning = None;
+        llama_cpp.reasoning_prefill = None;
         chat_parameters.send_thinking_state = None;
         chat_parameters.top_k = None;
         chat_parameters.frequency_penalty = None;
