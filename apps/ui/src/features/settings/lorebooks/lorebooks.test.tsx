@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Sheet } from "@lettuceai/crisp";
-import type { SettingsUpdateRequest_Deserialize, SettingsView } from "@/api/generated/bindings";
+import type { ModelView, ProviderAccountView, SettingsUpdateRequest_Deserialize, SettingsView } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -28,6 +28,34 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
+const cloud: ProviderAccountView = {
+  id: "cloud",
+  label: "Cloud",
+  provider_kind: "openai",
+  enabled: true,
+  protocol: "open_ai_compatible",
+  base_url: null,
+  streaming_enabled: true,
+  allow_invalid_tls: false,
+  api_key_set: true,
+  config: {},
+  revision: 1,
+  created_at: 1,
+  updated_at: 1,
+};
+const chatModel: ModelView = {
+  id: "chat",
+  display_name: "Chat",
+  external_model_id: "chat-slug",
+  provider_account_id: "cloud",
+  kind: "chat",
+  input_scopes: ["text"],
+  output_scopes: ["text"],
+  config: {},
+  revision: 1,
+  created_at: 1,
+  updated_at: 1,
+};
 
 async function mount(tab = "lorebook", gate?: Promise<void>, promptCount = 0) {
   let current = {
@@ -79,8 +107,8 @@ async function mount(tab = "lorebook", gate?: Promise<void>, promptCount = 0) {
       appStatus: () => ok({ ...mockAppStatus, ui_state: { onboarding: { completed: true } } }),
       settingsGet: () => ok(current),
       settingsUpdate: write,
-      modelsList: () => ok({ models: [], default_model_id: null, revision: 1 }),
-      providerAccountsList: () => ok([]),
+      modelsList: () => ok({ models: [chatModel], default_model_id: null, revision: 1 }),
+      providerAccountsList: () => ok([cloud]),
       promptsList: ({ kind }) =>
         ok({
           items: kind

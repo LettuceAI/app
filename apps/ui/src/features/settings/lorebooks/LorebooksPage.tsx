@@ -175,6 +175,7 @@ export function LorebooksPage() {
           t("settings.useDefault")
         )
       }
+      disabled={choices.length === 0}
       onClick={() => open("model")}
     />
   );

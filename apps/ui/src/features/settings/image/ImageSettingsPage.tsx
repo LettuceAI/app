@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
-import { Check, Image, PenLine, UserRound } from "lucide-react";
+import { Check, Image, PenLine, Plus, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, EmptyState, icon, ListGroup, ListRow, ListRowButton, Page, Skeleton, Switch } from "@lettuceai/crisp";
+import { icon, ListGroup, ListRow, ListRowButton, Page, Skeleton, Switch } from "@lettuceai/crisp";
 import type { SettingsImageGenerationSettings } from "@/api/generated/bindings";
 import { appStatusQuery } from "@/api/app-status-query";
 import { queryKeys } from "@/api/query-keys";
@@ -114,17 +114,17 @@ export function ImageSettingsPage() {
           </div>
         ) : (
           <div className="@container">
-            {images.length === 0 && <EmptyState title={t("image.empty.title")} description={t("image.empty.body")} action={<Button variant="secondary" onClick={addModel}>{t("image.addModel")}</Button>} />}
+            {images.length === 0 && <ListGroup className="mb-7"><ListRowButton icon={<Plus size={icon.lg} />} title={t("image.empty.title")} description={t("image.empty.body")} trailing={<span className="text-sm text-fg-3">{t("image.addModel")}</span>} onClick={addModel} /></ListGroup>}
             <div className="grid grid-cols-1 gap-7 @4xl:grid-cols-2 @4xl:items-start @4xl:gap-x-10">
               <div className="min-w-0 space-y-7">
                 <ListGroup label={t("image.avatar.group")}>
                   <ListRow icon={<UserRound size={icon.lg} />} title={t("image.avatar.title")} description={t("image.avatar.body")} trailing={<Switch checked={value.avatar_enabled} onChange={(enabled) => { void change({ avatar_enabled: enabled }); }} disabled={busy} aria-label={t("image.avatar.title")} />} />
-                  <ListRowButton icon={<Image size={icon.lg} />} title={t("image.avatar.model")} description={value.avatar_enabled ? describe("avatar") : t("image.avatar.disabled")} disabled={busy || !value.avatar_enabled} onClick={() => open("avatar")} />
+                  <ListRowButton icon={<Image size={icon.lg} />} title={t("image.avatar.model")} description={value.avatar_enabled ? describe("avatar") : t("image.avatar.disabled")} disabled={busy || !value.avatar_enabled || avatars.length === 0} onClick={() => open("avatar")} />
                   {promptRow("avatar_generation", !value.avatar_enabled)}
                   {promptRow("avatar_edit_request", !value.avatar_enabled)}
                 </ListGroup>
                 <ListGroup label={t("image.writer.group")}>
-                  <ListRowButton icon={<PenLine size={icon.lg} />} title={t("image.writer.model")} description={describe("writer")} disabled={busy} onClick={() => open("writer")} />
+                  <ListRowButton icon={<PenLine size={icon.lg} />} title={t("image.writer.model")} description={describe("writer")} disabled={busy || writers.length === 0} onClick={() => open("writer")} />
                   {promptRow("scene_prompt_writer")}
                   {promptRow("design_reference_writer")}
                 </ListGroup>
@@ -132,7 +132,7 @@ export function ImageSettingsPage() {
               <div className="min-w-0 space-y-7">
                 <ListGroup label={t("image.scene.group")}>
                   <ListRow icon={<Image size={icon.lg} />} title={t("image.scene.title")} description={t("image.scene.body")} trailing={<Switch checked={value.scene_enabled} onChange={(enabled) => { void change({ scene_enabled: enabled }); }} disabled={busy} aria-label={t("image.scene.title")} />} />
-                  <ListRowButton icon={<Image size={icon.lg} />} title={t("image.scene.model")} description={value.scene_enabled ? describe("scene") : t("image.scene.disabled")} disabled={busy || !value.scene_enabled} onClick={() => open("scene")} />
+                  <ListRowButton icon={<Image size={icon.lg} />} title={t("image.scene.model")} description={value.scene_enabled ? describe("scene") : t("image.scene.disabled")} disabled={busy || !value.scene_enabled || images.length === 0} onClick={() => open("scene")} />
                   {promptRow("scene_generation", !value.scene_enabled)}
                   <ListRow icon={<Image size={icon.lg} />} title={t("image.scene.automatic.title")} description={t(value.scene_enabled ? "image.scene.automatic.body" : "image.scene.automatic.disabled")} trailing={<Switch checked={value.scene_automatic_enabled} onChange={(enabled) => { void change({ scene_automatic_enabled: enabled }); }} disabled={busy || !value.scene_enabled} aria-label={t("image.scene.automatic.title")} />} />
                 </ListGroup>

@@ -264,6 +264,7 @@ export function ReplyHelperPage() {
                         modelDescription
                       )
                     }
+                    disabled={choices.length === 0}
                     onClick={() => open("model")}
                   />
                   <ListRow

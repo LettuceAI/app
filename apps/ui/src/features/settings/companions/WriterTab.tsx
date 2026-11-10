@@ -107,6 +107,7 @@ export function WriterTab({
                   modelLine(primary)
                 )
               }
+              disabled={choices.length === 0}
               onClick={() => onOpen("primary")}
             />
             <ListRowButton
@@ -121,6 +122,7 @@ export function WriterTab({
                   modelLine(fallback)
                 )
               }
+              disabled={choices.length === 0}
               onClick={() => onOpen("fallback")}
             />
           </ListGroup>
