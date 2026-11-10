@@ -170,5 +170,16 @@
     "empty": "아직 로어북이 없어요",
     "emptyBody": "만들거나 가져온 로어북이 여기에 표시돼요.",
     "edit": "{{name}} 편집"
+  },
+  "model": {
+    "choice": {
+      "search": "모델 검색",
+      "loading": "선택 항목 불러오는 중",
+      "empty": "아직 이 용도의 모델이 없어요",
+      "add": "모델 추가",
+      "noMatches": "일치하는 결과가 없어요",
+      "onDevice": "기기 내",
+      "providerOff": "제공업체가 꺼져 있어요"
+    }
   }
 }

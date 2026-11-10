@@ -146,10 +146,7 @@
   },
   "pickers": {
     "model": "Model",
-    "modelSearch": "Cari model",
     "modelDefaultBody": "Model apa pun yang digunakan aplikasi secara default",
-    "onDevice": "Di perangkat ini",
-    "noModels": "Belum ada model. Tambahkan di Pengaturan.",
     "promptDefaultBody": "Default aplikasi untuk jenis obrolan ini",
     "promptBuiltin": "Bawaan",
     "promptCustom": "Milik Anda"

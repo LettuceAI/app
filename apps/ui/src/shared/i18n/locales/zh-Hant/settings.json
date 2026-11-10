@@ -14,13 +14,11 @@
       "unavailable": "提示無法使用"
     },
     "loading": "正在載入圖片設定",
-    "search": "搜尋模型",
     "addModel": "新增模型",
     "first": "使用第一個可用的",
     "firstBody": "依你的模型清單順序",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "所選模型無法使用",
-    "noMatches": "沒有符合的模型",
     "local": {
       "group": "在此電腦上",
       "readFailed": "無法讀取本機圖片設定",
@@ -358,9 +356,7 @@
       "group": "提示撰寫",
       "model": "提示撰寫器",
       "first": "使用第一個能讀取圖片的模型",
-      "firstBody": "撰寫場景和設計參考提示",
-      "empty": "尚無可讀取圖片的模型",
-      "emptyBody": "新增具備文字和圖片輸入、文字輸出的模型，以撰寫場景和設計參考提示。"
+      "firstBody": "撰寫場景和設計參考提示"
     },
     "modes": {
       "group": "當回覆描述場景時",
@@ -1538,9 +1534,6 @@
     "modelUnavailable": "所選模型無法使用",
     "modelDisabled": "所選模型的供應商已停用",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · 已停用",
-    "defaultGroup": "預設",
-    "onDevice": "裝置上",
     "builtIn": "內建",
     "app": "應用程式",
     "yours": "你的",
@@ -1548,12 +1541,7 @@
     "builtinMissing": "內建提示無法使用",
     "managePrompts": "管理提示",
     "managePromptsBody": "開啟系統提示",
-    "modelSearch": "搜尋模型",
     "promptSearch": "搜尋提示",
-    "noModels": "沒有可用的模型",
-    "noModelsBody": "在「設定 > 模型」新增文字模型。",
-    "addModel": "新增模型",
-    "noMatches": "沒有符合",
     "loading": "正在載入回覆小幫手設定",
     "notSaved": "尚未儲存",
     "retry": "再試一次"

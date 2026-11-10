@@ -25,7 +25,7 @@ import type {
 } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { MemoryDownloadSheet, useEmbeddingInstall } from "@/entities/embedding";
-import { ModelChoiceSheet } from "@/features/characters";
+import { ModelChoiceSheet } from "@/entities/model";
 import { promptsQuery } from "@/entities/prompt";
 import { useChatModels } from "@/features/conversations";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -78,6 +78,7 @@ export function MemoryPage() {
 function MemoryForm({ view, installed }: { view: SettingsView; installed: boolean }) {
   const { t, i18n } = useTranslation("settings");
   const { t: common } = useTranslation("common");
+  const { t: characters } = useTranslation("characters");
   const api = useSettingsApi();
   const queryClient = useQueryClient();
   const write = useSettingsWrite(api);
@@ -422,7 +423,10 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
       <ModelChoiceSheet
         api={api}
         open={sheet === "model"}
+        title={characters("pickers.model")}
         value={modelId}
+        requirement={{ kind: "chat" }}
+        nullChoice={{ title: characters("details.modelDefault"), description: characters("pickers.modelDefaultBody") }}
         onChange={(id) =>
           void write(() => ({
             section: "selections",

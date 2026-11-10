@@ -150,10 +150,7 @@
   },
   "pickers": {
     "model": "Modell",
-    "modelSearch": "Søk i modeller",
     "modelDefaultBody": "Modellen appen bruker som standard",
-    "onDevice": "På denne enheten",
-    "noModels": "Ingen modeller ennå. Legg til en i Innstillinger.",
     "promptDefaultBody": "Appens standard for denne typen samtale",
     "promptBuiltin": "Innebygd",
     "promptCustom": "Din"

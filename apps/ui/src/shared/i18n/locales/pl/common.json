@@ -173,5 +173,16 @@
     "empty": "Nie ma jeszcze lorebooków",
     "emptyBody": "Utworzone lub zaimportowane lorebooki pojawią się tutaj.",
     "edit": "Edytuj {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Szukaj modeli",
+      "loading": "Ładowanie opcji",
+      "empty": "Brak jeszcze modeli do tego",
+      "add": "Dodaj model",
+      "noMatches": "Brak pasujących wyników",
+      "onDevice": "Na urządzeniu",
+      "providerOff": "Dostawca jest wyłączony"
+    }
   }
 }

@@ -172,5 +172,16 @@
     "empty": "Nenhum livro de lore ainda",
     "emptyBody": "Livros de lore que você criar ou importar aparecem aqui.",
     "edit": "Editar {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Pesquisar modelos",
+      "loading": "Carregando opções",
+      "empty": "Ainda não há modelos para isso",
+      "add": "Adicionar um modelo",
+      "noMatches": "Nenhum resultado correspondente",
+      "onDevice": "No dispositivo",
+      "providerOff": "Provedor desativado"
+    }
   }
 }

@@ -84,7 +84,6 @@
     "memoriesBusy": "Memóriák, a legutóbbi válasz olvasása",
     "search": "Üzenetek keresése",
     "options": "Beszélgetés beállításai",
-    "onDevice": "Eszközön",
     "untitled": "Beszélgetés"
   },
   "search": {
@@ -559,7 +558,6 @@
     "model": {
       "title": "Modell",
       "none": "Nincs beállított modell",
-      "search": "Modellek keresése",
       "useDefault": "A karakter alapértelmezésének használata",
       "useDefaultHint": "A karaktert, majd az alkalmazás alapértelmezését követi",
       "remoteTitle": "Távoli modellt használsz?",

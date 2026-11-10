@@ -923,6 +923,7 @@ describe("conversation screen", () => {
           id: "m2", provider_account_id: "account", external_model_id: "vendor/second", display_name: "Second model", kind: "chat", config: {},
           input_scopes: ["text"], output_scopes: ["text"], revision: 1, created_at: 1, updated_at: 1,
         }], default_model_id: "m1", revision: 1 } }),
+        providerAccountsList: () => ({ status: "ok", data: [{ id: "account", provider_kind: "openai", protocol: "open_ai_compatible", label: "Provider", base_url: null, enabled: true, streaming_enabled: true, allow_invalid_tls: false, api_key_set: true, config: {}, revision: 1, created_at: 1, updated_at: 1 }] }),
         conversationSettingsUpdate: (request) => { saveSettings(request); return { status: "ok", data: settings }; },
         conversationParticipantUpdate: (request) => { changeMember(request); return { status: "ok", data: settings }; },
       },

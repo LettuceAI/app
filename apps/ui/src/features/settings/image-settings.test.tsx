@@ -207,7 +207,8 @@ describe("image settings", () => {
   });
 
   it("keeps a missing selection explicit, supports automatic selection and closes on browser Back", async () => {
-    const { history, current } = await mount({ settings: { avatar_model_profile_id: "deleted" } });
+    const extra = Array.from({ length: 9 }, (_, index) => model(`Extra ${index}`, "openai", ["text", "image"], ["image"]));
+    const { history, current } = await mount({ settings: { avatar_model_profile_id: "deleted" }, calls: { modelsList: () => ok({ models: [...models, ...extra], default_model_id: null, revision: 1 }) } });
     expect(await screen.findByText("Selected model is unavailable")).toBeTruthy();
     await clickRow("Avatar model");
     const picker = await screen.findByRole("dialog");

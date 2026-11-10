@@ -170,5 +170,16 @@
     "empty": "Belum ada lorebook",
     "emptyBody": "Lorebook yang Anda buat atau impor akan muncul di sini.",
     "edit": "Edit {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Cari model",
+      "loading": "Memuat pilihan",
+      "empty": "Belum ada model untuk ini",
+      "add": "Tambah model",
+      "noMatches": "Tidak ada hasil yang cocok",
+      "onDevice": "Di perangkat",
+      "providerOff": "Penyedia dimatikan"
+    }
   }
 }

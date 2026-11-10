@@ -85,7 +85,6 @@
     "memoriesBusy": "Souvenirs, lecture de la dernière réponse",
     "search": "Rechercher des messages",
     "options": "Options de la discussion",
-    "onDevice": "Sur l'appareil",
     "untitled": "Discussion"
   },
   "search": {
@@ -566,7 +565,6 @@
     "model": {
       "title": "Modèle",
       "none": "Aucun modèle défini",
-      "search": "Rechercher des modèles",
       "useDefault": "Utiliser la valeur par défaut du personnage",
       "useDefaultHint": "Suivre le personnage, puis la valeur par défaut de l'application",
       "remoteTitle": "Utiliser un modèle distant ?",

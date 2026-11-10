@@ -14,13 +14,11 @@
       "unavailable": "Prompt indisponível"
     },
     "loading": "Carregando configurações de imagem",
-    "search": "Pesquisar modelos",
     "addModel": "Adicionar um modelo",
     "first": "Usar o primeiro disponível",
     "firstBody": "Segue a ordem da sua lista de modelos",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "O modelo selecionado está indisponível",
-    "noMatches": "Nenhum modelo correspondente",
     "local": {
       "group": "Neste computador",
       "readFailed": "Não foi possível ler as configurações de imagem locais",
@@ -366,9 +364,7 @@
       "group": "Escrita de prompt",
       "model": "Escritor de prompt",
       "first": "Usar o primeiro que lê imagens",
-      "firstBody": "Escreve prompts de cena e de referência de design",
-      "empty": "Nenhum modelo lê imagens ainda",
-      "emptyBody": "Adicione um modelo com entrada de texto e imagem e saída de texto para escrever prompts de cena e de referência de design."
+      "firstBody": "Escreve prompts de cena e de referência de design"
     },
     "modes": {
       "group": "Quando uma resposta descreve uma cena",
@@ -1554,9 +1550,6 @@
     "modelUnavailable": "O modelo selecionado está indisponível",
     "modelDisabled": "O provedor do modelo selecionado está desativado",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Desativado",
-    "defaultGroup": "Padrão",
-    "onDevice": "No dispositivo",
     "builtIn": "Integrado",
     "app": "App",
     "yours": "Seu",
@@ -1564,12 +1557,7 @@
     "builtinMissing": "Prompt integrado indisponível",
     "managePrompts": "Gerenciar prompts",
     "managePromptsBody": "Abre Prompts de sistema",
-    "modelSearch": "Pesquisar modelos",
     "promptSearch": "Pesquisar prompts",
-    "noModels": "Nenhum modelo disponível",
-    "noModelsBody": "Adicione um modelo de texto em Configurações, Modelos.",
-    "addModel": "Adicionar modelo",
-    "noMatches": "Nenhuma correspondência",
     "loading": "Carregando configurações do assistente de resposta",
     "notSaved": "Não salvo",
     "retry": "Tentar novamente"

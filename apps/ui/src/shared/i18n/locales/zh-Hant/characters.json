@@ -146,10 +146,7 @@
   },
   "pickers": {
     "model": "模型",
-    "modelSearch": "搜尋模型",
     "modelDefaultBody": "應用程式預設使用的模型",
-    "onDevice": "此裝置上",
-    "noModels": "尚無模型。請在設定中新增。",
     "promptDefaultBody": "此類對話的應用程式預設提示",
     "promptBuiltin": "內建",
     "promptCustom": "你的"

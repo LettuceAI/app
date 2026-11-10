@@ -14,13 +14,11 @@
       "unavailable": "Prompt nem elérhető"
     },
     "loading": "Képbeállítások betöltése",
-    "search": "Modellek keresése",
     "addModel": "Modell hozzáadása",
     "first": "Az első elérhető használata",
     "firstBody": "A modelllistád sorrendjét követi",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "A kiválasztott modell nem elérhető",
-    "noMatches": "Nincs egyező modell",
     "local": {
       "group": "Ezen a számítógépen",
       "readFailed": "Nem sikerült beolvasni a helyi képbeállításokat",
@@ -362,9 +360,7 @@
       "group": "Promptírás",
       "model": "Promptíró",
       "first": "Az első képeket olvasó használata",
-      "firstBody": "Jelenet- és designreferencia-promptokat ír",
-      "empty": "Még egy modell sem olvas képeket",
-      "emptyBody": "Adj hozzá szöveg- és képbemenettel, szövegkimenettel rendelkező modellt a jelenet- és designreferencia-promptok írásához."
+      "firstBody": "Jelenet- és designreferencia-promptokat ír"
     },
     "modes": {
       "group": "Amikor egy válasz jelenetet ír le",
@@ -1546,9 +1542,6 @@
     "modelUnavailable": "A kiválasztott modell nem elérhető",
     "modelDisabled": "A kiválasztott modell szolgáltatója le van tiltva",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Letiltva",
-    "defaultGroup": "Alapértelmezett",
-    "onDevice": "Eszközön",
     "builtIn": "Beépített",
     "app": "Alkalmazás",
     "yours": "Saját",
@@ -1556,12 +1549,7 @@
     "builtinMissing": "A beépített prompt nem elérhető",
     "managePrompts": "Promptok kezelése",
     "managePromptsBody": "Megnyitja a Rendszerpromptokat",
-    "modelSearch": "Modellek keresése",
     "promptSearch": "Promptok keresése",
-    "noModels": "Nincsenek elérhető modellek",
-    "noModelsBody": "Adj hozzá szövegmodellt a Beállítások, Modellek alatt.",
-    "addModel": "Modell hozzáadása",
-    "noMatches": "Nincs egyezés",
     "loading": "Válaszsegítő beállításainak betöltése",
     "notSaved": "Nincs mentve",
     "retry": "Újra"

@@ -171,5 +171,16 @@
     "empty": "Wala pang lorebook",
     "emptyBody": "Lalabas dito ang mga lorebook na ginawa o ini-import mo.",
     "edit": "I-edit ang {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Maghanap ng modelo",
+      "loading": "Naglo-load ng mga pagpipilian",
+      "empty": "Wala pang modelo para dito",
+      "add": "Magdagdag ng modelo",
+      "noMatches": "Walang tugmang resulta",
+      "onDevice": "Sa device",
+      "providerOff": "Naka-off ang provider"
+    }
   }
 }

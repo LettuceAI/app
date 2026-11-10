@@ -171,5 +171,16 @@
     "empty": "Henüz lore kitabı yok",
     "emptyBody": "Oluşturduğunuz veya içe aktardığınız lore kitapları burada görünür.",
     "edit": "{{name}} öğesini düzenle"
+  },
+  "model": {
+    "choice": {
+      "search": "Model ara",
+      "loading": "Seçenekler yükleniyor",
+      "empty": "Bunun için henüz model yok",
+      "add": "Model ekle",
+      "noMatches": "Eşleşen sonuç yok",
+      "onDevice": "Cihazda",
+      "providerOff": "Sağlayıcı kapalı"
+    }
   }
 }

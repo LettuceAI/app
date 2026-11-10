@@ -26,6 +26,7 @@ import {
 } from "@lettuceai/crisp";
 import type { SettingsHelpMeReplySettings } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { meetsRequirement, ModelChoiceSheet, modelChoices, type ModelRequirement } from "@/entities/model";
 import { PromptPickerSheet, promptsQuery } from "@/entities/prompt";
 import { modelsQuery } from "@/features/conversations";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -33,9 +34,10 @@ import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { useSettingsApi, useSettingsLayout } from "../data";
 import { useSettingsWrite } from "../use-settings-write";
 import { ReplyHelperNumber } from "./ReplyHelperNumber";
-import { ReplyHelperPicker, type ReplyHelperModel, type ReplyPicker } from "./ReplyHelperPicker";
 
 type Style = SettingsHelpMeReplySettings["style"];
+type ReplyPicker = "model" | "roleplay" | "conversational";
+const modelRequirement: ModelRequirement = { kind: "chat", input: ["text"], output: ["text"] };
 const styles = ["roleplay", "conversational"] as const;
 const fields = {
   roleplay: "roleplay_prompt_id",
@@ -83,16 +85,11 @@ export function ReplyHelperPage() {
       })),
     [write],
   );
-  const byAccount = new Map((accounts.data ?? []).map((account) => [account.id, account]));
-  const choices: ReplyHelperModel[] = (models.data?.models ?? []).flatMap((model) => {
-    const account = byAccount.get(model.provider_account_id);
-    return model.kind === "chat" &&
-      model.input_scopes.includes("text") &&
-      model.output_scopes.includes("text") &&
-      account
-      ? [{ model, account }]
-      : [];
-  });
+  const choices = modelChoices(models.data?.models ?? [], accounts.data ?? []).filter((choice) =>
+    meetsRequirement(choice, modelRequirement),
+  );
+  const modelFailure = [models, accounts].find((query) => query.isError);
+  const modelLoading = models.isPending || accounts.isPending;
   const selectedModel = choices.find((choice) => choice.model.id === value?.model_profile_id);
   const defaultModel = choices.find(
     (choice) => choice.model.id === settings.data?.default_model_profile_id,
@@ -114,8 +111,6 @@ export function ReplyHelperPage() {
               provider: selectedModel.account.label,
               name: selectedModel.model.display_name,
             });
-  const modelFailure = [models, accounts].find((query) => query.isError);
-  const modelLoading = models.isPending || accounts.isPending;
   const close = () => {
     if (pushed) router.history.back();
     else
@@ -136,9 +131,12 @@ export function ReplyHelperPage() {
       resetScroll: false,
     });
   const choose = (id: string | null) => {
-    if (!picker) return;
-    void change(picker === "model" ? { model_profile_id: id } : { [fields[picker]]: id });
+    if (!picker || picker === "model") return;
+    void change({ [fields[picker]]: id });
     close();
+  };
+  const chooseModel = (id: string | null) => {
+    void change({ model_profile_id: id });
   };
   const promptRow = (style: Style) => {
     const query = prompts[style];
@@ -326,20 +324,15 @@ export function ReplyHelperPage() {
           </>
         )}
       </Page>
-      <ReplyHelperPicker
+      <ModelChoiceSheet
+        api={api}
         open={picker === "model" && enabled}
-        phone={phone}
-        models={choices}
-        modelLoading={modelLoading}
-        modelFailure={
-          modelFailure
-            ? { error: modelFailure.error, retry: () => void modelFailure.refetch() }
-            : null
-        }
-        defaultName={defaultName}
-        value={value?.model_profile_id ?? null}
         onClose={close}
-        onChange={choose}
+        title={t("replyHelper.model")}
+        value={value?.model_profile_id ?? null}
+        requirement={modelRequirement}
+        nullChoice={{ title: t("replyHelper.appDefault"), description: defaultName }}
+        onChange={chooseModel}
         onAddModel={() => void navigate({ to: "/settings/models/new", replace: true })}
       />
       <PromptPickerSheet

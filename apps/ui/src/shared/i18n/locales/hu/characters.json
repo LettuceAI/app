@@ -150,10 +150,7 @@
   },
   "pickers": {
     "model": "Modell",
-    "modelSearch": "Modellek keresése",
     "modelDefaultBody": "Amilyen modellt az alkalmazás alapértelmezésként használ",
-    "onDevice": "Ezen az eszközön",
-    "noModels": "Még nincsenek modellek. Adj hozzá egyet a Beállításokban.",
     "promptDefaultBody": "Az alkalmazás alapértelmezése ehhez a beszélgetéstípushoz",
     "promptBuiltin": "Beépített",
     "promptCustom": "Saját"

@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { BookOpen, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, icon, ListGroup, ListRow, ListRowButton, Skeleton, Switch } from "@lettuceai/crisp";
-import { ModelChoiceSheet } from "@/features/characters";
 import { modelsQuery } from "@/features/conversations";
 import { LorebookChoiceSheet } from "@/entities/lorebook";
+import { ModelChoiceSheet } from "@/entities/model";
 import { PersonaSheet } from "@/entities/persona";
 import { castQuery, groupPersonasQuery } from "../data/queries";
 import { GroupNotesGroup } from "./GroupNotesGroup";
@@ -56,6 +56,6 @@ export function ExtrasStep({ api, form, update, libraryOnly = false, saved }: St
       onSelect={(id) => { update((current) => ({ ...current, draft: { ...current.draft, persona: id === null ? { kind: "disabled" } : { kind: "explicit", value: id } } })); choose(null); }}
     />
     <LorebookChoiceSheet api={api} open={picking === "lorebooks"} value={form.lorebookIds} onChange={(lorebookIds) => update((current) => ({ ...current, lorebookIds }))} onClose={() => choose(null)} />
-    {modelMember && <ModelChoiceSheet api={api} open value={modelMember.model_profile_override} defaultChoice={{ title: t("extras.characterModel"), description: t("extras.characterModelBody") }} onChange={(id) => update((current) => ({ ...current, draft: { ...current.draft, members: current.draft.members.map((member) => member.character_id === modelMember.character_id ? { ...member, model_profile_override: id } : member) } }))} onClose={() => choose(null)} />}
+    {modelMember && <ModelChoiceSheet api={api} open title={t("edit.model")} value={modelMember.model_profile_override} requirement={{ kind: "chat" }} nullChoice={{ title: t("extras.characterModel"), description: t("extras.characterModelBody") }} onChange={(id) => update((current) => ({ ...current, draft: { ...current.draft, members: current.draft.members.map((member) => member.character_id === modelMember.character_id ? { ...member, model_profile_override: id } : member) } }))} onClose={() => choose(null)} />}
   </div>;
 }

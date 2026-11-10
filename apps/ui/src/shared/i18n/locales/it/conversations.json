@@ -85,7 +85,6 @@
     "memoriesBusy": "Ricordi, lettura dell'ultima risposta",
     "search": "Cerca messaggi",
     "options": "Opzioni chat",
-    "onDevice": "Sul dispositivo",
     "untitled": "Chat"
   },
   "search": {
@@ -566,7 +565,6 @@
     "model": {
       "title": "Modello",
       "none": "Nessun modello impostato",
-      "search": "Cerca modelli",
       "useDefault": "Usa il predefinito del personaggio",
       "useDefaultHint": "Segui il personaggio, poi il predefinito dell'app",
       "remoteTitle": "Usare un modello remoto?",

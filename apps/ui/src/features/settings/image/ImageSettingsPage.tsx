@@ -8,14 +8,15 @@ import type { SettingsImageGenerationSettings } from "@/api/generated/bindings";
 import { appStatusQuery } from "@/api/app-status-query";
 import { queryKeys } from "@/api/query-keys";
 import { modelsQuery } from "@/features/conversations";
+import { meetsRequirement, ModelChoiceSheet, modelChoices, type ModelChoice, type ModelRequirement } from "@/entities/model";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi, useSettingsLayout } from "../data";
 import { useSettingsWrite } from "../use-settings-write";
-import { ImageModelSheet, type ImageModelChoice, type ImagePicker } from "./ImageModelSheet";
 import { LocalImagePage, LocalImageSettings } from "./LocalImageSettings";
 import { ImagePromptSetting, type ImagePromptKind } from "./ImagePromptSetting";
 
+type ImagePicker = "avatar" | "scene" | "writer";
 const modelFields = { avatar: "avatar_model_profile_id", scene: "scene_model_profile_id", writer: "scene_writer_model_profile_id" } as const;
 const sceneModes = ["auto", "ask_first", "manual"] as const;
 
@@ -68,15 +69,17 @@ export function ImageSettingsPage() {
     void navigate({ to: "/settings/$section", params: { section: "imageGeneration" }, search: { imagePrompt }, state: { imagePickerPushed: true }, resetScroll: false });
   };
   const addModel = () => { void navigate({ to: "/settings/models/new", replace: picker !== null }); };
-  const byAccount = new Map((accounts.data ?? []).map((account) => [account.id, account]));
-  const candidates: ImageModelChoice[] = (models.data?.models ?? []).flatMap((model) => {
-    const account = byAccount.get(model.provider_account_id);
-    return account ? [{ model, account }] : [];
-  });
   const mobile = status.data?.platform === "android" || status.data?.platform === "ios";
-  const images = candidates.filter(({ model, account }) => model.output_scopes.includes("image") && !(mobile && account.provider_kind.toLowerCase() === "sdcpp"));
-  const avatars = images.filter(({ model }) => model.input_scopes.includes("image"));
-  const writers = candidates.filter(({ model }) => model.input_scopes.includes("text") && model.input_scopes.includes("image") && model.output_scopes.includes("text"));
+  const notLocalOnPhone = ({ account }: ModelChoice) => !(mobile && account.provider_kind.toLowerCase() === "sdcpp");
+  const requirements: Record<ImagePicker, ModelRequirement> = {
+    scene: { output: ["image"], allow: notLocalOnPhone },
+    avatar: { input: ["image"], output: ["image"], allow: notLocalOnPhone },
+    writer: { input: ["text", "image"], output: ["text"] },
+  };
+  const candidates = modelChoices(models.data?.models ?? [], accounts.data ?? []);
+  const images = candidates.filter((choice) => meetsRequirement(choice, requirements.scene));
+  const avatars = candidates.filter((choice) => meetsRequirement(choice, requirements.avatar));
+  const writers = candidates.filter((choice) => meetsRequirement(choice, requirements.writer));
   const promptRow = (kind: ImagePromptKind, disabled = false) => {
     if (!value) return null;
     const model = kind === "avatar_generation" || kind === "avatar_edit_request"
@@ -95,9 +98,8 @@ export function ImageSettingsPage() {
     return chosen ? t("image.selected", { model: chosen.model.display_name, provider: chosen.account.label }) : t("image.unavailable");
   };
   const choose = (id: string | null) => {
-    if (!picker || busy) return;
+    if (!picker) return;
     void change({ [modelFields[picker]]: id });
-    close();
   };
   const selected = shown && value ? value[modelFields[shown]] : null;
   return (
@@ -145,7 +147,7 @@ export function ImageSettingsPage() {
       </Page>
       </div>
       {localView && !mobile && <LocalImagePage view={localView} />}
-      {shown && ready && <ImageModelSheet key={shown} picker={shown} open={picker !== null} choices={shown === "writer" ? writers : shown === "avatar" ? avatars : images} value={selected} busy={busy} failure={failed ? { error: failed.error, retry: () => void failed.refetch() } : subscriptionError ? { error: subscriptionError.error, retry: () => window.location.reload() } : null} onChange={choose} onClose={close} onAdd={addModel} />}
+      {shown && ready && <ModelChoiceSheet key={shown} api={api} open={picker !== null} onClose={close} title={t(`image.${shown}.model`)} value={selected} requirement={requirements[shown]} nullChoice={{ title: t(shown === "writer" ? "image.writer.first" : "image.first"), description: t(shown === "writer" ? "image.writer.firstBody" : "image.firstBody") }} busy={busy} onChange={choose} onAddModel={addModel} />}
     </>
   );
 }

@@ -14,13 +14,11 @@
       "unavailable": "プロンプトを利用できません"
     },
     "loading": "画像設定を読み込み中",
-    "search": "モデルを検索",
     "addModel": "モデルを追加",
     "first": "最初に利用可能なものを使用",
     "firstBody": "モデルリストの順序に従います",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "選択したモデルは利用できません",
-    "noMatches": "一致するモデルはありません",
     "local": {
       "group": "このコンピューター上",
       "readFailed": "ローカル画像設定を読み取れませんでした",
@@ -358,9 +356,7 @@
       "group": "プロンプト作成",
       "model": "プロンプトライター",
       "first": "画像を読める最初のものを使用",
-      "firstBody": "シーンとデザインリファレンスのプロンプトを書く",
-      "empty": "画像を読めるモデルがまだありません",
-      "emptyBody": "テキストと画像入力、テキスト出力を持つモデルを追加して、シーンとデザインリファレンスのプロンプトを書かせてください。"
+      "firstBody": "シーンとデザインリファレンスのプロンプトを書く"
     },
     "modes": {
       "group": "返信がシーンを描写したとき",
@@ -1538,9 +1534,6 @@
     "modelUnavailable": "選択したモデルを利用できません",
     "modelDisabled": "選択したモデルのプロバイダーが無効です",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · 無効",
-    "defaultGroup": "既定",
-    "onDevice": "デバイス上",
     "builtIn": "組み込み",
     "app": "アプリ",
     "yours": "自作",
@@ -1548,12 +1541,7 @@
     "builtinMissing": "組み込みプロンプトを利用できません",
     "managePrompts": "プロンプトを管理",
     "managePromptsBody": "システムプロンプトを開きます",
-    "modelSearch": "モデルを検索",
     "promptSearch": "プロンプトを検索",
-    "noModels": "利用可能なモデルがありません",
-    "noModelsBody": "設定 > モデルでテキストモデルを追加してください。",
-    "addModel": "モデルを追加",
-    "noMatches": "一致なし",
     "loading": "返信ヘルパー設定を読み込み中",
     "notSaved": "未保存",
     "retry": "再試行"

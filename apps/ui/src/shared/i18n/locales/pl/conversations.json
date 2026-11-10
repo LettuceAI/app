@@ -86,7 +86,6 @@
     "memoriesBusy": "Wspomnienia, odczytywanie najnowszej odpowiedzi",
     "search": "Szukaj wiadomości",
     "options": "Opcje czatu",
-    "onDevice": "Na urządzeniu",
     "untitled": "Czat"
   },
   "search": {
@@ -573,7 +572,6 @@
     "model": {
       "title": "Model",
       "none": "Nie ustawiono modelu",
-      "search": "Szukaj modeli",
       "useDefault": "Użyj domyślnego postaci",
       "useDefaultHint": "Podążaj za postacią, potem za domyślnym aplikacji",
       "remoteTitle": "Użyć zdalnego modelu?",

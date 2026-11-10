@@ -14,13 +14,11 @@
       "unavailable": "Lời nhắc không khả dụng"
     },
     "loading": "Đang tải cài đặt hình ảnh",
-    "search": "Tìm mô hình",
     "addModel": "Thêm mô hình",
     "first": "Dùng mô hình đầu tiên có sẵn",
     "firstBody": "Theo thứ tự danh sách mô hình",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Mô hình đã chọn không khả dụng",
-    "noMatches": "Không có mô hình phù hợp",
     "local": {
       "group": "Trên máy tính này",
       "readFailed": "Không thể đọc cài đặt hình ảnh cục bộ",
@@ -358,9 +356,7 @@
       "group": "Viết lời nhắc",
       "model": "Trình viết lời nhắc",
       "first": "Dùng mô hình đầu tiên đọc được hình ảnh",
-      "firstBody": "Viết lời nhắc cảnh và ghi chú thiết kế",
-      "empty": "Chưa có mô hình đọc được hình ảnh",
-      "emptyBody": "Thêm mô hình nhận văn bản và hình ảnh, trả về văn bản để viết lời nhắc cảnh và ghi chú thiết kế."
+      "firstBody": "Viết lời nhắc cảnh và ghi chú thiết kế"
     },
     "modes": {
       "group": "Khi câu trả lời mô tả một cảnh",
@@ -1538,9 +1534,6 @@
     "modelUnavailable": "Mô hình đã chọn không khả dụng",
     "modelDisabled": "Nhà cung cấp của mô hình đã chọn bị tắt",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Đã tắt",
-    "defaultGroup": "Mặc định",
-    "onDevice": "Trên thiết bị",
     "builtIn": "Có sẵn",
     "app": "Ứng dụng",
     "yours": "Của bạn",
@@ -1548,12 +1541,7 @@
     "builtinMissing": "Lời nhắc có sẵn không khả dụng",
     "managePrompts": "Quản lý lời nhắc",
     "managePromptsBody": "Mở Lời nhắc hệ thống",
-    "modelSearch": "Tìm mô hình",
     "promptSearch": "Tìm lời nhắc",
-    "noModels": "Không có mô hình khả dụng",
-    "noModelsBody": "Thêm mô hình văn bản trong Cài đặt, Mô hình.",
-    "addModel": "Thêm mô hình",
-    "noMatches": "Không có kết quả phù hợp",
     "loading": "Đang tải cài đặt trợ lý trả lời",
     "notSaved": "Chưa lưu",
     "retry": "Thử lại"

@@ -158,10 +158,7 @@
   },
   "pickers": {
     "model": "Model",
-    "modelSearch": "Szukaj modeli",
     "modelDefaultBody": "Model używany domyślnie przez aplikację",
-    "onDevice": "Na tym urządzeniu",
-    "noModels": "Nie ma jeszcze modeli. Dodaj model w Ustawieniach.",
     "promptDefaultBody": "Domyślny aplikacji dla tego typu czatu",
     "promptBuiltin": "Wbudowany",
     "promptCustom": "Twój"

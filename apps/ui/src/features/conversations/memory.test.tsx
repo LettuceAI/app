@@ -408,6 +408,7 @@ describe("memory status card", () => {
             default_model_id: null, revision: 1,
           },
         }),
+        providerAccountsList: () => ({ status: "ok", data: [{ id: "a1", provider_kind: "openai", protocol: "open_ai_compatible", label: "Provider", base_url: null, enabled: true, streaming_enabled: true, allow_invalid_tls: false, api_key_set: true, config: {}, revision: 1, created_at: 1, updated_at: 1 }] }),
       },
     });
     fireEvent.click(await screen.findByRole("button", { name: "Use another model" }));

@@ -171,5 +171,16 @@
     "empty": "Nog geen lorebooks",
     "emptyBody": "Lorebooks die je maakt of importeert, verschijnen hier.",
     "edit": "{{name}} bewerken"
+  },
+  "model": {
+    "choice": {
+      "search": "Modellen zoeken",
+      "loading": "Keuzes laden",
+      "empty": "Nog geen modellen hiervoor",
+      "add": "Een model toevoegen",
+      "noMatches": "Geen resultaten",
+      "onDevice": "Op het apparaat",
+      "providerOff": "Aanbieder staat uit"
+    }
   }
 }

@@ -172,5 +172,16 @@
     "empty": "Nessun lorebook ancora",
     "emptyBody": "I lorebook che crei o importi compaiono qui.",
     "edit": "Modifica {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Cerca modelli",
+      "loading": "Caricamento scelte",
+      "empty": "Ancora nessun modello per questo",
+      "add": "Aggiungi un modello",
+      "noMatches": "Nessun risultato corrispondente",
+      "onDevice": "Sul dispositivo",
+      "providerOff": "Provider disattivato"
+    }
   }
 }

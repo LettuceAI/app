@@ -170,5 +170,16 @@
     "empty": "尚無設定集",
     "emptyBody": "你建立或匯入的設定集會顯示在這裡。",
     "edit": "編輯 {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "搜尋模型",
+      "loading": "正在載入選項",
+      "empty": "還沒有適用的模型",
+      "add": "新增模型",
+      "noMatches": "沒有符合的結果",
+      "onDevice": "裝置上",
+      "providerOff": "供應商已關閉"
+    }
   }
 }

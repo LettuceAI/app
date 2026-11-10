@@ -16,9 +16,8 @@ import {
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi, useSettingsLayout } from "../data";
 import { useCompanionSettings } from "./use-companion-settings";
-import { WriterTab } from "./WriterTab";
+import { WriterTab, type CompanionPickerId } from "./WriterTab";
 import { EmotionsTab } from "./EmotionsTab";
-import type { CompanionPickerId } from "./CompanionPicker";
 
 export function CompanionsPage() {
   const { t, i18n } = useTranslation("companions");

@@ -83,7 +83,6 @@
     "memoriesBusy": "기억, 최신 답장 읽는 중",
     "search": "메시지 검색",
     "options": "채팅 옵션",
-    "onDevice": "기기 내",
     "untitled": "채팅"
   },
   "search": {
@@ -552,7 +551,6 @@
     "model": {
       "title": "모델",
       "none": "설정된 모델 없음",
-      "search": "모델 검색",
       "useDefault": "캐릭터 기본값 사용",
       "useDefaultHint": "캐릭터를 따른 뒤 앱 기본값을 따라요",
       "remoteTitle": "원격 모델을 사용할까요?",

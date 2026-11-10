@@ -14,13 +14,11 @@
       "unavailable": "Prompt non disponibile"
     },
     "loading": "Caricamento impostazioni immagini",
-    "search": "Cerca modelli",
     "addModel": "Aggiungi un modello",
     "first": "Usa il primo disponibile",
     "firstBody": "Segue l'ordine della tua lista di modelli",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Il modello selezionato non è disponibile",
-    "noMatches": "Nessun modello corrispondente",
     "local": {
       "group": "Su questo computer",
       "readFailed": "Impossibile leggere le impostazioni immagini locali",
@@ -366,9 +364,7 @@
       "group": "Scrittura dei prompt",
       "model": "Scrittore di prompt",
       "first": "Usa il primo che legge le immagini",
-      "firstBody": "Scrive prompt per scene e riferimenti di design",
-      "empty": "Nessun modello legge ancora le immagini",
-      "emptyBody": "Aggiungi un modello con input testo e immagini e output testo per scrivere prompt per scene e riferimenti di design."
+      "firstBody": "Scrive prompt per scene e riferimenti di design"
     },
     "modes": {
       "group": "Quando una risposta descrive una scena",
@@ -1554,9 +1550,6 @@
     "modelUnavailable": "Il modello selezionato non è disponibile",
     "modelDisabled": "Il provider del modello selezionato è disattivato",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Disattivato",
-    "defaultGroup": "Predefiniti",
-    "onDevice": "Sul dispositivo",
     "builtIn": "Integrato",
     "app": "App",
     "yours": "Tuoi",
@@ -1564,12 +1557,7 @@
     "builtinMissing": "Il prompt integrato non è disponibile",
     "managePrompts": "Gestisci prompt",
     "managePromptsBody": "Apre Prompt di sistema",
-    "modelSearch": "Cerca modelli",
     "promptSearch": "Cerca prompt",
-    "noModels": "Nessun modello disponibile",
-    "noModelsBody": "Aggiungi un modello di testo in Impostazioni, Modelli.",
-    "addModel": "Aggiungi modello",
-    "noMatches": "Nessuna corrispondenza",
     "loading": "Caricamento impostazioni dell'assistente risposte",
     "notSaved": "Non salvato",
     "retry": "Riprova"

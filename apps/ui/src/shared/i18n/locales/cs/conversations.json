@@ -86,7 +86,6 @@
     "memoriesBusy": "Paměti, čte se nejnovější odpověď",
     "search": "Hledat zprávy",
     "options": "Možnosti chatu",
-    "onDevice": "V zařízení",
     "untitled": "Chat"
   },
   "search": {
@@ -573,7 +572,6 @@
     "model": {
       "title": "Model",
       "none": "Model není nastavený",
-      "search": "Hledat modely",
       "useDefault": "Použít výchozí model postavy",
       "useDefaultHint": "Podle postavy, pak podle výchozího v aplikaci",
       "remoteTitle": "Použít vzdálený model?",

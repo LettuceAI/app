@@ -171,5 +171,16 @@
     "empty": "Ingen lorebøker ennå",
     "emptyBody": "Lorebøker du oppretter eller importerer, vises her.",
     "edit": "Rediger {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Søk i modeller",
+      "loading": "Laster valg",
+      "empty": "Ingen modeller for dette ennå",
+      "add": "Legg til en modell",
+      "noMatches": "Ingen treff",
+      "onDevice": "På enheten",
+      "providerOff": "Leverandøren er slått av"
+    }
   }
 }

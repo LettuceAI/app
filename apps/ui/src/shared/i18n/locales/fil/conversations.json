@@ -84,7 +84,6 @@
     "memoriesBusy": "Mga Memory, binabasa ang pinakabagong tugon",
     "search": "Maghanap ng mensahe",
     "options": "Mga opsyon sa chat",
-    "onDevice": "Sa device",
     "untitled": "Chat"
   },
   "search": {
@@ -559,7 +558,6 @@
     "model": {
       "title": "Modelo",
       "none": "Walang naka-set na modelo",
-      "search": "Maghanap ng modelo",
       "useDefault": "Gamitin ang default ng karakter",
       "useDefaultHint": "Sundin ang karakter, tapos ang default ng app",
       "remoteTitle": "Gumamit ng remote model?",

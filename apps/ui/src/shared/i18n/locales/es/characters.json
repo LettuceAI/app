@@ -154,10 +154,7 @@
   },
   "pickers": {
     "model": "Modelo",
-    "modelSearch": "Buscar modelos",
     "modelDefaultBody": "El modelo que la app usa por defecto",
-    "onDevice": "En este dispositivo",
-    "noModels": "Aún no hay modelos. Añade uno en Ajustes.",
     "promptDefaultBody": "El predeterminado de la app para este tipo de chat",
     "promptBuiltin": "Integrado",
     "promptCustom": "Tuyo"

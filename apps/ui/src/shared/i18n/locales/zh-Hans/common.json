@@ -170,5 +170,16 @@
     "empty": "还没有知识库",
     "emptyBody": "你创建或导入的知识库会显示在这里。",
     "edit": "编辑 {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "搜索模型",
+      "loading": "正在加载选项",
+      "empty": "还没有适用的模型",
+      "add": "添加模型",
+      "noMatches": "没有匹配结果",
+      "onDevice": "本机",
+      "providerOff": "提供商已关闭"
+    }
   }
 }

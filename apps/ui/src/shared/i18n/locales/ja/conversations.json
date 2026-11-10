@@ -83,7 +83,6 @@
     "memoriesBusy": "メモリ、最新の返信を読み取り中",
     "search": "メッセージを検索",
     "options": "チャットオプション",
-    "onDevice": "デバイス上",
     "untitled": "チャット"
   },
   "search": {
@@ -552,7 +551,6 @@
     "model": {
       "title": "モデル",
       "none": "モデル未設定",
-      "search": "モデルを検索",
       "useDefault": "キャラクターの既定を使用",
       "useDefaultHint": "キャラクター、次にアプリの既定に従う",
       "remoteTitle": "リモートモデルを使用しますか？",

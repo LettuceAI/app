@@ -4,7 +4,7 @@ import { UserMinus, UserPlus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, confirm, icon, IconButton, ListGroup, ListRow, ListRowButton, LoadingState, Meter, Switch } from "@lettuceai/crisp";
 import { queryKeys } from "@/api/query-keys";
-import { ModelChoiceSheet } from "@/features/characters";
+import { ModelChoiceSheet } from "@/entities/model";
 import { modelsQuery } from "../../data/queries";
 import { FailureState } from "@/shared/ui/FailureState";
 import { participationQuery } from "../../data/settings-queries";
@@ -138,7 +138,7 @@ export function MembersSection({ ctx }: { ctx: PanelCtx }) {
       {selection?.models_source === "conversation" && <ListRowButton title={t("members.followModels")} description={t("members.followModelsHint")} chevron={false} disabled={ctx.busy} onClick={() => void ctx.save({ reset_member_models: true })} />}
     </ListGroup>
     {soulWarning.dialog}
-    {chosen && ctx.activeSheet === "member_model" && <ModelChoiceSheet api={api} open busy={ctx.busy} value={chosen.model.source === "conversation" ? chosen.model.id : null} defaultChoice={{ title: t("members.characterModel"), description: t("members.characterModelHint") }} onChange={(id) => setModel(chosen.participant_id, id)} onClose={() => { setModelMember(null); ctx.closeSheet(); }} />}
+    {chosen && ctx.activeSheet === "member_model" && <ModelChoiceSheet api={api} open busy={ctx.busy} title={t("settings.model.title")} value={chosen.model.source === "conversation" ? chosen.model.id : null} requirement={{ kind: "chat" }} nullChoice={{ title: t("members.characterModel"), description: t("members.characterModelHint") }} onChange={(id) => setModel(chosen.participant_id, id)} onClose={() => { setModelMember(null); ctx.closeSheet(); }} />}
     </>
   );
 }

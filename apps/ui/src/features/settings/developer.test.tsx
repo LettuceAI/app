@@ -11,8 +11,8 @@ import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
-import companionDraft from "../characters/fixtures/default-companion-draft.json";
-import roleplayDraft from "../characters/fixtures/default-draft.json";
+import companionDraft from "./fixtures/default-companion-draft.json";
+import roleplayDraft from "./fixtures/default-character-draft.json";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 

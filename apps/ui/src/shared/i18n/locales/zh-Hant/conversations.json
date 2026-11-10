@@ -83,7 +83,6 @@
     "memoriesBusy": "記憶，正在讀取最新回覆",
     "search": "搜尋訊息",
     "options": "對話選項",
-    "onDevice": "裝置上",
     "untitled": "對話"
   },
   "search": {
@@ -552,7 +551,6 @@
     "model": {
       "title": "模型",
       "none": "未設定模型",
-      "search": "搜尋模型",
       "useDefault": "使用角色預設",
       "useDefaultHint": "先跟隨角色，再跟隨應用程式預設",
       "remoteTitle": "要使用遠端模型嗎？",

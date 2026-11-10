@@ -150,10 +150,7 @@
   },
   "pickers": {
     "model": "Modelo",
-    "modelSearch": "Maghanap ng modelo",
     "modelDefaultBody": "Kung anong modelo ang default na ginagamit ng app",
-    "onDevice": "Sa device na ito",
-    "noModels": "Wala pang modelo. Magdagdag sa Settings.",
     "promptDefaultBody": "Ang default ng app para sa ganitong chat",
     "promptBuiltin": "Built-in",
     "promptCustom": "Sa iyo"

@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
-  Check,
   FileText,
   Globe,
   Hash,
@@ -14,17 +13,13 @@ import {
   Wand2,
 } from "lucide-react";
 import {
-  Button,
   CrispStringsProvider,
-  EmptyState,
   icon,
   ListGroup,
   ListRow,
   ListRowButton,
   NumberInput,
   Page,
-  SearchField,
-  Sheet,
   Skeleton,
   Slider,
   Tab,
@@ -34,6 +29,7 @@ import {
 } from "@lettuceai/crisp";
 import type { PromptKind, SettingsLorebookGeneratorSelection } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { ModelChoiceSheet } from "@/entities/model";
 import { ModelMark } from "@/entities/provider";
 import { PromptPickerSheet, promptsQuery } from "@/entities/prompt";
 import { generatorDefaultsQuery } from "@/entities/lorebook";
@@ -76,7 +72,6 @@ export function LorebooksPage() {
   const router = useRouter();
   const pushed = useLocation({ select: (location) => location.state.lorebookPanelPushed });
   const routeKey = useLocation({ select: (location) => location.state.__TSR_key });
-  const [q, setQuery] = useState("");
   const defaults = useQuery(generatorDefaultsQuery(api));
   const models = useQuery({
     queryKey: queryKeys.models.list(),
@@ -102,7 +97,6 @@ export function LorebooksPage() {
       });
   };
   const open = (lorePicker: string) => {
-    setQuery("");
     void navigate({
       to: "/settings/$section",
       params: { section: "lorebooks" },
@@ -215,11 +209,6 @@ export function LorebooksPage() {
       />
     );
   };
-  const filtered = choices.filter(
-    ({ model, account }) =>
-      !q ||
-      `${model.display_name} ${account.label}`.toLocaleLowerCase().includes(q.toLocaleLowerCase()),
-  );
   return (
     <CrispStringsProvider
       locale={i18n.language}
@@ -438,68 +427,20 @@ export function LorebooksPage() {
             </section>
           </>
         )}
-        {shown && (
-          <Sheet open={picker === "model"} onClose={close} title={t("model")}>
-            <div className="space-y-4">
-              <SearchField
-                value={q}
-                onChange={setQuery}
-                placeholder={t("settings.searchModels")}
-                aria-label={t("settings.searchModels")}
-              />
-              {models.isPending || accounts.isPending ? (
-                <Skeleton className="h-32 w-full" />
-              ) : (
-                <>
-                  <ListGroup>
-                    <ListRowButton
-                      icon={<FileText size={icon.lg} />}
-                      title={t("settings.useDefault")}
-                      chevron={false}
-                      trailing={
-                        selected === null ? (
-                          <Check size={icon.md} className="text-accent" />
-                        ) : undefined
-                      }
-                      onClick={() => void choose(null)}
-                    />
-                    {filtered.map(({ model, account }) => (
-                      <ListRowButton
-                        key={model.id}
-                        icon={
-                          <ModelMark
-                            name={model.display_name}
-                            modelId={model.external_model_id}
-                            providerKind={account.provider_kind}
-                          />
-                        }
-                        title={model.display_name}
-                        description={
-                          account.enabled ? account.label : t("settings.providerDisabled")
-                        }
-                        disabled={!account.enabled}
-                        chevron={false}
-                        trailing={
-                          model.id === selected ? (
-                            <Check size={icon.md} className="text-accent" />
-                          ) : undefined
-                        }
-                        onClick={() => void choose(model.id)}
-                      />
-                    ))}
-                  </ListGroup>
-                  {filtered.length === 0 && q && <EmptyState title={t("noMatches")} />}
-                  <Button
-                    variant="ghost"
-                    onClick={() => void navigate({ to: "/settings/models/new", replace: true })}
-                  >
-                    {t("settings.addModel")}
-                  </Button>
-                </>
-              )}
-            </div>
-          </Sheet>
-        )}
+        <ModelChoiceSheet
+          api={api}
+          open={picker === "model"}
+          onClose={close}
+          title={t("model")}
+          value={modelPicker ? (selected ?? null) : null}
+          requirement={{ input: ["text"], output: ["text"] }}
+          nullChoice={{ title: t("settings.useDefault") }}
+          onAddModel={() => void navigate({ to: "/settings/models/new", replace: true })}
+          onChange={async (id) => {
+            await choose(id);
+            return false;
+          }}
+        />
         {promptKey && promptQuery && (
           <PromptPickerSheet
             open={picker !== undefined && picker !== "model"}

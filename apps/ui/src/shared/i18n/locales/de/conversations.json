@@ -84,7 +84,6 @@
     "memoriesBusy": "Erinnerungen, die neueste Antwort wird gelesen",
     "search": "Nachrichten durchsuchen",
     "options": "Chat-Optionen",
-    "onDevice": "Auf diesem Gerät",
     "untitled": "Chat"
   },
   "search": {
@@ -559,7 +558,6 @@
     "model": {
       "title": "Modell",
       "none": "Kein Modell festgelegt",
-      "search": "Modelle durchsuchen",
       "useDefault": "Charakter-Standard verwenden",
       "useDefaultHint": "Dem Charakter und dann dem App-Standard folgen",
       "remoteTitle": "Ein entferntes Modell verwenden?",

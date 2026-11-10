@@ -7,8 +7,8 @@ import {
   ListGroup, ListRow, ListRowButton, ReorderableList, SearchField, Sheet, Switch, Text, toast, useLongPress,
 } from "@lettuceai/crisp";
 import type { CharacterSummary } from "@/api/generated/bindings";
-import { ModelChoiceSheet } from "@/features/characters";
 import { modelsQuery, useMissingSoulWarning } from "@/features/conversations";
+import { ModelChoiceSheet } from "@/entities/model";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import type { StepProps } from "./MembersStep";
 
@@ -88,7 +88,7 @@ export function EditMembersTab({ api, form, update, cast, phone }: StepProps & {
         <ListGroup><ListRowButton icon={<UserMinus size={icon.lg} />} title={t("edit.removeMember")} description={t(members.length <= 2 ? "edit.needTwo" : "edit.staysInLibrary")} tone="danger" chevron={false} disabled={members.length <= 2} onClick={remove} /></ListGroup>
       </div>}
     </Sheet>
-    {panel?.kind === "model" && link && <ModelChoiceSheet api={api} open value={link.model_profile_override} defaultChoice={{ title: t("extras.characterModel"), description: t("extras.characterModelBody") }} onChange={(id) => patchMember(link.character_id, { model_profile_override: id })} onClose={() => setPanel(null)} />}
+    {panel?.kind === "model" && link && <ModelChoiceSheet api={api} open title={t("edit.model")} value={link.model_profile_override} requirement={{ kind: "chat" }} nullChoice={{ title: t("extras.characterModel"), description: t("extras.characterModelBody") }} onChange={(id) => patchMember(link.character_id, { model_profile_override: id })} onClose={() => setPanel(null)} />}
     <Sheet open={panel?.kind === "add"} onClose={() => setPanel(null)} size="sm" title={t("edit.addMembers")} description={t("edit.addMembersBody")} footer={<Button variant="primary" block disabled={picked.length === 0} onClick={() => {
       update((current) => ({ ...current, draft: { ...current.draft, members: [...current.draft.members, ...picked.filter((id) => !current.draft.members.some((item) => item.character_id === id)).map((id, index) => ({ character_id: id, ordinal: current.draft.members.length + index, muted: false, model_profile_override: null }))] } }));
       if (form.draft.companion_mode) void soulWarning.warn(picked.filter((id) => !members.some((item) => item.character_id === id)));

@@ -146,10 +146,7 @@
   },
   "pickers": {
     "model": "โมเดล",
-    "modelSearch": "ค้นหาโมเดล",
     "modelDefaultBody": "โมเดลใดก็ตามที่แอปใช้เป็นค่าเริ่มต้น",
-    "onDevice": "บนอุปกรณ์นี้",
-    "noModels": "ยังไม่มีโมเดล เพิ่มได้ในการตั้งค่า",
     "promptDefaultBody": "ค่าเริ่มต้นของแอปสำหรับแชทประเภทนี้",
     "promptBuiltin": "ในตัว",
     "promptCustom": "ของคุณ"

@@ -150,10 +150,7 @@
   },
   "pickers": {
     "model": "Model",
-    "modelSearch": "Search models",
     "modelDefaultBody": "Whatever model the app uses by default",
-    "onDevice": "On this device",
-    "noModels": "No models yet. Add one in Settings.",
     "promptDefaultBody": "The app's default for this kind of chat",
     "promptBuiltin": "Built in",
     "promptCustom": "Yours"

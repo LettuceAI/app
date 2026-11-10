@@ -158,10 +158,7 @@
   },
   "pickers": {
     "model": "Model",
-    "modelSearch": "Hledat modely",
     "modelDefaultBody": "Model, který aplikace používá jako výchozí",
-    "onDevice": "V tomto zařízení",
-    "noModels": "Zatím žádné modely. Přidej nějaký v Nastavení.",
     "promptDefaultBody": "Výchozí aplikace pro tento typ chatu",
     "promptBuiltin": "Vestavěný",
     "promptCustom": "Tvůj"

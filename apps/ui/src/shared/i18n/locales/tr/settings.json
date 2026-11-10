@@ -14,13 +14,11 @@
       "unavailable": "Prompt kullanılamıyor"
     },
     "loading": "Görsel ayarları yükleniyor",
-    "search": "Model ara",
     "addModel": "Model ekle",
     "first": "Kullanılabilir ilkini kullan",
     "firstBody": "Model listenizin sırasını takip eder",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Seçili model kullanılamıyor",
-    "noMatches": "Eşleşen model yok",
     "local": {
       "group": "Bu bilgisayarda",
       "readFailed": "Yerel görsel ayarları okunamadı",
@@ -362,9 +360,7 @@
       "group": "Prompt yazma",
       "model": "Prompt yazarı",
       "first": "Görselleri okuyan ilkini kullan",
-      "firstBody": "Sahne ve tasarım referansı promptları yazar",
-      "empty": "Henüz görsel okuyan model yok",
-      "emptyBody": "Sahne ve tasarım referansı promptları yazmak için metin ve görsel girdili, metin çıktılı bir model ekleyin."
+      "firstBody": "Sahne ve tasarım referansı promptları yazar"
     },
     "modes": {
       "group": "Bir yanıt bir sahneyi tanımladığında",
@@ -1574,9 +1570,6 @@
     "modelUnavailable": "Seçili model kullanılamıyor",
     "modelDisabled": "Seçili modelin sağlayıcısı devre dışı",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Devre dışı",
-    "defaultGroup": "Varsayılan",
-    "onDevice": "Cihazda",
     "builtIn": "Yerleşik",
     "app": "Uygulama",
     "yours": "Sizin",
@@ -1584,12 +1577,7 @@
     "builtinMissing": "Yerleşik prompt kullanılamıyor",
     "managePrompts": "Promptları yönet",
     "managePromptsBody": "Sistem promptlarını açar",
-    "modelSearch": "Model ara",
     "promptSearch": "Promptlarda ara",
-    "noModels": "Kullanılabilir model yok",
-    "noModelsBody": "Ayarlar > Modeller bölümünden bir metin modeli ekleyin.",
-    "addModel": "Model ekle",
-    "noMatches": "Eşleşme yok",
     "loading": "Yanıt yardımcısı ayarları yükleniyor",
     "notSaved": "Kaydedilmedi",
     "retry": "Tekrar deneyin"

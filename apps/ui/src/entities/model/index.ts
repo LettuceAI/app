@@ -25,3 +25,14 @@ export const minimalModelConfig = {
   },
 };
 
+
+export { ModelChoiceSheet, type ModelChoiceSheetProps } from "./ModelChoiceSheet";
+export {
+  groupByProvider,
+  meetsRequirement,
+  modelChoices,
+  searchModels,
+  type ModelChoice,
+  type ModelRequirement,
+  type ProviderGroup,
+} from "./model-choice";

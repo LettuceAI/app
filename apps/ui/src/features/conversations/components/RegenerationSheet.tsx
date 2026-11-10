@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next";
 import { Avatar, Button, dismissTopLayer, Field, icon, ListGroup, ListRowButton, LoadingState, Sheet, Text, Textarea } from "@lettuceai/crisp";
 import { Cpu as CpuIcon } from "lucide-react";
 import type { ApiClient } from "@/api/client";
+import { ModelChoiceSheet } from "@/entities/model";
 import { ModelMark } from "@/entities/provider";
-import { ModelChoiceSheet } from "@/features/characters";
 import { FailureState } from "@/shared/ui/FailureState";
 import { settingsQuery } from "../data/queries";
 import { useChatModels } from "../data/use-models";
@@ -98,7 +98,7 @@ export function RegenerationSheet({ api, conversationId, open, group, speakers, 
         {waiting && <Text variant="hint">{t("menu.regenerateBusy")}</Text>}
       </div>
     </Sheet>
-    <ModelChoiceSheet api={api} open={open && picker === "model"} value={modelId} defaultChoice={{ title: t("regeneration.usualModel"), description: t("regeneration.oneReply") }} onChange={setModelId} onClose={() => setPicker(null)} />
+    <ModelChoiceSheet api={api} open={open && picker === "model"} title={t("settings.model.title")} value={modelId} requirement={{ kind: "chat" }} nullChoice={{ title: t("regeneration.usualModel"), description: t("regeneration.oneReply") }} onChange={setModelId} onClose={() => setPicker(null)} />
     <SpeakerSheet open={open && picker === "speaker"} purpose="regenerate" speakers={available} selectedId={speakerId} originalName={originalName} onClose={() => setPicker(null)} onPick={(speaker) => setSpeakerId(speaker?.id ?? null)} />
   </>;
 }

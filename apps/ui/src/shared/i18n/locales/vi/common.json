@@ -170,5 +170,16 @@
     "empty": "Chưa có sách lore",
     "emptyBody": "Sách lore bạn tạo hoặc nhập sẽ hiện ở đây.",
     "edit": "Sửa {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Tìm mô hình",
+      "loading": "Đang tải lựa chọn",
+      "empty": "Chưa có mô hình nào cho việc này",
+      "add": "Thêm mô hình",
+      "noMatches": "Không có kết quả phù hợp",
+      "onDevice": "Trên thiết bị",
+      "providerOff": "Nhà cung cấp đang tắt"
+    }
   }
 }

@@ -14,13 +14,11 @@
       "unavailable": "Hindi available ang prompt"
     },
     "loading": "Naglo-load ng image settings",
-    "search": "Maghanap ng modelo",
     "addModel": "Magdagdag ng modelo",
     "first": "Gamitin ang unang available",
     "firstBody": "Sumusunod sa order ng listahan ng modelo mo",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Hindi available ang napiling modelo",
-    "noMatches": "Walang tugmang modelo",
     "local": {
       "group": "Sa computer na ito",
       "readFailed": "Hindi mabasa ang local image settings",
@@ -362,9 +360,7 @@
       "group": "Pagsulat ng prompt",
       "model": "Prompt writer",
       "first": "Gamitin ang unang nakakabasa ng larawan",
-      "firstBody": "Nagsusulat ng scene at design reference prompt",
-      "empty": "Wala pang modelong nakakabasa ng larawan",
-      "emptyBody": "Magdagdag ng modelong may text at image input at text output para makasulat ng scene at design reference prompt."
+      "firstBody": "Nagsusulat ng scene at design reference prompt"
     },
     "modes": {
       "group": "Kapag naglalarawan ng eksena ang isang tugon",
@@ -1546,9 +1542,6 @@
     "modelUnavailable": "Hindi available ang napiling modelo",
     "modelDisabled": "Naka-disable ang provider ng napiling modelo",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Naka-disable",
-    "defaultGroup": "Default",
-    "onDevice": "Sa device",
     "builtIn": "Built-in",
     "app": "App",
     "yours": "Sa iyo",
@@ -1556,12 +1549,7 @@
     "builtinMissing": "Hindi available ang built-in na prompt",
     "managePrompts": "Pamahalaan ang mga prompt",
     "managePromptsBody": "Binubuksan ang System prompts",
-    "modelSearch": "Maghanap ng modelo",
     "promptSearch": "Maghanap ng prompt",
-    "noModels": "Walang available na modelo",
-    "noModelsBody": "Magdagdag ng text model sa Settings, Models.",
-    "addModel": "Magdagdag ng modelo",
-    "noMatches": "Walang tugma",
     "loading": "Naglo-load ng reply helper settings",
     "notSaved": "Hindi pa na-save",
     "retry": "Subukan muli"

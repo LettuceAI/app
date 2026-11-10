@@ -85,7 +85,6 @@
     "memoriesBusy": "Memórias, lendo a última resposta",
     "search": "Pesquisar mensagens",
     "options": "Opções da conversa",
-    "onDevice": "No dispositivo",
     "untitled": "Conversa"
   },
   "search": {
@@ -566,7 +565,6 @@
     "model": {
       "title": "Modelo",
       "none": "Nenhum modelo definido",
-      "search": "Pesquisar modelos",
       "useDefault": "Usar o padrão do personagem",
       "useDefaultHint": "Seguir o personagem e depois o padrão do app",
       "remoteTitle": "Usar um modelo remoto?",

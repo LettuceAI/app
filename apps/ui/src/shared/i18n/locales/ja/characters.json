@@ -146,10 +146,7 @@
   },
   "pickers": {
     "model": "モデル",
-    "modelSearch": "モデルを検索",
     "modelDefaultBody": "アプリが既定で使うモデル",
-    "onDevice": "このデバイス上",
-    "noModels": "モデルがまだありません。設定で追加してください。",
     "promptDefaultBody": "この種類のチャットに対するアプリの既定",
     "promptBuiltin": "組み込み",
     "promptCustom": "自作"

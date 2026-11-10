@@ -84,7 +84,6 @@
     "memoriesBusy": "Herinneringen, het laatste antwoord lezen",
     "search": "Berichten zoeken",
     "options": "Chatopties",
-    "onDevice": "Op het apparaat",
     "untitled": "Chat"
   },
   "search": {
@@ -559,7 +558,6 @@
     "model": {
       "title": "Model",
       "none": "Geen model ingesteld",
-      "search": "Modellen zoeken",
       "useDefault": "De karakterstandaard gebruiken",
       "useDefaultHint": "Volg het karakter en daarna de app-standaard",
       "remoteTitle": "Een extern model gebruiken?",

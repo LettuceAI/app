@@ -150,10 +150,7 @@
   },
   "pickers": {
     "model": "Model",
-    "modelSearch": "Modellen zoeken",
     "modelDefaultBody": "Welk model de app standaard gebruikt",
-    "onDevice": "Op dit apparaat",
-    "noModels": "Nog geen modellen. Voeg er een toe in Instellingen.",
     "promptDefaultBody": "De standaard van de app voor dit soort chat",
     "promptBuiltin": "Ingebouwd",
     "promptCustom": "Van jou"

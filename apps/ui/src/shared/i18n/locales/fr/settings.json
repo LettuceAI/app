@@ -14,13 +14,11 @@
       "unavailable": "Prompt indisponible"
     },
     "loading": "Chargement des paramètres d'image",
-    "search": "Rechercher des modèles",
     "addModel": "Ajouter un modèle",
     "first": "Utiliser le premier disponible",
     "firstBody": "Suit l'ordre de votre liste de modèles",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Le modèle sélectionné n'est pas disponible",
-    "noMatches": "Aucun modèle correspondant",
     "local": {
       "group": "Sur cet ordinateur",
       "readFailed": "Impossible de lire les paramètres d'image locaux",
@@ -366,9 +364,7 @@
       "group": "Rédaction de prompt",
       "model": "Rédacteur de prompt",
       "first": "Utiliser le premier qui lit les images",
-      "firstBody": "Rédige les prompts de scène et de référence de design",
-      "empty": "Aucun modèle ne lit encore les images",
-      "emptyBody": "Ajoutez un modèle avec entrée texte et image et sortie texte pour rédiger les prompts de scène et de référence de design."
+      "firstBody": "Rédige les prompts de scène et de référence de design"
     },
     "modes": {
       "group": "Quand une réponse décrit une scène",
@@ -1554,9 +1550,6 @@
     "modelUnavailable": "Le modèle sélectionné est indisponible",
     "modelDisabled": "Le fournisseur du modèle sélectionné est désactivé",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Désactivé",
-    "defaultGroup": "Par défaut",
-    "onDevice": "Sur l'appareil",
     "builtIn": "Intégré",
     "app": "Application",
     "yours": "Le vôtre",
@@ -1564,12 +1557,7 @@
     "builtinMissing": "Le prompt intégré est indisponible",
     "managePrompts": "Gérer les prompts",
     "managePromptsBody": "Ouvre Prompts système",
-    "modelSearch": "Rechercher des modèles",
     "promptSearch": "Rechercher des prompts",
-    "noModels": "Aucun modèle disponible",
-    "noModelsBody": "Ajoutez un modèle texte dans Paramètres, Modèles.",
-    "addModel": "Ajouter un modèle",
-    "noMatches": "Aucun résultat",
     "loading": "Chargement des paramètres de l'assistant de réponse",
     "notSaved": "Non enregistré",
     "retry": "Réessayer"

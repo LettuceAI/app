@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { ListGroup, ListRow, ListRowButton, Switch } from "@lettuceai/crisp";
 import { draftSetters } from "../components/draft-setters";
 import { LorebooksRow, MemoryGroup, PromptsGroup } from "../components/ChatSettings";
-import { ModelChoiceSheet, VoiceChoiceSheet } from "../components/Pickers";
+import { ModelChoiceSheet } from "@/entities/model";
+import { VoiceChoiceSheet } from "../components/Pickers";
 import { useModelName } from "../components/use-model-name";
 import { voiceLabel } from "../data/voice";
 import type { StepProps } from "../components/step-props";
@@ -34,7 +35,7 @@ export function ChatTab({ api, form, update, characterId }: StepProps & { charac
       <NotesGroup api={api} characterId={characterId} />
       <LorebooksRow api={api} form={form} update={update} />
     </div>
-    <ModelChoiceSheet api={api} open={sheet === "model"} value={defaults.model_profile_id} onChange={(model_profile_id) => setDefaults({ model_profile_id })} onClose={() => setSheet(null)} />
+    <ModelChoiceSheet api={api} open={sheet === "model"} title={t("pickers.model")} value={defaults.model_profile_id} requirement={{ kind: "chat" }} nullChoice={{ title: t("details.modelDefault"), description: t("pickers.modelDefaultBody") }} onChange={(model_profile_id) => setDefaults({ model_profile_id })} onClose={() => setSheet(null)} />
     <VoiceChoiceSheet api={api} open={sheet === "voice"} value={defaults.voice} onChange={(voice) => setDefaults({ voice })} onClose={() => setSheet(null)} />
   </div>;
 }

@@ -83,7 +83,6 @@
     "memoriesBusy": "Ký ức, đang đọc câu trả lời mới nhất",
     "search": "Tìm tin nhắn",
     "options": "Tùy chọn trò chuyện",
-    "onDevice": "Trên thiết bị",
     "untitled": "Trò chuyện"
   },
   "search": {
@@ -552,7 +551,6 @@
     "model": {
       "title": "Mô hình",
       "none": "Chưa đặt mô hình",
-      "search": "Tìm mô hình",
       "useDefault": "Dùng mặc định của nhân vật",
       "useDefaultHint": "Theo nhân vật, rồi đến mặc định của ứng dụng",
       "remoteTitle": "Dùng mô hình từ xa?",

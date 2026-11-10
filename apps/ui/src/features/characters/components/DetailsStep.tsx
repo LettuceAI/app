@@ -2,10 +2,10 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Field, icon } from "@lettuceai/crisp";
+import { ModelChoiceSheet } from "@/entities/model";
 import { draftSetters } from "./draft-setters";
 import { MemoryGroup, PromptsGroup } from "./ChatSettings";
 import { useModelName } from "./use-model-name";
-import { ModelChoiceSheet } from "./Pickers";
 import { DefinitionField, DescriptionField } from "./ProfileFields";
 import type { StepProps } from "./step-props";
 
@@ -30,6 +30,6 @@ export function DetailsStep({ api, form, update }: StepProps) {
         <MemoryGroup api={api} form={form} update={update} />
       </div>
     </div>
-    <ModelChoiceSheet api={api} open={sheet === "model"} value={defaults.model_profile_id} onChange={(model_profile_id) => setDefaults({ model_profile_id })} onClose={() => setSheet(null)} />
+    <ModelChoiceSheet api={api} open={sheet === "model"} title={t("pickers.model")} value={defaults.model_profile_id} requirement={{ kind: "chat" }} nullChoice={{ title: t("details.modelDefault"), description: t("pickers.modelDefaultBody") }} onChange={(model_profile_id) => setDefaults({ model_profile_id })} onClose={() => setSheet(null)} />
   </>;
 }

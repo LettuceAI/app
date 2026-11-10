@@ -84,7 +84,6 @@
     "memoriesBusy": "Memories, reading the latest reply",
     "search": "Search messages",
     "options": "Chat options",
-    "onDevice": "On device",
     "untitled": "Chat"
   },
   "search": {
@@ -559,7 +558,6 @@
     "model": {
       "title": "Model",
       "none": "No model set",
-      "search": "Search models",
       "useDefault": "Use the character default",
       "useDefaultHint": "Follow the character, then the app default",
       "remoteTitle": "Use a remote model?",

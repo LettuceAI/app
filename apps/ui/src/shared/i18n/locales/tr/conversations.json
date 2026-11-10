@@ -84,7 +84,6 @@
     "memoriesBusy": "Anılar, son yanıt okunuyor",
     "search": "Mesajlarda ara",
     "options": "Sohbet seçenekleri",
-    "onDevice": "Cihazda",
     "untitled": "Sohbet"
   },
   "search": {
@@ -559,7 +558,6 @@
     "model": {
       "title": "Model",
       "none": "Model ayarlanmadı",
-      "search": "Model ara",
       "useDefault": "Karakter varsayılanını kullan",
       "useDefaultHint": "Karakteri, ardından uygulama varsayılanını takip et",
       "remoteTitle": "Uzak bir model kullanılsın mı?",

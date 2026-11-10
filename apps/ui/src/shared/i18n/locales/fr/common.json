@@ -172,5 +172,16 @@
     "empty": "Aucune encyclopédie pour l'instant",
     "emptyBody": "Les encyclopédies que vous créez ou importez apparaissent ici.",
     "edit": "Modifier {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Rechercher des modèles",
+      "loading": "Chargement des choix",
+      "empty": "Aucun modèle pour cela pour l'instant",
+      "add": "Ajouter un modèle",
+      "noMatches": "Aucun résultat",
+      "onDevice": "Sur l'appareil",
+      "providerOff": "Fournisseur désactivé"
+    }
   }
 }

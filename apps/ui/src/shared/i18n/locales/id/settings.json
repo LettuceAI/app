@@ -14,13 +14,11 @@
       "unavailable": "Prompt tidak tersedia"
     },
     "loading": "Memuat pengaturan gambar",
-    "search": "Cari model",
     "addModel": "Tambah model",
     "first": "Gunakan yang pertama tersedia",
     "firstBody": "Mengikuti urutan daftar model Anda",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Model yang dipilih tidak tersedia",
-    "noMatches": "Tidak ada model yang cocok",
     "local": {
       "group": "Di komputer ini",
       "readFailed": "Tidak dapat membaca pengaturan gambar lokal",
@@ -358,9 +356,7 @@
       "group": "Penulisan prompt",
       "model": "Penulis prompt",
       "first": "Gunakan yang pertama membaca gambar",
-      "firstBody": "Menulis prompt adegan dan referensi desain",
-      "empty": "Belum ada model yang membaca gambar",
-      "emptyBody": "Tambahkan model dengan masukan teks dan gambar serta keluaran teks untuk menulis prompt adegan dan referensi desain."
+      "firstBody": "Menulis prompt adegan dan referensi desain"
     },
     "modes": {
       "group": "Saat balasan menggambarkan adegan",
@@ -1538,9 +1534,6 @@
     "modelUnavailable": "Model yang dipilih tidak tersedia",
     "modelDisabled": "Penyedia model yang dipilih dinonaktifkan",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Dinonaktifkan",
-    "defaultGroup": "Default",
-    "onDevice": "Di perangkat",
     "builtIn": "Bawaan",
     "app": "Aplikasi",
     "yours": "Milik Anda",
@@ -1548,12 +1541,7 @@
     "builtinMissing": "Prompt bawaan tidak tersedia",
     "managePrompts": "Kelola prompt",
     "managePromptsBody": "Membuka Prompt sistem",
-    "modelSearch": "Cari model",
     "promptSearch": "Cari prompt",
-    "noModels": "Tidak ada model tersedia",
-    "noModelsBody": "Tambahkan model teks di Pengaturan, Model.",
-    "addModel": "Tambah model",
-    "noMatches": "Tidak ada kecocokan",
     "loading": "Memuat pengaturan pembantu balasan",
     "notSaved": "Belum disimpan",
     "retry": "Coba lagi"

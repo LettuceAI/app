@@ -14,13 +14,11 @@
       "unavailable": "提示词不可用"
     },
     "loading": "正在加载图片设置",
-    "search": "搜索模型",
     "addModel": "添加模型",
     "first": "使用第一个可用模型",
     "firstBody": "按模型列表顺序",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "所选模型不可用",
-    "noMatches": "没有匹配的模型",
     "local": {
       "group": "在本机",
       "readFailed": "无法读取本地图片设置",
@@ -358,9 +356,7 @@
       "group": "提示词撰写",
       "model": "提示词撰写器",
       "first": "使用第一个能读图的模型",
-      "firstBody": "撰写场景和设计参考提示词",
-      "empty": "还没有能读图的模型",
-      "emptyBody": "添加一个支持文本和图片输入、文本输出的模型，用来撰写场景和设计参考提示词。"
+      "firstBody": "撰写场景和设计参考提示词"
     },
     "modes": {
       "group": "当回复描述场景时",
@@ -1538,9 +1534,6 @@
     "modelUnavailable": "所选模型不可用",
     "modelDisabled": "所选模型的服务商已停用",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · 已停用",
-    "defaultGroup": "默认",
-    "onDevice": "在本机",
     "builtIn": "内置",
     "app": "应用",
     "yours": "你的",
@@ -1548,12 +1541,7 @@
     "builtinMissing": "内置提示词不可用",
     "managePrompts": "管理提示词",
     "managePromptsBody": "打开系统提示词",
-    "modelSearch": "搜索模型",
     "promptSearch": "搜索提示词",
-    "noModels": "没有可用的模型",
-    "noModelsBody": "在“设置 > 模型”中添加文本模型。",
-    "addModel": "添加模型",
-    "noMatches": "没有匹配",
     "loading": "正在加载回复助手设置",
     "notSaved": "未保存",
     "retry": "重试"

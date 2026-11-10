@@ -171,5 +171,16 @@
     "empty": "No lorebooks yet",
     "emptyBody": "Lorebooks you create or import show up here.",
     "edit": "Edit {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Search models",
+      "loading": "Loading choices",
+      "empty": "No models for this yet",
+      "add": "Add a model",
+      "noMatches": "No matching results",
+      "onDevice": "On device",
+      "providerOff": "Provider turned off"
+    }
   }
 }

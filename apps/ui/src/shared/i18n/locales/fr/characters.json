@@ -154,10 +154,7 @@
   },
   "pickers": {
     "model": "Modèle",
-    "modelSearch": "Rechercher des modèles",
     "modelDefaultBody": "Le modèle que l'application utilise par défaut",
-    "onDevice": "Sur cet appareil",
-    "noModels": "Aucun modèle pour l'instant. Ajoutez-en un dans les paramètres.",
     "promptDefaultBody": "La valeur par défaut de l'application pour ce type de discussion",
     "promptBuiltin": "Intégré",
     "promptCustom": "Le vôtre"

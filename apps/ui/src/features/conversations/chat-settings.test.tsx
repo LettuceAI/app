@@ -124,6 +124,7 @@ describe("chat settings panel", () => {
       conversationSettingsGet: () => ({ status: "ok", data: groupSettings }),
       conversationParticipationStats: () => ({ status: "ok", data: { total_messages: 0, items: [{ participant_id: "pc", character_id: "ch1", name: "Cassian", enabled: true, muted: false, percent: 0, message_count: 0, last_spoke_at: null, last_spoke_message_id: null }] } }),
       modelsList: () => ({ status: "ok", data: { models: [{ id: "m1", provider_account_id: "a", external_model_id: "x", display_name: "Vision", kind: "chat", config: {}, input_scopes: ["text", "image"], output_scopes: ["text"], revision: 1, created_at: 1, updated_at: 1 }], default_model_id: "m1", revision: 1 } }),
+      providerAccountsList: () => ({ status: "ok", data: [{ id: "a", provider_kind: "openai", protocol: "open_ai_compatible", label: "Provider", base_url: null, enabled: true, streaming_enabled: true, allow_invalid_tls: false, api_key_set: true, config: {}, revision: 1, created_at: 1, updated_at: 1 }] }),
       conversationParticipantUpdate: participant, conversationSettingsUpdate: update,
       promptsList: () => ({ status: "ok", data: { items: [
         { id: "p2", name: "Group story", kind: "group_chat_roleplay", archived: false, origin: { type: "user" }, app_default: false, built_in_update: false, revision: 1, created_at: 1, updated_at: 1 },

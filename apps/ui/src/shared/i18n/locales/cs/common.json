@@ -173,5 +173,16 @@
     "empty": "Zatím žádné lorebooky",
     "emptyBody": "Lorebooky, které vytvoříš nebo importuješ, se objeví tady.",
     "edit": "Upravit {{name}}"
+  },
+  "model": {
+    "choice": {
+      "search": "Hledat modely",
+      "loading": "Načítání voleb",
+      "empty": "Zatím žádné modely pro tohle",
+      "add": "Přidat model",
+      "noMatches": "Žádné odpovídající výsledky",
+      "onDevice": "V zařízení",
+      "providerOff": "Poskytovatel je vypnutý"
+    }
   }
 }

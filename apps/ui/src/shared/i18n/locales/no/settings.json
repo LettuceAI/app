@@ -14,13 +14,11 @@
       "unavailable": "Prompt utilgjengelig"
     },
     "loading": "Laster bildeinnstillinger",
-    "search": "Søk i modeller",
     "addModel": "Legg til en modell",
     "first": "Bruk den første tilgjengelige",
     "firstBody": "Følger rekkefølgen i modellisten din",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Valgt modell er utilgjengelig",
-    "noMatches": "Ingen samsvarende modeller",
     "local": {
       "group": "På denne datamaskinen",
       "readFailed": "Kunne ikke lese lokale bildeinnstillinger",
@@ -362,9 +360,7 @@
       "group": "Promptskriving",
       "model": "Promptskriver",
       "first": "Bruk den første som leser bilder",
-      "firstBody": "Skriver prompter for scener og designreferanser",
-      "empty": "Ingen modell leser bilder ennå",
-      "emptyBody": "Legg til en modell med tekst- og bildeinndata og tekstutdata for å skrive prompter for scener og designreferanser."
+      "firstBody": "Skriver prompter for scener og designreferanser"
     },
     "modes": {
       "group": "Når et svar beskriver en scene",
@@ -1546,9 +1542,6 @@
     "modelUnavailable": "Valgt modell er utilgjengelig",
     "modelDisabled": "Leverandøren til den valgte modellen er deaktivert",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Deaktivert",
-    "defaultGroup": "Standard",
-    "onDevice": "På enheten",
     "builtIn": "Innebygd",
     "app": "App",
     "yours": "Dine",
@@ -1556,12 +1549,7 @@
     "builtinMissing": "Innebygd prompt er utilgjengelig",
     "managePrompts": "Administrer prompter",
     "managePromptsBody": "Åpner Systemprompter",
-    "modelSearch": "Søk i modeller",
     "promptSearch": "Søk i prompter",
-    "noModels": "Ingen modeller tilgjengelig",
-    "noModelsBody": "Legg til en tekstmodell under Innstillinger, Modeller.",
-    "addModel": "Legg til modell",
-    "noMatches": "Ingen treff",
     "loading": "Laster svarhjelperinnstillinger",
     "notSaved": "Ikke lagret",
     "retry": "Prøv igjen"

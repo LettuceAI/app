@@ -146,10 +146,7 @@
   },
   "pickers": {
     "model": "模型",
-    "modelSearch": "搜索模型",
     "modelDefaultBody": "应用默认使用的模型",
-    "onDevice": "在本机",
-    "noModels": "还没有模型。请在设置中添加。",
     "promptDefaultBody": "这类聊天使用的应用默认提示词",
     "promptBuiltin": "内置",
     "promptCustom": "你的"

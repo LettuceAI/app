@@ -14,13 +14,11 @@
       "unavailable": "Prompt niet beschikbaar"
     },
     "loading": "Afbeeldingsinstellingen laden",
-    "search": "Modellen zoeken",
     "addModel": "Een model toevoegen",
     "first": "De eerste beschikbare gebruiken",
     "firstBody": "Volgt de volgorde van je modellenlijst",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Het gekozen model is niet beschikbaar",
-    "noMatches": "Geen overeenkomende modellen",
     "local": {
       "group": "Op deze computer",
       "readFailed": "Kon lokale afbeeldingsinstellingen niet lezen",
@@ -362,9 +360,7 @@
       "group": "Prompts schrijven",
       "model": "Promptschrijver",
       "first": "De eerste gebruiken die afbeeldingen leest",
-      "firstBody": "Schrijft scène- en ontwerpreferentieprompts",
-      "empty": "Nog geen model leest afbeeldingen",
-      "emptyBody": "Voeg een model toe met tekst- en afbeeldingsinvoer en tekstuitvoer om scène- en ontwerpreferentieprompts te schrijven."
+      "firstBody": "Schrijft scène- en ontwerpreferentieprompts"
     },
     "modes": {
       "group": "Wanneer een antwoord een scène beschrijft",
@@ -1546,9 +1542,6 @@
     "modelUnavailable": "Het gekozen model is niet beschikbaar",
     "modelDisabled": "De provider van het gekozen model is uitgeschakeld",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Uitgeschakeld",
-    "defaultGroup": "Standaard",
-    "onDevice": "Op apparaat",
     "builtIn": "Ingebouwd",
     "app": "App",
     "yours": "Van jou",
@@ -1556,12 +1549,7 @@
     "builtinMissing": "Ingebouwde prompt is niet beschikbaar",
     "managePrompts": "Prompts beheren",
     "managePromptsBody": "Opent Systeemprompts",
-    "modelSearch": "Modellen zoeken",
     "promptSearch": "Prompts zoeken",
-    "noModels": "Geen modellen beschikbaar",
-    "noModelsBody": "Voeg een tekstmodel toe onder Instellingen, Modellen.",
-    "addModel": "Model toevoegen",
-    "noMatches": "Geen overeenkomsten",
     "loading": "Instellingen voor antwoordhulp laden",
     "notSaved": "Niet opgeslagen",
     "retry": "Opnieuw proberen"

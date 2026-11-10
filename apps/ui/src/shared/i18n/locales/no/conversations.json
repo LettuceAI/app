@@ -84,7 +84,6 @@
     "memoriesBusy": "Minner, leser det siste svaret",
     "search": "Søk i meldinger",
     "options": "Samtalevalg",
-    "onDevice": "På enheten",
     "untitled": "Samtale"
   },
   "search": {
@@ -559,7 +558,6 @@
     "model": {
       "title": "Modell",
       "none": "Ingen modell angitt",
-      "search": "Søk i modeller",
       "useDefault": "Bruk karakterens standard",
       "useDefaultHint": "Følg karakteren, deretter appens standard",
       "remoteTitle": "Bruke en ekstern modell?",

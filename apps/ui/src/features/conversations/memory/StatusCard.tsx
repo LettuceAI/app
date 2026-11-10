@@ -6,7 +6,7 @@ import { Alert, Button, icon, Progress, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
 import type { JobAccepted, JobProgressDto, MemoryStatusView } from "@/api/generated/bindings";
 import { watchJob } from "@/entities/job";
-import { ModelChoiceSheet } from "@/features/characters";
+import { ModelChoiceSheet } from "@/entities/model";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useMemoryError } from "./errors";
 import { createOperationIds } from "./operation-ids";
@@ -20,6 +20,7 @@ export interface StatusCardProps {
 
 export function StatusCard({ api, conversationId, status }: StatusCardProps) {
   const { t } = useTranslation("conversations");
+  const { t: characters } = useTranslation("characters");
   const queryClient = useQueryClient();
   const errorText = useMemoryError();
   const [ids] = useState(createOperationIds);
@@ -108,7 +109,10 @@ export function StatusCard({ api, conversationId, status }: StatusCardProps) {
     <ModelChoiceSheet
       api={api}
       open={picking}
+      title={t("settings.model.title")}
       value={null}
+      requirement={{ kind: "chat" }}
+      nullChoice={{ title: characters("details.modelDefault"), description: characters("pickers.modelDefaultBody") }}
       onChange={(id) => void retry(id)}
       onClose={() => setPicking(false)}
     />

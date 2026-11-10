@@ -14,13 +14,11 @@
       "unavailable": "Prompt není dostupný"
     },
     "loading": "Načítání nastavení obrázků",
-    "search": "Hledat modely",
     "addModel": "Přidat model",
     "first": "Použít první dostupný",
     "firstBody": "Podle pořadí v seznamu modelů",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Vybraný model není dostupný",
-    "noMatches": "Žádné odpovídající modely",
     "local": {
       "group": "Na tomto počítači",
       "readFailed": "Nastavení lokálních obrázků se nepodařilo přečíst",
@@ -370,9 +368,7 @@
       "group": "Psaní promptů",
       "model": "Tvůrce promptů",
       "first": "Použít první, který čte obrázky",
-      "firstBody": "Píše prompty scén a referencí vzhledu",
-      "empty": "Zatím žádný model nečte obrázky",
-      "emptyBody": "Přidej model se vstupem textu a obrázků a výstupem textu, ať může psát prompty scén a referencí vzhledu."
+      "firstBody": "Píše prompty scén a referencí vzhledu"
     },
     "modes": {
       "group": "Když odpověď popisuje scénu",
@@ -1562,9 +1558,6 @@
     "modelUnavailable": "Vybraný model není dostupný",
     "modelDisabled": "Poskytovatel vybraného modelu je vypnutý",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Vypnuto",
-    "defaultGroup": "Výchozí",
-    "onDevice": "V zařízení",
     "builtIn": "Vestavěný",
     "app": "Aplikace",
     "yours": "Tvoje",
@@ -1572,12 +1565,7 @@
     "builtinMissing": "Vestavěný prompt není dostupný",
     "managePrompts": "Spravovat prompty",
     "managePromptsBody": "Otevře Systémové prompty",
-    "modelSearch": "Hledat modely",
     "promptSearch": "Hledat prompty",
-    "noModels": "Nejsou dostupné žádné modely",
-    "noModelsBody": "Přidej textový model v Nastavení → Modely.",
-    "addModel": "Přidat model",
-    "noMatches": "Žádné shody",
     "loading": "Načítání nastavení pomocníka s odpovědí",
     "notSaved": "Neuloženo",
     "retry": "Zkusit znovu"

@@ -150,10 +150,7 @@
   },
   "pickers": {
     "model": "मॉडल",
-    "modelSearch": "मॉडल खोजें",
     "modelDefaultBody": "ऐप डिफ़ॉल्ट रूप से जो मॉडल उपयोग करता है",
-    "onDevice": "इस डिवाइस पर",
-    "noModels": "अभी कोई मॉडल नहीं। सेटिंग्स में जोड़ें।",
     "promptDefaultBody": "इस तरह की चैट के लिए ऐप का डिफ़ॉल्ट",
     "promptBuiltin": "बिल्ट-इन",
     "promptCustom": "आपका"

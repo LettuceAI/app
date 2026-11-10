@@ -83,7 +83,6 @@
     "memoriesBusy": "记忆，正在读取最新回复",
     "search": "搜索消息",
     "options": "聊天选项",
-    "onDevice": "在本机",
     "untitled": "聊天"
   },
   "search": {
@@ -552,7 +551,6 @@
     "model": {
       "title": "模型",
       "none": "未设置模型",
-      "search": "搜索模型",
       "useDefault": "使用角色默认",
       "useDefaultHint": "跟随角色，再跟随应用默认",
       "remoteTitle": "使用远程模型？",

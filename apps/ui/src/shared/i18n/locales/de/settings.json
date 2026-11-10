@@ -14,13 +14,11 @@
       "unavailable": "Prompt nicht verfügbar"
     },
     "loading": "Bildeinstellungen werden geladen",
-    "search": "Modelle durchsuchen",
     "addModel": "Modell hinzufügen",
     "first": "Das erste verfügbare verwenden",
     "firstBody": "Folgt der Reihenfolge deiner Modellliste",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Das ausgewählte Modell ist nicht verfügbar",
-    "noMatches": "Keine passenden Modelle",
     "local": {
       "group": "Auf diesem Computer",
       "readFailed": "Lokale Bildeinstellungen konnten nicht gelesen werden",
@@ -362,9 +360,7 @@
       "group": "Prompt-Schreiben",
       "model": "Prompt-Schreiber",
       "first": "Das erste verwenden, das Bilder liest",
-      "firstBody": "Schreibt Szenen- und Designreferenz-Prompts",
-      "empty": "Noch kein Modell liest Bilder",
-      "emptyBody": "Füge ein Modell mit Text- und Bildeingabe und Textausgabe hinzu, um Szenen- und Designreferenz-Prompts zu schreiben."
+      "firstBody": "Schreibt Szenen- und Designreferenz-Prompts"
     },
     "modes": {
       "group": "Wenn eine Antwort eine Szene beschreibt",
@@ -1546,9 +1542,6 @@
     "modelUnavailable": "Das ausgewählte Modell ist nicht verfügbar",
     "modelDisabled": "Der Anbieter des ausgewählten Modells ist deaktiviert",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Deaktiviert",
-    "defaultGroup": "Standard",
-    "onDevice": "Auf dem Gerät",
     "builtIn": "Integriert",
     "app": "App",
     "yours": "Deine",
@@ -1556,12 +1549,7 @@
     "builtinMissing": "Der integrierte Prompt ist nicht verfügbar",
     "managePrompts": "Prompts verwalten",
     "managePromptsBody": "Öffnet System-Prompts",
-    "modelSearch": "Modelle durchsuchen",
     "promptSearch": "Prompts durchsuchen",
-    "noModels": "Keine Modelle verfügbar",
-    "noModelsBody": "Füge unter Einstellungen, Modelle ein Textmodell hinzu.",
-    "addModel": "Modell hinzufügen",
-    "noMatches": "Keine Treffer",
     "loading": "Einstellungen der Antworthilfe werden geladen",
     "notSaved": "Nicht gespeichert",
     "retry": "Erneut versuchen"

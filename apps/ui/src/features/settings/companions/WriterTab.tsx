@@ -6,12 +6,12 @@ import { Alert, icon, ListGroup, ListRowButton, Skeleton, Text } from "@lettucea
 import type { SettingsCompanionSoulWriterSettings } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { modelsQuery } from "@/features/conversations";
+import { meetsRequirement, ModelChoiceSheet, modelChoices, type ModelChoice, type ModelRequirement } from "@/entities/model";
 import { PromptPickerSheet, promptsQuery } from "@/entities/prompt";
 import { FailureState } from "@/shared/ui/FailureState";
 import { StructuredFallbackSelector } from "@/shared/ui/StructuredFallbackSelector";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { useSettingsApi } from "../data";
-import { CompanionPicker, type CompanionPickerId, type WriterModel } from "./CompanionPicker";
 
 const fields = {
   primary: "model_profile_id",
@@ -19,6 +19,10 @@ const fields = {
   prompt: "prompt_id",
 } as const;
 const promptKind = "companion_soul_writer";
+const writerRequirement: ModelRequirement = { kind: "chat", input: ["text"], output: ["text"] };
+
+export type CompanionPickerId = "primary" | "fallback" | "prompt";
+
 export function WriterTab({
   value,
   defaultModelId,
@@ -46,16 +50,9 @@ export function WriterTab({
   const shownModel = useClosingValue(
     picker === "primary" || picker === "fallback" ? picker : null,
   ).shown;
-  const byAccount = new Map((accounts.data ?? []).map((account) => [account.id, account]));
-  const choices: WriterModel[] = (models.data?.models ?? []).flatMap((model) => {
-    const account = byAccount.get(model.provider_account_id);
-    return account &&
-      model.kind === "chat" &&
-      model.input_scopes.includes("text") &&
-      model.output_scopes.includes("text")
-      ? [{ model, account }]
-      : [];
-  });
+  const choices = modelChoices(models.data?.models ?? [], accounts.data ?? []).filter((choice) =>
+    meetsRequirement(choice, writerRequirement),
+  );
   const defaultChoice = choices.find(({ model }) => model.id === defaultModelId);
   const defaultName =
     defaultModelId === null
@@ -65,7 +62,7 @@ export function WriterTab({
         : t("defaultUnavailable");
   const primary = choices.find(({ model }) => model.id === value.model_profile_id);
   const fallback = choices.find(({ model }) => model.id === value.fallback_model_profile_id);
-  const modelLine = (choice: WriterModel | undefined) =>
+  const modelLine = (choice: ModelChoice | undefined) =>
     !choice
       ? t("modelUnavailable")
       : !choice.account.enabled
@@ -79,6 +76,9 @@ export function WriterTab({
       void onChange({ [fields[picker]]: id });
       onClose();
     }
+  };
+  const chooseModel = (id: string | null) => {
+    if (shownModel) void onChange({ [fields[shownModel]]: id });
   };
   return (
     <>
@@ -165,20 +165,19 @@ export function WriterTab({
         </section>
         <Alert tone="info" title={t("whereTitle")} description={t("whereBody")} />
       </div>
-      <CompanionPicker
+      <ModelChoiceSheet
+        api={api}
         open={picker === "primary" || picker === "fallback"}
-        picker={shownModel}
-        models={choices}
-        loading={loading}
-        failure={modelFailure?.error ?? null}
-        retry={() => {
-          void models.refetch();
-          void accounts.refetch();
-        }}
-        value={shownModel ? value[fields[shownModel]] : null}
-        defaultName={defaultName}
         onClose={onClose}
-        onChoose={choose}
+        title={t(shownModel === "fallback" ? "backupModel" : "writerModel")}
+        value={shownModel ? value[fields[shownModel]] : null}
+        requirement={writerRequirement}
+        nullChoice={
+          shownModel === "fallback"
+            ? { title: t("none"), description: t("noBackupBody") }
+            : { title: t("appDefault"), description: defaultName }
+        }
+        onChange={chooseModel}
         onAddModel={() => void navigate({ to: "/settings/models/new", replace: true })}
       />
       <PromptPickerSheet

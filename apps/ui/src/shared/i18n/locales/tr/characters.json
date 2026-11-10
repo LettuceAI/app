@@ -150,10 +150,7 @@
   },
   "pickers": {
     "model": "Model",
-    "modelSearch": "Model ara",
     "modelDefaultBody": "Uygulamanın varsayılan olarak kullandığı model",
-    "onDevice": "Bu cihazda",
-    "noModels": "Henüz model yok. Ayarlar'dan bir tane ekleyin.",
     "promptDefaultBody": "Uygulamanın bu tür sohbet için varsayılanı",
     "promptBuiltin": "Yerleşik",
     "promptCustom": "Sizin"

@@ -14,13 +14,11 @@
       "unavailable": "Prompt unavailable"
     },
     "loading": "Loading image settings",
-    "search": "Search models",
     "addModel": "Add a model",
     "first": "Use the first available",
     "firstBody": "Follows your model list order",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Selected model is unavailable",
-    "noMatches": "No matching models",
     "local": {
       "group": "On this computer",
       "readFailed": "Couldn't read local image settings",
@@ -362,9 +360,7 @@
       "group": "Prompt writing",
       "model": "Prompt writer",
       "first": "Use the first that reads images",
-      "firstBody": "Writes scene and design reference prompts",
-      "empty": "No model reads images yet",
-      "emptyBody": "Add a model with text and image input and text output to write scene and design reference prompts."
+      "firstBody": "Writes scene and design reference prompts"
     },
     "modes": {
       "group": "When a reply describes a scene",
@@ -1575,9 +1571,6 @@
     "modelUnavailable": "Selected model is unavailable",
     "modelDisabled": "Selected model’s provider is disabled",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Disabled",
-    "defaultGroup": "Default",
-    "onDevice": "On device",
     "builtIn": "Built in",
     "app": "App",
     "yours": "Yours",
@@ -1585,12 +1578,7 @@
     "builtinMissing": "Built-in prompt is unavailable",
     "managePrompts": "Manage prompts",
     "managePromptsBody": "Opens System prompts",
-    "modelSearch": "Search models",
     "promptSearch": "Search prompts",
-    "noModels": "No models available",
-    "noModelsBody": "Add a text model under Settings, Models.",
-    "addModel": "Add model",
-    "noMatches": "No matches",
     "loading": "Loading reply helper settings",
     "notSaved": "Not saved",
     "retry": "Try again"

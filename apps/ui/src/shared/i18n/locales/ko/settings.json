@@ -14,13 +14,11 @@
       "unavailable": "프롬프트를 사용할 수 없어요"
     },
     "loading": "이미지 설정 불러오는 중",
-    "search": "모델 검색",
     "addModel": "모델 추가",
     "first": "사용 가능한 첫 모델",
     "firstBody": "모델 목록 순서를 따라요",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "선택한 모델을 사용할 수 없어요",
-    "noMatches": "일치하는 모델 없음",
     "local": {
       "group": "이 컴퓨터에서",
       "readFailed": "로컬 이미지 설정을 읽지 못했어요",
@@ -358,9 +356,7 @@
       "group": "프롬프트 작성",
       "model": "프롬프트 작성기",
       "first": "이미지를 읽는 첫 모델 사용",
-      "firstBody": "장면 및 디자인 참조 프롬프트를 작성해요",
-      "empty": "아직 이미지를 읽는 모델이 없어요",
-      "emptyBody": "장면 및 디자인 참조 프롬프트를 작성하려면 텍스트와 이미지 입력, 텍스트 출력을 지원하는 모델을 추가하세요."
+      "firstBody": "장면 및 디자인 참조 프롬프트를 작성해요"
     },
     "modes": {
       "group": "답장이 장면을 묘사할 때",
@@ -1538,9 +1534,6 @@
     "modelUnavailable": "선택한 모델을 사용할 수 없어요",
     "modelDisabled": "선택한 모델의 제공자가 비활성화됐어요",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · 비활성화됨",
-    "defaultGroup": "기본",
-    "onDevice": "기기 내",
     "builtIn": "기본 제공",
     "app": "앱",
     "yours": "내 것",
@@ -1548,12 +1541,7 @@
     "builtinMissing": "기본 제공 프롬프트를 사용할 수 없어요",
     "managePrompts": "프롬프트 관리",
     "managePromptsBody": "시스템 프롬프트를 열어요",
-    "modelSearch": "모델 검색",
     "promptSearch": "프롬프트 검색",
-    "noModels": "사용 가능한 모델 없음",
-    "noModelsBody": "설정 > 모델에서 텍스트 모델을 추가하세요.",
-    "addModel": "모델 추가",
-    "noMatches": "일치 항목 없음",
     "loading": "답장 도우미 설정 불러오는 중",
     "notSaved": "저장 안 됨",
     "retry": "다시 시도"

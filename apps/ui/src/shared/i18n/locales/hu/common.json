@@ -171,5 +171,16 @@
     "empty": "Még nincs lorebook",
     "emptyBody": "Az általad létrehozott vagy importált lorebookok itt jelennek meg.",
     "edit": "{{name}} szerkesztése"
+  },
+  "model": {
+    "choice": {
+      "search": "Modellek keresése",
+      "loading": "Választékok betöltése",
+      "empty": "Ehhez még nincs modell",
+      "add": "Modell hozzáadása",
+      "noMatches": "Nincs egyező találat",
+      "onDevice": "Eszközön",
+      "providerOff": "A szolgáltató ki van kapcsolva"
+    }
   }
 }

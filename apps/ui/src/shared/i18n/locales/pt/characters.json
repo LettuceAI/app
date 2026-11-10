@@ -154,10 +154,7 @@
   },
   "pickers": {
     "model": "Modelo",
-    "modelSearch": "Pesquisar modelos",
     "modelDefaultBody": "O modelo que o app usa por padrão",
-    "onDevice": "Neste dispositivo",
-    "noModels": "Nenhum modelo ainda. Adicione um em Configurações.",
     "promptDefaultBody": "O padrão do app para este tipo de conversa",
     "promptBuiltin": "Integrado",
     "promptCustom": "Seu"

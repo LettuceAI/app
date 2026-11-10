@@ -14,13 +14,11 @@
       "unavailable": "Prompt niedostępny"
     },
     "loading": "Ładowanie ustawień obrazów",
-    "search": "Szukaj modeli",
     "addModel": "Dodaj model",
     "first": "Użyj pierwszego dostępnego",
     "firstBody": "Zgodnie z kolejnością listy modeli",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "Wybrany model jest niedostępny",
-    "noMatches": "Brak pasujących modeli",
     "local": {
       "group": "Na tym komputerze",
       "readFailed": "Nie udało się odczytać lokalnych ustawień obrazów",
@@ -370,9 +368,7 @@
       "group": "Pisanie promptów",
       "model": "Twórca promptów",
       "first": "Użyj pierwszego, który czyta obrazy",
-      "firstBody": "Pisze prompty scen i referencji wyglądu",
-      "empty": "Żaden model nie czyta jeszcze obrazów",
-      "emptyBody": "Dodaj model z wejściem tekstowym i obrazowym oraz wyjściem tekstowym, aby pisać prompty scen i referencji wyglądu."
+      "firstBody": "Pisze prompty scen i referencji wyglądu"
     },
     "modes": {
       "group": "Gdy odpowiedź opisuje scenę",
@@ -1562,9 +1558,6 @@
     "modelUnavailable": "Wybrany model jest niedostępny",
     "modelDisabled": "Dostawca wybranego modelu jest wyłączony",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Wyłączony",
-    "defaultGroup": "Domyślny",
-    "onDevice": "Na urządzeniu",
     "builtIn": "Wbudowany",
     "app": "Aplikacja",
     "yours": "Twoje",
@@ -1572,12 +1565,7 @@
     "builtinMissing": "Wbudowany prompt jest niedostępny",
     "managePrompts": "Zarządzaj promptami",
     "managePromptsBody": "Otwiera Prompty systemowe",
-    "modelSearch": "Szukaj modeli",
     "promptSearch": "Szukaj promptów",
-    "noModels": "Brak dostępnych modeli",
-    "noModelsBody": "Dodaj model tekstowy w Ustawieniach, Modele.",
-    "addModel": "Dodaj model",
-    "noMatches": "Brak dopasowań",
     "loading": "Ładowanie ustawień pomocnika odpowiedzi",
     "notSaved": "Nie zapisano",
     "retry": "Spróbuj ponownie"

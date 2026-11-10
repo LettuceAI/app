@@ -114,8 +114,18 @@ async function mount(tab = "lorebook", gate?: Promise<void>, promptCount = 0) {
   return { history, runtime, write };
 }
 
+it("keeps the Model picker mounted while closing", async () => {
+  const { history, runtime } = await mount("lorebook");
+  fireEvent.click((await screen.findByText("Model", { exact: true, selector: "span" })).closest("button")!);
+  await screen.findByRole("dialog");
+  await act(async () => history.back());
+  await waitFor(() => expect(runtime.router.state.location.search.lorePicker).toBeUndefined());
+  const props = sheetRender.mock.lastCall?.[0] as ComponentProps<typeof Sheet>;
+  expect(props.open).toBe(false);
+  expect(props.title).toBe("Model");
+});
+
 it.each([
-  ["Model", "Search models"],
   ["Plan", "Search prompts"],
 ])("keeps the %s picker mounted with its content while closing", async (title, search) => {
   const { history, runtime } = await mount("lorebook", undefined, title === "Plan" ? 9 : 0);

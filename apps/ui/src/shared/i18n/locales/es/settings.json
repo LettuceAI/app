@@ -14,13 +14,11 @@
       "unavailable": "Prompt no disponible"
     },
     "loading": "Cargando los ajustes de imagen",
-    "search": "Buscar modelos",
     "addModel": "Añadir un modelo",
     "first": "Usar el primero disponible",
     "firstBody": "Sigue el orden de tu lista de modelos",
     "selected": "{{model}} · {{provider}}",
     "unavailable": "El modelo seleccionado no está disponible",
-    "noMatches": "No hay modelos que coincidan",
     "local": {
       "group": "En esta computadora",
       "readFailed": "No se pudieron leer los ajustes de imagen locales",
@@ -366,9 +364,7 @@
       "group": "Escritura de prompts",
       "model": "Escritor de prompts",
       "first": "Usar el primero que lea imágenes",
-      "firstBody": "Escribe prompts de escena y de referencias de diseño",
-      "empty": "Aún no hay ningún modelo que lea imágenes",
-      "emptyBody": "Añade un modelo con entrada de texto e imagen y salida de texto para escribir prompts de escena y de referencias de diseño."
+      "firstBody": "Escribe prompts de escena y de referencias de diseño"
     },
     "modes": {
       "group": "Cuando una respuesta describe una escena",
@@ -1554,9 +1550,6 @@
     "modelUnavailable": "El modelo seleccionado no está disponible",
     "modelDisabled": "El proveedor del modelo seleccionado está desactivado",
     "modelIdentity": "{{provider}} · {{name}}",
-    "providerDisabled": "{{provider}} · Desactivado",
-    "defaultGroup": "Predeterminado",
-    "onDevice": "En el dispositivo",
     "builtIn": "Integrado",
     "app": "App",
     "yours": "Tuyo",
@@ -1564,12 +1557,7 @@
     "builtinMissing": "El prompt integrado no está disponible",
     "managePrompts": "Gestionar prompts",
     "managePromptsBody": "Abre Prompts de sistema",
-    "modelSearch": "Buscar modelos",
     "promptSearch": "Buscar prompts",
-    "noModels": "No hay modelos disponibles",
-    "noModelsBody": "Añade un modelo de texto en Ajustes, Modelos.",
-    "addModel": "Añadir modelo",
-    "noMatches": "Sin coincidencias",
     "loading": "Cargando los ajustes del asistente de respuesta",
     "notSaved": "Sin guardar",
     "retry": "Reintentar"

@@ -83,7 +83,6 @@
     "memoriesBusy": "Memori, membaca balasan terbaru",
     "search": "Cari pesan",
     "options": "Opsi obrolan",
-    "onDevice": "Di perangkat",
     "untitled": "Obrolan"
   },
   "search": {
@@ -552,7 +551,6 @@
     "model": {
       "title": "Model",
       "none": "Belum ada model diatur",
-      "search": "Cari model",
       "useDefault": "Gunakan default karakter",
       "useDefaultHint": "Ikuti karakter, lalu default aplikasi",
       "remoteTitle": "Gunakan model jarak jauh?",

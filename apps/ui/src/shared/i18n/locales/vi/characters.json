@@ -146,10 +146,7 @@
   },
   "pickers": {
     "model": "Mô hình",
-    "modelSearch": "Tìm mô hình",
     "modelDefaultBody": "Mô hình ứng dụng dùng mặc định",
-    "onDevice": "Trên thiết bị này",
-    "noModels": "Chưa có mô hình. Thêm trong Cài đặt.",
     "promptDefaultBody": "Mặc định của ứng dụng cho loại trò chuyện này",
     "promptBuiltin": "Có sẵn",
     "promptCustom": "Của bạn"
