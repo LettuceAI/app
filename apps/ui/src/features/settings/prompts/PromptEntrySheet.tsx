@@ -3,13 +3,14 @@ import { useBlocker } from "@tanstack/react-router";
 import type { PromptPlaceholders } from "@/api/generated/bindings";
 import { usePromptText } from "./copy";
 import { blankEntry } from "./data";
+import { SettingsPick } from "@/shared/ui/SettingsPick";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Braces, Plus, Search, Trash2, X } from "lucide-react";
 import {
   Alert, Button, Chip, confirm, Collapsible, EmptyState, Field, IconButton, Input, ListGroup, ListRow, ListRowButton, NumberInput, SearchField, Segmented,
   Select, Sheet, Switch, TagInput, Text, Textarea,
 } from "@lettuceai/crisp";
-import { cn, icon, motion as m } from "@lettuceai/crisp";
+import { cn, icon, motion as m, useCompactLayout } from "@lettuceai/crisp";
 import { contradictions, defaultValue, describeRules, describeCondition, ruleDefinition as RULE } from "./rules";
 import { POSITION, SLOT_LABEL, RULES, type RuleDef } from "./presentation";
 import type { Entry, ImageSlot, Position, Role, Rule, Rules } from "./types";
@@ -266,6 +267,7 @@ function RuleList({
   addLabel: string;
 }) {
   const { t } = usePromptText();
+  const phone = useCompactLayout();
   const patch = (id: string, next: Partial<Rule>) => onChange(rules.map((r) => (r.id === id ? { ...r, ...next } : r)));
   const remove = (id: string) => onChange(rules.filter((r) => r.id !== id));
 
@@ -280,7 +282,7 @@ function RuleList({
             def.shape.kind === "flag" ? (
               <Segmented size="sm" aria-label={t(def.label)} value={rule.value ? "yes" : "no"} onChange={(v) => patch(rule.id, { value: v === "yes" })} options={[{ value: "yes", label: t("Yes") }, { value: "no", label: t("No") }]} />
             ) : def.shape.kind === "choice" ? (
-              <Segmented size="sm" aria-label={t(def.label)} value={String(rule.value)} onChange={(v) => patch(rule.id, { value: v })} options={def.shape.options.map((option) => ({ ...option, label: t(option.label) }))} />
+              <SettingsPick label={t(def.label)} native={phone} value={String(rule.value)} onChange={(v) => patch(rule.id, { value: v })} options={def.shape.options.map((option) => ({ ...option, label: t(option.label) }))} />
             ) : def.shape.kind === "number" ? (
               <NumberInput aria-label={t(def.label)} value={Number(rule.value)} min={def.shape.min} suffix={t(def.shape.unit)} onChange={(v) => patch(rule.id, { value: v })} />
             ) : null;

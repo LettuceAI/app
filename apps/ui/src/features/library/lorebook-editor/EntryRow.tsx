@@ -21,7 +21,7 @@ export const EntryRow = memo(function EntryRow({
   return (
     <div
       className={cn(
-        "group flex items-start gap-2 rounded-2xl border border-line bg-surface-1 p-3 transition-colors hover:bg-fill @xl:p-4",
+        "group flex min-w-0 items-start gap-2 rounded-2xl border border-line bg-surface-1 p-3 transition-colors hover:bg-fill @xl:p-4",
         !entry.enabled && "opacity-60",
       )}
     >
