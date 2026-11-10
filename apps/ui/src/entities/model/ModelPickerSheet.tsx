@@ -51,7 +51,7 @@ export function ModelPickerSheet(props: ModelPickerSheetProps) {
     model.context_length === null ? null : formatContext(model.context_length, i18n.language);
 
   return (
-    <Sheet open={props.open} onClose={props.onClose} title={t("model.picker.title", { name: props.routeName })} size="lg">
+    <Sheet open={props.open} onClose={props.onClose} title={t("model.picker.title", { name: props.routeName })} size="md">
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">

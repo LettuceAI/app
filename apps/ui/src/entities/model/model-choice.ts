@@ -103,28 +103,33 @@ function tokenScore(token: string, target: Field): number {
 /**
  * Ranked matches for a query typed in any word order. A token matches a field as a word
  * prefix, a substring (also across separators, so `gpt4o` finds `gpt-4o`), or, from three
- * characters, as letters in order with at most two skipped between neighbours. An empty
- * query returns every choice in its order.
+ * characters, as letters in order with at most two skipped between neighbours. Every token
+ * must match some field; higher-weight fields rank first. An empty query returns every item
+ * in its order.
  */
-export function searchModels(choices: readonly ModelChoice[], query: string): ModelChoice[] {
+export function rankMatches<T>(items: readonly T[], query: string, fieldsOf: (item: T) => readonly (readonly [string, number])[]): T[] {
   const normalized = normalize(query);
-  if (normalized === "") return [...choices];
+  if (normalized === "") return [...items];
   const tokens = normalized.split(" ");
-  const ranked: { choice: ModelChoice; score: number; order: number }[] = [];
-  choices.forEach((choice, order) => {
-    const fields = [
-      field(choice.model.display_name, 2),
-      field(choice.model.external_model_id, 1),
-      field(choice.account.label, 1),
-      field(choice.account.provider_kind, 1),
-    ];
+  const ranked: { item: T; score: number; order: number }[] = [];
+  items.forEach((item, order) => {
+    const fields = fieldsOf(item).map(([value, weight]) => field(value, weight));
     let total = 0;
     for (const token of tokens) {
       const best = Math.max(...fields.map((target) => tokenScore(token, target)));
       if (best === 0) return;
       total += best;
     }
-    ranked.push({ choice, score: total, order });
+    ranked.push({ item, score: total, order });
   });
-  return ranked.sort((a, b) => b.score - a.score || a.order - b.order).map((entry) => entry.choice);
+  return ranked.sort((a, b) => b.score - a.score || a.order - b.order).map((entry) => entry.item);
+}
+
+export function searchModels(choices: readonly ModelChoice[], query: string): ModelChoice[] {
+  return rankMatches(choices, query, ({ model, account }) => [
+    [model.display_name, 2],
+    [model.external_model_id, 1],
+    [account.label, 1],
+    [account.provider_kind, 1],
+  ]);
 }

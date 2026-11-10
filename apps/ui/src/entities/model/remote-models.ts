@@ -1,5 +1,6 @@
 import type { RemoteModelContract } from "@/api/generated/bindings";
 import { defaultModelName, vendorOf } from "@/entities/provider";
+import { rankMatches } from "./model-choice";
 
 export type ModelSort = "name" | "price" | "context";
 
@@ -63,16 +64,16 @@ export interface ModelQuery {
 }
 
 export function filterModels(models: readonly RemoteModelContract[], query: ModelQuery): RemoteModelContract[] {
-  const needle = query.text.trim().toLowerCase();
   const { filters } = query;
-  return models
-    .filter((model) => `${modelName(model)} ${model.id}`.toLowerCase().includes(needle))
+  const searching = query.text.trim() !== "";
+  const kept = rankMatches(models, query.text, (model) => [[modelName(model), 2], [model.id, 1]])
     .filter((model) => !query.onlyFree || isFree(model))
     .filter((model) => !filters.imagesOnly || acceptsImages(model))
-    .filter((model) => filters.vendors.length === 0 || filters.vendors.includes(vendorOf(model.id)?.vendor ?? ""))
-    .toSorted((a, b) => {
-      const difference = sortKey(a, filters.sort) - sortKey(b, filters.sort);
-      if (difference !== 0 && !Number.isNaN(difference)) return difference;
-      return modelName(a).localeCompare(modelName(b));
-    });
+    .filter((model) => filters.vendors.length === 0 || filters.vendors.includes(vendorOf(model.id)?.vendor ?? ""));
+  if (searching && filters.sort === "name") return kept;
+  return kept.toSorted((a, b) => {
+    const difference = sortKey(a, filters.sort) - sortKey(b, filters.sort);
+    if (difference !== 0 && !Number.isNaN(difference)) return difference;
+    return modelName(a).localeCompare(modelName(b));
+  });
 }

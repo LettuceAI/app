@@ -7,6 +7,7 @@ import type { RemoteModelContract, SdInstalledModel } from "@/api/generated/bind
 import { ModelPickerSheet } from "@/entities/model/ModelPickerSheet";
 import { ModelFilterSheet } from "@/entities/model/ModelFilterSheet";
 import { activeFilterCount, filterModels, noFilters, vendorNames, type ModelFilters } from "@/entities/model/remote-models";
+import { rankMatches } from "@/entities/model/model-choice";
 import { queryKeys } from "@/api/query-keys";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -37,7 +38,7 @@ export function ModelFilePicker({ open, accountId, kind, providerKind, providerN
   const entries = remoteKind ? (remote.data ?? []).map((entry) => ({ id: entry.id, name: entry.display_name, remote: entry, detail: entry.id }))
     : kind === "local" ? (local.data?.files ?? []).filter((entry) => !entry.is_mmproj && !entry.is_mtp && !entry.is_dflash).map((entry) => ({ id: entry.path, name: entry.filename, detail: `${entry.quantization} · ${fileSize(entry.size, i18n.language)}` }))
     : (images.data?.models ?? []).map((entry) => ({ id: entry.model_path, name: entry.display_name, installed: entry, detail: fileSize(entry.component_bytes_on_disk, i18n.language) }));
-  const shown = entries.filter((entry) => `${entry.name} ${entry.id}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  const shown = rankMatches<(typeof entries)[number]>(entries, search, (entry) => [[entry.name ?? entry.id, 2], [entry.id, 1]]);
   const pickFile = async () => {
     setPicking(true); setError(null);
     try {
