@@ -1268,13 +1268,12 @@
     },
     "group": {
       "members": "Členové",
-      "matrixCorner": "Vůči komu",
       "withOthers": "S ostatními",
       "towardOthers": "Jak {{name}} vidí ostatní",
+      "fromOthers": "{{name}} očima ostatních",
       "noStance": "Zatím žádný",
       "noCheckpoint": "{{name}}: zatím žádné kolo. Toto jsou počáteční hodnoty.",
       "notFollowing": "{{name}}: teď mimo rozhovor. Co zazní, se k této postavě nedostane do její další promluvy nebo nového označení.",
-      "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Dotčení: {{names}}",
       "you": "ty",
@@ -1309,7 +1308,9 @@
         "dismissal": "odbytí",
         "exclusion": "vyloučení",
         "threat": "výhrůžka"
-      }
+      },
+      "memory": "Paměť",
+      "away": "Teď mimo rozhovor"
     },
     "audience": {
       "title": "Kdo to slyšel",

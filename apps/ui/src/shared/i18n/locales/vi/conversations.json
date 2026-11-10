@@ -1175,13 +1175,12 @@
     },
     "group": {
       "members": "Thành viên",
-      "matrixCorner": "Đối với",
       "withOthers": "Với những người khác",
       "towardOthers": "Cách {{name}} nhìn những người khác",
+      "fromOthers": "Mọi người nhìn {{name}} thế nào",
       "noStance": "Chưa có",
       "noCheckpoint": "{{name}} chưa trải qua lượt nào. Đây là các giá trị ban đầu.",
       "notFollowing": "{{name}} hiện không theo dõi cuộc trò chuyện và sẽ không biết những gì được nói cho đến khi nói lại hoặc được đánh dấu quay lại.",
-      "stanceLabel": "{{from}} đối với {{to}}: {{band}}",
       "stanceTitle": "{{from}} đối với {{to}}",
       "effectSummary": "Bị ảnh hưởng: {{names}}",
       "you": "bạn",
@@ -1216,7 +1215,9 @@
         "dismissal": "gạt bỏ",
         "exclusion": "cô lập",
         "threat": "đe dọa"
-      }
+      },
+      "memory": "Bộ nhớ",
+      "away": "Hiện không theo dõi"
     },
     "audience": {
       "title": "Ai đã nghe điều này",

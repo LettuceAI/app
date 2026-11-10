@@ -1175,13 +1175,12 @@
     },
     "group": {
       "members": "成員",
-      "matrixCorner": "對象",
       "withOthers": "與其他人",
       "towardOthers": "{{name}} 如何看待其他人",
+      "fromOthers": "其他成員眼中的{{name}}",
       "noStance": "尚無",
       "noCheckpoint": "{{name}} 還沒有經歷過任何回合。這些是初始值。",
       "notFollowing": "{{name}}目前沒有在聽對話，在再次發言或被標記回來之前，不會知道說了什麼。",
-      "stanceLabel": "{{from}} 對 {{to}}：{{band}}",
       "stanceTitle": "{{from}} 對 {{to}}",
       "effectSummary": "受影響：{{names}}",
       "you": "你",
@@ -1216,7 +1215,9 @@
         "dismissal": "敷衍",
         "exclusion": "排擠",
         "threat": "威脅"
-      }
+      },
+      "memory": "記憶",
+      "away": "目前沒有在聽"
     },
     "audience": {
       "title": "誰聽到了這則",

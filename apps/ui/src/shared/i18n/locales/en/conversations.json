@@ -1206,13 +1206,12 @@
     },
     "group": {
       "members": "Members",
-      "matrixCorner": "Toward",
       "withOthers": "With the others",
       "towardOthers": "How {{name}} sees the others",
+      "fromOthers": "How the others see {{name}}",
       "noStance": "None yet",
       "noCheckpoint": "{{name}} has not been through a turn yet. These are the starting values.",
       "notFollowing": "{{name}} is not following the conversation right now and won't know what is said until speaking again or being marked back.",
-      "stanceLabel": "{{from}} toward {{to}}: {{band}}",
       "stanceTitle": "{{from}} toward {{to}}",
       "effectSummary": "Affected: {{names}}",
       "you": "you",
@@ -1247,7 +1246,9 @@
         "dismissal": "dismissal",
         "exclusion": "exclusion",
         "threat": "threat"
-      }
+      },
+      "memory": "Memory",
+      "away": "Not following right now"
     },
     "audience": {
       "title": "Who heard this",

@@ -1206,13 +1206,12 @@
     },
     "group": {
       "members": "Mga Kasapi",
-      "matrixCorner": "Papunta kay",
       "withOthers": "Sa iba pa",
       "towardOthers": "Paano nakikita ni {{name}} ang iba",
+      "fromOthers": "Paano nakikita ng iba si {{name}}",
       "noStance": "Wala pa",
       "noCheckpoint": "Wala pang naranasang turn si {{name}}. Ito ang mga panimulang halaga.",
       "notFollowing": "Hindi sumusubaybay si {{name}} sa usapan ngayon at hindi malalaman ang sinasabi hanggang magsalita ulit o mamarkahang bumalik.",
-      "stanceLabel": "{{from}} papunta kay {{to}}: {{band}}",
       "stanceTitle": "{{from}} papunta kay {{to}}",
       "effectSummary": "Apektado: {{names}}",
       "you": "ikaw",
@@ -1247,7 +1246,9 @@
         "dismissal": "pagbalewala",
         "exclusion": "pag-etsapuwera",
         "threat": "banta"
-      }
+      },
+      "memory": "Memorya",
+      "away": "Hindi sumusubaybay ngayon"
     },
     "audience": {
       "title": "Sino ang nakarinig nito",

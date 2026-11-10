@@ -1237,13 +1237,12 @@
     },
     "group": {
       "members": "Miembros",
-      "matrixCorner": "Hacia",
       "withOthers": "Con los demás",
       "towardOthers": "Cómo ve {{name}} a los demás",
+      "fromOthers": "Cómo ven los demás a {{name}}",
       "noStance": "Todavía ninguno",
       "noCheckpoint": "{{name}} aún no ha vivido ningún turno. Estos son los valores iniciales.",
       "notFollowing": "{{name}} no está siguiendo la conversación ahora y no sabrá lo que se dice hasta volver a hablar o hasta que se marque su regreso.",
-      "stanceLabel": "{{from}} hacia {{to}}: {{band}}",
       "stanceTitle": "{{from}} hacia {{to}}",
       "effectSummary": "Afectados: {{names}}",
       "you": "tú",
@@ -1278,7 +1277,9 @@
         "dismissal": "desaire",
         "exclusion": "exclusión",
         "threat": "amenaza"
-      }
+      },
+      "memory": "Memoria",
+      "away": "No sigue la conversación ahora"
     },
     "audience": {
       "title": "Quién escuchó esto",

@@ -1175,13 +1175,12 @@
     },
     "group": {
       "members": "Anggota",
-      "matrixCorner": "Terhadap",
       "withOthers": "Dengan yang lain",
       "towardOthers": "Cara {{name}} memandang yang lain",
+      "fromOthers": "Bagaimana yang lain melihat {{name}}",
       "noStance": "Belum ada",
       "noCheckpoint": "{{name}} belum menjalani giliran apa pun. Ini adalah nilai awal.",
       "notFollowing": "{{name}} sedang tidak mengikuti percakapan dan tidak akan tahu apa yang dikatakan sampai berbicara lagi atau ditandai kembali.",
-      "stanceLabel": "{{from}} terhadap {{to}}: {{band}}",
       "stanceTitle": "{{from}} terhadap {{to}}",
       "effectSummary": "Terpengaruh: {{names}}",
       "you": "kamu",
@@ -1216,7 +1215,9 @@
         "dismissal": "pengabaian",
         "exclusion": "pengucilan",
         "threat": "ancaman"
-      }
+      },
+      "memory": "Memori",
+      "away": "Sedang tidak mengikuti"
     },
     "audience": {
       "title": "Siapa yang mendengar ini",

@@ -1206,13 +1206,12 @@
     },
     "group": {
       "members": "Leden",
-      "matrixCorner": "Richting",
       "withOthers": "Met de anderen",
       "towardOthers": "Hoe {{name}} de anderen ziet",
+      "fromOthers": "Hoe de anderen {{name}} zien",
       "noStance": "Nog geen",
       "noCheckpoint": "{{name}} heeft nog geen beurt meegemaakt. Dit zijn de beginwaarden.",
       "notFollowing": "{{name}} volgt het gesprek nu niet en weet niet wat er gezegd wordt tot {{name}} weer spreekt of terug wordt gemarkeerd.",
-      "stanceLabel": "{{from}} richting {{to}}: {{band}}",
       "stanceTitle": "{{from}} richting {{to}}",
       "effectSummary": "Betrokken: {{names}}",
       "you": "jij",
@@ -1247,7 +1246,9 @@
         "dismissal": "afwimpelen",
         "exclusion": "buitensluiten",
         "threat": "dreiging"
-      }
+      },
+      "memory": "Geheugen",
+      "away": "Volgt nu niet"
     },
     "audience": {
       "title": "Wie dit hoorde",

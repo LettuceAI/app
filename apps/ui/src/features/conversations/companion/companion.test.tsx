@@ -441,14 +441,16 @@ const groupCalls = (on = true, souls: string[] = []): MockCallHandlers => ({
 });
 
 describe("group companion chat", () => {
-  it("shows a member's bond, the matrix of stances, a stance sheet and the Soul of the chosen member", async () => {
+  it("shows a member's bond, its stances both ways, a stance sheet and the Soul of the chosen member", async () => {
     const souls: string[] = [];
     await open({ path: "/chat/c1/companion", calls: groupCalls(true, souls) });
     expect((await screen.findByRole("meter", { name: "Closeness" })).getAttribute("aria-valuenow")).toBe("0.3");
     expect(screen.queryByRole("tab", { name: /^Memories/ })).toBeNull();
     expect(screen.queryByRole("tab", { name: /^Activity/ })).toBeNull();
     expect(screen.getByText("With the others")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Ada toward Bea: Intimate" }));
+    expect(screen.getByText("How Ada sees the others")).toBeTruthy();
+    expect(screen.getByText("How the others see Ada")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Bea.*Intimate/ }));
     const sheet = await screen.findByRole("dialog", { name: "Ada toward Bea" });
     expect(within(sheet).getByText("+80")).toBeTruthy();
     expect(within(sheet).getByText("+40")).toBeTruthy();
@@ -462,6 +464,12 @@ describe("group companion chat", () => {
     fireEvent.click(screen.getByRole("tab", { name: /^Soul/ }));
     await screen.findByText("Patient and curious.");
     expect(souls).toContain("cb");
+  });
+
+  it("opens the group memory page from the group companion page", async () => {
+    const app = await open({ path: "/chat/c1/companion", calls: groupCalls() });
+    fireEvent.click(await screen.findByRole("button", { name: "Memory" }));
+    await waitFor(() => expect(app.runtime.router.state.location.pathname).toBe("/chat/c1/memory"));
   });
 
   it("opens the companion page from the header only while companion mode is on", async () => {

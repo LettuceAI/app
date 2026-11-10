@@ -1206,13 +1206,12 @@
     },
     "group": {
       "members": "सदस्य",
-      "matrixCorner": "की ओर",
       "withOthers": "बाकी लोगों के साथ",
       "towardOthers": "{{name}} बाकी लोगों को कैसे देखता है",
+      "fromOthers": "बाकी लोग {{name}} को कैसे देखते हैं",
       "noStance": "अभी कुछ नहीं",
       "noCheckpoint": "{{name}} अभी किसी टर्न से नहीं गुज़रा है। ये शुरुआती मान हैं।",
       "notFollowing": "{{name}} अभी बातचीत में शामिल नहीं है और दोबारा बोलने या वापस चिह्नित होने तक कही गई बातें नहीं जानेगा।",
-      "stanceLabel": "{{from}} की {{to}} के प्रति: {{band}}",
       "stanceTitle": "{{from}} की {{to}} के प्रति",
       "effectSummary": "प्रभावित: {{names}}",
       "you": "आप",
@@ -1247,7 +1246,9 @@
         "dismissal": "अनदेखी",
         "exclusion": "बहिष्कार",
         "threat": "धमकी"
-      }
+      },
+      "memory": "मेमोरी",
+      "away": "अभी साथ नहीं"
     },
     "audience": {
       "title": "यह किसने सुना",

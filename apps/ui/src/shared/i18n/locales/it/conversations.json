@@ -1237,13 +1237,12 @@
     },
     "group": {
       "members": "Membri",
-      "matrixCorner": "Verso",
       "withOthers": "Con gli altri",
       "towardOthers": "Come {{name}} vede gli altri",
+      "fromOthers": "Come gli altri vedono {{name}}",
       "noStance": "Ancora nessuna",
       "noCheckpoint": "{{name}} non ha ancora vissuto nessun turno. Questi sono i valori iniziali.",
       "notFollowing": "{{name}} al momento non segue la conversazione e non saprà cosa viene detto finché non parla di nuovo o finché il ritorno non viene segnato.",
-      "stanceLabel": "{{from}} verso {{to}}: {{band}}",
       "stanceTitle": "{{from}} verso {{to}}",
       "effectSummary": "Coinvolti: {{names}}",
       "you": "tu",
@@ -1278,7 +1277,9 @@
         "dismissal": "noncuranza",
         "exclusion": "esclusione",
         "threat": "minaccia"
-      }
+      },
+      "memory": "Memoria",
+      "away": "Non segue al momento"
     },
     "audience": {
       "title": "Chi ha sentito questo",

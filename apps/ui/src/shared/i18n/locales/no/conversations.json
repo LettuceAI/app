@@ -1206,13 +1206,12 @@
     },
     "group": {
       "members": "Medlemmer",
-      "matrixCorner": "Mot",
       "withOthers": "Med de andre",
       "towardOthers": "Hvordan {{name}} ser de andre",
+      "fromOthers": "Hvordan de andre ser {{name}}",
       "noStance": "Ingen ennå",
       "noCheckpoint": "{{name}} har ikke vært gjennom noen tur ennå. Dette er startverdiene.",
       "notFollowing": "{{name}} følger ikke samtalen nå og vet ikke hva som blir sagt før hen snakker igjen eller blir markert tilbake.",
-      "stanceLabel": "{{from}} mot {{to}}: {{band}}",
       "stanceTitle": "{{from}} mot {{to}}",
       "effectSummary": "Berørt: {{names}}",
       "you": "du",
@@ -1247,7 +1246,9 @@
         "dismissal": "avfeiing",
         "exclusion": "utestengelse",
         "threat": "trussel"
-      }
+      },
+      "memory": "Minne",
+      "away": "Følger ikke med nå"
     },
     "audience": {
       "title": "Hvem hørte dette",

@@ -1206,13 +1206,12 @@
     },
     "group": {
       "members": "Tagok",
-      "matrixCorner": "Irányában",
       "withOthers": "A többiekkel",
       "towardOthers": "Hogyan látja {{name}} a többieket",
+      "fromOthers": "Hogyan látják a többiek: {{name}}",
       "noStance": "Még nincs",
       "noCheckpoint": "{{name}} még nem élt át egyetlen kört sem. Ezek a kezdőértékek.",
       "notFollowing": "{{name}} most nem követi a beszélgetést, és nem tudja, mi hangzik el, amíg újra meg nem szólal vagy vissza nem jelölik.",
-      "stanceLabel": "{{from}} {{to}} iránt: {{band}}",
       "stanceTitle": "{{from}} {{to}} iránt",
       "effectSummary": "Érintettek: {{names}}",
       "you": "te",
@@ -1247,7 +1246,9 @@
         "dismissal": "lerázás",
         "exclusion": "kirekesztés",
         "threat": "fenyegetés"
-      }
+      },
+      "memory": "Emlékezet",
+      "away": "Most nem követi"
     },
     "audience": {
       "title": "Ki hallotta ezt",

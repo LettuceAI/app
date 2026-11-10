@@ -1268,13 +1268,12 @@
     },
     "group": {
       "members": "Учасники",
-      "matrixCorner": "Щодо кого",
       "withOthers": "З рештою",
       "towardOthers": "Як {{name}} бачить решту",
+      "fromOthers": "{{name}} очима інших",
       "noStance": "Поки немає",
       "noCheckpoint": "{{name}}: ще жодного ходу. Це початкові значення.",
       "notFollowing": "{{name}}: зараз поза розмовою. Сказане не дійде до цього персонажа до наступної репліки або нової позначки.",
-      "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Зачеплені: {{names}}",
       "you": "ви",
@@ -1309,7 +1308,9 @@
         "dismissal": "нехтування",
         "exclusion": "виключення",
         "threat": "погроза"
-      }
+      },
+      "memory": "Пам'ять",
+      "away": "Зараз поза розмовою"
     },
     "audience": {
       "title": "Хто це чув",

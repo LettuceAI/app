@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Sprout } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Brain, Check, Sprout } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { AppBar, Avatar, Button, CrispStringsProvider, EmptyState, FilterBar, icon, ListGroup, ListRow, ListRowButton, LoadingState, relativeTime, Sheet, Skeleton, Tab, TabList, Table, Tabs, Text, useCompactLayout, type Column } from "@lettuceai/crisp";
+import { AppBar, Avatar, AvatarGroup, Button, CrispStringsProvider, EmptyState, FilterBar, icon, ListGroup, ListRow, ListRowButton, LoadingState, relativeTime, Sheet, Skeleton, Tab, TabList, Tabs, Text, useCompactLayout } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import type { ConversationView, GroupCompanionMemberView, GroupMemberRelationshipView } from "@/api/generated/bindings";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
@@ -28,6 +29,7 @@ function stanceOf(from: GroupCompanionMemberView, to: GroupCompanionMemberView):
 
 export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, onBack }: { api: ApiClient; conversationId: string; view: ConversationView; tab: GroupCompanionTab; onTab: (tab: GroupCompanionTab) => void; onBack: () => void }) {
   const { t, i18n } = useTranslation("conversations");
+  const navigate = useNavigate();
   const phone = useCompactLayout();
   const main = useRef<HTMLElement>(null);
   const state = useQuery(groupCompanionStateQuery(api, conversationId));
@@ -42,6 +44,14 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
   const avatarOf = (characterId: string) => view.participants.find((participant) => participant.character_id === characterId)?.avatar?.url ?? null;
   const band = (value: GroupMemberRelationshipView | null) => value === null ? t("companion.group.noStance") : t(`companion.axes.closeness.${closenessBand(value.closeness ?? 0)}`);
 
+  const stanceRow = (other: GroupCompanionMemberView, from: GroupCompanionMemberView, to: GroupCompanionMemberView) => {
+    const value = stanceOf(from, to);
+    const face = <Avatar src={avatarOf(other.character_id)} name={other.display_name} size="sm" />;
+    return value === null
+      ? <ListRow key={other.character_id} icon={face} title={other.display_name} description={band(null)} />
+      : <ListRowButton key={other.character_id} icon={face} title={other.display_name} description={band(value)} onClick={() => setStance({ from, to, value })} />;
+  };
+
   let body;
   if (state.isPending) body = <LoadingState />;
   else if (state.isError && state.data === undefined) body = <FailureState error={state.error} onRetry={() => void state.refetch()} />;
@@ -49,18 +59,6 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
   else if (tab === "soul") body = soul.isPending ? <LoadingState /> : soul.isError && soul.data === undefined ? <FailureState error={soul.error} onRetry={() => void soul.refetch()} /> : soul.data ? <SoulTab key={member.character_id} api={api} conversationId={conversationId} soul={soul.data} onSources={() => undefined} /> : null;
   else {
     const others = members.filter((entry) => entry.character_id !== member.character_id);
-    const columns: Column<GroupCompanionMemberView>[] = [
-      { key: "member", header: t("companion.group.matrixCorner"), cell: (row) => <span className="flex items-center gap-2"><Avatar src={avatarOf(row.character_id)} name={row.display_name} size="xs" /><span className="truncate">{row.display_name}</span></span> },
-      ...members.map((target): Column<GroupCompanionMemberView> => ({
-        key: target.character_id,
-        header: <span className="flex items-center gap-2"><Avatar src={avatarOf(target.character_id)} name={target.display_name} size="xs" /><span className="truncate">{target.display_name}</span></span>,
-        cell: (row) => {
-          if (row.character_id === target.character_id) return null;
-          const value = stanceOf(row, target);
-          return value === null ? <Text as="span" variant="caption" className="text-fg-4">{band(null)}</Text> : <Button size="sm" variant="ghost" aria-label={t("companion.group.stanceLabel", { from: row.display_name, to: target.display_name, band: band(value) })} onClick={() => setStance({ from: row, to: target, value })}>{band(value)}</Button>;
-        },
-      })),
-    ];
     body = <div className="space-y-7">
       <section>
         <SectionHead title={t("companion.bond")} right={member.relationship.last_interaction_at > 0 ? t("companion.lastTalked", { when: relativeTime(member.relationship.last_interaction_at, undefined, i18n.language).toLowerCase() }) : undefined} />
@@ -72,16 +70,12 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
         <SectionHead title={t("companion.engine")} />
         {emotion.isPending ? <Skeleton className="h-28 w-full" /> : emotion.isError && emotion.data === undefined ? <FailureState error={emotion.error} onRetry={() => void emotion.refetch()} size="sm" /> : emotion.data?.type !== "installed" ? <EmotionInstallNotice api={api} /> : <div className="grid gap-2 @2xl:grid-cols-2"><EmotionGroup group="expressed" values={member.expressed} /><EmotionGroup group="felt" values={member.felt} /></div>}
       </section>
-      {others.length > 0 && <section>
+      {others.length > 0 && <section className="space-y-4">
         <SectionHead title={t("companion.group.withOthers")} />
-        {phone
-          ? <ListGroup label={t("companion.group.towardOthers", { name: member.display_name })}>{others.map((target) => {
-            const value = stanceOf(member, target);
-            return value === null
-              ? <ListRow key={target.character_id} icon={<Avatar src={avatarOf(target.character_id)} name={target.display_name} size="sm" />} title={target.display_name} description={band(null)} />
-              : <ListRowButton key={target.character_id} icon={<Avatar src={avatarOf(target.character_id)} name={target.display_name} size="sm" />} title={target.display_name} description={band(value)} onClick={() => setStance({ from: member, to: target, value })} />;
-          })}</ListGroup>
-          : <Table columns={columns} rows={members} rowKey={(row) => row.character_id} />}
+        <div className="grid gap-4 @3xl:grid-cols-2">
+          <ListGroup label={t("companion.group.towardOthers", { name: member.display_name })}>{others.map((target) => stanceRow(target, member, target))}</ListGroup>
+          <ListGroup label={t("companion.group.fromOthers", { name: member.display_name })}>{others.map((source) => stanceRow(source, source, member))}</ListGroup>
+        </div>
       </section>}
     </div>;
   }
@@ -89,10 +83,15 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
   return <CrispStringsProvider locale={i18n.language} strings={{ sheetClose: t("crisp.sheetClose"), dialogClose: t("companion.crisp.close"), searchFieldClear: t("companion.crisp.clearSearch") }}>
     <div className="relative flex h-full flex-col overflow-clip">
       <main ref={main} className="min-h-0 flex-1 overflow-y-auto">
-        <AppBar title={<Text as="span" variant="title" className="min-w-0 truncate">{view.title}</Text>} {...(phone ? {} : { meta: t("companion.title") })} onBack={onBack} backLabel={t("companion.back")} scrollRef={main} filters={<Tabs value={tab} onChange={onTab}><TabList>{(["relationship", "soul"] as const).map((id) => <Tab key={id} value={id}>{t(phone && id === "relationship" ? "companion.tabs.bond" : `companion.tabs.${id}`)}</Tab>)}</TabList></Tabs>} />
+        <AppBar title={<span className="flex min-w-0 items-center gap-3"><AvatarGroup people={members.map((entry) => ({ name: entry.display_name, src: avatarOf(entry.character_id) }))} max={3} size={phone ? "xs" : "sm"} /><Text as="span" variant="title" className="min-w-0 truncate">{view.title}</Text></span>} actions={<Button size="sm" variant="ghost" leading={<Brain size={icon.sm} />} onClick={() => void navigate({ to: "/chat/$conversationId/memory", params: { conversationId } })}>{t("companion.group.memory")}</Button>} {...(phone ? {} : { meta: t("companion.title") })} onBack={onBack} backLabel={t("companion.back")} scrollRef={main} filters={<Tabs value={tab} onChange={onTab}><TabList>{(["relationship", "soul"] as const).map((id) => <Tab key={id} value={id}>{t(phone && id === "relationship" ? "companion.tabs.bond" : `companion.tabs.${id}`)}</Tab>)}</TabList></Tabs>} />
         <div className="@container space-y-6 px-4 pb-10 pt-4 @xl:px-8">
-          {members.length > 1 && <FilterBar aria-label={t("companion.group.members")} value={member?.character_id ?? ""} onChange={setPicked} options={members.map((entry) => ({ value: entry.character_id, label: entry.display_name, icon: <Avatar src={avatarOf(entry.character_id)} name={entry.display_name} size="xs" /> }))} />}
-          {body}
+          {members.length > 1 && phone && <FilterBar aria-label={t("companion.group.members")} value={member?.character_id ?? ""} onChange={setPicked} options={members.map((entry) => ({ value: entry.character_id, label: entry.display_name, icon: <Avatar src={avatarOf(entry.character_id)} name={entry.display_name} size="xs" /> }))} />}
+          {members.length > 1 && !phone ? <div className="grid gap-6 @4xl:grid-cols-[17rem_minmax(0,1fr)]">
+            <aside className="@4xl:sticky @4xl:top-24 @4xl:self-start">
+              <ListGroup label={t("companion.group.members")} role="radiogroup">{members.map((entry) => <ListRowButton key={entry.character_id} role="radio" aria-checked={entry.character_id === member?.character_id} icon={<Avatar src={avatarOf(entry.character_id)} name={entry.display_name} size="sm" />} title={entry.display_name} description={entry.following ? undefined : t("companion.group.away")} chevron={false} trailing={entry.character_id === member?.character_id ? <Check size={icon.md} /> : undefined} onClick={() => setPicked(entry.character_id)} />)}</ListGroup>
+            </aside>
+            <div className="min-w-0">{body}</div>
+          </div> : body}
         </div>
       </main>
     </div>

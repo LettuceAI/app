@@ -1268,13 +1268,12 @@
     },
     "group": {
       "members": "Członkowie",
-      "matrixCorner": "Wobec kogo",
       "withOthers": "Z pozostałymi",
       "towardOthers": "Jak {{name}} widzi pozostałych",
+      "fromOthers": "{{name}} w oczach pozostałych",
       "noStance": "Jeszcze brak",
       "noCheckpoint": "{{name}}: jeszcze żadnej tury. To wartości początkowe.",
       "notFollowing": "{{name}}: teraz poza rozmową. To, co padnie, nie dotrze do tej postaci przed jej kolejną wypowiedzią lub ponownym oznaczeniem.",
-      "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Dotyczy: {{names}}",
       "you": "ty",
@@ -1309,7 +1308,9 @@
         "dismissal": "zbycie",
         "exclusion": "wykluczenie",
         "threat": "groźba"
-      }
+      },
+      "memory": "Pamięć",
+      "away": "Teraz poza rozmową"
     },
     "audience": {
       "title": "Kto to słyszał",

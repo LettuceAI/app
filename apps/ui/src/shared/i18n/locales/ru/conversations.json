@@ -1268,13 +1268,12 @@
     },
     "group": {
       "members": "Участники",
-      "matrixCorner": "К кому",
       "withOthers": "С остальными",
       "towardOthers": "Как {{name}} видит остальных",
+      "fromOthers": "{{name}} глазами остальных",
       "noStance": "Пока нет",
       "noCheckpoint": "{{name}}: ещё ни одного хода. Это начальные значения.",
       "notFollowing": "{{name}}: сейчас вне разговора. Сказанное не дойдёт до этого персонажа до следующей реплики или новой отметки.",
-      "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Затронуты: {{names}}",
       "you": "вы",
@@ -1309,7 +1308,9 @@
         "dismissal": "пренебрежение",
         "exclusion": "исключение",
         "threat": "угроза"
-      }
+      },
+      "memory": "Память",
+      "away": "Сейчас вне разговора"
     },
     "audience": {
       "title": "Кто это слышал",

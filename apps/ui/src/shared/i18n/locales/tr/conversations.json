@@ -1206,13 +1206,12 @@
     },
     "group": {
       "members": "Üyeler",
-      "matrixCorner": "Kime karşı",
       "withOthers": "Diğerleriyle",
       "towardOthers": "{{name}} diğerlerini nasıl görüyor",
+      "fromOthers": "Diğerleri {{name}} hakkında ne düşünüyor",
       "noStance": "Henüz yok",
       "noCheckpoint": "{{name}} henüz hiçbir turdan geçmedi. Bunlar başlangıç değerleri.",
       "notFollowing": "{{name}} şu an konuşmayı takip etmiyor; tekrar konuşana ya da geri işaretlenene kadar söylenenleri bilmeyecek.",
-      "stanceLabel": "{{from}} → {{to}}: {{band}}",
       "stanceTitle": "{{from}} → {{to}}",
       "effectSummary": "Etkilenenler: {{names}}",
       "you": "sen",
@@ -1247,7 +1246,9 @@
         "dismissal": "geçiştirme",
         "exclusion": "dışlama",
         "threat": "tehdit"
-      }
+      },
+      "memory": "Hafıza",
+      "away": "Şu an takip etmiyor"
     },
     "audience": {
       "title": "Bunu kim duydu",

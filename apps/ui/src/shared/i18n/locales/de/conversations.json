@@ -1206,13 +1206,12 @@
     },
     "group": {
       "members": "Mitglieder",
-      "matrixCorner": "Gegenüber",
       "withOthers": "Mit den anderen",
       "towardOthers": "Wie {{name}} die anderen sieht",
+      "fromOthers": "Wie die anderen {{name}} sehen",
       "noStance": "Noch keine",
       "noCheckpoint": "{{name}} hat noch keine Runde erlebt. Das sind die Startwerte.",
       "notFollowing": "{{name}} folgt dem Gespräch gerade nicht und erfährt nichts vom Gesagten, bis {{name}} wieder spricht oder zurück markiert wird.",
-      "stanceLabel": "{{from}} gegenüber {{to}}: {{band}}",
       "stanceTitle": "{{from}} gegenüber {{to}}",
       "effectSummary": "Betroffen: {{names}}",
       "you": "du",
@@ -1247,7 +1246,9 @@
         "dismissal": "Abweisung",
         "exclusion": "Ausgrenzung",
         "threat": "Drohung"
-      }
+      },
+      "memory": "Gedächtnis",
+      "away": "Folgt gerade nicht"
     },
     "audience": {
       "title": "Wer das gehört hat",
