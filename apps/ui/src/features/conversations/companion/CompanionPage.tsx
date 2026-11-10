@@ -123,7 +123,7 @@ function CompanionScreen({ conversationId }: { conversationId: string }) {
     setSummarySession((value) => value + 1);
     setSummaryOpen(true);
   };
-  if (view?.kind === "group") return <GroupCompanionScreen api={api} conversationId={conversationId} view={view} tab={tab === "soul" ? "soul" : "relationship"} onTab={changeTab} onBack={openChat} />;
+  if (view?.kind === "group") return <GroupCompanionScreen api={api} conversationId={conversationId} view={view} tab={tab} onTab={changeTab} onBack={openChat} />;
   const initialMessages = view?.messages;
   const latestReply = initialMessages?.items.findLast((message) => message.role === "assistant");
   const firstMessageAt = initialMessages?.next_cursor === null ? initialMessages.items.find((message) => message.role !== "system")?.created_at ?? null : null;

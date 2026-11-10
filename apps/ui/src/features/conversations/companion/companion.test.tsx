@@ -445,8 +445,6 @@ describe("group companion chat", () => {
     const souls: string[] = [];
     await open({ path: "/chat/c1/companion", calls: groupCalls(true, souls) });
     expect((await screen.findByRole("meter", { name: "Closeness" })).getAttribute("aria-valuenow")).toBe("0.3");
-    expect(screen.queryByRole("tab", { name: /^Memories/ })).toBeNull();
-    expect(screen.queryByRole("tab", { name: /^Activity/ })).toBeNull();
     expect(screen.getByText("With the others")).toBeTruthy();
     expect(screen.getByText("How Ada sees the others")).toBeTruthy();
     expect(screen.getByText("How the others see Ada")).toBeTruthy();
@@ -466,10 +464,15 @@ describe("group companion chat", () => {
     expect(souls).toContain("cb");
   });
 
-  it("opens the group memory page from the group companion page", async () => {
-    const app = await open({ path: "/chat/c1/companion", calls: groupCalls() });
-    fireEvent.click(await screen.findByRole("button", { name: "Memory" }));
-    await waitFor(() => expect(app.runtime.router.state.location.pathname).toBe("/chat/c1/memory"));
+  it("shows the shared group memory and a member's own memory in the companion page tabs", async () => {
+    const asked: Record<string, unknown>[] = [];
+    await open({ path: "/chat/c1/companion?tab=memories", calls: { ...groupCalls(), groupCompanionMemoryGet: (request) => { asked.push(request); return ok({ ...memory(), items: [item("p1", { text: "Ada thinks Bea is hiding something." })], revision: 3 }); } } });
+    expect(await screen.findByRole("tab", { name: /^Memories/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /^Activity/ })).toBeTruthy();
+    expect(await screen.findByRole("radio", { name: /^Shared/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /^Ada/ }));
+    expect(await screen.findByText("Ada thinks Bea is hiding something.")).toBeTruthy();
+    expect(asked[0]).toMatchObject({ conversation_id: "c1", character_id: "ca" });
   });
 
   it("opens the companion page from the header only while companion mode is on", async () => {
