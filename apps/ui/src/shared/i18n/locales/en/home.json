@@ -96,7 +96,7 @@
   "discover": {
     "title": "Discover",
     "soonTitle": "Discover is on its way",
-    "soonBody": "A place to find and share characters made by the community. We're building it on our own servers, with moderation from the first day.",
+    "soonBody": "A place to find and share characters made by the community.",
     "create": "Create a character",
     "discord": "Follow along on Discord"
   }

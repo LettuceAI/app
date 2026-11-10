@@ -96,7 +96,7 @@
   "discover": {
     "title": "Descubrir",
     "soonTitle": "Descubrir está en camino",
-    "soonBody": "Un lugar para encontrar y compartir personajes creados por la comunidad. Lo estamos construyendo en nuestros propios servidores, con moderación desde el primer día.",
+    "soonBody": "Un lugar para encontrar y compartir personajes creados por la comunidad.",
     "create": "Crear un personaje",
     "discord": "Sigue las novedades en Discord"
   }

@@ -96,7 +96,7 @@
   "discover": {
     "title": "发现",
     "soonTitle": "“发现”即将上线",
-    "soonBody": "一个查找和分享社区角色的地方。我们正在自己的服务器上搭建它，从第一天起就会有内容审核。",
+    "soonBody": "一个查找和分享社区角色的地方。",
     "create": "创建角色",
     "discord": "在 Discord 关注进展"
   }

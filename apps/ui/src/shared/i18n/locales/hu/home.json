@@ -96,7 +96,7 @@
   "discover": {
     "title": "Felfedezés",
     "soonTitle": "A Felfedezés hamarosan érkezik",
-    "soonBody": "Hely, ahol a közösség által készített karaktereket találhatsz és oszthatsz meg. A saját szervereinken építjük, a moderálással az első naptól.",
+    "soonBody": "Hely, ahol a közösség által készített karaktereket találhatsz és oszthatsz meg.",
     "create": "Karakter létrehozása",
     "discord": "Kövess minket Discordon"
   }
