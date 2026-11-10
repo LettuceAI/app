@@ -242,7 +242,6 @@
     "mtp": "ドラフト採用率"
   },
   "futureGroup": "グループチャット用に保存されました。新しいインターフェースは準備中です。",
-  "futureWidgets": "チャットウィジェット領域用に保存されました。新しいインターフェースは準備中です。",
   "metricInput": "入力{{value}}",
   "metricOutput": "出力{{value}}",
   "metricTotal": "合計{{value}}",
@@ -280,5 +279,6 @@
   "barSpacing": "顔の間隔",
   "barHint": "ディレクターヒント",
   "barHintTop": "上",
-  "barHintBottom": "下"
+  "barHintBottom": "下",
+  "widgetsBesideTheChatHint": "チャット列の横のスペースを使います。ウィジェットはチャットから編集できます。"
 }

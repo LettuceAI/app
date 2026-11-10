@@ -242,7 +242,6 @@
     "mtp": "Skuteczność szkicu"
   },
   "futureGroup": "Zapisane dla czatów grupowych. Ich nowy interfejs jest wciąż budowany.",
-  "futureWidgets": "Zapisane dla obszaru widgetów czatu. Ich nowy interfejs jest wciąż budowany.",
   "metricInput": "{{value}} wej.",
   "metricOutput": "{{value}} wyj.",
   "metricTotal": "{{value}} razem",
@@ -283,5 +282,6 @@
   "barSpacing": "Odstępy twarzy",
   "barHint": "Wskazówka reżysera",
   "barHintTop": "Nad",
-  "barHintBottom": "Pod"
+  "barHintBottom": "Pod",
+  "widgetsBesideTheChatHint": "Wykorzystuje miejsce obok kolumny czatu. Widgety edytujesz z poziomu czatu."
 }

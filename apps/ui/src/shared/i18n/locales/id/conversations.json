@@ -1232,5 +1232,280 @@
       "hearOnward": "Mengikuti lagi dari sini",
       "hint": "Model memori memperbaikinya saat membaca. Perubahanmu selalu diutamakan."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Pembatas",
+        "desc": "Garis atau spasi antar widget."
+      },
+      "box": {
+        "label": "Kotak",
+        "desc": "Kelompokkan widget dengan judul dan warna opsional."
+      },
+      "character_info": {
+        "label": "Info karakter",
+        "desc": "Avatar, nama, dan deskripsi karakter saat ini."
+      },
+      "persona_info": {
+        "label": "Info persona",
+        "desc": "Avatar, nama, dan deskripsi persona saat ini."
+      },
+      "scratch_pad": {
+        "label": "Catatan cepat",
+        "desc": "Catatan markdown yang menyertai obrolan."
+      },
+      "image": {
+        "label": "Gambar",
+        "desc": "Avatar karakter atau persona, atau berkas gambar."
+      },
+      "selector": {
+        "label": "Pemilih",
+        "desc": "Membuka pemilih persona, model, atau catatan penulis."
+      },
+      "button": {
+        "label": "Tombol",
+        "desc": "Picu aksi seperti hasilkan ulang atau tukar tempat."
+      },
+      "stat_tracker": {
+        "label": "Pelacak statistik",
+        "desc": "Angka yang dapat diedit seperti kasih sayang, HP, atau emas."
+      },
+      "quick_snippets": {
+        "label": "Cuplikan cepat",
+        "desc": "Tombol yang menyisipkan teks preset ke penyusun."
+      },
+      "dice": {
+        "label": "Pelempar dadu",
+        "desc": "Lempar dadu dengan notasi kustom."
+      },
+      "memory": {
+        "label": "Memori",
+        "desc": "Apa yang diingat obrolan ini."
+      },
+      "companion_state": {
+        "label": "Status companion",
+        "desc": "Hubungan dan suasana hati untuk karakter companion."
+      },
+      "session_info": {
+        "label": "Info sesi",
+        "desc": "Jumlah pesan, kenangan, dan adegan saat ini."
+      },
+      "author_note": {
+        "label": "Catatan penulis",
+        "desc": "Edit catatan penulis obrolan ini secara inline."
+      },
+      "time": {
+        "label": "Waktu",
+        "desc": "Tampilkan dan atur waktu yang dilihat companion."
+      }
+    },
+    "picker": {
+      "title": "Tambah widget"
+    },
+    "config": {
+      "fields": {
+        "title": "Judul",
+        "titleOptional": "Judul (opsional)",
+        "descriptionOptional": "Deskripsi (opsional)",
+        "content": "Konten"
+      },
+      "design": {
+        "label": "Desain",
+        "default": "Default",
+        "minimal": "Minimal",
+        "solid": "Solid",
+        "outline": "Garis"
+      },
+      "memory": {
+        "maxEntries": "Maks entri ditampilkan",
+        "maxEntriesHint": "Memori terbaru untuk ditampilkan."
+      },
+      "characterInfo": {
+        "character": "Karakter",
+        "characterHint": "Anggota grup mana yang ditampilkan kartu ini.",
+        "firstMember": "Anggota pertama (default)"
+      },
+      "authorNote": {
+        "descriptionHint": "Catatan itu sendiri diedit secara inline dari widget dan disimpan ke obrolan ini."
+      },
+      "statTracker": {
+        "stats": "Statistik",
+        "labelPlaceholder": "Label",
+        "removeStat": "Hapus statistik",
+        "min": "Min",
+        "start": "Awal",
+        "max": "Maks",
+        "defaultStat": "Statistik",
+        "addStat": "Tambah statistik"
+      },
+      "quickSnippets": {
+        "snippets": "Cuplikan",
+        "labelPlaceholder": "Label",
+        "textPlaceholder": "Teks yang disisipkan",
+        "removeSnippet": "Hapus cuplikan",
+        "newSnippet": "Baru",
+        "addSnippet": "Tambah cuplikan"
+      },
+      "dice": {
+        "notation": "Notasi",
+        "notationHint": "mis. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Gaya",
+        "line": "Garis",
+        "space": "Spasi"
+      },
+      "box": {
+        "variant": "Varian",
+        "default": "Default",
+        "subtle": "Halus",
+        "info": "Info",
+        "warning": "Peringatan",
+        "success": "Berhasil",
+        "danger": "Bahaya"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown didukung."
+      },
+      "image": {
+        "source": "Sumber",
+        "character": "Karakter",
+        "persona": "Persona",
+        "upload": "Unggah",
+        "imageSelected": "Gambar dipilih.",
+        "noImageSelected": "Belum ada gambar dipilih.",
+        "replaceImage": "Ganti gambar",
+        "chooseFile": "Pilih file",
+        "shape": "Bentuk",
+        "auto": "Otomatis",
+        "square": "Persegi",
+        "wide": "Lebar",
+        "circle": "Lingkaran"
+      },
+      "selector": {
+        "selects": "Memilih",
+        "persona": "Persona",
+        "model": "Model",
+        "authorNote": "Catatan penulis"
+      },
+      "button": {
+        "action": "Aksi",
+        "regenerate": "Hasilkan ulang",
+        "continue": "Lanjutkan",
+        "swapPlaces": "Tukar tempat",
+        "stop": "Hentikan",
+        "newSession": "Sesi baru",
+        "history": "Riwayat",
+        "memories": "Memori",
+        "search": "Cari"
+      },
+      "save": "Simpan",
+      "cancel": "Batal",
+      "time": {
+        "hourFormat": "Format jam",
+        "h12": "12 jam",
+        "h24": "24 jam",
+        "showSeconds": "Tampilkan detik",
+        "showDate": "Tampilkan tanggal"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Hasilkan ulang balasan terakhir",
+      "swapPlaces": "Tukar tempat",
+      "newSession": "Sesi baru",
+      "continue": "Lanjutkan",
+      "stopGenerating": "Hentikan pembuatan",
+      "viewChatHistory": "Lihat riwayat obrolan",
+      "memories": "Memori",
+      "searchChat": "Cari obrolan",
+      "voiceAutoplay": "Putar otomatis suara",
+      "directOnly": "Hanya di obrolan satu lawan satu",
+      "noReply": "Belum ada balasan",
+      "nothingToStop": "Tidak ada yang sedang dibuat",
+      "waiting": "Tunggu balasan selesai"
+    },
+    "characterInfo": {
+      "noCharacter": "Tidak ada karakter dimuat."
+    },
+    "personaInfo": {
+      "noPersona": "Tidak ada persona dipilih."
+    },
+    "companionState": {
+      "companionOnly": "Hanya tersedia untuk karakter companion.",
+      "noData": "Belum ada data hubungan."
+    },
+    "image": {
+      "alt": "Gambar widget",
+      "noImage": "Gambar tidak ditemukan"
+    },
+    "memory": {
+      "all": "Semua",
+      "empty": "Belum ada yang diingat.",
+      "manage": "Kelola",
+      "more": "+{{count}} lagi"
+    },
+    "quickSnippets": {
+      "empty": "Belum ada cuplikan."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Model",
+      "authorNote": "Catatan penulis",
+      "perMember": "Diatur per anggota di pengaturan obrolan"
+    },
+    "sessionInfo": {
+      "messages": "Pesan",
+      "scene": "Adegan",
+      "memories": "Memori",
+      "none": "Tidak Ada"
+    },
+    "statTracker": {
+      "empty": "Belum ada statistik.",
+      "decrease": "Kurangi {{label}}",
+      "increase": "Tambah {{label}}"
+    },
+    "list": {
+      "addWidget": "Tambah widget",
+      "editWidgets": "Edit widget",
+      "revert": "Kembalikan",
+      "add": "Tambah",
+      "done": "Selesai"
+    },
+    "empty": {
+      "editingTitle": "Belum ada widget di sini.",
+      "addWidget": "Tambah widget",
+      "title": "Tidak ada widget di sini."
+    },
+    "wrapper": {
+      "moveRight": "Pindah ke sisi kanan",
+      "moveLeft": "Pindah ke sisi kiri",
+      "editWidget": "Edit widget",
+      "deleteWidget": "Hapus widget"
+    },
+    "area": {
+      "left": "area widget kiri",
+      "right": "area widget kanan"
+    },
+    "presets": {
+      "actions": {
+        "label": "Aksi",
+        "desc": "Buat ulang, lanjutkan, dan obrolan baru dalam satu kotak."
+      }
+    },
+    "dice": {
+      "natural": "Natural {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Tulis catatan",
+      "onlyYou": "Hanya Anda"
+    },
+    "authorNote": {
+      "placeholder": "Tulis catatan penulis",
+      "everyReply": "Setiap balasan"
+    },
+    "time": {
+      "awarenessOff": "Aktifkan kesadaran waktu di pengaturan obrolan untuk mengatur jam."
+    }
   }
 }

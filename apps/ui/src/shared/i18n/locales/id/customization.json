@@ -242,7 +242,6 @@
     "mtp": "Penerimaan draf"
   },
   "futureGroup": "Disimpan untuk obrolan grup. Antarmuka barunya masih dibangun.",
-  "futureWidgets": "Disimpan untuk area widget obrolan. Antarmuka barunya masih dibangun.",
   "metricInput": "{{value}} masuk",
   "metricOutput": "{{value}} keluar",
   "metricTotal": "{{value}} total",
@@ -280,5 +279,6 @@
   "barSpacing": "Jarak wajah",
   "barHint": "Petunjuk sutradara",
   "barHintTop": "Atas",
-  "barHintBottom": "Bawah"
+  "barHintBottom": "Bawah",
+  "widgetsBesideTheChatHint": "Memakai ruang di samping kolom obrolan. Edit widget dari obrolan."
 }

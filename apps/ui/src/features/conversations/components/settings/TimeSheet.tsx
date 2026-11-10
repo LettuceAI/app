@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { datePickerStrings } from "./date-picker-strings";
 import { Button, CrispStringsProvider, DatePicker, Field, ListGroup, ListRow, Segmented, Sheet } from "@lettuceai/crisp";
 import type { TimeMode, TimeView } from "@/api/generated/bindings";
 import type { PanelCtx } from "./context";
@@ -14,7 +15,7 @@ export function TimeSheet({ ctx, value }: { ctx: PanelCtx; value: TimeView }) {
     const ok = await ctx.save({ time: reset ? { type: "reset" } : { type: "set", mode, anchor_at: mode === "live" ? null : anchor?.getTime() ?? null } });
     if (ok) ctx.closeSheet();
   };
-  return <CrispStringsProvider locale={i18n.language} strings={{ datePickerPreviousMonth: t("settings.time.previousMonth"), datePickerNextMonth: t("settings.time.nextMonth"), datePickerChooseMonth: t("settings.time.chooseMonth"), datePickerPreviousYear: t("settings.time.previousYear"), datePickerNextYear: t("settings.time.nextYear"), datePickerYear: t("settings.time.year"), datePickerTime: t("settings.time.time") }}><Sheet open={ctx.activeSheet === "time"} onClose={ctx.closeSheet} placement="bottom" size="md" title={t("settings.time.title")} footer={
+  return <CrispStringsProvider locale={i18n.language} strings={datePickerStrings(t)}><Sheet open={ctx.activeSheet === "time"} onClose={ctx.closeSheet} placement="bottom" size="md" title={t("settings.time.title")} footer={
     <div className="flex items-center gap-2">
       {value.mode !== "live" && <Button variant="ghost" disabled={ctx.busy} onClick={() => void apply(true)}>{t("settings.time.reset")}</Button>}
       <span className="flex-1" />

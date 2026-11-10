@@ -1232,5 +1232,280 @@
       "hearOnward": "從這裡起重新在聽",
       "hint": "記憶模型會在閱讀時修正這一點。你的修改永遠優先。"
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "分隔線 (Divider)",
+        "desc": "元件之間的線條或空格。"
+      },
+      "box": {
+        "label": "方框 (Box)",
+        "desc": "使用可選的標題和顏色對元件進行分組。"
+      },
+      "character_info": {
+        "label": "角色資訊 (Character info)",
+        "desc": "目前角色的頭像、名稱和描述。"
+      },
+      "persona_info": {
+        "label": "人格資訊 (Persona info)",
+        "desc": "目前人格的頭像、名稱和描述。"
+      },
+      "scratch_pad": {
+        "label": "便箋 (Scratch pad)",
+        "desc": "隨對話同步的 Markdown 筆記。"
+      },
+      "image": {
+        "label": "圖片 (Image)",
+        "desc": "角色或角色設定的頭像，或一個圖片檔案。"
+      },
+      "selector": {
+        "label": "選擇器 (Selector)",
+        "desc": "開啟角色設定、模型或作者備註的選擇器。"
+      },
+      "button": {
+        "label": "按鈕 (Button)",
+        "desc": "觸發動作，例如重新生成或交換位置。"
+      },
+      "stat_tracker": {
+        "label": "數值追蹤器 (Stat tracker)",
+        "desc": "可編輯的數字，例如好感度、HP 或金幣。"
+      },
+      "quick_snippets": {
+        "label": "快速片段 (Quick snippets)",
+        "desc": "將預設文本插入輸入框的按鈕。"
+      },
+      "dice": {
+        "label": "擲骰子 (Dice roller)",
+        "desc": "使用自定義表示法擲骰子。"
+      },
+      "memory": {
+        "label": "記憶 (Memories)",
+        "desc": "此對話所記得的內容。"
+      },
+      "companion_state": {
+        "label": "同伴狀態 (Companion state)",
+        "desc": "同伴角色的關係和心情。"
+      },
+      "session_info": {
+        "label": "對話階段資訊 (Session info)",
+        "desc": "訊息數量、記憶和目前場景。"
+      },
+      "author_note": {
+        "label": "作者註記 (Author note)",
+        "desc": "直接在對話中編輯此對話的作者註記。"
+      },
+      "time": {
+        "label": "時間 (Time)",
+        "desc": "顯示並設定同伴所見的時間。"
+      }
+    },
+    "picker": {
+      "title": "添加元件 (Add widget)"
+    },
+    "config": {
+      "fields": {
+        "title": "標題",
+        "titleOptional": "標題 (可選)",
+        "descriptionOptional": "描述 (可選)",
+        "content": "內容"
+      },
+      "design": {
+        "label": "設計 (Design)",
+        "default": "預設 (Default)",
+        "minimal": "極簡 (Minimal)",
+        "solid": "實色 (Solid)",
+        "outline": "輪廓 (Outline)"
+      },
+      "memory": {
+        "maxEntries": "最大顯示條數",
+        "maxEntriesHint": "要顯示的最近期記憶。"
+      },
+      "characterInfo": {
+        "character": "角色 (Character)",
+        "characterHint": "此卡片顯示哪個群組成員。",
+        "firstMember": "第一個成員 (預設)"
+      },
+      "authorNote": {
+        "descriptionHint": "註記本身直接從元件中編輯並儲存到此對話中。"
+      },
+      "statTracker": {
+        "stats": "數值 (Stats)",
+        "labelPlaceholder": "標籤 (Label)",
+        "removeStat": "移除數值",
+        "min": "最小值 (Min)",
+        "start": "起始值 (Start)",
+        "max": "最大值 (Max)",
+        "defaultStat": "數值 (Stat)",
+        "addStat": "添加數值"
+      },
+      "quickSnippets": {
+        "snippets": "片段 (Snippets)",
+        "labelPlaceholder": "標籤 (Label)",
+        "textPlaceholder": "插入的文本",
+        "removeSnippet": "移除片段",
+        "newSnippet": "新建 (New)",
+        "addSnippet": "添加片段"
+      },
+      "dice": {
+        "notation": "表示法 (Notation)",
+        "notationHint": "例如 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "樣式 (Style)",
+        "line": "線條 (Line)",
+        "space": "空格 (Space)"
+      },
+      "box": {
+        "variant": "變體 (Variant)",
+        "default": "預設 (Default)",
+        "subtle": "淡色 (Subtle)",
+        "info": "資訊 (Info)",
+        "warning": "警告 (Warning)",
+        "success": "成功 (Success)",
+        "danger": "危險 (Danger)"
+      },
+      "scratchPad": {
+        "markdownHint": "支援 Markdown。"
+      },
+      "image": {
+        "source": "來源 (Source)",
+        "character": "角色 (Character)",
+        "persona": "人格 (Persona)",
+        "upload": "上傳 (Upload)",
+        "imageSelected": "已選擇圖片。",
+        "noImageSelected": "尚未選擇圖片。",
+        "replaceImage": "替換圖片",
+        "chooseFile": "選擇檔案",
+        "shape": "形狀",
+        "auto": "自動",
+        "square": "正方形",
+        "wide": "寬螢幕",
+        "circle": "圓形"
+      },
+      "selector": {
+        "selects": "選擇",
+        "persona": "人格 (Persona)",
+        "model": "模型",
+        "authorNote": "作者註記"
+      },
+      "button": {
+        "action": "動作",
+        "regenerate": "重新生成",
+        "continue": "繼續",
+        "swapPlaces": "交換位置",
+        "stop": "停止",
+        "newSession": "新會話",
+        "history": "歷史記錄",
+        "memories": "記憶",
+        "search": "搜尋"
+      },
+      "save": "儲存",
+      "cancel": "取消",
+      "time": {
+        "hourFormat": "時間格式",
+        "h12": "12 小時制",
+        "h24": "24 小時制",
+        "showSeconds": "顯示秒",
+        "showDate": "顯示日期"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "重新生成最後一則回覆",
+      "swapPlaces": "交換位置",
+      "newSession": "新會話",
+      "continue": "繼續",
+      "stopGenerating": "停止生成",
+      "viewChatHistory": "查看聊天記錄",
+      "memories": "記憶",
+      "searchChat": "搜尋聊天內容",
+      "voiceAutoplay": "語音自動播放",
+      "directOnly": "僅限一對一對話",
+      "noReply": "還沒有回覆",
+      "nothingToStop": "沒有正在生成的內容",
+      "waiting": "請等待回覆完成"
+    },
+    "characterInfo": {
+      "noCharacter": "未載入角色。"
+    },
+    "personaInfo": {
+      "noPersona": "未選擇人格。"
+    },
+    "companionState": {
+      "companionOnly": "僅適用於同伴角色。",
+      "noData": "尚無關係數據。"
+    },
+    "image": {
+      "alt": "元件圖片",
+      "noImage": "找不到圖片"
+    },
+    "memory": {
+      "all": "全部",
+      "empty": "尚未記錄任何記憶。",
+      "manage": "管理",
+      "more": "+{{count}} 個更多"
+    },
+    "quickSnippets": {
+      "empty": "尚無片段。"
+    },
+    "selector": {
+      "persona": "人格 (Persona)",
+      "model": "模型",
+      "authorNote": "作者註記",
+      "perMember": "在對話設定中依成員設定"
+    },
+    "sessionInfo": {
+      "messages": "訊息數量",
+      "scene": "場景",
+      "memories": "記憶",
+      "none": "無"
+    },
+    "statTracker": {
+      "empty": "尚無統計數據。",
+      "decrease": "減少 {{label}}",
+      "increase": "增加 {{label}}"
+    },
+    "list": {
+      "addWidget": "新增元件",
+      "editWidgets": "編輯元件",
+      "revert": "還原",
+      "add": "新增",
+      "done": "完成"
+    },
+    "empty": {
+      "editingTitle": "這裡還沒有元件。",
+      "addWidget": "新增元件",
+      "title": "這裡沒有元件。"
+    },
+    "wrapper": {
+      "moveRight": "移至右側",
+      "moveLeft": "移至左側",
+      "editWidget": "編輯元件",
+      "deleteWidget": "刪除元件"
+    },
+    "area": {
+      "left": "左側元件區",
+      "right": "右側元件區"
+    },
+    "presets": {
+      "actions": {
+        "label": "動作",
+        "desc": "重新生成、繼續和新對話，集中在一個框裡。"
+      }
+    },
+    "dice": {
+      "natural": "自然 {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "寫一則筆記",
+      "onlyYou": "僅自己可見"
+    },
+    "authorNote": {
+      "placeholder": "寫一則作者備註",
+      "everyReply": "每次回覆"
+    },
+    "time": {
+      "awarenessOff": "在對話設定中開啟時間感知後才能設定時鐘。"
+    }
   }
 }

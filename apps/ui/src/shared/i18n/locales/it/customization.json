@@ -242,7 +242,6 @@
     "mtp": "Accettazione delle bozze"
   },
   "futureGroup": "Salvato per le chat di gruppo. La loro nuova interfaccia è ancora in costruzione.",
-  "futureWidgets": "Salvato per l'area widget della chat. La sua nuova interfaccia è ancora in costruzione.",
   "metricInput": "{{value}} in",
   "metricOutput": "{{value}} out",
   "metricTotal": "{{value}} totali",
@@ -282,5 +281,6 @@
   "barSpacing": "Spaziatura dei volti",
   "barHint": "Suggerimento regia",
   "barHintTop": "Sopra",
-  "barHintBottom": "Sotto"
+  "barHintBottom": "Sotto",
+  "widgetsBesideTheChatHint": "Usa lo spazio accanto alla colonna della chat. Modifica i widget dalla chat."
 }

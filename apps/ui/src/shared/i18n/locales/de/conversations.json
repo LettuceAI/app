@@ -1263,5 +1263,280 @@
       "hearOnward": "Folgt ab hier wieder",
       "hint": "Das Gedächtnismodell korrigiert das beim Lesen. Deine Änderungen haben immer Vorrang."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Trenner",
+        "desc": "Eine Linie oder ein Abstand zwischen Widgets."
+      },
+      "box": {
+        "label": "Box",
+        "desc": "Gruppiere Widgets mit optionalem Titel und Farbe."
+      },
+      "character_info": {
+        "label": "Charakterinfo",
+        "desc": "Avatar, Name und Beschreibung des aktuellen Charakters."
+      },
+      "persona_info": {
+        "label": "Persona-Info",
+        "desc": "Avatar, Name und Beschreibung der aktuellen Persona."
+      },
+      "scratch_pad": {
+        "label": "Notizblock",
+        "desc": "Markdown-Notizen, die den Chat begleiten."
+      },
+      "image": {
+        "label": "Bild",
+        "desc": "Avatar der Figur oder Persona oder eine Bilddatei."
+      },
+      "selector": {
+        "label": "Auswahl",
+        "desc": "Öffnet die Auswahl für Persona, Modell oder Autorennotiz."
+      },
+      "button": {
+        "label": "Schaltfläche",
+        "desc": "Löse eine Aktion aus wie Neugenerieren oder Plätze tauschen."
+      },
+      "stat_tracker": {
+        "label": "Werte-Tracker",
+        "desc": "Bearbeitbare Zahlen wie Zuneigung, HP oder Gold."
+      },
+      "quick_snippets": {
+        "label": "Schnellbausteine",
+        "desc": "Schaltflächen, die voreingestellten Text in den Editor einfügen."
+      },
+      "dice": {
+        "label": "Würfelwerfer",
+        "desc": "Würfle mit benutzerdefinierter Notation."
+      },
+      "memory": {
+        "label": "Erinnerungen",
+        "desc": "Woran sich dieser Chat erinnert."
+      },
+      "companion_state": {
+        "label": "Companion-Zustand",
+        "desc": "Beziehung und Stimmung für Companion-Charaktere."
+      },
+      "session_info": {
+        "label": "Sitzungsinfo",
+        "desc": "Nachrichtenanzahl, Erinnerungen und aktuelle Szene."
+      },
+      "author_note": {
+        "label": "Autorennotiz",
+        "desc": "Bearbeite die Autorennotiz dieses Chats inline."
+      },
+      "time": {
+        "label": "Zeit",
+        "desc": "Zeige und stelle die Zeit ein, die der Companion sieht."
+      }
+    },
+    "picker": {
+      "title": "Widget hinzufügen"
+    },
+    "config": {
+      "fields": {
+        "title": "Titel",
+        "titleOptional": "Titel (optional)",
+        "descriptionOptional": "Beschreibung (optional)",
+        "content": "Inhalt"
+      },
+      "design": {
+        "label": "Design",
+        "default": "Standard",
+        "minimal": "Minimal",
+        "solid": "Gefüllt",
+        "outline": "Umriss"
+      },
+      "memory": {
+        "maxEntries": "Max. angezeigte Einträge",
+        "maxEntriesHint": "Neueste anzuzeigende Erinnerungen."
+      },
+      "characterInfo": {
+        "character": "Charakter",
+        "characterHint": "Welches Gruppenmitglied diese Karte zeigt.",
+        "firstMember": "Erstes Mitglied (Standard)"
+      },
+      "authorNote": {
+        "descriptionHint": "Die Notiz selbst wird inline am Widget bearbeitet und in diesem Chat gespeichert."
+      },
+      "statTracker": {
+        "stats": "Werte",
+        "labelPlaceholder": "Bezeichnung",
+        "removeStat": "Wert entfernen",
+        "min": "Min",
+        "start": "Start",
+        "max": "Max",
+        "defaultStat": "Wert",
+        "addStat": "Wert hinzufügen"
+      },
+      "quickSnippets": {
+        "snippets": "Bausteine",
+        "labelPlaceholder": "Bezeichnung",
+        "textPlaceholder": "Eingefügter Text",
+        "removeSnippet": "Baustein entfernen",
+        "newSnippet": "Neu",
+        "addSnippet": "Baustein hinzufügen"
+      },
+      "dice": {
+        "notation": "Notation",
+        "notationHint": "z. B. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Stil",
+        "line": "Linie",
+        "space": "Abstand"
+      },
+      "box": {
+        "variant": "Variante",
+        "default": "Standard",
+        "subtle": "Dezent",
+        "info": "Info",
+        "warning": "Warnung",
+        "success": "Erfolg",
+        "danger": "Gefahr"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown wird unterstützt."
+      },
+      "image": {
+        "source": "Quelle",
+        "character": "Charakter",
+        "persona": "Persona",
+        "upload": "Hochladen",
+        "imageSelected": "Bild ausgewählt.",
+        "noImageSelected": "Noch kein Bild ausgewählt.",
+        "replaceImage": "Bild ersetzen",
+        "chooseFile": "Datei wählen",
+        "shape": "Form",
+        "auto": "Auto",
+        "square": "Quadratisch",
+        "wide": "Breit",
+        "circle": "Kreis"
+      },
+      "selector": {
+        "selects": "Wählt",
+        "persona": "Persona",
+        "model": "Modell",
+        "authorNote": "Autorennotiz"
+      },
+      "button": {
+        "action": "Aktion",
+        "regenerate": "Neu generieren",
+        "continue": "Fortsetzen",
+        "swapPlaces": "Plätze tauschen",
+        "stop": "Stoppen",
+        "newSession": "Neue Sitzung",
+        "history": "Verlauf",
+        "memories": "Erinnerungen",
+        "search": "Suchen"
+      },
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "time": {
+        "hourFormat": "Stundenformat",
+        "h12": "12 Stunden",
+        "h24": "24 Stunden",
+        "showSeconds": "Sekunden anzeigen",
+        "showDate": "Datum anzeigen"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Letzte Antwort neu generieren",
+      "swapPlaces": "Plätze tauschen",
+      "newSession": "Neue Sitzung",
+      "continue": "Fortsetzen",
+      "stopGenerating": "Generierung stoppen",
+      "viewChatHistory": "Chat-Verlauf ansehen",
+      "memories": "Erinnerungen",
+      "searchChat": "Chat durchsuchen",
+      "voiceAutoplay": "Stimme automatisch abspielen",
+      "directOnly": "Nur in Einzelchats",
+      "noReply": "Es gibt noch keine Antwort",
+      "nothingToStop": "Es wird nichts generiert",
+      "waiting": "Warte, bis die Antwort fertig ist"
+    },
+    "characterInfo": {
+      "noCharacter": "Kein Charakter geladen."
+    },
+    "personaInfo": {
+      "noPersona": "Keine Persona ausgewählt."
+    },
+    "companionState": {
+      "companionOnly": "Nur für Companion-Charaktere verfügbar.",
+      "noData": "Noch keine Beziehungsdaten."
+    },
+    "image": {
+      "alt": "Widget-Bild",
+      "noImage": "Bild nicht gefunden"
+    },
+    "memory": {
+      "all": "Alle",
+      "empty": "Noch nichts erinnert.",
+      "manage": "Verwalten",
+      "more": "+{{count}} mehr"
+    },
+    "quickSnippets": {
+      "empty": "Noch keine Bausteine."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Modell",
+      "authorNote": "Autorennotiz",
+      "perMember": "Pro Mitglied in den Chat-Einstellungen festgelegt"
+    },
+    "sessionInfo": {
+      "messages": "Nachrichten",
+      "scene": "Szene",
+      "memories": "Erinnerungen",
+      "none": "Keine"
+    },
+    "statTracker": {
+      "empty": "Noch keine Werte.",
+      "decrease": "{{label}} verringern",
+      "increase": "{{label}} erhöhen"
+    },
+    "list": {
+      "addWidget": "Widget hinzufügen",
+      "editWidgets": "Widgets bearbeiten",
+      "revert": "Rückgängig",
+      "add": "Hinzufügen",
+      "done": "Fertig"
+    },
+    "empty": {
+      "editingTitle": "Hier sind noch keine Widgets.",
+      "addWidget": "Ein Widget hinzufügen",
+      "title": "Hier sind keine Widgets."
+    },
+    "wrapper": {
+      "moveRight": "Nach rechts verschieben",
+      "moveLeft": "Nach links verschieben",
+      "editWidget": "Widget bearbeiten",
+      "deleteWidget": "Widget löschen"
+    },
+    "area": {
+      "left": "linker Widget-Bereich",
+      "right": "rechter Widget-Bereich"
+    },
+    "presets": {
+      "actions": {
+        "label": "Aktionen",
+        "desc": "Neu generieren, Fortsetzen und neuer Chat in einer Box."
+      }
+    },
+    "dice": {
+      "natural": "Natürliche {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Notiz schreiben",
+      "onlyYou": "Nur für dich"
+    },
+    "authorNote": {
+      "placeholder": "Autorennotiz schreiben",
+      "everyReply": "Jede Antwort"
+    },
+    "time": {
+      "awarenessOff": "Aktiviere in den Chat-Einstellungen das Zeitbewusstsein, um die Uhr zu stellen."
+    }
   }
 }

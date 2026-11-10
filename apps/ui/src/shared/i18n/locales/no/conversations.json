@@ -1263,5 +1263,280 @@
       "hearOnward": "Følger med igjen herfra",
       "hint": "Minnemodellen retter dette mens den leser. Endringene dine vinner alltid."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Skillelinje",
+        "desc": "En linje eller mellomrom mellom moduler."
+      },
+      "box": {
+        "label": "Boks",
+        "desc": "Grupper moduler med en valgfri tittel og farge."
+      },
+      "character_info": {
+        "label": "Karakterinfo",
+        "desc": "Avatar, navn og beskrivelse av gjeldende karakter."
+      },
+      "persona_info": {
+        "label": "Personainfo",
+        "desc": "Avatar, navn og beskrivelse av gjeldende persona."
+      },
+      "scratch_pad": {
+        "label": "Notatblokk",
+        "desc": "Markdown-notater som følger med chatten."
+      },
+      "image": {
+        "label": "Bilde",
+        "desc": "Avataren til karakteren eller personaen, eller en bildefil."
+      },
+      "selector": {
+        "label": "Velger",
+        "desc": "Åpner valget for persona, modell eller forfatternotat."
+      },
+      "button": {
+        "label": "Knapp",
+        "desc": "Utløs en handling som å regenerere eller bytte plass."
+      },
+      "stat_tracker": {
+        "label": "Statistikksporer",
+        "desc": "Redigerbare tall som hengivenhet, HP eller gull."
+      },
+      "quick_snippets": {
+        "label": "Hurtigtekster",
+        "desc": "Knapper som setter inn forhåndsdefinert tekst i skriveruten."
+      },
+      "dice": {
+        "label": "Terningkaster",
+        "desc": "Kast terninger med egendefinert notasjon."
+      },
+      "memory": {
+        "label": "Minner",
+        "desc": "Det denne chatten husker."
+      },
+      "companion_state": {
+        "label": "Følgesvenntilstand",
+        "desc": "Relasjon og humør for følgesvennkarakterer."
+      },
+      "session_info": {
+        "label": "Øktinfo",
+        "desc": "Antall meldinger, minner og gjeldende scene."
+      },
+      "author_note": {
+        "label": "Forfatternotat",
+        "desc": "Rediger denne chattens forfatternotat direkte."
+      },
+      "time": {
+        "label": "Tid",
+        "desc": "Vis og angi tiden følgesvennen ser."
+      }
+    },
+    "picker": {
+      "title": "Legg til modul"
+    },
+    "config": {
+      "fields": {
+        "title": "Tittel",
+        "titleOptional": "Tittel (valgfritt)",
+        "descriptionOptional": "Beskrivelse (valgfritt)",
+        "content": "Innhold"
+      },
+      "design": {
+        "label": "Design",
+        "default": "Standard",
+        "minimal": "Minimal",
+        "solid": "Heldekkende",
+        "outline": "Omriss"
+      },
+      "memory": {
+        "maxEntries": "Maks oppføringer vist",
+        "maxEntriesHint": "Nyeste minner som skal vises."
+      },
+      "characterInfo": {
+        "character": "Karakter",
+        "characterHint": "Hvilket gruppemedlem dette kortet viser.",
+        "firstMember": "Første medlem (standard)"
+      },
+      "authorNote": {
+        "descriptionHint": "Selve notatet redigeres direkte fra modulen og lagres til denne chatten."
+      },
+      "statTracker": {
+        "stats": "Statistikker",
+        "labelPlaceholder": "Etikett",
+        "removeStat": "Fjern statistikk",
+        "min": "Min",
+        "start": "Start",
+        "max": "Maks",
+        "defaultStat": "Statistikk",
+        "addStat": "Legg til statistikk"
+      },
+      "quickSnippets": {
+        "snippets": "Tekstbiter",
+        "labelPlaceholder": "Etikett",
+        "textPlaceholder": "Innsatt tekst",
+        "removeSnippet": "Fjern tekstbit",
+        "newSnippet": "Ny",
+        "addSnippet": "Legg til tekstbit"
+      },
+      "dice": {
+        "notation": "Notasjon",
+        "notationHint": "f.eks. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Stil",
+        "line": "Linje",
+        "space": "Mellomrom"
+      },
+      "box": {
+        "variant": "Variant",
+        "default": "Standard",
+        "subtle": "Subtil",
+        "info": "Info",
+        "warning": "Advarsel",
+        "success": "Suksess",
+        "danger": "Fare"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown støttes."
+      },
+      "image": {
+        "source": "Kilde",
+        "character": "Karakter",
+        "persona": "Persona",
+        "upload": "Last opp",
+        "imageSelected": "Bilde valgt.",
+        "noImageSelected": "Ingen bilde valgt ennå.",
+        "replaceImage": "Erstatt bilde",
+        "chooseFile": "Velg fil",
+        "shape": "Form",
+        "auto": "Auto",
+        "square": "Firkantet",
+        "wide": "Bred",
+        "circle": "Sirkel"
+      },
+      "selector": {
+        "selects": "Velger",
+        "persona": "Persona",
+        "model": "Modell",
+        "authorNote": "Forfatternotat"
+      },
+      "button": {
+        "action": "Handling",
+        "regenerate": "Regenerer",
+        "continue": "Fortsett",
+        "swapPlaces": "Bytt plass",
+        "stop": "Stopp",
+        "newSession": "Ny økt",
+        "history": "Historikk",
+        "memories": "Minner",
+        "search": "Søk"
+      },
+      "save": "Lagre",
+      "cancel": "Avbryt",
+      "time": {
+        "hourFormat": "Tidsformat",
+        "h12": "12-timers",
+        "h24": "24-timers",
+        "showSeconds": "Vis sekunder",
+        "showDate": "Vis dato"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Regenerer siste svar",
+      "swapPlaces": "Bytt plass",
+      "newSession": "Ny økt",
+      "continue": "Fortsett",
+      "stopGenerating": "Stopp generering",
+      "viewChatHistory": "Vis chathistorikk",
+      "memories": "Minner",
+      "searchChat": "Søk i chat",
+      "voiceAutoplay": "Automatisk stemmeavspilling",
+      "directOnly": "Bare i enkeltchatter",
+      "noReply": "Det er ikke noe svar ennå",
+      "nothingToStop": "Ingenting genereres",
+      "waiting": "Vent til svaret er ferdig"
+    },
+    "characterInfo": {
+      "noCharacter": "Ingen karakter lastet."
+    },
+    "personaInfo": {
+      "noPersona": "Ingen persona valgt."
+    },
+    "companionState": {
+      "companionOnly": "Bare tilgjengelig for følgesvennkarakterer.",
+      "noData": "Ingen relasjonsdata ennå."
+    },
+    "image": {
+      "alt": "Modulbilde",
+      "noImage": "Fant ikke bildet"
+    },
+    "memory": {
+      "all": "Alle",
+      "empty": "Ingenting husket ennå.",
+      "manage": "Administrer",
+      "more": "+{{count}} flere"
+    },
+    "quickSnippets": {
+      "empty": "Ingen tekstbiter ennå."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Modell",
+      "authorNote": "Forfatternotat",
+      "perMember": "Settes per medlem i chatinnstillingene"
+    },
+    "sessionInfo": {
+      "messages": "Meldinger",
+      "scene": "Scene",
+      "memories": "Minner",
+      "none": "Ingen"
+    },
+    "statTracker": {
+      "empty": "Ingen statistikker ennå.",
+      "decrease": "Reduser {{label}}",
+      "increase": "Øk {{label}}"
+    },
+    "list": {
+      "addWidget": "Legg til modul",
+      "editWidgets": "Rediger moduler",
+      "revert": "Tilbakestill",
+      "add": "Legg til",
+      "done": "Ferdig"
+    },
+    "empty": {
+      "editingTitle": "Ingen moduler her ennå.",
+      "addWidget": "Legg til en modul",
+      "title": "Ingen moduler her."
+    },
+    "wrapper": {
+      "moveRight": "Flytt til høyre side",
+      "moveLeft": "Flytt til venstre side",
+      "editWidget": "Rediger modul",
+      "deleteWidget": "Slett modul"
+    },
+    "area": {
+      "left": "venstre modulområde",
+      "right": "høyre modulområde"
+    },
+    "presets": {
+      "actions": {
+        "label": "Handlinger",
+        "desc": "Generer på nytt, fortsett og ny chat i én boks."
+      }
+    },
+    "dice": {
+      "natural": "Naturlig {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Skriv et notat",
+      "onlyYou": "Bare deg"
+    },
+    "authorNote": {
+      "placeholder": "Skriv et forfatternotat",
+      "everyReply": "Hvert svar"
+    },
+    "time": {
+      "awarenessOff": "Slå på tidsbevissthet i chatinnstillingene for å stille klokken."
+    }
   }
 }

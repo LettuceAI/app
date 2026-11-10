@@ -242,7 +242,6 @@
     "mtp": "मसौदा स्वीकृति"
   },
   "futureGroup": "ग्रुप चैट्स के लिए सेव। उनका नया इंटरफ़ेस अभी बन रहा है।",
-  "futureWidgets": "चैट विजेट क्षेत्र के लिए सेव। उसका नया इंटरफ़ेस अभी बन रहा है।",
   "metricInput": "{{value}} इन",
   "metricOutput": "{{value}} आउट",
   "metricTotal": "{{value}} कुल",
@@ -281,5 +280,6 @@
   "barSpacing": "चेहरों का अंतराल",
   "barHint": "निर्देशक संकेत",
   "barHintTop": "ऊपर",
-  "barHintBottom": "नीचे"
+  "barHintBottom": "नीचे",
+  "widgetsBesideTheChatHint": "चैट कॉलम के बगल की जगह इस्तेमाल करता है। विजेट चैट से ही बदलें।"
 }

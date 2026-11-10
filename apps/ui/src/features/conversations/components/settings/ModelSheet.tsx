@@ -1,9 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { Sheet } from "@lettuceai/crisp";
-import { ModelView } from "./ChoiceViews";
-import type { PanelCtx } from "./context";
+import { ModelView, type ModelCtx } from "./ChoiceViews";
 
-export function ModelSheet({ ctx, open, onClose }: { ctx: PanelCtx; open: boolean; onClose: () => void }) {
+export function ModelSheet({ ctx, open, onClose }: { ctx: ModelCtx; open: boolean; onClose: () => void }) {
   const { t } = useTranslation("conversations");
   return (
     <Sheet open={open} onClose={onClose} size="sm" title={t("settings.model.title")} dismissible={!ctx.busy}>

@@ -242,7 +242,6 @@
     "mtp": "Přijetí návrhu"
   },
   "futureGroup": "Uloženo pro skupinové chaty. Jejich nové rozhraní se ještě staví.",
-  "futureWidgets": "Uloženo pro oblast widgetů chatu. Její nové rozhraní se ještě staví.",
   "metricInput": "{{value}} dovnitř",
   "metricOutput": "{{value}} ven",
   "metricTotal": "celkem {{value}}",
@@ -283,5 +282,6 @@
   "barSpacing": "Mezery mezi obličeji",
   "barHint": "Nápověda režie",
   "barHintTop": "Nad",
-  "barHintBottom": "Pod"
+  "barHintBottom": "Pod",
+  "widgetsBesideTheChatHint": "Používá místo vedle sloupce chatu. Widgety uprav přímo v chatu."
 }

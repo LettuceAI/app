@@ -1,5 +1,5 @@
 import type { ApiClient } from "@/api/client";
-import type { CharacterView_Serialize, GroupView_Serialize } from "@/api/generated/bindings";
+import type { AssetRef_Serialize, CharacterView_Serialize, GroupView_Serialize } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { characterAppearance, withCharacterAppearance, type AppearanceDraft } from "@/features/groups";
 
@@ -7,6 +7,7 @@ import { characterAppearance, withCharacterAppearance, type AppearanceDraft } fr
 export interface AppearanceSnapshot {
   revision: number;
   value: AppearanceDraft;
+  assets: AssetRef_Serialize[];
   save: (next: AppearanceDraft, operationId: string) => Promise<AppearanceSnapshot>;
 }
 
@@ -19,6 +20,7 @@ export interface AppearanceTarget {
 function groupSnapshot(api: ApiClient, view: GroupView_Serialize): AppearanceSnapshot {
   return {
     revision: view.revision,
+    assets: view.assets,
     value: { presentation: view.draft.presentation, presentation_overrides: view.draft.presentation_overrides ?? null },
     save: async (next, operationId) =>
       groupSnapshot(api, await api.call("groupSave", {
@@ -33,6 +35,7 @@ function groupSnapshot(api: ApiClient, view: GroupView_Serialize): AppearanceSna
 function characterSnapshot(api: ApiClient, view: CharacterView_Serialize): AppearanceSnapshot {
   return {
     revision: view.revision,
+    assets: view.assets,
     value: characterAppearance(view.draft.presentation),
     save: async (next, operationId) =>
       characterSnapshot(api, await api.call("characterSave", {

@@ -1263,5 +1263,280 @@
       "hearOnward": "यहाँ से फिर साथ",
       "hint": "मेमोरी मॉडल पढ़ते समय इसे ठीक करता है। आपके बदलाव हमेशा मान्य रहते हैं।"
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "डिवाइडर",
+        "desc": "विजेट्स के बीच एक रेखा या स्थान।"
+      },
+      "box": {
+        "label": "बॉक्स",
+        "desc": "वैकल्पिक शीर्षक और रंग के साथ विजेट्स को ग्रुप करें।"
+      },
+      "character_info": {
+        "label": "कैरेक्टर जानकारी",
+        "desc": "वर्तमान कैरेक्टर का अवतार, नाम और विवरण।"
+      },
+      "persona_info": {
+        "label": "पर्सोना जानकारी",
+        "desc": "वर्तमान पर्सोना का अवतार, नाम और विवरण।"
+      },
+      "scratch_pad": {
+        "label": "स्क्रैच पैड",
+        "desc": "मार्कडाउन नोट्स जो चैट के साथ चलते हैं।"
+      },
+      "image": {
+        "label": "इमेज",
+        "desc": "पात्र या पर्सोना का अवतार, या एक इमेज फ़ाइल।"
+      },
+      "selector": {
+        "label": "सिलेक्टर",
+        "desc": "पर्सोना, मॉडल या लेखक के नोट का चयन खोलता है।"
+      },
+      "button": {
+        "label": "बटन",
+        "desc": "रीजेनरेट या जगह बदलने जैसे एक्शन को ट्रिगर करें।"
+      },
+      "stat_tracker": {
+        "label": "स्टेट ट्रैकर",
+        "desc": "स्नेह, HP, या सोने जैसे संपादन योग्य नंबर।"
+      },
+      "quick_snippets": {
+        "label": "क्विक स्निपेट्स",
+        "desc": "बटन जो कंपोज़र में प्रीसेट टेक्स्ट डालते हैं।"
+      },
+      "dice": {
+        "label": "डाइस रोलर",
+        "desc": "कस्टम नोटेशन के साथ पासा फेंकें।"
+      },
+      "memory": {
+        "label": "यादें",
+        "desc": "यह चैट क्या याद रखती है।"
+      },
+      "companion_state": {
+        "label": "साथी की स्थिति (Companion state)",
+        "desc": "साथी कैरेक्टर्स के लिए रिश्ता और मूड।"
+      },
+      "session_info": {
+        "label": "सेशन जानकारी",
+        "desc": "संदेशों की संख्या, यादें और मौजूदा दृश्य।"
+      },
+      "author_note": {
+        "label": "ऑथर नोट",
+        "desc": "इस चैट के ऑथर नोट को इनलाइन एडिट करें।"
+      },
+      "time": {
+        "label": "समय",
+        "desc": "वह समय दिखाएं और सेट करें जो साथी देखता है।"
+      }
+    },
+    "picker": {
+      "title": "विजेट जोड़ें"
+    },
+    "config": {
+      "fields": {
+        "title": "शीर्षक",
+        "titleOptional": "शीर्षक (वैकल्पिक)",
+        "descriptionOptional": "विवरण (वैकल्पिक)",
+        "content": "सामग्री"
+      },
+      "design": {
+        "label": "डिज़ाइन",
+        "default": "डिफ़ॉल्ट",
+        "minimal": "मिनिमल",
+        "solid": "सॉलिड",
+        "outline": "आउटलाइन"
+      },
+      "memory": {
+        "maxEntries": "अधिकतम प्रविष्टियाँ दिखाई गईं",
+        "maxEntriesHint": "दिखाने के लिए सबसे हालिया यादें।"
+      },
+      "characterInfo": {
+        "character": "कैरेक्टर",
+        "characterHint": "यह कार्ड किस ग्रुप मेंबर को दिखाता है।",
+        "firstMember": "पहला सदस्य (डिफ़ॉल्ट)"
+      },
+      "authorNote": {
+        "descriptionHint": "नोट स्वयं विजेट के माध्यम से इनलाइन रूप से संपादित किया जाता है और इस चैट में सहेजा जाता है।"
+      },
+      "statTracker": {
+        "stats": "आंकड़े (Stats)",
+        "labelPlaceholder": "लेबल",
+        "removeStat": "आंकड़ा हटाएँ",
+        "min": "न्यूनतम (Min)",
+        "start": "शुरुआत",
+        "max": "अधिकतम (Max)",
+        "defaultStat": "आंकड़ा (Stat)",
+        "addStat": "आंकड़ा जोड़ें"
+      },
+      "quickSnippets": {
+        "snippets": "स्निपेट्स (Snippets)",
+        "labelPlaceholder": "लेबल",
+        "textPlaceholder": "डाला गया टेक्स्ट",
+        "removeSnippet": "स्निपेट हटाएँ",
+        "newSnippet": "नया",
+        "addSnippet": "स्निपेट जोड़ें"
+      },
+      "dice": {
+        "notation": "नोटेशन (Notation)",
+        "notationHint": "जैसे कि 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "शैली (Style)",
+        "line": "रेखा (Line)",
+        "space": "जगह (Space)"
+      },
+      "box": {
+        "variant": "वेरिएंट (Variant)",
+        "default": "डिफ़ॉल्ट (Default)",
+        "subtle": "सूक्ष्म (Subtle)",
+        "info": "जानकारी (Info)",
+        "warning": "चेतावनी (Warning)",
+        "success": "सफलता (Success)",
+        "danger": "खतरा (Danger)"
+      },
+      "scratchPad": {
+        "markdownHint": "मार्काडाउन (Markdown) समर्थित है।"
+      },
+      "image": {
+        "source": "स्रोत (Source)",
+        "character": "कैरेक्टर (Character)",
+        "persona": "पर्सोना (Persona)",
+        "upload": "अपलोड (Upload)",
+        "imageSelected": "छवि चुनी गई।",
+        "noImageSelected": "अभी तक कोई छवि नहीं चुनी गई है।",
+        "replaceImage": "छवि बदलें",
+        "chooseFile": "फ़ाइल चुनें",
+        "shape": "आकार (Shape)",
+        "auto": "ऑटो (Auto)",
+        "square": "वर्ग (Square)",
+        "wide": "चौड़ा (Wide)",
+        "circle": "वृत्त (Circle)"
+      },
+      "selector": {
+        "selects": "चुनता है (Selects)",
+        "persona": "पर्सोना (Persona)",
+        "model": "मॉडल (Model)",
+        "authorNote": "लेखक का नोट (Author's note)"
+      },
+      "button": {
+        "action": "कार्रवाई (Action)",
+        "regenerate": "पुनर्जेनरेट करें (Regenerate)",
+        "continue": "जारी रखें (Continue)",
+        "swapPlaces": "जगह बदलें (Swap places)",
+        "stop": "रोकें (Stop)",
+        "newSession": "नया सत्र (New session)",
+        "history": "इतिहास (History)",
+        "memories": "यादें (Memories)",
+        "search": "खोजें (Search)"
+      },
+      "save": "सेव करें",
+      "cancel": "रद्द करें",
+      "time": {
+        "hourFormat": "घंटे का प्रारूप",
+        "h12": "12 घंटे",
+        "h24": "24 घंटे",
+        "showSeconds": "सेकंड दिखाएँ",
+        "showDate": "तारीख दिखाएँ"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "पिछला जवाब पुनर्जेनरेट करें",
+      "swapPlaces": "जगह बदलें",
+      "newSession": "नया सत्र",
+      "continue": "जारी रखें",
+      "stopGenerating": "जेनरेट करना बंद करें",
+      "viewChatHistory": "चैट इतिहास देखें",
+      "memories": "यादें",
+      "searchChat": "चैट खोजें",
+      "voiceAutoplay": "आवाज़ ऑटोप्ले",
+      "directOnly": "केवल एक-से-एक चैट में",
+      "noReply": "अभी कोई उत्तर नहीं है",
+      "nothingToStop": "कुछ भी जनरेट नहीं हो रहा",
+      "waiting": "उत्तर पूरा होने तक रुकें"
+    },
+    "characterInfo": {
+      "noCharacter": "कोई कैरेक्टर लोड नहीं हुआ।"
+    },
+    "personaInfo": {
+      "noPersona": "कोई पर्सोना नहीं चुना गया।"
+    },
+    "companionState": {
+      "companionOnly": "केवल साथी कैरेक्टर्स के लिए उपलब्ध।",
+      "noData": "अभी तक कोई संबंध डेटा नहीं है।"
+    },
+    "image": {
+      "alt": "विजेट छवि",
+      "noImage": "इमेज नहीं मिली"
+    },
+    "memory": {
+      "all": "सभी",
+      "empty": "अभी तक कुछ भी याद नहीं है।",
+      "manage": "प्रबंधित करें",
+      "more": "+{{count}} और"
+    },
+    "quickSnippets": {
+      "empty": "अभी तक कोई स्निपेट नहीं है।"
+    },
+    "selector": {
+      "persona": "पर्सोना (Persona)",
+      "model": "मॉडल (Model)",
+      "authorNote": "लेखक का नोट (Author's note)",
+      "perMember": "चैट सेटिंग में हर सदस्य के लिए तय होता है"
+    },
+    "sessionInfo": {
+      "messages": "संदेश (Messages)",
+      "scene": "दृश्य (Scene)",
+      "memories": "यादें (Memories)",
+      "none": "कोई नहीं"
+    },
+    "statTracker": {
+      "empty": "अभी तक कोई आंकड़े नहीं हैं।",
+      "decrease": "{{label}} घटाएँ",
+      "increase": "{{label}} बढ़ाएँ"
+    },
+    "list": {
+      "addWidget": "विजेट जोड़ें",
+      "editWidgets": "विजेट संपादित करें",
+      "revert": "पूर्ववत करें (Revert)",
+      "add": "जोड़ें",
+      "done": "पूर्ण"
+    },
+    "empty": {
+      "editingTitle": "यहाँ अभी तक कोई विजेट नहीं हैं।",
+      "addWidget": "एक विजेट जोड़ें",
+      "title": "यहाँ कोई विजेट नहीं हैं।"
+    },
+    "wrapper": {
+      "moveRight": "दाईं ओर ले जाएँ",
+      "moveLeft": "बाईं ओर ले जाएँ",
+      "editWidget": "विजेट संपादित करें",
+      "deleteWidget": "विजेट हटाएँ"
+    },
+    "area": {
+      "left": "बायां विजेट क्षेत्र",
+      "right": "दायां विजेट क्षेत्र"
+    },
+    "presets": {
+      "actions": {
+        "label": "क्रियाएँ",
+        "desc": "रीजनरेट, जारी रखें और नई चैट, एक ही बॉक्स में।"
+      }
+    },
+    "dice": {
+      "natural": "नैचुरल {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "एक नोट लिखें",
+      "onlyYou": "सिर्फ़ आप"
+    },
+    "authorNote": {
+      "placeholder": "लेखक का नोट लिखें",
+      "everyReply": "हर उत्तर"
+    },
+    "time": {
+      "awarenessOff": "घड़ी सेट करने के लिए चैट सेटिंग में समय-जागरूकता चालू करें।"
+    }
   }
 }

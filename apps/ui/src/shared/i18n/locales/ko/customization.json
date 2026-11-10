@@ -242,7 +242,6 @@
     "mtp": "초안 채택률"
   },
   "futureGroup": "그룹 채팅용으로 저장돼요. 새 인터페이스는 아직 준비 중이에요.",
-  "futureWidgets": "채팅 위젯 영역용으로 저장돼요. 새 인터페이스는 아직 준비 중이에요.",
   "metricInput": "{{value}} 입력",
   "metricOutput": "{{value}} 출력",
   "metricTotal": "{{value}} 총계",
@@ -280,5 +279,6 @@
   "barSpacing": "얼굴 간격",
   "barHint": "디렉터 힌트",
   "barHintTop": "위",
-  "barHintBottom": "아래"
+  "barHintBottom": "아래",
+  "widgetsBesideTheChatHint": "채팅 열 옆의 공간을 사용합니다. 위젯은 채팅에서 편집하세요."
 }

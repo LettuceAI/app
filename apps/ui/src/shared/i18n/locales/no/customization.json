@@ -242,7 +242,6 @@
     "mtp": "Utkastgodkjenning"
   },
   "futureGroup": "Lagret for gruppesamtaler. Det nye grensesnittet deres er fortsatt under utvikling.",
-  "futureWidgets": "Lagret for samtale-widgetområdet. Det nye grensesnittet er fortsatt under utvikling.",
   "metricInput": "{{value}} inn",
   "metricOutput": "{{value}} ut",
   "metricTotal": "{{value}} totalt",
@@ -281,5 +280,6 @@
   "barSpacing": "Ansiktsavstand",
   "barHint": "Regissørhint",
   "barHintTop": "Over",
-  "barHintBottom": "Under"
+  "barHintBottom": "Under",
+  "widgetsBesideTheChatHint": "Bruker plassen ved siden av chatkolonnen. Rediger widgets fra chatten."
 }

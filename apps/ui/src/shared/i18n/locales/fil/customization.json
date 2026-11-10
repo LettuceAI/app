@@ -242,7 +242,6 @@
     "mtp": "Pagtanggap ng draft"
   },
   "futureGroup": "Naka-save para sa mga group chat. Ginagawa pa ang bagong interface nila.",
-  "futureWidgets": "Naka-save para sa chat widget area. Ginagawa pa ang bagong interface nito.",
   "metricInput": "{{value}} pumasok",
   "metricOutput": "{{value}} lumabas",
   "metricTotal": "{{value}} kabuuan",
@@ -281,5 +280,6 @@
   "barSpacing": "Espasyo ng mga mukha",
   "barHint": "Hint ng director",
   "barHintTop": "Sa itaas",
-  "barHintBottom": "Sa ibaba"
+  "barHintBottom": "Sa ibaba",
+  "widgetsBesideTheChatHint": "Ginagamit ang espasyo sa tabi ng chat column. I-edit ang mga widget mula sa chat."
 }

@@ -242,7 +242,6 @@
     "mtp": "Aceitação de rascunho"
   },
   "futureGroup": "Salvo para conversas em grupo. A nova interface delas ainda está sendo construída.",
-  "futureWidgets": "Salvo para a área de widgets da conversa. A nova interface dela ainda está sendo construída.",
   "metricInput": "{{value}} entrada",
   "metricOutput": "{{value}} saída",
   "metricTotal": "{{value}} total",
@@ -282,5 +281,6 @@
   "barSpacing": "Espaçamento dos rostos",
   "barHint": "Dica do diretor",
   "barHintTop": "Acima",
-  "barHintBottom": "Abaixo"
+  "barHintBottom": "Abaixo",
+  "widgetsBesideTheChatHint": "Usa o espaço ao lado da coluna do chat. Edite os widgets pelo chat."
 }

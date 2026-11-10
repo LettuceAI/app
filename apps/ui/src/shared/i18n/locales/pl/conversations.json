@@ -1325,5 +1325,280 @@
       "hearOnward": "Od tego miejsca znów w rozmowie",
       "hint": "Model pamięci poprawia to podczas czytania. Twoje zmiany zawsze mają pierwszeństwo."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Separator",
+        "desc": "Linia lub odstęp między widżetami."
+      },
+      "box": {
+        "label": "Ramka",
+        "desc": "Grupuj widżety z opcjonalnym tytułem i kolorem."
+      },
+      "character_info": {
+        "label": "Informacje o postaci",
+        "desc": "Awatar, imię i opis bieżącej postaci."
+      },
+      "persona_info": {
+        "label": "Informacje o personie",
+        "desc": "Awatar, imię i opis bieżącej persony."
+      },
+      "scratch_pad": {
+        "label": "Notatnik",
+        "desc": "Notatki Markdown podróżujące z czatem."
+      },
+      "image": {
+        "label": "Obraz",
+        "desc": "Awatar postaci lub persony albo plik obrazu."
+      },
+      "selector": {
+        "label": "Selektor",
+        "desc": "Otwiera wybór persony, modelu lub notatki autora."
+      },
+      "button": {
+        "label": "Przycisk",
+        "desc": "Wyzwól akcję, taką jak regeneracja lub zamiana miejsc."
+      },
+      "stat_tracker": {
+        "label": "Śledzenie statystyk",
+        "desc": "Edytowalne liczby, takie jak sympatia, HP czy złoto."
+      },
+      "quick_snippets": {
+        "label": "Szybkie fragmenty",
+        "desc": "Przyciski wstawiające gotowy tekst do edytora."
+      },
+      "dice": {
+        "label": "Rzut kostką",
+        "desc": "Rzucaj kostkami z niestandardową notacją."
+      },
+      "memory": {
+        "label": "Wspomnienia",
+        "desc": "Co ten czat pamięta."
+      },
+      "companion_state": {
+        "label": "Stan towarzysza",
+        "desc": "Relacja i nastrój dla postaci towarzyszy."
+      },
+      "session_info": {
+        "label": "Informacje o sesji",
+        "desc": "Liczba wiadomości, wspomnienia i bieżąca scena."
+      },
+      "author_note": {
+        "label": "Notatka autora",
+        "desc": "Edytuj notatkę autora tego czatu w miejscu."
+      },
+      "time": {
+        "label": "Czas",
+        "desc": "Pokaż i ustaw czas, który widzi towarzysz."
+      }
+    },
+    "picker": {
+      "title": "Dodaj widżet"
+    },
+    "config": {
+      "fields": {
+        "title": "Tytuł",
+        "titleOptional": "Tytuł (opcjonalny)",
+        "descriptionOptional": "Opis (opcjonalny)",
+        "content": "Treść"
+      },
+      "design": {
+        "label": "Wygląd",
+        "default": "Domyślny",
+        "minimal": "Minimalny",
+        "solid": "Pełny",
+        "outline": "Kontur"
+      },
+      "memory": {
+        "maxEntries": "Maks. wyświetlanych wpisów",
+        "maxEntriesHint": "Najnowsze wspomnienia do wyświetlenia."
+      },
+      "characterInfo": {
+        "character": "Postać",
+        "characterHint": "Którego członka grupy pokazuje ta karta.",
+        "firstMember": "Pierwszy członek (domyślnie)"
+      },
+      "authorNote": {
+        "descriptionHint": "Sama notatka jest edytowana w miejscu z widżetu i zapisywana w tym czacie."
+      },
+      "statTracker": {
+        "stats": "Statystyki",
+        "labelPlaceholder": "Etykieta",
+        "removeStat": "Usuń statystykę",
+        "min": "Min",
+        "start": "Początek",
+        "max": "Maks",
+        "defaultStat": "Statystyka",
+        "addStat": "Dodaj statystykę"
+      },
+      "quickSnippets": {
+        "snippets": "Fragmenty",
+        "labelPlaceholder": "Etykieta",
+        "textPlaceholder": "Wstawiany tekst",
+        "removeSnippet": "Usuń fragment",
+        "newSnippet": "Nowy",
+        "addSnippet": "Dodaj fragment"
+      },
+      "dice": {
+        "notation": "Notacja",
+        "notationHint": "np. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Styl",
+        "line": "Linia",
+        "space": "Odstęp"
+      },
+      "box": {
+        "variant": "Wariant",
+        "default": "Domyślny",
+        "subtle": "Subtelny",
+        "info": "Informacja",
+        "warning": "Ostrzeżenie",
+        "success": "Sukces",
+        "danger": "Niebezpieczeństwo"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown obsługiwany."
+      },
+      "image": {
+        "source": "Źródło",
+        "character": "Postać",
+        "persona": "Persona",
+        "upload": "Prześlij",
+        "imageSelected": "Obraz wybrany.",
+        "noImageSelected": "Nie wybrano jeszcze obrazu.",
+        "replaceImage": "Zamień obraz",
+        "chooseFile": "Wybierz plik",
+        "shape": "Kształt",
+        "auto": "Auto",
+        "square": "Kwadrat",
+        "wide": "Szeroki",
+        "circle": "Koło"
+      },
+      "selector": {
+        "selects": "Wybiera",
+        "persona": "Persona",
+        "model": "Model",
+        "authorNote": "Notatka autora"
+      },
+      "button": {
+        "action": "Akcja",
+        "regenerate": "Regeneruj",
+        "continue": "Kontynuuj",
+        "swapPlaces": "Zamień miejsca",
+        "stop": "Zatrzymaj",
+        "newSession": "Nowa sesja",
+        "history": "Historia",
+        "memories": "Wspomnienia",
+        "search": "Szukaj"
+      },
+      "save": "Zapisz",
+      "cancel": "Anuluj",
+      "time": {
+        "hourFormat": "Format godziny",
+        "h12": "12-godzinny",
+        "h24": "24-godzinny",
+        "showSeconds": "Pokaż sekundy",
+        "showDate": "Pokaż datę"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Regeneruj ostatnią odpowiedź",
+      "swapPlaces": "Zamień miejsca",
+      "newSession": "Nowa sesja",
+      "continue": "Kontynuuj",
+      "stopGenerating": "Zatrzymaj generowanie",
+      "viewChatHistory": "Zobacz historię czatu",
+      "memories": "Wspomnienia",
+      "searchChat": "Przeszukaj czat",
+      "voiceAutoplay": "Autoodtwarzanie głosu",
+      "directOnly": "Tylko w czatach jeden na jeden",
+      "noReply": "Nie ma jeszcze odpowiedzi",
+      "nothingToStop": "Nic nie jest generowane",
+      "waiting": "Poczekaj, aż odpowiedź się skończy"
+    },
+    "characterInfo": {
+      "noCharacter": "Brak załadowanej postaci."
+    },
+    "personaInfo": {
+      "noPersona": "Nie wybrano persony."
+    },
+    "companionState": {
+      "companionOnly": "Dostępne tylko dla postaci towarzyszy.",
+      "noData": "Brak danych o relacji."
+    },
+    "image": {
+      "alt": "Obraz widżetu",
+      "noImage": "Nie znaleziono obrazu"
+    },
+    "memory": {
+      "all": "Wszystkie",
+      "empty": "Nic jeszcze nie zapamiętano.",
+      "manage": "Zarządzaj",
+      "more": "+{{count}} więcej"
+    },
+    "quickSnippets": {
+      "empty": "Brak fragmentów."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Model",
+      "authorNote": "Notatka autora",
+      "perMember": "Ustawiane dla każdego członka w ustawieniach czatu"
+    },
+    "sessionInfo": {
+      "messages": "Wiadomości",
+      "scene": "Scena",
+      "memories": "Wspomnienia",
+      "none": "Brak"
+    },
+    "statTracker": {
+      "empty": "Brak statystyk.",
+      "decrease": "Zmniejsz {{label}}",
+      "increase": "Zwiększ {{label}}"
+    },
+    "list": {
+      "addWidget": "Dodaj widżet",
+      "editWidgets": "Edytuj widżety",
+      "revert": "Cofnij",
+      "add": "Dodaj",
+      "done": "Gotowe"
+    },
+    "empty": {
+      "editingTitle": "Brak tu jeszcze widżetów.",
+      "addWidget": "Dodaj widżet",
+      "title": "Brak tu widżetów."
+    },
+    "wrapper": {
+      "moveRight": "Przenieś na prawą stronę",
+      "moveLeft": "Przenieś na lewą stronę",
+      "editWidget": "Edytuj widżet",
+      "deleteWidget": "Usuń widżet"
+    },
+    "area": {
+      "left": "lewy obszar widżetów",
+      "right": "prawy obszar widżetów"
+    },
+    "presets": {
+      "actions": {
+        "label": "Akcje",
+        "desc": "Wygeneruj ponownie, kontynuuj i nowy czat w jednym polu."
+      }
+    },
+    "dice": {
+      "natural": "Naturalna {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Napisz notatkę",
+      "onlyYou": "Tylko ty"
+    },
+    "authorNote": {
+      "placeholder": "Napisz notatkę autora",
+      "everyReply": "Każda odpowiedź"
+    },
+    "time": {
+      "awarenessOff": "Włącz świadomość czasu w ustawieniach czatu, aby ustawić zegar."
+    }
   }
 }

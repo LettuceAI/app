@@ -1232,5 +1232,280 @@
       "hearOnward": "ここからまた会話を追っている",
       "hint": "メモリーモデルが読みながら修正します。あなたの変更が常に優先されます。"
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "区切り線",
+        "desc": "ウィジェット間の線またはスペース。"
+      },
+      "box": {
+        "label": "ボックス",
+        "desc": "任意のタイトルと色でウィジェットをグループ化します。"
+      },
+      "character_info": {
+        "label": "キャラクター情報",
+        "desc": "現在のキャラクターのアバター、名前、説明。"
+      },
+      "persona_info": {
+        "label": "ペルソナ情報",
+        "desc": "現在のペルソナのアバター、名前、説明。"
+      },
+      "scratch_pad": {
+        "label": "スクラッチパッド",
+        "desc": "チャットと一緒に持ち運べるMarkdownメモ。"
+      },
+      "image": {
+        "label": "画像",
+        "desc": "キャラクターまたはペルソナのアバター、あるいは画像ファイル。"
+      },
+      "selector": {
+        "label": "セレクター",
+        "desc": "ペルソナ、モデル、作者メモの選択を開きます。"
+      },
+      "button": {
+        "label": "ボタン",
+        "desc": "再生成や入れ替えなどのアクションをトリガー。"
+      },
+      "stat_tracker": {
+        "label": "ステータストラッカー",
+        "desc": "愛情、HP、ゴールドなどの編集可能な数値。"
+      },
+      "quick_snippets": {
+        "label": "クイックスニペット",
+        "desc": "プリセットテキストを入力欄に挿入するボタン。"
+      },
+      "dice": {
+        "label": "ダイスローラー",
+        "desc": "カスタム記法でダイスを振ります。"
+      },
+      "memory": {
+        "label": "メモリ",
+        "desc": "このチャットが記憶している内容。"
+      },
+      "companion_state": {
+        "label": "コンパニオンの状態",
+        "desc": "コンパニオンキャラクターの関係と気分。"
+      },
+      "session_info": {
+        "label": "セッション情報",
+        "desc": "メッセージ数、記憶、現在のシーン。"
+      },
+      "author_note": {
+        "label": "作者ノート",
+        "desc": "このチャットの作者ノートをインラインで編集。"
+      },
+      "time": {
+        "label": "時間",
+        "desc": "コンパニオンが見る時刻を表示・設定。"
+      }
+    },
+    "picker": {
+      "title": "ウィジェットを追加"
+    },
+    "config": {
+      "fields": {
+        "title": "タイトル",
+        "titleOptional": "タイトル（任意）",
+        "descriptionOptional": "説明（任意）",
+        "content": "コンテンツ"
+      },
+      "design": {
+        "label": "デザイン",
+        "default": "既定",
+        "minimal": "ミニマル",
+        "solid": "ソリッド",
+        "outline": "アウトライン"
+      },
+      "memory": {
+        "maxEntries": "表示する最大件数",
+        "maxEntriesHint": "表示する最新のメモリ件数。"
+      },
+      "characterInfo": {
+        "character": "キャラクター",
+        "characterHint": "このカードに表示するグループメンバー。",
+        "firstMember": "最初のメンバー（既定）"
+      },
+      "authorNote": {
+        "descriptionHint": "ノート自体はウィジェットからインラインで編集され、このチャットに保存されます。"
+      },
+      "statTracker": {
+        "stats": "ステータス",
+        "labelPlaceholder": "ラベル",
+        "removeStat": "ステータスを削除",
+        "min": "最小",
+        "start": "開始",
+        "max": "最大",
+        "defaultStat": "ステータス",
+        "addStat": "ステータスを追加"
+      },
+      "quickSnippets": {
+        "snippets": "スニペット",
+        "labelPlaceholder": "ラベル",
+        "textPlaceholder": "挿入されるテキスト",
+        "removeSnippet": "スニペットを削除",
+        "newSnippet": "新規",
+        "addSnippet": "スニペットを追加"
+      },
+      "dice": {
+        "notation": "記法",
+        "notationHint": "例: 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "スタイル",
+        "line": "線",
+        "space": "スペース"
+      },
+      "box": {
+        "variant": "バリアント",
+        "default": "既定",
+        "subtle": "控えめ",
+        "info": "情報",
+        "warning": "警告",
+        "success": "成功",
+        "danger": "危険"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown対応。"
+      },
+      "image": {
+        "source": "ソース",
+        "character": "キャラクター",
+        "persona": "ペルソナ",
+        "upload": "アップロード",
+        "imageSelected": "画像を選択しました。",
+        "noImageSelected": "まだ画像が選択されていません。",
+        "replaceImage": "画像を置き換える",
+        "chooseFile": "ファイルを選ぶ",
+        "shape": "形状",
+        "auto": "自動",
+        "square": "正方形",
+        "wide": "ワイド",
+        "circle": "円形"
+      },
+      "selector": {
+        "selects": "選択対象",
+        "persona": "ペルソナ",
+        "model": "モデル",
+        "authorNote": "作者ノート"
+      },
+      "button": {
+        "action": "アクション",
+        "regenerate": "再生成",
+        "continue": "続ける",
+        "swapPlaces": "入れ替える",
+        "stop": "停止",
+        "newSession": "新しいセッション",
+        "history": "履歴",
+        "memories": "メモリ",
+        "search": "検索"
+      },
+      "save": "保存",
+      "cancel": "キャンセル",
+      "time": {
+        "hourFormat": "時刻の形式",
+        "h12": "12時間制",
+        "h24": "24時間制",
+        "showSeconds": "秒を表示",
+        "showDate": "日付を表示"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "最後の返信を再生成",
+      "swapPlaces": "入れ替える",
+      "newSession": "新しいセッション",
+      "continue": "続ける",
+      "stopGenerating": "生成を停止",
+      "viewChatHistory": "チャット履歴を表示",
+      "memories": "メモリ",
+      "searchChat": "チャットを検索",
+      "voiceAutoplay": "音声の自動再生",
+      "directOnly": "1対1のチャットのみ",
+      "noReply": "まだ返信がありません",
+      "nothingToStop": "生成中のものはありません",
+      "waiting": "返信が終わるまでお待ちください"
+    },
+    "characterInfo": {
+      "noCharacter": "キャラクターが読み込まれていません。"
+    },
+    "personaInfo": {
+      "noPersona": "ペルソナが選択されていません。"
+    },
+    "companionState": {
+      "companionOnly": "コンパニオンキャラクターでのみ利用可能です。",
+      "noData": "まだ関係データがありません。"
+    },
+    "image": {
+      "alt": "ウィジェット画像",
+      "noImage": "画像が見つかりません"
+    },
+    "memory": {
+      "all": "すべて",
+      "empty": "まだ何も記憶していません。",
+      "manage": "管理",
+      "more": "他 +{{count}} 件"
+    },
+    "quickSnippets": {
+      "empty": "まだスニペットがありません。"
+    },
+    "selector": {
+      "persona": "ペルソナ",
+      "model": "モデル",
+      "authorNote": "作者ノート",
+      "perMember": "チャット設定でメンバーごとに設定します"
+    },
+    "sessionInfo": {
+      "messages": "メッセージ",
+      "scene": "シーン",
+      "memories": "メモリ",
+      "none": "なし"
+    },
+    "statTracker": {
+      "empty": "まだステータスがありません。",
+      "decrease": "{{label}} を減らす",
+      "increase": "{{label}} を増やす"
+    },
+    "list": {
+      "addWidget": "ウィジェットを追加",
+      "editWidgets": "ウィジェットを編集",
+      "revert": "元に戻す",
+      "add": "追加",
+      "done": "完了"
+    },
+    "empty": {
+      "editingTitle": "ここにはまだウィジェットがありません。",
+      "addWidget": "ウィジェットを追加",
+      "title": "ここにはウィジェットがありません。"
+    },
+    "wrapper": {
+      "moveRight": "右側へ移動",
+      "moveLeft": "左側へ移動",
+      "editWidget": "ウィジェットを編集",
+      "deleteWidget": "ウィジェットを削除"
+    },
+    "area": {
+      "left": "左ウィジェットエリア",
+      "right": "右ウィジェットエリア"
+    },
+    "presets": {
+      "actions": {
+        "label": "アクション",
+        "desc": "再生成、続行、新しいチャットを1つのボックスにまとめます。"
+      }
+    },
+    "dice": {
+      "natural": "ナチュラル {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "メモを書く",
+      "onlyYou": "自分だけ"
+    },
+    "authorNote": {
+      "placeholder": "作者メモを書く",
+      "everyReply": "毎回の返信"
+    },
+    "time": {
+      "awarenessOff": "時計を設定するには、チャット設定で時間認識をオンにしてください。"
+    }
   }
 }

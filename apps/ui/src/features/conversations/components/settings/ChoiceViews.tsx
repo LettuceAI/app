@@ -11,7 +11,10 @@ import type { PanelCtx } from "./context";
 
 const mark = <Check size={icon.md} />;
 
-export function ModelView({ ctx, onDone }: { ctx: PanelCtx; onDone: () => void }) {
+/** What the model picker needs of the settings panel, so a chat widget can open it without a panel around it. */
+export type ModelCtx = Pick<PanelCtx, "api" | "settings" | "busy" | "save">;
+
+export function ModelView({ ctx, onDone }: { ctx: ModelCtx; onDone: () => void }) {
   const { t } = useTranslation("conversations");
   const status = useQuery(modelsQuery(ctx.api));
   const chat = useChatModels(ctx.api);

@@ -1325,5 +1325,280 @@
       "hearOnward": "Od tohoto místa znovu v rozhovoru",
       "hint": "Model paměti to při čtení opravuje. Tvoje změny mají vždy přednost."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Oddělovač",
+        "desc": "Čára nebo mezera mezi widgety."
+      },
+      "box": {
+        "label": "Box",
+        "desc": "Seskupí widgety s volitelným názvem a barvou."
+      },
+      "character_info": {
+        "label": "Info o postavě",
+        "desc": "Avatar, jméno a popis aktuální postavy."
+      },
+      "persona_info": {
+        "label": "Info o personě",
+        "desc": "Avatar, jméno a popis aktuální persony."
+      },
+      "scratch_pad": {
+        "label": "Poznámkový blok",
+        "desc": "Poznámky v Markdownu, které putují s chatem."
+      },
+      "image": {
+        "label": "Obrázek",
+        "desc": "Avatar postavy nebo persony, nebo soubor s obrázkem."
+      },
+      "selector": {
+        "label": "Výběr",
+        "desc": "Otevře výběr persony, modelu nebo poznámky autora."
+      },
+      "button": {
+        "label": "Tlačítko",
+        "desc": "Spustí akci, například přegenerování nebo prohození rolí."
+      },
+      "stat_tracker": {
+        "label": "Sledování hodnot",
+        "desc": "Upravitelná čísla, třeba náklonnost, životy nebo zlato."
+      },
+      "quick_snippets": {
+        "label": "Rychlé fráze",
+        "desc": "Tlačítka, která vloží předem připravený text do pole zprávy."
+      },
+      "dice": {
+        "label": "Kostky",
+        "desc": "Hoď kostkami s vlastním zápisem."
+      },
+      "memory": {
+        "label": "Vzpomínky",
+        "desc": "Co si tento chat pamatuje."
+      },
+      "companion_state": {
+        "label": "Stav společníka",
+        "desc": "Vztah a nálada u společnických postav."
+      },
+      "session_info": {
+        "label": "Info o relaci",
+        "desc": "Počet zpráv, vzpomínky a aktuální scéna."
+      },
+      "author_note": {
+        "label": "Poznámka autora",
+        "desc": "Uprav poznámku autora tohoto chatu přímo ve widgetu."
+      },
+      "time": {
+        "label": "Čas",
+        "desc": "Zobraz a nastav čas, který vidí společník."
+      }
+    },
+    "picker": {
+      "title": "Přidat widget"
+    },
+    "config": {
+      "fields": {
+        "title": "Název",
+        "titleOptional": "Název (volitelné)",
+        "descriptionOptional": "Popis (volitelné)",
+        "content": "Obsah"
+      },
+      "design": {
+        "label": "Vzhled",
+        "default": "Výchozí",
+        "minimal": "Minimální",
+        "solid": "Plný",
+        "outline": "Obrys"
+      },
+      "memory": {
+        "maxEntries": "Max. zobrazených záznamů",
+        "maxEntriesHint": "Nejnovější vzpomínky k zobrazení."
+      },
+      "characterInfo": {
+        "character": "Postava",
+        "characterHint": "Kterého člena skupiny karta zobrazuje.",
+        "firstMember": "První člen (výchozí)"
+      },
+      "authorNote": {
+        "descriptionHint": "Samotná poznámka se upravuje přímo ve widgetu a ukládá se do tohoto chatu."
+      },
+      "statTracker": {
+        "stats": "Hodnoty",
+        "labelPlaceholder": "Popisek",
+        "removeStat": "Odebrat hodnotu",
+        "min": "Min.",
+        "start": "Start",
+        "max": "Max.",
+        "defaultStat": "Hodnota",
+        "addStat": "Přidat hodnotu"
+      },
+      "quickSnippets": {
+        "snippets": "Fráze",
+        "labelPlaceholder": "Popisek",
+        "textPlaceholder": "Vkládaný text",
+        "removeSnippet": "Odebrat frázi",
+        "newSnippet": "Nová",
+        "addSnippet": "Přidat frázi"
+      },
+      "dice": {
+        "notation": "Zápis",
+        "notationHint": "např. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Styl",
+        "line": "Čára",
+        "space": "Mezera"
+      },
+      "box": {
+        "variant": "Varianta",
+        "default": "Výchozí",
+        "subtle": "Decentní",
+        "info": "Info",
+        "warning": "Varování",
+        "success": "Úspěch",
+        "danger": "Nebezpečí"
+      },
+      "scratchPad": {
+        "markdownHint": "Podporuje Markdown."
+      },
+      "image": {
+        "source": "Zdroj",
+        "character": "Postava",
+        "persona": "Persona",
+        "upload": "Nahrát",
+        "imageSelected": "Obrázek vybrán.",
+        "noImageSelected": "Zatím nebyl vybrán žádný obrázek.",
+        "replaceImage": "Nahradit obrázek",
+        "chooseFile": "Vybrat soubor",
+        "shape": "Tvar",
+        "auto": "Auto",
+        "square": "Čtverec",
+        "wide": "Široký",
+        "circle": "Kruh"
+      },
+      "selector": {
+        "selects": "Vybírá",
+        "persona": "Persona",
+        "model": "Model",
+        "authorNote": "Poznámka autora"
+      },
+      "button": {
+        "action": "Akce",
+        "regenerate": "Přegenerovat",
+        "continue": "Pokračovat",
+        "swapPlaces": "Prohodit role",
+        "stop": "Zastavit",
+        "newSession": "Nová relace",
+        "history": "Historie",
+        "memories": "Vzpomínky",
+        "search": "Hledat"
+      },
+      "save": "Uložit",
+      "cancel": "Zrušit",
+      "time": {
+        "hourFormat": "Formát času",
+        "h12": "12hodinový",
+        "h24": "24hodinový",
+        "showSeconds": "Zobrazit sekundy",
+        "showDate": "Zobrazit datum"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Přegenerovat poslední odpověď",
+      "swapPlaces": "Prohodit role",
+      "newSession": "Nová relace",
+      "continue": "Pokračovat",
+      "stopGenerating": "Zastavit generování",
+      "viewChatHistory": "Zobrazit historii chatu",
+      "memories": "Vzpomínky",
+      "searchChat": "Hledat v chatu",
+      "voiceAutoplay": "Automatické přehrávání hlasu",
+      "directOnly": "Jen v chatech jeden na jednoho",
+      "noReply": "Zatím tu není žádná odpověď",
+      "nothingToStop": "Nic se negeneruje",
+      "waiting": "Počkej, až odpověď skončí"
+    },
+    "characterInfo": {
+      "noCharacter": "Není načtena žádná postava."
+    },
+    "personaInfo": {
+      "noPersona": "Není vybrána žádná persona."
+    },
+    "companionState": {
+      "companionOnly": "Dostupné jen pro společnické postavy.",
+      "noData": "Zatím žádná data o vztahu."
+    },
+    "image": {
+      "alt": "Obrázek widgetu",
+      "noImage": "Obrázek nebyl nalezen"
+    },
+    "memory": {
+      "all": "Vše",
+      "empty": "Zatím nic není zapamatováno.",
+      "manage": "Spravovat",
+      "more": "+{{count}} dalších"
+    },
+    "quickSnippets": {
+      "empty": "Zatím žádné fráze."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Model",
+      "authorNote": "Poznámka autora",
+      "perMember": "Nastavuje se pro každého člena v nastavení chatu"
+    },
+    "sessionInfo": {
+      "messages": "Zprávy",
+      "scene": "Scéna",
+      "memories": "Vzpomínky",
+      "none": "Žádná"
+    },
+    "statTracker": {
+      "empty": "Zatím žádné hodnoty.",
+      "decrease": "Snížit: {{label}}",
+      "increase": "Zvýšit: {{label}}"
+    },
+    "list": {
+      "addWidget": "Přidat widget",
+      "editWidgets": "Upravit widgety",
+      "revert": "Vrátit zpět",
+      "add": "Přidat",
+      "done": "Hotovo"
+    },
+    "empty": {
+      "editingTitle": "Zatím tu nejsou žádné widgety.",
+      "addWidget": "Přidat widget",
+      "title": "Tady nejsou žádné widgety."
+    },
+    "wrapper": {
+      "moveRight": "Přesunout na pravou stranu",
+      "moveLeft": "Přesunout na levou stranu",
+      "editWidget": "Upravit widget",
+      "deleteWidget": "Smazat widget"
+    },
+    "area": {
+      "left": "levá oblast widgetů",
+      "right": "pravá oblast widgetů"
+    },
+    "presets": {
+      "actions": {
+        "label": "Akce",
+        "desc": "Přegenerování, pokračování a nový chat v jednom boxu."
+      }
+    },
+    "dice": {
+      "natural": "Přirozená {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Napiš poznámku",
+      "onlyYou": "Jen ty"
+    },
+    "authorNote": {
+      "placeholder": "Napiš poznámku autora",
+      "everyReply": "Každá odpověď"
+    },
+    "time": {
+      "awarenessOff": "Zapni vnímání času v nastavení chatu, abys mohl nastavit hodiny."
+    }
   }
 }

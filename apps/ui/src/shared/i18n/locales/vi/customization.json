@@ -242,7 +242,6 @@
     "mtp": "Tỷ lệ chấp nhận bản nháp"
   },
   "futureGroup": "Đã lưu cho trò chuyện nhóm. Giao diện mới vẫn đang được xây dựng.",
-  "futureWidgets": "Đã lưu cho vùng tiện ích trò chuyện. Giao diện mới vẫn đang được xây dựng.",
   "metricInput": "{{value}} vào",
   "metricOutput": "{{value}} ra",
   "metricTotal": "{{value}} tổng",
@@ -280,5 +279,6 @@
   "barSpacing": "Khoảng cách gương mặt",
   "barHint": "Gợi ý chỉ đạo",
   "barHintTop": "Phía trên",
-  "barHintBottom": "Phía dưới"
+  "barHintBottom": "Phía dưới",
+  "widgetsBesideTheChatHint": "Dùng khoảng trống bên cạnh cột trò chuyện. Chỉnh sửa tiện ích từ cuộc trò chuyện."
 }

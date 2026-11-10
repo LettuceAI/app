@@ -1263,5 +1263,280 @@
       "hearOnward": "Innen újra követi",
       "hint": "Az emlékezetmodell olvasás közben javítja ezt. A te módosításaid mindig elsőbbséget élveznek."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Elválasztó",
+        "desc": "Vonal vagy térköz a widgetek között."
+      },
+      "box": {
+        "label": "Doboz",
+        "desc": "Widgeteket csoportosít, opcionális címmel és színnel."
+      },
+      "character_info": {
+        "label": "Karakterinfó",
+        "desc": "A jelenlegi karakter avatarja, neve és leírása."
+      },
+      "persona_info": {
+        "label": "Perszónainfó",
+        "desc": "A jelenlegi perszóna avatarja, neve és leírása."
+      },
+      "scratch_pad": {
+        "label": "Jegyzettömb",
+        "desc": "Markdown jegyzetek, amelyek a beszélgetéssel együtt járnak."
+      },
+      "image": {
+        "label": "Kép",
+        "desc": "A karakter vagy a perszóna avatarja, vagy egy képfájl."
+      },
+      "selector": {
+        "label": "Választó",
+        "desc": "Megnyitja a perszóna, a modell vagy a szerzői jegyzet választóját."
+      },
+      "button": {
+        "label": "Gomb",
+        "desc": "Műveletet indít, például újragenerálást vagy szerepcserét."
+      },
+      "stat_tracker": {
+        "label": "Értékkövető",
+        "desc": "Szerkeszthető számok, például vonzalom, életerő vagy arany."
+      },
+      "quick_snippets": {
+        "label": "Gyors szövegek",
+        "desc": "Gombok, amelyek előre megadott szöveget szúrnak a beviteli mezőbe."
+      },
+      "dice": {
+        "label": "Kockadobó",
+        "desc": "Dobj kockával egyéni jelöléssel."
+      },
+      "memory": {
+        "label": "Emlékek",
+        "desc": "Amire ez a beszélgetés emlékszik."
+      },
+      "companion_state": {
+        "label": "Társ állapota",
+        "desc": "Kapcsolat és hangulat társkarakterekhez."
+      },
+      "session_info": {
+        "label": "Munkamenet-infó",
+        "desc": "Üzenetek száma, emlékek és a jelenlegi jelenet."
+      },
+      "author_note": {
+        "label": "Szerzői jegyzet",
+        "desc": "A beszélgetés szerzői jegyzetének szerkesztése közvetlenül a widgetben."
+      },
+      "time": {
+        "label": "Idő",
+        "desc": "A társ által látott idő megjelenítése és beállítása."
+      }
+    },
+    "picker": {
+      "title": "Widget hozzáadása"
+    },
+    "config": {
+      "fields": {
+        "title": "Cím",
+        "titleOptional": "Cím (nem kötelező)",
+        "descriptionOptional": "Leírás (nem kötelező)",
+        "content": "Tartalom"
+      },
+      "design": {
+        "label": "Megjelenés",
+        "default": "Alapértelmezett",
+        "minimal": "Minimális",
+        "solid": "Tömör",
+        "outline": "Körvonal"
+      },
+      "memory": {
+        "maxEntries": "Megjelenített bejegyzések max. száma",
+        "maxEntriesHint": "A legfrissebb emlékek megjelenítése."
+      },
+      "characterInfo": {
+        "character": "Karakter",
+        "characterHint": "A kártya melyik csoporttagot mutatja.",
+        "firstMember": "Első tag (alapértelmezett)"
+      },
+      "authorNote": {
+        "descriptionHint": "Magát a jegyzetet közvetlenül a widgetben szerkesztheted, és ebbe a beszélgetésbe mentődik."
+      },
+      "statTracker": {
+        "stats": "Értékek",
+        "labelPlaceholder": "Címke",
+        "removeStat": "Érték eltávolítása",
+        "min": "Min.",
+        "start": "Kezdő",
+        "max": "Max.",
+        "defaultStat": "Érték",
+        "addStat": "Érték hozzáadása"
+      },
+      "quickSnippets": {
+        "snippets": "Szövegek",
+        "labelPlaceholder": "Címke",
+        "textPlaceholder": "Beszúrt szöveg",
+        "removeSnippet": "Szöveg eltávolítása",
+        "newSnippet": "Új",
+        "addSnippet": "Szöveg hozzáadása"
+      },
+      "dice": {
+        "notation": "Jelölés",
+        "notationHint": "pl. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Stílus",
+        "line": "Vonal",
+        "space": "Térköz"
+      },
+      "box": {
+        "variant": "Változat",
+        "default": "Alapértelmezett",
+        "subtle": "Visszafogott",
+        "info": "Infó",
+        "warning": "Figyelmeztetés",
+        "success": "Siker",
+        "danger": "Veszély"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown támogatott."
+      },
+      "image": {
+        "source": "Forrás",
+        "character": "Karakter",
+        "persona": "Perszóna",
+        "upload": "Feltöltés",
+        "imageSelected": "Kép kiválasztva.",
+        "noImageSelected": "Még nincs kiválasztott kép.",
+        "replaceImage": "Kép cseréje",
+        "chooseFile": "Fájl kiválasztása",
+        "shape": "Forma",
+        "auto": "Automatikus",
+        "square": "Négyzet",
+        "wide": "Széles",
+        "circle": "Kör"
+      },
+      "selector": {
+        "selects": "Mit választ",
+        "persona": "Perszóna",
+        "model": "Modell",
+        "authorNote": "Szerzői jegyzet"
+      },
+      "button": {
+        "action": "Művelet",
+        "regenerate": "Újragenerálás",
+        "continue": "Folytatás",
+        "swapPlaces": "Szerepcsere",
+        "stop": "Leállítás",
+        "newSession": "Új munkamenet",
+        "history": "Előzmények",
+        "memories": "Emlékek",
+        "search": "Keresés"
+      },
+      "save": "Mentés",
+      "cancel": "Mégse",
+      "time": {
+        "hourFormat": "Időformátum",
+        "h12": "12 órás",
+        "h24": "24 órás",
+        "showSeconds": "Másodpercek megjelenítése",
+        "showDate": "Dátum megjelenítése"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Utolsó válasz újragenerálása",
+      "swapPlaces": "Szerepcsere",
+      "newSession": "Új munkamenet",
+      "continue": "Folytatás",
+      "stopGenerating": "Generálás leállítása",
+      "viewChatHistory": "Beszélgetési előzmények megtekintése",
+      "memories": "Emlékek",
+      "searchChat": "Keresés a beszélgetésben",
+      "voiceAutoplay": "Hang automatikus lejátszása",
+      "directOnly": "Csak kétszemélyes beszélgetésekben",
+      "noReply": "Még nincs válasz",
+      "nothingToStop": "Semmi sem generálódik",
+      "waiting": "Várd meg, amíg a válasz befejeződik"
+    },
+    "characterInfo": {
+      "noCharacter": "Nincs betöltött karakter."
+    },
+    "personaInfo": {
+      "noPersona": "Nincs kiválasztott perszóna."
+    },
+    "companionState": {
+      "companionOnly": "Csak társkarakterekhez érhető el.",
+      "noData": "Még nincs kapcsolati adat."
+    },
+    "image": {
+      "alt": "Widgetkép",
+      "noImage": "A kép nem található"
+    },
+    "memory": {
+      "all": "Mind",
+      "empty": "Még semmi sincs megjegyezve.",
+      "manage": "Kezelés",
+      "more": "+{{count}} további"
+    },
+    "quickSnippets": {
+      "empty": "Még nincsenek szövegek."
+    },
+    "selector": {
+      "persona": "Perszóna",
+      "model": "Modell",
+      "authorNote": "Szerzői jegyzet",
+      "perMember": "Tagonként állítható a beszélgetés beállításaiban"
+    },
+    "sessionInfo": {
+      "messages": "Üzenetek",
+      "scene": "Jelenet",
+      "memories": "Emlékek",
+      "none": "Nincs"
+    },
+    "statTracker": {
+      "empty": "Még nincsenek értékek.",
+      "decrease": "{{label}} csökkentése",
+      "increase": "{{label}} növelése"
+    },
+    "list": {
+      "addWidget": "Widget hozzáadása",
+      "editWidgets": "Widgetek szerkesztése",
+      "revert": "Visszaállítás",
+      "add": "Hozzáadás",
+      "done": "Kész"
+    },
+    "empty": {
+      "editingTitle": "Itt még nincsenek widgetek.",
+      "addWidget": "Widget hozzáadása",
+      "title": "Itt nincsenek widgetek."
+    },
+    "wrapper": {
+      "moveRight": "Áthelyezés a jobb oldalra",
+      "moveLeft": "Áthelyezés a bal oldalra",
+      "editWidget": "Widget szerkesztése",
+      "deleteWidget": "Widget törlése"
+    },
+    "area": {
+      "left": "bal oldali widgetterület",
+      "right": "jobb oldali widgetterület"
+    },
+    "presets": {
+      "actions": {
+        "label": "Műveletek",
+        "desc": "Újragenerálás, folytatás és új beszélgetés egy dobozban."
+      }
+    },
+    "dice": {
+      "natural": "Természetes {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Írj egy jegyzetet",
+      "onlyYou": "Csak te"
+    },
+    "authorNote": {
+      "placeholder": "Írj szerzői jegyzetet",
+      "everyReply": "Minden válasz"
+    },
+    "time": {
+      "awarenessOff": "Kapcsold be az időtudatosságot a beszélgetés beállításaiban az óra beállításához."
+    }
   }
 }

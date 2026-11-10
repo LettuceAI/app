@@ -1263,5 +1263,280 @@
       "hearOnward": "Volgt vanaf hier weer",
       "hint": "Het geheugenmodel corrigeert dit tijdens het lezen. Jouw wijzigingen gaan altijd voor."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Scheidingslijn",
+        "desc": "Een lijn of ruimte tussen widgets."
+      },
+      "box": {
+        "label": "Vak",
+        "desc": "Groepeer widgets met een optionele titel en kleur."
+      },
+      "character_info": {
+        "label": "Personage-info",
+        "desc": "Avatar, naam en beschrijving van het huidige personage."
+      },
+      "persona_info": {
+        "label": "Persona-info",
+        "desc": "Avatar, naam en beschrijving van de huidige persona."
+      },
+      "scratch_pad": {
+        "label": "Kladblok",
+        "desc": "Markdown-notities die met de chat meereizen."
+      },
+      "image": {
+        "label": "Afbeelding",
+        "desc": "De avatar van het personage of de persona, of een afbeeldingsbestand."
+      },
+      "selector": {
+        "label": "Selector",
+        "desc": "Opent de keuze voor persona, model of notitie van de auteur."
+      },
+      "button": {
+        "label": "Knop",
+        "desc": "Start een actie zoals opnieuw genereren of van plaats wisselen."
+      },
+      "stat_tracker": {
+        "label": "Statistiektracker",
+        "desc": "Bewerkbare getallen zoals genegenheid, HP of goud."
+      },
+      "quick_snippets": {
+        "label": "Snelle fragmenten",
+        "desc": "Knoppen die vooraf ingestelde tekst in de editor invoegen."
+      },
+      "dice": {
+        "label": "Dobbelsteenroller",
+        "desc": "Gooi met dobbelstenen met aangepaste notatie."
+      },
+      "memory": {
+        "label": "Herinneringen",
+        "desc": "Wat deze chat onthoudt."
+      },
+      "companion_state": {
+        "label": "Companion-staat",
+        "desc": "Relatie en stemming voor companion-personages."
+      },
+      "session_info": {
+        "label": "Sessie-info",
+        "desc": "Aantal berichten, herinneringen en huidige scène."
+      },
+      "author_note": {
+        "label": "Auteursnotitie",
+        "desc": "Bewerk de auteursnotitie van deze chat inline."
+      },
+      "time": {
+        "label": "Tijd",
+        "desc": "Toon en stel de tijd in die de companion ziet."
+      }
+    },
+    "picker": {
+      "title": "Widget toevoegen"
+    },
+    "config": {
+      "fields": {
+        "title": "Titel",
+        "titleOptional": "Titel (optioneel)",
+        "descriptionOptional": "Beschrijving (optioneel)",
+        "content": "Inhoud"
+      },
+      "design": {
+        "label": "Ontwerp",
+        "default": "Standaard",
+        "minimal": "Minimaal",
+        "solid": "Vol",
+        "outline": "Omtrek"
+      },
+      "memory": {
+        "maxEntries": "Max. getoonde items",
+        "maxEntriesHint": "Meest recente herinneringen om weer te geven."
+      },
+      "characterInfo": {
+        "character": "Personage",
+        "characterHint": "Welk groepslid deze kaart toont.",
+        "firstMember": "Eerste lid (standaard)"
+      },
+      "authorNote": {
+        "descriptionHint": "De notitie zelf wordt inline bewerkt vanuit de widget en opgeslagen in deze chat."
+      },
+      "statTracker": {
+        "stats": "Statistieken",
+        "labelPlaceholder": "Label",
+        "removeStat": "Statistiek verwijderen",
+        "min": "Min",
+        "start": "Start",
+        "max": "Max",
+        "defaultStat": "Statistiek",
+        "addStat": "Statistiek toevoegen"
+      },
+      "quickSnippets": {
+        "snippets": "Fragmenten",
+        "labelPlaceholder": "Label",
+        "textPlaceholder": "Ingevoegde tekst",
+        "removeSnippet": "Fragment verwijderen",
+        "newSnippet": "Nieuw",
+        "addSnippet": "Fragment toevoegen"
+      },
+      "dice": {
+        "notation": "Notatie",
+        "notationHint": "bijv. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Stijl",
+        "line": "Lijn",
+        "space": "Ruimte"
+      },
+      "box": {
+        "variant": "Variant",
+        "default": "Standaard",
+        "subtle": "Subtiel",
+        "info": "Info",
+        "warning": "Waarschuwing",
+        "success": "Succes",
+        "danger": "Gevaar"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown wordt ondersteund."
+      },
+      "image": {
+        "source": "Bron",
+        "character": "Personage",
+        "persona": "Persona",
+        "upload": "Uploaden",
+        "imageSelected": "Afbeelding geselecteerd.",
+        "noImageSelected": "Nog geen afbeelding geselecteerd.",
+        "replaceImage": "Afbeelding vervangen",
+        "chooseFile": "Bestand kiezen",
+        "shape": "Vorm",
+        "auto": "Auto",
+        "square": "Vierkant",
+        "wide": "Breed",
+        "circle": "Cirkel"
+      },
+      "selector": {
+        "selects": "Selecteert",
+        "persona": "Persona",
+        "model": "Model",
+        "authorNote": "Auteursnotitie"
+      },
+      "button": {
+        "action": "Actie",
+        "regenerate": "Opnieuw genereren",
+        "continue": "Doorgaan",
+        "swapPlaces": "Van plaats wisselen",
+        "stop": "Stoppen",
+        "newSession": "Nieuwe sessie",
+        "history": "Geschiedenis",
+        "memories": "Herinneringen",
+        "search": "Zoeken"
+      },
+      "save": "Opslaan",
+      "cancel": "Annuleren",
+      "time": {
+        "hourFormat": "Tijdnotatie",
+        "h12": "12-uurs",
+        "h24": "24-uurs",
+        "showSeconds": "Seconden tonen",
+        "showDate": "Datum tonen"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Laatste antwoord opnieuw genereren",
+      "swapPlaces": "Van plaats wisselen",
+      "newSession": "Nieuwe sessie",
+      "continue": "Doorgaan",
+      "stopGenerating": "Stoppen met genereren",
+      "viewChatHistory": "Chatgeschiedenis bekijken",
+      "memories": "Herinneringen",
+      "searchChat": "Chat doorzoeken",
+      "voiceAutoplay": "Stem automatisch afspelen",
+      "directOnly": "Alleen in privéchats",
+      "noReply": "Er is nog geen antwoord",
+      "nothingToStop": "Er wordt niets gegenereerd",
+      "waiting": "Wacht tot het antwoord klaar is"
+    },
+    "characterInfo": {
+      "noCharacter": "Geen personage geladen."
+    },
+    "personaInfo": {
+      "noPersona": "Geen persona geselecteerd."
+    },
+    "companionState": {
+      "companionOnly": "Alleen beschikbaar voor companion-personages.",
+      "noData": "Nog geen relatiegegevens."
+    },
+    "image": {
+      "alt": "Widget-afbeelding",
+      "noImage": "Afbeelding niet gevonden"
+    },
+    "memory": {
+      "all": "Alle",
+      "empty": "Nog niets onthouden.",
+      "manage": "Beheren",
+      "more": "+{{count}} meer"
+    },
+    "quickSnippets": {
+      "empty": "Nog geen fragmenten."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Model",
+      "authorNote": "Auteursnotitie",
+      "perMember": "Per lid ingesteld in de chatinstellingen"
+    },
+    "sessionInfo": {
+      "messages": "Berichten",
+      "scene": "Scène",
+      "memories": "Herinneringen",
+      "none": "Geen"
+    },
+    "statTracker": {
+      "empty": "Nog geen statistieken.",
+      "decrease": "{{label}} verlagen",
+      "increase": "{{label}} verhogen"
+    },
+    "list": {
+      "addWidget": "Widget toevoegen",
+      "editWidgets": "Widgets bewerken",
+      "revert": "Terugdraaien",
+      "add": "Toevoegen",
+      "done": "Klaar"
+    },
+    "empty": {
+      "editingTitle": "Hier nog geen widgets.",
+      "addWidget": "Een widget toevoegen",
+      "title": "Hier geen widgets."
+    },
+    "wrapper": {
+      "moveRight": "Naar rechterkant verplaatsen",
+      "moveLeft": "Naar linkerkant verplaatsen",
+      "editWidget": "Widget bewerken",
+      "deleteWidget": "Widget verwijderen"
+    },
+    "area": {
+      "left": "linker widgetgebied",
+      "right": "rechter widgetgebied"
+    },
+    "presets": {
+      "actions": {
+        "label": "Acties",
+        "desc": "Opnieuw genereren, doorgaan en nieuwe chat in één vak."
+      }
+    },
+    "dice": {
+      "natural": "Natural {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Schrijf een notitie",
+      "onlyYou": "Alleen jij"
+    },
+    "authorNote": {
+      "placeholder": "Schrijf een auteursnotitie",
+      "everyReply": "Elk antwoord"
+    },
+    "time": {
+      "awarenessOff": "Zet tijdbesef aan in de chatinstellingen om de klok in te stellen."
+    }
   }
 }

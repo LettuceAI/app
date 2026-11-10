@@ -242,7 +242,6 @@
     "mtp": "Draft acceptance"
   },
   "futureGroup": "Saved for group chats. Their new interface is still being built.",
-  "futureWidgets": "Saved for the chat widget area. Its new interface is still being built.",
   "metricInput": "{{value}} in",
   "metricOutput": "{{value}} out",
   "metricTotal": "{{value}} total",
@@ -281,5 +280,6 @@
   "barSpacing": "Face spacing",
   "barHint": "Director hint",
   "barHintTop": "Above",
-  "barHintBottom": "Below"
+  "barHintBottom": "Below",
+  "widgetsBesideTheChatHint": "Uses the space beside the chat column. Edit widgets from the chat."
 }

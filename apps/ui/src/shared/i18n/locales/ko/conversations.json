@@ -1232,5 +1232,280 @@
       "hearOnward": "여기서부터 다시 따라감",
       "hint": "메모리 모델이 읽으면서 이를 수정합니다. 직접 바꾼 내용이 항상 우선합니다."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "구분선",
+        "desc": "위젯 사이의 선 또는 공간."
+      },
+      "box": {
+        "label": "상자",
+        "desc": "선택적 제목과 색상으로 위젯을 묶습니다."
+      },
+      "character_info": {
+        "label": "캐릭터 정보",
+        "desc": "현재 캐릭터의 아바타, 이름, 설명."
+      },
+      "persona_info": {
+        "label": "페르소나 정보",
+        "desc": "현재 페르소나의 아바타, 이름, 설명."
+      },
+      "scratch_pad": {
+        "label": "메모장",
+        "desc": "채팅과 함께 이동하는 마크다운 메모."
+      },
+      "image": {
+        "label": "이미지",
+        "desc": "캐릭터 또는 페르소나의 아바타, 또는 이미지 파일."
+      },
+      "selector": {
+        "label": "선택기",
+        "desc": "페르소나, 모델 또는 작성자 메모 선택기를 엽니다."
+      },
+      "button": {
+        "label": "버튼",
+        "desc": "재생성이나 자리 바꾸기 같은 동작을 실행합니다."
+      },
+      "stat_tracker": {
+        "label": "스탯 추적기",
+        "desc": "애정, HP, 골드 같은 편집 가능한 숫자."
+      },
+      "quick_snippets": {
+        "label": "빠른 스니펫",
+        "desc": "미리 설정한 텍스트를 입력창에 삽입하는 버튼."
+      },
+      "dice": {
+        "label": "주사위 굴리기",
+        "desc": "사용자 지정 표기법으로 주사위를 굴립니다."
+      },
+      "memory": {
+        "label": "기억",
+        "desc": "이 채팅이 기억하는 내용."
+      },
+      "companion_state": {
+        "label": "컴패니언 상태",
+        "desc": "컴패니언 캐릭터의 관계와 기분."
+      },
+      "session_info": {
+        "label": "세션 정보",
+        "desc": "메시지 수, 기억, 현재 장면."
+      },
+      "author_note": {
+        "label": "작성자 노트",
+        "desc": "이 채팅의 작성자 노트를 인라인으로 편집합니다."
+      },
+      "time": {
+        "label": "시간",
+        "desc": "컴패니언이 보는 시간을 표시하고 설정합니다."
+      }
+    },
+    "picker": {
+      "title": "위젯 추가"
+    },
+    "config": {
+      "fields": {
+        "title": "제목",
+        "titleOptional": "제목 (선택)",
+        "descriptionOptional": "설명 (선택)",
+        "content": "내용"
+      },
+      "design": {
+        "label": "디자인",
+        "default": "기본",
+        "minimal": "미니멀",
+        "solid": "솔리드",
+        "outline": "외곽선"
+      },
+      "memory": {
+        "maxEntries": "표시할 최대 항목 수",
+        "maxEntriesHint": "표시할 가장 최근 기억."
+      },
+      "characterInfo": {
+        "character": "캐릭터",
+        "characterHint": "이 카드가 표시할 그룹 멤버.",
+        "firstMember": "첫 번째 멤버 (기본값)"
+      },
+      "authorNote": {
+        "descriptionHint": "노트 자체는 위젯에서 인라인으로 편집되어 이 채팅에 저장됩니다."
+      },
+      "statTracker": {
+        "stats": "스탯",
+        "labelPlaceholder": "라벨",
+        "removeStat": "스탯 제거",
+        "min": "최소",
+        "start": "시작",
+        "max": "최대",
+        "defaultStat": "스탯",
+        "addStat": "스탯 추가"
+      },
+      "quickSnippets": {
+        "snippets": "스니펫",
+        "labelPlaceholder": "라벨",
+        "textPlaceholder": "삽입할 텍스트",
+        "removeSnippet": "스니펫 제거",
+        "newSnippet": "새로 만들기",
+        "addSnippet": "스니펫 추가"
+      },
+      "dice": {
+        "notation": "표기법",
+        "notationHint": "예: 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "스타일",
+        "line": "선",
+        "space": "공간"
+      },
+      "box": {
+        "variant": "종류",
+        "default": "기본",
+        "subtle": "은은함",
+        "info": "정보",
+        "warning": "경고",
+        "success": "성공",
+        "danger": "위험"
+      },
+      "scratchPad": {
+        "markdownHint": "마크다운 지원."
+      },
+      "image": {
+        "source": "소스",
+        "character": "캐릭터",
+        "persona": "페르소나",
+        "upload": "업로드",
+        "imageSelected": "이미지가 선택되었습니다.",
+        "noImageSelected": "아직 선택된 이미지가 없습니다.",
+        "replaceImage": "이미지 교체",
+        "chooseFile": "파일 선택",
+        "shape": "모양",
+        "auto": "자동",
+        "square": "정사각형",
+        "wide": "와이드",
+        "circle": "원형"
+      },
+      "selector": {
+        "selects": "선택 대상",
+        "persona": "페르소나",
+        "model": "모델",
+        "authorNote": "작성자 노트"
+      },
+      "button": {
+        "action": "동작",
+        "regenerate": "재생성",
+        "continue": "계속",
+        "swapPlaces": "자리 바꾸기",
+        "stop": "중지",
+        "newSession": "새 세션",
+        "history": "기록",
+        "memories": "기억",
+        "search": "검색"
+      },
+      "save": "저장",
+      "cancel": "취소",
+      "time": {
+        "hourFormat": "시간 형식",
+        "h12": "12시간",
+        "h24": "24시간",
+        "showSeconds": "초 표시",
+        "showDate": "날짜 표시"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "마지막 답장 재생성",
+      "swapPlaces": "자리 바꾸기",
+      "newSession": "새 세션",
+      "continue": "계속",
+      "stopGenerating": "생성 중지",
+      "viewChatHistory": "채팅 기록 보기",
+      "memories": "기억",
+      "searchChat": "채팅 검색",
+      "voiceAutoplay": "음성 자동 재생",
+      "directOnly": "1:1 채팅에서만",
+      "noReply": "아직 답변이 없습니다",
+      "nothingToStop": "생성 중인 것이 없습니다",
+      "waiting": "답변이 끝날 때까지 기다리세요"
+    },
+    "characterInfo": {
+      "noCharacter": "불러온 캐릭터가 없습니다."
+    },
+    "personaInfo": {
+      "noPersona": "선택된 페르소나가 없습니다."
+    },
+    "companionState": {
+      "companionOnly": "컴패니언 캐릭터에만 사용 가능합니다.",
+      "noData": "아직 관계 데이터가 없습니다."
+    },
+    "image": {
+      "alt": "위젯 이미지",
+      "noImage": "이미지를 찾을 수 없습니다"
+    },
+    "memory": {
+      "all": "전체",
+      "empty": "아직 기억하는 것이 없습니다.",
+      "manage": "관리",
+      "more": "+{{count}}개 더보기"
+    },
+    "quickSnippets": {
+      "empty": "아직 스니펫이 없습니다."
+    },
+    "selector": {
+      "persona": "페르소나",
+      "model": "모델",
+      "authorNote": "작성자 노트",
+      "perMember": "채팅 설정에서 멤버별로 지정합니다"
+    },
+    "sessionInfo": {
+      "messages": "메시지",
+      "scene": "장면",
+      "memories": "기억",
+      "none": "없음"
+    },
+    "statTracker": {
+      "empty": "아직 스탯이 없습니다.",
+      "decrease": "{{label}} 감소",
+      "increase": "{{label}} 증가"
+    },
+    "list": {
+      "addWidget": "위젯 추가",
+      "editWidgets": "위젯 편집",
+      "revert": "되돌리기",
+      "add": "추가",
+      "done": "완료"
+    },
+    "empty": {
+      "editingTitle": "아직 위젯이 없습니다.",
+      "addWidget": "위젯 추가",
+      "title": "여기에 위젯이 없습니다."
+    },
+    "wrapper": {
+      "moveRight": "오른쪽으로 이동",
+      "moveLeft": "왼쪽으로 이동",
+      "editWidget": "위젯 편집",
+      "deleteWidget": "위젯 삭제"
+    },
+    "area": {
+      "left": "왼쪽 위젯 영역",
+      "right": "오른쪽 위젯 영역"
+    },
+    "presets": {
+      "actions": {
+        "label": "동작",
+        "desc": "다시 생성, 이어서 쓰기, 새 채팅을 한 상자에 담습니다."
+      }
+    },
+    "dice": {
+      "natural": "내추럴 {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "메모 작성",
+      "onlyYou": "나만 보기"
+    },
+    "authorNote": {
+      "placeholder": "작성자 메모 작성",
+      "everyReply": "모든 답변"
+    },
+    "time": {
+      "awarenessOff": "시계를 설정하려면 채팅 설정에서 시간 인식을 켜세요."
+    }
   }
 }

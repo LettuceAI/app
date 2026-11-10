@@ -1263,5 +1263,280 @@
       "hearOnward": "Sumusubaybay ulit mula rito",
       "hint": "Itinatama ito ng memory model habang nagbabasa. Laging nananaig ang mga pagbabago mo."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Divider",
+        "desc": "Isang linya o espasyo sa pagitan ng mga widget."
+      },
+      "box": {
+        "label": "Box",
+        "desc": "Igrupo ang mga widget na may opsyonal na pamagat at kulay."
+      },
+      "character_info": {
+        "label": "Character info",
+        "desc": "Avatar, pangalan, at paglalarawan ng kasalukuyang character."
+      },
+      "persona_info": {
+        "label": "Persona info",
+        "desc": "Avatar, pangalan, at paglalarawan ng kasalukuyang persona."
+      },
+      "scratch_pad": {
+        "label": "Scratch pad",
+        "desc": "Markdown na mga tala na kasama ng chat."
+      },
+      "image": {
+        "label": "Larawan",
+        "desc": "Ang avatar ng karakter o persona, o isang file ng larawan."
+      },
+      "selector": {
+        "label": "Selector",
+        "desc": "Binubuksan ang pagpili ng persona, modelo, o tala ng may-akda."
+      },
+      "button": {
+        "label": "Button",
+        "desc": "Mag-trigger ng aksyon tulad ng regenerate o swap places."
+      },
+      "stat_tracker": {
+        "label": "Stat tracker",
+        "desc": "Mga numerong nae-edit tulad ng affection, HP, o gold."
+      },
+      "quick_snippets": {
+        "label": "Quick snippets",
+        "desc": "Mga button na naglalagay ng preset na teksto sa composer."
+      },
+      "dice": {
+        "label": "Dice roller",
+        "desc": "Maghagis ng dice gamit ang custom na notation."
+      },
+      "memory": {
+        "label": "Mga Memory",
+        "desc": "Kung ano ang naaalala ng chat na ito."
+      },
+      "companion_state": {
+        "label": "Companion state",
+        "desc": "Relasyon at mood para sa mga companion na character."
+      },
+      "session_info": {
+        "label": "Session info",
+        "desc": "Bilang ng mensahe, mga alaala, at kasalukuyang eksena."
+      },
+      "author_note": {
+        "label": "Author note",
+        "desc": "I-edit ang author note ng chat na ito nang inline."
+      },
+      "time": {
+        "label": "Oras",
+        "desc": "Ipakita at itakda ang oras na nakikita ng companion."
+      }
+    },
+    "picker": {
+      "title": "Magdagdag ng widget"
+    },
+    "config": {
+      "fields": {
+        "title": "Pamagat",
+        "titleOptional": "Pamagat (opsyonal)",
+        "descriptionOptional": "Paglalarawan (opsyonal)",
+        "content": "Nilalaman"
+      },
+      "design": {
+        "label": "Disenyo",
+        "default": "Default",
+        "minimal": "Minimal",
+        "solid": "Solid",
+        "outline": "Outline"
+      },
+      "memory": {
+        "maxEntries": "Max na entry na ipinapakita",
+        "maxEntriesHint": "Pinakabagong mga memory na ipapakita."
+      },
+      "characterInfo": {
+        "character": "Character",
+        "characterHint": "Aling group member ang ipinapakita ng card na ito.",
+        "firstMember": "Unang miyembro (default)"
+      },
+      "authorNote": {
+        "descriptionHint": "Ang tala mismo ay ine-edit nang inline mula sa widget at sine-save sa chat na ito."
+      },
+      "statTracker": {
+        "stats": "Mga Stat",
+        "labelPlaceholder": "Label",
+        "removeStat": "Alisin ang stat",
+        "min": "Min",
+        "start": "Simula",
+        "max": "Max",
+        "defaultStat": "Stat",
+        "addStat": "Magdagdag ng stat"
+      },
+      "quickSnippets": {
+        "snippets": "Mga Snippet",
+        "labelPlaceholder": "Label",
+        "textPlaceholder": "Inilagay na teksto",
+        "removeSnippet": "Alisin ang snippet",
+        "newSnippet": "Bago",
+        "addSnippet": "Magdagdag ng snippet"
+      },
+      "dice": {
+        "notation": "Notation",
+        "notationHint": "hal. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Estilo",
+        "line": "Linya",
+        "space": "Espasyo"
+      },
+      "box": {
+        "variant": "Variant",
+        "default": "Default",
+        "subtle": "Subtle",
+        "info": "Info",
+        "warning": "Babala",
+        "success": "Tagumpay",
+        "danger": "Panganib"
+      },
+      "scratchPad": {
+        "markdownHint": "Suportado ang markdown."
+      },
+      "image": {
+        "source": "Pinagmulan",
+        "character": "Character",
+        "persona": "Persona",
+        "upload": "Upload",
+        "imageSelected": "Napili ang larawan.",
+        "noImageSelected": "Wala pang napiling larawan.",
+        "replaceImage": "Palitan ang larawan",
+        "chooseFile": "Pumili ng file",
+        "shape": "Hugis",
+        "auto": "Auto",
+        "square": "Parisukat",
+        "wide": "Malapad",
+        "circle": "Bilog"
+      },
+      "selector": {
+        "selects": "Pumipili",
+        "persona": "Persona",
+        "model": "Model",
+        "authorNote": "Author's note"
+      },
+      "button": {
+        "action": "Aksyon",
+        "regenerate": "I-regenerate",
+        "continue": "Magpatuloy",
+        "swapPlaces": "Magpalit ng lugar",
+        "stop": "Itigil",
+        "newSession": "Bagong session",
+        "history": "Kasaysayan",
+        "memories": "Mga Memory",
+        "search": "Maghanap"
+      },
+      "save": "I-save",
+      "cancel": "Kanselahin",
+      "time": {
+        "hourFormat": "Format ng oras",
+        "h12": "12-oras",
+        "h24": "24-oras",
+        "showSeconds": "Ipakita ang segundo",
+        "showDate": "Ipakita ang petsa"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "I-regenerate ang huling sagot",
+      "swapPlaces": "Magpalit ng lugar",
+      "newSession": "Bagong session",
+      "continue": "Magpatuloy",
+      "stopGenerating": "Itigil ang paggawa",
+      "viewChatHistory": "Tingnan ang kasaysayan ng chat",
+      "memories": "Mga Memory",
+      "searchChat": "Maghanap sa chat",
+      "voiceAutoplay": "Voice autoplay",
+      "directOnly": "Sa one-to-one na chat lang",
+      "noReply": "Wala pang sagot",
+      "nothingToStop": "Walang ginagawa",
+      "waiting": "Hintaying matapos ang sagot"
+    },
+    "characterInfo": {
+      "noCharacter": "Walang naka-load na character."
+    },
+    "personaInfo": {
+      "noPersona": "Walang napiling persona."
+    },
+    "companionState": {
+      "companionOnly": "Available lang para sa mga companion na character.",
+      "noData": "Wala pang datos ng relasyon."
+    },
+    "image": {
+      "alt": "Larawan ng widget",
+      "noImage": "Hindi nahanap ang larawan"
+    },
+    "memory": {
+      "all": "Lahat",
+      "empty": "Wala pang naaalala.",
+      "manage": "Pamahalaan",
+      "more": "+{{count}} pa"
+    },
+    "quickSnippets": {
+      "empty": "Wala pang snippet."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Model",
+      "authorNote": "Author's note",
+      "perMember": "Itinakda bawat miyembro sa mga setting ng chat"
+    },
+    "sessionInfo": {
+      "messages": "Mga Mensahe",
+      "scene": "Eksena",
+      "memories": "Mga Memory",
+      "none": "Wala"
+    },
+    "statTracker": {
+      "empty": "Wala pang stat.",
+      "decrease": "Bawasan ang {{label}}",
+      "increase": "Dagdagan ang {{label}}"
+    },
+    "list": {
+      "addWidget": "Magdagdag ng widget",
+      "editWidgets": "I-edit ang mga widget",
+      "revert": "Ibalik",
+      "add": "Idagdag",
+      "done": "Tapos Na"
+    },
+    "empty": {
+      "editingTitle": "Wala pang widget dito.",
+      "addWidget": "Magdagdag ng widget",
+      "title": "Walang widget dito."
+    },
+    "wrapper": {
+      "moveRight": "Ilipat sa kanang bahagi",
+      "moveLeft": "Ilipat sa kaliwang bahagi",
+      "editWidget": "I-edit ang widget",
+      "deleteWidget": "Tanggalin ang widget"
+    },
+    "area": {
+      "left": "kaliwang widget area",
+      "right": "kanang widget area"
+    },
+    "presets": {
+      "actions": {
+        "label": "Mga aksyon",
+        "desc": "Regenerate, magpatuloy, at bagong chat sa iisang kahon."
+      }
+    },
+    "dice": {
+      "natural": "Natural {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Magsulat ng tala",
+      "onlyYou": "Ikaw lang"
+    },
+    "authorNote": {
+      "placeholder": "Magsulat ng tala ng may-akda",
+      "everyReply": "Bawat sagot"
+    },
+    "time": {
+      "awarenessOff": "I-on ang time awareness sa mga setting ng chat para maitakda ang orasan."
+    }
   }
 }

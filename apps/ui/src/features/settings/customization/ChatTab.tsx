@@ -664,10 +664,11 @@ export function ChatSettings({
             toggle("chatHeaderMoves", t("headerFollowsTheColumn"))}
           {look.chatColumnWidth !== "full" &&
             toggle("chatFooterMoves", t("composerFollowsTheColumn"))}
-          {!group && look.chatColumnWidth !== "full" &&
-            toggle("chatWidgetAreaEnabled", t("widgetsBesideTheChat"), t("futureWidgets"))}
-          {!group && look.chatColumnWidth !== "full" &&
+          {look.chatColumnWidth !== "full" &&
+            toggle("chatWidgetAreaEnabled", t("widgetsBesideTheChat"), t("widgetsBesideTheChatHint"))}
+          {look.chatColumnWidth !== "full" &&
             look.chatWidgetAreaEnabled &&
+            look.chatColumnAlign === "center" &&
             row(
               "chatWidgetCenterMode",
               t("widgetSides"),

@@ -1263,5 +1263,280 @@
       "hearOnward": "Following again from here",
       "hint": "The memory model corrects this as it reads. Your changes always win."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Divider",
+        "desc": "A line or space between widgets."
+      },
+      "box": {
+        "label": "Box",
+        "desc": "Group widgets with an optional title and color."
+      },
+      "character_info": {
+        "label": "Character info",
+        "desc": "Avatar, name, and description of the current character."
+      },
+      "persona_info": {
+        "label": "Persona info",
+        "desc": "Avatar, name, and description of the current persona."
+      },
+      "scratch_pad": {
+        "label": "Scratch pad",
+        "desc": "Markdown notes that travel with the chat."
+      },
+      "image": {
+        "label": "Image",
+        "desc": "The character or persona avatar, or an image file."
+      },
+      "selector": {
+        "label": "Selector",
+        "desc": "Open the persona, model or author's note picker."
+      },
+      "button": {
+        "label": "Button",
+        "desc": "Trigger an action like regenerate or swap places."
+      },
+      "stat_tracker": {
+        "label": "Stat tracker",
+        "desc": "Editable numbers like affection, HP, or gold."
+      },
+      "quick_snippets": {
+        "label": "Quick snippets",
+        "desc": "Buttons that insert preset text into the composer."
+      },
+      "dice": {
+        "label": "Dice roller",
+        "desc": "Roll dice with custom notation."
+      },
+      "memory": {
+        "label": "Memories",
+        "desc": "What this chat remembers."
+      },
+      "companion_state": {
+        "label": "Companion state",
+        "desc": "Relationship and mood for companion characters."
+      },
+      "session_info": {
+        "label": "Session info",
+        "desc": "Message count, memories, and current scene."
+      },
+      "author_note": {
+        "label": "Author note",
+        "desc": "Edit this chat's author note inline."
+      },
+      "time": {
+        "label": "Time",
+        "desc": "Show and set the time the companion sees."
+      }
+    },
+    "picker": {
+      "title": "Add widget"
+    },
+    "config": {
+      "fields": {
+        "title": "Title",
+        "titleOptional": "Title (optional)",
+        "descriptionOptional": "Description (optional)",
+        "content": "Content"
+      },
+      "design": {
+        "label": "Design",
+        "default": "Default",
+        "minimal": "Minimal",
+        "solid": "Solid",
+        "outline": "Outline"
+      },
+      "memory": {
+        "maxEntries": "Max entries shown",
+        "maxEntriesHint": "Most recent memories to display."
+      },
+      "characterInfo": {
+        "character": "Character",
+        "characterHint": "Which group member this card shows.",
+        "firstMember": "First member (default)"
+      },
+      "authorNote": {
+        "descriptionHint": "The note itself is edited inline from the widget and saved to this chat."
+      },
+      "statTracker": {
+        "stats": "Stats",
+        "labelPlaceholder": "Label",
+        "removeStat": "Remove stat",
+        "min": "Min",
+        "start": "Start",
+        "max": "Max",
+        "defaultStat": "Stat",
+        "addStat": "Add stat"
+      },
+      "quickSnippets": {
+        "snippets": "Snippets",
+        "labelPlaceholder": "Label",
+        "textPlaceholder": "Inserted text",
+        "removeSnippet": "Remove snippet",
+        "newSnippet": "New",
+        "addSnippet": "Add snippet"
+      },
+      "dice": {
+        "notation": "Notation",
+        "notationHint": "e.g. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Style",
+        "line": "Line",
+        "space": "Space"
+      },
+      "box": {
+        "variant": "Variant",
+        "default": "Default",
+        "subtle": "Subtle",
+        "info": "Info",
+        "warning": "Warning",
+        "success": "Success",
+        "danger": "Danger"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown supported."
+      },
+      "image": {
+        "source": "Source",
+        "character": "Character",
+        "persona": "Persona",
+        "upload": "Upload",
+        "imageSelected": "Image selected.",
+        "noImageSelected": "No image selected yet.",
+        "replaceImage": "Replace image",
+        "chooseFile": "Choose file",
+        "shape": "Shape",
+        "auto": "Auto",
+        "square": "Square",
+        "wide": "Wide",
+        "circle": "Circle"
+      },
+      "selector": {
+        "selects": "Selects",
+        "persona": "Persona",
+        "model": "Model",
+        "authorNote": "Author's note"
+      },
+      "button": {
+        "action": "Action",
+        "regenerate": "Regenerate",
+        "continue": "Continue",
+        "swapPlaces": "Swap places",
+        "stop": "Stop",
+        "newSession": "New session",
+        "history": "History",
+        "memories": "Memories",
+        "search": "Search"
+      },
+      "save": "Save",
+      "cancel": "Cancel",
+      "time": {
+        "hourFormat": "Hour format",
+        "h12": "12-hour",
+        "h24": "24-hour",
+        "showSeconds": "Show seconds",
+        "showDate": "Show date"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Regenerate last reply",
+      "swapPlaces": "Swap places",
+      "newSession": "New session",
+      "continue": "Continue",
+      "stopGenerating": "Stop generating",
+      "viewChatHistory": "View chat history",
+      "memories": "Memories",
+      "searchChat": "Search chat",
+      "voiceAutoplay": "Voice autoplay",
+      "directOnly": "Only in one-to-one chats",
+      "noReply": "There is no reply yet",
+      "nothingToStop": "Nothing is being generated",
+      "waiting": "Wait for the reply to finish"
+    },
+    "characterInfo": {
+      "noCharacter": "No character loaded."
+    },
+    "personaInfo": {
+      "noPersona": "No persona selected."
+    },
+    "companionState": {
+      "companionOnly": "Only available for companion characters.",
+      "noData": "No relationship data yet."
+    },
+    "image": {
+      "alt": "Widget image",
+      "noImage": "Image not found"
+    },
+    "memory": {
+      "all": "All",
+      "empty": "Nothing remembered yet.",
+      "manage": "Manage",
+      "more": "+{{count}} more"
+    },
+    "quickSnippets": {
+      "empty": "No snippets yet."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Model",
+      "authorNote": "Author's note",
+      "perMember": "Set per member in the chat settings"
+    },
+    "sessionInfo": {
+      "messages": "Messages",
+      "scene": "Scene",
+      "memories": "Memories",
+      "none": "None"
+    },
+    "statTracker": {
+      "empty": "No stats yet.",
+      "decrease": "Decrease {{label}}",
+      "increase": "Increase {{label}}"
+    },
+    "list": {
+      "addWidget": "Add widget",
+      "editWidgets": "Edit widgets",
+      "revert": "Revert",
+      "add": "Add",
+      "done": "Done"
+    },
+    "empty": {
+      "editingTitle": "No widgets here yet.",
+      "addWidget": "Add a widget",
+      "title": "No widgets here."
+    },
+    "wrapper": {
+      "moveRight": "Move to right side",
+      "moveLeft": "Move to left side",
+      "editWidget": "Edit widget",
+      "deleteWidget": "Delete widget"
+    },
+    "area": {
+      "left": "left widget area",
+      "right": "right widget area"
+    },
+    "presets": {
+      "actions": {
+        "label": "Actions",
+        "desc": "Regenerate, continue and new chat in one box."
+      }
+    },
+    "dice": {
+      "natural": "Natural {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Write a note",
+      "onlyYou": "Only you"
+    },
+    "authorNote": {
+      "placeholder": "Write an author's note",
+      "everyReply": "Every reply"
+    },
+    "time": {
+      "awarenessOff": "Turn on time awareness in the chat settings to set the clock."
+    }
   }
 }

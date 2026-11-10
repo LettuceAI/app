@@ -1232,5 +1232,280 @@
       "hearOnward": "Theo dõi lại từ đây",
       "hint": "Mô hình bộ nhớ sửa điều này khi đọc. Thay đổi của bạn luôn được ưu tiên."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Đường phân cách",
+        "desc": "Một đường kẻ hoặc khoảng trống giữa các tiện ích."
+      },
+      "box": {
+        "label": "Hộp",
+        "desc": "Nhóm các tiện ích với tiêu đề và màu tùy chọn."
+      },
+      "character_info": {
+        "label": "Thông tin nhân vật",
+        "desc": "Ảnh đại diện, tên và mô tả của nhân vật hiện tại."
+      },
+      "persona_info": {
+        "label": "Thông tin nhân cách",
+        "desc": "Ảnh đại diện, tên và mô tả của nhân cách hiện tại."
+      },
+      "scratch_pad": {
+        "label": "Bảng nháp",
+        "desc": "Ghi chú Markdown đi kèm cuộc trò chuyện."
+      },
+      "image": {
+        "label": "Hình ảnh",
+        "desc": "Ảnh đại diện của nhân vật hoặc persona, hoặc một tệp ảnh."
+      },
+      "selector": {
+        "label": "Bộ chọn",
+        "desc": "Mở bộ chọn persona, mô hình hoặc ghi chú của tác giả."
+      },
+      "button": {
+        "label": "Nút",
+        "desc": "Kích hoạt một hành động như tạo lại hoặc đổi chỗ."
+      },
+      "stat_tracker": {
+        "label": "Bộ theo dõi chỉ số",
+        "desc": "Các con số có thể chỉnh sửa như tình cảm, HP hoặc vàng."
+      },
+      "quick_snippets": {
+        "label": "Đoạn nhanh",
+        "desc": "Các nút chèn văn bản đặt sẵn vào ô soạn thảo."
+      },
+      "dice": {
+        "label": "Tung xúc xắc",
+        "desc": "Tung xúc xắc với ký hiệu tùy chỉnh."
+      },
+      "memory": {
+        "label": "Ký ức",
+        "desc": "Những gì cuộc trò chuyện này ghi nhớ."
+      },
+      "companion_state": {
+        "label": "Trạng thái bạn đồng hành",
+        "desc": "Mối quan hệ và tâm trạng cho nhân vật bạn đồng hành."
+      },
+      "session_info": {
+        "label": "Thông tin phiên",
+        "desc": "Số tin nhắn, ký ức và cảnh hiện tại."
+      },
+      "author_note": {
+        "label": "Ghi chú tác giả",
+        "desc": "Chỉnh sửa ghi chú tác giả của cuộc trò chuyện này ngay tại chỗ."
+      },
+      "time": {
+        "label": "Thời gian",
+        "desc": "Hiển thị và đặt thời gian mà bạn đồng hành nhìn thấy."
+      }
+    },
+    "picker": {
+      "title": "Thêm tiện ích"
+    },
+    "config": {
+      "fields": {
+        "title": "Tiêu đề",
+        "titleOptional": "Tiêu đề (tùy chọn)",
+        "descriptionOptional": "Mô tả (tùy chọn)",
+        "content": "Nội dung"
+      },
+      "design": {
+        "label": "Thiết kế",
+        "default": "Mặc định",
+        "minimal": "Tối giản",
+        "solid": "Đặc",
+        "outline": "Viền"
+      },
+      "memory": {
+        "maxEntries": "Số mục tối đa hiển thị",
+        "maxEntriesHint": "Số ký ức gần đây nhất để hiển thị."
+      },
+      "characterInfo": {
+        "character": "Nhân vật",
+        "characterHint": "Thẻ này hiển thị thành viên nhóm nào.",
+        "firstMember": "Thành viên đầu tiên (mặc định)"
+      },
+      "authorNote": {
+        "descriptionHint": "Ghi chú được chỉnh sửa ngay tại tiện ích và lưu vào cuộc trò chuyện này."
+      },
+      "statTracker": {
+        "stats": "Chỉ số",
+        "labelPlaceholder": "Nhãn",
+        "removeStat": "Xóa chỉ số",
+        "min": "Tối thiểu",
+        "start": "Bắt đầu",
+        "max": "Tối đa",
+        "defaultStat": "Chỉ số",
+        "addStat": "Thêm chỉ số"
+      },
+      "quickSnippets": {
+        "snippets": "Đoạn",
+        "labelPlaceholder": "Nhãn",
+        "textPlaceholder": "Văn bản chèn vào",
+        "removeSnippet": "Xóa đoạn",
+        "newSnippet": "Mới",
+        "addSnippet": "Thêm đoạn"
+      },
+      "dice": {
+        "notation": "Ký hiệu",
+        "notationHint": "vd. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Kiểu",
+        "line": "Đường kẻ",
+        "space": "Khoảng trống"
+      },
+      "box": {
+        "variant": "Biến thể",
+        "default": "Mặc định",
+        "subtle": "Nhẹ nhàng",
+        "info": "Thông tin",
+        "warning": "Cảnh báo",
+        "success": "Thành công",
+        "danger": "Nguy hiểm"
+      },
+      "scratchPad": {
+        "markdownHint": "Hỗ trợ Markdown."
+      },
+      "image": {
+        "source": "Nguồn",
+        "character": "Nhân vật",
+        "persona": "Nhân cách",
+        "upload": "Tải lên",
+        "imageSelected": "Đã chọn hình ảnh.",
+        "noImageSelected": "Chưa chọn hình ảnh nào.",
+        "replaceImage": "Thay hình ảnh",
+        "chooseFile": "Chọn tệp",
+        "shape": "Hình dạng",
+        "auto": "Tự động",
+        "square": "Vuông",
+        "wide": "Rộng",
+        "circle": "Tròn"
+      },
+      "selector": {
+        "selects": "Chọn",
+        "persona": "Nhân cách",
+        "model": "Mô hình",
+        "authorNote": "Ghi chú tác giả"
+      },
+      "button": {
+        "action": "Hành động",
+        "regenerate": "Tạo lại",
+        "continue": "Tiếp tục",
+        "swapPlaces": "Đổi chỗ",
+        "stop": "Dừng",
+        "newSession": "Phiên mới",
+        "history": "Lịch sử",
+        "memories": "Ký ức",
+        "search": "Tìm kiếm"
+      },
+      "save": "Lưu",
+      "cancel": "Hủy",
+      "time": {
+        "hourFormat": "Định dạng giờ",
+        "h12": "12 giờ",
+        "h24": "24 giờ",
+        "showSeconds": "Hiện giây",
+        "showDate": "Hiện ngày"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Tạo lại phản hồi cuối",
+      "swapPlaces": "Đổi chỗ",
+      "newSession": "Phiên mới",
+      "continue": "Tiếp tục",
+      "stopGenerating": "Dừng tạo",
+      "viewChatHistory": "Xem lịch sử trò chuyện",
+      "memories": "Ký ức",
+      "searchChat": "Tìm trong trò chuyện",
+      "voiceAutoplay": "Tự động phát giọng nói",
+      "directOnly": "Chỉ trong trò chuyện 1-1",
+      "noReply": "Chưa có phản hồi",
+      "nothingToStop": "Không có gì đang được tạo",
+      "waiting": "Chờ phản hồi hoàn tất"
+    },
+    "characterInfo": {
+      "noCharacter": "Chưa tải nhân vật nào."
+    },
+    "personaInfo": {
+      "noPersona": "Chưa chọn nhân cách nào."
+    },
+    "companionState": {
+      "companionOnly": "Chỉ khả dụng cho nhân vật bạn đồng hành.",
+      "noData": "Chưa có dữ liệu mối quan hệ."
+    },
+    "image": {
+      "alt": "Hình ảnh tiện ích",
+      "noImage": "Không tìm thấy ảnh"
+    },
+    "memory": {
+      "all": "Tất cả",
+      "empty": "Chưa ghi nhớ gì cả.",
+      "manage": "Quản lý",
+      "more": "+{{count}} nữa"
+    },
+    "quickSnippets": {
+      "empty": "Chưa có đoạn nào."
+    },
+    "selector": {
+      "persona": "Nhân cách",
+      "model": "Mô hình",
+      "authorNote": "Ghi chú tác giả",
+      "perMember": "Đặt theo từng thành viên trong cài đặt trò chuyện"
+    },
+    "sessionInfo": {
+      "messages": "Tin nhắn",
+      "scene": "Cảnh",
+      "memories": "Ký ức",
+      "none": "Không có"
+    },
+    "statTracker": {
+      "empty": "Chưa có chỉ số nào.",
+      "decrease": "Giảm {{label}}",
+      "increase": "Tăng {{label}}"
+    },
+    "list": {
+      "addWidget": "Thêm tiện ích",
+      "editWidgets": "Chỉnh sửa tiện ích",
+      "revert": "Hoàn nguyên",
+      "add": "Thêm",
+      "done": "Xong"
+    },
+    "empty": {
+      "editingTitle": "Chưa có tiện ích nào ở đây.",
+      "addWidget": "Thêm một tiện ích",
+      "title": "Không có tiện ích nào ở đây."
+    },
+    "wrapper": {
+      "moveRight": "Chuyển sang bên phải",
+      "moveLeft": "Chuyển sang bên trái",
+      "editWidget": "Chỉnh sửa tiện ích",
+      "deleteWidget": "Xóa tiện ích"
+    },
+    "area": {
+      "left": "khu vực tiện ích bên trái",
+      "right": "khu vực tiện ích bên phải"
+    },
+    "presets": {
+      "actions": {
+        "label": "Hành động",
+        "desc": "Tạo lại, tiếp tục và cuộc trò chuyện mới trong một hộp."
+      }
+    },
+    "dice": {
+      "natural": "Tự nhiên {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Viết ghi chú",
+      "onlyYou": "Chỉ mình bạn"
+    },
+    "authorNote": {
+      "placeholder": "Viết ghi chú của tác giả",
+      "everyReply": "Mọi phản hồi"
+    },
+    "time": {
+      "awarenessOff": "Bật nhận thức thời gian trong cài đặt trò chuyện để chỉnh đồng hồ."
+    }
   }
 }

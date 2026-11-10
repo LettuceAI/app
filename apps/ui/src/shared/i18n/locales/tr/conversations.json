@@ -1263,5 +1263,280 @@
       "hearOnward": "Buradan itibaren yine takip ediyor",
       "hint": "Memory modeli okurken bunu düzeltir. Senin değişikliklerin her zaman önceliklidir."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Ayırıcı",
+        "desc": "Widget'lar arasında bir çizgi veya boşluk."
+      },
+      "box": {
+        "label": "Kutu",
+        "desc": "Widget'ları isteğe bağlı bir başlık ve renkle gruplandırın."
+      },
+      "character_info": {
+        "label": "Karakter bilgisi",
+        "desc": "Mevcut karakterin avatarı, adı ve açıklaması."
+      },
+      "persona_info": {
+        "label": "Persona bilgisi",
+        "desc": "Mevcut personanın avatarı, adı ve açıklaması."
+      },
+      "scratch_pad": {
+        "label": "Karalama defteri",
+        "desc": "Sohbetle birlikte taşınan Markdown notları."
+      },
+      "image": {
+        "label": "Resim",
+        "desc": "Karakterin veya personanın avatarı ya da bir görsel dosyası."
+      },
+      "selector": {
+        "label": "Seçici",
+        "desc": "Persona, model veya yazar notu seçicisini açar."
+      },
+      "button": {
+        "label": "Buton",
+        "desc": "Yeniden oluşturma veya yer değiştirme gibi bir işlemi tetikleyin."
+      },
+      "stat_tracker": {
+        "label": "İstatistik takipçisi",
+        "desc": "Şefkat, HP veya altın gibi düzenlenebilir sayılar."
+      },
+      "quick_snippets": {
+        "label": "Hızlı snippet'lar",
+        "desc": "Composer'a önceden ayarlanmış metinler ekleyen butonlar."
+      },
+      "dice": {
+        "label": "Zar atıcı",
+        "desc": "Özel notasyonla zar atın."
+      },
+      "memory": {
+        "label": "Anılar",
+        "desc": "Bu sohbetin hatırladıkları."
+      },
+      "companion_state": {
+        "label": "Yoldaş durumu",
+        "desc": "Yoldaş karakterler için ilişki ve ruh hali."
+      },
+      "session_info": {
+        "label": "Oturum bilgisi",
+        "desc": "Mesaj sayısı, anılar ve geçerli sahne."
+      },
+      "author_note": {
+        "label": "Yazar notu",
+        "desc": "Bu sohbetin yazar notunu satır içinde düzenleyin."
+      },
+      "time": {
+        "label": "Zaman",
+        "desc": "Yoldaşın gördüğü zamanı gösterin ve ayarlayın."
+      }
+    },
+    "picker": {
+      "title": "Widget ekle"
+    },
+    "config": {
+      "fields": {
+        "title": "Başlık",
+        "titleOptional": "Başlık (isteğe bağlı)",
+        "descriptionOptional": "Açıklama (isteğe bağlı)",
+        "content": "İçerik"
+      },
+      "design": {
+        "label": "Tasarım",
+        "default": "Varsayılan",
+        "minimal": "Minimal",
+        "solid": "Katı",
+        "outline": "Anahat"
+      },
+      "memory": {
+        "maxEntries": "Gösterilen maks. girişler",
+        "maxEntriesHint": "Görüntülenecek en yeni anılar."
+      },
+      "characterInfo": {
+        "character": "Karakter",
+        "characterHint": "Bu kartın hangi grup üyesini gösterdiği.",
+        "firstMember": "İlk üye (varsayılan)"
+      },
+      "authorNote": {
+        "descriptionHint": "Notun kendisi widget üzerinden satır içinde düzenlenir ve bu sohbete kaydedilir."
+      },
+      "statTracker": {
+        "stats": "İstatistikler",
+        "labelPlaceholder": "Etiket",
+        "removeStat": "İstatistiği kaldır",
+        "min": "Min",
+        "start": "Başlangıç",
+        "max": "Maks",
+        "defaultStat": "İstatistik",
+        "addStat": "İstatistik ekle"
+      },
+      "quickSnippets": {
+        "snippets": "Snippet'lar",
+        "labelPlaceholder": "Etiket",
+        "textPlaceholder": "Eklenen metin",
+        "removeSnippet": "Snippet'ı kaldır",
+        "newSnippet": "Yeni",
+        "addSnippet": "Snippet ekle"
+      },
+      "dice": {
+        "notation": "Notasyon",
+        "notationHint": "ör. 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Stil",
+        "line": "Çizgi",
+        "space": "Boşluk"
+      },
+      "box": {
+        "variant": "Varyant",
+        "default": "Varsayılan",
+        "subtle": "Hafif",
+        "info": "Bilgi",
+        "warning": "Uyarı",
+        "success": "Başarı",
+        "danger": "Tehlike"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown desteklenir."
+      },
+      "image": {
+        "source": "Kaynak",
+        "character": "Karakter",
+        "persona": "Persona",
+        "upload": "Yükle",
+        "imageSelected": "Resim seçildi.",
+        "noImageSelected": "Henüz resim seçilmedi.",
+        "replaceImage": "Resmi değiştir",
+        "chooseFile": "Dosya seç",
+        "shape": "Şekil",
+        "auto": "Otomatik",
+        "square": "Kare",
+        "wide": "Geniş",
+        "circle": "Daire"
+      },
+      "selector": {
+        "selects": "Seçer",
+        "persona": "Persona",
+        "model": "Model",
+        "authorNote": "Yazar notu"
+      },
+      "button": {
+        "action": "Eylem",
+        "regenerate": "Yeniden oluştur",
+        "continue": "Devam et",
+        "swapPlaces": "Yer değiştir",
+        "stop": "Durdur",
+        "newSession": "Yeni oturum",
+        "history": "Geçmiş",
+        "memories": "Anılar",
+        "search": "Ara"
+      },
+      "save": "Kaydet",
+      "cancel": "İptal",
+      "time": {
+        "hourFormat": "Saat biçimi",
+        "h12": "12 saat",
+        "h24": "24 saat",
+        "showSeconds": "Saniyeleri göster",
+        "showDate": "Tarihi göster"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Son yanıtı yeniden oluştur",
+      "swapPlaces": "Yer değiştir",
+      "newSession": "Yeni oturum",
+      "continue": "Devam et",
+      "stopGenerating": "Oluşturmayı durdur",
+      "viewChatHistory": "Sohbet geçmişini görüntüle",
+      "memories": "Anılar",
+      "searchChat": "Sohbet içinde ara",
+      "voiceAutoplay": "Ses otomatik oynatma",
+      "directOnly": "Yalnızca birebir sohbetlerde",
+      "noReply": "Henüz yanıt yok",
+      "nothingToStop": "Hiçbir şey üretilmiyor",
+      "waiting": "Yanıtın bitmesini bekle"
+    },
+    "characterInfo": {
+      "noCharacter": "Karakter yüklenmedi."
+    },
+    "personaInfo": {
+      "noPersona": "Persona seçilmedi."
+    },
+    "companionState": {
+      "companionOnly": "Sadece companion karakterler için geçerlidir.",
+      "noData": "Henüz ilişki verisi yok."
+    },
+    "image": {
+      "alt": "Widget resmi",
+      "noImage": "Görsel bulunamadı"
+    },
+    "memory": {
+      "all": "Tümü",
+      "empty": "Henüz hiçbir şey hatırlanmadı.",
+      "manage": "Yönet",
+      "more": "+{{count}} daha fazla"
+    },
+    "quickSnippets": {
+      "empty": "Henüz snippet yok."
+    },
+    "selector": {
+      "persona": "Persona own",
+      "model": "Model",
+      "authorNote": "Yazarın notu",
+      "perMember": "Sohbet ayarlarında üye başına belirlenir"
+    },
+    "sessionInfo": {
+      "messages": "Mesajlar",
+      "scene": "Sahne",
+      "memories": "Anılar",
+      "none": "Hiçbiri"
+    },
+    "statTracker": {
+      "empty": "Henüz istatistik yok.",
+      "decrease": "{{label}} değerini düşür",
+      "increase": "{{label}} değerini artır"
+    },
+    "list": {
+      "addWidget": "Widget ekle",
+      "editWidgets": "Widget'ları düzenle",
+      "revert": "Geri al",
+      "add": "Ekle",
+      "done": "Tamam"
+    },
+    "empty": {
+      "editingTitle": "Burada henüz widget yok.",
+      "addWidget": "Bir widget ekle",
+      "title": "Burada widget yok."
+    },
+    "wrapper": {
+      "moveRight": "Sağ tarafa taşı",
+      "moveLeft": "Sol tarafa taşı",
+      "editWidget": "Widget'ı düzenle",
+      "deleteWidget": "Widget'ı sil"
+    },
+    "area": {
+      "left": "sol widget alanı",
+      "right": "sağ widget alanı"
+    },
+    "presets": {
+      "actions": {
+        "label": "Eylemler",
+        "desc": "Yeniden üret, devam et ve yeni sohbet tek kutuda."
+      }
+    },
+    "dice": {
+      "natural": "Doğal {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Not yaz",
+      "onlyYou": "Yalnızca sen"
+    },
+    "authorNote": {
+      "placeholder": "Yazar notu yaz",
+      "everyReply": "Her yanıt"
+    },
+    "time": {
+      "awarenessOff": "Saati ayarlamak için sohbet ayarlarında zaman farkındalığını aç."
+    }
   }
 }

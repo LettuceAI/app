@@ -242,7 +242,6 @@
     "mtp": "草稿采纳率"
   },
   "futureGroup": "已为群聊保存。群聊的新界面仍在开发中。",
-  "futureWidgets": "已为聊天组件区域保存。其新界面仍在开发中。",
   "metricInput": "{{value}} 输入",
   "metricOutput": "{{value}} 输出",
   "metricTotal": "{{value}} 总计",
@@ -280,5 +279,6 @@
   "barSpacing": "头像间距",
   "barHint": "导演提示",
   "barHintTop": "上方",
-  "barHintBottom": "下方"
+  "barHintBottom": "下方",
+  "widgetsBesideTheChatHint": "使用聊天栏旁边的空间。请在聊天中编辑小组件。"
 }

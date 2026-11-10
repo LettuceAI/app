@@ -242,7 +242,6 @@
     "mtp": "Taslak kabulü"
   },
   "futureGroup": "Grup sohbetleri için kaydedildi. Yeni arayüzü hâlâ geliştiriliyor.",
-  "futureWidgets": "Sohbet araç alanı için kaydedildi. Yeni arayüzü hâlâ geliştiriliyor.",
   "metricInput": "{{value}} giriş",
   "metricOutput": "{{value}} çıkış",
   "metricTotal": "{{value}} toplam",
@@ -281,5 +280,6 @@
   "barSpacing": "Yüz aralığı",
   "barHint": "Yönetmen ipucu",
   "barHintTop": "Üstte",
-  "barHintBottom": "Altta"
+  "barHintBottom": "Altta",
+  "widgetsBesideTheChatHint": "Sohbet sütununun yanındaki alanı kullanır. Widget'ları sohbetten düzenle."
 }

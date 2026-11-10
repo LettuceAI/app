@@ -21,8 +21,9 @@ import {
   useCompactLayout,
 } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
+import { pickImage } from "@/entities/image-input";
 import { queryKeys } from "@/api/query-keys";
-import type { RuntimeNoticeCode, TimelineMessage } from "@/api/generated/bindings";
+import type { ConversationSettingsPatch_Deserialize, MemoryItemView, RuntimeNoticeCode, TimelineMessage } from "@/api/generated/bindings";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import {
@@ -47,6 +48,7 @@ import { RegenerationSheet } from "./components/RegenerationSheet";
 import { ParticipantsBar } from "./components/ParticipantsBar";
 import { type Speaker } from "./components/SpeakerSheet";
 import { BranchSheet, type BranchTarget } from "./components/BranchSheet";
+import { ModelSheet } from "./components/settings/ModelSheet";
 import { EffectSheet } from "./companion/EffectSheet";
 import { GroupEffectSheet } from "./companion/GroupEffectSheet";
 import { AudienceSheet } from "./companion/AudienceSheet";
@@ -63,6 +65,8 @@ import {
   selectCandidate,
   selectScene,
   setMemberMuted,
+  startDirectChat,
+  startGroupChat,
   updateSettings,
   type ConversationServices,
 } from "./data/actions";
@@ -75,11 +79,18 @@ import {
   type MediaItem,
 } from "./data/messages";
 import { candidatesQuery, memoryQuery, personasQuery, settingsQuery } from "./data/queries";
-import { characterQuery, libraryCastQuery } from "./data/settings-queries";
+import { characterQuery, libraryCastQuery, messageCountQuery } from "./data/settings-queries";
 import { useGeneration } from "./data/use-generation";
 import { useSearch } from "./data/use-search";
 import { useTimeline } from "./data/use-timeline";
 import { useInlineAuthorNote } from "./data/use-inline-author-note";
+import { WidgetContext, useStableActions, type WidgetActions, type WidgetPerson } from "./widgets/context";
+import { useAreaWidth, widgetLayout } from "./widgets/layout";
+import { updateNode as updateWidgetNode } from "./widgets/nodes";
+import { useWidgetSlots } from "./widgets/use-widget-slots";
+import { WidgetArea } from "./widgets/WidgetArea";
+
+const noMemories: readonly MemoryItemView[] = [];
 
 export function ConversationPage() {
   const { conversationId } = useParams({ strict: false });
@@ -167,8 +178,10 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     [preferences.value, view?.kind, settings.data],
   );
   const look = draftLook ?? savedLook;
+  const [areaRef, areaWidth] = useAreaWidth<HTMLDivElement>();
+  const layout = useMemo(() => widgetLayout(look, areaWidth, phone), [look, areaWidth, phone]);
   const columnStyle = useMemo(() => {
-    if (phone || look.chatColumnWidth === "full") return {};
+    if (layout.enabled || phone || look.chatColumnWidth === "full") return {};
     const widths = {
       narrow: 640,
       normal: 800,
@@ -182,7 +195,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
       marginRight: look.chatColumnAlign === "right" ? 0 : "auto",
       width: "100%",
     };
-  }, [look.chatColumnAlign, look.chatColumnWidth, look.chatColumnWidthPx, phone]);
+  }, [layout.enabled, look.chatColumnAlign, look.chatColumnWidth, look.chatColumnWidthPx, phone]);
   const mode = settings.data?.memory.mode;
   const memoryOn = mode !== undefined && mode !== "disabled";
   const memory = useQuery({ ...memoryQuery(api, conversationId), enabled: memoryOn });
@@ -204,6 +217,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const [modelRequired, setModelRequired] = useState(false);
   const [panel, setPanel] = useState<ToolPanel | null>(null);
   const [swap, setSwap] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   const [pendingMedia, setPendingMedia] = useState<MediaItem[]>([]);
   const composer = useRef<ComposerHandle | null>(null);
 
@@ -644,14 +658,146 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
     memory.data?.status.latest_cycle_status === "queued" ||
     memory.data?.status.latest_cycle_status === "processing";
 
+  const canContinue = directorBehavior !== "action" && messages.length > 0;
+  const continueReply = () => (directorBehavior ? directorContinue() : void generation.continueReply(swap));
+  const groupId = view?.source.type === "group" ? view.source.group_id : null;
+  const saveSettings = useCallback(
+    (change: Partial<ConversationSettingsPatch_Deserialize>) =>
+      run(async () => {
+        await updateSettings(services, change);
+      }),
+    [run, services],
+  );
+  const widgetSlots = useWidgetSlots(api, { characterId: directCharacterId, groupId }, layout.enabled);
+  const messageCount = useQuery({ ...messageCountQuery(api, conversationId), enabled: layout.enabled });
+  const lastMessage = timeline.windowed ? undefined : messages[messages.length - 1];
+  const widgetCharacter = useMemo<WidgetPerson | null>(
+    () =>
+      character && directCharacterId
+        ? { id: directCharacterId, name: character.name, avatar: character.avatar?.url ?? null, description: sceneCharacter.data?.draft.profile?.description ?? null }
+        : null,
+    [character, directCharacterId, sceneCharacter.data],
+  );
+  const widgetMembers = useMemo<WidgetPerson[]>(
+    () =>
+      isGroup
+        ? members.map((member) => ({
+            id: member.character_id,
+            name: member.name,
+            avatar: member.avatar?.url ?? null,
+            description: member.character_id ? (descriptions.get(member.character_id) ?? null) : null,
+          }))
+        : [],
+    [isGroup, members, descriptions],
+  );
+  const widgetPersona = useMemo<WidgetPerson | null>(
+    () => (persona ? { id: persona.id, name: persona.title, avatar: persona.avatar?.url ?? null, description: persona.description || null } : null),
+    [persona],
+  );
+  const sceneName = sceneIndex < 0 ? null : scenes[sceneIndex]?.direction?.trim() || t("message.titleScene");
+  const widgetActions = useStableActions({
+    regenerate: () => {
+      if (lastMessage?.role !== "assistant") return;
+      timeline.jumpToLatest();
+      void generation.regenerate(lastMessage.id, swap);
+    },
+    continueReply,
+    stop: () => generation.stop(view?.pending_turn_id ?? null),
+    toggleSwap: () => setSwap((current) => !current),
+    newChat: () =>
+      void run(async () => {
+        let id: string;
+        if (groupId) id = await startGroupChat(api, queryClient, groupId);
+        else if (directCharacterId) {
+          if ((sceneCharacter.data?.draft.starters.length ?? 0) > 0) {
+            openSettings();
+            return;
+          }
+          id = await startDirectChat(api, queryClient, directCharacterId);
+        } else return;
+        await navigate({ to: "/chat/$conversationId", params: { conversationId: id }, search: {}, replace: true });
+      }),
+    openHistory: () =>
+      directCharacterId
+        ? void navigate({ to: "/characters/$characterId/history", params: { characterId: directCharacterId } })
+        : openSettings(),
+    openMemories,
+    openSearch: () => search.start(),
+    openPersona: () => setPanel("persona"),
+    openNote: () => setPanel("note"),
+    openModel: () => setModelOpen(true),
+    saveAuthorNote: (author_note: string) => saveSettings({ author_note }),
+    insertText: (text: string) => composer.current?.append(text),
+    updateNode: (id: string, change: Parameters<WidgetActions["updateNode"]>[1]) =>
+      widgetSlots.save((slots) => ({ left: updateWidgetNode(slots.left, id, change), right: updateWidgetNode(slots.right, id, change) })),
+    pickImage: async () => {
+      try {
+        const asset = await pickImage(api, "reference_image");
+        if (asset) widgetSlots.remember(asset.asset_id, asset.url);
+        return asset;
+      } catch (error) {
+        fail(error);
+        return null;
+      }
+    },
+    setTime: (time: Parameters<WidgetActions["setTime"]>[0]) => saveSettings({ time }),
+  });
+  const memories = memoryOn ? (memory.data?.items ?? noMemories) : noMemories;
+  const widgets = useMemo<WidgetActions>(
+    () => ({
+      ...widgetActions,
+      api,
+      conversationId,
+      isGroup,
+      companion,
+      character: widgetCharacter,
+      members: widgetMembers,
+      persona: widgetPersona,
+      personaLoading: personas.isPending,
+      settings: settings.data,
+      messageCount: messageCount.data,
+      sceneName,
+      memoryOn,
+      memories,
+      memoryBusy,
+      sending,
+      canRegenerate: !sending && lastMessage?.role === "assistant",
+      canContinue: canContinue && !sending,
+      swap,
+      assets: widgetSlots.assets,
+    }),
+    [widgetActions, api, conversationId, isGroup, companion, widgetCharacter, widgetMembers, widgetPersona, personas.isPending, settings.data, messageCount.data, sceneName, memoryOn, memories, memoryBusy, sending, lastMessage?.role, canContinue, swap, widgetSlots.assets],
+  );
+  const where = useMemo(() => ({ companion, group: isGroup }), [companion, isGroup]);
+  const headerInside = layout.enabled && look.chatHeaderMoves;
+  const header = (
+    <ChatHeader
+      columnStyle={look.chatHeaderMoves ? columnStyle : undefined}
+      name={name}
+      avatar={avatar}
+      {...(isGroup ? { faces } : {})}
+      phone={phone}
+      memory={memoryOn || companionPage ? { count: memory.data?.items.length ?? 0, busy: memoryBusy, ...(companionPage ? { label: t("companion.title") } : {}) } : null}
+      search={search}
+      onBack={goBack}
+      onOptions={openSettings}
+      onMemory={openMemories}
+    />
+  );
+
+  const footerStyle = !look.chatFooterMoves
+    ? undefined
+    : layout.enabled && layout.columnPx !== null
+      ? { width: layout.columnPx, maxWidth: "100%", marginLeft: layout.showLeft ? "auto" : 0, marginRight: layout.showRight ? "auto" : 0 }
+      : columnStyle;
   let body;
+  let footer = null;
   if (timeline.pending) {
     body = <LoadingState />;
   } else if (!view) {
     body = <FailureState error={timeline.error} onRetry={timeline.refetch} />;
   } else {
     body = (
-      <>
         <Timeline
           conversationId={conversationId}
           onSceneImage={openSceneImage}
@@ -679,9 +825,11 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           onRetry={() => void generation.retry()}
           bottomInset={barVisible}
         />
+    );
+    footer = (
         <div
           className="relative shrink-0 px-3 pb-[calc(var(--safe-bottom)+10px)] pt-2 @xl:px-6"
-          style={look.chatFooterMoves ? columnStyle : undefined}
+          style={footerStyle}
         >
           <ChatBanners
             blockers={{
@@ -702,12 +850,10 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               name={name}
               sending={sending}
               disabled={!view.can_send && !sending}
-              canContinue={directorBehavior !== "action" && messages.length > 0}
+              canContinue={canContinue}
               onSend={directorBehavior ? sendDirector : send}
               onSendSystem={sendSystem}
-              onContinue={() =>
-                directorBehavior ? directorContinue() : void generation.continueReply(swap)
-              }
+              onContinue={continueReply}
               mentions={isGroup ? speakers : undefined}
               above={
                 barVisible
@@ -741,7 +887,6 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
             />
           </div>
         </div>
-      </>
     );
   }
 
@@ -758,20 +903,15 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
             : {})}
           className={cn("h-full overflow-clip", !background && "bg-surface")}
         >
-          <div className="relative flex h-full min-h-0 flex-col">
-            <ChatHeader
-              columnStyle={look.chatHeaderMoves ? columnStyle : undefined}
-              name={name}
-              avatar={avatar}
-              {...(isGroup ? { faces } : {})}
-              phone={phone}
-              memory={memoryOn || companionPage ? { count: memory.data?.items.length ?? 0, busy: memoryBusy, ...(companionPage ? { label: t("companion.title") } : {}) } : null}
-              search={search}
-              onBack={goBack}
-              onOptions={openSettings}
-              onMemory={openMemories}
-            />
-            {body}
+          <div ref={areaRef} className="relative flex h-full min-h-0 flex-col">
+            {!headerInside && header}
+            <WidgetContext.Provider value={widgets}>
+              <WidgetArea layout={layout} slots={widgetSlots.slots} failure={widgetSlots.failure} where={where} save={widgetSlots.save}>
+                {headerInside && header}
+                {body}
+              </WidgetArea>
+            </WidgetContext.Provider>
+            {footer}
             <BeetrootRain store={store} />
           </div>
         </Surface>
@@ -931,6 +1071,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
             onDraft={setDraftLook}
           />
         )}
+
+        <ModelSheet ctx={{ api, settings: settings.data, busy, save: saveSettings }} open={modelOpen} onClose={() => setModelOpen(false)} />
 
         <ChatTools
           api={api}

@@ -242,7 +242,6 @@
     "mtp": "Conceptacceptatie"
   },
   "futureGroup": "Opgeslagen voor groepschats. Hun nieuwe interface wordt nog gebouwd.",
-  "futureWidgets": "Opgeslagen voor het chatwidgetgebied. De nieuwe interface wordt nog gebouwd.",
   "metricInput": "{{value}} in",
   "metricOutput": "{{value}} uit",
   "metricTotal": "{{value}} totaal",
@@ -281,5 +280,6 @@
   "barSpacing": "Gezichtsafstand",
   "barHint": "Regisseurshint",
   "barHintTop": "Boven",
-  "barHintBottom": "Onder"
+  "barHintBottom": "Onder",
+  "widgetsBesideTheChatHint": "Gebruikt de ruimte naast de chatkolom. Bewerk widgets vanuit de chat."
 }

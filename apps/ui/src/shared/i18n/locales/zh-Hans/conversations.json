@@ -1232,5 +1232,280 @@
       "hearOnward": "从这里起重新在听",
       "hint": "记忆模型会在阅读时修正这一点。你的修改始终优先。"
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "分隔线",
+        "desc": "组件之间的线条或空格。"
+      },
+      "box": {
+        "label": "方框",
+        "desc": "使用可选标题和颜色对组件进行分组。"
+      },
+      "character_info": {
+        "label": "角色信息",
+        "desc": "当前角色的头像、姓名和描述。"
+      },
+      "persona_info": {
+        "label": "人格信息",
+        "desc": "当前人格的头像、姓名和描述。"
+      },
+      "scratch_pad": {
+        "label": "暂存板",
+        "desc": "随聊天携带的 Markdown 笔记。"
+      },
+      "image": {
+        "label": "图片",
+        "desc": "角色或角色设定的头像，或一个图片文件。"
+      },
+      "selector": {
+        "label": "选择器",
+        "desc": "打开角色设定、模型或作者备注的选择器。"
+      },
+      "button": {
+        "label": "按钮",
+        "desc": "触发操作，如重新生成或交换位置。"
+      },
+      "stat_tracker": {
+        "label": "数值追踪器",
+        "desc": "可编辑的数值，如好感度、HP 或金币。"
+      },
+      "quick_snippets": {
+        "label": "快速片段",
+        "desc": "将预设文本插入输入框的按钮。"
+      },
+      "dice": {
+        "label": "掷骰子",
+        "desc": "使用自定义表示法掷骰子。"
+      },
+      "memory": {
+        "label": "记忆",
+        "desc": "此聊天记得的内容。"
+      },
+      "companion_state": {
+        "label": "伴侣状态",
+        "desc": "伴侣角色的关系和心情。"
+      },
+      "session_info": {
+        "label": "会话信息",
+        "desc": "消息数量、记忆和当前场景。"
+      },
+      "author_note": {
+        "label": "作者注记",
+        "desc": "在行内编辑此聊天的作者注记。"
+      },
+      "time": {
+        "label": "时间",
+        "desc": "显示并设置伴侣看到的时间。"
+      }
+    },
+    "picker": {
+      "title": "添加组件"
+    },
+    "config": {
+      "fields": {
+        "title": "标题",
+        "titleOptional": "标题 (可选)",
+        "descriptionOptional": "描述 (可选)",
+        "content": "内容"
+      },
+      "design": {
+        "label": "设计",
+        "default": "默认",
+        "minimal": "极简",
+        "solid": "实色",
+        "outline": "轮廓"
+      },
+      "memory": {
+        "maxEntries": "最大显示条数",
+        "maxEntriesHint": "要显示的最新记忆数量。"
+      },
+      "characterInfo": {
+        "character": "角色",
+        "characterHint": "此卡片显示哪个组员。",
+        "firstMember": "首位成员 (默认)"
+      },
+      "authorNote": {
+        "descriptionHint": "注记本身在组件中行内编辑并保存到此聊天。"
+      },
+      "statTracker": {
+        "stats": "数值",
+        "labelPlaceholder": "标签",
+        "removeStat": "移除数值",
+        "min": "最小值",
+        "start": "起始值",
+        "max": "最大值",
+        "defaultStat": "数值",
+        "addStat": "添加数值"
+      },
+      "quickSnippets": {
+        "snippets": "片段",
+        "labelPlaceholder": "标签",
+        "textPlaceholder": "插入文本",
+        "removeSnippet": "移除片段",
+        "newSnippet": "新建",
+        "addSnippet": "添加片段"
+      },
+      "dice": {
+        "notation": "表示法",
+        "notationHint": "例如 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "样式",
+        "line": "线条",
+        "space": "空格"
+      },
+      "box": {
+        "variant": "变体",
+        "default": "默认",
+        "subtle": "微妙",
+        "info": "信息",
+        "warning": "警告",
+        "success": "成功",
+        "danger": "危险"
+      },
+      "scratchPad": {
+        "markdownHint": "支持 Markdown。"
+      },
+      "image": {
+        "source": "来源",
+        "character": "角色",
+        "persona": "人格",
+        "upload": "上传",
+        "imageSelected": "已选择图片。",
+        "noImageSelected": "尚未选择图片。",
+        "replaceImage": "替换图片",
+        "chooseFile": "选择文件",
+        "shape": "形状",
+        "auto": "自动",
+        "square": "正方形",
+        "wide": "宽屏",
+        "circle": "圆形"
+      },
+      "selector": {
+        "selects": "选择",
+        "persona": "人格",
+        "model": "模型",
+        "authorNote": "作者附注"
+      },
+      "button": {
+        "action": "操作",
+        "regenerate": "重新生成",
+        "continue": "继续",
+        "swapPlaces": "交换角色",
+        "stop": "停止",
+        "newSession": "新会话",
+        "history": "历史记录",
+        "memories": "记忆",
+        "search": "搜索"
+      },
+      "save": "保存",
+      "cancel": "取消",
+      "time": {
+        "hourFormat": "时间格式",
+        "h12": "12 小时制",
+        "h24": "24 小时制",
+        "showSeconds": "显示秒",
+        "showDate": "显示日期"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "重新生成最后一条回复",
+      "swapPlaces": "交换角色",
+      "newSession": "新会话",
+      "continue": "继续",
+      "stopGenerating": "停止生成",
+      "viewChatHistory": "查看聊天历史记录",
+      "memories": "记忆",
+      "searchChat": "搜索聊天内容",
+      "voiceAutoplay": "语音自动播放",
+      "directOnly": "仅限一对一聊天",
+      "noReply": "还没有回复",
+      "nothingToStop": "没有正在生成的内容",
+      "waiting": "请等待回复完成"
+    },
+    "characterInfo": {
+      "noCharacter": "未加载角色。"
+    },
+    "personaInfo": {
+      "noPersona": "未选择人格。"
+    },
+    "companionState": {
+      "companionOnly": "仅适用于伙伴角色。",
+      "noData": "暂无关系数据。"
+    },
+    "image": {
+      "alt": "组件图像",
+      "noImage": "找不到图片"
+    },
+    "memory": {
+      "all": "全部",
+      "empty": "还没有记住任何内容。",
+      "manage": "管理",
+      "more": "+{{count}} 条更多"
+    },
+    "quickSnippets": {
+      "empty": "暂无片段。"
+    },
+    "selector": {
+      "persona": "人格",
+      "model": "模型",
+      "authorNote": "作者附注",
+      "perMember": "在聊天设置中按成员设置"
+    },
+    "sessionInfo": {
+      "messages": "消息数",
+      "scene": "场景",
+      "memories": "记忆",
+      "none": "无"
+    },
+    "statTracker": {
+      "empty": "暂无统计数据。",
+      "decrease": "减少 {{label}}",
+      "increase": "增加 {{label}}"
+    },
+    "list": {
+      "addWidget": "添加组件",
+      "editWidgets": "编辑组件",
+      "revert": "还原",
+      "add": "添加",
+      "done": "完成"
+    },
+    "empty": {
+      "editingTitle": "这里还没有组件。",
+      "addWidget": "添加组件",
+      "title": "这里没有组件。"
+    },
+    "wrapper": {
+      "moveRight": "移至右侧",
+      "moveLeft": "移至左侧",
+      "editWidget": "编辑组件",
+      "deleteWidget": "删除组件"
+    },
+    "area": {
+      "left": "左侧组件区域",
+      "right": "右侧组件区域"
+    },
+    "presets": {
+      "actions": {
+        "label": "操作",
+        "desc": "重新生成、继续和新聊天，集中在一个框里。"
+      }
+    },
+    "dice": {
+      "natural": "自然 {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "写一条笔记",
+      "onlyYou": "仅自己可见"
+    },
+    "authorNote": {
+      "placeholder": "写一条作者备注",
+      "everyReply": "每次回复"
+    },
+    "time": {
+      "awarenessOff": "在聊天设置中开启时间感知后才能设置时钟。"
+    }
   }
 }

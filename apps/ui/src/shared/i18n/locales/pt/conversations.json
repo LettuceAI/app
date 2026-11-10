@@ -1294,5 +1294,280 @@
       "hearOnward": "Volta a acompanhar daqui",
       "hint": "O modelo de memória corrige isso ao ler. Suas mudanças sempre têm prioridade."
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "Divisor",
+        "desc": "Uma linha ou espaço entre widgets."
+      },
+      "box": {
+        "label": "Caixa",
+        "desc": "Agrupe widgets com um título e cor opcionais."
+      },
+      "character_info": {
+        "label": "Informações do personagem",
+        "desc": "Avatar, nome e descrição do personagem atual."
+      },
+      "persona_info": {
+        "label": "Informações da persona",
+        "desc": "Avatar, nome e descrição da persona atual."
+      },
+      "scratch_pad": {
+        "label": "Bloco de rascunho",
+        "desc": "Notas em markdown que acompanham a conversa."
+      },
+      "image": {
+        "label": "Imagem",
+        "desc": "O avatar do personagem ou da persona, ou um arquivo de imagem."
+      },
+      "selector": {
+        "label": "Seletor",
+        "desc": "Abre o seletor de persona, modelo ou nota do autor."
+      },
+      "button": {
+        "label": "Botão",
+        "desc": "Acione uma ação como regenerar ou trocar de lugar."
+      },
+      "stat_tracker": {
+        "label": "Rastreador de status",
+        "desc": "Números editáveis como afeto, HP ou ouro."
+      },
+      "quick_snippets": {
+        "label": "Trechos rápidos",
+        "desc": "Botões que inserem texto predefinido no compositor."
+      },
+      "dice": {
+        "label": "Rolador de dados",
+        "desc": "Role dados com notação personalizada."
+      },
+      "memory": {
+        "label": "Memórias",
+        "desc": "O que esta conversa lembra."
+      },
+      "companion_state": {
+        "label": "Estado do companion",
+        "desc": "Relacionamento e humor para personagens companion."
+      },
+      "session_info": {
+        "label": "Informações da sessão",
+        "desc": "Número de mensagens, memórias e cena atual."
+      },
+      "author_note": {
+        "label": "Nota do autor",
+        "desc": "Edite a nota do autor desta conversa inline."
+      },
+      "time": {
+        "label": "Hora",
+        "desc": "Mostrar e definir a hora que o companion vê."
+      }
+    },
+    "picker": {
+      "title": "Adicionar widget"
+    },
+    "config": {
+      "fields": {
+        "title": "Título",
+        "titleOptional": "Título (opcional)",
+        "descriptionOptional": "Descrição (opcional)",
+        "content": "Conteúdo"
+      },
+      "design": {
+        "label": "Design",
+        "default": "Padrão",
+        "minimal": "Minimalista",
+        "solid": "Sólido",
+        "outline": "Contorno"
+      },
+      "memory": {
+        "maxEntries": "Máximo de entradas exibidas",
+        "maxEntriesHint": "Memórias mais recentes a exibir."
+      },
+      "characterInfo": {
+        "character": "Personagem",
+        "characterHint": "Qual membro do grupo este cartão exibe.",
+        "firstMember": "Primeiro membro (padrão)"
+      },
+      "authorNote": {
+        "descriptionHint": "A nota em si é editada inline a partir do widget e salva nesta conversa."
+      },
+      "statTracker": {
+        "stats": "Status",
+        "labelPlaceholder": "Rótulo",
+        "removeStat": "Remover status",
+        "min": "Mín",
+        "start": "Início",
+        "max": "Máx",
+        "defaultStat": "Status",
+        "addStat": "Adicionar status"
+      },
+      "quickSnippets": {
+        "snippets": "Trechos",
+        "labelPlaceholder": "Rótulo",
+        "textPlaceholder": "Texto inserido",
+        "removeSnippet": "Remover trecho",
+        "newSnippet": "Novo",
+        "addSnippet": "Adicionar trecho"
+      },
+      "dice": {
+        "notation": "Notação",
+        "notationHint": "ex.: 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "Estilo",
+        "line": "Linha",
+        "space": "Espaço"
+      },
+      "box": {
+        "variant": "Variante",
+        "default": "Padrão",
+        "subtle": "Sutil",
+        "info": "Informação",
+        "warning": "Aviso",
+        "success": "Sucesso",
+        "danger": "Perigo"
+      },
+      "scratchPad": {
+        "markdownHint": "Markdown suportado."
+      },
+      "image": {
+        "source": "Origem",
+        "character": "Personagem",
+        "persona": "Persona",
+        "upload": "Upload",
+        "imageSelected": "Imagem selecionada.",
+        "noImageSelected": "Nenhuma imagem selecionada ainda.",
+        "replaceImage": "Substituir imagem",
+        "chooseFile": "Escolher arquivo",
+        "shape": "Formato",
+        "auto": "Automático",
+        "square": "Quadrado",
+        "wide": "Largo",
+        "circle": "Círculo"
+      },
+      "selector": {
+        "selects": "Seleciona",
+        "persona": "Persona",
+        "model": "Modelo",
+        "authorNote": "Nota do autor"
+      },
+      "button": {
+        "action": "Ação",
+        "regenerate": "Regenerar",
+        "continue": "Continuar",
+        "swapPlaces": "Trocar de lugar",
+        "stop": "Parar",
+        "newSession": "Nova sessão",
+        "history": "Histórico",
+        "memories": "Memórias",
+        "search": "Buscar"
+      },
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "time": {
+        "hourFormat": "Formato da hora",
+        "h12": "12 horas",
+        "h24": "24 horas",
+        "showSeconds": "Mostrar segundos",
+        "showDate": "Mostrar data"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "Regenerar última resposta",
+      "swapPlaces": "Trocar de lugar",
+      "newSession": "Nova sessão",
+      "continue": "Continuar",
+      "stopGenerating": "Parar geração",
+      "viewChatHistory": "Ver histórico da conversa",
+      "memories": "Memórias",
+      "searchChat": "Buscar na conversa",
+      "voiceAutoplay": "Reprodução automática de voz",
+      "directOnly": "Somente em chats individuais",
+      "noReply": "Ainda não há resposta",
+      "nothingToStop": "Nada está sendo gerado",
+      "waiting": "Espere a resposta terminar"
+    },
+    "characterInfo": {
+      "noCharacter": "Nenhum personagem carregado."
+    },
+    "personaInfo": {
+      "noPersona": "Nenhuma persona selecionada."
+    },
+    "companionState": {
+      "companionOnly": "Disponível apenas para personagens companion.",
+      "noData": "Nenhum dado de relacionamento ainda."
+    },
+    "image": {
+      "alt": "Imagem do widget",
+      "noImage": "Imagem não encontrada"
+    },
+    "memory": {
+      "all": "Todas",
+      "empty": "Nada lembrado ainda.",
+      "manage": "Gerenciar",
+      "more": "+{{count}} mais"
+    },
+    "quickSnippets": {
+      "empty": "Nenhum trecho ainda."
+    },
+    "selector": {
+      "persona": "Persona",
+      "model": "Modelo",
+      "authorNote": "Nota do autor",
+      "perMember": "Definido por membro nas configurações do chat"
+    },
+    "sessionInfo": {
+      "messages": "Mensagens",
+      "scene": "Cena",
+      "memories": "Memórias",
+      "none": "Nenhum"
+    },
+    "statTracker": {
+      "empty": "Nenhum status ainda.",
+      "decrease": "Diminuir {{label}}",
+      "increase": "Aumentar {{label}}"
+    },
+    "list": {
+      "addWidget": "Adicionar widget",
+      "editWidgets": "Editar widgets",
+      "revert": "Reverter",
+      "add": "Adicionar",
+      "done": "Concluído"
+    },
+    "empty": {
+      "editingTitle": "Nenhum widget aqui ainda.",
+      "addWidget": "Adicionar um widget",
+      "title": "Nenhum widget aqui."
+    },
+    "wrapper": {
+      "moveRight": "Mover para o lado direito",
+      "moveLeft": "Mover para o lado esquerdo",
+      "editWidget": "Editar widget",
+      "deleteWidget": "Excluir widget"
+    },
+    "area": {
+      "left": "área de widgets esquerda",
+      "right": "área de widgets direita"
+    },
+    "presets": {
+      "actions": {
+        "label": "Ações",
+        "desc": "Regenerar, continuar e novo chat em uma só caixa."
+      }
+    },
+    "dice": {
+      "natural": "Natural {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "Escreva uma nota",
+      "onlyYou": "Só você"
+    },
+    "authorNote": {
+      "placeholder": "Escreva uma nota do autor",
+      "everyReply": "Cada resposta"
+    },
+    "time": {
+      "awarenessOff": "Ative a percepção de tempo nas configurações do chat para acertar o relógio."
+    }
   }
 }

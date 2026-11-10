@@ -242,7 +242,6 @@
     "mtp": "Entwurfsannahme"
   },
   "futureGroup": "Für Gruppenchats gespeichert. Deren neue Oberfläche wird noch gebaut.",
-  "futureWidgets": "Für den Chat-Widget-Bereich gespeichert. Dessen neue Oberfläche wird noch gebaut.",
   "metricInput": "{{value}} rein",
   "metricOutput": "{{value}} raus",
   "metricTotal": "{{value}} insgesamt",
@@ -281,5 +280,6 @@
   "barSpacing": "Abstand der Gesichter",
   "barHint": "Regie-Hinweis",
   "barHintTop": "Oben",
-  "barHintBottom": "Unten"
+  "barHintBottom": "Unten",
+  "widgetsBesideTheChatHint": "Nutzt den Platz neben der Chatspalte. Widgets bearbeitest du im Chat."
 }

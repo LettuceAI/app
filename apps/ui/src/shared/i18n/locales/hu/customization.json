@@ -242,7 +242,6 @@
     "mtp": "Piszkozat elfogadása"
   },
   "futureGroup": "Csoportos beszélgetésekhez mentve. Az új felületük még készül.",
-  "futureWidgets": "A beszélgetési widgetterülethez mentve. Az új felülete még készül.",
   "metricInput": "{{value}} be",
   "metricOutput": "{{value}} ki",
   "metricTotal": "{{value}} összesen",
@@ -281,5 +280,6 @@
   "barSpacing": "Arcok közti tér",
   "barHint": "Rendezői tipp",
   "barHintTop": "Felül",
-  "barHintBottom": "Alul"
+  "barHintBottom": "Alul",
+  "widgetsBesideTheChatHint": "A beszélgetési oszlop melletti helyet használja. A widgeteket a beszélgetésből szerkesztheted."
 }

@@ -242,7 +242,6 @@
     "mtp": "草稿接受率"
   },
   "futureGroup": "已為群組對話保留。新的介面仍在開發中。",
-  "futureWidgets": "已為對話小工具區保留。新的介面仍在開發中。",
   "metricInput": "{{value}} 輸入",
   "metricOutput": "{{value}} 輸出",
   "metricTotal": "{{value}} 總計",
@@ -280,5 +279,6 @@
   "barSpacing": "臉孔間距",
   "barHint": "導演提示",
   "barHintTop": "上方",
-  "barHintBottom": "下方"
+  "barHintBottom": "下方",
+  "widgetsBesideTheChatHint": "使用對話欄旁邊的空間。請在對話中編輯小工具。"
 }

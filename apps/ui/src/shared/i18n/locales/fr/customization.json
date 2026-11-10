@@ -242,7 +242,6 @@
     "mtp": "Acceptation des brouillons"
   },
   "futureGroup": "Enregistré pour les discussions de groupe. Leur nouvelle interface est encore en cours de construction.",
-  "futureWidgets": "Enregistré pour la zone des widgets de discussion. Sa nouvelle interface est encore en cours de construction.",
   "metricInput": "{{value}} en entrée",
   "metricOutput": "{{value}} en sortie",
   "metricTotal": "{{value}} au total",
@@ -282,5 +281,6 @@
   "barSpacing": "Espacement des visages",
   "barHint": "Indice du réalisateur",
   "barHintTop": "Au-dessus",
-  "barHintBottom": "En dessous"
+  "barHintBottom": "En dessous",
+  "widgetsBesideTheChatHint": "Utilise l'espace à côté de la colonne du chat. Modifiez les widgets depuis le chat."
 }

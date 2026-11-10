@@ -1232,5 +1232,280 @@
       "hearOnward": "กลับมาติดตามตั้งแต่ตรงนี้",
       "hint": "โมเดลความจำแก้ไขเรื่องนี้ขณะอ่าน การเปลี่ยนแปลงของคุณมีผลเหนือกว่าเสมอ"
     }
+  },
+  "widgets": {
+    "types": {
+      "divider": {
+        "label": "ตัวแบ่ง",
+        "desc": "เส้นหรือช่องว่างระหว่างวิดเจ็ต"
+      },
+      "box": {
+        "label": "กล่อง",
+        "desc": "จัดกลุ่มวิดเจ็ตพร้อมชื่อและสีที่ไม่บังคับ"
+      },
+      "character_info": {
+        "label": "ข้อมูลตัวละคร",
+        "desc": "อวตาร ชื่อ และคำอธิบายของตัวละครปัจจุบัน"
+      },
+      "persona_info": {
+        "label": "ข้อมูลเพอร์โซนา",
+        "desc": "อวตาร ชื่อ และคำอธิบายของเพอร์โซนาปัจจุบัน"
+      },
+      "scratch_pad": {
+        "label": "สมุดโน้ต",
+        "desc": "บันทึก Markdown ที่ไปกับแชท"
+      },
+      "image": {
+        "label": "รูปภาพ",
+        "desc": "อวตารของตัวละครหรือเพอร์โซนา หรือไฟล์รูปภาพ"
+      },
+      "selector": {
+        "label": "ตัวเลือก",
+        "desc": "เปิดตัวเลือกเพอร์โซนา โมเดล หรือบันทึกของผู้เขียน"
+      },
+      "button": {
+        "label": "ปุ่ม",
+        "desc": "เรียกการทำงาน เช่น สร้างใหม่หรือสลับบทบาท"
+      },
+      "stat_tracker": {
+        "label": "ตัวติดตามค่า",
+        "desc": "ตัวเลขที่แก้ไขได้ เช่น ความรัก พลังชีวิต หรือทอง"
+      },
+      "quick_snippets": {
+        "label": "ข้อความด่วน",
+        "desc": "ปุ่มที่แทรกข้อความสำเร็จรูปลงในช่องพิมพ์"
+      },
+      "dice": {
+        "label": "ลูกเต๋า",
+        "desc": "ทอยลูกเต๋าด้วยรูปแบบที่กำหนดเอง"
+      },
+      "memory": {
+        "label": "ความทรงจำ",
+        "desc": "สิ่งที่แชทนี้จดจำไว้"
+      },
+      "companion_state": {
+        "label": "สถานะคู่หู",
+        "desc": "ความสัมพันธ์และอารมณ์ของตัวละครคู่หู"
+      },
+      "session_info": {
+        "label": "ข้อมูลเซสชัน",
+        "desc": "จำนวนข้อความ ความทรงจำ และฉากปัจจุบัน"
+      },
+      "author_note": {
+        "label": "บันทึกของผู้เขียน",
+        "desc": "แก้ไขบันทึกของผู้เขียนของแชทนี้ได้ในวิดเจ็ต"
+      },
+      "time": {
+        "label": "เวลา",
+        "desc": "แสดงและตั้งเวลาที่คู่หูเห็น"
+      }
+    },
+    "picker": {
+      "title": "เพิ่มวิดเจ็ต"
+    },
+    "config": {
+      "fields": {
+        "title": "ชื่อ",
+        "titleOptional": "ชื่อ (ไม่บังคับ)",
+        "descriptionOptional": "คำอธิบาย (ไม่บังคับ)",
+        "content": "เนื้อหา"
+      },
+      "design": {
+        "label": "รูปแบบ",
+        "default": "ค่าเริ่มต้น",
+        "minimal": "เรียบง่าย",
+        "solid": "ทึบ",
+        "outline": "เส้นขอบ"
+      },
+      "memory": {
+        "maxEntries": "จำนวนรายการสูงสุดที่แสดง",
+        "maxEntriesHint": "ความทรงจำล่าสุดที่จะแสดง"
+      },
+      "characterInfo": {
+        "character": "ตัวละคร",
+        "characterHint": "สมาชิกกลุ่มที่การ์ดนี้แสดง",
+        "firstMember": "สมาชิกคนแรก (ค่าเริ่มต้น)"
+      },
+      "authorNote": {
+        "descriptionHint": "ตัวบันทึกแก้ไขได้ในวิดเจ็ตโดยตรงและบันทึกไว้กับแชทนี้"
+      },
+      "statTracker": {
+        "stats": "ค่า",
+        "labelPlaceholder": "ป้ายชื่อ",
+        "removeStat": "ลบค่า",
+        "min": "ต่ำสุด",
+        "start": "เริ่มต้น",
+        "max": "สูงสุด",
+        "defaultStat": "ค่า",
+        "addStat": "เพิ่มค่า"
+      },
+      "quickSnippets": {
+        "snippets": "ข้อความ",
+        "labelPlaceholder": "ป้ายชื่อ",
+        "textPlaceholder": "ข้อความที่แทรก",
+        "removeSnippet": "ลบข้อความ",
+        "newSnippet": "ใหม่",
+        "addSnippet": "เพิ่มข้อความ"
+      },
+      "dice": {
+        "notation": "รูปแบบการเขียน",
+        "notationHint": "เช่น 1d20, 2d6+3"
+      },
+      "divider": {
+        "style": "สไตล์",
+        "line": "เส้น",
+        "space": "ช่องว่าง"
+      },
+      "box": {
+        "variant": "รูปแบบ",
+        "default": "ค่าเริ่มต้น",
+        "subtle": "เบา",
+        "info": "ข้อมูล",
+        "warning": "คำเตือน",
+        "success": "สำเร็จ",
+        "danger": "อันตราย"
+      },
+      "scratchPad": {
+        "markdownHint": "รองรับ Markdown"
+      },
+      "image": {
+        "source": "แหล่งที่มา",
+        "character": "ตัวละคร",
+        "persona": "เพอร์โซนา",
+        "upload": "อัปโหลด",
+        "imageSelected": "เลือกรูปภาพแล้ว",
+        "noImageSelected": "ยังไม่ได้เลือกรูปภาพ",
+        "replaceImage": "เปลี่ยนรูปภาพ",
+        "chooseFile": "เลือกไฟล์",
+        "shape": "รูปทรง",
+        "auto": "อัตโนมัติ",
+        "square": "จัตุรัส",
+        "wide": "กว้าง",
+        "circle": "วงกลม"
+      },
+      "selector": {
+        "selects": "เลือก",
+        "persona": "เพอร์โซนา",
+        "model": "โมเดล",
+        "authorNote": "บันทึกของผู้เขียน"
+      },
+      "button": {
+        "action": "การทำงาน",
+        "regenerate": "สร้างใหม่",
+        "continue": "ต่อ",
+        "swapPlaces": "สลับบทบาท",
+        "stop": "หยุด",
+        "newSession": "เซสชันใหม่",
+        "history": "ประวัติ",
+        "memories": "ความทรงจำ",
+        "search": "ค้นหา"
+      },
+      "save": "บันทึก",
+      "cancel": "ยกเลิก",
+      "time": {
+        "hourFormat": "รูปแบบเวลา",
+        "h12": "12 ชั่วโมง",
+        "h24": "24 ชั่วโมง",
+        "showSeconds": "แสดงวินาที",
+        "showDate": "แสดงวันที่"
+      }
+    },
+    "button": {
+      "regenerateLastReply": "สร้างคำตอบล่าสุดใหม่",
+      "swapPlaces": "สลับบทบาท",
+      "newSession": "เซสชันใหม่",
+      "continue": "ต่อ",
+      "stopGenerating": "หยุดการสร้าง",
+      "viewChatHistory": "ดูประวัติแชท",
+      "memories": "ความทรงจำ",
+      "searchChat": "ค้นหาในแชท",
+      "voiceAutoplay": "เล่นเสียงอัตโนมัติ",
+      "directOnly": "เฉพาะแชทแบบตัวต่อตัว",
+      "noReply": "ยังไม่มีคำตอบ",
+      "nothingToStop": "ไม่มีสิ่งที่กำลังสร้าง",
+      "waiting": "รอให้คำตอบเสร็จก่อน"
+    },
+    "characterInfo": {
+      "noCharacter": "ไม่มีตัวละครที่โหลดไว้"
+    },
+    "personaInfo": {
+      "noPersona": "ยังไม่ได้เลือกเพอร์โซนา"
+    },
+    "companionState": {
+      "companionOnly": "ใช้ได้เฉพาะตัวละครคู่หู",
+      "noData": "ยังไม่มีข้อมูลความสัมพันธ์"
+    },
+    "image": {
+      "alt": "รูปภาพวิดเจ็ต",
+      "noImage": "ไม่พบรูปภาพ"
+    },
+    "memory": {
+      "all": "ทั้งหมด",
+      "empty": "ยังไม่มีอะไรที่จดจำไว้",
+      "manage": "จัดการ",
+      "more": "อีก {{count}} รายการ"
+    },
+    "quickSnippets": {
+      "empty": "ยังไม่มีข้อความด่วน"
+    },
+    "selector": {
+      "persona": "เพอร์โซนา",
+      "model": "โมเดล",
+      "authorNote": "บันทึกของผู้เขียน",
+      "perMember": "ตั้งค่าตามสมาชิกในการตั้งค่าแชท"
+    },
+    "sessionInfo": {
+      "messages": "ข้อความ",
+      "scene": "ฉาก",
+      "memories": "ความทรงจำ",
+      "none": "ไม่มี"
+    },
+    "statTracker": {
+      "empty": "ยังไม่มีค่า",
+      "decrease": "ลด {{label}}",
+      "increase": "เพิ่ม {{label}}"
+    },
+    "list": {
+      "addWidget": "เพิ่มวิดเจ็ต",
+      "editWidgets": "แก้ไขวิดเจ็ต",
+      "revert": "ย้อนกลับ",
+      "add": "เพิ่ม",
+      "done": "เสร็จสิ้น"
+    },
+    "empty": {
+      "editingTitle": "ยังไม่มีวิดเจ็ตที่นี่",
+      "addWidget": "เพิ่มวิดเจ็ต",
+      "title": "ไม่มีวิดเจ็ตที่นี่"
+    },
+    "wrapper": {
+      "moveRight": "ย้ายไปด้านขวา",
+      "moveLeft": "ย้ายไปด้านซ้าย",
+      "editWidget": "แก้ไขวิดเจ็ต",
+      "deleteWidget": "ลบวิดเจ็ต"
+    },
+    "area": {
+      "left": "พื้นที่วิดเจ็ตด้านซ้าย",
+      "right": "พื้นที่วิดเจ็ตด้านขวา"
+    },
+    "presets": {
+      "actions": {
+        "label": "การทำงาน",
+        "desc": "สร้างใหม่ ต่อ และแชทใหม่ในกล่องเดียว"
+      }
+    },
+    "dice": {
+      "natural": "เนเชอรัล {{n}}"
+    },
+    "scratchPad": {
+      "placeholder": "เขียนบันทึก",
+      "onlyYou": "เฉพาะคุณ"
+    },
+    "authorNote": {
+      "placeholder": "เขียนบันทึกของผู้เขียน",
+      "everyReply": "ทุกคำตอบ"
+    },
+    "time": {
+      "awarenessOff": "เปิดการรับรู้เวลาในการตั้งค่าแชทเพื่อตั้งนาฬิกา"
+    }
   }
 }
