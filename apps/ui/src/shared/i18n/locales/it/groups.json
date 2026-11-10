@@ -113,7 +113,9 @@
     "order": "Ordine di parola",
     "orderBody": "Usato quando ognuno risponde a turno. Trascina per cambiarlo.",
     "memory": "Memoria",
-    "mode": "Modalità chat"
+    "mode": "Modalità chat",
+    "noSoul": "Nessuna Soul",
+    "noSoulBody": "Per questo personaggio non è scritta una Soul, quindi il comportamento da compagno sarà più debole."
   },
   "speaker": {
     "llm": "LLM",

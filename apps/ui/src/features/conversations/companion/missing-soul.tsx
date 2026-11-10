@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Button, Dialog, ListGroup, ListRow } from "@lettuceai/crisp";
@@ -12,6 +12,12 @@ const soulFields = ["essence", "traits", "backstory", "appearance", "goals", "li
 export function hasSoul(config: CompanionSoulConfigView | null): boolean {
   if (config === null) return false;
   return config.authored_facts.length > 0 || soulFields.some((field) => config.soul[field].trim().length > 0);
+}
+
+/** The ids among `characterIds` whose character has no Soul written. */
+export function useMissingSouls(api: ApiClient, characterIds: readonly string[], enabled = true): ReadonlySet<string> {
+  const characters = useQueries({ queries: characterIds.map((id) => ({ ...characterQuery(api, id), enabled })) });
+  return new Set(characters.flatMap((character, index) => character.data && !hasSoul(character.data.draft.defaults.companion_soul) ? [characterIds[index]!] : []));
 }
 
 interface Missing {

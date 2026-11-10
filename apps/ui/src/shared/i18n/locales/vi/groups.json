@@ -103,7 +103,9 @@
     "order": "Thứ tự nói",
     "orderBody": "Dùng khi mọi người thay phiên nhau. Kéo để thay đổi.",
     "memory": "Bộ nhớ",
-    "mode": "Chế độ trò chuyện"
+    "mode": "Chế độ trò chuyện",
+    "noSoul": "Chưa có Soul",
+    "noSoulBody": "Nhân vật này chưa có Soul, nên hành vi bạn đồng hành sẽ yếu hơn."
   },
   "speaker": {
     "llm": "LLM",

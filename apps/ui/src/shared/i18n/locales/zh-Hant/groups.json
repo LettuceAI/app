@@ -103,7 +103,9 @@
     "order": "發言順序",
     "orderBody": "所有人輪流發言時使用。拖曳可變更順序。",
     "memory": "記憶",
-    "mode": "聊天模式"
+    "mode": "聊天模式",
+    "noSoul": "無 Soul",
+    "noSoulBody": "這個角色還沒有寫 Soul，因此陪伴表現會較弱。"
   },
   "speaker": {
     "llm": "LLM",

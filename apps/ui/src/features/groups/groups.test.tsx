@@ -424,7 +424,10 @@ describe("group time awareness and notes", () => {
     const dialog = await screen.findByRole("dialog", { name: "No Soul written" });
     expect(within(dialog).getByText(/No Soul is written for: Aria and Bram\./)).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: /Edit the Soul of/ })).toBeNull();
-    expect(within(dialog).getByRole("button", { name: "Continue" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.getAllByText("No Soul")).toHaveLength(2));
+    fireEvent.click(screen.getByRole("radio", { name: /^Roleplay/ }));
+    await waitFor(() => expect(screen.queryByText("No Soul")).toBeNull());
   });
 
   it("warns when a character without a Soul joins a companion group and still adds it", async () => {

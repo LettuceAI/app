@@ -108,7 +108,9 @@
     "order": "Spreekvolgorde",
     "orderBody": "Gebruikt wanneer iedereen om de beurt gaat. Sleep om te wijzigen.",
     "memory": "Geheugen",
-    "mode": "Chatmodus"
+    "mode": "Chatmodus",
+    "noSoul": "Geen Soul",
+    "noSoulBody": "Voor dit personage is geen Soul geschreven, dus het companion-gedrag is zwakker."
   },
   "speaker": {
     "llm": "LLM",

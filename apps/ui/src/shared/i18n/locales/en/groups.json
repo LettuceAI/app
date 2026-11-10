@@ -108,7 +108,9 @@
     "order": "Speaking order",
     "orderBody": "Used when everyone takes turns. Drag to change it.",
     "memory": "Memory",
-    "mode": "Chat mode"
+    "mode": "Chat mode",
+    "noSoul": "No Soul",
+    "noSoulBody": "No Soul is written for this character, so its companion behavior will be weaker."
   },
   "speaker": {
     "llm": "LLM",

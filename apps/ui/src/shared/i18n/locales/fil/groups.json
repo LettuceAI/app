@@ -108,7 +108,9 @@
     "order": "Pagkakasunod-sunod ng pagsasalita",
     "orderBody": "Ginagamit kapag naghahalinhinan ang lahat. I-drag para baguhin.",
     "memory": "Memory",
-    "mode": "Mode ng chat"
+    "mode": "Mode ng chat",
+    "noSoul": "Walang Soul",
+    "noSoulBody": "Walang Soul na nakasulat para sa karakter na ito, kaya mas mahina ang pagiging companion nito."
   },
   "speaker": {
     "llm": "LLM",

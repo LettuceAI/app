@@ -108,7 +108,9 @@
     "order": "Talerekkefølge",
     "orderBody": "Brukes når alle tar turer. Dra for å endre.",
     "memory": "Minne",
-    "mode": "Chatmodus"
+    "mode": "Chatmodus",
+    "noSoul": "Ingen Soul",
+    "noSoulBody": "Det er ikke skrevet noen Soul for denne karakteren, så companion-oppførselen blir svakere."
   },
   "speaker": {
     "llm": "LLM",

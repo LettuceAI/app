@@ -108,7 +108,9 @@
     "order": "Sprechreihenfolge",
     "orderBody": "Wird verwendet, wenn alle der Reihe nach drangenommen werden. Zum Ändern ziehen.",
     "memory": "Speicher",
-    "mode": "Chatmodus"
+    "mode": "Chatmodus",
+    "noSoul": "Keine Soul",
+    "noSoulBody": "Für diesen Charakter ist keine Soul geschrieben, daher ist das Companion-Verhalten schwächer."
   },
   "speaker": {
     "llm": "LLM",

@@ -118,7 +118,9 @@
     "order": "Kolejność mówienia",
     "orderBody": "Używana, gdy każdy mówi po kolei. Przeciągnij, aby zmienić.",
     "memory": "Pamięć",
-    "mode": "Tryb czatu"
+    "mode": "Tryb czatu",
+    "noSoul": "Brak Soul",
+    "noSoulBody": "Ta postać nie ma napisanej Soul, więc jej zachowanie jako towarzysza będzie słabsze."
   },
   "speaker": {
     "llm": "LLM",

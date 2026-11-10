@@ -113,7 +113,9 @@
     "order": "Orden de intervención",
     "orderBody": "Se usa cuando todos hablan por turnos. Arrastra para cambiarlo.",
     "memory": "Memoria",
-    "mode": "Modo de chat"
+    "mode": "Modo de chat",
+    "noSoul": "Sin Soul",
+    "noSoulBody": "Este personaje no tiene una Soul escrita, así que su comportamiento de compañero será más débil."
   },
   "speaker": {
     "llm": "LLM",

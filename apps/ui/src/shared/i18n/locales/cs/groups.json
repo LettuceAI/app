@@ -118,7 +118,9 @@
     "order": "Pořadí mluvčích",
     "orderBody": "Používá se, když se všichni střídají. Tažením změníš pořadí.",
     "memory": "Paměť",
-    "mode": "Režim chatu"
+    "mode": "Režim chatu",
+    "noSoul": "Bez Soul",
+    "noSoulBody": "Tato postava nemá napsanou Soul, takže její chování společníka bude slabší."
   },
   "speaker": {
     "llm": "LLM",

@@ -113,7 +113,9 @@
     "order": "Ordre de parole",
     "orderBody": "Utilisé quand chacun parle à tour de rôle. Faites glisser pour le modifier.",
     "memory": "Mémoire",
-    "mode": "Mode de discussion"
+    "mode": "Mode de discussion",
+    "noSoul": "Pas de Soul",
+    "noSoulBody": "Aucune Soul n'est écrite pour ce personnage, son comportement de compagnon sera donc plus faible."
   },
   "speaker": {
     "llm": "LLM",

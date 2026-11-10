@@ -108,7 +108,9 @@
     "order": "Beszélési sorrend",
     "orderBody": "Akkor használjuk, amikor mindenki sorra kerül. Húzd az átrendezéshez.",
     "memory": "Memória",
-    "mode": "Csevegési mód"
+    "mode": "Csevegési mód",
+    "noSoul": "Nincs Soul",
+    "noSoulBody": "Ehhez a karakterhez nincs Soul írva, ezért a társ viselkedése gyengébb lesz."
   },
   "speaker": {
     "llm": "LLM",

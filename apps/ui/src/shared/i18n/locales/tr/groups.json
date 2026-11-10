@@ -108,7 +108,9 @@
     "order": "Konuşma sırası",
     "orderBody": "Herkes sırayla konuştuğunda kullanılır. Değiştirmek için sürükleyin.",
     "memory": "Hafıza",
-    "mode": "Sohbet modu"
+    "mode": "Sohbet modu",
+    "noSoul": "Soul yok",
+    "noSoulBody": "Bu karakter için Soul yazılmamış, bu yüzden companion davranışı daha zayıf olacak."
   },
   "speaker": {
     "llm": "LLM",

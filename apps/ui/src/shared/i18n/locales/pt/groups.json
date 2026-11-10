@@ -113,7 +113,9 @@
     "order": "Ordem de fala",
     "orderBody": "Usada quando todos se revezam. Arraste para mudar.",
     "memory": "Memória",
-    "mode": "Modo de conversa"
+    "mode": "Modo de conversa",
+    "noSoul": "Sem Soul",
+    "noSoulBody": "Nenhuma Soul foi escrita para este personagem, então o comportamento de companheiro será mais fraco."
   },
   "speaker": {
     "llm": "LLM",

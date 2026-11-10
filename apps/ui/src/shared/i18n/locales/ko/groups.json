@@ -103,7 +103,9 @@
     "order": "발언 순서",
     "orderBody": "모두 돌아가며 말할 때 사용해요. 끌어서 순서를 바꾸세요.",
     "memory": "메모리",
-    "mode": "채팅 모드"
+    "mode": "채팅 모드",
+    "noSoul": "Soul 없음",
+    "noSoulBody": "이 캐릭터에는 Soul이 작성되지 않아 컴패니언 행동이 약해집니다."
   },
   "speaker": {
     "llm": "LLM",

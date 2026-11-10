@@ -103,7 +103,9 @@
     "order": "Urutan bicara",
     "orderBody": "Digunakan saat semua bergiliran. Seret untuk mengubahnya.",
     "memory": "Memori",
-    "mode": "Mode obrolan"
+    "mode": "Mode obrolan",
+    "noSoul": "Tanpa Soul",
+    "noSoulBody": "Belum ada Soul yang ditulis untuk karakter ini, jadi perilaku pendampingnya akan lebih lemah."
   },
   "speaker": {
     "llm": "LLM",
