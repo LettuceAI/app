@@ -1306,8 +1306,7 @@
     "config": {
       "fields": {
         "title": "Tiêu đề",
-        "titleOptional": "Tiêu đề (tùy chọn)",
-        "descriptionOptional": "Mô tả (tùy chọn)",
+        "description": "Mô tả",
         "content": "Nội dung"
       },
       "design": {

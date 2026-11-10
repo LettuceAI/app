@@ -1399,8 +1399,7 @@
     "config": {
       "fields": {
         "title": "Назва",
-        "titleOptional": "Назва (необов'язково)",
-        "descriptionOptional": "Опис (необов'язково)",
+        "description": "Опис",
         "content": "Вміст"
       },
       "design": {

@@ -1337,8 +1337,7 @@
     "config": {
       "fields": {
         "title": "Τίτλος",
-        "titleOptional": "Τίτλος (προαιρετικό)",
-        "descriptionOptional": "Περιγραφή (προαιρετικό)",
+        "description": "Περιγραφή",
         "content": "Περιεχόμενο"
       },
       "design": {

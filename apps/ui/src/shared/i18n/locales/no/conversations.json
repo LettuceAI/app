@@ -1337,8 +1337,7 @@
     "config": {
       "fields": {
         "title": "Tittel",
-        "titleOptional": "Tittel (valgfritt)",
-        "descriptionOptional": "Beskrivelse (valgfritt)",
+        "description": "Beskrivelse",
         "content": "Innhold"
       },
       "design": {

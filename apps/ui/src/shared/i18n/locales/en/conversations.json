@@ -1337,8 +1337,7 @@
     "config": {
       "fields": {
         "title": "Title",
-        "titleOptional": "Title (optional)",
-        "descriptionOptional": "Description (optional)",
+        "description": "Description",
         "content": "Content"
       },
       "design": {

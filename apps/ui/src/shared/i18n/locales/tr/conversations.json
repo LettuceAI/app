@@ -1337,8 +1337,7 @@
     "config": {
       "fields": {
         "title": "Başlık",
-        "titleOptional": "Başlık (isteğe bağlı)",
-        "descriptionOptional": "Açıklama (isteğe bağlı)",
+        "description": "Açıklama",
         "content": "İçerik"
       },
       "design": {

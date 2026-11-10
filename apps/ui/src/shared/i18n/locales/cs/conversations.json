@@ -1399,8 +1399,7 @@
     "config": {
       "fields": {
         "title": "Název",
-        "titleOptional": "Název (volitelné)",
-        "descriptionOptional": "Popis (volitelné)",
+        "description": "Popis",
         "content": "Obsah"
       },
       "design": {

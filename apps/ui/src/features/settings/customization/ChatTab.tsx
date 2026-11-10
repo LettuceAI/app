@@ -34,7 +34,6 @@ import {
   Message,
   NumberInput,
   Segmented,
-  Select,
   SelectMenu,
   Slider,
   Surface,
@@ -52,61 +51,11 @@ import { ChatAppearanceProvider } from "@/entities/preferences";
 import { ParticipantsBar } from "@/features/conversations";
 import { DETAILS, opts, type ChatLook, type Detail, type Opt } from "./options";
 import { SettingsControlRow as Row } from "@/shared/ui/SettingsControlRow";
+import { SettingsPick as Pick } from "@/shared/ui/SettingsPick";
 import { formatMessageTime } from "@/shared/formatting/messageTime";
 export { SettingsControlRow as Row } from "@/shared/ui/SettingsControlRow";
 
-export function Pick<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-  menu,
-  block,
-  native,
-}: {
-  value: T;
-  options: Opt<T>;
-  onChange: (value: T) => void;
-  label: string;
-  menu?: boolean;
-  block?: boolean;
-  native?: boolean;
-}) {
-  if (menu || options.length > 3) {
-    if (native) {
-      return (
-        <Field label={<span className="sr-only">{label}</span>} className="w-full space-y-0">
-          <Select
-            className="min-h-11 w-full text-ellipsis"
-            value={value}
-            options={options}
-            onChange={(event) => onChange(event.target.value as T)}
-          />
-        </Field>
-      );
-    }
-    return (
-      <Field label={<span className="sr-only">{label}</span>} className="space-y-0">
-        <SelectMenu<T>
-          className={block ? "w-full" : "w-40"}
-          value={value}
-          options={options}
-          onChange={(v) => v && onChange(v)}
-        />
-      </Field>
-    );
-  }
-  return (
-    <Segmented<T>
-      size="sm"
-      block={block ?? false}
-      aria-label={label}
-      value={value}
-      options={options}
-      onChange={onChange}
-    />
-  );
-}
+export { SettingsPick as Pick } from "@/shared/ui/SettingsPick";
 
 type Set = <K extends keyof ChatLook>(key: K, value: ChatLook[K]) => void;
 

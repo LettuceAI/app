@@ -1337,8 +1337,7 @@
     "config": {
       "fields": {
         "title": "Cím",
-        "titleOptional": "Cím (nem kötelező)",
-        "descriptionOptional": "Leírás (nem kötelező)",
+        "description": "Leírás",
         "content": "Tartalom"
       },
       "design": {

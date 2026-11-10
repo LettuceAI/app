@@ -1306,8 +1306,7 @@
     "config": {
       "fields": {
         "title": "標題",
-        "titleOptional": "標題 (可選)",
-        "descriptionOptional": "描述 (可選)",
+        "description": "描述",
         "content": "內容"
       },
       "design": {

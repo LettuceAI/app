@@ -1368,8 +1368,7 @@
     "config": {
       "fields": {
         "title": "Titre",
-        "titleOptional": "Titre (facultatif)",
-        "descriptionOptional": "Description (facultative)",
+        "description": "Description",
         "content": "Contenu"
       },
       "design": {

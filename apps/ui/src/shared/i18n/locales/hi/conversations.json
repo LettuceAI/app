@@ -1337,8 +1337,7 @@
     "config": {
       "fields": {
         "title": "शीर्षक",
-        "titleOptional": "शीर्षक (वैकल्पिक)",
-        "descriptionOptional": "विवरण (वैकल्पिक)",
+        "description": "विवरण",
         "content": "सामग्री"
       },
       "design": {

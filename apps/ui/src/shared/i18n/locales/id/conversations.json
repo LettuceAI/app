@@ -1306,8 +1306,7 @@
     "config": {
       "fields": {
         "title": "Judul",
-        "titleOptional": "Judul (opsional)",
-        "descriptionOptional": "Deskripsi (opsional)",
+        "description": "Deskripsi",
         "content": "Konten"
       },
       "design": {

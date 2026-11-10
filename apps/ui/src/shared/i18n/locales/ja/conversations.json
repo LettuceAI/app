@@ -1306,8 +1306,7 @@
     "config": {
       "fields": {
         "title": "タイトル",
-        "titleOptional": "タイトル（任意）",
-        "descriptionOptional": "説明（任意）",
+        "description": "説明",
         "content": "コンテンツ"
       },
       "design": {

@@ -1337,8 +1337,7 @@
     "config": {
       "fields": {
         "title": "Pamagat",
-        "titleOptional": "Pamagat (opsyonal)",
-        "descriptionOptional": "Paglalarawan (opsyonal)",
+        "description": "Paglalarawan",
         "content": "Nilalaman"
       },
       "design": {

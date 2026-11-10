@@ -1306,8 +1306,7 @@
     "config": {
       "fields": {
         "title": "ชื่อ",
-        "titleOptional": "ชื่อ (ไม่บังคับ)",
-        "descriptionOptional": "คำอธิบาย (ไม่บังคับ)",
+        "description": "คำอธิบาย",
         "content": "เนื้อหา"
       },
       "design": {
