@@ -1,7 +1,6 @@
-use std::{io::Read, path::Path};
+use std::path::{Path, PathBuf};
 
 use lettuce_platform::{ConfinedInstallStore, InstalledFile, ObjectKey, PlatformError};
-use lettuce_types::ContentHash;
 
 use crate::InstalledModelArtifact;
 
@@ -82,15 +81,28 @@ pub struct InstalledKokoroVoice {
     pub artifact: InstalledModelArtifact,
 }
 
+/// A Kokoro file found on disk with its size. Status reads never hash: contents are verified when a file is installed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KokoroPresentFile {
+    pub path: PathBuf,
+    pub byte_size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KokoroPresentVoice {
+    pub id: String,
+    pub file: KokoroPresentFile,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KokoroAssetStatus {
     pub variant: KokoroModelVariant,
     pub variant_allowed_on_platform: bool,
-    pub model: Option<InstalledModelArtifact>,
-    pub config: Option<InstalledModelArtifact>,
-    pub tokenizer: Option<InstalledModelArtifact>,
-    pub tokenizer_config: Option<InstalledModelArtifact>,
-    pub installed_voices: Vec<InstalledKokoroVoice>,
+    pub model: Option<KokoroPresentFile>,
+    pub config: Option<KokoroPresentFile>,
+    pub tokenizer: Option<KokoroPresentFile>,
+    pub tokenizer_config: Option<KokoroPresentFile>,
+    pub installed_voices: Vec<KokoroPresentVoice>,
     pub selected_voice_installed: Option<bool>,
 }
 
@@ -126,7 +138,7 @@ impl KokoroAssetStore {
         })
     }
 
-    pub fn installed_voices(&self) -> Result<Vec<InstalledKokoroVoice>, KokoroAssetError> {
+    pub fn installed_voices(&self) -> Result<Vec<KokoroPresentVoice>, KokoroAssetError> {
         let directory = ObjectKey::single("voices").map_err(KokoroAssetError::Platform)?;
         let entries = self
             .files
@@ -143,12 +155,12 @@ impl KokoroAssetStore {
             if id.trim().is_empty() {
                 continue;
             }
-            let artifact = self
+            let file = self
                 .inspect_file(&["voices", entry.name.as_str()])?
                 .ok_or(KokoroAssetError::ChangedDuringInspection)?;
-            voices.push(InstalledKokoroVoice {
+            voices.push(KokoroPresentVoice {
                 id: id.to_owned(),
-                artifact,
+                file,
             });
         }
         Ok(voices)
@@ -157,7 +169,7 @@ impl KokoroAssetStore {
     fn resolve_model(
         &self,
         variant: KokoroModelVariant,
-    ) -> Result<Option<InstalledModelArtifact>, KokoroAssetError> {
+    ) -> Result<Option<KokoroPresentFile>, KokoroAssetError> {
         for filename in variant.candidate_filenames() {
             if let Some(artifact) = self.inspect_file(&["onnx", filename])? {
                 return Ok(Some(artifact));
@@ -172,16 +184,16 @@ impl KokoroAssetStore {
     fn inspect_file(
         &self,
         segments: &[&str],
-    ) -> Result<Option<InstalledModelArtifact>, KokoroAssetError> {
+    ) -> Result<Option<KokoroPresentFile>, KokoroAssetError> {
         let key = ObjectKey::from_segments(segments).map_err(KokoroAssetError::Platform)?;
-        let Some(mut file) = self
+        let Some(file) = self
             .files
             .inspect(&key)
             .map_err(KokoroAssetError::Platform)?
         else {
             return Ok(None);
         };
-        inspect_artifact(&mut file).map(Some)
+        present_file(&file).map(Some)
     }
 }
 
@@ -217,37 +229,15 @@ pub const fn kokoro_platform_allows_variant(variant: KokoroModelVariant) -> bool
     }
 }
 
-fn inspect_artifact(file: &mut InstalledFile) -> Result<InstalledModelArtifact, KokoroAssetError> {
+fn present_file(file: &InstalledFile) -> Result<KokoroPresentFile, KokoroAssetError> {
     if file.is_empty() || file.len() > MAX_KOKORO_ARTIFACT_BYTES {
         return Err(KokoroAssetError::InvalidArtifact {
             reason: "artifact is empty or exceeds the size limit",
         });
     }
-    file.rewind().map_err(KokoroAssetError::Platform)?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer).map_err(|error| {
-            tracing::warn!(%error, "reading the kokoro artifact failed");
-            KokoroAssetError::UnreadableArtifact {
-                reason: "reading the kokoro artifact failed",
-            }
-        })?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    let blake3 = ContentHash::parse(hasher.finalize().to_hex().to_string()).map_err(|error| {
-        tracing::warn!(%error, "artifact digest is not a valid content hash");
-        KokoroAssetError::InvalidArtifact {
-            reason: "artifact digest is not a valid content hash",
-        }
-    })?;
-    Ok(InstalledModelArtifact {
+    Ok(KokoroPresentFile {
         path: file.native_path().to_path_buf(),
         byte_size: file.len(),
-        blake3,
     })
 }
 

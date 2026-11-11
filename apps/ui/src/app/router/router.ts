@@ -235,6 +235,14 @@ const settingsSectionRoute = createRoute({
     speechTab?: "model" | "vocabulary" | "corrections" | "examples";
     speechPanel?: "models" | "microphone" | "word" | "correction" | "example";
     speechItem?: string;
+    voiceEditor?: string;
+    voiceProvider?: string;
+    voiceItem?: string;
+    kokoro?: string;
+    kokoroBlend?: string;
+    kokoroBlendVoice?: string;
+    kokoroEngine?: true;
+    providersTab?: "audio";
     logFile?: string;
     logPanel?:
       | "line"
@@ -349,6 +357,21 @@ const settingsSectionRoute = createRoute({
     ...(typeof search.speechItem === "string" && search.speechItem
       ? { speechItem: search.speechItem }
       : {}),
+    ...(typeof search.voiceEditor === "string" && search.voiceEditor ? { voiceEditor: search.voiceEditor } : {}),
+    ...(typeof search.voiceProvider === "string" && search.voiceProvider && typeof search.voiceItem === "string" && search.voiceItem
+      ? { voiceProvider: search.voiceProvider, voiceItem: search.voiceItem }
+      : {}),
+    ...(typeof search.kokoro === "string" && search.kokoro ? { kokoro: search.kokoro } : {}),
+    ...(typeof search.kokoro === "string" && search.kokoro && typeof search.kokoroBlend === "string" && search.kokoroBlend
+      ? { kokoroBlend: search.kokoroBlend }
+      : {}),
+    ...(typeof search.kokoro === "string" && search.kokoroBlend === "new" && typeof search.kokoroBlendVoice === "string" && search.kokoroBlendVoice
+      ? { kokoroBlendVoice: search.kokoroBlendVoice }
+      : {}),
+    ...(typeof search.kokoro === "string" && search.kokoro && (search.kokoroEngine === true || search.kokoroEngine === "true")
+      ? { kokoroEngine: true as const }
+      : {}),
+    ...(search.providersTab === "audio" ? { providersTab: "audio" as const } : {}),
     ...(search.replyPicker === "model" ||
     search.replyPicker === "roleplay" ||
     search.replyPicker === "conversational"
@@ -528,6 +551,7 @@ declare module "@tanstack/history" {
     settingsPanelPushed?: boolean;
     setupReplayPushed?: boolean;
     speechPanelPushed?: boolean;
+    voicesPanelPushed?: boolean;
     replyPickerPushed?: boolean;
     customizationPushed?: boolean;
     appearancePreviewPushed?: boolean;

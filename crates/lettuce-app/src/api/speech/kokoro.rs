@@ -19,7 +19,6 @@ fn variant(value: &str) -> Result<KokoroModelVariant, ApiError> {
 fn artifact(value: crate::KokoroArtifactSummary) -> dto::KokoroArtifactView {
     dto::KokoroArtifactView {
         byte_size: value.byte_size,
-        blake3: value.blake3.to_string(),
     }
 }
 fn voice(value: crate::KokoroInstalledVoiceSummary) -> dto::KokoroInstalledVoiceView {
@@ -64,11 +63,14 @@ pub async fn kokoro_inventory(
             let pin = store
                 .recorded_model(variant(&request.variant)?)
                 .map_err(failed)?;
-            if let Some(model) = store.installed(&pin).map_err(failed)? {
-                for file in model.artifacts {
+            if let Some(files) = store.model_files(&pin).map_err(failed)? {
+                for file in files {
+                    let Some(remote) = pin.artifacts.iter().find(|remote| remote.role == file.role)
+                    else {
+                        continue;
+                    };
                     let summary = crate::KokoroArtifactSummary {
-                        byte_size: file.artifact.byte_size,
-                        blake3: file.artifact.blake3,
+                        byte_size: remote.byte_size,
                     };
                     match file.role {
                         lettuce_model_hub::KokoroArtifactRole::Config => {

@@ -70,6 +70,16 @@ export const queryKeys = {
     list: () => [...queryKeys.models.all, "list"] as const,
   },
   audioProviders: { all: ["audio-providers"] as const },
+  voices: {
+    all: ["voices"] as const,
+    user: () => [...queryKeys.voices.all, "user"] as const,
+    providerVoices: (providerId: string) => [...queryKeys.voices.all, "provider-voices", providerId] as const,
+    models: (providerType: string, design: boolean) => [...queryKeys.voices.all, "models", providerType, design] as const,
+    cache: () => [...queryKeys.voices.all, "cache"] as const,
+    kokoroVariants: () => [...queryKeys.voices.all, "kokoro", "variants"] as const,
+    kokoroInventory: (variant: string) => [...queryKeys.voices.all, "kokoro", "inventory", variant] as const,
+    kokoroAvailable: () => [...queryKeys.voices.all, "kokoro", "available"] as const,
+  },
   companions: {
     all: ["companions"] as const,
     emotion: () => ["companions", "emotion"] as const,

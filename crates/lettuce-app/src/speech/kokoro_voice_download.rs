@@ -579,7 +579,6 @@ fn summaries(voices: Vec<InstalledKokoroVoice>) -> Vec<KokoroInstalledVoiceSumma
             id: voice.id,
             artifact: KokoroArtifactSummary {
                 byte_size: voice.artifact.byte_size,
-                blake3: voice.artifact.blake3,
             },
         })
         .collect()

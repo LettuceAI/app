@@ -31,7 +31,9 @@ use crate::{
 };
 
 const ORT_DYLIB_PATH: &str = "ORT_DYLIB_PATH";
-const INSTALL_LEASE: Duration = Duration::from_secs(60);
+/// Matches the other install jobs. Progress renews the lease only every few megabytes and an expired claim is
+/// recovered only at startup, so a shorter lease turns a slow download into one stuck until restart.
+const INSTALL_LEASE: Duration = Duration::from_secs(30 * 60);
 const ENVIRONMENT_NAME: &str = "lettuce";
 
 static ENSURE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());

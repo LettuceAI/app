@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Cpu, EthernetPort, Plus, Volume2 } from "lucide-react";
@@ -28,7 +29,8 @@ export function ProvidersPage() {
   const audio = useQuery({ queryKey: queryKeys.audioProviders.all, queryFn: () => api.call("audioProvidersList") });
   const models = useQuery({ queryKey: queryKeys.models.list(), queryFn: () => api.call("modelsList") });
   const { t: common } = useTranslation();
-  const [tab, setTab] = useState<"llm" | "audio">("llm");
+  const startTab = useSearch({ from: "/settings/$section", select: (search) => search.providersTab ?? "llm" });
+  const [tab, setTab] = useState<"llm" | "audio">(startTab);
   const [editor, setEditor] = useState<Editor | null>(null);
   const closingEditor = useClosingValue(editor);
   const query = tab === "audio" ? audio : accounts;

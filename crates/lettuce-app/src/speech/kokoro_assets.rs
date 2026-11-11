@@ -4,12 +4,9 @@ use lettuce_model_hub::{
     KokoroAssetError, KokoroAssetStatus, KokoroAssetStore, KokoroModelVariant,
     KokoroModelVariantInfo, kokoro_supported_model_variants,
 };
-use lettuce_types::ContentHash;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KokoroArtifactSummary {
     pub byte_size: u64,
-    pub blake3: ContentHash,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,7 +83,7 @@ impl KokoroAssetInventoryCoordinator {
                     voice.id.clone(),
                     KokoroInstalledVoiceSummary {
                         id: voice.id,
-                        artifact: artifact_summary(voice.artifact),
+                        artifact: artifact_summary(voice.file),
                     },
                 )
             })
@@ -97,21 +94,20 @@ impl KokoroAssetInventoryCoordinator {
                 reason: "installed voice descriptors could not be read",
             })
         })?;
-        if let Some(installed) = self.voices.installed(&descriptors).map_err(|error| {
+        let present = self.voices.present(&descriptors).map_err(|error| {
             tracing::warn!(%error, "installed voices could not be read");
             KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact {
                 reason: "installed voices could not be read",
             })
-        })? {
-            for voice in installed {
-                voices.insert(
-                    voice.id.clone(),
-                    KokoroInstalledVoiceSummary {
-                        id: voice.id,
-                        artifact: artifact_summary(voice.artifact),
-                    },
-                );
-            }
+        })?;
+        for voice in present {
+            voices.insert(
+                voice.id.clone(),
+                KokoroInstalledVoiceSummary {
+                    id: voice.id,
+                    artifact: artifact_summary(voice.file),
+                },
+            );
         }
         Ok(voices.into_values().collect())
     }
@@ -130,17 +126,16 @@ fn inventory(status: KokoroAssetStatus) -> KokoroAssetInventory {
             .into_iter()
             .map(|voice| KokoroInstalledVoiceSummary {
                 id: voice.id,
-                artifact: artifact_summary(voice.artifact),
+                artifact: artifact_summary(voice.file),
             })
             .collect(),
         selected_voice_installed: status.selected_voice_installed,
     }
 }
 
-fn artifact_summary(artifact: lettuce_model_hub::InstalledModelArtifact) -> KokoroArtifactSummary {
+fn artifact_summary(file: lettuce_model_hub::KokoroPresentFile) -> KokoroArtifactSummary {
     KokoroArtifactSummary {
-        byte_size: artifact.byte_size,
-        blake3: artifact.blake3,
+        byte_size: file.byte_size,
     }
 }
 

@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import {
-  ArrowLeftRight,
   BarChart3,
   BookOpen,
   Brain,
@@ -45,7 +44,6 @@ export const settingsSectionIds = [
   "speech",
   "sync",
   "backup",
-  "convert",
   "security",
   "usage",
   "help",
@@ -104,7 +102,6 @@ export const settingsGroups: readonly SettingsGroup[] = [
     sections: [
       { id: "sync", icon: glyph(RefreshCw) },
       { id: "backup", icon: glyph(HardDrive) },
-      { id: "convert", icon: glyph(ArrowLeftRight) },
     ],
   },
   {
@@ -152,6 +149,7 @@ export const builtSettingsSections: ReadonlySet<SettingsSectionId> = new Set([
   "prompts",
   "replyHelper",
   "speech",
+  "voices",
   "security",
   "reset",
   "developer",

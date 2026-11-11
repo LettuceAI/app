@@ -5,6 +5,7 @@ import { LogsPage } from "./logs/LogsPage";
 import { LorebooksPage } from "./lorebooks/LorebooksPage";
 import { UsagePage } from "./usage/UsagePage";
 import { SpeechPage } from "./speech/SpeechPage";
+import { VoicesPage } from "./voices/VoicesPage";
 import { ProvidersPage } from "./ProvidersPage";
 import { ModelsPage } from "./ModelsPage";
 import { AboutPage } from "./AboutPage";
@@ -28,6 +29,7 @@ export function SettingsSectionPage() {
   if (section === "companions") return <CompanionsPage />;
   if (section === "customization") return <CustomizationPage />;
   if (section === "speech") return <SpeechPage />;
+  if (section === "voices") return <VoicesPage />;
   if (section === "providers") return <ProvidersPage />;
   if (section === "models") return <ModelsPage />;
   if (section === "memory") return <MemoryPage />;

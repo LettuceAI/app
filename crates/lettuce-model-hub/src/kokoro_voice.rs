@@ -190,6 +190,29 @@ impl KokoroVoiceInstallStore {
         Ok(Some(installed))
     }
 
+    /// The given voices that are on disk at their pinned size, without reading them; their contents were verified when
+    /// they were installed.
+    pub fn present(&self, remotes: &[RemoteKokoroVoice]) -> Result<Vec<crate::KokoroPresentVoice>, KokoroInstallError> {
+        let mut present = Vec::with_capacity(remotes.len());
+        for remote in remotes {
+            remote.validate()?;
+            let target = voice_target(remote)?;
+            let Some(file) = self.inner.inspect(&target).map_err(KokoroInstallError::Platform)? else {
+                continue;
+            };
+            if file.len() == remote.byte_size {
+                present.push(crate::KokoroPresentVoice {
+                    id: remote.id.clone(),
+                    file: crate::KokoroPresentFile {
+                        path: file.native_path().to_path_buf(),
+                        byte_size: file.len(),
+                    },
+                });
+            }
+        }
+        Ok(present)
+    }
+
     pub fn materialize(
         &self,
         remotes: &[RemoteKokoroVoice],

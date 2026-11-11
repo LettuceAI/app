@@ -395,11 +395,11 @@ export const commands = {
 	providerModelVerify: (request: ProviderModelVerifyRequest) => typedError<ProviderModelVerified, ApiError_Serialize>(__TAURI_INVOKE("provider_model_verify", { request })),
 	certificatesImport: (request: CertificatesImportRequest) => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_import", { request })),
 	certificatesRemove: (request: CertificatesRemoveRequest) => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_remove", { request })),
-	settingsGet: () => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_get")),
+	settingsGet: () => typedError<SettingsView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("settings_get")),
 	settingsThemeRead: (source: FileSource) => typedError<SettingsThemeDocument, ApiError_Serialize>(__TAURI_INVOKE("settings_theme_read", { source })),
 	settingsThemeExport: (request: SettingsThemeExportRequest) => typedError<EntityExportResult, ApiError_Serialize>(__TAURI_INVOKE("settings_theme_export", { request })),
-	settingsUpdate: (request: SettingsCommandInput<SettingsUpdateRequest_Deserialize>) => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_update", { request })),
-	settingsSamplerDefaultsUpdate: (request: SettingsCommandInput<SettingsSamplerDefaultsUpdateRequest>) => typedError<SettingsView, ApiError_Serialize>(__TAURI_INVOKE("settings_sampler_defaults_update", { request })),
+	settingsUpdate: (request: SettingsCommandInput<SettingsUpdateRequest_Deserialize>) => typedError<SettingsView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("settings_update", { request })),
+	settingsSamplerDefaultsUpdate: (request: SettingsCommandInput<SettingsSamplerDefaultsUpdateRequest_Deserialize>) => typedError<SettingsView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("settings_sampler_defaults_update", { request })),
 	contentFilterLog: () => typedError<ContentFilterLogView, ApiError_Serialize>(__TAURI_INVOKE("content_filter_log")),
 	contentFilterClear: () => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("content_filter_clear")),
 	modelsList: () => typedError<ModelsView, ApiError_Serialize>(__TAURI_INVOKE("models_list")),
@@ -2021,7 +2021,7 @@ export type ConversationSettingsPatch_Deserialize = {
 	companion_personal_memories: FlagChange | null,
 	companion_memory_write_back: FlagChange | null,
 	/**  Replaces the chat's own layer; an empty layer clears it. */
-	model_settings?: SettingsModelSettingsLayer | null,
+	model_settings?: SettingsModelSettingsLayer_Deserialize | null,
 	/**  The members and their muted flags follow the group again. */
 	reset_members?: boolean,
 	/**  The members' models follow the group again. */
@@ -2048,7 +2048,7 @@ export type ConversationSettingsPatch_Serialize = {
 	companion_personal_memories: FlagChange | null,
 	companion_memory_write_back: FlagChange | null,
 	/**  Replaces the chat's own layer; an empty layer clears it. */
-	model_settings: SettingsModelSettingsLayer | null,
+	model_settings: SettingsModelSettingsLayer_Serialize | null,
 	/**  The members and their muted flags follow the group again. */
 	reset_members: boolean,
 	/**  The members' models follow the group again. */
@@ -2120,7 +2120,7 @@ export type ConversationSettingsView_Deserialize = {
 	 *  The sampler and runtime settings a one-to-one chat overrides; empty
 	 *  when it follows the model and app settings.
 	 */
-	model_settings: SettingsModelSettingsLayer | null,
+	model_settings: SettingsModelSettingsLayer_Deserialize | null,
 	time: TimeView,
 	/**
 	 *  Whether the chat is a companion chat: a one-to-one chat whose live
@@ -2165,7 +2165,7 @@ export type ConversationSettingsView_Serialize = {
 	 *  The sampler and runtime settings a one-to-one chat overrides; empty
 	 *  when it follows the model and app settings.
 	 */
-	model_settings: SettingsModelSettingsLayer | null,
+	model_settings: SettingsModelSettingsLayer_Serialize | null,
 	time: TimeView,
 	/**
 	 *  Whether the chat is a companion chat: a one-to-one chat whose live
@@ -4558,7 +4558,6 @@ export type JobsListRequest_Serialize = {
 
 export type KokoroArtifactView = {
 	byte_size: number,
-	blake3: string,
 };
 
 export type KokoroAvailableVoiceView = {
@@ -8684,6 +8683,8 @@ export type SettingsEmbeddingVersion = "v3" | "v4" | "v5";
 
 export type SettingsFailureReason = "invalid_data" | "stale_revision" | "model_profile_missing" | "storage" | "developer_mode_required";
 
+export type SettingsForcedReasoningPrefill = "gemma" | "think";
+
 export type SettingsGlobalSettings = {
 	pure_mode: SettingsPureMode,
 	analytics_enabled: boolean,
@@ -8737,7 +8738,9 @@ export type SettingsImageGenerationSettings = {
 	scene_default_size: string | null,
 };
 
-export type SettingsLlamaCppSettings = {
+export type SettingsLlamaCppSettings = SettingsLlamaCppSettings_Serialize | SettingsLlamaCppSettings_Deserialize;
+
+export type SettingsLlamaCppSettings_Deserialize = {
 	gpu_layers: number | null,
 	multi_gpu_enabled: boolean | null,
 	gpu_device_ids: number[] | null,
@@ -8774,7 +8777,48 @@ export type SettingsLlamaCppSettings = {
 	dflash_min_probability: number | null,
 	dflash_model_path: string | null,
 	streaming_enabled: boolean | null,
-	reasoning_prefill: SettingsForcedReasoningPrefill | null,
+	reasoning_prefill?: SettingsForcedReasoningPrefill | null,
+	sampler: SettingsLlamaSamplerSettings,
+};
+
+export type SettingsLlamaCppSettings_Serialize = {
+	gpu_layers: number | null,
+	multi_gpu_enabled: boolean | null,
+	gpu_device_ids: number[] | null,
+	gpu_distribution_mode: SettingsLlamaGpuDistributionMode | null,
+	gpu_manual_layers: SettingsLlamaGpuLayerAssignment[] | null,
+	cpu_layers: number | null,
+	kv_placement: SettingsLlamaKvPlacement | null,
+	main_gpu: number | null,
+	single_gpu_device_id: number | null,
+	priority_vram_limit_bytes: number | null,
+	threads: number | null,
+	threads_batch: number | null,
+	rope_freq_base: number | null,
+	rope_freq_scale: number | null,
+	offload_kqv: boolean | null,
+	batch_size: number | null,
+	ubatch_size: number | null,
+	kv_type: SettingsLlamaKvType | null,
+	kv_type_k: SettingsLlamaKvType | null,
+	kv_type_v: SettingsLlamaKvType | null,
+	flash_attention: SettingsLlamaFlashAttention | null,
+	swa_full: boolean | null,
+	chat_template_override: string | null,
+	chat_template_preset: string | null,
+	mmproj_path: string | null,
+	raw_completion_fallback: boolean | null,
+	strict_mode: boolean | null,
+	mtp_enabled: boolean | null,
+	mtp_placement: SettingsLlamaMtpPlacement | null,
+	mtp_draft_tokens: number | null,
+	mtp_model_path: string | null,
+	dflash_enabled: boolean | null,
+	dflash_draft_tokens: number | null,
+	dflash_min_probability: number | null,
+	dflash_model_path: string | null,
+	streaming_enabled: boolean | null,
+	reasoning_prefill?: SettingsForcedReasoningPrefill,
 	sampler: SettingsLlamaSamplerSettings,
 };
 
@@ -8847,9 +8891,17 @@ export type SettingsMemoryRunMode = "auto" | "ask_first" | "manual";
 
 export type SettingsMemoryStructuredFallbackFormat = "json" | "xml";
 
-export type SettingsModelSettingsLayer = {
+export type SettingsModelSettingsLayer = SettingsModelSettingsLayer_Serialize | SettingsModelSettingsLayer_Deserialize;
+
+export type SettingsModelSettingsLayer_Deserialize = {
 	chat_parameters: SettingsChatParameterProfile,
-	llama_cpp: SettingsLlamaCppSettings,
+	llama_cpp: SettingsLlamaCppSettings_Deserialize,
+	stable_diffusion: SettingsStableDiffusionSettings,
+};
+
+export type SettingsModelSettingsLayer_Serialize = {
+	chat_parameters: SettingsChatParameterProfile,
+	llama_cpp: SettingsLlamaCppSettings_Serialize,
 	stable_diffusion: SettingsStableDiffusionSettings,
 };
 
@@ -8891,12 +8943,18 @@ export type SettingsPromptCaching = "disabled" | { enabled: {
 export type SettingsPureMode = "off" | "standard" | "strict" | "low";
 
 export type SettingsReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
-export type SettingsForcedReasoningPrefill = "gemma" | "think";
 
 export type SettingsReasoningMode = "disabled" | "enabled";
 
-export type SettingsSamplerDefaultsUpdateRequest = {
-	value: SettingsModelSettingsLayer,
+export type SettingsSamplerDefaultsUpdateRequest = SettingsSamplerDefaultsUpdateRequest_Serialize | SettingsSamplerDefaultsUpdateRequest_Deserialize;
+
+export type SettingsSamplerDefaultsUpdateRequest_Deserialize = {
+	value: SettingsModelSettingsLayer_Deserialize,
+	expected_revision: number,
+};
+
+export type SettingsSamplerDefaultsUpdateRequest_Serialize = {
+	value: SettingsModelSettingsLayer_Serialize,
 	expected_revision: number,
 };
 
@@ -9204,10 +9262,23 @@ export type SettingsUpdateRequest_Serialize = {
 	expected_revision: number,
 };
 
-export type SettingsView = {
+export type SettingsView = SettingsView_Serialize | SettingsView_Deserialize;
+
+export type SettingsView_Deserialize = {
 	device: SettingsDeviceView,
 	global: SettingsGlobalSettings,
-	sampler_defaults: SettingsModelSettingsLayer,
+	sampler_defaults: SettingsModelSettingsLayer_Deserialize,
+	default_model_profile_id: string | null,
+	default_prompt_document_id: string | null,
+	dynamic_memory_model_profile_id: string | null,
+	group_speaker_model_profile_id: string | null,
+	revision: number,
+};
+
+export type SettingsView_Serialize = {
+	device: SettingsDeviceView,
+	global: SettingsGlobalSettings,
+	sampler_defaults: SettingsModelSettingsLayer_Serialize,
 	default_model_profile_id: string | null,
 	default_prompt_document_id: string | null,
 	dynamic_memory_model_profile_id: string | null,

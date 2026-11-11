@@ -22,7 +22,6 @@ pub struct KokoroInventoryRequest {
 pub struct KokoroArtifactView {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub byte_size: u64,
-    pub blake3: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -5,7 +5,10 @@ export const terminalJobStates: ReadonlySet<JobView["state"]> = new Set(["succee
 
 export type DownloadPhase = "downloading" | "verifying" | "done" | "failed";
 
-/** Where a download-and-verify install job is, from its state and stage label. */
+/**
+ * Where a download-and-verify install job is, from its state, stage label and bytes. A multi-file install can enter a
+ * later stage while files are still arriving, so missing bytes always mean downloading.
+ */
 export function downloadPhaseOf(job: JobView): DownloadPhase {
   switch (job.state) {
     case "succeeded":
@@ -15,7 +18,9 @@ export function downloadPhaseOf(job: JobView): DownloadPhase {
     case "interrupted":
       return "failed";
     default: {
-      const label = job.progress.label_code;
+      const { label_code: label, unit, current, total } = job.progress;
+      if (label === "verify") return "verifying";
+      if (unit === "bytes" && total !== null && total > 0 && current < total) return "downloading";
       return label === null || label === "download" ? "downloading" : "verifying";
     }
   }

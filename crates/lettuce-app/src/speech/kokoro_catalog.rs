@@ -153,7 +153,6 @@ fn map_manifest_error(_: KokoroInstallError) -> KokoroCatalogError {
 #[cfg(test)]
 mod tests {
     use lettuce_model_hub::KOKORO_SOURCE_REVISION;
-    use lettuce_types::ContentHash;
 
     use super::*;
 
@@ -166,7 +165,6 @@ mod tests {
             id: id.to_owned(),
             artifact: crate::KokoroArtifactSummary {
                 byte_size: 10,
-                blake3: ContentHash::parse("ab".repeat(32)).expect("content hash"),
             },
         }
     }
