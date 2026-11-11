@@ -7662,7 +7662,16 @@ export type PromptParameters = {
 	frequency_penalty: number | null,
 	presence_penalty: number | null,
 	repetition_penalty: number | null,
+	/**
+	 *  The reasoning budget reserved on top of `max_output_tokens`, when the
+	 *  model reasons. Part of what a reserving runtime holds back.
+	 */
 	reasoning_budget_tokens: number | null,
+	/**
+	 *  The whole completion budget a local runtime reserves inside the context
+	 *  window (`max_output_tokens` + `reasoning_budget_tokens`). Shown as
+	 *  "reserved for response" in the context-usage bar.
+	 */
 	total_completion_allowance: number | null,
 };
 
