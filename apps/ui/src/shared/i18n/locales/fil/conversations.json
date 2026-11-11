@@ -249,8 +249,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Multi-token prediction: mga token kada round at pagtanggap ng draft",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Mga entry ng lorebook na ginamit",

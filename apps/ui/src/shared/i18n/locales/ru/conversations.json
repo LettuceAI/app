@@ -253,8 +253,8 @@
       "speedValue": "{{value}} ток/с",
       "mtp": "Многотокенное предсказание: токенов за раунд и принятие черновика",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Использованные записи лорбука",

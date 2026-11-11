@@ -249,8 +249,8 @@
       "speedValue": "{{value}} टोक/से",
       "mtp": "मल्टी-टोकन अनुमान: प्रति राउंड टोकन और मसौदा स्वीकृति",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "उपयोग हुई लोरबुक एंट्रियाँ",

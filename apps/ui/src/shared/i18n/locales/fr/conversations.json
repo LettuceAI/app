@@ -251,8 +251,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Prédiction multi-token : tokens par tour et acceptation des brouillons",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Entrées d'encyclopédie utilisées",

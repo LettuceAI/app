@@ -247,8 +247,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "多 token 預測：每輪 token 數和草稿接受率",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "使用的設定集條目",

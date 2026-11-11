@@ -249,8 +249,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Πρόβλεψη πολλαπλών tokens: tokens ανά γύρο και αποδοχή προσχεδίου",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Καταχωρίσεις βιβλίου γνώσης που χρησιμοποιήθηκαν",

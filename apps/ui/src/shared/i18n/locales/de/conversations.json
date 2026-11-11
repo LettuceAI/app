@@ -249,8 +249,8 @@
       "speedValue": "{{value}} Tok./s",
       "mtp": "Multi-Token-Vorhersage: Token pro Runde und Entwurfsannahme",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Verwendete Lorebook-Einträge",

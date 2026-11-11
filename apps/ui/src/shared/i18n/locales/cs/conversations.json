@@ -253,8 +253,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Predikce více tokenů: tokeny na kolo a přijetí návrhu",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Použité záznamy lorebooku",

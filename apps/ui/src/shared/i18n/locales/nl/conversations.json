@@ -249,8 +249,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Meertokenvoorspelling: tokens per ronde en conceptacceptatie",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Gebruikte lorebookitems",

@@ -247,8 +247,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "멀티 토큰 예측: 라운드당 토큰과 초안 채택률",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "사용된 로어북 항목",

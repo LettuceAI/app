@@ -249,8 +249,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Fler-token-prediksjon: tokens per runde og utkastgodkjenning",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Lorebokoppføringer som ble brukt",

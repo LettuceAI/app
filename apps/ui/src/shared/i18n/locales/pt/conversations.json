@@ -251,8 +251,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Predição multi-token: tokens por rodada e aceitação de rascunho",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Entradas do livro de lore usadas",

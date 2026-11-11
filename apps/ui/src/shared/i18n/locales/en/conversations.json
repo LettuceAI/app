@@ -249,8 +249,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Multi-token prediction: tokens per round and draft acceptance",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Lorebook entries used",

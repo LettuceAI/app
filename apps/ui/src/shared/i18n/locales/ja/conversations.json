@@ -247,8 +247,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "マルチトークン予測：ラウンドあたりのトークンとドラフト採用率",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "使用したロアブックエントリー",

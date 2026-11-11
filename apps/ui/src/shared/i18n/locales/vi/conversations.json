@@ -247,8 +247,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Dự đoán đa token: token mỗi lượt và tỷ lệ chấp nhận bản nháp",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Các mục sách lore đã dùng",

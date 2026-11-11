@@ -249,8 +249,8 @@
       "speedValue": "{{value}} tok/sn",
       "mtp": "Çoklu token tahmini: tur başına token ve taslak kabulü",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Kullanılan lore kitabı girdileri",

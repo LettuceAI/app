@@ -249,8 +249,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Többtokenes előrejelzés: tokenek körönként és piszkozat-elfogadás",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Használt lorebook-bejegyzések",

@@ -247,8 +247,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "การทำนายหลายโทเค็น: โทเค็นต่อรอบและอัตราการยอมรับฉบับร่าง",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "รายการ Lorebook ที่ใช้",

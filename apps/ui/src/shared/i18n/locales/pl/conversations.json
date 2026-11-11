@@ -253,8 +253,8 @@
       "speedValue": "{{value}} tok/s",
       "mtp": "Przewidywanie wielu tokenów: tokeny na rundę i skuteczność szkicu",
       "mtpValue": "MTP {{value}}×",
-      "promptValue": "↓{{value}}",
-      "replyValue": "↑{{value}}"
+      "promptValue": "↑{{value}}",
+      "replyValue": "↓{{value}}"
     },
     "sources": {
       "lorebooks": "Użyte wpisy lorebooka",
