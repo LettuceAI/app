@@ -103,11 +103,13 @@ export function ModelsPage() {
   const provider = (model: ModelView) =>
     accounts.data?.find((p) => p.id === model.provider_account_id);
   const query = search.trim().toLocaleLowerCase();
-  const visibleModels = (models.data?.models ?? []).filter((model) =>
-    [model.display_name, model.external_model_id, provider(model)?.label ?? ""].some((value) =>
-      value.toLocaleLowerCase().includes(query),
-    ),
-  );
+  const visibleModels = (models.data?.models ?? [])
+    .filter((model) =>
+      [model.display_name, model.external_model_id, provider(model)?.label ?? ""].some((value) =>
+        value.toLocaleLowerCase().includes(query),
+      ),
+    )
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
   const groups = new Map<string, ModelView[]>();
   for (const model of visibleModels) {
     groups.set(model.provider_account_id, [
@@ -349,7 +351,13 @@ export function ModelsPage() {
                     : "grid grid-flow-row-dense grid-cols-1 items-start gap-x-4 gap-y-7 @min-[53rem]:grid-cols-2 @min-[80rem]:grid-cols-3"
                 }
               >
-                {[...groups].map(([id, list]) => {
+                {[...groups]
+                  .sort(([a], [b]) =>
+                    (accounts.data?.find((p) => p.id === a)?.label ?? a).localeCompare(
+                      accounts.data?.find((p) => p.id === b)?.label ?? b,
+                    ),
+                  )
+                  .map(([id, list]) => {
                   const account = accounts.data?.find((p) => p.id === id);
                   const label = account?.label ?? id;
                   const collapsed = (query ? collapsedSearchProviders : collapsedProviders).has(id);

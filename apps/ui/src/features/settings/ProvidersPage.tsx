@@ -91,7 +91,7 @@ export function ProvidersPage() {
           tab === "llm" ? (
             <div className="@container space-y-7">
               {providerGroups.map((group) => {
-                const members = (accounts.data ?? []).filter((p) => groupOf(p) === group);
+                const members = (accounts.data ?? []).filter((p) => groupOf(p) === group).sort((a, b) => a.label.localeCompare(b.label));
                 if (members.length === 0) return null;
                 return (
                   <section key={group} aria-label={common(`providerSelect.groups.${group}`)} className="space-y-3">
@@ -140,7 +140,7 @@ export function ProvidersPage() {
             </div>
           ) : (
           <ListGroup>
-            {audio.data?.map((p) => (
+            {[...(audio.data ?? [])].sort((a, b) => a.label.localeCompare(b.label)).map((p) => (
                   <ListRowButton
                     key={p.id}
                     icon={

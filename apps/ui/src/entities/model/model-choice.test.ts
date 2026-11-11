@@ -91,15 +91,15 @@ describe("meetsRequirement", () => {
 });
 
 describe("groupByProvider", () => {
-  it("puts on-device first, then providers in first-seen order", () => {
+  it("puts on-device first, then providers alphabetically by label, models alphabetically within", () => {
     const groups = groupByProvider([
-      choice(model("r1", "router"), router),
+      choice(model("r2", "router"), router),
       choice(model("c1", "cloud"), cloud),
       choice(model("l1", "local"), local),
-      choice(model("r2", "router"), router),
+      choice(model("r1", "router"), router),
     ]);
-    expect(groups.map((group) => group.account.id)).toEqual(["local", "router", "cloud"]);
-    expect(groups[1]?.choices.map((entry) => entry.model.id)).toEqual(["r1", "r2"]);
+    expect(groups.map((group) => group.account.id)).toEqual(["local", "cloud", "router"]);
+    expect(groups[2]?.choices.map((entry) => entry.model.id)).toEqual(["r1", "r2"]);
   });
 });
 

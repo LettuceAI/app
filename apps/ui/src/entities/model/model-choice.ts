@@ -41,7 +41,8 @@ export function meetsRequirement(choice: ModelChoice, requirement: ModelRequirem
   return requirement.allow ? requirement.allow(choice) : true;
 }
 
-/** On-device models first, then the other providers in the order their first model appears. */
+/** On-device models first, then the other providers alphabetically by label, with each
+    provider's models sorted alphabetically by name. */
 export function groupByProvider(choices: readonly ModelChoice[]): ProviderGroup[] {
   const groups = new Map<string, ProviderGroup>();
   for (const choice of choices) {
@@ -50,9 +51,11 @@ export function groupByProvider(choices: readonly ModelChoice[]): ProviderGroup[
     else groups.set(choice.account.id, { account: choice.account, choices: [choice] });
   }
   const all = [...groups.values()];
+  for (const group of all) group.choices.sort((a, b) => a.model.display_name.localeCompare(b.model.display_name));
+  const byLabel = (a: ProviderGroup, b: ProviderGroup) => a.account.label.localeCompare(b.account.label);
   return [
-    ...all.filter((group) => group.account.provider_kind === onDeviceKind),
-    ...all.filter((group) => group.account.provider_kind !== onDeviceKind),
+    ...all.filter((group) => group.account.provider_kind === onDeviceKind).sort(byLabel),
+    ...all.filter((group) => group.account.provider_kind !== onDeviceKind).sort(byLabel),
   ];
 }
 

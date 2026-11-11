@@ -25,7 +25,8 @@ export function useChatModels(api: ApiClient): { models: ChatModel[]; find: (id:
       .map((model): ChatModel => {
         const account = byAccount.get(model.provider_account_id);
         return { id: model.id, name: model.display_name, local: account?.provider_kind === localProviderKind, provider: account?.label ?? "", externalId: model.external_model_id, providerKind: account?.provider_kind ?? null };
-      });
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
     const byId = new Map(list.map((model) => [model.id, model]));
     return { models: list, find: (id) => (id ? (byId.get(id) ?? null) : null) };
   }, [models.data, accounts.data]);
