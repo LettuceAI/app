@@ -797,18 +797,19 @@ let mut private_items_used =
                 transcript.push(message);
             }
         }
-        let history_text_bytes = transcript
+        let history_text = transcript
             .iter()
             .flat_map(|message| &message.parts)
             .filter_map(|part| match part {
                 ProviderContextPart::Text { text } => Some(if direct {
-                    names.resolve_names(text).len()
+                    names.resolve_names(text)
                 } else {
-                    text.len()
+                    text.clone()
                 }),
                 _ => None,
             })
-            .sum::<usize>();
+            .collect::<Vec<_>>()
+            .join("\n");
         insert_in_chat_messages(&mut transcript, in_chat);
         messages.append(&mut transcript);
         if direct {
@@ -820,12 +821,7 @@ let mut private_items_used =
         }
 
         let budget = budget_report(&messages, omitted_messages)?;
-        let sections = placed_sections(
-            &messages,
-            sections,
-            budget.input_bytes as usize,
-            history_text_bytes,
-        )?;
+        let sections = placed_sections(sections, history_text);
         let attributions = ContextAttributions {
             used_sources: Some(lettuce_conversations::UsedContextSources {
                 lorebook_entries: lore_entries
@@ -3729,7 +3725,19 @@ fn speaker_character(
 struct SectionSource {
     kind: ContextSectionKind,
     label: Option<String>,
-    bytes: usize,
+    tokens: u32,
+}
+
+/// The o200k token count of each text, falling back to a rough bytes/4 estimate
+/// only when the tokenizer can't be loaded, so the breakdown degrades instead of
+/// failing the whole request.
+fn section_tokens(texts: &[String]) -> Vec<u32> {
+    lettuce_context::count_tokens_batch(texts).unwrap_or_else(|_| {
+        texts
+            .iter()
+            .map(|text| u32::try_from(text.len().div_ceil(4)).unwrap_or(u32::MAX))
+            .collect()
+    })
 }
 
 struct LoreSource {
@@ -3776,15 +3784,17 @@ fn rendered_sources(
     entry_name: Option<&str>,
     lore_sources: &[LoreSource],
 ) -> Vec<SectionSource> {
-    let final_bytes = |text: &str| {
+    let final_text = |text: &str| {
         if direct {
-            names.resolve_names(text).len()
+            names.resolve_names(text)
         } else {
-            text.len()
+            text.to_owned()
         }
     };
-    let mut sources = Vec::new();
-    let mut substituted = 0;
+    // Each placeholder that was actually placed is one identified span; what the
+    // message holds beyond them is its own base text (instructions and the like),
+    // attributed to the entry as the leftover below.
+    let mut spans: Vec<(ContextSectionKind, Option<String>, String)> = Vec::new();
     let trim_start = message.content.len() - message.content.trim_start().len();
     let trim_end = message.content.trim_end().len();
     for value in &message.substitutions {
@@ -3798,19 +3808,15 @@ fn rendered_sources(
                 let lore_start = (value.start + lore.start).max(start);
                 let lore_end = (value.start + lore.end).min(end);
                 if lore_start < lore_end {
-                    let bytes = final_bytes(&message.content[lore_start..lore_end]);
-                    substituted += bytes;
-                    sources.push(SectionSource {
-                        kind: ContextSectionKind::Lorebook,
-                        label: Some(lore.title.clone()),
-                        bytes,
-                    });
+                    spans.push((
+                        ContextSectionKind::Lorebook,
+                        Some(lore.title.clone()),
+                        final_text(&message.content[lore_start..lore_end]),
+                    ));
                 }
             }
             continue;
         }
-        let bytes = final_bytes(&message.content[start..end]);
-        substituted += bytes;
         let kind = match value.placeholder.as_str() {
             "{{char.desc}}" | "{{ai_description}}" => ContextSectionKind::Character,
             "{{persona.desc}}"
@@ -3841,14 +3847,30 @@ fn rendered_sources(
             ContextSectionKind::PromptEntry => entry_name.map(str::to_owned),
             _ => None,
         };
-        sources.push(SectionSource { kind, label, bytes });
+        spans.push((kind, label, final_text(&message.content[start..end])));
     }
-    let bytes = final_bytes(message.content.trim()).saturating_sub(substituted);
-    if bytes > 0 {
+    // One tiktoken pass for the spans and the whole message: the leftover is what
+    // the real count of the message exceeds its placed placeholders by.
+    let mut batch: Vec<String> = spans.iter().map(|(_, _, text)| text.clone()).collect();
+    batch.push(final_text(message.content.trim()));
+    let counts = section_tokens(&batch);
+    let message_tokens = counts.last().copied().unwrap_or(0);
+    let mut sources = Vec::new();
+    let mut covered = 0_u32;
+    for ((kind, label, _), tokens) in spans.into_iter().zip(&counts) {
+        covered = covered.saturating_add(*tokens);
+        sources.push(SectionSource {
+            kind,
+            label,
+            tokens: *tokens,
+        });
+    }
+    let leftover = message_tokens.saturating_sub(covered);
+    if leftover > 0 {
         sources.push(SectionSource {
             kind: ContextSectionKind::PromptEntry,
             label: entry_name.map(str::to_owned),
-            bytes,
+            tokens: leftover,
         });
     }
     sources
@@ -3871,68 +3893,26 @@ fn part_input_bytes(part: &ProviderContextPart) -> usize {
     }
 }
 
-fn placed_sections(
-    messages: &[ProviderNeutralMessage],
-    sources: Vec<SectionSource>,
-    input_bytes: usize,
-    history_text_bytes: usize,
-) -> Result<Vec<ContextSection>, ContextAssemblyError> {
-    let mut total = 0_usize;
-    let mut sections = Vec::new();
-    for source in sources {
-        let prior = total.div_ceil(4);
-        total += source.bytes;
-        sections.push(ContextSection {
+fn placed_sections(sources: Vec<SectionSource>, history_text: String) -> Vec<ContextSection> {
+    let mut sections: Vec<ContextSection> = sources
+        .into_iter()
+        .map(|source| ContextSection {
             kind: source.kind,
             label: source.label,
-            estimated_tokens: (total.div_ceil(4) - prior) as u32,
-        });
-    }
-    let media = messages
-        .iter()
-        .flat_map(|message| &message.parts)
-        .filter(|part| matches!(part, ProviderContextPart::MediaAsset { .. }))
-        .map(part_input_bytes)
-        .sum::<usize>();
-    let tools = messages
-        .iter()
-        .flat_map(|message| &message.parts)
-        .filter(|part| {
-            matches!(
-                part,
-                ProviderContextPart::ToolCall(_) | ProviderContextPart::ToolResult(_)
-            )
+            estimated_tokens: source.tokens,
         })
-        .map(part_input_bytes)
-        .sum::<usize>();
-    for (kind, bytes) in [
-        (ContextSectionKind::Media, media),
-        (ContextSectionKind::Tools, tools),
-        (ContextSectionKind::History, history_text_bytes),
-    ] {
-        if bytes > 0 {
-            let prior = total.div_ceil(4);
-            total += bytes;
-            sections.push(ContextSection {
-                kind,
-                label: None,
-                estimated_tokens: (total.div_ceil(4) - prior) as u32,
-            });
-        }
-    }
-    let remainder = input_bytes
-        .checked_sub(total)
-        .ok_or(ContextAssemblyError::PromptRender {
-            reason: "context section byte total exceeds the input bytes",
-        })?;
-    if remainder > 0 {
+        .collect();
+    // The chat history is counted whole: the last messages are one section, not
+    // one per turn.
+    let history_tokens = section_tokens(&[history_text]).first().copied().unwrap_or(0);
+    if history_tokens > 0 {
         sections.push(ContextSection {
-            kind: ContextSectionKind::PromptEntry,
+            kind: ContextSectionKind::History,
             label: None,
-            estimated_tokens: ((total + remainder).div_ceil(4) - total.div_ceil(4)) as u32,
+            estimated_tokens: history_tokens,
         });
     }
-    Ok(sections)
+    sections
 }
 
 fn budget_report(
@@ -3999,7 +3979,7 @@ mod tests {
         let sources = rendered_sources(&entry, &values, true, Some("Entry"), &[]);
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].kind, ContextSectionKind::Persona);
-        assert_eq!(sources[0].bytes, 4);
+        assert_eq!(sources[0].tokens, section_tokens(&["same".to_owned()])[0]);
         let literal = lettuce_context::RenderedPromptMessage {
             substitutions: Vec::new(),
             ..entry
@@ -4038,14 +4018,13 @@ mod tests {
         ];
         let values = PromptRenderValues::default();
         let sources = rendered_sources(&entry, &values, false, Some("Lore rules"), &lore);
-        assert_eq!(sources.iter().map(|source| source.bytes).sum::<usize>(), 10);
         assert_eq!(
             sources
                 .iter()
                 .filter(|source| source.kind == ContextSectionKind::Lorebook)
-                .map(|source| (source.label.as_deref(), source.bytes))
+                .map(|source| (source.label.as_deref(), source.tokens > 0))
                 .collect::<Vec<_>>(),
-            vec![(Some("First"), 4), (Some("Second"), 4)]
+            vec![(Some("First"), true), (Some("Second"), true)]
         );
         assert_eq!(
             sources.last().expect("separator").label.as_deref(),

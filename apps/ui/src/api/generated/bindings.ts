@@ -7663,6 +7663,8 @@ export type PromptParameters = {
 	frequency_penalty: number | null,
 	presence_penalty: number | null,
 	repetition_penalty: number | null,
+	reasoning_budget_tokens: number | null,
+	total_completion_allowance: number | null,
 };
 
 export type PromptPart = PromptPart_Serialize | PromptPart_Deserialize;

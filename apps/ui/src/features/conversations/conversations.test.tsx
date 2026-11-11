@@ -395,7 +395,7 @@ describe("conversation screen", () => {
             prompt: null, lorebooks: [], turn_id: "t1", candidate_id: "k1", operation: "send",
             model: { display_name: "Chat model", external_model_id: "chat", provider_kind: "openrouter" },
             streaming: true,
-            parameters: { temperature: null, top_p: null, top_k: null, max_output_tokens: null, context_length: null, frequency_penalty: null, presence_penalty: null, repetition_penalty: null },
+            parameters: { temperature: null, top_p: null, top_k: null, max_output_tokens: null, context_length: null, frequency_penalty: null, presence_penalty: null, repetition_penalty: null, reasoning_budget_tokens: null, total_completion_allowance: null },
             messages: [], budget: { selected_messages: 0, omitted_messages: 0, input_bytes: 0, estimated_input_tokens: 0, truncated: false },
             sections: null, sections_unavailable: "predates_breakdown",
           },

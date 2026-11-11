@@ -43,6 +43,13 @@ pub struct PromptParameters {
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub repetition_penalty: Option<f64>,
+    /// The reasoning budget reserved on top of `max_output_tokens`, when the
+    /// model reasons. Part of what a reserving runtime holds back.
+    pub reasoning_budget_tokens: Option<u32>,
+    /// The whole completion budget a local runtime reserves inside the context
+    /// window (`max_output_tokens` + `reasoning_budget_tokens`). Shown as
+    /// "reserved for response" in the context-usage bar.
+    pub total_completion_allowance: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

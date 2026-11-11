@@ -117,6 +117,8 @@ pub(super) fn snapshot_view(
             frequency_penalty: parameters.frequency_penalty,
             presence_penalty: parameters.presence_penalty,
             repetition_penalty: parameters.repetition_penalty,
+            reasoning_budget_tokens: parameters.reasoning_budget_tokens,
+            total_completion_allowance: parameters.total_completion_allowance,
         },
         messages: record
             .request
