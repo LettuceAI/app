@@ -1711,7 +1711,10 @@ async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
     ));
     assert!(matches!(
         settlement.results[2].outcome,
-        lettuce_memory::MemoryToolOutcome::Deleted { .. }
+        lettuce_memory::MemoryToolOutcome::SoftDeleted {
+            reason: lettuce_memory::SoftDeleteReason::WasHot,
+            ..
+        }
     ));
     let after = status_of(&harness, &chat).await;
     assert!(
@@ -1726,7 +1729,9 @@ async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
             .iter()
             .any(|item| item.id == unpinned.id && item.pinned)
     );
-    assert!(after.items.iter().all(|item| item.id != untouched.id));
+    assert!(after.items.iter().any(|item| {
+        item.id == untouched.id && item.temperature == dto::MemoryTemperature::Cold
+    }));
 }
 
 #[tokio::test]

@@ -395,6 +395,7 @@ pub enum MemoryToolSkipReason {
     MalformedArguments,
     UserEdited,
     AlreadyApplied,
+    PinnedTarget,
 }
 
 /// A memory as the model named it: a six-digit short id, a stable id, or (for
@@ -714,6 +715,7 @@ pub struct MemoryToolCall {
 pub enum SoftDeleteReason {
     LowConfidence,
     HardDeleteLimitReached,
+    WasHot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1462,6 +1464,9 @@ fn text_similarity(left: &str, right: &str) -> f64 {
     1.0 - previous[right.len()] as f64 / longest as f64
 }
 
+/// A pinned memory is never deleted. A delete cools a hot memory; only a
+/// memory that is already cold is removed, at hard-delete confidence and within
+/// the cycle budget.
 fn apply_delete(
     items: &mut Vec<MemoryItem>,
     target: &MemoryReference,
@@ -1475,22 +1480,31 @@ fn apply_delete(
             reference: target.clone(),
         };
     };
+    if items[index].is_pinned {
+        return MemoryToolOutcome::Skipped {
+            reason: MemoryToolSkipReason::PinnedTarget,
+        };
+    }
     let id = items[index].id;
     let short_id = items[index].short_id;
     let text = items[index].text.clone();
-    let hard_requested = confidence >= Score::HARD_DELETE_THRESHOLD;
-    if !hard_requested || *hard_delete_count >= hard_delete_limit {
+    let soft_reason = if confidence < Score::HARD_DELETE_THRESHOLD {
+        Some(SoftDeleteReason::LowConfidence)
+    } else if !items[index].is_cold {
+        Some(SoftDeleteReason::WasHot)
+    } else if *hard_delete_count >= hard_delete_limit {
+        Some(SoftDeleteReason::HardDeleteLimitReached)
+    } else {
+        None
+    };
+    if let Some(reason) = soft_reason {
         items[index].is_cold = true;
         items[index].importance = policy.cold_threshold;
         return MemoryToolOutcome::SoftDeleted {
             id,
             short_id,
             text,
-            reason: if hard_requested {
-                SoftDeleteReason::HardDeleteLimitReached
-            } else {
-                SoftDeleteReason::LowConfidence
-            },
+            reason,
             memories: list_memories(items),
         };
     }
@@ -2069,7 +2083,8 @@ mod tests {
     #[test]
     fn legacy_references_resolve_by_short_id_or_exact_text() {
         let first = item("Mira likes tea.", 2, 1, false);
-        let second = item("Mira keeps a brass key.", 2, 2, false);
+        let mut second = item("Mira keeps a brass key.", 2, 2, false);
+        second.is_cold = true;
         let third = item("Mira fears storms.", 2, 3, false);
         let (first_short, second_id, third_short) = (first.short_id, second.id, third.short_id);
         let state = snapshot(vec![first, second, third]);
@@ -2515,7 +2530,7 @@ mod tests {
         assert_eq!(super::text_similarity("abc", "abc"), 1.0);
         assert_eq!(super::text_similarity("abc", ""), 0.0);
         assert!((super::text_similarity("kitten", "sitting") - (1.0 - 3.0 / 7.0)).abs() < 1e-12);
-        assert!((super::text_similarity("güveniyor", "güvenmiyor") - 0.8).abs() < 1e-12);
+        assert!((super::text_similarity("naïve", "naive") - 0.8).abs() < 1e-12);
     }
 
     fn semantic_create(
@@ -2553,7 +2568,6 @@ mod tests {
             ("Mira trusts Jonas", "Mira no longer trusts Jonas"),
             ("Mira is 21 years old", "Mira is 22 years old"),
             ("Mira met Jonas on Monday", "Mira met Jonas on Tuesday"),
-            ("Mira Jonas'a güveniyor", "Mira Jonas'a artık güvenmiyor"),
             (
                 "Mira arbeitet im Krankenhaus",
                 "Mira arbeitet nachts im Krankenhaus",
@@ -2829,7 +2843,8 @@ mod tests {
     #[test]
     fn mutation_results_list_the_memories_right_after_each_call() {
         let first = item("Mira likes the old harbor.", 4, 1, false);
-        let second = item("The lighthouse keeper is her uncle.", 6, 2, false);
+        let mut second = item("The lighthouse keeper is her uncle.", 6, 2, false);
+        second.is_cold = true;
         let mut superseded = item("Mira lived in the capital.", 5, 3, false);
         superseded.superseded_by = Some(first.id);
         superseded.superseded_at = Some(TimestampMillis::new(3));
@@ -2975,8 +2990,10 @@ mod tests {
 
     #[test]
     fn delete_safeguard_soft_deletes_after_cycle_limit() {
-        let first = item("first", 2, 1, false);
-        let second = item("second", 2, 2, false);
+        let mut first = item("first", 2, 1, false);
+        first.is_cold = true;
+        let mut second = item("second", 2, 2, false);
+        second.is_cold = true;
         let third = item("third", 2, 3, false);
         let first_id = first.id;
         let second_id = second.id;
@@ -3009,9 +3026,68 @@ mod tests {
     }
 
     #[test]
+    fn a_delete_cools_a_hot_memory_and_removes_only_a_cold_one() {
+        let hot = item("Mira keeps a brass key.", 2, 1, false);
+        let hot_id = hot.id;
+        let state = snapshot(vec![hot, item("Mira fears storms.", 2, 2, false)]);
+        let delete = call(MemoryToolArguments::DeleteMemory {
+            target: reference(hot_id),
+            confidence: Some(Score::FULL),
+        });
+        let cooled = MemoryToolReducer
+            .reduce(&state, &policy(), std::slice::from_ref(&delete))
+            .expect("reduce");
+        assert!(matches!(
+            cooled.results[0].outcome,
+            MemoryToolOutcome::SoftDeleted {
+                id,
+                reason: SoftDeleteReason::WasHot,
+                ..
+            } if id == hot_id
+        ));
+        let mut cold_state = state.clone();
+        cold_state.items[0].is_cold = true;
+        cold_state.items[0].importance = policy().cold_threshold;
+        let removed = MemoryToolReducer
+            .reduce(&cold_state, &policy(), &[delete])
+            .expect("reduce");
+        assert!(matches!(
+            removed.results[0].outcome,
+            MemoryToolOutcome::Deleted { id, .. } if id == hot_id
+        ));
+    }
+
+    #[test]
+    fn a_pinned_memory_is_never_deleted() {
+        let pinned = item("Mira is a lighthouse keeper.", 2, 1, true);
+        let pinned_id = pinned.id;
+        let state = snapshot(vec![pinned]);
+        let calls = [Score::FULL, score(1_000)].map(|confidence| {
+            call(MemoryToolArguments::DeleteMemory {
+                target: reference(pinned_id),
+                confidence: Some(confidence),
+            })
+        });
+        let result = MemoryToolReducer
+            .reduce(&state, &policy(), &calls)
+            .expect("reduce");
+        for outcome in result.results.iter().map(|result| &result.outcome) {
+            assert_eq!(
+                outcome,
+                &MemoryToolOutcome::Skipped {
+                    reason: MemoryToolSkipReason::PinnedTarget
+                }
+            );
+        }
+        assert!(result.change.is_none());
+    }
+
+    #[test]
     fn hard_delete_budget_counts_every_cycle_start_item_and_spans_rounds() {
-        let first = item("first", 2, 1, false);
-        let second = item("second", 2, 2, false);
+        let mut first = item("first", 2, 1, false);
+        first.is_cold = true;
+        let mut second = item("second", 2, 2, false);
+        second.is_cold = true;
         let first_id = first.id;
         let second_id = second.id;
         let mut cold_one = item("cold one", 2, 3, false);

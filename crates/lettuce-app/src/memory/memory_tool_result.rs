@@ -192,6 +192,7 @@ fn skip_reason(
         MemoryToolSkipReason::MalformedArguments => "memory_skip_malformed_arguments",
         MemoryToolSkipReason::UserEdited => "memory_skip_user_edited",
         MemoryToolSkipReason::AlreadyApplied => "memory_skip_social_event_recorded",
+        MemoryToolSkipReason::PinnedTarget => "memory_skip_pinned_target",
     };
     text.render_with(key, [])
 }

@@ -1576,7 +1576,7 @@ pub(crate) mod tests {
         assert_eq!(
             first.run.tool_request.definitions[1].description.as_deref(),
             Some(
-                "Delete an outdated or redundant memory. Low confidence (< 0.7) triggers soft-delete to cold storage."
+                "Delete an outdated or redundant memory. A hot memory moves to cold storage, where it can still be recalled. A memory already in cold storage is removed when the confidence is 0.7 or higher. Pinned memories cannot be deleted."
             )
         );
         *repository.summary.lock().expect("summary") = Some(lettuce_memory::MemorySummary {

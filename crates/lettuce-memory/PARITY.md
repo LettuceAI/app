@@ -28,6 +28,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 
 ## Deliberate differences from legacy
 
+- `delete_memory` never touches a pinned memory (`Skipped` with `PinnedTarget`) and removes only a memory that is already cold; a hot target goes cold (`SoftDeleted` with `WasHot`) whatever the confidence. Legacy hard-deleted any target, pinned or hot, at confidence 0.7 or higher while its cycle budget lasted (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3971-3974`), and its prompt told the model deleted memories were never lost.
 - Keyword overlap alone no longer suppresses creates: it discards word order, numbers and short words. Normalized text equality preserves internal punctuation, including signs, decimals and names such as C++. Embedding-based duplicate checks remain enabled.
 - Memory reads identify the conversation branch. Legacy branches were separate sessions with copied memory (`old-code/src/core/storage/repo.ts:1655-1709`); in-conversation branches keep separate own spaces while companion pools remain shared.
 

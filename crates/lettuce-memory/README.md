@@ -85,7 +85,7 @@ Created text is normalized by `normalize_memory_text`: a surrounding code fence 
 Targets are `MemoryReference`s, kept raw from the model and resolved against the items as they are when the call applies. Surrounding `# * " ' [ ] ( )` are cleaned off. A six-digit reference resolves only as a short id; anything else may be a memory UUID, and `delete_memory` also accepts the exact memory text. A reference that resolves to nothing settles as `TargetNotFound`.
 
 - `create_memory` needs a `CreateMemoryPreparation` from the application. Duplicate checks use equal normalized text or qualified semantic evidence, in memory order. Text normalization preserves internal punctuation, word order, short words and numbers; keyword overlap alone cannot suppress a create. `important: true` creates it pinned.
-- `delete_memory` hard-deletes when confidence is at least 0.7 and the cycle's hard-delete budget allows it. Otherwise it soft-deletes: the item goes cold at the cold threshold, with the reason (low confidence or budget reached).
+- `delete_memory` never deletes a pinned memory; the call settles as `Skipped` with `PinnedTarget`. A hot target is soft-deleted: it goes cold at the cold threshold. Only a target that is already cold is removed, when confidence is at least 0.7 and the cycle's hard-delete budget allows it. Every soft delete carries its reason (low confidence, the target was hot, or budget reached).
 - `pin_memory` pins and makes the item hot at full importance; `unpin_memory` clears the pin.
 - `done` ends the round; later calls in the same batch settle as `StoppedAfterDone`. A round may repeat `done`.
 
