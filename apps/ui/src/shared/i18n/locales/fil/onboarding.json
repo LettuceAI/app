@@ -333,6 +333,11 @@
       "note": "Walang ido-download."
     }
   },
+  "sync": {
+    "title": "Mag-sync mula sa ibang device",
+    "body": "Makipag-pair sa device na may naka-setup nang LettuceAI. Kokopyahin ang data mo sa pamamagitan ng local network.",
+    "hint": "Sa kabilang device, buksan ang Settings, tapos ang Local sync, at simulan ang pag-host para makakuha ng address at PIN."
+  },
   "other": {
     "title": "Iba pang opsyon",
     "language": "Wika",
@@ -340,6 +345,8 @@
     "skipBody": "Tumingin-tumingin muna. Kailangan ng AI ang mga chat bago sila makasagot.",
     "restore": "I-restore ang backup",
     "restoreBody": "Ibalik ang mga chat, karakter at setting mula sa .lettuce file",
+    "sync": "Mag-sync mula sa ibang device",
+    "syncBody": "Kopyahin ang setup mo sa local network mula sa device na may LettuceAI na",
     "languageTitle": "Wika",
     "warning": {
       "title": "Kailangan ng AI ang mga chat bago sila makasagot",

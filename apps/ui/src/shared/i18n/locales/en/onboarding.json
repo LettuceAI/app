@@ -333,6 +333,11 @@
       "note": "Nothing to download."
     }
   },
+  "sync": {
+    "title": "Sync from another device",
+    "body": "Pair with a device that already has LettuceAI set up. Your data is copied over your local network.",
+    "hint": "On the other device, open Settings, then Local sync, and start hosting to get an address and PIN."
+  },
   "other": {
     "title": "Other options",
     "language": "Language",
@@ -340,6 +345,8 @@
     "skipBody": "Look around first. Chats need an AI before they can reply.",
     "restore": "Restore a backup",
     "restoreBody": "Bring back chats, characters and settings from a .lettuce file",
+    "sync": "Sync from another device",
+    "syncBody": "Copy your setup over the local network from a device that already has LettuceAI",
     "languageTitle": "Language",
     "warning": {
       "title": "Chats need an AI before they can reply",

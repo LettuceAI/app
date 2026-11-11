@@ -1,0 +1,147 @@
+{
+  "mode": {
+    "join": {
+      "title": "Mit Gerät verbinden",
+      "body": "Adresse und PIN eines anderen Geräts eingeben"
+    },
+    "host": {
+      "title": "Auf diesem Gerät hosten",
+      "body": "Verbindung für ein anderes Gerät erstellen"
+    }
+  },
+  "join": {
+    "address": "Host-Adresse",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "Die IPv4-Adresse und der Port, die das andere Gerät anzeigt",
+    "addressInvalid": "Gib eine IPv4-Adresse und einen Port ein, zum Beispiel 192.168.1.100:12345",
+    "pin": "PIN-Code",
+    "scan": "QR-Code scannen",
+    "connect": "Verbinden",
+    "scanDenied": "Der Kamerazugriff wurde verweigert. Erlaube die Kamera in den Systemeinstellungen, um einen Code zu scannen.",
+    "scanInvalid": "Das ist kein LettuceAI-Sync-Code.",
+    "scanUnavailable": "Die Kamera konnte nicht geöffnet werden."
+  },
+  "host": {
+    "body1": "Mach dieses Gerät für ein anderes Gerät in deinem Netzwerk verfügbar.",
+    "body2": "Nach der Verbindung vergleichen beide Geräte ihre neuesten Änderungen und tauschen sie aus.",
+    "start": "Hosting starten"
+  },
+  "sharing": {
+    "group": "Hosting",
+    "qr": "QR-Code mit Adresse, Port und PIN dieses Geräts",
+    "addressPicker": "Im QR-Code angezeigte Adresse",
+    "address": "Adresse",
+    "pin": "Verbindungs-PIN",
+    "pinBody": "Teile diese PIN mit dem verbindenden Gerät",
+    "copyPin": "PIN kopieren",
+    "copyAddress": "Adresse kopieren",
+    "copied": "Kopiert",
+    "steps": "Einrichtungsanleitung",
+    "step1": "Öffne LettuceAI auf dem anderen Gerät",
+    "step2": "Gehe zu Einstellungen, dann Lokale Synchronisierung",
+    "step3": "Scanne den QR-Code oder gib Adresse und PIN ein",
+    "stop": "Hosting beenden"
+  },
+  "request": {
+    "title": "Verbindungsanfrage",
+    "body": "{{name}} möchte sich mit diesem Gerät synchronisieren.",
+    "waiting": "Warten auf deine Antwort",
+    "accept": "Verbindung akzeptieren",
+    "decline": "Ablehnen"
+  },
+  "ready": {
+    "title": "Bereit zur Synchronisierung",
+    "body": "{{name}} ist verbunden. Starte die Synchronisierung, um die Übertragung zu beginnen.",
+    "start": "Synchronisierung starten",
+    "cancel": "Abbrechen"
+  },
+  "unknownDevice": "Unbekanntes Gerät",
+  "progress": {
+    "connecting": "Verbinden",
+    "connectingBody": "Warten, bis das andere Gerät die Verbindung annimmt und die Synchronisierung startet.",
+    "syncing": "Synchronisieren",
+    "phase": {
+      "changes": "Änderungen werden ausgetauscht",
+      "media": "Mediendateien werden ausgetauscht",
+      "secrets": "Geheimnisse werden ausgetauscht"
+    },
+    "items": "{{done}} von {{total}} Elementen",
+    "itemsOnly": "{{done}} Elemente",
+    "bytes": "{{done}} von {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Abbrechen"
+  },
+  "completed": {
+    "title": "Synchronisierung abgeschlossen",
+    "upToDate": "Beide Geräte waren bereits auf dem neuesten Stand.",
+    "sentChanges": "Gesendete Änderungen",
+    "receivedChanges": "Empfangene Änderungen",
+    "receivedMedia": "Empfangene Mediendateien",
+    "receivedBytes": "Empfangene Daten",
+    "receivedSecrets": "Empfangene Geheimnisse",
+    "skippedSecrets": "Übersprungene Geheimnisse",
+    "unavailableMedia": "Nicht verfügbare Mediendateien",
+    "done": "Fertig"
+  },
+  "failed": {
+    "title": "Synchronisierung fehlgeschlagen",
+    "retry": "Erneut versuchen",
+    "reason": {
+      "invalid_state": "Die Synchronisierung kann das gerade nicht tun. Beende die Sitzung und versuche es erneut.",
+      "addresses_unavailable": "Dieses Gerät hat keine Netzwerkadresse zum Teilen. Verbinde dich mit einem Netzwerk und versuche es erneut.",
+      "media_unavailable": "Einige Mediendateien konnten nicht gelesen werden, deshalb wurde die Synchronisierung gestoppt.",
+      "authentication_failed": "Die PIN ist falsch. Prüfe die PIN auf dem Host-Gerät und versuche es erneut.",
+      "pairing_locked": "Zu viele falsche PINs. Beende das Hosting auf dem anderen Gerät und starte es neu, um eine neue PIN zu erhalten.",
+      "declined": "Das andere Gerät hat die Verbindung abgelehnt.",
+      "disconnected": "Die Verbindung zum anderen Gerät wurde unterbrochen.",
+      "peer_stalled": "Das andere Gerät antwortet nicht mehr.",
+      "protocol": "Das andere Gerät wurde nicht verstanden. Beide Geräte müssen dieselbe LettuceAI-Version verwenden.",
+      "storage": "Die Daten auf diesem Gerät konnten nicht gelesen oder gespeichert werden.",
+      "pending_batch": "Eine frühere Synchronisierung hat Änderungen hinterlassen, die noch nicht angewendet wurden. Starte die App neu und versuche es erneut.",
+      "required_reference_unavailable": "Das andere Gerät hat Daten gesendet, die sich auf etwas beziehen, das dieses Gerät nicht hat."
+    }
+  },
+  "conflicts": {
+    "title": "Sync-Konflikte",
+    "row": "Konflikte",
+    "needChoice_one": "{{count}} Element braucht deine Entscheidung",
+    "needChoice_other": "{{count}} Elemente brauchen deine Entscheidung",
+    "emptyTitle": "Nichts zu klären",
+    "emptyBody": "Konflikte erscheinen hier, wenn beide Geräte dasselbe geändert haben.",
+    "menu": "Weitere Aktionen",
+    "edits": "Widersprüchliche Änderungen",
+    "forks": "Konversationszweige",
+    "legacy": "Importierte Daten",
+    "kind": {
+      "character": "Charakter",
+      "persona": "Persona",
+      "persona_default": "Standard-Persona",
+      "lorebook": "Lorebook",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Standard-Persona",
+    "deleted": "Gelöscht",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Konflikt lösen",
+    "thisDevice": "Dieses Gerät",
+    "otherDevice": "Anderes Gerät",
+    "noTime": "Zeit unbekannt",
+    "keepThis": "Version dieses Geräts behalten",
+    "useOther": "Version des anderen Geräts verwenden",
+    "resolved": "Konflikt gelöst",
+    "changedMeanwhile": "Dieses Element wurde zwischenzeitlich geändert. Jetzt werden die neuesten Versionen angezeigt.",
+    "forkBody": "Nachrichten von beiden Geräten wurden als getrennte Zweige behalten.",
+    "forkLocal": "Der kopierte Zweig enthält die Nachrichten dieses Geräts.",
+    "forkOther": "Der kopierte Zweig enthält die Nachrichten des anderen Geräts.",
+    "forkUntitled": "Konversation",
+    "openBranches": "Zweige öffnen",
+    "dismiss": "Ausblenden",
+    "legacyTitle": "Aus der vorherigen App importiert",
+    "legacyCurrent": "Aktuell",
+    "legacyLocal": "Lokal",
+    "legacyIncoming": "Eingehend",
+    "notMapped": "Nicht zugeordnet"
+  },
+  "disclaimer": "Beide Geräte senden und empfangen Änderungen über dein lokales Netzwerk. Lass diesen Bildschirm auf beiden Geräten geöffnet, bis die Synchronisierung abgeschlossen ist. Sie müssen dieselbe LettuceAI-Version verwenden.",
+  "loading": "Sync-Status wird geladen"
+}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, FileUp, Languages } from "lucide-react";
+import { ArrowLeft, ArrowRight, FileUp, Languages, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, IconButton, ListGroup, ListRowButton, Sheet } from "@lettuceai/crisp";
 import { resources } from "@/shared/i18n";
@@ -12,6 +12,7 @@ export interface OtherOptionsSheetProps {
   onSkip: () => void;
   onLanguage: (locale: string) => Promise<void>;
   onRestore: () => void;
+  onSync: () => void;
   picking: boolean;
   skipping: boolean;
   skipError: unknown;
@@ -23,7 +24,7 @@ function languageName(locale: string, display: string): string {
   return new Intl.DisplayNames([display], { type: "language" }).of(locale) ?? locale;
 }
 
-export function OtherOptionsSheet({ open, onClose, onSkip, onLanguage, onRestore, picking, skipping, skipError }: OtherOptionsSheetProps) {
+export function OtherOptionsSheet({ open, onClose, onSkip, onLanguage, onRestore, onSync, picking, skipping, skipError }: OtherOptionsSheetProps) {
   const { t, i18n } = useTranslation("onboarding");
   const [view, setView] = useState<"menu" | "language">("menu");
   const [languageError, setLanguageError] = useState<unknown>(null);
@@ -65,6 +66,13 @@ export function OtherOptionsSheet({ open, onClose, onSkip, onLanguage, onRestore
               chevron={false}
               disabled={picking}
               onClick={onRestore}
+            />
+            <ListRowButton
+              icon={<RefreshCw size={icon.lg} />}
+              title={t("other.sync")}
+              description={t("other.syncBody")}
+              chevron={false}
+              onClick={onSync}
             />
             <ListRowButton
               icon={<ArrowRight size={icon.lg} />}

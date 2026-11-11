@@ -1,0 +1,146 @@
+{
+  "mode": {
+    "join": {
+      "title": "デバイスに参加",
+      "body": "別のデバイスのアドレスとPINを入力"
+    },
+    "host": {
+      "title": "このデバイスでホスト",
+      "body": "別のデバイス用の接続を作成"
+    }
+  },
+  "join": {
+    "address": "ホストアドレス",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "もう一方のデバイスに表示されるIPv4アドレスとポート",
+    "addressInvalid": "192.168.1.100:12345 のように、IPv4アドレスとポートを入力してください",
+    "pin": "PINコード",
+    "scan": "QRコードをスキャン",
+    "connect": "接続",
+    "scanDenied": "カメラへのアクセスが拒否されました。コードをスキャンするには、システム設定でカメラを許可してください。",
+    "scanInvalid": "LettuceAIの同期コードではありません。",
+    "scanUnavailable": "カメラを開けませんでした。"
+  },
+  "host": {
+    "body1": "ネットワーク上の別のデバイスからこのデバイスに接続できるようにします。",
+    "body2": "接続後、両方のデバイスが最新の変更を比較して交換します。",
+    "start": "ホスティングを開始"
+  },
+  "sharing": {
+    "group": "ホスティング",
+    "qr": "このデバイスのアドレス、ポート、PINを含むQRコード",
+    "addressPicker": "QRコードに表示するアドレス",
+    "address": "アドレス",
+    "pin": "接続PIN",
+    "pinBody": "接続するデバイスとこのPINを共有してください",
+    "copyPin": "PINをコピー",
+    "copyAddress": "アドレスをコピー",
+    "copied": "コピーしました",
+    "steps": "セットアップガイド",
+    "step1": "もう一方のデバイスでLettuceAIを開く",
+    "step2": "設定、ローカル同期の順に移動",
+    "step3": "QRコードをスキャンするか、アドレスとPINを入力",
+    "stop": "ホスティングを停止"
+  },
+  "request": {
+    "title": "接続リクエスト",
+    "body": "{{name}}がこのデバイスと同期しようとしています。",
+    "waiting": "応答を待っています",
+    "accept": "接続を承認",
+    "decline": "拒否"
+  },
+  "ready": {
+    "title": "同期の準備完了",
+    "body": "{{name}}と接続しました。同期を開始すると転送が始まります。",
+    "start": "同期を開始",
+    "cancel": "キャンセル"
+  },
+  "unknownDevice": "不明なデバイス",
+  "progress": {
+    "connecting": "接続中",
+    "connectingBody": "もう一方のデバイスが承認して同期を開始するのを待っています。",
+    "syncing": "同期中",
+    "phase": {
+      "changes": "変更を交換中",
+      "media": "メディアファイルを交換中",
+      "secrets": "シークレットを交換中"
+    },
+    "items": "{{total}}件中{{done}}件",
+    "itemsOnly": "{{done}}件",
+    "bytes": "{{total}}中{{done}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "キャンセル"
+  },
+  "completed": {
+    "title": "同期が完了しました",
+    "upToDate": "両方のデバイスはすでに最新でした。",
+    "sentChanges": "送信した変更",
+    "receivedChanges": "受信した変更",
+    "receivedMedia": "受信したメディアファイル",
+    "receivedBytes": "受信したデータ",
+    "receivedSecrets": "受信したシークレット",
+    "skippedSecrets": "スキップしたシークレット",
+    "unavailableMedia": "利用できないメディアファイル",
+    "done": "完了"
+  },
+  "failed": {
+    "title": "同期に失敗しました",
+    "retry": "再試行",
+    "reason": {
+      "invalid_state": "現在、同期はその操作を実行できません。セッションを停止してもう一度お試しください。",
+      "addresses_unavailable": "このデバイスには共有できるネットワークアドレスがありません。ネットワークに接続してもう一度お試しください。",
+      "media_unavailable": "一部のメディアファイルを読み取れなかったため、同期を停止しました。",
+      "authentication_failed": "PINが正しくありません。ホストデバイスのPINを確認して、もう一度お試しください。",
+      "pairing_locked": "PINの誤入力が多すぎます。もう一方のデバイスでホスティングを停止し、再度開始して新しいPINを取得してください。",
+      "declined": "もう一方のデバイスが接続を拒否しました。",
+      "disconnected": "もう一方のデバイスとの接続が切断されました。",
+      "peer_stalled": "もう一方のデバイスが応答しなくなりました。",
+      "protocol": "もう一方のデバイスの通信を解釈できませんでした。両方のデバイスで同じバージョンのLettuceAIを使用してください。",
+      "storage": "このデバイスのデータを読み取れないか、保存できませんでした。",
+      "pending_batch": "以前の同期で未適用の変更が残っています。アプリを再起動してもう一度お試しください。",
+      "required_reference_unavailable": "もう一方のデバイスから、このデバイスにないものを参照するデータが送られてきました。"
+    }
+  },
+  "conflicts": {
+    "title": "同期の競合",
+    "row": "競合",
+    "needChoice_other": "{{count}}件の項目で選択が必要です",
+    "emptyTitle": "解決するものはありません",
+    "emptyBody": "両方のデバイスで同じ項目が変更されると、競合がここに表示されます。",
+    "menu": "その他の操作",
+    "edits": "競合する編集",
+    "forks": "会話の分岐",
+    "legacy": "インポートしたデータ",
+    "kind": {
+      "character": "キャラクター",
+      "persona": "ペルソナ",
+      "persona_default": "デフォルトのペルソナ",
+      "lorebook": "ロアブック",
+      "prompt": "プロンプト"
+    },
+    "defaultPersona": "デフォルトのペルソナ",
+    "deleted": "削除済み",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "競合を解決",
+    "thisDevice": "このデバイス",
+    "otherDevice": "もう一方のデバイス",
+    "noTime": "時刻不明",
+    "keepThis": "このデバイスの版を残す",
+    "useOther": "もう一方のデバイスの版を使う",
+    "resolved": "競合を解決しました",
+    "changedMeanwhile": "この項目はその間に変更されました。最新の版を表示しています。",
+    "forkBody": "両方のデバイスのメッセージを、別々の分岐として残しました。",
+    "forkLocal": "コピーした分岐には、このデバイスのメッセージが入っています。",
+    "forkOther": "コピーした分岐には、もう一方のデバイスのメッセージが入っています。",
+    "forkUntitled": "会話",
+    "openBranches": "分岐を開く",
+    "dismiss": "閉じる",
+    "legacyTitle": "以前のアプリからインポート",
+    "legacyCurrent": "現在",
+    "legacyLocal": "ローカル",
+    "legacyIncoming": "受信",
+    "notMapped": "未対応"
+  },
+  "disclaimer": "両方のデバイスがローカルネットワーク経由で変更を送受信します。同期が終わるまで、両方のデバイスでこの画面を開いたままにしてください。同じバージョンのLettuceAIが必要です。",
+  "loading": "同期の状態を読み込み中"
+}

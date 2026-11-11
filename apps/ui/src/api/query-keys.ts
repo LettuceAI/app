@@ -117,6 +117,11 @@ export const queryKeys = {
     nano: (id: string) => ["usage", "nano", id] as const,
   },
   backups: { all: ["backups"] as const, list: () => ["backups", "list"] as const },
+  sync: {
+    all: ["sync"] as const,
+    status: () => [...queryKeys.sync.all, "status"] as const,
+    conflicts: () => [...queryKeys.sync.all, "conflicts"] as const,
+  },
   embedding: {
     all: ["embedding"] as const,
     status: () => [...queryKeys.embedding.all, "status"] as const,
@@ -225,6 +230,7 @@ export const appEventInvalidations: AppEventInvalidations = {
   app_usage_changed: () => [queryKeys.usage.time(), queryKeys.usage.clock()],
   provider_quota: (event) => [queryKeys.usage.nano(event.account_id)],
   prompts_changed: () => [queryKeys.prompts.all],
+  sync_conflicts_changed: () => [queryKeys.sync.conflicts()],
   job_updated: (event) => [
     ...(event.job.subject_detail?.type === "lorebook_project"
       ? [queryKeys.lorebookProjects.all]

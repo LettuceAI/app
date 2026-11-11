@@ -334,6 +334,11 @@
       "note": "Niente da scaricare."
     }
   },
+  "sync": {
+    "title": "Sincronizza da un altro dispositivo",
+    "body": "Associati a un dispositivo su cui LettuceAI è già configurato. I tuoi dati vengono copiati tramite la rete locale.",
+    "hint": "Sull'altro dispositivo apri Impostazioni, poi Sincronizzazione locale, e avvia l'hosting per ottenere un indirizzo e un PIN."
+  },
   "other": {
     "title": "Altre opzioni",
     "language": "Lingua",
@@ -341,6 +346,8 @@
     "skipBody": "Dai prima un'occhiata. Le chat hanno bisogno di un'AI prima di poter rispondere.",
     "restore": "Ripristina un backup",
     "restoreBody": "Riporta chat, personaggi e impostazioni da un file .lettuce",
+    "sync": "Sincronizza da un altro dispositivo",
+    "syncBody": "Copia la tua configurazione tramite la rete locale da un dispositivo che ha già LettuceAI",
     "languageTitle": "Lingua",
     "warning": {
       "title": "Le chat hanno bisogno di un'AI prima di poter rispondere",

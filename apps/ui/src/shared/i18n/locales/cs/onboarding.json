@@ -335,6 +335,11 @@
       "note": "Nic se nestahuje."
     }
   },
+  "sync": {
+    "title": "Synchronizovat z jiného zařízení",
+    "body": "Spáruj se zařízením, které už má LettuceAI nastavené. Data se zkopírují přes tvou lokální síť.",
+    "hint": "Na druhém zařízení otevři Nastavení, poté Lokální synchronizace a spusť hostování, abys získal adresu a PIN."
+  },
   "other": {
     "title": "Další možnosti",
     "language": "Jazyk",
@@ -342,6 +347,8 @@
     "skipBody": "Nejdřív se rozhlédni. Chaty potřebují AI, aby mohly odpovídat.",
     "restore": "Obnovit zálohu",
     "restoreBody": "Vrať chaty, postavy a nastavení ze souboru .lettuce",
+    "sync": "Synchronizovat z jiného zařízení",
+    "syncBody": "Zkopíruj své nastavení přes lokální síť ze zařízení, které už má LettuceAI",
     "languageTitle": "Jazyk",
     "warning": {
       "title": "Chaty potřebují AI, aby mohly odpovídat",

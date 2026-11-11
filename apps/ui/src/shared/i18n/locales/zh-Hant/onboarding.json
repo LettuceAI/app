@@ -332,6 +332,11 @@
       "note": "無需下載。"
     }
   },
+  "sync": {
+    "title": "從另一台裝置同步",
+    "body": "與已設定好 LettuceAI 的裝置配對。你的資料會透過區域網路複製。",
+    "hint": "在另一台裝置上開啟設定，然後選擇本機同步，並開始託管以取得位址和 PIN。"
+  },
   "other": {
     "title": "其他選項",
     "language": "語言",
@@ -339,6 +344,8 @@
     "skipBody": "先四處看看。對話需要先連線 AI 才能回覆。",
     "restore": "還原備份",
     "restoreBody": "從 .lettuce 檔案還原對話、角色和設定",
+    "sync": "從另一台裝置同步",
+    "syncBody": "透過區域網路，從已安裝 LettuceAI 的裝置複製你的設定",
     "languageTitle": "語言",
     "warning": {
       "title": "對話需要先連線 AI 才能回覆",

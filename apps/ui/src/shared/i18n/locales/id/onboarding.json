@@ -332,6 +332,11 @@
       "note": "Tidak ada yang perlu diunduh."
     }
   },
+  "sync": {
+    "title": "Sinkronkan dari perangkat lain",
+    "body": "Pasangkan dengan perangkat yang sudah menyiapkan LettuceAI. Datamu disalin melalui jaringan lokal.",
+    "hint": "Di perangkat lain, buka Pengaturan, lalu Sinkronisasi lokal, dan mulai hosting untuk mendapatkan alamat dan PIN."
+  },
   "other": {
     "title": "Opsi lain",
     "language": "Bahasa",
@@ -339,6 +344,8 @@
     "skipBody": "Lihat-lihat dulu. Obrolan memerlukan AI sebelum bisa membalas.",
     "restore": "Pulihkan cadangan",
     "restoreBody": "Kembalikan obrolan, karakter, dan pengaturan dari file .lettuce",
+    "sync": "Sinkronkan dari perangkat lain",
+    "syncBody": "Salin pengaturanmu lewat jaringan lokal dari perangkat yang sudah memakai LettuceAI",
     "languageTitle": "Bahasa",
     "warning": {
       "title": "Obrolan memerlukan AI sebelum bisa membalas",

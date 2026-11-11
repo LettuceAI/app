@@ -333,6 +333,11 @@
       "note": "Nichts herunterzuladen."
     }
   },
+  "sync": {
+    "title": "Von einem anderen Gerät synchronisieren",
+    "body": "Koppel dich mit einem Gerät, auf dem LettuceAI bereits eingerichtet ist. Deine Daten werden über dein lokales Netzwerk kopiert.",
+    "hint": "Öffne auf dem anderen Gerät Einstellungen, dann Lokale Synchronisierung, und starte das Hosting, um Adresse und PIN zu erhalten."
+  },
   "other": {
     "title": "Andere Optionen",
     "language": "Sprache",
@@ -340,6 +345,8 @@
     "skipBody": "Sieh dich zuerst um. Chats brauchen eine KI, bevor sie antworten können.",
     "restore": "Eine Sicherung wiederherstellen",
     "restoreBody": "Chats, Charaktere und Einstellungen aus einer .lettuce-Datei zurückholen",
+    "sync": "Von einem anderen Gerät synchronisieren",
+    "syncBody": "Deine Einrichtung über das lokale Netzwerk von einem Gerät kopieren, auf dem LettuceAI bereits läuft",
     "languageTitle": "Sprache",
     "warning": {
       "title": "Chats brauchen eine KI, bevor sie antworten können",

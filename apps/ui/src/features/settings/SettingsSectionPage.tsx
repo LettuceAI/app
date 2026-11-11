@@ -14,6 +14,7 @@ import { ImageSettingsPage } from "./image/ImageSettingsPage";
 import { ReplyHelperPage } from "./reply-helper/ReplyHelperPage";
 import { PromptsPage } from "./prompts/PromptsPage";
 import { BackupPage } from "./backup/BackupPage";
+import { SyncPage } from "./sync/SyncPage";
 import { ResetPage } from "./reset/ResetPage";
 import { SecurityPage } from "./security/SecurityPage";
 import { CustomizationPage } from "./customization/CustomizationPage";
@@ -37,6 +38,7 @@ export function SettingsSectionPage() {
   if (section === "replyHelper") return <ReplyHelperPage />;
   if (section === "prompts") return <PromptsPage />;
   if (section === "backup") return <BackupPage />;
+  if (section === "sync") return <SyncPage />;
   if (section === "reset") return <ResetPage />;
   if (section === "security") return <SecurityPage />;
   if (section === "developer") return <DeveloperPage />;

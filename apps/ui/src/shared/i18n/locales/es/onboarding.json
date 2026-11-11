@@ -334,6 +334,11 @@
       "note": "No hay nada que descargar."
     }
   },
+  "sync": {
+    "title": "Sincronizar desde otro dispositivo",
+    "body": "Empareja con un dispositivo que ya tiene LettuceAI configurado. Tus datos se copian por tu red local.",
+    "hint": "En el otro dispositivo, abre Ajustes, luego Sincronización local, y empieza a alojar para obtener una dirección y un PIN."
+  },
   "other": {
     "title": "Otras opciones",
     "language": "Idioma",
@@ -341,6 +346,8 @@
     "skipBody": "Primero echa un vistazo. Los chats necesitan una IA para poder responder.",
     "restore": "Restaurar una copia de seguridad",
     "restoreBody": "Recupera chats, personajes y ajustes de un archivo .lettuce",
+    "sync": "Sincronizar desde otro dispositivo",
+    "syncBody": "Copia tu configuración por la red local desde un dispositivo que ya tiene LettuceAI",
     "languageTitle": "Idioma",
     "warning": {
       "title": "Los chats necesitan una IA para poder responder",

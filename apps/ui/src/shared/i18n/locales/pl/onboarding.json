@@ -335,6 +335,11 @@
       "note": "Nic do pobrania."
     }
   },
+  "sync": {
+    "title": "Synchronizuj z innego urządzenia",
+    "body": "Sparuj z urządzeniem, na którym LettuceAI jest już skonfigurowane. Twoje dane zostaną skopiowane przez sieć lokalną.",
+    "hint": "Na drugim urządzeniu otwórz Ustawienia, potem Synchronizacja lokalna, i uruchom hosting, aby uzyskać adres i PIN."
+  },
   "other": {
     "title": "Inne opcje",
     "language": "Język",
@@ -342,6 +347,8 @@
     "skipBody": "Najpierw się rozejrzyj. Czaty potrzebują AI, zanim będą mogły odpowiadać.",
     "restore": "Przywróć kopię zapasową",
     "restoreBody": "Przywróć czaty, postacie i ustawienia z pliku .lettuce",
+    "sync": "Synchronizuj z innego urządzenia",
+    "syncBody": "Skopiuj swoją konfigurację przez sieć lokalną z urządzenia, które ma już LettuceAI",
     "languageTitle": "Język",
     "warning": {
       "title": "Czaty potrzebują AI, zanim będą mogły odpowiadać",

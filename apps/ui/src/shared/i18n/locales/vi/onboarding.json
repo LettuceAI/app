@@ -332,6 +332,11 @@
       "note": "Không cần tải gì."
     }
   },
+  "sync": {
+    "title": "Đồng bộ từ thiết bị khác",
+    "body": "Ghép nối với thiết bị đã thiết lập LettuceAI. Dữ liệu của bạn được sao chép qua mạng cục bộ.",
+    "hint": "Trên thiết bị kia, mở Cài đặt, rồi Đồng bộ cục bộ, và bắt đầu lưu trữ để nhận địa chỉ và mã PIN."
+  },
   "other": {
     "title": "Tùy chọn khác",
     "language": "Ngôn ngữ",
@@ -339,6 +344,8 @@
     "skipBody": "Xem qua trước đã. Trò chuyện cần AI trước khi có thể trả lời.",
     "restore": "Khôi phục bản sao lưu",
     "restoreBody": "Mang lại trò chuyện, nhân vật và cài đặt từ tệp .lettuce",
+    "sync": "Đồng bộ từ thiết bị khác",
+    "syncBody": "Sao chép thiết lập của bạn qua mạng cục bộ từ thiết bị đã có LettuceAI",
     "languageTitle": "Ngôn ngữ",
     "warning": {
       "title": "Trò chuyện cần AI trước khi có thể trả lời",

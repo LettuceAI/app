@@ -1,0 +1,147 @@
+{
+  "mode": {
+    "join": {
+      "title": "Verbinden met een apparaat",
+      "body": "Voer het adres en de pincode van een ander apparaat in"
+    },
+    "host": {
+      "title": "Hosten op dit apparaat",
+      "body": "Maak een verbinding voor een ander apparaat"
+    }
+  },
+  "join": {
+    "address": "Hostadres",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "Het IPv4-adres en de poort die het andere apparaat toont",
+    "addressInvalid": "Voer een IPv4-adres en poort in, zoals 192.168.1.100:12345",
+    "pin": "PIN-code",
+    "scan": "QR-code scannen",
+    "connect": "Verbinden",
+    "scanDenied": "Toegang tot de camera is geweigerd. Sta de camera toe in de systeeminstellingen om een code te scannen.",
+    "scanInvalid": "Dat is geen LettuceAI-synccode.",
+    "scanUnavailable": "De camera kon niet worden geopend."
+  },
+  "host": {
+    "body1": "Maak dit apparaat beschikbaar voor een ander apparaat in je netwerk.",
+    "body2": "Na het verbinden vergelijken beide apparaten hun nieuwste wijzigingen en wisselen ze die uit.",
+    "start": "Starten met hosten"
+  },
+  "sharing": {
+    "group": "Hosten",
+    "qr": "QR-code met het adres, de poort en de PIN van dit apparaat",
+    "addressPicker": "Adres in de QR-code",
+    "address": "Adres",
+    "pin": "Verbindings-PIN",
+    "pinBody": "Deel deze PIN met het verbindende apparaat",
+    "copyPin": "PIN kopiëren",
+    "copyAddress": "Adres kopiëren",
+    "copied": "Gekopieerd",
+    "steps": "Installatiegids",
+    "step1": "Open LettuceAI op het andere apparaat",
+    "step2": "Ga naar Instellingen en dan naar Lokale synchronisatie",
+    "step3": "Scan de QR-code, of voer het adres en de PIN in",
+    "stop": "Stop met hosten"
+  },
+  "request": {
+    "title": "Verbindingsverzoek",
+    "body": "{{name}} wil synchroniseren met dit apparaat.",
+    "waiting": "Wachten op je antwoord",
+    "accept": "Verbinding accepteren",
+    "decline": "Weigeren"
+  },
+  "ready": {
+    "title": "Klaar om te synchroniseren",
+    "body": "{{name}} is verbonden. Start het synchroniseren om de overdracht te beginnen.",
+    "start": "Begin met synchroniseren",
+    "cancel": "Annuleren"
+  },
+  "unknownDevice": "Onbekend apparaat",
+  "progress": {
+    "connecting": "Verbinden",
+    "connectingBody": "Wachten tot het andere apparaat accepteert en het synchroniseren start.",
+    "syncing": "Synchroniseren",
+    "phase": {
+      "changes": "Wijzigingen uitwisselen",
+      "media": "Mediabestanden uitwisselen",
+      "secrets": "Geheimen uitwisselen"
+    },
+    "items": "{{done}} van {{total}} items",
+    "itemsOnly": "{{done}} items",
+    "bytes": "{{done}} van {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Annuleren"
+  },
+  "completed": {
+    "title": "Synchronisatie voltooid",
+    "upToDate": "Beide apparaten waren al up-to-date.",
+    "sentChanges": "Verzonden wijzigingen",
+    "receivedChanges": "Ontvangen wijzigingen",
+    "receivedMedia": "Ontvangen mediabestanden",
+    "receivedBytes": "Ontvangen gegevens",
+    "receivedSecrets": "Ontvangen geheimen",
+    "skippedSecrets": "Overgeslagen geheimen",
+    "unavailableMedia": "Niet beschikbare mediabestanden",
+    "done": "Klaar"
+  },
+  "failed": {
+    "title": "Synchronisatie mislukt",
+    "retry": "Opnieuw proberen",
+    "reason": {
+      "invalid_state": "Synchroniseren kan dat nu niet doen. Stop de sessie en probeer het opnieuw.",
+      "addresses_unavailable": "Dit apparaat heeft geen netwerkadres om te delen. Maak verbinding met een netwerk en probeer het opnieuw.",
+      "media_unavailable": "Sommige mediabestanden konden niet worden gelezen, dus de synchronisatie is gestopt.",
+      "authentication_failed": "De PIN is onjuist. Controleer de PIN op het hostapparaat en probeer het opnieuw.",
+      "pairing_locked": "Te veel onjuiste PIN's. Stop met hosten op het andere apparaat en start opnieuw om een nieuwe PIN te krijgen.",
+      "declined": "Het andere apparaat heeft de verbinding geweigerd.",
+      "disconnected": "De verbinding met het andere apparaat is verbroken.",
+      "peer_stalled": "Het andere apparaat reageert niet meer.",
+      "protocol": "Het andere apparaat kon niet worden begrepen. Beide apparaten moeten dezelfde versie van LettuceAI gebruiken.",
+      "storage": "De gegevens op dit apparaat konden niet worden gelezen of opgeslagen.",
+      "pending_batch": "Een eerdere synchronisatie heeft wijzigingen achtergelaten die nog niet zijn toegepast. Start de app opnieuw en probeer het opnieuw.",
+      "required_reference_unavailable": "Het andere apparaat heeft gegevens gestuurd die verwijzen naar iets wat dit apparaat niet heeft."
+    }
+  },
+  "conflicts": {
+    "title": "Synchronisatieconflicten",
+    "row": "Conflicten",
+    "needChoice_one": "{{count}} item wacht op jouw keuze",
+    "needChoice_other": "{{count}} items wachten op jouw keuze",
+    "emptyTitle": "Niets op te lossen",
+    "emptyBody": "Conflicten verschijnen hier als beide apparaten hetzelfde hebben gewijzigd.",
+    "menu": "Meer acties",
+    "edits": "Conflicterende wijzigingen",
+    "forks": "Gespreksvertakkingen",
+    "legacy": "Geïmporteerde gegevens",
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "persona_default": "Standaardpersona",
+      "lorebook": "Lorebook",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Standaardpersona",
+    "deleted": "Verwijderd",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Conflict oplossen",
+    "thisDevice": "Dit apparaat",
+    "otherDevice": "Het andere apparaat",
+    "noTime": "Tijd onbekend",
+    "keepThis": "Versie van dit apparaat behouden",
+    "useOther": "Versie van het andere apparaat gebruiken",
+    "resolved": "Conflict opgelost",
+    "changedMeanwhile": "Dit item is intussen gewijzigd. Nu worden de nieuwste versies getoond.",
+    "forkBody": "Berichten van beide apparaten zijn bewaard als aparte vertakkingen.",
+    "forkLocal": "De gekopieerde vertakking bevat de berichten van dit apparaat.",
+    "forkOther": "De gekopieerde vertakking bevat de berichten van het andere apparaat.",
+    "forkUntitled": "Gesprek",
+    "openBranches": "Vertakkingen openen",
+    "dismiss": "Sluiten",
+    "legacyTitle": "Geïmporteerd uit de vorige app",
+    "legacyCurrent": "Huidig",
+    "legacyLocal": "Lokaal",
+    "legacyIncoming": "Inkomend",
+    "notMapped": "Niet gekoppeld"
+  },
+  "disclaimer": "Beide apparaten sturen en ontvangen wijzigingen via je lokale netwerk. Laat dit scherm op beide apparaten open tot de synchronisatie klaar is. Ze moeten dezelfde versie van LettuceAI gebruiken.",
+  "loading": "Synchronisatiestatus laden"
+}

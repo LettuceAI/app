@@ -1,0 +1,148 @@
+{
+  "mode": {
+    "join": {
+      "title": "Unirse a un dispositivo",
+      "body": "Introduce la dirección y el PIN de otro dispositivo"
+    },
+    "host": {
+      "title": "Alojar en este dispositivo",
+      "body": "Crea una conexión para otro dispositivo"
+    }
+  },
+  "join": {
+    "address": "Dirección del host",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "La dirección IPv4 y el puerto que muestra el otro dispositivo",
+    "addressInvalid": "Introduce una dirección IPv4 y un puerto, como 192.168.1.100:12345",
+    "pin": "Código PIN",
+    "scan": "Escanear código QR",
+    "connect": "Conectar",
+    "scanDenied": "Se denegó el acceso a la cámara. Permite la cámara en los ajustes del sistema para escanear un código.",
+    "scanInvalid": "Ese código no es un código de sincronización de LettuceAI.",
+    "scanUnavailable": "No se pudo abrir la cámara."
+  },
+  "host": {
+    "body1": "Haz que este dispositivo esté disponible para otro dispositivo de tu red.",
+    "body2": "Una vez conectados, ambos dispositivos comparan e intercambian sus últimos cambios.",
+    "start": "Empezar a alojar"
+  },
+  "sharing": {
+    "group": "Alojamiento",
+    "qr": "Código QR con la dirección, el puerto y el PIN de este dispositivo",
+    "addressPicker": "Dirección mostrada en el código QR",
+    "address": "Dirección",
+    "pin": "PIN de conexión",
+    "pinBody": "Comparte este PIN con el dispositivo que se conecta",
+    "copyPin": "Copiar PIN",
+    "copyAddress": "Copiar dirección",
+    "copied": "Copiado",
+    "steps": "Guía de configuración",
+    "step1": "Abre LettuceAI en el otro dispositivo",
+    "step2": "Ve a Ajustes y luego a Sincronización local",
+    "step3": "Escanea el código QR o introduce la dirección y el PIN",
+    "stop": "Detener el alojamiento"
+  },
+  "request": {
+    "title": "Solicitud de conexión",
+    "body": "{{name}} quiere sincronizarse con este dispositivo.",
+    "waiting": "Esperando tu respuesta",
+    "accept": "Aceptar conexión",
+    "decline": "Rechazar"
+  },
+  "ready": {
+    "title": "Listo para sincronizar",
+    "body": "{{name}} está conectado. Empieza la sincronización para iniciar la transferencia.",
+    "start": "Empezar sincronización",
+    "cancel": "Cancelar"
+  },
+  "unknownDevice": "Dispositivo desconocido",
+  "progress": {
+    "connecting": "Conectando",
+    "connectingBody": "Esperando a que el otro dispositivo acepte e inicie la sincronización.",
+    "syncing": "Sincronizando",
+    "phase": {
+      "changes": "Intercambiando cambios",
+      "media": "Intercambiando archivos multimedia",
+      "secrets": "Intercambiando secretos"
+    },
+    "items": "{{done}} de {{total}} elementos",
+    "itemsOnly": "{{done}} elementos",
+    "bytes": "{{done}} de {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Cancelar"
+  },
+  "completed": {
+    "title": "Sincronización completa",
+    "upToDate": "Ambos dispositivos ya estaban actualizados.",
+    "sentChanges": "Cambios enviados",
+    "receivedChanges": "Cambios recibidos",
+    "receivedMedia": "Archivos multimedia recibidos",
+    "receivedBytes": "Datos recibidos",
+    "receivedSecrets": "Secretos recibidos",
+    "skippedSecrets": "Secretos omitidos",
+    "unavailableMedia": "Archivos multimedia no disponibles",
+    "done": "Listo"
+  },
+  "failed": {
+    "title": "La sincronización falló",
+    "retry": "Reintentar",
+    "reason": {
+      "invalid_state": "La sincronización no puede hacer eso ahora mismo. Detén la sesión e inténtalo de nuevo.",
+      "addresses_unavailable": "Este dispositivo no tiene una dirección de red para compartir. Conéctate a una red e inténtalo de nuevo.",
+      "media_unavailable": "No se pudieron leer algunos archivos multimedia, así que la sincronización se detuvo.",
+      "authentication_failed": "El PIN es incorrecto. Comprueba el PIN en el dispositivo anfitrión e inténtalo de nuevo.",
+      "pairing_locked": "Demasiados PIN incorrectos. Detén el alojamiento en el otro dispositivo y vuelve a iniciarlo para obtener un PIN nuevo.",
+      "declined": "El otro dispositivo rechazó la conexión.",
+      "disconnected": "Se perdió la conexión con el otro dispositivo.",
+      "peer_stalled": "El otro dispositivo dejó de responder.",
+      "protocol": "No se pudo entender al otro dispositivo. Ambos dispositivos deben usar la misma versión de LettuceAI.",
+      "storage": "No se pudieron leer ni guardar los datos de este dispositivo.",
+      "pending_batch": "Una sincronización anterior dejó cambios que aún no se han aplicado. Reinicia la app e inténtalo de nuevo.",
+      "required_reference_unavailable": "El otro dispositivo envió datos que hacen referencia a algo que este dispositivo no tiene."
+    }
+  },
+  "conflicts": {
+    "title": "Conflictos de sincronización",
+    "row": "Conflictos",
+    "needChoice_one": "{{count}} elemento necesita tu decisión",
+    "needChoice_many": "{{count}} de elementos necesitan tu decisión",
+    "needChoice_other": "{{count}} elementos necesitan tu decisión",
+    "emptyTitle": "Nada que resolver",
+    "emptyBody": "Los conflictos aparecen aquí cuando ambos dispositivos cambiaron lo mismo.",
+    "menu": "Más acciones",
+    "edits": "Ediciones en conflicto",
+    "forks": "Ramas de conversación",
+    "legacy": "Datos importados",
+    "kind": {
+      "character": "Personaje",
+      "persona": "Persona",
+      "persona_default": "Persona predeterminada",
+      "lorebook": "Libro de lore",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Persona predeterminada",
+    "deleted": "Eliminado",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Resolver conflicto",
+    "thisDevice": "Este dispositivo",
+    "otherDevice": "Otro dispositivo",
+    "noTime": "Hora desconocida",
+    "keepThis": "Conservar la versión de este dispositivo",
+    "useOther": "Usar la versión del otro dispositivo",
+    "resolved": "Conflicto resuelto",
+    "changedMeanwhile": "Este elemento cambió entretanto. Ahora se muestran las versiones más recientes.",
+    "forkBody": "Los mensajes de ambos dispositivos se conservaron como ramas separadas.",
+    "forkLocal": "La rama copiada contiene los mensajes de este dispositivo.",
+    "forkOther": "La rama copiada contiene los mensajes del otro dispositivo.",
+    "forkUntitled": "Conversación",
+    "openBranches": "Abrir ramas",
+    "dismiss": "Descartar",
+    "legacyTitle": "Importado de la app anterior",
+    "legacyCurrent": "Actual",
+    "legacyLocal": "Local",
+    "legacyIncoming": "Entrante",
+    "notMapped": "Sin asignar"
+  },
+  "disclaimer": "Ambos dispositivos envían y reciben cambios por tu red local. Mantén esta pantalla abierta en los dos dispositivos hasta que termine la sincronización. Deben usar la misma versión de LettuceAI.",
+  "loading": "Cargando el estado de la sincronización"
+}

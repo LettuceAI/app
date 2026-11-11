@@ -146,6 +146,7 @@ export const builtSettingsSections: ReadonlySet<SettingsSectionId> = new Set([
   "companions",
   "imageGeneration",
   "backup",
+  "sync",
   "prompts",
   "replyHelper",
   "speech",

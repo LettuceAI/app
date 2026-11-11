@@ -18,6 +18,7 @@ import {
 import { canConnect, classifyConnectError, connectProvider } from "./data/connect";
 import { MemoryDownloadSheet, useEmbeddingInstall } from "@/entities/embedding";
 import { RestoreSheet, usePickBackup, type PickedBackup } from "@/features/opened-files";
+import { JoinSyncSheet } from "@/features/settings";
 import { externalModelId, saveChosenModel } from "./data/models";
 import { catalogQuery, useApi } from "./data/queries";
 import { useAction } from "./data/use-action";
@@ -81,6 +82,7 @@ export function OnboardingPage() {
     setOther(false);
     setRestoreFrom(picked);
   });
+  const [syncOpen, setSyncOpen] = useState(false);
   const [otherKey, setOtherKey] = useState(0);
   const [skipWarning, setSkipWarning] = useState(false);
   const [memorySheet, setMemorySheet] = useState(false);
@@ -459,10 +461,15 @@ export function OnboardingPage() {
           onSkip={skip.run}
           onLanguage={changeLanguage}
           onRestore={() => void backup.pick()}
+          onSync={() => {
+            setOther(false);
+            setSyncOpen(true);
+          }}
           picking={backup.picking}
           skipping={skip.busy}
           skipError={skip.error}
         />
+        <JoinSyncSheet open={syncOpen} onClose={() => setSyncOpen(false)} onCompleted={() => void finishApp()} />
         {restoreFrom && <RestoreSheet api={api} source={restoreFrom.source} header={restoreFrom.header} onClose={() => setRestoreFrom(null)} />}
         <SkipWarningSheet
           open={skipWarning}

@@ -334,6 +334,11 @@
       "note": "Rien à télécharger."
     }
   },
+  "sync": {
+    "title": "Synchroniser depuis un autre appareil",
+    "body": "Associez-vous à un appareil où LettuceAI est déjà configuré. Vos données sont copiées via votre réseau local.",
+    "hint": "Sur l'autre appareil, ouvrez Paramètres, puis Synchronisation locale, et démarrez l'hébergement pour obtenir une adresse et un PIN."
+  },
   "other": {
     "title": "Autres options",
     "language": "Langue",
@@ -341,6 +346,8 @@
     "skipBody": "Regardez d'abord. Les discussions ont besoin d'une IA pour répondre.",
     "restore": "Restaurer une sauvegarde",
     "restoreBody": "Récupérez discussions, personnages et paramètres depuis un fichier .lettuce",
+    "sync": "Synchroniser depuis un autre appareil",
+    "syncBody": "Copiez votre configuration via le réseau local depuis un appareil où LettuceAI est déjà installé",
     "languageTitle": "Langue",
     "warning": {
       "title": "Les discussions ont besoin d'une IA pour répondre",

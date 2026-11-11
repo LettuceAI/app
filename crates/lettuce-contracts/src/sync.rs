@@ -91,11 +91,11 @@ pub enum SyncStatus {
 pub struct SyncProgress {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub items_done: u64,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub items_total: Option<u64>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub bytes_done: u64,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub bytes_total: Option<u64>,
 }
 
@@ -147,7 +147,7 @@ pub enum SyncConflictValue {
 pub struct SyncConflictCandidate {
     pub change_id: Option<String>,
     pub device_id: Option<String>,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub timestamp: Option<i64>,
     pub value: SyncConflictValue,
 }

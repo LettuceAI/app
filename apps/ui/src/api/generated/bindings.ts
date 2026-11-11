@@ -9398,14 +9398,14 @@ export type SyncConflictCandidate = SyncConflictCandidate_Serialize | SyncConfli
 export type SyncConflictCandidate_Deserialize = {
 	change_id: string | null,
 	device_id: string | null,
-	timestamp: number,
+	timestamp: number | null,
 	value: SyncConflictValue_Deserialize,
 };
 
 export type SyncConflictCandidate_Serialize = {
 	change_id: string | null,
 	device_id: string | null,
-	timestamp: number,
+	timestamp: number | null,
 	value: SyncConflictValue_Serialize,
 };
 
@@ -9498,9 +9498,9 @@ export type SyncPhase = "changes" | "media" | "secrets";
 
 export type SyncProgress = {
 	items_done: number,
-	items_total: number,
+	items_total: number | null,
 	bytes_done: number,
-	bytes_total: number,
+	bytes_total: number | null,
 };
 
 export type SyncShareApproveRequest = {

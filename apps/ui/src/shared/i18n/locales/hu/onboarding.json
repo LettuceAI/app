@@ -333,6 +333,11 @@
       "note": "Nincs mit letölteni."
     }
   },
+  "sync": {
+    "title": "Szinkronizálás másik eszközről",
+    "body": "Párosítsd egy olyan eszközzel, amelyen már be van állítva a LettuceAI. Az adataid a helyi hálózaton keresztül másolódnak át.",
+    "hint": "A másik eszközön nyisd meg a Beállítások, majd a Helyi szinkronizálás oldalt, és indítsd el a hosztolást, hogy címet és PIN-t kapj."
+  },
   "other": {
     "title": "További lehetőségek",
     "language": "Nyelv",
@@ -340,6 +345,8 @@
     "skipBody": "Előbb nézz körül. A beszélgetésekhez AI kell a válaszokhoz.",
     "restore": "Biztonsági mentés visszaállítása",
     "restoreBody": "Hozd vissza a beszélgetéseket, karaktereket és beállításokat egy .lettuce fájlból",
+    "sync": "Szinkronizálás másik eszközről",
+    "syncBody": "Másold át a beállításaidat a helyi hálózaton egy olyan eszközről, amelyen már van LettuceAI",
     "languageTitle": "Nyelv",
     "warning": {
       "title": "A beszélgetésekhez AI kell a válaszokhoz",

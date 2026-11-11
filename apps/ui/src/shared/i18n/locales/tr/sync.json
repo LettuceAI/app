@@ -1,0 +1,147 @@
+{
+  "mode": {
+    "join": {
+      "title": "Bir cihaza katıl",
+      "body": "Başka bir cihazın adresini ve PIN'ini girin"
+    },
+    "host": {
+      "title": "Bu cihazda barındır",
+      "body": "Başka bir cihaz için bağlantı oluşturun"
+    }
+  },
+  "join": {
+    "address": "Barındıran cihazın adresi",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "Diğer cihazın gösterdiği IPv4 adresi ve bağlantı noktası",
+    "addressInvalid": "192.168.1.100:12345 gibi bir IPv4 adresi ve bağlantı noktası girin",
+    "pin": "PIN kodu",
+    "scan": "QR kodu tara",
+    "connect": "Bağlan",
+    "scanDenied": "Kamera erişimi reddedildi. Kod taramak için sistem ayarlarında kameraya izin verin.",
+    "scanInvalid": "Bu bir LettuceAI senkronizasyon kodu değil.",
+    "scanUnavailable": "Kamera açılamadı."
+  },
+  "host": {
+    "body1": "Bu cihazı ağınızdaki başka bir cihaza açın.",
+    "body2": "Bağlandıktan sonra iki cihaz en son değişikliklerini karşılaştırıp birbirine aktarır.",
+    "start": "Barındırmayı başlat"
+  },
+  "sharing": {
+    "group": "Barındırma",
+    "qr": "Bu cihazın adresini, bağlantı noktasını ve PIN'ini içeren QR kodu",
+    "addressPicker": "QR kodunda gösterilen adres",
+    "address": "Adres",
+    "pin": "Bağlantı PIN'i",
+    "pinBody": "Bu PIN'i bağlanan cihazla paylaşın",
+    "copyPin": "PIN'i kopyala",
+    "copyAddress": "Adresi kopyala",
+    "copied": "Kopyalandı",
+    "steps": "Kurulum rehberi",
+    "step1": "LettuceAI'yı diğer cihazda açın",
+    "step2": "Ayarlar'a, ardından Yerel senkronizasyon'a gidin",
+    "step3": "QR kodunu tarayın veya adresi ve PIN'i girin",
+    "stop": "Barındırmayı durdur"
+  },
+  "request": {
+    "title": "Bağlantı isteği",
+    "body": "{{name}} bu cihazla senkronize olmak istiyor.",
+    "waiting": "Yanıtınız bekleniyor",
+    "accept": "Bağlantıyı kabul et",
+    "decline": "Reddet"
+  },
+  "ready": {
+    "title": "Senkronize etmeye hazır",
+    "body": "{{name}} bağlandı. Aktarımı başlatmak için senkronizasyonu başlatın.",
+    "start": "Senkronizasyonu başlat",
+    "cancel": "İptal"
+  },
+  "unknownDevice": "Bilinmeyen cihaz",
+  "progress": {
+    "connecting": "Bağlanıyor",
+    "connectingBody": "Diğer cihazın kabul edip senkronizasyonu başlatması bekleniyor.",
+    "syncing": "Senkronize ediliyor",
+    "phase": {
+      "changes": "Değişiklikler aktarılıyor",
+      "media": "Medya dosyaları aktarılıyor",
+      "secrets": "Gizli bilgiler aktarılıyor"
+    },
+    "items": "{{done}} / {{total}} öğe",
+    "itemsOnly": "{{done}} öğe",
+    "bytes": "{{done}} / {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "İptal"
+  },
+  "completed": {
+    "title": "Senkronizasyon tamamlandı",
+    "upToDate": "İki cihaz da zaten güncel durumdaydı.",
+    "sentChanges": "Gönderilen değişiklikler",
+    "receivedChanges": "Alınan değişiklikler",
+    "receivedMedia": "Alınan medya dosyaları",
+    "receivedBytes": "Alınan veriler",
+    "receivedSecrets": "Alınan gizli bilgiler",
+    "skippedSecrets": "Atlanan gizli bilgiler",
+    "unavailableMedia": "Kullanılamayan medya dosyaları",
+    "done": "Bitti"
+  },
+  "failed": {
+    "title": "Senkronizasyon başarısız oldu",
+    "retry": "Tekrar deneyin",
+    "reason": {
+      "invalid_state": "Senkronizasyon şu anda bunu yapamıyor. Oturumu durdurun ve tekrar deneyin.",
+      "addresses_unavailable": "Bu cihazın paylaşacak bir ağ adresi yok. Bir ağa bağlanın ve tekrar deneyin.",
+      "media_unavailable": "Bazı medya dosyaları okunamadığı için senkronizasyon durdu.",
+      "authentication_failed": "PIN yanlış. Ana bilgisayar cihazındaki PIN'i kontrol edin ve tekrar deneyin.",
+      "pairing_locked": "Çok fazla yanlış PIN girildi. Yeni bir PIN almak için diğer cihazda barındırmayı durdurup yeniden başlatın.",
+      "declined": "Diğer cihaz bağlantıyı reddetti.",
+      "disconnected": "Diğer cihazla bağlantı koptu.",
+      "peer_stalled": "Diğer cihaz yanıt vermeyi bıraktı.",
+      "protocol": "Diğer cihaz anlaşılamadı. İki cihaz da aynı LettuceAI sürümünü kullanmalı.",
+      "storage": "Bu cihazdaki veriler okunamadı veya kaydedilemedi.",
+      "pending_batch": "Önceki bir senkronizasyon henüz uygulanmamış değişiklikler bıraktı. Uygulamayı yeniden başlatın ve tekrar deneyin.",
+      "required_reference_unavailable": "Diğer cihaz, bu cihazda olmayan bir şeye başvuran veri gönderdi."
+    }
+  },
+  "conflicts": {
+    "title": "Senkronizasyon çakışmaları",
+    "row": "Çakışmalar",
+    "needChoice_one": "{{count}} öğe için seçim yapmanız gerekiyor",
+    "needChoice_other": "{{count}} öğe için seçim yapmanız gerekiyor",
+    "emptyTitle": "Çözülecek bir şey yok",
+    "emptyBody": "İki cihaz da aynı şeyi değiştirdiğinde çakışmalar burada görünür.",
+    "menu": "Diğer işlemler",
+    "edits": "Çakışan düzenlemeler",
+    "forks": "Sohbet dalları",
+    "legacy": "İçe aktarılan veriler",
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "persona_default": "Varsayılan persona",
+      "lorebook": "Lore kitabı",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Varsayılan persona",
+    "deleted": "Silindi",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Çakışmayı çöz",
+    "thisDevice": "Bu cihaz",
+    "otherDevice": "Diğer cihaz",
+    "noTime": "Zaman bilinmiyor",
+    "keepThis": "Bu cihazdaki sürümü koru",
+    "useOther": "Diğer cihazdaki sürümü kullan",
+    "resolved": "Çakışma çözüldü",
+    "changedMeanwhile": "Bu öğe bu arada değişti. En son sürümler gösteriliyor.",
+    "forkBody": "İki cihazdaki mesajlar ayrı dallar olarak korundu.",
+    "forkLocal": "Kopyalanan dal bu cihazın mesajlarını içeriyor.",
+    "forkOther": "Kopyalanan dal diğer cihazın mesajlarını içeriyor.",
+    "forkUntitled": "Sohbet",
+    "openBranches": "Dalları aç",
+    "dismiss": "Yoksay",
+    "legacyTitle": "Önceki uygulamadan içe aktarıldı",
+    "legacyCurrent": "Mevcut",
+    "legacyLocal": "Yerel",
+    "legacyIncoming": "Gelen",
+    "notMapped": "Eşlenmedi"
+  },
+  "disclaimer": "İki cihaz da değişiklikleri yerel ağınız üzerinden gönderir ve alır. Senkronizasyon bitene kadar bu ekranı iki cihazda da açık tutun. Aynı LettuceAI sürümünü kullanmaları gerekir.",
+  "loading": "Senkronizasyon durumu yükleniyor"
+}

@@ -333,6 +333,11 @@
       "note": "Niets te downloaden."
     }
   },
+  "sync": {
+    "title": "Synchroniseren vanaf een ander apparaat",
+    "body": "Koppel met een apparaat waarop LettuceAI al is ingesteld. Je gegevens worden via je lokale netwerk gekopieerd.",
+    "hint": "Open op het andere apparaat Instellingen, dan Lokale synchronisatie, en start het hosten om een adres en PIN te krijgen."
+  },
   "other": {
     "title": "Andere opties",
     "language": "Taal",
@@ -340,6 +345,8 @@
     "skipBody": "Kijk eerst wat rond. Chats hebben een AI nodig voordat ze kunnen antwoorden.",
     "restore": "Een back-up herstellen",
     "restoreBody": "Haal chats, karakters en instellingen terug uit een .lettuce-bestand",
+    "sync": "Synchroniseren vanaf een ander apparaat",
+    "syncBody": "Kopieer je instellingen via het lokale netwerk vanaf een apparaat waarop LettuceAI al staat",
     "languageTitle": "Taal",
     "warning": {
       "title": "Chats hebben een AI nodig voordat ze kunnen antwoorden",

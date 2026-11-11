@@ -21,6 +21,7 @@ import onboarding from "./locales/en/onboarding.json";
 import prompts from "./locales/en/prompts.json";
 import personas from "./locales/en/personas.json";
 import settings from "./locales/en/settings.json";
+import sync from "./locales/en/sync.json";
 import welcomeBack from "./locales/en/welcome-back.json";
 
 export const defaultNamespace = "common";
@@ -48,6 +49,7 @@ const english = {
     "opened-files": openedFiles,
     personas,
     settings,
+    sync,
     "welcome-back": welcomeBack,
   },
 } as const;

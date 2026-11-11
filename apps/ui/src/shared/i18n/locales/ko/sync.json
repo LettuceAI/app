@@ -1,0 +1,146 @@
+{
+  "mode": {
+    "join": {
+      "title": "기기에 참여",
+      "body": "다른 기기의 주소와 PIN을 입력해요"
+    },
+    "host": {
+      "title": "이 기기에서 호스팅",
+      "body": "다른 기기를 위한 연결을 만들어요"
+    }
+  },
+  "join": {
+    "address": "호스트 주소",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "다른 기기에 표시되는 IPv4 주소와 포트",
+    "addressInvalid": "192.168.1.100:12345처럼 IPv4 주소와 포트를 입력하세요",
+    "pin": "PIN 코드",
+    "scan": "QR 코드 스캔",
+    "connect": "연결",
+    "scanDenied": "카메라 접근이 거부되었어요. 코드를 스캔하려면 시스템 설정에서 카메라를 허용해 주세요.",
+    "scanInvalid": "LettuceAI 동기화 코드가 아니에요.",
+    "scanUnavailable": "카메라를 열 수 없어요."
+  },
+  "host": {
+    "body1": "네트워크의 다른 기기에서 이 기기에 연결할 수 있게 해요.",
+    "body2": "연결되면 두 기기가 최신 변경 사항을 비교하고 교환해요.",
+    "start": "호스팅 시작"
+  },
+  "sharing": {
+    "group": "호스팅",
+    "qr": "이 기기의 주소, 포트, PIN이 담긴 QR 코드",
+    "addressPicker": "QR 코드에 표시되는 주소",
+    "address": "주소",
+    "pin": "연결 PIN",
+    "pinBody": "연결하는 기기와 이 PIN을 공유하세요",
+    "copyPin": "PIN 복사",
+    "copyAddress": "주소 복사",
+    "copied": "복사됨",
+    "steps": "설정 가이드",
+    "step1": "다른 기기에서 LettuceAI 열기",
+    "step2": "설정으로 이동한 다음 로컬 동기화 선택",
+    "step3": "QR 코드를 스캔하거나 주소와 PIN 입력",
+    "stop": "호스팅 중지"
+  },
+  "request": {
+    "title": "연결 요청",
+    "body": "{{name}} 기기가 이 기기와 동기화하려고 해요.",
+    "waiting": "응답을 기다리는 중",
+    "accept": "연결 수락",
+    "decline": "거절"
+  },
+  "ready": {
+    "title": "동기화 준비 완료",
+    "body": "{{name}} 기기와 연결되었어요. 동기화를 시작하면 전송이 시작돼요.",
+    "start": "동기화 시작",
+    "cancel": "취소"
+  },
+  "unknownDevice": "알 수 없는 기기",
+  "progress": {
+    "connecting": "연결 중",
+    "connectingBody": "다른 기기가 수락하고 동기화를 시작하기를 기다리는 중이에요.",
+    "syncing": "동기화 중",
+    "phase": {
+      "changes": "변경 사항 교환 중",
+      "media": "미디어 파일 교환 중",
+      "secrets": "시크릿 교환 중"
+    },
+    "items": "{{total}}개 중 {{done}}개 항목",
+    "itemsOnly": "{{done}}개 항목",
+    "bytes": "{{total}} 중 {{done}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "취소"
+  },
+  "completed": {
+    "title": "동기화 완료",
+    "upToDate": "두 기기 모두 이미 최신 상태였어요.",
+    "sentChanges": "보낸 변경 사항",
+    "receivedChanges": "받은 변경 사항",
+    "receivedMedia": "받은 미디어 파일",
+    "receivedBytes": "받은 데이터",
+    "receivedSecrets": "받은 시크릿",
+    "skippedSecrets": "건너뛴 시크릿",
+    "unavailableMedia": "사용할 수 없는 미디어 파일",
+    "done": "완료"
+  },
+  "failed": {
+    "title": "동기화 실패",
+    "retry": "다시 시도",
+    "reason": {
+      "invalid_state": "지금은 동기화가 그 작업을 할 수 없어요. 세션을 중지하고 다시 시도하세요.",
+      "addresses_unavailable": "이 기기에는 공유할 네트워크 주소가 없어요. 네트워크에 연결하고 다시 시도하세요.",
+      "media_unavailable": "일부 미디어 파일을 읽을 수 없어서 동기화가 중단되었어요.",
+      "authentication_failed": "PIN이 맞지 않아요. 호스트 기기의 PIN을 확인하고 다시 시도하세요.",
+      "pairing_locked": "잘못된 PIN을 너무 많이 입력했어요. 다른 기기에서 호스팅을 중지한 뒤 다시 시작해 새 PIN을 받으세요.",
+      "declined": "다른 기기가 연결을 거절했어요.",
+      "disconnected": "다른 기기와의 연결이 끊어졌어요.",
+      "peer_stalled": "다른 기기가 응답하지 않아요.",
+      "protocol": "다른 기기의 응답을 해석할 수 없어요. 두 기기 모두 같은 LettuceAI 버전을 사용해야 해요.",
+      "storage": "이 기기의 데이터를 읽거나 저장할 수 없어요.",
+      "pending_batch": "이전 동기화에서 아직 적용되지 않은 변경 사항이 남아 있어요. 앱을 다시 시작하고 다시 시도하세요.",
+      "required_reference_unavailable": "다른 기기가 이 기기에 없는 항목을 참조하는 데이터를 보냈어요."
+    }
+  },
+  "conflicts": {
+    "title": "동기화 충돌",
+    "row": "충돌",
+    "needChoice_other": "{{count}}개 항목의 선택이 필요해요",
+    "emptyTitle": "해결할 항목이 없어요",
+    "emptyBody": "두 기기에서 같은 항목을 변경하면 충돌이 여기에 표시돼요.",
+    "menu": "더 보기",
+    "edits": "충돌한 수정",
+    "forks": "대화 분기",
+    "legacy": "가져온 데이터",
+    "kind": {
+      "character": "캐릭터",
+      "persona": "페르소나",
+      "persona_default": "기본 페르소나",
+      "lorebook": "로어북",
+      "prompt": "프롬프트"
+    },
+    "defaultPersona": "기본 페르소나",
+    "deleted": "삭제됨",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "충돌 해결",
+    "thisDevice": "이 기기",
+    "otherDevice": "다른 기기",
+    "noTime": "시간 알 수 없음",
+    "keepThis": "이 기기의 버전 유지",
+    "useOther": "다른 기기의 버전 사용",
+    "resolved": "충돌을 해결했어요",
+    "changedMeanwhile": "그 사이에 이 항목이 변경되었어요. 이제 최신 버전이 표시돼요.",
+    "forkBody": "두 기기의 메시지를 별도의 분기로 보관했어요.",
+    "forkLocal": "복사된 분기에는 이 기기의 메시지가 들어 있어요.",
+    "forkOther": "복사된 분기에는 다른 기기의 메시지가 들어 있어요.",
+    "forkUntitled": "대화",
+    "openBranches": "분기 열기",
+    "dismiss": "닫기",
+    "legacyTitle": "이전 앱에서 가져옴",
+    "legacyCurrent": "현재",
+    "legacyLocal": "로컬",
+    "legacyIncoming": "수신",
+    "notMapped": "매핑 안 됨"
+  },
+  "disclaimer": "두 기기가 로컬 네트워크로 변경 사항을 주고받아요. 동기화가 끝날 때까지 두 기기 모두에서 이 화면을 열어 두세요. 같은 LettuceAI 버전을 사용해야 해요.",
+  "loading": "동기화 상태를 불러오는 중"
+}

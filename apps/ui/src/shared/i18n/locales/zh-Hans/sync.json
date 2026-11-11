@@ -1,0 +1,146 @@
+{
+  "mode": {
+    "join": {
+      "title": "加入设备",
+      "body": "输入另一台设备的地址和 PIN"
+    },
+    "host": {
+      "title": "在此设备上托管",
+      "body": "为另一台设备创建连接"
+    }
+  },
+  "join": {
+    "address": "主机地址",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "另一台设备显示的 IPv4 地址和端口",
+    "addressInvalid": "请输入 IPv4 地址和端口，例如 192.168.1.100:12345",
+    "pin": "PIN 码",
+    "scan": "扫描二维码",
+    "connect": "连接",
+    "scanDenied": "相机权限被拒绝。要扫描二维码，请在系统设置中允许使用相机。",
+    "scanInvalid": "这不是 LettuceAI 的同步二维码。",
+    "scanUnavailable": "无法打开相机。"
+  },
+  "host": {
+    "body1": "让网络中的另一台设备可以连接此设备。",
+    "body2": "连接后，两台设备会比较并交换各自的最新更改。",
+    "start": "开始托管"
+  },
+  "sharing": {
+    "group": "托管",
+    "qr": "包含此设备地址、端口和 PIN 的二维码",
+    "addressPicker": "二维码中显示的地址",
+    "address": "地址",
+    "pin": "连接 PIN",
+    "pinBody": "与连接设备分享此 PIN",
+    "copyPin": "复制 PIN",
+    "copyAddress": "复制地址",
+    "copied": "已复制",
+    "steps": "设置指南",
+    "step1": "在另一台设备上打开 LettuceAI",
+    "step2": "前往设置，然后选择本地同步",
+    "step3": "扫描二维码，或输入地址和 PIN",
+    "stop": "停止托管"
+  },
+  "request": {
+    "title": "连接请求",
+    "body": "{{name}} 想要与此设备同步。",
+    "waiting": "正在等待你的回应",
+    "accept": "接受连接",
+    "decline": "拒绝"
+  },
+  "ready": {
+    "title": "准备同步",
+    "body": "{{name}} 已连接。开始同步即可开始传输。",
+    "start": "开始同步",
+    "cancel": "取消"
+  },
+  "unknownDevice": "未知设备",
+  "progress": {
+    "connecting": "正在连接",
+    "connectingBody": "正在等待另一台设备接受并开始同步。",
+    "syncing": "正在同步",
+    "phase": {
+      "changes": "正在交换更改",
+      "media": "正在交换媒体文件",
+      "secrets": "正在交换密钥"
+    },
+    "items": "{{done}} / {{total}} 项",
+    "itemsOnly": "{{done}} 项",
+    "bytes": "{{done}} / {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "取消"
+  },
+  "completed": {
+    "title": "同步完成",
+    "upToDate": "两台设备已经是最新状态。",
+    "sentChanges": "已发送的更改",
+    "receivedChanges": "已接收的更改",
+    "receivedMedia": "已接收的媒体文件",
+    "receivedBytes": "已接收的数据",
+    "receivedSecrets": "已接收的密钥",
+    "skippedSecrets": "已跳过的密钥",
+    "unavailableMedia": "不可用的媒体文件",
+    "done": "完成"
+  },
+  "failed": {
+    "title": "同步失败",
+    "retry": "重试",
+    "reason": {
+      "invalid_state": "同步目前无法执行此操作。请停止会话后重试。",
+      "addresses_unavailable": "此设备没有可共享的网络地址。请连接网络后重试。",
+      "media_unavailable": "部分媒体文件无法读取，同步已停止。",
+      "authentication_failed": "PIN 不正确。请检查主机设备上的 PIN 后重试。",
+      "pairing_locked": "输错 PIN 的次数过多。请在另一台设备上停止托管，再重新开始以获取新的 PIN。",
+      "declined": "另一台设备拒绝了连接。",
+      "disconnected": "与另一台设备的连接已断开。",
+      "peer_stalled": "另一台设备已停止响应。",
+      "protocol": "无法识别另一台设备发来的内容。两台设备必须使用相同版本的 LettuceAI。",
+      "storage": "无法读取或保存此设备上的数据。",
+      "pending_batch": "之前的同步留下了尚未应用的更改。请重启应用后重试。",
+      "required_reference_unavailable": "另一台设备发来的数据引用了此设备上不存在的内容。"
+    }
+  },
+  "conflicts": {
+    "title": "同步冲突",
+    "row": "冲突",
+    "needChoice_other": "有 {{count}} 项需要你来选择",
+    "emptyTitle": "没有需要处理的内容",
+    "emptyBody": "当两台设备修改了同一内容时，冲突会显示在这里。",
+    "menu": "更多操作",
+    "edits": "冲突的编辑",
+    "forks": "对话分支",
+    "legacy": "导入的数据",
+    "kind": {
+      "character": "角色",
+      "persona": "人设",
+      "persona_default": "默认人设",
+      "lorebook": "知识库",
+      "prompt": "提示词"
+    },
+    "defaultPersona": "默认人设",
+    "deleted": "已删除",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "解决冲突",
+    "thisDevice": "此设备",
+    "otherDevice": "另一台设备",
+    "noTime": "时间未知",
+    "keepThis": "保留此设备的版本",
+    "useOther": "使用另一台设备的版本",
+    "resolved": "冲突已解决",
+    "changedMeanwhile": "此项在此期间发生了变化。现在显示的是最新版本。",
+    "forkBody": "两台设备的消息已保留为各自独立的分支。",
+    "forkLocal": "复制出的分支包含此设备的消息。",
+    "forkOther": "复制出的分支包含另一台设备的消息。",
+    "forkUntitled": "对话",
+    "openBranches": "打开分支",
+    "dismiss": "忽略",
+    "legacyTitle": "从上一个应用导入",
+    "legacyCurrent": "当前",
+    "legacyLocal": "本地",
+    "legacyIncoming": "传入",
+    "notMapped": "未映射"
+  },
+  "disclaimer": "两台设备会通过你的本地网络发送和接收更改。同步完成前，请在两台设备上保持此界面打开。两台设备必须使用相同版本的 LettuceAI。",
+  "loading": "正在加载同步状态"
+}

@@ -1,0 +1,147 @@
+{
+  "mode": {
+    "join": {
+      "title": "Join a device",
+      "body": "Enter another device's address and PIN"
+    },
+    "host": {
+      "title": "Host on this device",
+      "body": "Create a connection for another device"
+    }
+  },
+  "join": {
+    "address": "Host address",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "The IPv4 address and port the other device shows",
+    "addressInvalid": "Enter an IPv4 address and port, such as 192.168.1.100:12345",
+    "pin": "PIN code",
+    "scan": "Scan QR code",
+    "connect": "Connect",
+    "scanDenied": "Camera access was denied. Allow the camera in the system settings to scan a code.",
+    "scanInvalid": "That code is not a LettuceAI sync code.",
+    "scanUnavailable": "The camera could not be opened."
+  },
+  "host": {
+    "body1": "Make this device available to another device on your network.",
+    "body2": "Once connected, both devices compare and exchange their latest changes.",
+    "start": "Start hosting"
+  },
+  "sharing": {
+    "group": "Hosting",
+    "qr": "QR code with the address, port and PIN of this device",
+    "addressPicker": "Address shown in the QR code",
+    "address": "Address",
+    "pin": "Connection PIN",
+    "pinBody": "Share this PIN with the connecting device",
+    "copyPin": "Copy PIN",
+    "copyAddress": "Copy address",
+    "copied": "Copied",
+    "steps": "Setup guide",
+    "step1": "Open LettuceAI on the other device",
+    "step2": "Go to Settings, then Local sync",
+    "step3": "Scan the QR code, or enter the address and PIN",
+    "stop": "Stop hosting"
+  },
+  "request": {
+    "title": "Connection request",
+    "body": "{{name}} wants to sync with this device.",
+    "waiting": "Waiting for your answer",
+    "accept": "Accept connection",
+    "decline": "Decline"
+  },
+  "ready": {
+    "title": "Ready to sync",
+    "body": "{{name}} is connected. Start syncing to begin the transfer.",
+    "start": "Start syncing",
+    "cancel": "Cancel"
+  },
+  "unknownDevice": "Unknown device",
+  "progress": {
+    "connecting": "Connecting",
+    "connectingBody": "Waiting for the other device to accept and start syncing.",
+    "syncing": "Syncing",
+    "phase": {
+      "changes": "Exchanging changes",
+      "media": "Exchanging media files",
+      "secrets": "Exchanging secrets"
+    },
+    "items": "{{done}} of {{total}} items",
+    "itemsOnly": "{{done}} items",
+    "bytes": "{{done}} of {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Cancel"
+  },
+  "completed": {
+    "title": "Sync complete",
+    "upToDate": "Both devices were already up to date.",
+    "sentChanges": "Changes sent",
+    "receivedChanges": "Changes received",
+    "receivedMedia": "Media files received",
+    "receivedBytes": "Data received",
+    "receivedSecrets": "Secrets received",
+    "skippedSecrets": "Secrets skipped",
+    "unavailableMedia": "Media files unavailable",
+    "done": "Done"
+  },
+  "failed": {
+    "title": "Sync failed",
+    "retry": "Try again",
+    "reason": {
+      "invalid_state": "Sync cannot do that right now. Stop the session and try again.",
+      "addresses_unavailable": "This device has no network address to share. Connect to a network and try again.",
+      "media_unavailable": "Some media files could not be read, so the sync stopped.",
+      "authentication_failed": "The PIN is wrong. Check the PIN on the host device and try again.",
+      "pairing_locked": "Too many wrong PINs. Stop hosting on the other device and start it again to get a new PIN.",
+      "declined": "The other device declined the connection.",
+      "disconnected": "The connection to the other device was lost.",
+      "peer_stalled": "The other device stopped responding.",
+      "protocol": "The other device could not be understood. Both devices must use the same LettuceAI version.",
+      "storage": "The data on this device could not be read or saved.",
+      "pending_batch": "An earlier sync left changes that have not been applied yet. Restart the app and try again.",
+      "required_reference_unavailable": "The other device sent data that refers to something this device does not have."
+    }
+  },
+  "conflicts": {
+    "title": "Sync conflicts",
+    "row": "Conflicts",
+    "needChoice_one": "{{count}} item needs your choice",
+    "needChoice_other": "{{count}} items need your choice",
+    "emptyTitle": "Nothing to resolve",
+    "emptyBody": "Conflicts appear here when both devices changed the same thing.",
+    "menu": "More actions",
+    "edits": "Conflicting edits",
+    "forks": "Conversation branches",
+    "legacy": "Imported data",
+    "kind": {
+      "character": "Character",
+      "persona": "Persona",
+      "persona_default": "Default persona",
+      "lorebook": "Lorebook",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Default persona",
+    "deleted": "Deleted",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Resolve conflict",
+    "thisDevice": "This device",
+    "otherDevice": "Other device",
+    "noTime": "Time unknown",
+    "keepThis": "Keep this device's version",
+    "useOther": "Use the other device's version",
+    "resolved": "Conflict resolved",
+    "changedMeanwhile": "This item changed in the meantime. The latest versions are shown now.",
+    "forkBody": "Messages from both devices were kept as separate branches.",
+    "forkLocal": "The copied branch holds this device's messages.",
+    "forkOther": "The copied branch holds the other device's messages.",
+    "forkUntitled": "Conversation",
+    "openBranches": "Open branches",
+    "dismiss": "Dismiss",
+    "legacyTitle": "Imported from the previous app",
+    "legacyCurrent": "Current",
+    "legacyLocal": "Local",
+    "legacyIncoming": "Incoming",
+    "notMapped": "Not mapped"
+  },
+  "disclaimer": "Both devices send and receive changes over your local network. Keep this screen open on both devices until the sync finishes. They must use the same LettuceAI version.",
+  "loading": "Loading sync status"
+}

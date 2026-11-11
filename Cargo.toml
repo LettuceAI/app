@@ -100,6 +100,7 @@ tauri-plugin-android-fs = { git = "https://github.com/MegalithOfficial/tauri-plu
 tauri-plugin-dialog = { version = "=3.0.0-alpha.3", default-features = false, features = ["xdg-portal"] }
 tauri-plugin-opener = "=3.0.0-alpha.3"
 tauri-plugin-haptics = "=3.0.0-alpha.3"
+tauri-plugin-barcode-scanner = "=3.0.0-alpha.3"
 tauri-plugin-single-window = { git = "https://github.com/MegalithOfficial/tauri-plugin-single-window", rev = "e43bb058666fcc8daca54e1b2e8cb9117b9e50f6" }
 tauri-specta = { git = "https://github.com/MegalithOfficial/tauri-specta", rev = "75afe7bfbd6a8861faa906b1169d4d4d82317fad", features = ["derive", "typescript"] }
 tar = "0.4"

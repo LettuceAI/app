@@ -332,6 +332,11 @@
       "note": "无需下载。"
     }
   },
+  "sync": {
+    "title": "从另一台设备同步",
+    "body": "与已设置好 LettuceAI 的设备配对。你的数据会通过本地网络复制。",
+    "hint": "在另一台设备上打开设置，然后选择本地同步，并开始托管以获取地址和 PIN。"
+  },
   "other": {
     "title": "其他选项",
     "language": "语言",
@@ -339,6 +344,8 @@
     "skipBody": "先随便看看。聊天需要连接 AI 才能回复。",
     "restore": "恢复备份",
     "restoreBody": "从 .lettuce 文件恢复聊天、角色和设置",
+    "sync": "从另一台设备同步",
+    "syncBody": "通过本地网络，从已安装 LettuceAI 的设备复制你的设置",
     "languageTitle": "语言",
     "warning": {
       "title": "聊天需要连接 AI 才能回复",

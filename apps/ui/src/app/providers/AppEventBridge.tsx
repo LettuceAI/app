@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { toast } from "@lettuceai/crisp";
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
-import { invalidationsFor } from "@/api/query-keys";
+import type { SyncStatus } from "@/api/generated/bindings";
+import { invalidationsFor, queryKeys } from "@/api/query-keys";
+import { checkRestoredModels } from "@/features/opened-files";
 
 export interface AppEventBridgeProps {
   api: ApiClient;
@@ -34,6 +36,14 @@ export function AppEventBridge({ api, queryClient, onDatabaseReload }: AppEventB
             undefined,
             { id: "onnx-memory-pressure" },
           );
+        }
+        if (event.type === "sync_status_changed") {
+          const previous = queryClient.getQueryData<SyncStatus>(queryKeys.sync.status());
+          queryClient.setQueryData<SyncStatus>(queryKeys.sync.status(), event.status);
+          if (event.status.type === "completed" && previous?.type !== "completed") {
+            void queryClient.invalidateQueries();
+            checkRestoredModels();
+          }
         }
         for (const queryKey of invalidationsFor(event))
           void queryClient.invalidateQueries({ queryKey });

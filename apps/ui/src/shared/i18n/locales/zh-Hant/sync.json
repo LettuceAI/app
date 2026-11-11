@@ -1,0 +1,146 @@
+{
+  "mode": {
+    "join": {
+      "title": "加入裝置",
+      "body": "輸入另一台裝置的位址和 PIN"
+    },
+    "host": {
+      "title": "在此裝置上託管",
+      "body": "為另一台裝置建立連線"
+    }
+  },
+  "join": {
+    "address": "主機位址",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "另一台裝置顯示的 IPv4 位址和連接埠",
+    "addressInvalid": "請輸入 IPv4 位址和連接埠，例如 192.168.1.100:12345",
+    "pin": "PIN 碼",
+    "scan": "掃描 QR Code",
+    "connect": "連線",
+    "scanDenied": "相機權限被拒絕。若要掃描 QR Code，請在系統設定中允許使用相機。",
+    "scanInvalid": "這不是 LettuceAI 的同步 QR Code。",
+    "scanUnavailable": "無法開啟相機。"
+  },
+  "host": {
+    "body1": "讓網路中的另一台裝置可以連線此裝置。",
+    "body2": "連線後，兩台裝置會比較並交換各自的最新變更。",
+    "start": "開始託管"
+  },
+  "sharing": {
+    "group": "託管",
+    "qr": "包含此裝置位址、連接埠和 PIN 的 QR Code",
+    "addressPicker": "QR Code 中顯示的位址",
+    "address": "位址",
+    "pin": "連線 PIN",
+    "pinBody": "與連線裝置分享此 PIN",
+    "copyPin": "複製 PIN",
+    "copyAddress": "複製位址",
+    "copied": "已複製",
+    "steps": "設定指南",
+    "step1": "在另一台裝置上開啟 LettuceAI",
+    "step2": "前往設定，然後選擇本機同步",
+    "step3": "掃描 QR Code，或輸入位址和 PIN",
+    "stop": "停止託管"
+  },
+  "request": {
+    "title": "連線請求",
+    "body": "{{name}} 想要與此裝置同步。",
+    "waiting": "正在等待你的回應",
+    "accept": "接受連線",
+    "decline": "拒絕"
+  },
+  "ready": {
+    "title": "準備同步",
+    "body": "{{name}} 已連線。開始同步即可開始傳輸。",
+    "start": "開始同步",
+    "cancel": "取消"
+  },
+  "unknownDevice": "未知裝置",
+  "progress": {
+    "connecting": "正在連線",
+    "connectingBody": "正在等待另一台裝置接受並開始同步。",
+    "syncing": "正在同步",
+    "phase": {
+      "changes": "正在交換變更",
+      "media": "正在交換媒體檔案",
+      "secrets": "正在交換金鑰"
+    },
+    "items": "{{done}} / {{total}} 項",
+    "itemsOnly": "{{done}} 項",
+    "bytes": "{{done}} / {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "取消"
+  },
+  "completed": {
+    "title": "同步完成",
+    "upToDate": "兩台裝置已經是最新狀態。",
+    "sentChanges": "已傳送的變更",
+    "receivedChanges": "已接收的變更",
+    "receivedMedia": "已接收的媒體檔案",
+    "receivedBytes": "已接收的資料",
+    "receivedSecrets": "已接收的金鑰",
+    "skippedSecrets": "已略過的金鑰",
+    "unavailableMedia": "無法使用的媒體檔案",
+    "done": "完成"
+  },
+  "failed": {
+    "title": "同步失敗",
+    "retry": "再試一次",
+    "reason": {
+      "invalid_state": "同步目前無法執行此操作。請停止工作階段後再試一次。",
+      "addresses_unavailable": "此裝置沒有可分享的網路位址。請連上網路後再試一次。",
+      "media_unavailable": "部分媒體檔案無法讀取，同步已停止。",
+      "authentication_failed": "PIN 不正確。請檢查主機裝置上的 PIN 後再試一次。",
+      "pairing_locked": "輸錯 PIN 的次數過多。請在另一台裝置上停止託管，再重新開始以取得新的 PIN。",
+      "declined": "另一台裝置拒絕了連線。",
+      "disconnected": "與另一台裝置的連線已中斷。",
+      "peer_stalled": "另一台裝置已停止回應。",
+      "protocol": "無法辨識另一台裝置傳來的內容。兩台裝置必須使用相同版本的 LettuceAI。",
+      "storage": "無法讀取或儲存此裝置上的資料。",
+      "pending_batch": "先前的同步留下了尚未套用的變更。請重新啟動應用程式後再試一次。",
+      "required_reference_unavailable": "另一台裝置傳來的資料引用了此裝置上不存在的內容。"
+    }
+  },
+  "conflicts": {
+    "title": "同步衝突",
+    "row": "衝突",
+    "needChoice_other": "有 {{count}} 項需要你來選擇",
+    "emptyTitle": "沒有需要處理的內容",
+    "emptyBody": "當兩台裝置修改了同一項內容時，衝突會顯示在這裡。",
+    "menu": "更多操作",
+    "edits": "衝突的編輯",
+    "forks": "對話分支",
+    "legacy": "匯入的資料",
+    "kind": {
+      "character": "角色",
+      "persona": "人設",
+      "persona_default": "預設人設",
+      "lorebook": "設定集",
+      "prompt": "提示"
+    },
+    "defaultPersona": "預設人設",
+    "deleted": "已刪除",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "解決衝突",
+    "thisDevice": "此裝置",
+    "otherDevice": "另一台裝置",
+    "noTime": "時間未知",
+    "keepThis": "保留此裝置的版本",
+    "useOther": "使用另一台裝置的版本",
+    "resolved": "衝突已解決",
+    "changedMeanwhile": "此項目在這段期間已有變更。現在顯示的是最新版本。",
+    "forkBody": "兩台裝置的訊息已保留為各自獨立的分支。",
+    "forkLocal": "複製出的分支包含此裝置的訊息。",
+    "forkOther": "複製出的分支包含另一台裝置的訊息。",
+    "forkUntitled": "對話",
+    "openBranches": "開啟分支",
+    "dismiss": "關閉",
+    "legacyTitle": "從上一個應用程式匯入",
+    "legacyCurrent": "目前",
+    "legacyLocal": "本機",
+    "legacyIncoming": "傳入",
+    "notMapped": "未對應"
+  },
+  "disclaimer": "兩台裝置會透過你的區域網路傳送和接收變更。同步完成前，請在兩台裝置上保持此畫面開啟。兩台裝置必須使用相同版本的 LettuceAI。",
+  "loading": "正在載入同步狀態"
+}

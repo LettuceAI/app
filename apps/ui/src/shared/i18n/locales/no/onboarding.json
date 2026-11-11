@@ -333,6 +333,11 @@
       "note": "Ingenting å laste ned."
     }
   },
+  "sync": {
+    "title": "Synkroniser fra en annen enhet",
+    "body": "Par med en enhet som allerede har LettuceAI satt opp. Dataene dine kopieres over det lokale nettverket.",
+    "hint": "Åpne Innstillinger på den andre enheten, deretter Lokal synkronisering, og start vertskap for å få en adresse og PIN-kode."
+  },
   "other": {
     "title": "Andre alternativer",
     "language": "Språk",
@@ -340,6 +345,8 @@
     "skipBody": "Se deg rundt først. Samtaler trenger en AI før de kan svare.",
     "restore": "Gjenopprett en sikkerhetskopi",
     "restoreBody": "Hent tilbake samtaler, karakterer og innstillinger fra en .lettuce-fil",
+    "sync": "Synkroniser fra en annen enhet",
+    "syncBody": "Kopier oppsettet ditt over det lokale nettverket fra en enhet som allerede har LettuceAI",
     "languageTitle": "Språk",
     "warning": {
       "title": "Samtaler trenger en AI før de kan svare",

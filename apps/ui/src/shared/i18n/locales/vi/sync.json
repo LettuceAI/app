@@ -1,0 +1,146 @@
+{
+  "mode": {
+    "join": {
+      "title": "Tham gia thiết bị",
+      "body": "Nhập địa chỉ và mã PIN của thiết bị khác"
+    },
+    "host": {
+      "title": "Lưu trữ trên thiết bị này",
+      "body": "Tạo kết nối cho thiết bị khác"
+    }
+  },
+  "join": {
+    "address": "Địa chỉ máy chủ",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "Địa chỉ IPv4 và cổng mà thiết bị kia hiển thị",
+    "addressInvalid": "Nhập địa chỉ IPv4 và cổng, ví dụ 192.168.1.100:12345",
+    "pin": "Mã PIN",
+    "scan": "Quét mã QR",
+    "connect": "Kết nối",
+    "scanDenied": "Quyền truy cập camera đã bị từ chối. Hãy cho phép camera trong cài đặt hệ thống để quét mã.",
+    "scanInvalid": "Đây không phải mã đồng bộ của LettuceAI.",
+    "scanUnavailable": "Không thể mở camera."
+  },
+  "host": {
+    "body1": "Cho phép một thiết bị khác trong mạng kết nối với thiết bị này.",
+    "body2": "Sau khi kết nối, cả hai thiết bị sẽ so sánh và trao đổi những thay đổi mới nhất.",
+    "start": "Bắt đầu lưu trữ"
+  },
+  "sharing": {
+    "group": "Lưu trữ",
+    "qr": "Mã QR chứa địa chỉ, cổng và mã PIN của thiết bị này",
+    "addressPicker": "Địa chỉ hiển thị trong mã QR",
+    "address": "Địa chỉ",
+    "pin": "PIN kết nối",
+    "pinBody": "Chia sẻ mã PIN này với thiết bị kết nối",
+    "copyPin": "Sao chép PIN",
+    "copyAddress": "Sao chép địa chỉ",
+    "copied": "Đã sao chép",
+    "steps": "Hướng dẫn thiết lập",
+    "step1": "Mở LettuceAI trên thiết bị kia",
+    "step2": "Vào Cài đặt, rồi chọn Đồng bộ cục bộ",
+    "step3": "Quét mã QR, hoặc nhập địa chỉ và mã PIN",
+    "stop": "Dừng lưu trữ"
+  },
+  "request": {
+    "title": "Yêu cầu kết nối",
+    "body": "{{name}} muốn đồng bộ với thiết bị này.",
+    "waiting": "Đang chờ câu trả lời của bạn",
+    "accept": "Chấp nhận kết nối",
+    "decline": "Từ chối"
+  },
+  "ready": {
+    "title": "Sẵn sàng đồng bộ",
+    "body": "{{name}} đã kết nối. Bắt đầu đồng bộ để khởi động quá trình truyền.",
+    "start": "Bắt đầu đồng bộ",
+    "cancel": "Hủy"
+  },
+  "unknownDevice": "Thiết bị không xác định",
+  "progress": {
+    "connecting": "Đang kết nối",
+    "connectingBody": "Đang chờ thiết bị kia chấp nhận và bắt đầu đồng bộ.",
+    "syncing": "Đang đồng bộ",
+    "phase": {
+      "changes": "Đang trao đổi thay đổi",
+      "media": "Đang trao đổi tệp phương tiện",
+      "secrets": "Đang trao đổi bí mật"
+    },
+    "items": "{{done}} trên {{total}} mục",
+    "itemsOnly": "{{done}} mục",
+    "bytes": "{{done}} trên {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Hủy"
+  },
+  "completed": {
+    "title": "Đồng bộ hoàn tất",
+    "upToDate": "Cả hai thiết bị đã được cập nhật từ trước.",
+    "sentChanges": "Thay đổi đã gửi",
+    "receivedChanges": "Thay đổi đã nhận",
+    "receivedMedia": "Tệp phương tiện đã nhận",
+    "receivedBytes": "Dữ liệu đã nhận",
+    "receivedSecrets": "Bí mật đã nhận",
+    "skippedSecrets": "Bí mật đã bỏ qua",
+    "unavailableMedia": "Tệp phương tiện không khả dụng",
+    "done": "Xong"
+  },
+  "failed": {
+    "title": "Đồng bộ thất bại",
+    "retry": "Thử lại",
+    "reason": {
+      "invalid_state": "Đồng bộ chưa thể thực hiện việc đó lúc này. Hãy dừng phiên và thử lại.",
+      "addresses_unavailable": "Thiết bị này không có địa chỉ mạng để chia sẻ. Hãy kết nối mạng và thử lại.",
+      "media_unavailable": "Một số tệp phương tiện không đọc được nên quá trình đồng bộ đã dừng.",
+      "authentication_failed": "Mã PIN không đúng. Hãy kiểm tra mã PIN trên thiết bị lưu trữ và thử lại.",
+      "pairing_locked": "Nhập sai PIN quá nhiều lần. Hãy dừng lưu trữ trên thiết bị kia rồi bắt đầu lại để nhận mã PIN mới.",
+      "declined": "Thiết bị kia đã từ chối kết nối.",
+      "disconnected": "Mất kết nối với thiết bị kia.",
+      "peer_stalled": "Thiết bị kia không còn phản hồi.",
+      "protocol": "Không thể hiểu dữ liệu từ thiết bị kia. Cả hai thiết bị phải dùng cùng phiên bản LettuceAI.",
+      "storage": "Không thể đọc hoặc lưu dữ liệu trên thiết bị này.",
+      "pending_batch": "Lần đồng bộ trước để lại các thay đổi chưa được áp dụng. Hãy khởi động lại ứng dụng và thử lại.",
+      "required_reference_unavailable": "Thiết bị kia đã gửi dữ liệu tham chiếu đến thứ mà thiết bị này không có."
+    }
+  },
+  "conflicts": {
+    "title": "Xung đột đồng bộ",
+    "row": "Xung đột",
+    "needChoice_other": "{{count}} mục cần bạn lựa chọn",
+    "emptyTitle": "Không có gì cần giải quyết",
+    "emptyBody": "Xung đột sẽ xuất hiện ở đây khi cả hai thiết bị cùng thay đổi một mục.",
+    "menu": "Thêm thao tác",
+    "edits": "Chỉnh sửa xung đột",
+    "forks": "Nhánh trò chuyện",
+    "legacy": "Dữ liệu đã nhập",
+    "kind": {
+      "character": "Nhân vật",
+      "persona": "Persona",
+      "persona_default": "Persona mặc định",
+      "lorebook": "Sách lore",
+      "prompt": "Lời nhắc"
+    },
+    "defaultPersona": "Persona mặc định",
+    "deleted": "Đã xóa",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Giải quyết xung đột",
+    "thisDevice": "Thiết bị này",
+    "otherDevice": "Thiết bị kia",
+    "noTime": "Không rõ thời gian",
+    "keepThis": "Giữ phiên bản của thiết bị này",
+    "useOther": "Dùng phiên bản của thiết bị kia",
+    "resolved": "Đã giải quyết xung đột",
+    "changedMeanwhile": "Mục này đã thay đổi trong lúc đó. Hiện đang hiển thị các phiên bản mới nhất.",
+    "forkBody": "Tin nhắn từ cả hai thiết bị được giữ lại thành các nhánh riêng.",
+    "forkLocal": "Nhánh đã sao chép chứa tin nhắn của thiết bị này.",
+    "forkOther": "Nhánh đã sao chép chứa tin nhắn của thiết bị kia.",
+    "forkUntitled": "Cuộc trò chuyện",
+    "openBranches": "Mở các nhánh",
+    "dismiss": "Bỏ qua",
+    "legacyTitle": "Đã nhập từ ứng dụng trước",
+    "legacyCurrent": "Hiện tại",
+    "legacyLocal": "Cục bộ",
+    "legacyIncoming": "Đến",
+    "notMapped": "Chưa ánh xạ"
+  },
+  "disclaimer": "Cả hai thiết bị gửi và nhận thay đổi qua mạng cục bộ của bạn. Hãy để màn hình này mở trên cả hai thiết bị cho đến khi đồng bộ xong. Hai thiết bị phải dùng cùng phiên bản LettuceAI.",
+  "loading": "Đang tải trạng thái đồng bộ"
+}

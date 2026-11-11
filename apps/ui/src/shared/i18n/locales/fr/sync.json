@@ -1,0 +1,148 @@
+{
+  "mode": {
+    "join": {
+      "title": "Rejoindre un appareil",
+      "body": "Saisissez l'adresse et le PIN d'un autre appareil"
+    },
+    "host": {
+      "title": "Héberger sur cet appareil",
+      "body": "Créez une connexion pour un autre appareil"
+    }
+  },
+  "join": {
+    "address": "Adresse de l'hôte",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "L'adresse IPv4 et le port affichés par l'autre appareil",
+    "addressInvalid": "Saisissez une adresse IPv4 et un port, par exemple 192.168.1.100:12345",
+    "pin": "Code PIN",
+    "scan": "Scanner le QR code",
+    "connect": "Se connecter",
+    "scanDenied": "L'accès à la caméra a été refusé. Autorisez la caméra dans les paramètres du système pour scanner un code.",
+    "scanInvalid": "Ce code n'est pas un code de synchronisation LettuceAI.",
+    "scanUnavailable": "Impossible d'ouvrir la caméra."
+  },
+  "host": {
+    "body1": "Rendez cet appareil accessible à un autre appareil de votre réseau.",
+    "body2": "Une fois connectés, les deux appareils comparent et échangent leurs dernières modifications.",
+    "start": "Commencer à héberger"
+  },
+  "sharing": {
+    "group": "Hébergement",
+    "qr": "QR code avec l'adresse, le port et le PIN de cet appareil",
+    "addressPicker": "Adresse affichée dans le QR code",
+    "address": "Adresse",
+    "pin": "PIN de connexion",
+    "pinBody": "Partagez ce PIN avec l'appareil qui se connecte",
+    "copyPin": "Copier le PIN",
+    "copyAddress": "Copier l'adresse",
+    "copied": "Copié",
+    "steps": "Guide de configuration",
+    "step1": "Ouvrez LettuceAI sur l'autre appareil",
+    "step2": "Allez dans Paramètres, puis Synchronisation locale",
+    "step3": "Scannez le QR code, ou saisissez l'adresse et le PIN",
+    "stop": "Arrêter l'hébergement"
+  },
+  "request": {
+    "title": "Demande de connexion",
+    "body": "{{name}} veut se synchroniser avec cet appareil.",
+    "waiting": "En attente de votre réponse",
+    "accept": "Accepter la connexion",
+    "decline": "Refuser"
+  },
+  "ready": {
+    "title": "Prêt à synchroniser",
+    "body": "{{name}} est connecté. Lancez la synchronisation pour démarrer le transfert.",
+    "start": "Démarrer la synchronisation",
+    "cancel": "Annuler"
+  },
+  "unknownDevice": "Appareil inconnu",
+  "progress": {
+    "connecting": "Connexion",
+    "connectingBody": "En attente que l'autre appareil accepte et lance la synchronisation.",
+    "syncing": "Synchronisation",
+    "phase": {
+      "changes": "Échange des modifications",
+      "media": "Échange des fichiers multimédias",
+      "secrets": "Échange des secrets"
+    },
+    "items": "{{done}} sur {{total}} éléments",
+    "itemsOnly": "{{done}} éléments",
+    "bytes": "{{done}} sur {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Annuler"
+  },
+  "completed": {
+    "title": "Synchronisation terminée",
+    "upToDate": "Les deux appareils étaient déjà à jour.",
+    "sentChanges": "Modifications envoyées",
+    "receivedChanges": "Modifications reçues",
+    "receivedMedia": "Fichiers multimédias reçus",
+    "receivedBytes": "Données reçues",
+    "receivedSecrets": "Secrets reçus",
+    "skippedSecrets": "Secrets ignorés",
+    "unavailableMedia": "Fichiers multimédias indisponibles",
+    "done": "Terminé"
+  },
+  "failed": {
+    "title": "Échec de la synchronisation",
+    "retry": "Réessayer",
+    "reason": {
+      "invalid_state": "La synchronisation ne peut pas faire cela pour le moment. Arrêtez la session et réessayez.",
+      "addresses_unavailable": "Cet appareil n'a aucune adresse réseau à partager. Connectez-vous à un réseau et réessayez.",
+      "media_unavailable": "Certains fichiers multimédias n'ont pas pu être lus, la synchronisation s'est donc arrêtée.",
+      "authentication_failed": "Le PIN est incorrect. Vérifiez le PIN sur l'appareil hôte et réessayez.",
+      "pairing_locked": "Trop de PIN incorrects. Arrêtez l'hébergement sur l'autre appareil et relancez-le pour obtenir un nouveau PIN.",
+      "declined": "L'autre appareil a refusé la connexion.",
+      "disconnected": "La connexion avec l'autre appareil a été perdue.",
+      "peer_stalled": "L'autre appareil ne répond plus.",
+      "protocol": "L'autre appareil n'a pas pu être compris. Les deux appareils doivent utiliser la même version de LettuceAI.",
+      "storage": "Les données de cet appareil n'ont pas pu être lues ou enregistrées.",
+      "pending_batch": "Une synchronisation précédente a laissé des modifications qui n'ont pas encore été appliquées. Redémarrez l'application et réessayez.",
+      "required_reference_unavailable": "L'autre appareil a envoyé des données qui font référence à quelque chose que cet appareil n'a pas."
+    }
+  },
+  "conflicts": {
+    "title": "Conflits de synchronisation",
+    "row": "Conflits",
+    "needChoice_one": "{{count}} élément attend votre choix",
+    "needChoice_many": "{{count}} d'éléments attendent votre choix",
+    "needChoice_other": "{{count}} éléments attendent votre choix",
+    "emptyTitle": "Rien à résoudre",
+    "emptyBody": "Les conflits apparaissent ici lorsque les deux appareils ont modifié la même chose.",
+    "menu": "Plus d'actions",
+    "edits": "Modifications en conflit",
+    "forks": "Branches de conversation",
+    "legacy": "Données importées",
+    "kind": {
+      "character": "Personnage",
+      "persona": "Persona",
+      "persona_default": "Persona par défaut",
+      "lorebook": "Encyclopédie",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Persona par défaut",
+    "deleted": "Supprimé",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Résoudre le conflit",
+    "thisDevice": "Cet appareil",
+    "otherDevice": "L'autre appareil",
+    "noTime": "Heure inconnue",
+    "keepThis": "Garder la version de cet appareil",
+    "useOther": "Utiliser la version de l'autre appareil",
+    "resolved": "Conflit résolu",
+    "changedMeanwhile": "Cet élément a changé entre-temps. Les versions les plus récentes sont affichées.",
+    "forkBody": "Les messages des deux appareils ont été conservés dans des branches séparées.",
+    "forkLocal": "La branche copiée contient les messages de cet appareil.",
+    "forkOther": "La branche copiée contient les messages de l'autre appareil.",
+    "forkUntitled": "Conversation",
+    "openBranches": "Ouvrir les branches",
+    "dismiss": "Ignorer",
+    "legacyTitle": "Importé depuis l'ancienne application",
+    "legacyCurrent": "Actuelle",
+    "legacyLocal": "Locale",
+    "legacyIncoming": "Entrante",
+    "notMapped": "Non associé"
+  },
+  "disclaimer": "Les deux appareils envoient et reçoivent des modifications sur votre réseau local. Gardez cet écran ouvert sur les deux appareils jusqu'à la fin de la synchronisation. Ils doivent utiliser la même version de LettuceAI.",
+  "loading": "Chargement de l'état de la synchronisation"
+}

@@ -1,0 +1,147 @@
+{
+  "mode": {
+    "join": {
+      "title": "Koble til en enhet",
+      "body": "Skriv inn adressen og PIN-koden til en annen enhet"
+    },
+    "host": {
+      "title": "Vær vert på denne enheten",
+      "body": "Opprett en tilkobling for en annen enhet"
+    }
+  },
+  "join": {
+    "address": "Vertsadresse",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "IPv4-adressen og porten som den andre enheten viser",
+    "addressInvalid": "Skriv inn en IPv4-adresse og en port, for eksempel 192.168.1.100:12345",
+    "pin": "PIN-kode",
+    "scan": "Skann QR-kode",
+    "connect": "Koble til",
+    "scanDenied": "Kameratilgang ble avslått. Tillat kameraet i systeminnstillingene for å skanne en kode.",
+    "scanInvalid": "Det er ikke en LettuceAI-synkroniseringskode.",
+    "scanUnavailable": "Kameraet kunne ikke åpnes."
+  },
+  "host": {
+    "body1": "Gjør denne enheten tilgjengelig for en annen enhet på nettverket ditt.",
+    "body2": "Når de er tilkoblet, sammenligner og utveksler begge enhetene de nyeste endringene.",
+    "start": "Start vertskap"
+  },
+  "sharing": {
+    "group": "Vertskap",
+    "qr": "QR-kode med adressen, porten og PIN-koden til denne enheten",
+    "addressPicker": "Adressen som vises i QR-koden",
+    "address": "Adresse",
+    "pin": "Tilkoblings-PIN",
+    "pinBody": "Del denne PIN-koden med enheten som kobler til",
+    "copyPin": "Kopier PIN",
+    "copyAddress": "Kopier adresse",
+    "copied": "Kopiert",
+    "steps": "Oppsettguide",
+    "step1": "Åpne LettuceAI på den andre enheten",
+    "step2": "Gå til Innstillinger, deretter Lokal synkronisering",
+    "step3": "Skann QR-koden, eller skriv inn adressen og PIN-koden",
+    "stop": "Stopp vertskap"
+  },
+  "request": {
+    "title": "Tilkoblingsforespørsel",
+    "body": "{{name}} ønsker å synkronisere med denne enheten.",
+    "waiting": "Venter på svaret ditt",
+    "accept": "Godta tilkobling",
+    "decline": "Avslå"
+  },
+  "ready": {
+    "title": "Klar til synkronisering",
+    "body": "{{name}} er tilkoblet. Start synkroniseringen for å begynne overføringen.",
+    "start": "Start synkronisering",
+    "cancel": "Avbryt"
+  },
+  "unknownDevice": "Ukjent enhet",
+  "progress": {
+    "connecting": "Kobler til",
+    "connectingBody": "Venter på at den andre enheten godtar og starter synkroniseringen.",
+    "syncing": "Synkroniserer",
+    "phase": {
+      "changes": "Utveksler endringer",
+      "media": "Utveksler mediefiler",
+      "secrets": "Utveksler hemmeligheter"
+    },
+    "items": "{{done}} av {{total}} elementer",
+    "itemsOnly": "{{done}} elementer",
+    "bytes": "{{done}} av {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Avbryt"
+  },
+  "completed": {
+    "title": "Synkroniseringen er fullført",
+    "upToDate": "Begge enhetene var allerede oppdatert.",
+    "sentChanges": "Sendte endringer",
+    "receivedChanges": "Mottatte endringer",
+    "receivedMedia": "Mottatte mediefiler",
+    "receivedBytes": "Mottatte data",
+    "receivedSecrets": "Mottatte hemmeligheter",
+    "skippedSecrets": "Hoppet over hemmeligheter",
+    "unavailableMedia": "Utilgjengelige mediefiler",
+    "done": "Ferdig"
+  },
+  "failed": {
+    "title": "Synkroniseringen mislyktes",
+    "retry": "Prøv igjen",
+    "reason": {
+      "invalid_state": "Synkroniseringen kan ikke gjøre det akkurat nå. Stopp økten og prøv igjen.",
+      "addresses_unavailable": "Denne enheten har ingen nettverksadresse å dele. Koble til et nettverk og prøv igjen.",
+      "media_unavailable": "Noen mediefiler kunne ikke leses, så synkroniseringen stoppet.",
+      "authentication_failed": "PIN-koden er feil. Sjekk PIN-koden på vertsenheten og prøv igjen.",
+      "pairing_locked": "For mange feil PIN-koder. Stopp vertskap på den andre enheten og start det på nytt for å få en ny PIN-kode.",
+      "declined": "Den andre enheten avslo tilkoblingen.",
+      "disconnected": "Tilkoblingen til den andre enheten ble brutt.",
+      "peer_stalled": "Den andre enheten sluttet å svare.",
+      "protocol": "Den andre enheten kunne ikke forstås. Begge enhetene må bruke samme LettuceAI-versjon.",
+      "storage": "Dataene på denne enheten kunne ikke leses eller lagres.",
+      "pending_batch": "En tidligere synkronisering etterlot endringer som ikke er brukt ennå. Start appen på nytt og prøv igjen.",
+      "required_reference_unavailable": "Den andre enheten sendte data som refererer til noe denne enheten ikke har."
+    }
+  },
+  "conflicts": {
+    "title": "Synkroniseringskonflikter",
+    "row": "Konflikter",
+    "needChoice_one": "{{count}} element trenger valget ditt",
+    "needChoice_other": "{{count}} elementer trenger valget ditt",
+    "emptyTitle": "Ingenting å løse",
+    "emptyBody": "Konflikter vises her når begge enhetene har endret det samme.",
+    "menu": "Flere handlinger",
+    "edits": "Motstridende endringer",
+    "forks": "Samtaleforgreninger",
+    "legacy": "Importerte data",
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "persona_default": "Standardpersona",
+      "lorebook": "Lorebok",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Standardpersona",
+    "deleted": "Slettet",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Løs konflikt",
+    "thisDevice": "Denne enheten",
+    "otherDevice": "Den andre enheten",
+    "noTime": "Ukjent tid",
+    "keepThis": "Behold versjonen på denne enheten",
+    "useOther": "Bruk versjonen på den andre enheten",
+    "resolved": "Konflikten er løst",
+    "changedMeanwhile": "Dette elementet ble endret i mellomtiden. De nyeste versjonene vises nå.",
+    "forkBody": "Meldinger fra begge enhetene ble beholdt som separate forgreninger.",
+    "forkLocal": "Den kopierte forgreningen inneholder meldingene fra denne enheten.",
+    "forkOther": "Den kopierte forgreningen inneholder meldingene fra den andre enheten.",
+    "forkUntitled": "Samtale",
+    "openBranches": "Åpne forgreninger",
+    "dismiss": "Avvis",
+    "legacyTitle": "Importert fra den forrige appen",
+    "legacyCurrent": "Gjeldende",
+    "legacyLocal": "Lokal",
+    "legacyIncoming": "Innkommende",
+    "notMapped": "Ikke tilordnet"
+  },
+  "disclaimer": "Begge enhetene sender og mottar endringer over det lokale nettverket ditt. Hold denne skjermen åpen på begge enhetene til synkroniseringen er ferdig. De må bruke samme LettuceAI-versjon.",
+  "loading": "Laster synkroniseringsstatus"
+}

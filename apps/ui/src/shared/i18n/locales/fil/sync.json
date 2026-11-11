@@ -1,0 +1,147 @@
+{
+  "mode": {
+    "join": {
+      "title": "Sumali sa device",
+      "body": "Ilagay ang address at PIN ng ibang device"
+    },
+    "host": {
+      "title": "Mag-host sa device na ito",
+      "body": "Gumawa ng koneksyon para sa ibang device"
+    }
+  },
+  "join": {
+    "address": "Host address",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "Ang IPv4 address at port na ipinapakita ng kabilang device",
+    "addressInvalid": "Maglagay ng IPv4 address at port, gaya ng 192.168.1.100:12345",
+    "pin": "PIN code",
+    "scan": "I-scan ang QR code",
+    "connect": "Kumonekta",
+    "scanDenied": "Tinanggihan ang access sa camera. Payagan ang camera sa system settings para makapag-scan ng code.",
+    "scanInvalid": "Hindi ito sync code ng LettuceAI.",
+    "scanUnavailable": "Hindi mabuksan ang camera."
+  },
+  "host": {
+    "body1": "Gawing available ang device na ito sa ibang device sa iyong network.",
+    "body2": "Kapag konektado na, ihahambing at ipagpapalit ng dalawang device ang pinakabago nilang pagbabago.",
+    "start": "Simulan ang pag-host"
+  },
+  "sharing": {
+    "group": "Pag-host",
+    "qr": "QR code na may address, port at PIN ng device na ito",
+    "addressPicker": "Address na ipinapakita sa QR code",
+    "address": "Address",
+    "pin": "Connection PIN",
+    "pinBody": "Ibahagi ang PIN na ito sa kumokonektang device",
+    "copyPin": "Kopyahin ang PIN",
+    "copyAddress": "Kopyahin ang address",
+    "copied": "Nakopya",
+    "steps": "Gabay sa setup",
+    "step1": "Buksan ang LettuceAI sa kabilang device",
+    "step2": "Pumunta sa Settings, tapos sa Local sync",
+    "step3": "I-scan ang QR code, o ilagay ang address at PIN",
+    "stop": "Ihinto ang pag-host"
+  },
+  "request": {
+    "title": "Kahilingan sa koneksyon",
+    "body": "Gustong mag-sync ng {{name}} sa device na ito.",
+    "waiting": "Naghihintay ng sagot mo",
+    "accept": "Tanggapin ang koneksyon",
+    "decline": "Tanggihan"
+  },
+  "ready": {
+    "title": "Handa nang mag-sync",
+    "body": "Nakakonekta na ang {{name}}. Simulan ang pag-sync para magsimula ang paglilipat.",
+    "start": "Simulan ang pag-sync",
+    "cancel": "Kanselahin"
+  },
+  "unknownDevice": "Hindi kilalang device",
+  "progress": {
+    "connecting": "Kumokonekta",
+    "connectingBody": "Hinihintay na tanggapin ng kabilang device at simulan ang pag-sync.",
+    "syncing": "Sine-sync",
+    "phase": {
+      "changes": "Ipinagpapalit ang mga pagbabago",
+      "media": "Ipinagpapalit ang mga media file",
+      "secrets": "Ipinagpapalit ang mga secret"
+    },
+    "items": "{{done}} sa {{total}} item",
+    "itemsOnly": "{{done}} item",
+    "bytes": "{{done}} sa {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Kanselahin"
+  },
+  "completed": {
+    "title": "Tapos na ang pag-sync",
+    "upToDate": "Parehong napapanahon na ang dalawang device.",
+    "sentChanges": "Mga naipadalang pagbabago",
+    "receivedChanges": "Mga natanggap na pagbabago",
+    "receivedMedia": "Mga natanggap na media file",
+    "receivedBytes": "Mga natanggap na data",
+    "receivedSecrets": "Mga natanggap na secret",
+    "skippedSecrets": "Mga nilaktawang secret",
+    "unavailableMedia": "Mga hindi available na media file",
+    "done": "Tapos na"
+  },
+  "failed": {
+    "title": "Nabigo ang pag-sync",
+    "retry": "Subukan muli",
+    "reason": {
+      "invalid_state": "Hindi ito magawa ng sync ngayon. Ihinto ang session at subukan muli.",
+      "addresses_unavailable": "Walang network address ang device na ito na maibabahagi. Kumonekta sa network at subukan muli.",
+      "media_unavailable": "May mga media file na hindi mabasa, kaya huminto ang pag-sync.",
+      "authentication_failed": "Mali ang PIN. Tingnan ang PIN sa host device at subukan muli.",
+      "pairing_locked": "Masyadong maraming maling PIN. Ihinto ang pag-host sa kabilang device at simulan ulit para makakuha ng bagong PIN.",
+      "declined": "Tinanggihan ng kabilang device ang koneksyon.",
+      "disconnected": "Nawala ang koneksyon sa kabilang device.",
+      "peer_stalled": "Huminto sa pagtugon ang kabilang device.",
+      "protocol": "Hindi naintindihan ang kabilang device. Dapat pareho ang bersyon ng LettuceAI ng dalawang device.",
+      "storage": "Hindi mabasa o mai-save ang data sa device na ito.",
+      "pending_batch": "May iniwang mga pagbabago ang naunang sync na hindi pa nailalapat. I-restart ang app at subukan muli.",
+      "required_reference_unavailable": "Nagpadala ang kabilang device ng data na tumutukoy sa isang bagay na wala sa device na ito."
+    }
+  },
+  "conflicts": {
+    "title": "Mga conflict sa sync",
+    "row": "Mga conflict",
+    "needChoice_one": "{{count}} item ang nangangailangan ng pili mo",
+    "needChoice_other": "{{count}} item ang nangangailangan ng pili mo",
+    "emptyTitle": "Walang aayusin",
+    "emptyBody": "Lalabas dito ang mga conflict kapag pareho nilang binago ng dalawang device ang iisang bagay.",
+    "menu": "Iba pang aksyon",
+    "edits": "Mga magkasalungat na edit",
+    "forks": "Mga branch ng conversation",
+    "legacy": "Na-import na data",
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "persona_default": "Default na persona",
+      "lorebook": "Lorebook",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Default na persona",
+    "deleted": "Tinanggal",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Ayusin ang conflict",
+    "thisDevice": "Device na ito",
+    "otherDevice": "Kabilang device",
+    "noTime": "Hindi alam ang oras",
+    "keepThis": "Panatilihin ang bersyon ng device na ito",
+    "useOther": "Gamitin ang bersyon ng kabilang device",
+    "resolved": "Naayos ang conflict",
+    "changedMeanwhile": "Nagbago ang item na ito samantala. Ipinapakita na ngayon ang pinakabagong bersyon.",
+    "forkBody": "Pinanatili ang mga mensahe mula sa dalawang device bilang magkahiwalay na branch.",
+    "forkLocal": "Nasa kinopyang branch ang mga mensahe ng device na ito.",
+    "forkOther": "Nasa kinopyang branch ang mga mensahe ng kabilang device.",
+    "forkUntitled": "Conversation",
+    "openBranches": "Buksan ang mga branch",
+    "dismiss": "Isara",
+    "legacyTitle": "Na-import mula sa dating app",
+    "legacyCurrent": "Kasalukuyan",
+    "legacyLocal": "Lokal",
+    "legacyIncoming": "Papasok",
+    "notMapped": "Hindi na-map"
+  },
+  "disclaimer": "Nagpapadala at tumatanggap ng pagbabago ang dalawang device sa pamamagitan ng iyong local network. Panatilihing bukas ang screen na ito sa dalawang device hanggang matapos ang pag-sync. Dapat pareho ang bersyon ng LettuceAI nila.",
+  "loading": "Nilo-load ang status ng sync"
+}

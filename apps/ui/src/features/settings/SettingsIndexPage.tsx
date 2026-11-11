@@ -1,8 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { ListGroup, ListRowButton, Page } from "@lettuceai/crisp";
+import { useQuery } from "@tanstack/react-query";
+import { Badge, ListGroup, ListRowButton, Page } from "@lettuceai/crisp";
 import { builtSettingsSections, settingsGroups } from "./sections";
-import { useDeveloperMode, useSettingsLayout } from "./data";
+import { useDeveloperMode, useSettingsApi, useSettingsLayout } from "./data";
+import { openConflictCount, syncConflictsQuery } from "./sync/sync-data";
 import { settingsSectionAvailable, settingsSectionVisible, useSettingsNavigation } from "./use-settings-navigation";
 import { ArrowUpRight } from "lucide-react";
 import { icon } from "@lettuceai/crisp";
@@ -13,6 +15,7 @@ export function SettingsIndexPage() {
   const { t: common } = useTranslation();
   const { standalone } = useSettingsLayout();
   const developerMode = useDeveloperMode();
+  const conflictCount = openConflictCount(useQuery(syncConflictsQuery(useSettingsApi())).data);
   const navigate = useNavigate();
   const navigation = useSettingsNavigation(
     (id) => void navigate({ to: "/settings/$section", params: { section: id } }),
@@ -42,7 +45,9 @@ export function SettingsIndexPage() {
                       chevron: false,
                       trailing: <ArrowUpRight size={icon.md} className="text-fg-4" />,
                     }
-                  : {})}
+                  : section.id === "sync" && conflictCount > 0
+                    ? { trailing: <Badge tone="warning">{conflictCount}</Badge> }
+                    : {})}
                 onClick={() => navigation.open(section)}
               />
             );

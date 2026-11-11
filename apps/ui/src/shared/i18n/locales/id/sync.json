@@ -1,0 +1,146 @@
+{
+  "mode": {
+    "join": {
+      "title": "Gabung ke perangkat",
+      "body": "Masukkan alamat dan PIN perangkat lain"
+    },
+    "host": {
+      "title": "Host di perangkat ini",
+      "body": "Buat koneksi untuk perangkat lain"
+    }
+  },
+  "join": {
+    "address": "Alamat host",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "Alamat IPv4 dan port yang ditampilkan perangkat lain",
+    "addressInvalid": "Masukkan alamat IPv4 dan port, misalnya 192.168.1.100:12345",
+    "pin": "Kode PIN",
+    "scan": "Pindai kode QR",
+    "connect": "Hubungkan",
+    "scanDenied": "Akses kamera ditolak. Izinkan kamera di pengaturan sistem untuk memindai kode.",
+    "scanInvalid": "Itu bukan kode sinkronisasi LettuceAI.",
+    "scanUnavailable": "Kamera tidak dapat dibuka."
+  },
+  "host": {
+    "body1": "Sediakan perangkat ini untuk perangkat lain di jaringanmu.",
+    "body2": "Setelah terhubung, kedua perangkat membandingkan dan bertukar perubahan terbaru.",
+    "start": "Mulai hosting"
+  },
+  "sharing": {
+    "group": "Hosting",
+    "qr": "Kode QR berisi alamat, port, dan PIN perangkat ini",
+    "addressPicker": "Alamat yang ditampilkan di kode QR",
+    "address": "Alamat",
+    "pin": "PIN koneksi",
+    "pinBody": "Bagikan PIN ini ke perangkat yang menghubungkan",
+    "copyPin": "Salin PIN",
+    "copyAddress": "Salin alamat",
+    "copied": "Tersalin",
+    "steps": "Panduan pengaturan",
+    "step1": "Buka LettuceAI di perangkat lain",
+    "step2": "Buka Pengaturan, lalu Sinkronisasi lokal",
+    "step3": "Pindai kode QR, atau masukkan alamat dan PIN",
+    "stop": "Hentikan hosting"
+  },
+  "request": {
+    "title": "Permintaan koneksi",
+    "body": "{{name}} ingin menyinkronkan dengan perangkat ini.",
+    "waiting": "Menunggu jawabanmu",
+    "accept": "Terima koneksi",
+    "decline": "Tolak"
+  },
+  "ready": {
+    "title": "Siap disinkronkan",
+    "body": "{{name}} sudah terhubung. Mulai sinkronisasi untuk memulai transfer.",
+    "start": "Mulai sinkronisasi",
+    "cancel": "Batal"
+  },
+  "unknownDevice": "Perangkat tidak dikenal",
+  "progress": {
+    "connecting": "Menghubungkan",
+    "connectingBody": "Menunggu perangkat lain menerima dan memulai sinkronisasi.",
+    "syncing": "Menyinkronkan",
+    "phase": {
+      "changes": "Bertukar perubahan",
+      "media": "Bertukar file media",
+      "secrets": "Bertukar rahasia"
+    },
+    "items": "{{done}} dari {{total}} item",
+    "itemsOnly": "{{done}} item",
+    "bytes": "{{done}} dari {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Batal"
+  },
+  "completed": {
+    "title": "Sinkronisasi selesai",
+    "upToDate": "Kedua perangkat sudah mutakhir.",
+    "sentChanges": "Perubahan terkirim",
+    "receivedChanges": "Perubahan diterima",
+    "receivedMedia": "File media diterima",
+    "receivedBytes": "Data diterima",
+    "receivedSecrets": "Rahasia diterima",
+    "skippedSecrets": "Rahasia dilewati",
+    "unavailableMedia": "File media tidak tersedia",
+    "done": "Selesai"
+  },
+  "failed": {
+    "title": "Sinkronisasi gagal",
+    "retry": "Coba lagi",
+    "reason": {
+      "invalid_state": "Sinkronisasi tidak bisa melakukan itu sekarang. Hentikan sesi dan coba lagi.",
+      "addresses_unavailable": "Perangkat ini tidak punya alamat jaringan untuk dibagikan. Hubungkan ke jaringan dan coba lagi.",
+      "media_unavailable": "Beberapa file media tidak bisa dibaca, jadi sinkronisasi dihentikan.",
+      "authentication_failed": "PIN salah. Periksa PIN di perangkat host dan coba lagi.",
+      "pairing_locked": "Terlalu banyak PIN yang salah. Hentikan hosting di perangkat lain lalu mulai lagi untuk mendapatkan PIN baru.",
+      "declined": "Perangkat lain menolak koneksi.",
+      "disconnected": "Koneksi ke perangkat lain terputus.",
+      "peer_stalled": "Perangkat lain berhenti merespons.",
+      "protocol": "Perangkat lain tidak dapat dipahami. Kedua perangkat harus memakai versi LettuceAI yang sama.",
+      "storage": "Data di perangkat ini tidak dapat dibaca atau disimpan.",
+      "pending_batch": "Sinkronisasi sebelumnya meninggalkan perubahan yang belum diterapkan. Mulai ulang aplikasi dan coba lagi.",
+      "required_reference_unavailable": "Perangkat lain mengirim data yang merujuk ke sesuatu yang tidak ada di perangkat ini."
+    }
+  },
+  "conflicts": {
+    "title": "Konflik sinkronisasi",
+    "row": "Konflik",
+    "needChoice_other": "{{count}} item perlu pilihanmu",
+    "emptyTitle": "Tidak ada yang perlu diselesaikan",
+    "emptyBody": "Konflik muncul di sini saat kedua perangkat mengubah hal yang sama.",
+    "menu": "Tindakan lainnya",
+    "edits": "Perubahan yang bertentangan",
+    "forks": "Cabang percakapan",
+    "legacy": "Data yang diimpor",
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "persona_default": "Persona default",
+      "lorebook": "Lorebook",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Persona default",
+    "deleted": "Dihapus",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Selesaikan konflik",
+    "thisDevice": "Perangkat ini",
+    "otherDevice": "Perangkat lain",
+    "noTime": "Waktu tidak diketahui",
+    "keepThis": "Pertahankan versi perangkat ini",
+    "useOther": "Gunakan versi perangkat lain",
+    "resolved": "Konflik terselesaikan",
+    "changedMeanwhile": "Item ini berubah sementara itu. Versi terbaru ditampilkan sekarang.",
+    "forkBody": "Pesan dari kedua perangkat disimpan sebagai cabang terpisah.",
+    "forkLocal": "Cabang yang disalin berisi pesan dari perangkat ini.",
+    "forkOther": "Cabang yang disalin berisi pesan dari perangkat lain.",
+    "forkUntitled": "Percakapan",
+    "openBranches": "Buka cabang",
+    "dismiss": "Tutup",
+    "legacyTitle": "Diimpor dari aplikasi sebelumnya",
+    "legacyCurrent": "Saat ini",
+    "legacyLocal": "Lokal",
+    "legacyIncoming": "Masuk",
+    "notMapped": "Tidak dipetakan"
+  },
+  "disclaimer": "Kedua perangkat mengirim dan menerima perubahan melalui jaringan lokalmu. Biarkan layar ini terbuka di kedua perangkat sampai sinkronisasi selesai. Keduanya harus memakai versi LettuceAI yang sama.",
+  "loading": "Memuat status sinkronisasi"
+}

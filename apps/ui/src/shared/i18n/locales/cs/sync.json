@@ -1,0 +1,149 @@
+{
+  "mode": {
+    "join": {
+      "title": "Připojit se k zařízení",
+      "body": "Zadej adresu a PIN jiného zařízení"
+    },
+    "host": {
+      "title": "Hostovat na tomto zařízení",
+      "body": "Vytvoř připojení pro jiné zařízení"
+    }
+  },
+  "join": {
+    "address": "Adresa hostitele",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "IPv4 adresa a port, které zobrazuje druhé zařízení",
+    "addressInvalid": "Zadej IPv4 adresu a port, například 192.168.1.100:12345",
+    "pin": "PIN kód",
+    "scan": "Naskenovat QR kód",
+    "connect": "Připojit",
+    "scanDenied": "Přístup ke kameře byl zamítnut. Pro naskenování kódu povol kameru v nastavení systému.",
+    "scanInvalid": "Tento kód není synchronizační kód LettuceAI.",
+    "scanUnavailable": "Kameru se nepodařilo otevřít."
+  },
+  "host": {
+    "body1": "Zpřístupni toto zařízení jinému zařízení ve své síti.",
+    "body2": "Po připojení si obě zařízení porovnají a vymění nejnovější změny.",
+    "start": "Spustit hostování"
+  },
+  "sharing": {
+    "group": "Hostování",
+    "qr": "QR kód s adresou, portem a PINem tohoto zařízení",
+    "addressPicker": "Adresa zobrazená v QR kódu",
+    "address": "Adresa",
+    "pin": "PIN připojení",
+    "pinBody": "Sdílej tento PIN s připojujícím se zařízením",
+    "copyPin": "Kopírovat PIN",
+    "copyAddress": "Kopírovat adresu",
+    "copied": "Zkopírováno",
+    "steps": "Průvodce nastavením",
+    "step1": "Otevři LettuceAI na druhém zařízení",
+    "step2": "Přejdi do Nastavení, poté do Lokální synchronizace",
+    "step3": "Naskenuj QR kód nebo zadej adresu a PIN",
+    "stop": "Ukončit hostování"
+  },
+  "request": {
+    "title": "Žádost o připojení",
+    "body": "Zařízení {{name}} se chce synchronizovat s tímto zařízením.",
+    "waiting": "Čeká se na tvou odpověď",
+    "accept": "Přijmout připojení",
+    "decline": "Odmítnout"
+  },
+  "ready": {
+    "title": "Připraveno k synchronizaci",
+    "body": "Zařízení {{name}} je připojeno. Spuštěním synchronizace zahájíš přenos.",
+    "start": "Spustit synchronizaci",
+    "cancel": "Zrušit"
+  },
+  "unknownDevice": "Neznámé zařízení",
+  "progress": {
+    "connecting": "Připojování",
+    "connectingBody": "Čeká se, až druhé zařízení připojení přijme a spustí synchronizaci.",
+    "syncing": "Synchronizace",
+    "phase": {
+      "changes": "Výměna změn",
+      "media": "Výměna mediálních souborů",
+      "secrets": "Výměna tajných údajů"
+    },
+    "items": "{{done}} z {{total}} položek",
+    "itemsOnly": "Položek: {{done}}",
+    "bytes": "{{done}} z {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Zrušit"
+  },
+  "completed": {
+    "title": "Synchronizace dokončena",
+    "upToDate": "Obě zařízení už byla aktuální.",
+    "sentChanges": "Odeslané změny",
+    "receivedChanges": "Přijaté změny",
+    "receivedMedia": "Přijaté mediální soubory",
+    "receivedBytes": "Přijatá data",
+    "receivedSecrets": "Přijaté tajné údaje",
+    "skippedSecrets": "Přeskočené tajné údaje",
+    "unavailableMedia": "Nedostupné mediální soubory",
+    "done": "Hotovo"
+  },
+  "failed": {
+    "title": "Synchronizace selhala",
+    "retry": "Zkusit znovu",
+    "reason": {
+      "invalid_state": "Synchronizace to teď nemůže provést. Ukonči relaci a zkus to znovu.",
+      "addresses_unavailable": "Toto zařízení nemá síťovou adresu, kterou by mohlo sdílet. Připoj se k síti a zkus to znovu.",
+      "media_unavailable": "Některé mediální soubory se nepodařilo přečíst, proto se synchronizace zastavila.",
+      "authentication_failed": "PIN je nesprávný. Zkontroluj PIN na hostitelském zařízení a zkus to znovu.",
+      "pairing_locked": "Příliš mnoho chybných PINů. Na druhém zařízení ukonči hostování a spusť ho znovu, abys získal nový PIN.",
+      "declined": "Druhé zařízení připojení odmítlo.",
+      "disconnected": "Spojení s druhým zařízením bylo přerušeno.",
+      "peer_stalled": "Druhé zařízení přestalo odpovídat.",
+      "protocol": "Druhému zařízení se nepodařilo porozumět. Obě zařízení musí používat stejnou verzi LettuceAI.",
+      "storage": "Data v tomto zařízení se nepodařilo přečíst nebo uložit.",
+      "pending_batch": "Předchozí synchronizace zanechala změny, které ještě nebyly použity. Restartuj aplikaci a zkus to znovu.",
+      "required_reference_unavailable": "Druhé zařízení poslalo data, která odkazují na něco, co toto zařízení nemá."
+    }
+  },
+  "conflicts": {
+    "title": "Konflikty synchronizace",
+    "row": "Konflikty",
+    "needChoice_one": "{{count}} položka čeká na tvou volbu",
+    "needChoice_few": "{{count}} položky čekají na tvou volbu",
+    "needChoice_many": "{{count}} položky čeká na tvou volbu",
+    "needChoice_other": "{{count}} položek čeká na tvou volbu",
+    "emptyTitle": "Není co řešit",
+    "emptyBody": "Konflikty se zobrazí tady, když obě zařízení změnila totéž.",
+    "menu": "Další akce",
+    "edits": "Konfliktní úpravy",
+    "forks": "Větve konverzace",
+    "legacy": "Importovaná data",
+    "kind": {
+      "character": "Postava",
+      "persona": "Persona",
+      "persona_default": "Výchozí persona",
+      "lorebook": "Lorebook",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Výchozí persona",
+    "deleted": "Smazáno",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Vyřešit konflikt",
+    "thisDevice": "Toto zařízení",
+    "otherDevice": "Druhé zařízení",
+    "noTime": "Čas neznámý",
+    "keepThis": "Ponechat verzi z tohoto zařízení",
+    "useOther": "Použít verzi z druhého zařízení",
+    "resolved": "Konflikt vyřešen",
+    "changedMeanwhile": "Položka se mezitím změnila. Zobrazují se nejnovější verze.",
+    "forkBody": "Zprávy z obou zařízení byly zachovány jako samostatné větve.",
+    "forkLocal": "Zkopírovaná větev obsahuje zprávy z tohoto zařízení.",
+    "forkOther": "Zkopírovaná větev obsahuje zprávy z druhého zařízení.",
+    "forkUntitled": "Konverzace",
+    "openBranches": "Otevřít větve",
+    "dismiss": "Zavřít",
+    "legacyTitle": "Importováno z předchozí aplikace",
+    "legacyCurrent": "Aktuální",
+    "legacyLocal": "Lokální",
+    "legacyIncoming": "Příchozí",
+    "notMapped": "Nepřiřazeno"
+  },
+  "disclaimer": "Obě zařízení odesílají a přijímají změny přes tvou lokální síť. Nech tuto obrazovku otevřenou na obou zařízeních, dokud synchronizace neskončí. Musí používat stejnou verzi LettuceAI.",
+  "loading": "Načítání stavu synchronizace"
+}

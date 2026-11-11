@@ -333,6 +333,11 @@
       "note": "İndirilecek bir şey yok."
     }
   },
+  "sync": {
+    "title": "Başka bir cihazdan senkronize et",
+    "body": "LettuceAI'nın zaten kurulu olduğu bir cihazla eşleşin. Verileriniz yerel ağınız üzerinden kopyalanır.",
+    "hint": "Diğer cihazda Ayarlar'ı, ardından Yerel senkronizasyon'u açın ve adres ile PIN almak için barındırmayı başlatın."
+  },
   "other": {
     "title": "Diğer seçenekler",
     "language": "Dil",
@@ -340,6 +345,8 @@
     "skipBody": "Önce etrafa bir göz atın. Sohbetlerin yanıt verebilmesi için bir yapay zekâ gerekir.",
     "restore": "Yedeği geri yükle",
     "restoreBody": "Sohbetleri, karakterleri ve ayarları bir .lettuce dosyasından geri getirin",
+    "sync": "Başka bir cihazdan senkronize et",
+    "syncBody": "LettuceAI'nın zaten kurulu olduğu bir cihazdan kurulumunuzu yerel ağ üzerinden kopyalayın",
     "languageTitle": "Dil",
     "warning": {
       "title": "Sohbetlerin yanıt verebilmesi için bir yapay zekâ gerekir",

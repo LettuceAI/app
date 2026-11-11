@@ -11,6 +11,8 @@ export { SidebarSettings } from "./SidebarSettings";
 export { WhatsNewSheet } from "./WhatsNewSheet";
 export { BuiltInUpdateNotice } from "./prompts/BuiltInUpdateNotice";
 export { ModelEditorPage } from "./ModelEditorPage";
+export { SyncConflictsPage } from "./sync/SyncConflictsPage";
+export { JoinSyncSheet } from "./sync/JoinSyncSheet";
 
 export { ModelBrowserPage, type BrowserSearch } from "./model-browser/ModelBrowserPage";
 

@@ -1,0 +1,147 @@
+{
+  "mode": {
+    "join": {
+      "title": "Csatlakozás egy eszközhöz",
+      "body": "Add meg egy másik eszköz címét és PIN-kódját"
+    },
+    "host": {
+      "title": "Hosztolás ezen az eszközön",
+      "body": "Kapcsolat létrehozása egy másik eszköznek"
+    }
+  },
+  "join": {
+    "address": "Hoszt címe",
+    "addressPlaceholder": "192.168.1.100:12345",
+    "addressHint": "A másik eszköz által megjelenített IPv4-cím és port",
+    "addressInvalid": "Adj meg egy IPv4-címet és portot, például 192.168.1.100:12345",
+    "pin": "PIN-kód",
+    "scan": "QR-kód beolvasása",
+    "connect": "Csatlakozás",
+    "scanDenied": "A kamera használatát megtagadták. A kód beolvasásához engedélyezd a kamerát a rendszerbeállításokban.",
+    "scanInvalid": "Ez nem LettuceAI szinkronkód.",
+    "scanUnavailable": "A kamerát nem sikerült megnyitni."
+  },
+  "host": {
+    "body1": "Tedd elérhetővé ezt az eszközt a hálózatodon lévő másik eszköz számára.",
+    "body2": "Csatlakozás után a két eszköz összehasonlítja és kicseréli a legfrissebb módosításait.",
+    "start": "Hosztolás indítása"
+  },
+  "sharing": {
+    "group": "Hosztolás",
+    "qr": "QR-kód az eszköz címével, portjával és PIN-kódjával",
+    "addressPicker": "A QR-kódban megjelenő cím",
+    "address": "Cím",
+    "pin": "Kapcsolati PIN",
+    "pinBody": "Oszd meg ezt a PIN-t a csatlakozó eszközzel",
+    "copyPin": "PIN másolása",
+    "copyAddress": "Cím másolása",
+    "copied": "Másolva",
+    "steps": "Beállítási útmutató",
+    "step1": "Nyisd meg a LettuceAI-t a másik eszközön",
+    "step2": "Menj a Beállítások, majd a Helyi szinkronizálás oldalra",
+    "step3": "Olvasd be a QR-kódot, vagy add meg a címet és a PIN-t",
+    "stop": "Hosztolás leállítása"
+  },
+  "request": {
+    "title": "Csatlakozási kérés",
+    "body": "{{name}} szinkronizálni szeretne ezzel az eszközzel.",
+    "waiting": "Várakozás a válaszodra",
+    "accept": "Kapcsolat elfogadása",
+    "decline": "Elutasítás"
+  },
+  "ready": {
+    "title": "Készen áll a szinkronizálásra",
+    "body": "{{name}} csatlakozott. Indítsd el a szinkronizálást az átvitel megkezdéséhez.",
+    "start": "Szinkronizálás indítása",
+    "cancel": "Mégse"
+  },
+  "unknownDevice": "Ismeretlen eszköz",
+  "progress": {
+    "connecting": "Csatlakozás",
+    "connectingBody": "Várakozás, hogy a másik eszköz elfogadja a kapcsolatot és elindítsa a szinkronizálást.",
+    "syncing": "Szinkronizálás",
+    "phase": {
+      "changes": "Módosítások cseréje",
+      "media": "Médiafájlok cseréje",
+      "secrets": "Titkok cseréje"
+    },
+    "items": "{{done}} / {{total}} elem",
+    "itemsOnly": "{{done}} elem",
+    "bytes": "{{done}} / {{total}}",
+    "bytesOnly": "{{done}}",
+    "cancel": "Mégse"
+  },
+  "completed": {
+    "title": "A szinkronizálás kész",
+    "upToDate": "Mindkét eszköz már naprakész volt.",
+    "sentChanges": "Elküldött módosítások",
+    "receivedChanges": "Fogadott módosítások",
+    "receivedMedia": "Fogadott médiafájlok",
+    "receivedBytes": "Fogadott adatok",
+    "receivedSecrets": "Fogadott titkok",
+    "skippedSecrets": "Kihagyott titkok",
+    "unavailableMedia": "Elérhetetlen médiafájlok",
+    "done": "Kész"
+  },
+  "failed": {
+    "title": "A szinkronizálás nem sikerült",
+    "retry": "Újra",
+    "reason": {
+      "invalid_state": "A szinkronizálás ezt most nem tudja megtenni. Állítsd le a munkamenetet, és próbáld újra.",
+      "addresses_unavailable": "Ennek az eszköznek nincs megosztható hálózati címe. Csatlakozz egy hálózathoz, és próbáld újra.",
+      "media_unavailable": "Néhány médiafájlt nem sikerült beolvasni, ezért a szinkronizálás leállt.",
+      "authentication_failed": "A PIN hibás. Ellenőrizd a PIN-t a hoszt eszközön, és próbáld újra.",
+      "pairing_locked": "Túl sok hibás PIN. Állítsd le a hosztolást a másik eszközön, majd indítsd újra, hogy új PIN-t kapj.",
+      "declined": "A másik eszköz elutasította a kapcsolatot.",
+      "disconnected": "A kapcsolat megszakadt a másik eszközzel.",
+      "peer_stalled": "A másik eszköz nem válaszol többé.",
+      "protocol": "A másik eszköz üzenetét nem sikerült értelmezni. Mindkét eszköznek ugyanazt a LettuceAI-verziót kell használnia.",
+      "storage": "Az eszközön lévő adatokat nem sikerült beolvasni vagy elmenteni.",
+      "pending_batch": "Egy korábbi szinkronizálás olyan módosításokat hagyott hátra, amelyek még nincsenek alkalmazva. Indítsd újra az alkalmazást, és próbáld újra.",
+      "required_reference_unavailable": "A másik eszköz olyan adatot küldött, amely valamire hivatkozik, ami ezen az eszközön nincs meg."
+    }
+  },
+  "conflicts": {
+    "title": "Szinkronütközések",
+    "row": "Ütközések",
+    "needChoice_one": "{{count}} elem választásodra vár",
+    "needChoice_other": "{{count}} elem választásodra vár",
+    "emptyTitle": "Nincs mit megoldani",
+    "emptyBody": "Az ütközések itt jelennek meg, ha mindkét eszköz ugyanazt módosította.",
+    "menu": "További műveletek",
+    "edits": "Ütköző módosítások",
+    "forks": "Beszélgetés-elágazások",
+    "legacy": "Importált adatok",
+    "kind": {
+      "character": "Karakter",
+      "persona": "Persona",
+      "persona_default": "Alapértelmezett persona",
+      "lorebook": "Lorebook",
+      "prompt": "Prompt"
+    },
+    "defaultPersona": "Alapértelmezett persona",
+    "deleted": "Törölve",
+    "described": "{{kind}} · {{when}}",
+    "sheetTitle": "Ütközés feloldása",
+    "thisDevice": "Ez az eszköz",
+    "otherDevice": "A másik eszköz",
+    "noTime": "Ismeretlen időpont",
+    "keepThis": "Ennek az eszköznek a verziója marad",
+    "useOther": "A másik eszköz verziójának használata",
+    "resolved": "Ütközés feloldva",
+    "changedMeanwhile": "Ez az elem időközben megváltozott. Most a legfrissebb verziók láthatók.",
+    "forkBody": "A két eszköz üzenetei külön elágazásként megmaradtak.",
+    "forkLocal": "A másolt elágazás ennek az eszköznek az üzeneteit tartalmazza.",
+    "forkOther": "A másolt elágazás a másik eszköz üzeneteit tartalmazza.",
+    "forkUntitled": "Beszélgetés",
+    "openBranches": "Elágazások megnyitása",
+    "dismiss": "Bezárás",
+    "legacyTitle": "Az előző alkalmazásból importálva",
+    "legacyCurrent": "Jelenlegi",
+    "legacyLocal": "Helyi",
+    "legacyIncoming": "Beérkező",
+    "notMapped": "Nincs társítva"
+  },
+  "disclaimer": "Mindkét eszköz a helyi hálózaton küldi és fogadja a módosításokat. Tartsd nyitva ezt a képernyőt mindkét eszközön, amíg a szinkronizálás be nem fejeződik. Ugyanazt a LettuceAI-verziót kell használniuk.",
+  "loading": "Szinkronállapot betöltése"
+}

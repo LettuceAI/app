@@ -46,6 +46,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init());
     #[cfg(target_os = "android")]
     let app = app.plugin(tauri_plugin_android_fs::init());
+    #[cfg(mobile)]
+    let app = app.plugin(tauri_plugin_barcode_scanner::init());
     let app = app
         .manage(startup::BackendStartup::default())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())

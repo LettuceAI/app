@@ -39,6 +39,7 @@ import {
   type BrowserSearch,
   SettingsIndexPage,
   SettingsSectionPage,
+  SyncConflictsPage,
 } from "@/features/settings";
 import { WelcomeBackPage } from "@/features/welcome-back";
 import { RouteErrorState } from "../error-boundaries/RouteErrorState";
@@ -485,6 +486,11 @@ const modelBrowserRoute = createRoute({
   }),
 });
 
+const syncConflictsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/sync/conflicts",
+  component: SyncConflictsPage,
+});
 const newModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/models/new",
@@ -517,6 +523,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   settingsSectionRoute,
   modelBrowserRoute,
+  syncConflictsRoute,
   newModelRoute,
   editModelRoute,
   chatRoute,

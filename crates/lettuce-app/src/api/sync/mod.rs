@@ -274,10 +274,42 @@ pub async fn sync_status(context: &ApiContext) -> Result<dto::SyncStatus, ApiErr
     Ok(context.sync_state().status.borrow().clone())
 }
 
-fn ordered_addresses(mut addresses: Vec<Ipv4Addr>) -> Vec<Ipv4Addr> {
-    addresses.sort_by_key(|ip| (!ip.is_private(), *ip));
-    addresses.dedup();
+/// Addresses best first, private ranges before public ones. Container and virtual machine bridges, which other
+/// devices cannot reach, are left out unless the device has nothing else.
+fn ordered_addresses(mut addresses: Vec<(String, Ipv4Addr)>) -> Vec<Ipv4Addr> {
+    if addresses.iter().any(|(name, _)| !virtual_bridge(name)) {
+        addresses.retain(|(name, _)| !virtual_bridge(name));
+    }
+    addresses.sort_by_key(|(_, ip)| (!ip.is_private(), *ip));
+    let mut seen = std::collections::HashSet::new();
     addresses
+        .into_iter()
+        .map(|(_, ip)| ip)
+        .filter(|ip| seen.insert(*ip))
+        .collect()
+}
+
+const BRIDGE_PREFIXES: [&str; 11] = [
+    "docker",
+    "br-",
+    "veth",
+    "virbr",
+    "vmnet",
+    "vboxnet",
+    "podman",
+    "cni",
+    "lxcbr",
+    "lxdbr",
+    "vethernet",
+];
+const BRIDGE_NAMES: [&str; 3] = ["virtualbox", "vmware", "hyper-v"];
+
+fn virtual_bridge(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    BRIDGE_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+        || BRIDGE_NAMES.iter().any(|part| name.contains(part))
 }
 
 pub async fn sync_share_start(context: &ApiContext) -> Result<dto::SyncSharing, ApiError> {
@@ -304,8 +336,16 @@ pub(super) async fn share_start_named(
     let addresses = ordered_addresses(
         interfaces
             .into_iter()
+            .filter(|interface| {
+                !matches!(
+                    interface.oper_status,
+                    if_addrs::IfOperStatus::Down
+                        | if_addrs::IfOperStatus::NotPresent
+                        | if_addrs::IfOperStatus::LowerLayerDown
+                )
+            })
             .filter_map(|interface| match interface.ip() {
-                std::net::IpAddr::V4(ip) if !ip.is_loopback() => Some(ip),
+                std::net::IpAddr::V4(ip) if !ip.is_loopback() => Some((interface.name, ip)),
                 _ => None,
             })
             .collect(),
@@ -867,14 +907,18 @@ mod progress_tests {
 
     #[test]
     fn addresses_include_all_private_ranges_before_public_interfaces() {
-        let addresses = ordered_addresses(vec![
-            Ipv4Addr::new(8, 8, 8, 8),
-            Ipv4Addr::new(192, 168, 1, 2),
-            Ipv4Addr::new(10, 1, 2, 3),
-            Ipv4Addr::new(172, 31, 1, 2),
-            Ipv4Addr::new(172, 32, 1, 2),
-            Ipv4Addr::new(10, 1, 2, 3),
-        ]);
+        let addresses = ordered_addresses(
+            [
+                ("eth1", Ipv4Addr::new(8, 8, 8, 8)),
+                ("wlan0", Ipv4Addr::new(192, 168, 1, 2)),
+                ("eth0", Ipv4Addr::new(10, 1, 2, 3)),
+                ("eth2", Ipv4Addr::new(172, 31, 1, 2)),
+                ("eth3", Ipv4Addr::new(172, 32, 1, 2)),
+                ("eth4", Ipv4Addr::new(10, 1, 2, 3)),
+            ]
+            .map(|(name, ip)| (name.to_owned(), ip))
+            .into(),
+        );
         assert_eq!(
             addresses,
             vec![
@@ -885,6 +929,23 @@ mod progress_tests {
                 Ipv4Addr::new(172, 32, 1, 2),
             ]
         );
+    }
+
+    #[test]
+    fn container_and_vm_bridges_are_left_out_unless_nothing_else_exists() {
+        let bridges = [
+            ("docker0", Ipv4Addr::new(172, 17, 0, 1)),
+            ("br-0654d49c81b5", Ipv4Addr::new(172, 18, 0, 1)),
+            ("vEthernet (WSL)", Ipv4Addr::new(172, 20, 0, 1)),
+        ]
+        .map(|(name, ip)| (name.to_owned(), ip));
+        let mut with_lan = bridges.to_vec();
+        with_lan.push(("eno1".to_owned(), Ipv4Addr::new(192, 168, 1, 20)));
+        assert_eq!(
+            ordered_addresses(with_lan),
+            vec![Ipv4Addr::new(192, 168, 1, 20)]
+        );
+        assert_eq!(ordered_addresses(bridges.to_vec()).len(), 3);
     }
 
     #[tokio::test]
