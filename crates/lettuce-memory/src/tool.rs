@@ -676,7 +676,7 @@ pub struct CreateMemoryPreparation {
     /// Qualified evidence supplied by the embedding coordinator, one entry per
     /// existing memory whose similarity passed the threshold. The reducer
     /// verifies each entry's policy qualification and takes the first live
-    /// memory, in memory order, that matches any duplicate check.
+    /// memory, in memory order, that matches a duplicate check.
     pub semantic_duplicates: Vec<SemanticDuplicateEvidence>,
 }
 
@@ -1270,7 +1270,21 @@ fn apply_create(
             reason: MemoryToolRejection::InvalidSemanticDuplicateEvidence,
         };
     }
-    if let Some((existing_id, kind)) = duplicate_id(text, &preparation.semantic_duplicates, items) {
+    let mut supersedes = Vec::new();
+    for reference in requested_supersedes {
+        if let Some(index) = reference.resolve_id(items) {
+            let id = items[index].id;
+            if id != preparation.id
+                && items[index].superseded_by.is_none()
+                && !supersedes.contains(&id)
+            {
+                supersedes.push(id);
+            }
+        }
+    }
+    if let Some((existing_id, kind)) =
+        duplicate_id(text, &preparation.semantic_duplicates, &supersedes, items)
+    {
         return MemoryToolOutcome::DuplicateSkipped { existing_id, kind };
     }
     let category = match category {
@@ -1287,18 +1301,6 @@ fn apply_create(
         }
     };
 
-    let mut supersedes = Vec::new();
-    for reference in requested_supersedes {
-        if let Some(index) = reference.resolve_id(items) {
-            let id = items[index].id;
-            if id != preparation.id
-                && items[index].superseded_by.is_none()
-                && !supersedes.contains(&id)
-            {
-                supersedes.push(id);
-            }
-        }
-    }
     let short_id = MemoryShortId::allocate(preparation.id, |candidate| {
         items.iter().any(|item| item.short_id == candidate)
     });
@@ -1378,69 +1380,86 @@ fn enforce_superseded_cap(items: &mut Vec<MemoryItem>, cap: usize) {
     });
 }
 
-/// The first memory, in item order, whose normalized text equals the
-/// candidate's, whose embedding is similar enough, or whose keywords overlap
-/// at least 90 percent, checked in that order per memory.
+/// Semantic evidence counts only for a reworded fact. Above this normalized
+/// Levenshtein similarity the two texts are the same sentence with a small
+/// edit, such as a changed number, day, name or negation, and embeddings score
+/// those edits higher than genuine paraphrases.
+const EDITED_FACT_TEXT_SIMILARITY: f64 = 0.59;
+
+/// The first text or semantic match in item order. A memory the create
+/// supersedes is never its semantic duplicate, and neither is a memory whose
+/// text is a small edit of the candidate.
 fn duplicate_id(
     candidate: &str,
     semantic_duplicates: &[SemanticDuplicateEvidence],
+    supersedes: &[MemoryId],
     items: &[MemoryItem],
 ) -> Option<(MemoryId, DuplicateKind)> {
     let normalized_candidate = normalize_text(candidate);
-    let candidate_word_count = normalized_candidate.split_whitespace().count();
     items.iter().find_map(|item| {
         let normalized_existing = normalize_text(&item.text);
         if !normalized_candidate.is_empty() && normalized_candidate == normalized_existing {
             return Some((item.id, DuplicateKind::NormalizedText));
         }
-        if let Some(evidence) = semantic_duplicates
+        if supersedes.contains(&item.id) {
+            return None;
+        }
+        semantic_duplicates
             .iter()
             .find(|evidence| evidence.existing_id == item.id)
-        {
-            return Some((
-                item.id,
-                DuplicateKind::Semantic {
-                    cosine: evidence.cosine_score,
-                    threshold: evidence.threshold,
-                },
-            ));
-        }
-        (candidate_word_count >= 3 && lexical_overlap(candidate, &item.text) >= 0.9)
-            .then_some((item.id, DuplicateKind::LexicalOverlap))
+            .filter(|_| {
+                text_similarity(&normalized_candidate, &normalized_existing)
+                    <= EDITED_FACT_TEXT_SIMILARITY
+            })
+            .map(|evidence| {
+                (
+                    item.id,
+                    DuplicateKind::Semantic {
+                        cosine: evidence.cosine_score,
+                        threshold: evidence.threshold,
+                    },
+                )
+            })
     })
 }
 
 fn normalize_text(value: &str) -> String {
-    let mut normalized = String::with_capacity(value.len());
-    let mut last_space = false;
-    for character in value.chars() {
-        if character.is_alphanumeric() {
-            normalized.extend(character.to_lowercase());
-            last_space = false;
-        } else if !last_space {
-            normalized.push(' ');
-            last_space = true;
-        }
-    }
-    normalized.trim().to_string()
-}
-
-fn lexical_overlap(left: &str, right: &str) -> f64 {
-    let left = keywords(left);
-    let right = keywords(right);
-    if left.is_empty() || right.is_empty() {
-        return 0.0;
-    }
-    let shared = left.intersection(&right).count();
-    shared as f64 / left.len().max(right.len()) as f64
-}
-
-fn keywords(value: &str) -> HashSet<String> {
-    normalize_text(value)
+    // Preserve punctuation within a fact: signs, decimals, apostrophes and
+    // names such as C++ carry meaning. Ignore only case, whitespace and an
+    // optional sentence-ending full stop.
+    let normalized = value
         .split_whitespace()
-        .filter(|word| word.len() >= 3)
-        .map(str::to_string)
-        .collect()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    normalized
+        .strip_suffix('.')
+        .unwrap_or(&normalized)
+        .to_owned()
+}
+
+/// `1 - distance / longest`, with the Levenshtein distance counted in
+/// characters.
+fn text_similarity(left: &str, right: &str) -> f64 {
+    let left = left.chars().collect::<Vec<_>>();
+    let right = right.chars().collect::<Vec<_>>();
+    let longest = left.len().max(right.len());
+    if longest == 0 {
+        return 1.0;
+    }
+    let mut previous = (0..=right.len()).collect::<Vec<_>>();
+    let mut current = vec![0; right.len() + 1];
+    for (row, left_character) in left.iter().enumerate() {
+        current[0] = row + 1;
+        for (column, right_character) in right.iter().enumerate() {
+            let substitution = previous[column] + usize::from(left_character != right_character);
+            current[column + 1] = substitution
+                .min(previous[column + 1] + 1)
+                .min(current[column] + 1);
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+    1.0 - previous[right.len()] as f64 / longest as f64
 }
 
 fn apply_delete(
@@ -2441,6 +2460,158 @@ mod tests {
         );
         assert!(!items.iter().any(|item| item.id == oldest));
         assert!(!items.iter().any(|item| item.id == second_oldest));
+    }
+
+    #[test]
+    fn distinct_facts_are_not_duplicates_from_text_or_word_overlap() {
+        for (existing_text, candidate_text) in [
+            ("Mira trusts Rowan", "Rowan trusts Mira"),
+            ("Mira is 21 years old", "Mira is 22 years old"),
+            ("Mira can swim", "Mira can't swim"),
+            ("Mira trusts Rowan", "Mira no longer trusts Rowan"),
+            ("Mira likes tea", "Mira likes coffee"),
+            ("Mira's balance is -50", "Mira's balance is 50"),
+            ("Mira's dose is 1.5 mg", "Mira's dose is 1 5 mg"),
+            ("Mira codes in C++", "Mira codes in C"),
+            (
+                "Mira enjoys reading old books in the quiet harbor every evening",
+                "Mira enjoys reading old books in the quiet harbor every morning",
+            ),
+        ] {
+            let existing = item(existing_text, 4, 1, false);
+            let mut create = call(MemoryToolArguments::CreateMemory {
+                text: candidate_text.to_owned(),
+                category: CategoryArgument::Tagged {
+                    category: MemoryCategory::Other,
+                },
+                important: false,
+                source_message_id: None,
+                supersedes: Vec::new(),
+            });
+            create.create = Some(CreateMemoryPreparation {
+                id: MemoryId::new(),
+                token_count: Some(4),
+                created_at: TimestampMillis::new(2),
+                semantic_duplicates: Vec::new(),
+            });
+            let result = MemoryToolReducer
+                .reduce(&snapshot(vec![existing.clone()]), &policy(), &[create])
+                .expect("reduce distinct fact");
+            assert!(
+                matches!(result.results[0].outcome, MemoryToolOutcome::Created { .. }),
+                "{existing_text:?} vs {candidate_text:?}: {:?}",
+                result.results[0].outcome,
+            );
+            let items = result.change.expect("new fact must be saved").items;
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0], existing);
+            assert_eq!(items[1].text, candidate_text);
+        }
+    }
+
+    #[test]
+    fn text_similarity_is_normalized_levenshtein() {
+        assert_eq!(super::text_similarity("", ""), 1.0);
+        assert_eq!(super::text_similarity("abc", "abc"), 1.0);
+        assert_eq!(super::text_similarity("abc", ""), 0.0);
+        assert!((super::text_similarity("kitten", "sitting") - (1.0 - 3.0 / 7.0)).abs() < 1e-12);
+        assert!((super::text_similarity("güveniyor", "güvenmiyor") - 0.8).abs() < 1e-12);
+    }
+
+    fn semantic_create(
+        existing: &MemoryItem,
+        text: &str,
+        supersedes: Vec<MemoryReference>,
+    ) -> MemoryToolCall {
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: text.to_owned(),
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::Other,
+            },
+            important: false,
+            source_message_id: None,
+            supersedes,
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: MemoryId::new(),
+            token_count: Some(4),
+            created_at: TimestampMillis::new(2),
+            semantic_duplicates: vec![super::SemanticDuplicateEvidence {
+                existing_id: existing.id,
+                source_revision: "v5-test".to_owned(),
+                dimensions: 768,
+                cosine_score: score(9_900),
+                threshold: score(7_800),
+            }],
+        });
+        create
+    }
+
+    #[test]
+    fn similar_embeddings_do_not_suppress_an_edited_fact() {
+        for (existing_text, candidate_text) in [
+            ("Mira trusts Jonas", "Mira no longer trusts Jonas"),
+            ("Mira is 21 years old", "Mira is 22 years old"),
+            ("Mira met Jonas on Monday", "Mira met Jonas on Tuesday"),
+            ("Mira Jonas'a güveniyor", "Mira Jonas'a artık güvenmiyor"),
+            (
+                "Mira arbeitet im Krankenhaus",
+                "Mira arbeitet nachts im Krankenhaus",
+            ),
+        ] {
+            let existing = item(existing_text, 4, 1, false);
+            let create = semantic_create(&existing, candidate_text, Vec::new());
+            let result = MemoryToolReducer
+                .reduce(&snapshot(vec![existing.clone()]), &policy(), &[create])
+                .expect("reduce edited fact");
+            assert!(
+                matches!(result.results[0].outcome, MemoryToolOutcome::Created { .. }),
+                "{existing_text:?} vs {candidate_text:?}: {:?}",
+                result.results[0].outcome,
+            );
+            assert_eq!(result.change.expect("edited fact is saved").items.len(), 2);
+        }
+    }
+
+    #[test]
+    fn similar_embeddings_suppress_a_reworded_fact() {
+        let existing = item("Mira prefers tea over coffee", 4, 1, false);
+        let create = semantic_create(
+            &existing,
+            "Given the choice, Mira picks tea rather than coffee",
+            Vec::new(),
+        );
+        let result = MemoryToolReducer
+            .reduce(&snapshot(vec![existing.clone()]), &policy(), &[create])
+            .expect("reduce reworded fact");
+        assert!(result.change.is_none());
+        assert!(matches!(
+            result.results[0].outcome,
+            MemoryToolOutcome::DuplicateSkipped {
+                existing_id,
+                kind: DuplicateKind::Semantic { .. },
+            } if existing_id == existing.id
+        ));
+    }
+
+    #[test]
+    fn a_superseding_create_is_not_a_semantic_duplicate_of_its_target() {
+        let existing = item("Mira lives in Berlin", 4, 1, false);
+        let create = semantic_create(
+            &existing,
+            "Mira's home is now Munich",
+            vec![reference(existing.id)],
+        );
+        let result = MemoryToolReducer
+            .reduce(&snapshot(vec![existing.clone()]), &policy(), &[create])
+            .expect("reduce superseding create");
+        assert!(matches!(
+            result.results[0].outcome,
+            MemoryToolOutcome::Created { .. }
+        ));
+        let items = result.change.expect("superseding fact is saved").items;
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].superseded_by, Some(items[1].id));
     }
 
     #[test]

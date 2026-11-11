@@ -84,14 +84,14 @@ Created text is normalized by `normalize_memory_text`: a surrounding code fence 
 
 Targets are `MemoryReference`s, kept raw from the model and resolved against the items as they are when the call applies. Surrounding `# * " ' [ ] ( )` are cleaned off. A six-digit reference resolves only as a short id; anything else may be a memory UUID, and `delete_memory` also accepts the exact memory text. A reference that resolves to nothing settles as `TargetNotFound`.
 
-- `create_memory` needs a `CreateMemoryPreparation` from the application. It is skipped as a duplicate when an existing memory matches, checked per memory in item order: equal normalized text, then qualified semantic evidence, then at least 90% keyword overlap for candidates of three or more words. `important: true` creates it pinned.
+- `create_memory` needs a `CreateMemoryPreparation` from the application. Duplicate checks use equal normalized text or qualified semantic evidence, in memory order. Text normalization preserves internal punctuation, word order, short words and numbers; keyword overlap alone cannot suppress a create. `important: true` creates it pinned.
 - `delete_memory` hard-deletes when confidence is at least 0.7 and the cycle's hard-delete budget allows it. Otherwise it soft-deletes: the item goes cold at the cold threshold, with the reason (low confidence or budget reached).
 - `pin_memory` pins and makes the item hot at full importance; `unpin_memory` clears the pin.
 - `done` ends the round; later calls in the same batch settle as `StoppedAfterDone`. A round may repeat `done`.
 
 The hard-delete budget, `MemoryCycleBudget`, is `floor(item_count_at_cycle_start * ratio)`, at least one, counting cold items; an empty space allows none. It is spent across all rounds of the cycle, so each round passes the `Deleted` count of earlier rounds. `reduce` is the first round of a fresh cycle.
 
-Semantic duplicates arrive as `SemanticDuplicateEvidence`: target id, embedding source revision, dimension count (64 to 768), cosine score and the threshold applied. The reducer rejects unqualified evidence and still checks that the target exists in its snapshot.
+Semantic duplicates arrive as `SemanticDuplicateEvidence`: target id, embedding source revision, dimension count (64 to 768), cosine score and the threshold applied. The reducer rejects unqualified evidence and still checks that the target exists in its snapshot. Embedding similarity alone does not make a duplicate, because a sentence with one changed number, day, name or negation scores higher than a genuine paraphrase. Evidence therefore counts only when the two normalized texts have a Levenshtein similarity of at most 0.59, which is where a reworded fact sits and an edited one does not, and never against a memory the same create supersedes.
 
 Each `MemoryToolOutcome` carries what the model is told afterwards: the six-digit id of a created, deleted, pinned or unpinned memory, a deleted memory's text, the `[short_id] text` listing right after the call (`ListedMemory`, superseded items excluded), and which duplicate check matched (`DuplicateKind`, with cosine and threshold for a semantic match). The application renders these into tool-result payloads.
 

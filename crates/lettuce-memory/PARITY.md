@@ -28,6 +28,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 
 ## Deliberate differences from legacy
 
+- Keyword overlap alone no longer suppresses creates: it discards word order, numbers and short words. Normalized text equality preserves internal punctuation, including signs, decimals and names such as C++. Embedding-based duplicate checks remain enabled.
 - Memory reads identify the conversation branch. Legacy branches were separate sessions with copied memory (`old-code/src/core/storage/repo.ts:1655-1709`); in-conversation branches keep separate own spaces while companion pools remain shared.
 
 - Legacy's cycle-start pass also restored pinned-but-cold items to hot. The snapshot invariant already rejects that state, so `restored_pinned` stays zero for stored spaces.
