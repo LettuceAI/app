@@ -993,6 +993,7 @@
         "pinned_target": "Die Erinnerung ist angeheftet"
       },
       "duplicate": {
+        "description": "\"{{proposed}}\" ist ein Duplikat von \"{{existing}}\".",
         "matches": "Entspricht „{{text}}“",
         "missing": "Entspricht einer Erinnerung, die nicht mehr existiert",
         "similarity": "({{similarity}} % ähnlich, Grenze {{threshold}} %)",

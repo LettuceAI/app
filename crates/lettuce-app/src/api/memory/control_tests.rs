@@ -1610,6 +1610,81 @@ async fn item(harness: &crate::api::tests::Harness, chat: &str, text: &str) -> d
 }
 
 #[tokio::test]
+async fn duplicate_activity_keeps_the_original_and_same_run_comparison_texts() {
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "duplicate-texts").await;
+    let original = "Mara works at the hospital.";
+    let created = "Mara works night shifts at the hospital.";
+    memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: chat.clone(),
+            text: original.into(),
+            category: None,
+            observed_at: None,
+            expected_revision: status_of(&harness, &chat).await.revision,
+            client_operation_id: "duplicate-texts-add".into(),
+            perspective_character_id: None,
+        },
+    )
+    .await
+    .expect("add original");
+    let original_item = item(&harness, &chat, original).await;
+    let round = open_round(
+        &harness,
+        &chat,
+        [original, created, created]
+            .into_iter()
+            .map(|text| ("create_memory", serde_json::json!({"text": text, "category": "other"})))
+            .collect(),
+    )
+    .await;
+    let settlement = settle(&harness, &round);
+    assert!(matches!(settlement.results[0].outcome, lettuce_memory::MemoryToolOutcome::DuplicateSkipped { .. }));
+    assert!(matches!(settlement.results[1].outcome, lettuce_memory::MemoryToolOutcome::Created { .. }));
+    assert!(matches!(settlement.results[2].outcome, lettuce_memory::MemoryToolOutcome::DuplicateSkipped { .. }));
+    let created_item = item(&harness, &chat, created).await;
+    memory_update(
+        &harness.context,
+        dto::MemoryUpdateRequest {
+            conversation_id: chat.clone(),
+            memory_id: original_item.id,
+            text: Some("Mara now works at the university.".into()),
+            category: dto::MemoryCategoryChange::Keep,
+            observed_at: dto::MemoryObservedAtChange::Keep,
+            expected_revision: status_of(&harness, &chat).await.revision,
+            client_operation_id: "duplicate-texts-edit".into(),
+            perspective_character_id: None,
+        },
+    )
+    .await
+    .expect("edit original after the result");
+    memory_delete(
+        &harness.context,
+        dto::MemoryDeleteRequest {
+            conversation_id: chat.clone(),
+            memory_id: created_item.id,
+            expected_revision: status_of(&harness, &chat).await.revision,
+            client_operation_id: "duplicate-texts-delete".into(),
+            perspective_character_id: None,
+        },
+    )
+    .await
+    .expect("delete same-run memory after the result");
+    let page = memory_cycles(
+        &harness.context,
+        dto::MemoryCyclesRequest { conversation_id: chat, cursor: None, limit: None },
+    )
+    .await
+    .expect("activity");
+    let cycle = page.items.iter().find(|cycle| cycle.run_id == round.run_id.to_string()).expect("cycle");
+    for (index, expected) in [(0, original), (2, created)] {
+        assert_eq!(cycle.actions[index].proposed_text.as_deref(), Some(expected));
+        assert_eq!(cycle.actions[index].duplicate.as_ref().expect("match").existing_text.as_deref(), Some(expected));
+    }
+}
+
+#[tokio::test]
 async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
     let harness = harness(Reply::Text("reply"));
     let (chat, _) = replied_chat(&harness, "stale").await;

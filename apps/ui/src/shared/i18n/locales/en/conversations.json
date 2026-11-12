@@ -993,6 +993,7 @@
         "pinned_target": "The memory is pinned"
       },
       "duplicate": {
+        "description": "\"{{proposed}}\" is a duplicate of \"{{existing}}\".",
         "matches": "Matches “{{text}}”",
         "missing": "Matches a memory that is gone now",
         "similarity": "({{similarity}}% similar, limit {{threshold}}%)",

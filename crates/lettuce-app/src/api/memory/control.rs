@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode, ApiErrorDetails};
 use lettuce_jobs::{JobState, JobStore};
 use lettuce_memory::{
     MemoryCycleRevert, MemoryCycleRevertError, MemoryReadRepository, MemoryToolOutcome,
 };
-use lettuce_types::{ConversationId, DynamicMemoryRunId, ModelProfileId};
+use lettuce_types::{ConversationId, DynamicMemoryRunId, MemoryId, ModelProfileId};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
@@ -358,7 +360,7 @@ fn skip_reason(reason: lettuce_memory::MemoryToolSkipReason) -> dto::MemorySkipR
 fn action(
     outcome: &MemoryToolOutcome,
     proposed_text: Option<&String>,
-    items: &[lettuce_memory::MemoryItem],
+    memory_texts: &HashMap<MemoryId, String>,
 ) -> dto::MemoryCycleAction {
     let mut row = outcome_action(outcome);
     match outcome {
@@ -379,10 +381,7 @@ fn action(
             };
             row.duplicate = Some(dto::MemoryDuplicateMatch {
                 kind,
-                existing_text: items
-                    .iter()
-                    .find(|item| item.id == *existing_id)
-                    .map(|item| item.text.clone()),
+                existing_text: memory_texts.get(existing_id).cloned(),
                 similarity_basis_points: similarity,
                 threshold_basis_points: threshold,
             });
@@ -394,6 +393,47 @@ fn action(
         _ => {}
     }
     row
+}
+
+fn cycle_actions(cycle: &lettuce_memory::MemoryActivityCycle) -> Vec<dto::MemoryCycleAction> {
+    let mut memory_texts = cycle
+        .run
+        .starting_memory
+        .items
+        .iter()
+        .map(|item| (item.id, item.text.clone()))
+        .collect::<HashMap<_, _>>();
+    cycle
+        .results
+        .iter()
+        .zip(
+            cycle
+                .proposed_texts
+                .iter()
+                .map(Option::as_ref)
+                .chain(std::iter::repeat(None)),
+        )
+        .filter(|(result, _)| {
+            !matches!(
+                result.outcome,
+                MemoryToolOutcome::SocialEventRecorded | MemoryToolOutcome::AudienceCorrected { .. }
+            )
+        })
+        .map(|(result, proposed)| {
+            // A duplicate can refer to a memory created in an earlier call of this run.
+            if let MemoryToolOutcome::Created {
+                id,
+                short_id,
+                memories,
+            } = &result.outcome
+            {
+                if let Some(memory) = memories.iter().find(|memory| memory.short_id == *short_id) {
+                    memory_texts.insert(*id, memory.text.clone());
+                }
+            }
+            action(&result.outcome, proposed, &memory_texts)
+        })
+        .collect()
 }
 
 fn outcome_action(outcome: &MemoryToolOutcome) -> dto::MemoryCycleAction {
@@ -530,27 +570,7 @@ pub async fn memory_cycles(
                             .checkpoint
                             .as_ref()
                             .map(|summary| summary.text.clone()),
-                        actions: cycle
-                            .results
-                            .iter()
-                            .zip(
-                                cycle
-                                    .proposed_texts
-                                    .iter()
-                                    .map(Option::as_ref)
-                                    .chain(std::iter::repeat(None)),
-                            )
-                            .filter(|(result, _)| {
-                                !matches!(
-                                    result.outcome,
-                                    MemoryToolOutcome::SocialEventRecorded
-                                        | MemoryToolOutcome::AudienceCorrected { .. }
-                                )
-                            })
-                            .map(|(result, proposed)| {
-                                action(&result.outcome, proposed, &scope.memory.items)
-                            })
-                            .collect(),
+                        actions: cycle_actions(cycle),
                         reverted: cycle.reverted,
                         revertable: !cycle.reverted
                             && !cycle.in_flight()

@@ -86,13 +86,17 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
                       <li key={index} className="flex gap-2 text-sm">
                         <span className={cn("w-24 shrink-0 text-fg-3", action.kind === "created" && "text-accent")}>{t(`memory.activity.actions.${action.kind}`)}</span>
                         <span className="min-w-0 space-y-0.5">
-                          {(action.text ?? action.proposed_text) && <span className="block text-fg-2">{action.text ?? action.proposed_text}</span>}
+                          {action.duplicate?.existing_text && action.proposed_text ? (
+                            <span className="block text-fg-2">{t("memory.activity.duplicate.description", { proposed: action.proposed_text, existing: action.duplicate.existing_text })}</span>
+                          ) : (action.text ?? action.proposed_text) && <span className="block text-fg-2">{action.text ?? action.proposed_text}</span>}
                           {action.skip_reason && <span className="block text-fg-3">{t(`memory.activity.skipReason.${action.skip_reason}`)}</span>}
                           {action.duplicate && (
                             <span className="block text-fg-3">
-                              {action.duplicate.existing_text
-                                ? t("memory.activity.duplicate.matches", { text: action.duplicate.existing_text })
-                                : t("memory.activity.duplicate.missing")}
+                              {!action.proposed_text || !action.duplicate.existing_text
+                                ? action.duplicate.existing_text
+                                  ? t("memory.activity.duplicate.matches", { text: action.duplicate.existing_text })
+                                  : t("memory.activity.duplicate.missing")
+                                : null}
                               {action.duplicate.similarity_basis_points !== null && action.duplicate.threshold_basis_points !== null
                                 ? ` ${t("memory.activity.duplicate.similarity", {
                                     similarity: Math.round(action.duplicate.similarity_basis_points / 100),

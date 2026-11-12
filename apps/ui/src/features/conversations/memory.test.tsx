@@ -470,14 +470,18 @@ describe("memory activity and pinned tabs", () => {
     const reasons = [cycle("r4", { window_start: 61, window_end: 80, label: "61-80", actions: [
       { kind: "skipped", memory_id: null, text: null, proposed_text: "Mira keeps every letter her brother sent.", skip_reason: "text_too_long", duplicate: null },
       { kind: "duplicate_skipped", memory_id: "m1", text: null, proposed_text: "Fears flying.", skip_reason: null, duplicate: { kind: "same_meaning", existing_text: "Afraid of flying.", similarity_basis_points: 9512, threshold_basis_points: 9300 } },
+      { kind: "duplicate_skipped", memory_id: "gone", text: null, proposed_text: "A missing comparison.", skip_reason: null, duplicate: { kind: "same_text", existing_text: null, similarity_basis_points: null, threshold_basis_points: null } },
     ] })];
     await open({ world: { cycles: reasons } });
     fireEvent.click(await screen.findByRole("tab", { name: /^Activity/ }));
     fireEvent.click(await screen.findByRole("button", { name: /Messages 61 to 80/ }));
     expect(await screen.findByText("Mira keeps every letter her brother sent.")).toBeTruthy();
     expect(screen.getByText("Longer than 280 characters")).toBeTruthy();
-    expect(screen.getByText("Fears flying.")).toBeTruthy();
-    expect(screen.getByText("Matches “Afraid of flying.” (95% similar, limit 93%)")).toBeTruthy();
+    expect(screen.getByText('\"Fears flying.\" is a duplicate of \"Afraid of flying.\".')).toBeTruthy();
+    expect(screen.getByText("(95% similar, limit 93%)")).toBeTruthy();
+    expect(screen.queryByText("m1")).toBeNull();
+    expect(screen.getByText("A missing comparison.")).toBeTruthy();
+    expect(screen.getByText("Matches a memory that is gone now (same text)")).toBeTruthy();
   });
 
   const pinnedMessage = message("p1", "assistant", "Karsk was a choice.", { pinned: true });
