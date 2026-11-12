@@ -26,6 +26,30 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "2.2.7 / 2.2.7",
+    date: "2026-11-12",
+    title: "2.2.7 — Qwen Image 2.1 & Top-n-sigma",
+    description:
+      "Qwen Image 2.1 joins local image generation, llama.cpp gains a Top-n-sigma sampling control, and newer image runtimes start correctly.",
+    changes: [
+      {
+        type: "feature",
+        description:
+          "Local image generation adds a Qwen Image 2.1 bundle for text-to-image and editing with up to 10 reference images. Choose Q3 K, Q4 K, or Q6 K diffusion weights, with Q4 K recommended by default. HuggingFace bundle discovery recognises the model and its Qwen3-VL-8B encoders, and the LoRA library identifies its architecture.",
+      },
+      {
+        type: "feature",
+        description:
+          "Top-n-sigma is now available for local llama.cpp models in model settings, per-chat overrides, and feature-generation settings. It filters tokens by their distance from the highest logit, with an adjustable value from 0 to 10; 0 leaves it off. Its position can be changed in the sampler-order editor, and the controls are translated into all 20 supported languages.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Local image generation starts correctly with newer stable-diffusion.cpp runtimes whose automatic memory-fitting option now requires an explicit value. Older runtimes continue to receive the original flag.",
+      },
+    ],
+  },
+  {
     version: "2.2.6 / 2.2.6",
     date: "2026-10-15",
     title: "2.2.6 — Historical Companion Time & USC Lorebook Import",
