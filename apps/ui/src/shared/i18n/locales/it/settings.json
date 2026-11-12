@@ -565,6 +565,16 @@
     "refresh": "Aggiorna"
   },
   "providers": {
+    "models": "Modelli di chat e immagine",
+    "optionalKey": "Chiave API (facoltativa)",
+    "webUiCredentials": "nome utente:password o token proxy",
+    "comfyTxt2img": "Workflow da testo a immagine (JSON API)",
+    "comfyImg2img": "Workflow da immagine a immagine (JSON API, facoltativo)",
+    "comfyWorkflowHint": "Esporta il workflow da ComfyUI in formato API. Sostituisci gli input variabili con i token qui sotto.",
+    "comfyInvalidWorkflow": "Usa un oggetto JSON in formato API con class_type e inputs per ogni nodo (fino a 4 MiB).",
+    "comfyTokens": "Testo: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% o %IMAGE0%. Numeri: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Mantieni i token di testo tra virgolette JSON.",
+    "webUiHint": "Avvia WebUI con --api. Dopo il salvataggio, aggiungi un modello per le immagini dall'elenco dei checkpoint del server in Modelli.",
+    "imageModelHint": "Dopo il salvataggio, aggiungi un modello per le immagini dall'elenco dei checkpoint del server in Modelli.",
     "type": "Tipo di provider",
     "language": "Modelli linguistici",
     "audio": "Audio",
@@ -690,6 +700,21 @@
     "mobileDownloads": "I download GGUF locali sono disponibili su desktop."
   },
   "customProvider": {
+    "imageRoutes": "Rotte immagine personalizzate",
+    "imageRoutesHint": "Usa la stessa autenticazione della chat. Per impostazione predefinita, l'API immagini di OpenAI.",
+    "imageGenerationPath": "Percorso di generazione immagini",
+    "imageEditPath": "Percorso di modifica immagini",
+    "imageEditHint": "Lascia vuoto per disattivare la modifica delle immagini.",
+    "imageEditFormat": "Formato della richiesta di modifica immagini",
+    "imageMultipart": "File multipart (OpenAI)",
+    "imageJson": "URL di dati JSON (NanoGPT)",
+    "imageListPath": "Percorso dell'elenco immagini nella risposta",
+    "imageListHint": "Percorso JSON puntato. Lascia vuoto per leggere la radice della risposta.",
+    "imageUrlPath": "Percorso URL immagine per elemento",
+    "imageB64Path": "Percorso immagine Base64 per elemento",
+    "imageExtraBody": "Parametri immagine aggiuntivi (JSON)",
+    "imageExtraBodyHint": "Valori specifici del provider, come quality o output_format. Il modello, il prompt e le immagini di input mantengono i valori attuali.",
+    "imageExtraBodyInvalid": "Inserisci un oggetto JSON, fino a 64 KiB.",
     "chatPath": "Endpoint della chat",
     "auth": "Autenticazione",
     "authModes": {
@@ -730,6 +755,9 @@
     "urlRequired": "Obbligatorio. L'URL di base del tuo server personalizzato."
   },
   "modelEditor": {
+    "modelType": "Tipo di modello",
+    "chatModel": "Chat",
+    "imageModel": "Generazione di immagini",
     "fields": {
       "temperature": "Temperatura",
       "topP": "Top P",

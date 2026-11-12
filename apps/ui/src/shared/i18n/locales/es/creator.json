@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Crear",
+  "new": {
+    "character": "Nuevo personaje",
+    "characterBody": "Crea un personaje conversando",
+    "persona": "Nueva persona",
+    "personaBody": "Escribe una persona con AI"
+  },
+  "kind": {
+    "character": "Personaje",
+    "persona": "Persona"
+  },
+  "editWithAi": "Editar con AI",
+  "editWithAiBody": "Revisa un borrador antes de guardar los cambios",
+  "settings": "Ajustes",
+  "openCreator": "Abrir Smart creator",
+  "openCreatorBody": "Crea o mejora personajes y personas",
+  "drafts": "Tu trabajo",
+  "empty": "Aún no hay borradores",
+  "emptyBody": "Elige un personaje o una persona para empezar",
+  "untitled": "Borrador sin título",
+  "saved": "Guardado",
+  "notSaved": "Borrador",
+  "savedBody": "Esta versión está guardada. Abre el elemento guardado para seguir editando.",
+  "openSaved": "Abrir elemento guardado",
+  "loadMore": "Cargar más",
+  "chat": "Chat",
+  "draft": "Borrador",
+  "views": "Vistas del creator",
+  "name": "Nombre",
+  "definition": "Definición",
+  "description": "Descripción",
+  "scenes": "Escenas iniciales",
+  "discard": "Descartar cambios",
+  "saveDraft": "Guardar cambios del borrador",
+  "leaveTitle": "¿Descartar los cambios sin guardar?",
+  "leaveBody": "Tu borrador guardado se conserva. Solo se perderán estos cambios sin guardar.",
+  "keepEditing": "Seguir editando",
+  "placeholder": "Describe lo que quieres crear o cambiar",
+  "startTitle": "¿Qué te gustaría crear?",
+  "startBody": "Describe tu idea. Puedes perfeccionar el borrador juntos o editarlo tú mismo.",
+  "model": "Modelo del creator",
+  "chooseModel": "Elegir un modelo",
+  "defaultModel": "Usar el predeterminado de Smart creator",
+  "appDefault": "Usar el predeterminado de la app",
+  "modelUnavailable": "El modelo seleccionado no está disponible",
+  "modelMissing": "Elige un modelo de texto para chatear. Puedes editar el borrador ahora.",
+  "streaming": "Mostrar respuestas en streaming",
+  "toolFormat": "Formato de herramientas",
+  "history": "Historial del borrador",
+  "version": "Versión {{number}}",
+  "restoreVersion": "Usar esta versión",
+  "before": "Antes",
+  "after": "Después",
+  "changes": "Ver cambios",
+  "regenerate": "Regenerar",
+  "retry": "Intentar de nuevo",
+  "review": "Revisar y guardar",
+  "reviewShort": "Revisar",
+  "reviewEdit": "Estos cambios actualizarán el elemento existente",
+  "reviewNew": "Revisa lo que se añadirá a tu biblioteca",
+  "saveChanges": "Guardar cambios",
+  "createAndChat": "Crear y chatear",
+  "turn": {
+    "pending": "Trabajando",
+    "succeeded": "Borrador actualizado",
+    "failed": "La respuesta falló. Se conserva tu borrador anterior.",
+    "cancelled": "Detenido. Se conserva tu borrador anterior.",
+    "interrupted": "Interrumpido. Inténtalo de nuevo para continuar desde tu borrador guardado."
+  },
+  "unsavedStatus": "Cambios del borrador sin guardar",
+  "noChanges": "Nada ha cambiado en esta versión.",
+  "back": "Atrás",
+  "current": "Actual",
+  "streamingBody": "Mostrar las respuestas mientras se escriben",
+  "incomplete": "Añade un nombre y una definición antes de guardar.",
+  "tools": {
+    "label": "Cambios del borrador",
+    "running": "Trabajando",
+    "succeeded": "Hecho",
+    "failed": "Fallido",
+    "name": {
+      "write_definition": "Actualizar la definición",
+      "write_scene": "Añadir una escena inicial",
+      "set_name": "Establecer el nombre",
+      "edit_scene": "Editar una escena inicial",
+      "delete_scene": "Quitar una escena inicial",
+      "show_preview": "Mostrar una vista previa",
+      "request_confirmation": "Pedir revisión",
+      "use_uploaded_image": "Establecer el avatar",
+      "generate_image": "Generar una imagen",
+      "edit_avatar_image": "Editar una imagen"
+    }
+  },
+  "settingsPage": {
+    "loading": "Cargando los ajustes de Smart creator",
+    "modelGroup": "Modelo",
+    "repliesGroup": "Respuestas",
+    "streamingNeedsNative": "El streaming necesita llamadas nativas a herramientas",
+    "nativeTitle": "Llamadas nativas a herramientas",
+    "nativeBody": "El modelo llama directamente a las herramientas del creator. Lo mejor para modelos compatibles con herramientas.",
+    "toolFormatHint": "JSON y XML piden al modelo que escriba sus llamadas a herramientas como texto, para modelos sin compatibilidad nativa con herramientas."
+  },
+  "scene": "Escena {{number}}",
+  "copy": "Copiar texto",
+  "copied": "Copiado",
+  "copyFailed": "No se pudo acceder al portapapeles",
+  "targetChanged": {
+    "character": "Este personaje cambió en otro lugar después de que empezaras, así que este borrador no se puede guardar encima.",
+    "persona": "Esta persona cambió en otro lugar después de que empezaras, así que este borrador no se puede guardar encima.",
+    "carry": "Continuar con la última versión"
+  },
+  "source": {
+    "start": "Punto de partida",
+    "creator": "Smart creator",
+    "edit": "Tu edición",
+    "review": "Revisado"
+  },
+  "attach": {
+    "title": "Adjuntar",
+    "image": "Imagen",
+    "imageBody": "Añade imágenes que el creator pueda usar",
+    "character": "Personaje",
+    "characterBody": "Deja que el creator lea un personaje",
+    "persona": "Persona",
+    "personaBody": "Deja que el creator lea una persona"
+  },
+  "references": {
+    "characterTitle": "Adjuntar personajes",
+    "personaTitle": "Adjuntar personas",
+    "description": "El creator lee su texto actual junto con tu mensaje",
+    "search": "Buscar",
+    "done": "Listo",
+    "noCharacters": "Aún no hay personajes",
+    "noPersonas": "Aún no hay personas",
+    "missing": {
+      "character": "Personaje eliminado",
+      "persona": "Persona eliminada"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Elegir un avatar",
+    "remove": "Quitar avatar",
+    "sessionImages": "Imágenes de esta sesión",
+    "origin": {
+      "upload": "Imagen subida",
+      "generated": "Imagen generada",
+      "edited": "Imagen editada"
+    }
+  },
+  "image": {
+    "label": "Imagen generada",
+    "useAvatar": "Usar como avatar",
+    "edit": "Editar"
+  }
+}

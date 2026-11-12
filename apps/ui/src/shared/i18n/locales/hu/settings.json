@@ -561,6 +561,16 @@
     "refresh": "Frissítés"
   },
   "providers": {
+    "models": "Beszélgetés- és képmodellek",
+    "optionalKey": "API-kulcs (opcionális)",
+    "webUiCredentials": "felhasználónév:jelszó vagy proxytoken",
+    "comfyTxt2img": "Szöveg-kép munkafolyamat (API JSON)",
+    "comfyImg2img": "Kép-kép munkafolyamat (API JSON, opcionális)",
+    "comfyWorkflowHint": "Exportáld a munkafolyamatot API-formátumban a ComfyUI-ból. A változó bemeneteket cseréld ki az alábbi tokenekre.",
+    "comfyInvalidWorkflow": "Használj API-formátumú JSON-objektumot class_type és inputs mezőkkel minden csomóponthoz (legfeljebb 4 MiB).",
+    "comfyTokens": "Szöveg: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% vagy %IMAGE0%. Számok: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. A szöveges tokeneket tartsd JSON-idézőjelek között.",
+    "webUiHint": "Indítsd a WebUI-t --api kapcsolóval. Mentés után adj hozzá képmodellet a szerver checkpointlistájából a Modellek alatt.",
+    "imageModelHint": "Mentés után adj hozzá képmodellet a szerver checkpointlistájából a Modellek alatt.",
     "type": "Szolgáltató típusa",
     "language": "Nyelvi modellek",
     "audio": "Hang",
@@ -683,6 +693,21 @@
     "mobileDownloads": "A helyi GGUF-letöltések asztali gépen érhetők el."
   },
   "customProvider": {
+    "imageRoutes": "Egyéni képmarsruták",
+    "imageRoutesHint": "Ugyanazt a hitelesítést használja, mint a beszélgetés. Alapértelmezésben az OpenAI kép API-ját használja.",
+    "imageGenerationPath": "Képgenerálási útvonal",
+    "imageEditPath": "Képszerkesztési útvonal",
+    "imageEditHint": "Hagyd üresen a képszerkesztés kikapcsolásához.",
+    "imageEditFormat": "Képszerkesztési kérés formátuma",
+    "imageMultipart": "Multipart fájlok (OpenAI)",
+    "imageJson": "JSON adat-URL-ek (NanoGPT)",
+    "imageListPath": "Képlista válaszútvonala",
+    "imageListHint": "Pontokkal tagolt JSON-útvonal. Hagyd üresen a válasz gyökerének olvasásához.",
+    "imageUrlPath": "Kép URL-útvonala elemenként",
+    "imageB64Path": "Base64 kép útvonala elemenként",
+    "imageExtraBody": "További képparaméterek (JSON)",
+    "imageExtraBodyHint": "Szolgáltatóra jellemző értékek, például quality vagy output_format. A modell, a prompt és a képbemenetek megtartják jelenlegi értéküket.",
+    "imageExtraBodyInvalid": "Adj meg egy JSON-objektumot, legfeljebb 64 KiB méretben.",
     "chatPath": "Beszélgetési végpont",
     "auth": "Hitelesítés",
     "authModes": {
@@ -723,6 +748,9 @@
     "urlRequired": "Kötelező. Az egyéni szervered alap URL-je."
   },
   "modelEditor": {
+    "modelType": "Modell típusa",
+    "chatModel": "Beszélgetés",
+    "imageModel": "Képgenerálás",
     "fields": {
       "temperature": "Hőmérséklet",
       "topP": "Top P",

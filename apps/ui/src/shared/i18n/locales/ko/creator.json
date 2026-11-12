@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "만들기",
+  "new": {
+    "character": "새 캐릭터",
+    "characterBody": "채팅으로 캐릭터 만들기",
+    "persona": "새 페르소나",
+    "personaBody": "AI로 페르소나 작성"
+  },
+  "kind": {
+    "character": "캐릭터",
+    "persona": "페르소나"
+  },
+  "editWithAi": "AI로 편집",
+  "editWithAiBody": "변경사항을 저장하기 전에 초안 검토",
+  "settings": "설정",
+  "openCreator": "Smart creator 열기",
+  "openCreatorBody": "캐릭터와 페르소나 만들기 또는 개선",
+  "drafts": "내 작업",
+  "empty": "아직 초안이 없어요",
+  "emptyBody": "시작할 캐릭터 또는 페르소나를 선택하세요",
+  "untitled": "제목 없는 초안",
+  "saved": "저장됨",
+  "notSaved": "초안",
+  "savedBody": "이 버전은 저장되었어요. 편집을 계속하려면 저장된 항목을 여세요.",
+  "openSaved": "저장된 항목 열기",
+  "loadMore": "더 불러오기",
+  "chat": "채팅",
+  "draft": "초안",
+  "views": "크리에이터 보기",
+  "name": "이름",
+  "definition": "설명",
+  "description": "소개",
+  "scenes": "시작 장면",
+  "discard": "변경사항 버리기",
+  "saveDraft": "초안 변경사항 저장",
+  "leaveTitle": "저장하지 않은 편집을 버릴까요?",
+  "leaveBody": "저장된 초안은 남아요. 이 저장하지 않은 편집만 사라져요.",
+  "keepEditing": "계속 편집",
+  "placeholder": "만들거나 바꾸고 싶은 내용을 설명하세요",
+  "startTitle": "무엇을 만들까요?",
+  "startBody": "아이디어를 설명하세요. 초안을 함께 다듬거나 직접 편집할 수 있어요.",
+  "model": "크리에이터 모델",
+  "chooseModel": "모델 선택",
+  "defaultModel": "Smart creator 기본값 사용",
+  "appDefault": "앱 기본값 사용",
+  "modelUnavailable": "선택한 모델을 사용할 수 없어요",
+  "modelMissing": "채팅하려면 텍스트 모델을 선택하세요. 지금 초안을 편집할 수 있어요.",
+  "streaming": "답장 스트리밍",
+  "toolFormat": "도구 형식",
+  "history": "초안 기록",
+  "version": "버전 {{number}}",
+  "restoreVersion": "이 버전 사용",
+  "before": "변경 전",
+  "after": "변경 후",
+  "changes": "변경사항 보기",
+  "regenerate": "다시 생성",
+  "retry": "다시 시도",
+  "review": "검토 후 저장",
+  "reviewShort": "검토",
+  "reviewEdit": "이 변경사항은 기존 항목을 업데이트해요",
+  "reviewNew": "라이브러리에 추가될 내용을 검토하세요",
+  "saveChanges": "변경사항 저장",
+  "createAndChat": "만들고 채팅",
+  "turn": {
+    "pending": "작업 중",
+    "succeeded": "초안 업데이트됨",
+    "failed": "답장에 실패했어요. 이전 초안은 유지돼요.",
+    "cancelled": "중지됐어요. 이전 초안은 유지돼요.",
+    "interrupted": "중단됐어요. 저장된 초안에서 계속하려면 다시 시도하세요."
+  },
+  "unsavedStatus": "저장하지 않은 초안 변경사항",
+  "noChanges": "이 버전에서는 변경된 내용이 없어요.",
+  "back": "뒤로",
+  "current": "현재",
+  "streamingBody": "작성되는 대로 답장 표시",
+  "incomplete": "저장하기 전에 이름과 설명을 추가하세요.",
+  "tools": {
+    "label": "초안 변경사항",
+    "running": "작업 중",
+    "succeeded": "완료",
+    "failed": "실패",
+    "name": {
+      "write_definition": "설명 업데이트",
+      "write_scene": "시작 장면 추가",
+      "set_name": "이름 설정",
+      "edit_scene": "시작 장면 편집",
+      "delete_scene": "시작 장면 제거",
+      "show_preview": "미리보기 표시",
+      "request_confirmation": "검토 요청",
+      "use_uploaded_image": "아바타 설정",
+      "generate_image": "이미지 생성",
+      "edit_avatar_image": "이미지 편집"
+    }
+  },
+  "settingsPage": {
+    "loading": "Smart creator 설정 불러오는 중",
+    "modelGroup": "모델",
+    "repliesGroup": "답장",
+    "streamingNeedsNative": "스트리밍에는 네이티브 도구 호출이 필요해요",
+    "nativeTitle": "네이티브 도구 호출",
+    "nativeBody": "모델이 크리에이터의 도구를 직접 호출해요. 도구를 지원하는 모델에 가장 적합해요.",
+    "toolFormatHint": "JSON과 XML은 네이티브 도구 지원이 없는 모델을 위해 도구 호출을 텍스트로 작성하도록 모델에 요청해요."
+  },
+  "scene": "장면 {{number}}",
+  "copy": "텍스트 복사",
+  "copied": "복사됨",
+  "copyFailed": "클립보드에 접근하지 못했어요",
+  "targetChanged": {
+    "character": "이 캐릭터는 시작한 뒤 다른 곳에서 변경되어서 이 초안을 덮어 저장할 수 없어요.",
+    "persona": "이 페르소나는 시작한 뒤 다른 곳에서 변경되어서 이 초안을 덮어 저장할 수 없어요.",
+    "carry": "최신 버전에서 계속"
+  },
+  "source": {
+    "start": "시작점",
+    "creator": "Smart creator",
+    "edit": "내 편집",
+    "review": "검토됨"
+  },
+  "attach": {
+    "title": "첨부",
+    "image": "이미지",
+    "imageBody": "크리에이터가 사용할 이미지 추가",
+    "character": "캐릭터",
+    "characterBody": "크리에이터가 캐릭터를 읽도록 허용",
+    "persona": "페르소나",
+    "personaBody": "크리에이터가 페르소나를 읽도록 허용"
+  },
+  "references": {
+    "characterTitle": "캐릭터 첨부",
+    "personaTitle": "페르소나 첨부",
+    "description": "크리에이터가 메시지와 함께 현재 텍스트를 읽어요",
+    "search": "검색",
+    "done": "완료",
+    "noCharacters": "아직 캐릭터가 없어요",
+    "noPersonas": "아직 페르소나가 없어요",
+    "missing": {
+      "character": "삭제된 캐릭터",
+      "persona": "삭제된 페르소나"
+    }
+  },
+  "avatar": {
+    "label": "아바타",
+    "choose": "아바타 선택",
+    "remove": "아바타 제거",
+    "sessionImages": "이 세션의 이미지",
+    "origin": {
+      "upload": "업로드한 이미지",
+      "generated": "생성한 이미지",
+      "edited": "편집한 이미지"
+    }
+  },
+  "image": {
+    "label": "생성한 이미지",
+    "useAvatar": "아바타로 사용",
+    "edit": "편집"
+  }
+}

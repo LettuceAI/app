@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Crea",
+  "new": {
+    "character": "Nuovo personaggio",
+    "characterBody": "Crea un personaggio conversando",
+    "persona": "Nuova persona",
+    "personaBody": "Scrivi una persona con AI"
+  },
+  "kind": {
+    "character": "Personaggio",
+    "persona": "Persona"
+  },
+  "editWithAi": "Modifica con AI",
+  "editWithAiBody": "Rivedi una bozza prima di salvare le modifiche",
+  "settings": "Impostazioni",
+  "openCreator": "Apri Smart creator",
+  "openCreatorBody": "Crea o migliora personaggi e persone",
+  "drafts": "I tuoi lavori",
+  "empty": "Nessuna bozza ancora",
+  "emptyBody": "Scegli un personaggio o una persona per iniziare",
+  "untitled": "Bozza senza titolo",
+  "saved": "Salvato",
+  "notSaved": "Bozza",
+  "savedBody": "Questa versione è salvata. Apri l'elemento salvato per continuare a modificarlo.",
+  "openSaved": "Apri elemento salvato",
+  "loadMore": "Carica altro",
+  "chat": "Chat",
+  "draft": "Bozza",
+  "views": "Viste del creator",
+  "name": "Nome",
+  "definition": "Definizione",
+  "description": "Descrizione",
+  "scenes": "Scene iniziali",
+  "discard": "Scarta modifiche",
+  "saveDraft": "Salva modifiche alla bozza",
+  "leaveTitle": "Scartare le modifiche non salvate?",
+  "leaveBody": "La bozza salvata resta. Si perderanno solo queste modifiche non salvate.",
+  "keepEditing": "Continua a modificare",
+  "placeholder": "Descrivi ciò che vuoi creare o cambiare",
+  "startTitle": "Cosa vorresti creare?",
+  "startBody": "Descrivi la tua idea. Puoi perfezionare la bozza insieme o modificarla da solo.",
+  "model": "Modello del creator",
+  "chooseModel": "Scegli un modello",
+  "defaultModel": "Usa il predefinito di Smart creator",
+  "appDefault": "Usa il predefinito dell'app",
+  "modelUnavailable": "Il modello selezionato non è disponibile",
+  "modelMissing": "Scegli un modello di testo per chattare. Puoi modificare la bozza subito.",
+  "streaming": "Mostra risposte in streaming",
+  "toolFormat": "Formato strumenti",
+  "history": "Cronologia bozza",
+  "version": "Versione {{number}}",
+  "restoreVersion": "Usa questa versione",
+  "before": "Prima",
+  "after": "Dopo",
+  "changes": "Vedi modifiche",
+  "regenerate": "Rigenera",
+  "retry": "Riprova",
+  "review": "Rivedi e salva",
+  "reviewShort": "Rivedi",
+  "reviewEdit": "Queste modifiche aggiorneranno l'elemento esistente",
+  "reviewNew": "Rivedi ciò che verrà aggiunto alla tua libreria",
+  "saveChanges": "Salva modifiche",
+  "createAndChat": "Crea e chatta",
+  "turn": {
+    "pending": "In corso",
+    "succeeded": "Bozza aggiornata",
+    "failed": "La risposta non è riuscita. La bozza precedente è conservata.",
+    "cancelled": "Fermato. La bozza precedente è conservata.",
+    "interrupted": "Interrotto. Riprova per continuare dalla bozza salvata."
+  },
+  "unsavedStatus": "Modifiche alla bozza non salvate",
+  "noChanges": "Niente è cambiato in questa versione.",
+  "back": "Indietro",
+  "current": "Attuale",
+  "streamingBody": "Mostra le risposte mentre vengono scritte",
+  "incomplete": "Aggiungi un nome e una definizione prima di salvare.",
+  "tools": {
+    "label": "Modifiche alla bozza",
+    "running": "In corso",
+    "succeeded": "Fatto",
+    "failed": "Non riuscito",
+    "name": {
+      "write_definition": "Aggiorna la definizione",
+      "write_scene": "Aggiungi una scena iniziale",
+      "set_name": "Imposta il nome",
+      "edit_scene": "Modifica una scena iniziale",
+      "delete_scene": "Rimuovi una scena iniziale",
+      "show_preview": "Mostra un'anteprima",
+      "request_confirmation": "Chiedi una revisione",
+      "use_uploaded_image": "Imposta l'avatar",
+      "generate_image": "Genera un'immagine",
+      "edit_avatar_image": "Modifica un'immagine"
+    }
+  },
+  "settingsPage": {
+    "loading": "Caricamento impostazioni di Smart creator",
+    "modelGroup": "Modello",
+    "repliesGroup": "Risposte",
+    "streamingNeedsNative": "Lo streaming richiede chiamate native agli strumenti",
+    "nativeTitle": "Chiamate native agli strumenti",
+    "nativeBody": "Il modello chiama direttamente gli strumenti del creator. Ideale per modelli che supportano gli strumenti.",
+    "toolFormatHint": "JSON e XML chiedono al modello di scrivere le chiamate agli strumenti come testo, per i modelli senza supporto nativo degli strumenti."
+  },
+  "scene": "Scena {{number}}",
+  "copy": "Copia testo",
+  "copied": "Copiato",
+  "copyFailed": "Impossibile accedere agli appunti",
+  "targetChanged": {
+    "character": "Questo personaggio è stato modificato altrove dopo che hai iniziato, quindi questa bozza non può essere salvata sopra.",
+    "persona": "Questa persona è stata modificata altrove dopo che hai iniziato, quindi questa bozza non può essere salvata sopra.",
+    "carry": "Continua con l'ultima versione"
+  },
+  "source": {
+    "start": "Punto di partenza",
+    "creator": "Smart creator",
+    "edit": "La tua modifica",
+    "review": "Revisionato"
+  },
+  "attach": {
+    "title": "Allega",
+    "image": "Immagine",
+    "imageBody": "Aggiungi immagini che il creator può usare",
+    "character": "Personaggio",
+    "characterBody": "Lascia che il creator legga un personaggio",
+    "persona": "Persona",
+    "personaBody": "Lascia che il creator legga una persona"
+  },
+  "references": {
+    "characterTitle": "Allega personaggi",
+    "personaTitle": "Allega persone",
+    "description": "Il creator legge il loro testo attuale con il tuo messaggio",
+    "search": "Cerca",
+    "done": "Fatto",
+    "noCharacters": "Nessun personaggio ancora",
+    "noPersonas": "Nessuna persona ancora",
+    "missing": {
+      "character": "Personaggio eliminato",
+      "persona": "Persona eliminata"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Scegli un avatar",
+    "remove": "Rimuovi avatar",
+    "sessionImages": "Immagini in questa sessione",
+    "origin": {
+      "upload": "Immagine caricata",
+      "generated": "Immagine generata",
+      "edited": "Immagine modificata"
+    }
+  },
+  "image": {
+    "label": "Immagine generata",
+    "useAvatar": "Usa come avatar",
+    "edit": "Modifica"
+  }
+}

@@ -561,6 +561,16 @@
     "refresh": "Oppdater"
   },
   "providers": {
+    "models": "Chat- og bildemodeller",
+    "optionalKey": "API-nøkkel (valgfritt)",
+    "webUiCredentials": "brukernavn:passord eller proxy-token",
+    "comfyTxt2img": "Tekst-til-bilde-arbeidsflyt (API-JSON)",
+    "comfyImg2img": "Bilde-til-bilde-arbeidsflyt (API-JSON, valgfritt)",
+    "comfyWorkflowHint": "Eksporter arbeidsflyten i API-format fra ComfyUI. Erstatt inndata som endres med tokenene nedenfor.",
+    "comfyInvalidWorkflow": "Bruk et JSON-objekt i API-format med class_type og inputs for hver node (opptil 4 MiB).",
+    "comfyTokens": "Tekst: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% eller %IMAGE0%. Tall: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Hold teksttokenene i JSON-anførselstegn.",
+    "webUiHint": "Start WebUI med --api. Etter lagring kan du legge til en bildemodell fra serverens sjekkpunktliste i Modeller.",
+    "imageModelHint": "Etter lagring kan du legge til en bildemodell fra serverens sjekkpunktliste i Modeller.",
     "type": "Leverandørtype",
     "language": "Språkmodeller",
     "audio": "Lyd",
@@ -683,6 +693,21 @@
     "mobileDownloads": "Lokale GGUF-nedlastinger er tilgjengelige på skrivebordet."
   },
   "customProvider": {
+    "imageRoutes": "Egendefinerte bilderuter",
+    "imageRoutesHint": "Bruker samme autentisering som samtale. Standard er OpenAI sitt bilde-API.",
+    "imageGenerationPath": "Sti for bildegenerering",
+    "imageEditPath": "Sti for bilderedigering",
+    "imageEditHint": "La det stå tomt for å slå av bilderedigering.",
+    "imageEditFormat": "Format for bilderedigeringsforespørsel",
+    "imageMultipart": "Multipart-filer (OpenAI)",
+    "imageJson": "JSON-dataadresser (NanoGPT)",
+    "imageListPath": "Sti for bildelistesvar",
+    "imageListHint": "Punktseparert JSON-sti. La det stå tomt for å lese roten av svaret.",
+    "imageUrlPath": "Sti for bilde-URL per element",
+    "imageB64Path": "Sti for Base64-bilde per element",
+    "imageExtraBody": "Ekstra bildeparametere (JSON)",
+    "imageExtraBodyHint": "Leverandørspesifikke verdier, som quality eller output_format. Modell-, prompt- og bildeinndata beholder gjeldende verdier.",
+    "imageExtraBodyInvalid": "Skriv inn et JSON-objekt, opptil 64 KiB.",
     "chatPath": "Samtaleendepunkt",
     "auth": "Autentisering",
     "authModes": {
@@ -723,6 +748,9 @@
     "urlRequired": "Påkrevd. Basis-URL-en til din egendefinerte server."
   },
   "modelEditor": {
+    "modelType": "Modelltype",
+    "chatModel": "Samtale",
+    "imageModel": "Bildegenerering",
     "fields": {
       "temperature": "Temperatur",
       "topP": "Top P",

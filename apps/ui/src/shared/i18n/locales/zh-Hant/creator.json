@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "建立",
+  "new": {
+    "character": "新角色",
+    "characterBody": "透過對話建立角色",
+    "persona": "新人設",
+    "personaBody": "用 AI 撰寫人設"
+  },
+  "kind": {
+    "character": "角色",
+    "persona": "人設"
+  },
+  "editWithAi": "用 AI 編輯",
+  "editWithAiBody": "儲存變更前先檢視草稿",
+  "settings": "設定",
+  "openCreator": "開啟 Smart creator",
+  "openCreatorBody": "建立或改進角色與人設",
+  "drafts": "你的作品",
+  "empty": "尚無草稿",
+  "emptyBody": "選擇角色或人設以開始",
+  "untitled": "未命名草稿",
+  "saved": "已儲存",
+  "notSaved": "草稿",
+  "savedBody": "此版本已儲存。開啟已儲存的項目以繼續編輯。",
+  "openSaved": "開啟已儲存的項目",
+  "loadMore": "載入更多",
+  "chat": "對話",
+  "draft": "草稿",
+  "views": "創作檢視",
+  "name": "名稱",
+  "definition": "描述",
+  "description": "簡介",
+  "scenes": "開場場景",
+  "discard": "捨棄變更",
+  "saveDraft": "儲存草稿變更",
+  "leaveTitle": "要捨棄未儲存的編輯嗎？",
+  "leaveBody": "已儲存的草稿會保留。只有這些未儲存的編輯會遺失。",
+  "keepEditing": "繼續編輯",
+  "placeholder": "描述你想建立或變更的內容",
+  "startTitle": "你想做什麼？",
+  "startBody": "描述你的想法。你可以一起完善草稿，或自行編輯。",
+  "model": "創作模型",
+  "chooseModel": "選擇模型",
+  "defaultModel": "使用 Smart creator 預設值",
+  "appDefault": "使用應用程式預設值",
+  "modelUnavailable": "所選模型無法使用",
+  "modelMissing": "選擇文字模型以對話。你現在可以編輯草稿。",
+  "streaming": "串流回覆",
+  "toolFormat": "工具格式",
+  "history": "草稿歷史",
+  "version": "版本 {{number}}",
+  "restoreVersion": "使用此版本",
+  "before": "變更前",
+  "after": "變更後",
+  "changes": "檢視變更",
+  "regenerate": "重新產生",
+  "retry": "再試一次",
+  "review": "檢視並儲存",
+  "reviewShort": "檢視",
+  "reviewEdit": "這些變更將更新現有項目",
+  "reviewNew": "檢視將加入資源庫的內容",
+  "saveChanges": "儲存變更",
+  "createAndChat": "建立並對話",
+  "turn": {
+    "pending": "處理中",
+    "succeeded": "草稿已更新",
+    "failed": "回覆失敗。先前的草稿已保留。",
+    "cancelled": "已停止。先前的草稿已保留。",
+    "interrupted": "已中斷。再試一次以從已儲存的草稿繼續。"
+  },
+  "unsavedStatus": "未儲存的草稿變更",
+  "noChanges": "此版本沒有任何變更。",
+  "back": "返回",
+  "current": "目前",
+  "streamingBody": "在撰寫時顯示回覆",
+  "incomplete": "儲存前請新增名稱和描述。",
+  "tools": {
+    "label": "草稿變更",
+    "running": "處理中",
+    "succeeded": "完成",
+    "failed": "失敗",
+    "name": {
+      "write_definition": "更新描述",
+      "write_scene": "新增開場場景",
+      "set_name": "設定名稱",
+      "edit_scene": "編輯開場場景",
+      "delete_scene": "移除開場場景",
+      "show_preview": "顯示預覽",
+      "request_confirmation": "請求檢視",
+      "use_uploaded_image": "設定大頭貼",
+      "generate_image": "產生圖片",
+      "edit_avatar_image": "編輯圖片"
+    }
+  },
+  "settingsPage": {
+    "loading": "正在載入 Smart creator 設定",
+    "modelGroup": "模型",
+    "repliesGroup": "回覆",
+    "streamingNeedsNative": "串流需要原生工具呼叫",
+    "nativeTitle": "原生工具呼叫",
+    "nativeBody": "模型直接呼叫創作者的工具。最適合支援工具的模型。",
+    "toolFormatHint": "JSON 和 XML 會要求模型以文字撰寫工具呼叫，適用於沒有原生工具支援的模型。"
+  },
+  "scene": "場景 {{number}}",
+  "copy": "複製文字",
+  "copied": "已複製",
+  "copyFailed": "無法存取剪貼簿",
+  "targetChanged": {
+    "character": "此角色在你開始後已在別處變更，因此此草稿無法覆寫儲存。",
+    "persona": "此人設在你開始後已在別處變更，因此此草稿無法覆寫儲存。",
+    "carry": "在最新版本上繼續"
+  },
+  "source": {
+    "start": "起點",
+    "creator": "Smart creator",
+    "edit": "你的編輯",
+    "review": "已檢視"
+  },
+  "attach": {
+    "title": "附加",
+    "image": "圖片",
+    "imageBody": "新增創作者可使用的圖片",
+    "character": "角色",
+    "characterBody": "讓創作者讀取角色",
+    "persona": "人設",
+    "personaBody": "讓創作者讀取人設"
+  },
+  "references": {
+    "characterTitle": "附加角色",
+    "personaTitle": "附加人設",
+    "description": "創作者會連同你的訊息一起讀取其目前文字",
+    "search": "搜尋",
+    "done": "完成",
+    "noCharacters": "尚無角色",
+    "noPersonas": "尚無人設",
+    "missing": {
+      "character": "已刪除的角色",
+      "persona": "已刪除的人設"
+    }
+  },
+  "avatar": {
+    "label": "大頭貼",
+    "choose": "選擇大頭貼",
+    "remove": "移除大頭貼",
+    "sessionImages": "此工作階段的圖片",
+    "origin": {
+      "upload": "上傳的圖片",
+      "generated": "產生的圖片",
+      "edited": "編輯過的圖片"
+    }
+  },
+  "image": {
+    "label": "產生的圖片",
+    "useAvatar": "設為大頭貼",
+    "edit": "編輯"
+  }
+}

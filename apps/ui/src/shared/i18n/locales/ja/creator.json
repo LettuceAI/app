@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "作成",
+  "new": {
+    "character": "新しいキャラクター",
+    "characterBody": "チャットでキャラクターを作成",
+    "persona": "新しいペルソナ",
+    "personaBody": "AIでペルソナを書く"
+  },
+  "kind": {
+    "character": "キャラクター",
+    "persona": "ペルソナ"
+  },
+  "editWithAi": "AIで編集",
+  "editWithAiBody": "変更を保存する前に下書きを確認",
+  "settings": "設定",
+  "openCreator": "Smart creatorを開く",
+  "openCreatorBody": "キャラクターとペルソナを作成・改善",
+  "drafts": "あなたの作業",
+  "empty": "下書きはまだありません",
+  "emptyBody": "始めるにはキャラクターまたはペルソナを選択",
+  "untitled": "無題の下書き",
+  "saved": "保存済み",
+  "notSaved": "下書き",
+  "savedBody": "このバージョンは保存されています。編集を続けるには保存済みの項目を開いてください。",
+  "openSaved": "保存済みの項目を開く",
+  "loadMore": "さらに読み込む",
+  "chat": "チャット",
+  "draft": "下書き",
+  "views": "クリエイタービュー",
+  "name": "名前",
+  "definition": "説明",
+  "description": "紹介文",
+  "scenes": "開始シーン",
+  "discard": "変更を破棄",
+  "saveDraft": "下書きの変更を保存",
+  "leaveTitle": "保存されていない編集を破棄しますか？",
+  "leaveBody": "保存済みの下書きは残ります。失われるのはこの未保存の編集だけです。",
+  "keepEditing": "編集を続ける",
+  "placeholder": "作成または変更したい内容を説明してください",
+  "startTitle": "何を作りますか？",
+  "startBody": "アイデアを説明してください。下書きを一緒に磨くことも、自分で編集することもできます。",
+  "model": "クリエイターモデル",
+  "chooseModel": "モデルを選択",
+  "defaultModel": "Smart creatorのデフォルトを使用",
+  "appDefault": "アプリのデフォルトを使用",
+  "modelUnavailable": "選択したモデルは利用できません",
+  "modelMissing": "チャットするにはテキストモデルを選択してください。下書きは今すぐ編集できます。",
+  "streaming": "返信をストリーミング",
+  "toolFormat": "ツール形式",
+  "history": "下書き履歴",
+  "version": "バージョン {{number}}",
+  "restoreVersion": "このバージョンを使用",
+  "before": "変更前",
+  "after": "変更後",
+  "changes": "変更を表示",
+  "regenerate": "再生成",
+  "retry": "もう一度試す",
+  "review": "確認して保存",
+  "reviewShort": "確認",
+  "reviewEdit": "これらの変更で既存の項目が更新されます",
+  "reviewNew": "ライブラリに追加される内容を確認",
+  "saveChanges": "変更を保存",
+  "createAndChat": "作成してチャット",
+  "turn": {
+    "pending": "処理中",
+    "succeeded": "下書きを更新しました",
+    "failed": "返信に失敗しました。以前の下書きは保持されています。",
+    "cancelled": "停止しました。以前の下書きは保持されています。",
+    "interrupted": "中断されました。保存済みの下書きから続けるにはもう一度試してください。"
+  },
+  "unsavedStatus": "未保存の下書き変更",
+  "noChanges": "このバージョンでは何も変更されていません。",
+  "back": "戻る",
+  "current": "現在",
+  "streamingBody": "書かれたそばから返信を表示",
+  "incomplete": "保存する前に名前と説明を追加してください。",
+  "tools": {
+    "label": "下書きの変更",
+    "running": "処理中",
+    "succeeded": "完了",
+    "failed": "失敗",
+    "name": {
+      "write_definition": "説明を更新",
+      "write_scene": "開始シーンを追加",
+      "set_name": "名前を設定",
+      "edit_scene": "開始シーンを編集",
+      "delete_scene": "開始シーンを削除",
+      "show_preview": "プレビューを表示",
+      "request_confirmation": "確認を求める",
+      "use_uploaded_image": "アバターを設定",
+      "generate_image": "画像を生成",
+      "edit_avatar_image": "画像を編集"
+    }
+  },
+  "settingsPage": {
+    "loading": "Smart creatorの設定を読み込み中",
+    "modelGroup": "モデル",
+    "repliesGroup": "返信",
+    "streamingNeedsNative": "ストリーミングにはネイティブのツール呼び出しが必要です",
+    "nativeTitle": "ネイティブツール呼び出し",
+    "nativeBody": "モデルがクリエイターのツールを直接呼び出します。ツールをサポートするモデルに最適です。",
+    "toolFormatHint": "JSONとXMLは、ネイティブのツールサポートがないモデル向けに、ツール呼び出しをテキストで書くようモデルに求めます。"
+  },
+  "scene": "シーン {{number}}",
+  "copy": "テキストをコピー",
+  "copied": "コピーしました",
+  "copyFailed": "クリップボードにアクセスできませんでした",
+  "targetChanged": {
+    "character": "このキャラクターは開始後に別の場所で変更されたため、この下書きを上書き保存できません。",
+    "persona": "このペルソナは開始後に別の場所で変更されたため、この下書きを上書き保存できません。",
+    "carry": "最新バージョンで続ける"
+  },
+  "source": {
+    "start": "開始点",
+    "creator": "Smart creator",
+    "edit": "あなたの編集",
+    "review": "確認済み"
+  },
+  "attach": {
+    "title": "添付",
+    "image": "画像",
+    "imageBody": "クリエイターが使える画像を追加",
+    "character": "キャラクター",
+    "characterBody": "クリエイターにキャラクターを読ませる",
+    "persona": "ペルソナ",
+    "personaBody": "クリエイターにペルソナを読ませる"
+  },
+  "references": {
+    "characterTitle": "キャラクターを添付",
+    "personaTitle": "ペルソナを添付",
+    "description": "クリエイターはあなたのメッセージと一緒に現在のテキストを読みます",
+    "search": "検索",
+    "done": "完了",
+    "noCharacters": "キャラクターはまだありません",
+    "noPersonas": "ペルソナはまだありません",
+    "missing": {
+      "character": "削除されたキャラクター",
+      "persona": "削除されたペルソナ"
+    }
+  },
+  "avatar": {
+    "label": "アバター",
+    "choose": "アバターを選択",
+    "remove": "アバターを削除",
+    "sessionImages": "このセッションの画像",
+    "origin": {
+      "upload": "アップロードした画像",
+      "generated": "生成した画像",
+      "edited": "編集した画像"
+    }
+  },
+  "image": {
+    "label": "生成した画像",
+    "useAvatar": "アバターに設定",
+    "edit": "編集"
+  }
+}

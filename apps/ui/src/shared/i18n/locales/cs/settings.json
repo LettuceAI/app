@@ -569,6 +569,16 @@
     "refresh": "Obnovit"
   },
   "providers": {
+    "models": "Modely chatu a obrázků",
+    "optionalKey": "API klíč (nepovinné)",
+    "webUiCredentials": "uživatelské jméno:heslo nebo token proxy",
+    "comfyTxt2img": "Pracovní postup převodu textu na obrázek (API JSON)",
+    "comfyImg2img": "Pracovní postup převodu obrázku na obrázek (API JSON, nepovinné)",
+    "comfyWorkflowHint": "Exportuj pracovní postup z ComfyUI ve formátu API. Měnící se vstupy nahraď tokeny níže.",
+    "comfyInvalidWorkflow": "Použij objekt JSON ve formátu API s class_type a inputs pro každý uzel (až 4 MiB).",
+    "comfyTokens": "Text: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% nebo %IMAGE0%. Čísla: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Textové tokeny nech v uvozovkách JSON.",
+    "webUiHint": "Spusť WebUI s --api. Po uložení přidej model obrázků ze seznamu checkpointů serveru v části Modely.",
+    "imageModelHint": "Po uložení přidej model obrázků ze seznamu checkpointů serveru v části Modely.",
     "type": "Typ poskytovatele",
     "language": "Jazykové modely",
     "audio": "Zvuk",
@@ -697,6 +707,21 @@
     "mobileDownloads": "Lokální stahování GGUF je dostupné na počítači."
   },
   "customProvider": {
+    "imageRoutes": "Vlastní trasy obrázků",
+    "imageRoutesHint": "Používá stejné ověřování jako chat. Výchozí je OpenAI API pro obrázky.",
+    "imageGenerationPath": "Cesta generování obrázků",
+    "imageEditPath": "Cesta úprav obrázků",
+    "imageEditHint": "Nech prázdné pro vypnutí úprav obrázků.",
+    "imageEditFormat": "Formát požadavku na úpravu obrázku",
+    "imageMultipart": "Soubory multipart (OpenAI)",
+    "imageJson": "JSON datové URL (NanoGPT)",
+    "imageListPath": "Cesta k odpovědi se seznamem obrázků",
+    "imageListHint": "Tečkovaná JSON cesta. Nech prázdné pro čtení kořene odpovědi.",
+    "imageUrlPath": "Cesta k URL obrázku u každé položky",
+    "imageB64Path": "Cesta k Base64 obrázku u každé položky",
+    "imageExtraBody": "Další parametry obrázků (JSON)",
+    "imageExtraBodyHint": "Hodnoty specifické pro poskytovatele, jako quality nebo output_format. Model, prompt a vstupy obrázků si zachovají aktuální hodnoty.",
+    "imageExtraBodyInvalid": "Zadej objekt JSON, až 64 KiB.",
     "chatPath": "Endpoint chatu",
     "auth": "Ověřování",
     "authModes": {
@@ -737,6 +762,9 @@
     "urlRequired": "Povinné. Základní URL tvého vlastního serveru."
   },
   "modelEditor": {
+    "modelType": "Typ modelu",
+    "chatModel": "Chat",
+    "imageModel": "Generování obrázků",
     "fields": {
       "temperature": "Teplota",
       "topP": "Top P",

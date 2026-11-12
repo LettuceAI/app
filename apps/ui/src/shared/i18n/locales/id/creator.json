@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Buat",
+  "new": {
+    "character": "Karakter baru",
+    "characterBody": "Buat karakter dengan mengobrol",
+    "persona": "Persona baru",
+    "personaBody": "Tulis persona dengan AI"
+  },
+  "kind": {
+    "character": "Karakter",
+    "persona": "Persona"
+  },
+  "editWithAi": "Edit dengan AI",
+  "editWithAiBody": "Tinjau draf sebelum menyimpan perubahan",
+  "settings": "Pengaturan",
+  "openCreator": "Buka Smart creator",
+  "openCreatorBody": "Buat atau tingkatkan karakter dan persona",
+  "drafts": "Karya Anda",
+  "empty": "Belum ada draf",
+  "emptyBody": "Pilih karakter atau persona untuk memulai",
+  "untitled": "Draf tanpa judul",
+  "saved": "Tersimpan",
+  "notSaved": "Draf",
+  "savedBody": "Versi ini tersimpan. Buka item tersimpan untuk melanjutkan pengeditan.",
+  "openSaved": "Buka item tersimpan",
+  "loadMore": "Muat lebih banyak",
+  "chat": "Obrolan",
+  "draft": "Draf",
+  "views": "Tampilan creator",
+  "name": "Nama",
+  "definition": "Deskripsi",
+  "description": "Perkenalan",
+  "scenes": "Adegan pembuka",
+  "discard": "Buang perubahan",
+  "saveDraft": "Simpan perubahan draf",
+  "leaveTitle": "Buang perubahan yang belum disimpan?",
+  "leaveBody": "Draf yang tersimpan tetap ada. Hanya perubahan yang belum disimpan ini yang akan hilang.",
+  "keepEditing": "Lanjut mengedit",
+  "placeholder": "Jelaskan apa yang ingin Anda buat atau ubah",
+  "startTitle": "Apa yang ingin Anda buat?",
+  "startBody": "Jelaskan ide Anda. Anda bisa menyempurnakan draf bersama-sama atau mengeditnya sendiri.",
+  "model": "Model creator",
+  "chooseModel": "Pilih model",
+  "defaultModel": "Gunakan default Smart creator",
+  "appDefault": "Gunakan default aplikasi",
+  "modelUnavailable": "Model yang dipilih tidak tersedia",
+  "modelMissing": "Pilih model teks untuk mengobrol. Anda bisa mengedit draf sekarang.",
+  "streaming": "Alirkan balasan",
+  "toolFormat": "Format alat",
+  "history": "Riwayat draf",
+  "version": "Versi {{number}}",
+  "restoreVersion": "Gunakan versi ini",
+  "before": "Sebelum",
+  "after": "Sesudah",
+  "changes": "Lihat perubahan",
+  "regenerate": "Buat ulang",
+  "retry": "Coba lagi",
+  "review": "Tinjau dan simpan",
+  "reviewShort": "Tinjau",
+  "reviewEdit": "Perubahan ini akan memperbarui item yang ada",
+  "reviewNew": "Tinjau apa yang akan ditambahkan ke perpustakaan Anda",
+  "saveChanges": "Simpan perubahan",
+  "createAndChat": "Buat dan obrolkan",
+  "turn": {
+    "pending": "Bekerja",
+    "succeeded": "Draf diperbarui",
+    "failed": "Balasan gagal. Draf sebelumnya dipertahankan.",
+    "cancelled": "Dihentikan. Draf sebelumnya dipertahankan.",
+    "interrupted": "Terputus. Coba lagi untuk melanjutkan dari draf yang tersimpan."
+  },
+  "unsavedStatus": "Perubahan draf yang belum disimpan",
+  "noChanges": "Tidak ada yang berubah di versi ini.",
+  "back": "Kembali",
+  "current": "Saat ini",
+  "streamingBody": "Tampilkan balasan saat ditulis",
+  "incomplete": "Tambahkan nama dan deskripsi sebelum menyimpan.",
+  "tools": {
+    "label": "Perubahan draf",
+    "running": "Bekerja",
+    "succeeded": "Selesai",
+    "failed": "Gagal",
+    "name": {
+      "write_definition": "Perbarui deskripsi",
+      "write_scene": "Tambah adegan pembuka",
+      "set_name": "Atur nama",
+      "edit_scene": "Edit adegan pembuka",
+      "delete_scene": "Hapus adegan pembuka",
+      "show_preview": "Tampilkan pratinjau",
+      "request_confirmation": "Minta tinjauan",
+      "use_uploaded_image": "Atur avatar",
+      "generate_image": "Buat gambar",
+      "edit_avatar_image": "Edit gambar"
+    }
+  },
+  "settingsPage": {
+    "loading": "Memuat pengaturan Smart creator",
+    "modelGroup": "Model",
+    "repliesGroup": "Balasan",
+    "streamingNeedsNative": "Streaming memerlukan panggilan alat native",
+    "nativeTitle": "Panggilan alat native",
+    "nativeBody": "Model memanggil alat creator secara langsung. Terbaik untuk model yang mendukung alat.",
+    "toolFormatHint": "JSON dan XML meminta model menulis panggilan alatnya sebagai teks, untuk model tanpa dukungan alat native."
+  },
+  "scene": "Adegan {{number}}",
+  "copy": "Salin teks",
+  "copied": "Disalin",
+  "copyFailed": "Tidak dapat mengakses papan klip",
+  "targetChanged": {
+    "character": "Karakter ini diubah di tempat lain setelah Anda mulai, jadi draf ini tidak dapat disimpan menimpanya.",
+    "persona": "Persona ini diubah di tempat lain setelah Anda mulai, jadi draf ini tidak dapat disimpan menimpanya.",
+    "carry": "Lanjutkan pada versi terbaru"
+  },
+  "source": {
+    "start": "Titik awal",
+    "creator": "Smart creator",
+    "edit": "Editan Anda",
+    "review": "Ditinjau"
+  },
+  "attach": {
+    "title": "Lampirkan",
+    "image": "Gambar",
+    "imageBody": "Tambahkan gambar yang dapat digunakan creator",
+    "character": "Karakter",
+    "characterBody": "Biarkan creator membaca karakter",
+    "persona": "Persona",
+    "personaBody": "Biarkan creator membaca persona"
+  },
+  "references": {
+    "characterTitle": "Lampirkan karakter",
+    "personaTitle": "Lampirkan persona",
+    "description": "Creator membaca teks terbaru mereka bersama pesan Anda",
+    "search": "Cari",
+    "done": "Selesai",
+    "noCharacters": "Belum ada karakter",
+    "noPersonas": "Belum ada persona",
+    "missing": {
+      "character": "Karakter terhapus",
+      "persona": "Persona terhapus"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Pilih avatar",
+    "remove": "Hapus avatar",
+    "sessionImages": "Gambar di sesi ini",
+    "origin": {
+      "upload": "Gambar diunggah",
+      "generated": "Gambar dihasilkan",
+      "edited": "Gambar diedit"
+    }
+  },
+  "image": {
+    "label": "Gambar dihasilkan",
+    "useAvatar": "Gunakan sebagai avatar",
+    "edit": "Edit"
+  }
+}

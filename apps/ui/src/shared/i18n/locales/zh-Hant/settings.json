@@ -557,6 +557,16 @@
     "refresh": "重新整理"
   },
   "providers": {
+    "models": "對話和圖片模型",
+    "optionalKey": "API 金鑰（選填）",
+    "webUiCredentials": "使用者名稱:密碼或代理權杖",
+    "comfyTxt2img": "文字轉圖片工作流程（API JSON）",
+    "comfyImg2img": "圖片轉圖片工作流程（API JSON，選填）",
+    "comfyWorkflowHint": "從 ComfyUI 以 API 格式匯出工作流程。將會變動的輸入替換為下方權杖。",
+    "comfyInvalidWorkflow": "使用 API 格式的 JSON 物件，每個節點包含 class_type 和 inputs（最大 4 MiB）。",
+    "comfyTokens": "文字: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% 或 %IMAGE0%。數字: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%。請將文字權杖保留在 JSON 引號內。",
+    "webUiHint": "使用 --api 啟動 WebUI。儲存後，在模型的伺服器 checkpoint 清單中新增圖片模型。",
+    "imageModelHint": "儲存後，在模型的伺服器 checkpoint 清單中新增圖片模型。",
     "type": "供應商類型",
     "language": "語言模型",
     "audio": "音訊",
@@ -676,6 +686,21 @@
     "mobileDownloads": "本機 GGUF 下載僅在桌面上提供。"
   },
   "customProvider": {
+    "imageRoutes": "自訂圖片路由",
+    "imageRoutesHint": "使用與對話相同的驗證。預設為 OpenAI 圖片 API。",
+    "imageGenerationPath": "圖片產生路徑",
+    "imageEditPath": "圖片編輯路徑",
+    "imageEditHint": "留空以停用圖片編輯。",
+    "imageEditFormat": "圖片編輯請求格式",
+    "imageMultipart": "多部分檔案（OpenAI）",
+    "imageJson": "JSON 資料 URL（NanoGPT）",
+    "imageListPath": "圖片清單回應路徑",
+    "imageListHint": "點分隔的 JSON 路徑。留空以讀取回應根。",
+    "imageUrlPath": "每個項目的圖片 URL 路徑",
+    "imageB64Path": "每個項目的 Base64 圖片路徑",
+    "imageExtraBody": "額外圖片參數（JSON）",
+    "imageExtraBodyHint": "供應商特定值，例如 quality 或 output_format。模型、提示和圖片輸入會保留目前值。",
+    "imageExtraBodyInvalid": "請輸入 JSON 物件，最大 64 KiB。",
     "chatPath": "對話端點",
     "auth": "驗證",
     "authModes": {
@@ -716,6 +741,9 @@
     "urlRequired": "必要。你的自訂伺服器基礎 URL。"
   },
   "modelEditor": {
+    "modelType": "模型類型",
+    "chatModel": "對話",
+    "imageModel": "圖片產生",
     "fields": {
       "temperature": "溫度",
       "topP": "Top P",

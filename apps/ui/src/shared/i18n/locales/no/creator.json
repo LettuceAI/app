@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Opprett",
+  "new": {
+    "character": "Ny karakter",
+    "characterBody": "Lag en karakter ved å chatte",
+    "persona": "Ny persona",
+    "personaBody": "Skriv en persona med AI"
+  },
+  "kind": {
+    "character": "Karakter",
+    "persona": "Persona"
+  },
+  "editWithAi": "Rediger med AI",
+  "editWithAiBody": "Se gjennom et utkast før du lagrer endringer",
+  "settings": "Innstillinger",
+  "openCreator": "Åpne Smart creator",
+  "openCreatorBody": "Lag eller forbedre karakterer og personaer",
+  "drafts": "Arbeidet ditt",
+  "empty": "Ingen utkast ennå",
+  "emptyBody": "Velg en karakter eller persona for å begynne",
+  "untitled": "Utkast uten tittel",
+  "saved": "Lagret",
+  "notSaved": "Utkast",
+  "savedBody": "Denne versjonen er lagret. Åpne det lagrede elementet for å fortsette å redigere.",
+  "openSaved": "Åpne lagret element",
+  "loadMore": "Last inn flere",
+  "chat": "Samtale",
+  "draft": "Utkast",
+  "views": "Creator-visninger",
+  "name": "Navn",
+  "definition": "Beskrivelse",
+  "description": "Introduksjon",
+  "scenes": "Startscener",
+  "discard": "Forkast endringer",
+  "saveDraft": "Lagre utkastendringer",
+  "leaveTitle": "Forkaste ulagrede endringer?",
+  "leaveBody": "Det lagrede utkastet blir værende. Bare disse ulagrede endringene går tapt.",
+  "keepEditing": "Fortsett å redigere",
+  "placeholder": "Beskriv hva du vil lage eller endre",
+  "startTitle": "Hva vil du lage?",
+  "startBody": "Beskriv ideen din. Dere kan forbedre utkastet sammen, eller du kan redigere det selv.",
+  "model": "Creator-modell",
+  "chooseModel": "Velg en modell",
+  "defaultModel": "Bruk Smart creator-standarden",
+  "appDefault": "Bruk appens standard",
+  "modelUnavailable": "Den valgte modellen er utilgjengelig",
+  "modelMissing": "Velg en tekstmodell for å chatte. Du kan redigere utkastet nå.",
+  "streaming": "Strøm svarene",
+  "toolFormat": "Verktøyformat",
+  "history": "Utkastlogg",
+  "version": "Versjon {{number}}",
+  "restoreVersion": "Bruk denne versjonen",
+  "before": "Før",
+  "after": "Etter",
+  "changes": "Se endringer",
+  "regenerate": "Generer på nytt",
+  "retry": "Prøv igjen",
+  "review": "Se gjennom og lagre",
+  "reviewShort": "Se gjennom",
+  "reviewEdit": "Disse endringene oppdaterer det eksisterende elementet",
+  "reviewNew": "Se gjennom det som legges til i biblioteket ditt",
+  "saveChanges": "Lagre endringer",
+  "createAndChat": "Opprett og start samtale",
+  "turn": {
+    "pending": "Arbeider",
+    "succeeded": "Utkastet er oppdatert",
+    "failed": "Svaret mislyktes. Det forrige utkastet er beholdt.",
+    "cancelled": "Stoppet. Det forrige utkastet er beholdt.",
+    "interrupted": "Avbrutt. Prøv igjen for å fortsette fra det lagrede utkastet."
+  },
+  "unsavedStatus": "Ulagrede utkastendringer",
+  "noChanges": "Ingenting ble endret i denne versjonen.",
+  "back": "Tilbake",
+  "current": "Gjeldende",
+  "streamingBody": "Vis svar mens de skrives",
+  "incomplete": "Legg til et navn og en beskrivelse før du lagrer.",
+  "tools": {
+    "label": "Utkastendringer",
+    "running": "Arbeider",
+    "succeeded": "Ferdig",
+    "failed": "Mislyktes",
+    "name": {
+      "write_definition": "Oppdater beskrivelsen",
+      "write_scene": "Legg til en startscene",
+      "set_name": "Angi navnet",
+      "edit_scene": "Rediger en startscene",
+      "delete_scene": "Fjern en startscene",
+      "show_preview": "Vis en forhåndsvisning",
+      "request_confirmation": "Be om gjennomgang",
+      "use_uploaded_image": "Angi avataren",
+      "generate_image": "Generer et bilde",
+      "edit_avatar_image": "Rediger et bilde"
+    }
+  },
+  "settingsPage": {
+    "loading": "Laster Smart creator-innstillinger",
+    "modelGroup": "Modell",
+    "repliesGroup": "Svar",
+    "streamingNeedsNative": "Strømming krever native verktøykall",
+    "nativeTitle": "Native verktøykall",
+    "nativeBody": "Modellen kaller creator-ens verktøy direkte. Best for modeller som støtter verktøy.",
+    "toolFormatHint": "JSON og XML ber modellen skrive verktøykallene som tekst, for modeller uten native verktøystøtte."
+  },
+  "scene": "Scene {{number}}",
+  "copy": "Kopier tekst",
+  "copied": "Kopiert",
+  "copyFailed": "Fikk ikke tilgang til utklippstavlen",
+  "targetChanged": {
+    "character": "Denne karakteren ble endret et annet sted etter at du startet, så dette utkastet kan ikke lagres over den.",
+    "persona": "Denne personaen ble endret et annet sted etter at du startet, så dette utkastet kan ikke lagres over den.",
+    "carry": "Fortsett på den nyeste versjonen"
+  },
+  "source": {
+    "start": "Utgangspunkt",
+    "creator": "Smart creator",
+    "edit": "Din redigering",
+    "review": "Gjennomgått"
+  },
+  "attach": {
+    "title": "Legg ved",
+    "image": "Bilde",
+    "imageBody": "Legg til bilder creator-en kan bruke",
+    "character": "Karakter",
+    "characterBody": "La creator-en lese en karakter",
+    "persona": "Persona",
+    "personaBody": "La creator-en lese en persona"
+  },
+  "references": {
+    "characterTitle": "Legg ved karakterer",
+    "personaTitle": "Legg ved personaer",
+    "description": "Creator-en leser den gjeldende teksten deres sammen med meldingen din",
+    "search": "Søk",
+    "done": "Ferdig",
+    "noCharacters": "Ingen karakterer ennå",
+    "noPersonas": "Ingen personaer ennå",
+    "missing": {
+      "character": "Slettet karakter",
+      "persona": "Slettet persona"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Velg en avatar",
+    "remove": "Fjern avatar",
+    "sessionImages": "Bilder i denne økten",
+    "origin": {
+      "upload": "Lastet opp bilde",
+      "generated": "Generert bilde",
+      "edited": "Redigert bilde"
+    }
+  },
+  "image": {
+    "label": "Generert bilde",
+    "useAvatar": "Bruk som avatar",
+    "edit": "Rediger"
+  }
+}

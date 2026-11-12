@@ -561,6 +561,16 @@
     "refresh": "Aktualisieren"
   },
   "providers": {
+    "models": "Chat- und Bildmodelle",
+    "optionalKey": "API-Schlüssel (optional)",
+    "webUiCredentials": "Benutzername:Passwort oder Proxy-Token",
+    "comfyTxt2img": "Text-zu-Bild-Workflow (API-JSON)",
+    "comfyImg2img": "Bild-zu-Bild-Workflow (API-JSON, optional)",
+    "comfyWorkflowHint": "Exportiere den Workflow in ComfyUI im API-Format. Ersetze veränderliche Eingaben durch die untenstehenden Tokens.",
+    "comfyInvalidWorkflow": "Verwende ein JSON-Objekt im API-Format mit class_type und inputs für jeden Knoten (bis zu 4 MiB).",
+    "comfyTokens": "Text: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% oder %IMAGE0%. Zahlen: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Text-Tokens in JSON-Anführungszeichen setzen.",
+    "webUiHint": "Starte WebUI mit --api. Füge nach dem Speichern ein Bildmodell aus der Checkpoint-Liste des Servers unter Modelle hinzu.",
+    "imageModelHint": "Füge nach dem Speichern ein Bildmodell aus der Checkpoint-Liste des Servers unter Modelle hinzu.",
     "type": "Anbietertyp",
     "language": "Sprachmodelle",
     "audio": "Audio",
@@ -683,6 +693,21 @@
     "mobileDownloads": "Lokale GGUF-Downloads sind auf dem Desktop verfügbar."
   },
   "customProvider": {
+    "imageRoutes": "Benutzerdefinierte Bildrouten",
+    "imageRoutesHint": "Verwendet dieselbe Authentifizierung wie der Chat. Standardmäßig die OpenAI-Bild-API.",
+    "imageGenerationPath": "Pfad zur Bildgenerierung",
+    "imageEditPath": "Pfad zur Bildbearbeitung",
+    "imageEditHint": "Leer lassen, um die Bildbearbeitung zu deaktivieren.",
+    "imageEditFormat": "Anfrageformat für Bildbearbeitung",
+    "imageMultipart": "Multipart-Dateien (OpenAI)",
+    "imageJson": "JSON-Daten-URLs (NanoGPT)",
+    "imageListPath": "Pfad zur Bildliste in der Antwort",
+    "imageListHint": "Punktierter JSON-Pfad. Leer lassen, um die Antwortwurzel zu lesen.",
+    "imageUrlPath": "Bild-URL-Pfad pro Element",
+    "imageB64Path": "Base64-Bildpfad pro Element",
+    "imageExtraBody": "Zusätzliche Bildparameter (JSON)",
+    "imageExtraBodyHint": "Anbieterspezifische Werte wie quality oder output_format. Modell-, Prompt- und Bildeingaben behalten ihre aktuellen Werte.",
+    "imageExtraBodyInvalid": "Gib ein JSON-Objekt mit bis zu 64 KiB ein.",
     "chatPath": "Chat-Endpunkt",
     "auth": "Authentifizierung",
     "authModes": {
@@ -723,6 +748,9 @@
     "urlRequired": "Erforderlich. Die Basis-URL deines benutzerdefinierten Servers."
   },
   "modelEditor": {
+    "modelType": "Modelltyp",
+    "chatModel": "Chat",
+    "imageModel": "Bildgenerierung",
     "fields": {
       "temperature": "Temperatur",
       "topP": "Top P",

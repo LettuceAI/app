@@ -610,6 +610,7 @@
     "deleteWithModelsBody_other": "Bu sağlayıcının hâlâ {{count}} modeli var: {{names}}. Sağlayıcıyı silmek onları da siler.",
     "deleteWithModels_one": "Sağlayıcıyı ve 1 modeli sil",
     "deleteWithModels_other": "Sağlayıcıyı ve {{count}} modeli sil",
+    "modelCount_zero": "Henüz model yok",
     "modelCount_one": "1 model",
     "modelCount_other": "{{count}} model"
   },

@@ -569,6 +569,16 @@
     "refresh": "Оновити"
   },
   "providers": {
+    "models": "Моделі чату й зображень",
+    "optionalKey": "API-ключ (необов'язково)",
+    "webUiCredentials": "ім'я користувача:пароль або токен проксі",
+    "comfyTxt2img": "Робочий процес текст-у-зображення (API JSON)",
+    "comfyImg2img": "Робочий процес зображення-в-зображення (API JSON, необов'язково)",
+    "comfyWorkflowHint": "Експортуйте робочий процес із ComfyUI у форматі API. Змінні вхідні дані замініть токенами нижче.",
+    "comfyInvalidWorkflow": "Використовуйте об'єкт JSON у форматі API з class_type та inputs для кожного вузла (до 4 MiB).",
+    "comfyTokens": "Текст: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% або %IMAGE0%. Числа: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Текстові токени залишайте в лапках JSON.",
+    "webUiHint": "Запустіть WebUI з --api. Після збереження додайте модель зображень зі списку контрольних точок сервера в розділі «Моделі».",
+    "imageModelHint": "Після збереження додайте модель зображень зі списку контрольних точок сервера в розділі «Моделі».",
     "type": "Тип провайдера",
     "language": "Мовні моделі",
     "audio": "Аудіо",
@@ -697,6 +707,21 @@
     "mobileDownloads": "Локальні завантаження GGUF доступні на комп'ютері."
   },
   "customProvider": {
+    "imageRoutes": "Власні маршрути зображень",
+    "imageRoutesHint": "Використовує ту саму автентифікацію, що й чат. За замовчуванням використовується API зображень OpenAI.",
+    "imageGenerationPath": "Шлях генерації зображень",
+    "imageEditPath": "Шлях редагування зображень",
+    "imageEditHint": "Залиште порожнім, щоб вимкнути редагування зображень.",
+    "imageEditFormat": "Формат запиту редагування зображення",
+    "imageMultipart": "Файли multipart (OpenAI)",
+    "imageJson": "URL-адреси даних JSON (NanoGPT)",
+    "imageListPath": "Шлях до відповіді зі списком зображень",
+    "imageListHint": "Шлях JSON через крапки. Залиште порожнім, щоб читати корінь відповіді.",
+    "imageUrlPath": "Шлях до URL зображення для кожного елемента",
+    "imageB64Path": "Шлях до зображення Base64 для кожного елемента",
+    "imageExtraBody": "Додаткові параметри зображень (JSON)",
+    "imageExtraBodyHint": "Значення, специфічні для провайдера, як-от quality або output_format. Модель, промпт і вхідні зображення зберігають поточні значення.",
+    "imageExtraBodyInvalid": "Введіть об'єкт JSON розміром до 64 KiB.",
     "chatPath": "Кінцева точка чату",
     "auth": "Автентифікація",
     "authModes": {
@@ -737,6 +762,9 @@
     "urlRequired": "Обов'язково. Базова URL-адреса вашого власного сервера."
   },
   "modelEditor": {
+    "modelType": "Тип моделі",
+    "chatModel": "Чат",
+    "imageModel": "Генерація зображень",
     "fields": {
       "temperature": "Температура",
       "topP": "Top P",

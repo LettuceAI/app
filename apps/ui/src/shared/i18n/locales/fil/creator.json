@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Gumawa",
+  "new": {
+    "character": "Bagong karakter",
+    "characterBody": "Bumuo ng karakter sa pamamagitan ng chat",
+    "persona": "Bagong persona",
+    "personaBody": "Sumulat ng persona gamit ang AI"
+  },
+  "kind": {
+    "character": "Karakter",
+    "persona": "Persona"
+  },
+  "editWithAi": "I-edit gamit ang AI",
+  "editWithAiBody": "Suriin ang draft bago i-save ang mga pagbabago",
+  "settings": "Mga Setting",
+  "openCreator": "Buksan ang Smart creator",
+  "openCreatorBody": "Gumawa o paghusayin ang mga karakter at persona",
+  "drafts": "Mga gawa mo",
+  "empty": "Wala pang draft",
+  "emptyBody": "Pumili ng karakter o persona para magsimula",
+  "untitled": "Draft na walang pamagat",
+  "saved": "Nai-save",
+  "notSaved": "Draft",
+  "savedBody": "Nai-save ang bersyong ito. Buksan ang nai-save na item para magpatuloy sa pag-edit.",
+  "openSaved": "Buksan ang nai-save na item",
+  "loadMore": "Mag-load pa",
+  "chat": "Chat",
+  "draft": "Draft",
+  "views": "Mga view ng creator",
+  "name": "Pangalan",
+  "definition": "Deskripsyon",
+  "description": "Paglalarawan",
+  "scenes": "Mga panimulang eksena",
+  "discard": "Itapon ang mga pagbabago",
+  "saveDraft": "I-save ang mga pagbabago sa draft",
+  "leaveTitle": "Itapon ang mga hindi nai-save na pagbabago?",
+  "leaveBody": "Mananatili ang nai-save mong draft. Ang mga hindi nai-save na pagbabagong ito lang ang mawawala.",
+  "keepEditing": "Magpatuloy sa pag-edit",
+  "placeholder": "Ilarawan kung ano ang gusto mong gawin o baguhin",
+  "startTitle": "Ano ang gusto mong gawin?",
+  "startBody": "Ilarawan ang ideya mo. Puwede ninyong paghusayin ang draft nang sama-sama, o i-edit mo ito mismo.",
+  "model": "Modelo ng creator",
+  "chooseModel": "Pumili ng modelo",
+  "defaultModel": "Gamitin ang default ng Smart creator",
+  "appDefault": "Gamitin ang default ng app",
+  "modelUnavailable": "Hindi available ang napiling modelo",
+  "modelMissing": "Pumili ng text model para makapag-chat. Puwede mo nang i-edit ang draft.",
+  "streaming": "I-stream ang mga tugon",
+  "toolFormat": "Format ng tool",
+  "history": "Kasaysayan ng draft",
+  "version": "Bersyon {{number}}",
+  "restoreVersion": "Gamitin ang bersyong ito",
+  "before": "Bago",
+  "after": "Pagkatapos",
+  "changes": "Tingnan ang mga pagbabago",
+  "regenerate": "Gumawa muli",
+  "retry": "Subukan muli",
+  "review": "Suriin at i-save",
+  "reviewShort": "Suriin",
+  "reviewEdit": "Ia-update ng mga pagbabagong ito ang umiiral na item",
+  "reviewNew": "Suriin ang idadagdag sa library mo",
+  "saveChanges": "I-save ang mga pagbabago",
+  "createAndChat": "Gumawa at mag-chat",
+  "turn": {
+    "pending": "Gumagawa",
+    "succeeded": "Na-update ang draft",
+    "failed": "Nabigo ang tugon. Napanatili ang dati mong draft.",
+    "cancelled": "Nahinto. Napanatili ang dati mong draft.",
+    "interrupted": "Naantala. Subukan muli para magpatuloy mula sa nai-save mong draft."
+  },
+  "unsavedStatus": "Mga hindi nai-save na pagbabago sa draft",
+  "noChanges": "Walang nagbago sa bersyong ito.",
+  "back": "Bumalik",
+  "current": "Kasalukuyan",
+  "streamingBody": "Ipakita ang mga tugon habang isinusulat",
+  "incomplete": "Maglagay ng pangalan at deskripsyon bago i-save.",
+  "tools": {
+    "label": "Mga pagbabago sa draft",
+    "running": "Gumagawa",
+    "succeeded": "Tapos na",
+    "failed": "Nabigo",
+    "name": {
+      "write_definition": "I-update ang deskripsyon",
+      "write_scene": "Magdagdag ng panimulang eksena",
+      "set_name": "Itakda ang pangalan",
+      "edit_scene": "I-edit ang panimulang eksena",
+      "delete_scene": "Alisin ang panimulang eksena",
+      "show_preview": "Magpakita ng preview",
+      "request_confirmation": "Humingi ng pagsusuri",
+      "use_uploaded_image": "Itakda ang avatar",
+      "generate_image": "Gumawa ng larawan",
+      "edit_avatar_image": "I-edit ang larawan"
+    }
+  },
+  "settingsPage": {
+    "loading": "Naglo-load ng mga setting ng Smart creator",
+    "modelGroup": "Modelo",
+    "repliesGroup": "Mga tugon",
+    "streamingNeedsNative": "Kailangan ng native tool calls ang streaming",
+    "nativeTitle": "Native tool calls",
+    "nativeBody": "Direktang tinatawag ng modelo ang mga tool ng creator. Pinakamainam para sa mga modelong sumusuporta ng tool.",
+    "toolFormatHint": "Hinihiling ng JSON at XML sa modelo na isulat ang mga tool call nito bilang text, para sa mga modelong walang native tool support."
+  },
+  "scene": "Eksena {{number}}",
+  "copy": "Kopyahin ang text",
+  "copied": "Nakopya",
+  "copyFailed": "Hindi maabot ang clipboard",
+  "targetChanged": {
+    "character": "Binago ang karakter na ito sa ibang lugar pagkatapos mong magsimula, kaya hindi mai-save ang draft na ito sa ibabaw nito.",
+    "persona": "Binago ang persona na ito sa ibang lugar pagkatapos mong magsimula, kaya hindi mai-save ang draft na ito sa ibabaw nito.",
+    "carry": "Magpatuloy sa pinakabagong bersyon"
+  },
+  "source": {
+    "start": "Simula",
+    "creator": "Smart creator",
+    "edit": "Pag-edit mo",
+    "review": "Nasuri"
+  },
+  "attach": {
+    "title": "I-attach",
+    "image": "Larawan",
+    "imageBody": "Magdagdag ng mga larawang magagamit ng creator",
+    "character": "Karakter",
+    "characterBody": "Payagan ang creator na basahin ang isang karakter",
+    "persona": "Persona",
+    "personaBody": "Payagan ang creator na basahin ang isang persona"
+  },
+  "references": {
+    "characterTitle": "I-attach ang mga karakter",
+    "personaTitle": "I-attach ang mga persona",
+    "description": "Binabasa ng creator ang kasalukuyang text nila kasama ng mensahe mo",
+    "search": "Maghanap",
+    "done": "Tapos na",
+    "noCharacters": "Wala pang karakter",
+    "noPersonas": "Wala pang persona",
+    "missing": {
+      "character": "Natanggal na karakter",
+      "persona": "Natanggal na persona"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Pumili ng avatar",
+    "remove": "Alisin ang avatar",
+    "sessionImages": "Mga larawan sa session na ito",
+    "origin": {
+      "upload": "Na-upload na larawan",
+      "generated": "Gawang larawan",
+      "edited": "Na-edit na larawan"
+    }
+  },
+  "image": {
+    "label": "Gawang larawan",
+    "useAvatar": "Gamitin bilang avatar",
+    "edit": "I-edit"
+  }
+}

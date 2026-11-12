@@ -561,6 +561,16 @@
     "refresh": "Vernieuwen"
   },
   "providers": {
+    "models": "Chat- en afbeeldingsmodellen",
+    "optionalKey": "API-sleutel (optioneel)",
+    "webUiCredentials": "gebruikersnaam:wachtwoord of proxytoken",
+    "comfyTxt2img": "Workflow voor tekst naar afbeelding (API-JSON)",
+    "comfyImg2img": "Workflow voor afbeelding naar afbeelding (API-JSON, optioneel)",
+    "comfyWorkflowHint": "Exporteer de workflow in API-formaat uit ComfyUI. Vervang veranderende invoer door de tokens hieronder.",
+    "comfyInvalidWorkflow": "Gebruik een JSON-object in API-formaat met class_type en inputs voor elke node (tot 4 MiB).",
+    "comfyTokens": "Tekst: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% of %IMAGE0%. Getallen: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Houd teksttokens tussen JSON-aanhalingstekens.",
+    "webUiHint": "Start WebUI met --api. Voeg na het opslaan een afbeeldingsmodel toe uit de checkpointlijst van de server bij Modellen.",
+    "imageModelHint": "Voeg na het opslaan een afbeeldingsmodel toe uit de checkpointlijst van de server bij Modellen.",
     "type": "Providertype",
     "language": "Taalmodellen",
     "audio": "Audio",
@@ -683,6 +693,21 @@
     "mobileDownloads": "Lokale GGUF-downloads zijn beschikbaar op desktop."
   },
   "customProvider": {
+    "imageRoutes": "Aangepaste afbeeldingsroutes",
+    "imageRoutesHint": "Gebruikt dezelfde authenticatie als chat. Standaard de OpenAI-afbeeldings-API.",
+    "imageGenerationPath": "Pad voor afbeeldingsgeneratie",
+    "imageEditPath": "Pad voor afbeeldingsbewerking",
+    "imageEditHint": "Laat leeg om afbeeldingsbewerking uit te schakelen.",
+    "imageEditFormat": "Aanvraagformaat voor afbeeldingsbewerking",
+    "imageMultipart": "Multipartbestanden (OpenAI)",
+    "imageJson": "JSON-data-URL's (NanoGPT)",
+    "imageListPath": "Pad naar afbeeldingslijst in het antwoord",
+    "imageListHint": "JSON-pad met punten. Laat leeg om de hoofdmap van het antwoord te lezen.",
+    "imageUrlPath": "Pad naar afbeeldings-URL per item",
+    "imageB64Path": "Pad naar Base64-afbeelding per item",
+    "imageExtraBody": "Extra afbeeldingsparameters (JSON)",
+    "imageExtraBodyHint": "Providerspecifieke waarden, zoals quality of output_format. Model-, prompt- en afbeeldingsinvoer behouden hun huidige waarden.",
+    "imageExtraBodyInvalid": "Voer een JSON-object in, tot 64 KiB.",
     "chatPath": "Chat-endpoint",
     "auth": "Authenticatie",
     "authModes": {
@@ -723,6 +748,9 @@
     "urlRequired": "Vereist. De basis-URL van je aangepaste server."
   },
   "modelEditor": {
+    "modelType": "Modeltype",
+    "chatModel": "Chat",
+    "imageModel": "Afbeeldingsgeneratie",
     "fields": {
       "temperature": "Temperatuur",
       "topP": "Top P",

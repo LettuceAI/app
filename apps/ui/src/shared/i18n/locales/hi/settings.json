@@ -561,6 +561,16 @@
     "refresh": "रिफ़्रेश करें"
   },
   "providers": {
+    "models": "चैट और छवि मॉडल",
+    "optionalKey": "API कुंजी (वैकल्पिक)",
+    "webUiCredentials": "username:password या proxy टोकन",
+    "comfyTxt2img": "टेक्स्ट-से-छवि वर्कफ़्लो (API JSON)",
+    "comfyImg2img": "छवि-से-छवि वर्कफ़्लो (API JSON, वैकल्पिक)",
+    "comfyWorkflowHint": "ComfyUI से वर्कफ़्लो को API फ़ॉर्मैट में एक्सपोर्ट करें। बदलने वाले इनपुट को नीचे दिए टोकन से बदलें।",
+    "comfyInvalidWorkflow": "हर नोड के लिए class_type और inputs वाला API-फ़ॉर्मैट JSON ऑब्जेक्ट उपयोग करें (4 MiB तक)।",
+    "comfyTokens": "टेक्स्ट: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% या %IMAGE0%. संख्याएँ: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. टेक्स्ट टोकन को JSON कोट्स में रखें।",
+    "webUiHint": "WebUI को --api के साथ शुरू करें। सेव करने के बाद, मॉडल में सर्वर की चेकपॉइंट सूची से एक छवि मॉडल जोड़ें।",
+    "imageModelHint": "सेव करने के बाद, मॉडल में सर्वर की चेकपॉइंट सूची से एक छवि मॉडल जोड़ें।",
     "type": "प्रदाता प्रकार",
     "language": "भाषा मॉडल",
     "audio": "ऑडियो",
@@ -683,6 +693,21 @@
     "mobileDownloads": "लोकल GGUF डाउनलोड डेस्कटॉप पर उपलब्ध हैं।"
   },
   "customProvider": {
+    "imageRoutes": "कस्टम छवि रूट",
+    "imageRoutesHint": "चैट जैसा ही प्रमाणीकरण उपयोग करता है। डिफ़ॉल्ट OpenAI छवि API है।",
+    "imageGenerationPath": "छवि बनाने का पाथ",
+    "imageEditPath": "छवि संपादन का पाथ",
+    "imageEditHint": "छवि संपादन बंद करने के लिए खाली छोड़ें।",
+    "imageEditFormat": "छवि संपादन अनुरोध फ़ॉर्मैट",
+    "imageMultipart": "मल्टीपार्ट फ़ाइलें (OpenAI)",
+    "imageJson": "JSON डेटा URL (NanoGPT)",
+    "imageListPath": "छवि सूची जवाब का पाथ",
+    "imageListHint": "डॉट वाला JSON पाथ। जवाब का रूट पढ़ने के लिए खाली छोड़ें।",
+    "imageUrlPath": "प्रति आइटम छवि URL पाथ",
+    "imageB64Path": "प्रति आइटम Base64 छवि पाथ",
+    "imageExtraBody": "अतिरिक्त छवि पैरामीटर (JSON)",
+    "imageExtraBodyHint": "प्रदाता-विशिष्ट मान, जैसे quality या output_format. मॉडल, प्रॉम्प्ट और छवि इनपुट अपने मौजूदा मान रखते हैं।",
+    "imageExtraBodyInvalid": "JSON ऑब्जेक्ट दर्ज करें, 64 KiB तक।",
     "chatPath": "चैट एंडपॉइंट",
     "auth": "प्रमाणीकरण",
     "authModes": {
@@ -723,6 +748,9 @@
     "urlRequired": "ज़रूरी। आपके कस्टम सर्वर का बेस URL।"
   },
   "modelEditor": {
+    "modelType": "मॉडल प्रकार",
+    "chatModel": "चैट",
+    "imageModel": "छवि निर्माण",
     "fields": {
       "temperature": "तापमान",
       "topP": "Top P",

@@ -561,6 +561,16 @@
     "refresh": "Ανανέωση"
   },
   "providers": {
+    "models": "Μοντέλα συνομιλίας και εικόνας",
+    "optionalKey": "Κλειδί API (προαιρετικό)",
+    "webUiCredentials": "όνομα χρήστη:κωδικός ή token proxy",
+    "comfyTxt2img": "Ροή εργασίας κειμένου σε εικόνα (API JSON)",
+    "comfyImg2img": "Ροή εργασίας εικόνας σε εικόνα (API JSON, προαιρετική)",
+    "comfyWorkflowHint": "Εξαγάγετε τη ροή εργασίας από το ComfyUI σε μορφή API. Αντικαταστήστε τις μεταβλητές εισόδους με τα tokens παρακάτω.",
+    "comfyInvalidWorkflow": "Χρησιμοποιήστε αντικείμενο JSON σε μορφή API με class_type και inputs για κάθε κόμβο (έως 4 MiB).",
+    "comfyTokens": "Κείμενο: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% ή %IMAGE0%. Αριθμοί: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Κρατήστε τα tokens κειμένου σε εισαγωγικά JSON.",
+    "webUiHint": "Ξεκινήστε το WebUI με --api. Αφού αποθηκεύσετε, προσθέστε ένα μοντέλο εικόνας από τη λίστα checkpoints του διακομιστή στα Μοντέλα.",
+    "imageModelHint": "Αφού αποθηκεύσετε, προσθέστε ένα μοντέλο εικόνας από τη λίστα checkpoints του διακομιστή στα Μοντέλα.",
     "type": "Τύπος παρόχου",
     "language": "Μοντέλα γλώσσας",
     "audio": "Ήχος",
@@ -683,6 +693,21 @@
     "mobileDownloads": "Οι τοπικές λήψεις GGUF είναι διαθέσιμες στον υπολογιστή."
   },
   "customProvider": {
+    "imageRoutes": "Προσαρμοσμένες διαδρομές εικόνας",
+    "imageRoutesHint": "Χρησιμοποιεί τον ίδιο έλεγχο ταυτότητας με τη συνομιλία. Από προεπιλογή χρησιμοποιεί το API εικόνας του OpenAI.",
+    "imageGenerationPath": "Διαδρομή δημιουργίας εικόνας",
+    "imageEditPath": "Διαδρομή επεξεργασίας εικόνας",
+    "imageEditHint": "Αφήστε το κενό για να απενεργοποιήσετε την επεξεργασία εικόνας.",
+    "imageEditFormat": "Μορφή αιτήματος επεξεργασίας εικόνας",
+    "imageMultipart": "Αρχεία multipart (OpenAI)",
+    "imageJson": "URL δεδομένων JSON (NanoGPT)",
+    "imageListPath": "Διαδρομή απόκρισης λίστας εικόνων",
+    "imageListHint": "Διαδρομή JSON με τελείες. Αφήστε το κενό για ανάγνωση της ρίζας της απόκρισης.",
+    "imageUrlPath": "Διαδρομή URL εικόνας ανά στοιχείο",
+    "imageB64Path": "Διαδρομή εικόνας Base64 ανά στοιχείο",
+    "imageExtraBody": "Πρόσθετες παράμετροι εικόνας (JSON)",
+    "imageExtraBodyHint": "Τιμές ειδικές για τον πάροχο, όπως quality ή output_format. Το μοντέλο, η προτροπή και οι είσοδοι εικόνας διατηρούν τις τρέχουσες τιμές τους.",
+    "imageExtraBodyInvalid": "Εισαγάγετε αντικείμενο JSON, έως 64 KiB.",
     "chatPath": "Endpoint συνομιλίας",
     "auth": "Έλεγχος ταυτότητας",
     "authModes": {
@@ -723,6 +748,9 @@
     "urlRequired": "Απαιτείται. Το βασικό URL του προσαρμοσμένου διακομιστή σας."
   },
   "modelEditor": {
+    "modelType": "Τύπος μοντέλου",
+    "chatModel": "Συνομιλία",
+    "imageModel": "Δημιουργία εικόνας",
     "fields": {
       "temperature": "Θερμοκρασία",
       "topP": "Top P",

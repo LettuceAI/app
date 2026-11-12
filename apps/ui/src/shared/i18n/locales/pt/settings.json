@@ -565,6 +565,16 @@
     "refresh": "Atualizar"
   },
   "providers": {
+    "models": "Modelos de conversa e imagem",
+    "optionalKey": "Chave de API (opcional)",
+    "webUiCredentials": "usuário:senha ou token de proxy",
+    "comfyTxt2img": "Fluxo de texto para imagem (JSON da API)",
+    "comfyImg2img": "Fluxo de imagem para imagem (JSON da API, opcional)",
+    "comfyWorkflowHint": "Exporte o fluxo do ComfyUI no formato de API. Substitua as entradas variáveis pelos tokens abaixo.",
+    "comfyInvalidWorkflow": "Use um objeto JSON no formato de API com class_type e inputs para cada nó (até 4 MiB).",
+    "comfyTokens": "Texto: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% ou %IMAGE0%. Números: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Mantenha os tokens de texto entre aspas JSON.",
+    "webUiHint": "Inicie o WebUI com --api. Depois de salvar, adicione um modelo de imagem da lista de checkpoints do servidor em Modelos.",
+    "imageModelHint": "Depois de salvar, adicione um modelo de imagem da lista de checkpoints do servidor em Modelos.",
     "type": "Tipo de provedor",
     "language": "Modelos de linguagem",
     "audio": "Áudio",
@@ -690,6 +700,21 @@
     "mobileDownloads": "Downloads de GGUF locais estão disponíveis no desktop."
   },
   "customProvider": {
+    "imageRoutes": "Rotas de imagem personalizadas",
+    "imageRoutesHint": "Usa a mesma autenticação da conversa. Por padrão, a API de imagem da OpenAI.",
+    "imageGenerationPath": "Caminho de geração de imagem",
+    "imageEditPath": "Caminho de edição de imagem",
+    "imageEditHint": "Deixe vazio para desativar a edição de imagem.",
+    "imageEditFormat": "Formato da solicitação de edição de imagem",
+    "imageMultipart": "Arquivos multipart (OpenAI)",
+    "imageJson": "URLs de dados JSON (NanoGPT)",
+    "imageListPath": "Caminho da lista de imagens na resposta",
+    "imageListHint": "Caminho JSON com pontos. Deixe vazio para ler a raiz da resposta.",
+    "imageUrlPath": "Caminho da URL da imagem por item",
+    "imageB64Path": "Caminho da imagem Base64 por item",
+    "imageExtraBody": "Parâmetros de imagem extras (JSON)",
+    "imageExtraBodyHint": "Valores específicos do provedor, como quality ou output_format. O modelo, o prompt e as imagens de entrada mantêm os valores atuais.",
+    "imageExtraBodyInvalid": "Insira um objeto JSON, até 64 KiB.",
     "chatPath": "Endpoint de conversa",
     "auth": "Autenticação",
     "authModes": {
@@ -730,6 +755,9 @@
     "urlRequired": "Obrigatório. A URL base do seu servidor personalizado."
   },
   "modelEditor": {
+    "modelType": "Tipo de modelo",
+    "chatModel": "Conversa",
+    "imageModel": "Geração de imagem",
     "fields": {
       "temperature": "Temperatura",
       "topP": "Top P",

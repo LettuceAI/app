@@ -569,6 +569,16 @@
     "refresh": "Odśwież"
   },
   "providers": {
+    "models": "Modele czatu i obrazów",
+    "optionalKey": "Klucz API (opcjonalny)",
+    "webUiCredentials": "nazwa użytkownika:hasło lub token proxy",
+    "comfyTxt2img": "Przepływ pracy tekst na obraz (API JSON)",
+    "comfyImg2img": "Przepływ pracy obraz na obraz (API JSON, opcjonalny)",
+    "comfyWorkflowHint": "Wyeksportuj przepływ pracy z ComfyUI w formacie API. Zmienne dane wejściowe zastąp tokenami poniżej.",
+    "comfyInvalidWorkflow": "Użyj obiektu JSON w formacie API z class_type i inputs dla każdego węzła (do 4 MiB).",
+    "comfyTokens": "Tekst: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% lub %IMAGE0%. Liczby: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Tokeny tekstowe trzymaj w cudzysłowach JSON.",
+    "webUiHint": "Uruchom WebUI z --api. Po zapisaniu dodaj model obrazów z listy checkpointów serwera w sekcji Modele.",
+    "imageModelHint": "Po zapisaniu dodaj model obrazów z listy checkpointów serwera w sekcji Modele.",
     "type": "Typ dostawcy",
     "language": "Modele językowe",
     "audio": "Dźwięk",
@@ -697,6 +707,21 @@
     "mobileDownloads": "Lokalne pobierania GGUF są dostępne na komputerze."
   },
   "customProvider": {
+    "imageRoutes": "Niestandardowe trasy obrazów",
+    "imageRoutesHint": "Używa tego samego uwierzytelniania co czat. Domyślnie korzysta z API obrazów OpenAI.",
+    "imageGenerationPath": "Ścieżka generowania obrazów",
+    "imageEditPath": "Ścieżka edycji obrazów",
+    "imageEditHint": "Pozostaw puste, aby wyłączyć edycję obrazów.",
+    "imageEditFormat": "Format żądania edycji obrazu",
+    "imageMultipart": "Pliki multipart (OpenAI)",
+    "imageJson": "Adresy URL danych JSON (NanoGPT)",
+    "imageListPath": "Ścieżka odpowiedzi z listą obrazów",
+    "imageListHint": "Ścieżka JSON z kropkami. Pozostaw puste, aby czytać główny element odpowiedzi.",
+    "imageUrlPath": "Ścieżka URL obrazu dla każdej pozycji",
+    "imageB64Path": "Ścieżka obrazu Base64 dla każdej pozycji",
+    "imageExtraBody": "Dodatkowe parametry obrazów (JSON)",
+    "imageExtraBodyHint": "Wartości specyficzne dla dostawcy, takie jak quality lub output_format. Model, prompt i dane wejściowe obrazów zachowują swoje bieżące wartości.",
+    "imageExtraBodyInvalid": "Wprowadź obiekt JSON, do 64 KiB.",
     "chatPath": "Punkt końcowy czatu",
     "auth": "Uwierzytelnianie",
     "authModes": {
@@ -737,6 +762,9 @@
     "urlRequired": "Wymagane. Bazowy URL twojego niestandardowego serwera."
   },
   "modelEditor": {
+    "modelType": "Typ modelu",
+    "chatModel": "Czat",
+    "imageModel": "Generowanie obrazów",
     "fields": {
       "temperature": "Temperatura",
       "topP": "Top P",

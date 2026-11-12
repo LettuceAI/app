@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Tạo",
+  "new": {
+    "character": "Nhân vật mới",
+    "characterBody": "Tạo nhân vật bằng cách trò chuyện",
+    "persona": "Persona mới",
+    "personaBody": "Viết persona bằng AI"
+  },
+  "kind": {
+    "character": "Nhân vật",
+    "persona": "Persona"
+  },
+  "editWithAi": "Sửa bằng AI",
+  "editWithAiBody": "Xem lại bản nháp trước khi lưu thay đổi",
+  "settings": "Cài đặt",
+  "openCreator": "Mở Smart creator",
+  "openCreatorBody": "Tạo hoặc cải thiện nhân vật và persona",
+  "drafts": "Tác phẩm của bạn",
+  "empty": "Chưa có bản nháp",
+  "emptyBody": "Chọn nhân vật hoặc persona để bắt đầu",
+  "untitled": "Bản nháp chưa đặt tên",
+  "saved": "Đã lưu",
+  "notSaved": "Bản nháp",
+  "savedBody": "Phiên bản này đã được lưu. Mở mục đã lưu để tiếp tục chỉnh sửa.",
+  "openSaved": "Mở mục đã lưu",
+  "loadMore": "Tải thêm",
+  "chat": "Trò chuyện",
+  "draft": "Bản nháp",
+  "views": "Chế độ xem creator",
+  "name": "Tên",
+  "definition": "Mô tả",
+  "description": "Giới thiệu",
+  "scenes": "Cảnh mở đầu",
+  "discard": "Bỏ thay đổi",
+  "saveDraft": "Lưu thay đổi bản nháp",
+  "leaveTitle": "Bỏ các thay đổi chưa lưu?",
+  "leaveBody": "Bản nháp đã lưu vẫn còn. Chỉ những thay đổi chưa lưu này sẽ mất.",
+  "keepEditing": "Tiếp tục sửa",
+  "placeholder": "Mô tả điều bạn muốn tạo hoặc thay đổi",
+  "startTitle": "Bạn muốn tạo gì?",
+  "startBody": "Mô tả ý tưởng của bạn. Bạn có thể cùng hoàn thiện bản nháp hoặc tự chỉnh sửa.",
+  "model": "Mô hình creator",
+  "chooseModel": "Chọn mô hình",
+  "defaultModel": "Dùng mặc định của Smart creator",
+  "appDefault": "Dùng mặc định của ứng dụng",
+  "modelUnavailable": "Mô hình đã chọn không khả dụng",
+  "modelMissing": "Chọn mô hình văn bản để trò chuyện. Bạn có thể sửa bản nháp ngay bây giờ.",
+  "streaming": "Truyền phản hồi trực tiếp",
+  "toolFormat": "Định dạng công cụ",
+  "history": "Lịch sử bản nháp",
+  "version": "Phiên bản {{number}}",
+  "restoreVersion": "Dùng phiên bản này",
+  "before": "Trước",
+  "after": "Sau",
+  "changes": "Xem thay đổi",
+  "regenerate": "Tạo lại",
+  "retry": "Thử lại",
+  "review": "Xem lại và lưu",
+  "reviewShort": "Xem lại",
+  "reviewEdit": "Những thay đổi này sẽ cập nhật mục hiện có",
+  "reviewNew": "Xem lại nội dung sẽ được thêm vào thư viện của bạn",
+  "saveChanges": "Lưu thay đổi",
+  "createAndChat": "Tạo và trò chuyện",
+  "turn": {
+    "pending": "Đang xử lý",
+    "succeeded": "Đã cập nhật bản nháp",
+    "failed": "Phản hồi thất bại. Bản nháp trước của bạn được giữ lại.",
+    "cancelled": "Đã dừng. Bản nháp trước của bạn được giữ lại.",
+    "interrupted": "Bị gián đoạn. Thử lại để tiếp tục từ bản nháp đã lưu."
+  },
+  "unsavedStatus": "Thay đổi bản nháp chưa lưu",
+  "noChanges": "Không có gì thay đổi trong phiên bản này.",
+  "back": "Quay lại",
+  "current": "Hiện tại",
+  "streamingBody": "Hiện phản hồi ngay khi được viết",
+  "incomplete": "Thêm tên và mô tả trước khi lưu.",
+  "tools": {
+    "label": "Thay đổi bản nháp",
+    "running": "Đang xử lý",
+    "succeeded": "Xong",
+    "failed": "Thất bại",
+    "name": {
+      "write_definition": "Cập nhật mô tả",
+      "write_scene": "Thêm cảnh mở đầu",
+      "set_name": "Đặt tên",
+      "edit_scene": "Sửa cảnh mở đầu",
+      "delete_scene": "Xóa cảnh mở đầu",
+      "show_preview": "Hiện bản xem trước",
+      "request_confirmation": "Yêu cầu xem lại",
+      "use_uploaded_image": "Đặt ảnh đại diện",
+      "generate_image": "Tạo ảnh",
+      "edit_avatar_image": "Sửa ảnh"
+    }
+  },
+  "settingsPage": {
+    "loading": "Đang tải cài đặt Smart creator",
+    "modelGroup": "Mô hình",
+    "repliesGroup": "Phản hồi",
+    "streamingNeedsNative": "Truyền trực tiếp cần lời gọi công cụ gốc",
+    "nativeTitle": "Lời gọi công cụ gốc",
+    "nativeBody": "Mô hình gọi trực tiếp các công cụ của creator. Tốt nhất cho mô hình hỗ trợ công cụ.",
+    "toolFormatHint": "JSON và XML yêu cầu mô hình viết lời gọi công cụ dưới dạng văn bản, dành cho mô hình không hỗ trợ công cụ gốc."
+  },
+  "scene": "Cảnh {{number}}",
+  "copy": "Sao chép văn bản",
+  "copied": "Đã sao chép",
+  "copyFailed": "Không truy cập được clipboard",
+  "targetChanged": {
+    "character": "Nhân vật này đã bị thay đổi ở nơi khác sau khi bạn bắt đầu, nên không thể lưu bản nháp này đè lên.",
+    "persona": "Persona này đã bị thay đổi ở nơi khác sau khi bạn bắt đầu, nên không thể lưu bản nháp này đè lên.",
+    "carry": "Tiếp tục trên phiên bản mới nhất"
+  },
+  "source": {
+    "start": "Điểm bắt đầu",
+    "creator": "Smart creator",
+    "edit": "Chỉnh sửa của bạn",
+    "review": "Đã xem lại"
+  },
+  "attach": {
+    "title": "Đính kèm",
+    "image": "Ảnh",
+    "imageBody": "Thêm ảnh để creator sử dụng",
+    "character": "Nhân vật",
+    "characterBody": "Cho creator đọc một nhân vật",
+    "persona": "Persona",
+    "personaBody": "Cho creator đọc một persona"
+  },
+  "references": {
+    "characterTitle": "Đính kèm nhân vật",
+    "personaTitle": "Đính kèm persona",
+    "description": "Creator đọc văn bản hiện tại của họ cùng với tin nhắn của bạn",
+    "search": "Tìm kiếm",
+    "done": "Xong",
+    "noCharacters": "Chưa có nhân vật",
+    "noPersonas": "Chưa có persona",
+    "missing": {
+      "character": "Nhân vật đã xóa",
+      "persona": "Persona đã xóa"
+    }
+  },
+  "avatar": {
+    "label": "Ảnh đại diện",
+    "choose": "Chọn ảnh đại diện",
+    "remove": "Xóa ảnh đại diện",
+    "sessionImages": "Ảnh trong phiên này",
+    "origin": {
+      "upload": "Ảnh đã tải lên",
+      "generated": "Ảnh được tạo",
+      "edited": "Ảnh đã sửa"
+    }
+  },
+  "image": {
+    "label": "Ảnh được tạo",
+    "useAvatar": "Dùng làm ảnh đại diện",
+    "edit": "Sửa"
+  }
+}

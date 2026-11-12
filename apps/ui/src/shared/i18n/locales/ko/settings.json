@@ -557,6 +557,16 @@
     "refresh": "새로고침"
   },
   "providers": {
+    "models": "채팅 및 이미지 모델",
+    "optionalKey": "API 키(선택 사항)",
+    "webUiCredentials": "사용자 이름:비밀번호 또는 프록시 토큰",
+    "comfyTxt2img": "텍스트-이미지 워크플로(API JSON)",
+    "comfyImg2img": "이미지-이미지 워크플로(API JSON, 선택 사항)",
+    "comfyWorkflowHint": "ComfyUI에서 워크플로를 API 형식으로 내보내세요. 변하는 입력은 아래 토큰으로 바꾸세요.",
+    "comfyInvalidWorkflow": "각 노드에 class_type과 inputs가 있는 API 형식 JSON 객체를 사용하세요(최대 4 MiB).",
+    "comfyTokens": "텍스트: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% 또는 %IMAGE0%. 숫자: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. 텍스트 토큰은 JSON 따옴표 안에 유지하세요.",
+    "webUiHint": "WebUI를 --api로 시작하세요. 저장한 뒤 모델의 서버 checkpoint 목록에서 이미지 모델을 추가하세요.",
+    "imageModelHint": "저장한 뒤 모델의 서버 checkpoint 목록에서 이미지 모델을 추가하세요.",
     "type": "제공자 유형",
     "language": "언어 모델",
     "audio": "오디오",
@@ -676,6 +686,21 @@
     "mobileDownloads": "로컬 GGUF 다운로드는 데스크톱에서 사용할 수 있어요."
   },
   "customProvider": {
+    "imageRoutes": "사용자 지정 이미지 경로",
+    "imageRoutesHint": "채팅과 같은 인증을 사용해요. 기본값은 OpenAI 이미지 API예요.",
+    "imageGenerationPath": "이미지 생성 경로",
+    "imageEditPath": "이미지 편집 경로",
+    "imageEditHint": "이미지 편집을 끄려면 비워 두세요.",
+    "imageEditFormat": "이미지 편집 요청 형식",
+    "imageMultipart": "멀티파트 파일(OpenAI)",
+    "imageJson": "JSON 데이터 URL(NanoGPT)",
+    "imageListPath": "이미지 목록 응답 경로",
+    "imageListHint": "점으로 구분된 JSON 경로예요. 응답 루트를 읽으려면 비워 두세요.",
+    "imageUrlPath": "항목별 이미지 URL 경로",
+    "imageB64Path": "항목별 Base64 이미지 경로",
+    "imageExtraBody": "추가 이미지 매개변수(JSON)",
+    "imageExtraBodyHint": "quality 또는 output_format 같은 제공자별 값이에요. 모델, 프롬프트, 이미지 입력은 현재 값을 유지해요.",
+    "imageExtraBodyInvalid": "최대 64 KiB의 JSON 객체를 입력하세요.",
     "chatPath": "채팅 엔드포인트",
     "auth": "인증",
     "authModes": {
@@ -716,6 +741,9 @@
     "urlRequired": "필수예요. 사용자 지정 서버의 기본 URL."
   },
   "modelEditor": {
+    "modelType": "모델 유형",
+    "chatModel": "채팅",
+    "imageModel": "이미지 생성",
     "fields": {
       "temperature": "온도",
       "topP": "Top P",

@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Créer",
+  "new": {
+    "character": "Nouveau personnage",
+    "characterBody": "Créer un personnage en discutant",
+    "persona": "Nouveau persona",
+    "personaBody": "Écrire un persona avec AI"
+  },
+  "kind": {
+    "character": "Personnage",
+    "persona": "Persona"
+  },
+  "editWithAi": "Modifier avec AI",
+  "editWithAiBody": "Relire un brouillon avant d'enregistrer les modifications",
+  "settings": "Paramètres",
+  "openCreator": "Ouvrir Smart creator",
+  "openCreatorBody": "Créer ou améliorer des personnages et des personas",
+  "drafts": "Votre travail",
+  "empty": "Aucun brouillon pour l'instant",
+  "emptyBody": "Choisissez un personnage ou un persona pour commencer",
+  "untitled": "Brouillon sans titre",
+  "saved": "Enregistré",
+  "notSaved": "Brouillon",
+  "savedBody": "Cette version est enregistrée. Ouvrez l'élément enregistré pour continuer à le modifier.",
+  "openSaved": "Ouvrir l'élément enregistré",
+  "loadMore": "Charger plus",
+  "chat": "Discussion",
+  "draft": "Brouillon",
+  "views": "Vues du creator",
+  "name": "Nom",
+  "definition": "Définition",
+  "description": "Description",
+  "scenes": "Scènes d'ouverture",
+  "discard": "Abandonner les modifications",
+  "saveDraft": "Enregistrer les modifications du brouillon",
+  "leaveTitle": "Abandonner les modifications non enregistrées ?",
+  "leaveBody": "Votre brouillon enregistré est conservé. Seules ces modifications non enregistrées seront perdues.",
+  "keepEditing": "Continuer la modification",
+  "placeholder": "Décrivez ce que vous voulez créer ou modifier",
+  "startTitle": "Que voulez-vous créer ?",
+  "startBody": "Décrivez votre idée. Vous pouvez affiner le brouillon ensemble ou le modifier vous-même.",
+  "model": "Modèle du creator",
+  "chooseModel": "Choisir un modèle",
+  "defaultModel": "Utiliser le modèle par défaut de Smart creator",
+  "appDefault": "Utiliser le modèle par défaut de l'app",
+  "modelUnavailable": "Le modèle sélectionné est indisponible",
+  "modelMissing": "Choisissez un modèle de texte pour discuter. Vous pouvez modifier le brouillon dès maintenant.",
+  "streaming": "Diffuser les réponses",
+  "toolFormat": "Format des outils",
+  "history": "Historique du brouillon",
+  "version": "Version {{number}}",
+  "restoreVersion": "Utiliser cette version",
+  "before": "Avant",
+  "after": "Après",
+  "changes": "Voir les modifications",
+  "regenerate": "Régénérer",
+  "retry": "Réessayer",
+  "review": "Relire et enregistrer",
+  "reviewShort": "Relire",
+  "reviewEdit": "Ces modifications mettront à jour l'élément existant",
+  "reviewNew": "Relisez ce qui sera ajouté à votre bibliothèque",
+  "saveChanges": "Enregistrer les modifications",
+  "createAndChat": "Créer et discuter",
+  "turn": {
+    "pending": "En cours",
+    "succeeded": "Brouillon mis à jour",
+    "failed": "La réponse a échoué. Votre brouillon précédent est conservé.",
+    "cancelled": "Arrêté. Votre brouillon précédent est conservé.",
+    "interrupted": "Interrompu. Réessayez pour reprendre depuis votre brouillon enregistré."
+  },
+  "unsavedStatus": "Modifications du brouillon non enregistrées",
+  "noChanges": "Rien n'a changé dans cette version.",
+  "back": "Retour",
+  "current": "Actuel",
+  "streamingBody": "Afficher les réponses pendant leur rédaction",
+  "incomplete": "Ajoutez un nom et une définition avant d'enregistrer.",
+  "tools": {
+    "label": "Modifications du brouillon",
+    "running": "En cours",
+    "succeeded": "Terminé",
+    "failed": "Échoué",
+    "name": {
+      "write_definition": "Mettre à jour la définition",
+      "write_scene": "Ajouter une scène d'ouverture",
+      "set_name": "Définir le nom",
+      "edit_scene": "Modifier une scène d'ouverture",
+      "delete_scene": "Supprimer une scène d'ouverture",
+      "show_preview": "Afficher un aperçu",
+      "request_confirmation": "Demander une relecture",
+      "use_uploaded_image": "Définir l'avatar",
+      "generate_image": "Générer une image",
+      "edit_avatar_image": "Modifier une image"
+    }
+  },
+  "settingsPage": {
+    "loading": "Chargement des paramètres de Smart creator",
+    "modelGroup": "Modèle",
+    "repliesGroup": "Réponses",
+    "streamingNeedsNative": "La diffusion nécessite des appels d'outils natifs",
+    "nativeTitle": "Appels d'outils natifs",
+    "nativeBody": "Le modèle appelle directement les outils du creator. Idéal pour les modèles compatibles avec les outils.",
+    "toolFormatHint": "JSON et XML demandent au modèle d'écrire ses appels d'outils sous forme de texte, pour les modèles sans prise en charge native des outils."
+  },
+  "scene": "Scène {{number}}",
+  "copy": "Copier le texte",
+  "copied": "Copié",
+  "copyFailed": "Impossible d'accéder au presse-papiers",
+  "targetChanged": {
+    "character": "Ce personnage a été modifié ailleurs après votre démarrage, ce brouillon ne peut donc pas être enregistré par-dessus.",
+    "persona": "Ce persona a été modifié ailleurs après votre démarrage, ce brouillon ne peut donc pas être enregistré par-dessus.",
+    "carry": "Continuer sur la dernière version"
+  },
+  "source": {
+    "start": "Point de départ",
+    "creator": "Smart creator",
+    "edit": "Votre modification",
+    "review": "Relu"
+  },
+  "attach": {
+    "title": "Joindre",
+    "image": "Image",
+    "imageBody": "Ajouter des images que le creator peut utiliser",
+    "character": "Personnage",
+    "characterBody": "Laisser le creator lire un personnage",
+    "persona": "Persona",
+    "personaBody": "Laisser le creator lire un persona"
+  },
+  "references": {
+    "characterTitle": "Joindre des personnages",
+    "personaTitle": "Joindre des personas",
+    "description": "Le creator lit leur texte actuel avec votre message",
+    "search": "Rechercher",
+    "done": "Terminé",
+    "noCharacters": "Aucun personnage pour l'instant",
+    "noPersonas": "Aucun persona pour l'instant",
+    "missing": {
+      "character": "Personnage supprimé",
+      "persona": "Persona supprimé"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Choisir un avatar",
+    "remove": "Retirer l'avatar",
+    "sessionImages": "Images de cette session",
+    "origin": {
+      "upload": "Image importée",
+      "generated": "Image générée",
+      "edited": "Image modifiée"
+    }
+  },
+  "image": {
+    "label": "Image générée",
+    "useAvatar": "Utiliser comme avatar",
+    "edit": "Modifier"
+  }
+}

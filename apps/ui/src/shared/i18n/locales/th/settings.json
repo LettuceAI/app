@@ -557,6 +557,16 @@
     "refresh": "รีเฟรช"
   },
   "providers": {
+    "models": "โมเดลแชทและรูปภาพ",
+    "optionalKey": "API key (ไม่บังคับ)",
+    "webUiCredentials": "username:password หรือ proxy token",
+    "comfyTxt2img": "เวิร์กโฟลว์ข้อความเป็นภาพ (API JSON)",
+    "comfyImg2img": "เวิร์กโฟลว์ภาพเป็นภาพ (API JSON, ไม่บังคับ)",
+    "comfyWorkflowHint": "ส่งออกเวิร์กโฟลว์ในรูปแบบ API จาก ComfyUI แทนที่อินพุตที่เปลี่ยนแปลงด้วยโทเค็นด้านล่าง",
+    "comfyInvalidWorkflow": "ใช้ออบเจกต์ JSON รูปแบบ API ที่มี class_type และ inputs สำหรับแต่ละโหนด (สูงสุด 4 MiB)",
+    "comfyTokens": "ข้อความ: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% หรือ %IMAGE0% ตัวเลข: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE% เก็บโทเค็นข้อความไว้ในเครื่องหมายคำพูด JSON",
+    "webUiHint": "เริ่ม WebUI ด้วย --api หลังบันทึกแล้ว เพิ่มโมเดลรูปภาพจากรายการ checkpoint ของเซิร์ฟเวอร์ในโมเดล",
+    "imageModelHint": "หลังบันทึกแล้ว เพิ่มโมเดลรูปภาพจากรายการ checkpoint ของเซิร์ฟเวอร์ในโมเดล",
     "type": "ประเภทผู้ให้บริการ",
     "language": "โมเดลภาษา",
     "audio": "เสียง",
@@ -676,6 +686,21 @@
     "mobileDownloads": "การดาวน์โหลด GGUF โลคอลใช้ได้บนเดสก์ท็อป"
   },
   "customProvider": {
+    "imageRoutes": "เส้นทางรูปภาพกำหนดเอง",
+    "imageRoutesHint": "ใช้การรับรองความถูกต้องเดียวกับแชท ค่าเริ่มต้นคือ OpenAI image API",
+    "imageGenerationPath": "เส้นทางสร้างรูปภาพ",
+    "imageEditPath": "เส้นทางแก้ไขรูปภาพ",
+    "imageEditHint": "เว้นว่างเพื่อปิดการแก้ไขรูปภาพ",
+    "imageEditFormat": "รูปแบบคำขอแก้ไขรูปภาพ",
+    "imageMultipart": "ไฟล์ multipart (OpenAI)",
+    "imageJson": "URL ข้อมูล JSON (NanoGPT)",
+    "imageListPath": "เส้นทางคำตอบรายการรูปภาพ",
+    "imageListHint": "เส้นทาง JSON แบบจุด เว้นว่างเพื่ออ่านรากของคำตอบ",
+    "imageUrlPath": "เส้นทาง URL รูปภาพต่อรายการ",
+    "imageB64Path": "เส้นทางรูปภาพ Base64 ต่อรายการ",
+    "imageExtraBody": "พารามิเตอร์รูปภาพเพิ่มเติม (JSON)",
+    "imageExtraBodyHint": "ค่าที่เฉพาะกับผู้ให้บริการ เช่น quality หรือ output_format อินพุตโมเดล พรอมต์ และรูปภาพยังคงค่าเดิม",
+    "imageExtraBodyInvalid": "ป้อนออบเจกต์ JSON สูงสุด 64 KiB",
     "chatPath": "Endpoint แชท",
     "auth": "การรับรองความถูกต้อง",
     "authModes": {
@@ -716,6 +741,9 @@
     "urlRequired": "จำเป็น Base URL ของเซิร์ฟเวอร์กำหนดเองของคุณ"
   },
   "modelEditor": {
+    "modelType": "ประเภทโมเดล",
+    "chatModel": "แชท",
+    "imageModel": "การสร้างรูปภาพ",
     "fields": {
       "temperature": "อุณหภูมิ",
       "topP": "Top P",

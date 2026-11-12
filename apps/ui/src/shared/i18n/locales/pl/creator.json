@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Utwórz",
+  "new": {
+    "character": "Nowa postać",
+    "characterBody": "Zbuduj postać przez rozmowę",
+    "persona": "Nowa persona",
+    "personaBody": "Napisz personę z AI"
+  },
+  "kind": {
+    "character": "Postać",
+    "persona": "Persona"
+  },
+  "editWithAi": "Edytuj z AI",
+  "editWithAiBody": "Przejrzyj szkic przed zapisaniem zmian",
+  "settings": "Ustawienia",
+  "openCreator": "Otwórz Smart creator",
+  "openCreatorBody": "Twórz lub ulepszaj postacie i persony",
+  "drafts": "Twoja praca",
+  "empty": "Nie ma jeszcze szkiców",
+  "emptyBody": "Wybierz postać lub personę, aby zacząć",
+  "untitled": "Szkic bez tytułu",
+  "saved": "Zapisano",
+  "notSaved": "Szkic",
+  "savedBody": "Ta wersja jest zapisana. Aby kontynuować edycję, otwórz zapisaną pozycję.",
+  "openSaved": "Otwórz zapisaną pozycję",
+  "loadMore": "Wczytaj więcej",
+  "chat": "Czat",
+  "draft": "Szkic",
+  "views": "Widoki twórcy",
+  "name": "Imię",
+  "definition": "Opis",
+  "description": "Wstęp",
+  "scenes": "Sceny początkowe",
+  "discard": "Odrzuć zmiany",
+  "saveDraft": "Zapisz zmiany szkicu",
+  "leaveTitle": "Odrzucić niezapisane zmiany?",
+  "leaveBody": "Zapisany szkic zostanie. Utracisz tylko te niezapisane zmiany.",
+  "keepEditing": "Kontynuuj edycję",
+  "placeholder": "Opisz, co chcesz utworzyć lub zmienić",
+  "startTitle": "Co chcesz utworzyć?",
+  "startBody": "Opisz swój pomysł. Szkic możesz dopracować razem albo edytować samodzielnie.",
+  "model": "Model twórcy",
+  "chooseModel": "Wybierz model",
+  "defaultModel": "Użyj domyślnego modelu Smart creator",
+  "appDefault": "Użyj domyślnego modelu aplikacji",
+  "modelUnavailable": "Wybrany model jest niedostępny",
+  "modelMissing": "Wybierz model tekstowy do czatu. Szkic możesz edytować już teraz.",
+  "streaming": "Odpowiedzi na żywo",
+  "toolFormat": "Format narzędzi",
+  "history": "Historia szkicu",
+  "version": "Wersja {{number}}",
+  "restoreVersion": "Użyj tej wersji",
+  "before": "Przed",
+  "after": "Po",
+  "changes": "Zobacz zmiany",
+  "regenerate": "Wygeneruj ponownie",
+  "retry": "Spróbuj ponownie",
+  "review": "Przejrzyj i zapisz",
+  "reviewShort": "Przejrzyj",
+  "reviewEdit": "Te zmiany zaktualizują istniejącą pozycję",
+  "reviewNew": "Przejrzyj, co zostanie dodane do twojej biblioteki",
+  "saveChanges": "Zapisz zmiany",
+  "createAndChat": "Utwórz i czatuj",
+  "turn": {
+    "pending": "Pracuje",
+    "succeeded": "Szkic zaktualizowany",
+    "failed": "Odpowiedź nie powiodła się. Poprzedni szkic zostaje zachowany.",
+    "cancelled": "Zatrzymano. Poprzedni szkic zostaje zachowany.",
+    "interrupted": "Przerwano. Spróbuj ponownie, aby kontynuować od zapisanego szkicu."
+  },
+  "unsavedStatus": "Niezapisane zmiany szkicu",
+  "noChanges": "W tej wersji nic się nie zmieniło.",
+  "back": "Wstecz",
+  "current": "Bieżąca",
+  "streamingBody": "Pokazuj odpowiedzi, gdy są pisane",
+  "incomplete": "Dodaj imię i opis przed zapisaniem.",
+  "tools": {
+    "label": "Zmiany szkicu",
+    "running": "Pracuje",
+    "succeeded": "Gotowe",
+    "failed": "Nie udało się",
+    "name": {
+      "write_definition": "Zaktualizuj opis",
+      "write_scene": "Dodaj scenę początkową",
+      "set_name": "Ustaw imię",
+      "edit_scene": "Edytuj scenę początkową",
+      "delete_scene": "Usuń scenę początkową",
+      "show_preview": "Pokaż podgląd",
+      "request_confirmation": "Poproś o przejrzenie",
+      "use_uploaded_image": "Ustaw awatar",
+      "generate_image": "Wygeneruj obraz",
+      "edit_avatar_image": "Edytuj obraz"
+    }
+  },
+  "settingsPage": {
+    "loading": "Ładowanie ustawień Smart creator",
+    "modelGroup": "Model",
+    "repliesGroup": "Odpowiedzi",
+    "streamingNeedsNative": "Strumieniowanie wymaga natywnych wywołań narzędzi",
+    "nativeTitle": "Natywne wywołania narzędzi",
+    "nativeBody": "Model wywołuje narzędzia kreatora bezpośrednio. Najlepsze dla modeli obsługujących narzędzia.",
+    "toolFormatHint": "JSON i XML proszą model o zapisanie wywołań narzędzi jako tekstu, dla modeli bez natywnej obsługi narzędzi."
+  },
+  "scene": "Scena {{number}}",
+  "copy": "Kopiuj tekst",
+  "copied": "Skopiowano",
+  "copyFailed": "Nie udało się uzyskać dostępu do schowka",
+  "targetChanged": {
+    "character": "Ta postać została zmieniona gdzie indziej po rozpoczęciu, więc tego szkicu nie można zapisać na jej miejscu.",
+    "persona": "Ta persona została zmieniona gdzie indziej po rozpoczęciu, więc tego szkicu nie można zapisać na jej miejscu.",
+    "carry": "Kontynuuj na najnowszej wersji"
+  },
+  "source": {
+    "start": "Punkt wyjścia",
+    "creator": "Smart creator",
+    "edit": "Twoja edycja",
+    "review": "Przejrzano"
+  },
+  "attach": {
+    "title": "Załącz",
+    "image": "Obraz",
+    "imageBody": "Dodaj obrazy, których kreator może użyć",
+    "character": "Postać",
+    "characterBody": "Pozwól kreatorowi odczytać postać",
+    "persona": "Persona",
+    "personaBody": "Pozwól kreatorowi odczytać personę"
+  },
+  "references": {
+    "characterTitle": "Załącz postacie",
+    "personaTitle": "Załącz persony",
+    "description": "Kreator odczyta ich aktualny tekst wraz z twoją wiadomością",
+    "search": "Szukaj",
+    "done": "Gotowe",
+    "noCharacters": "Nie ma jeszcze postaci",
+    "noPersonas": "Nie ma jeszcze person",
+    "missing": {
+      "character": "Usunięta postać",
+      "persona": "Usunięta persona"
+    }
+  },
+  "avatar": {
+    "label": "Awatar",
+    "choose": "Wybierz awatar",
+    "remove": "Usuń awatar",
+    "sessionImages": "Obrazy w tej sesji",
+    "origin": {
+      "upload": "Przesłany obraz",
+      "generated": "Wygenerowany obraz",
+      "edited": "Edytowany obraz"
+    }
+  },
+  "image": {
+    "label": "Wygenerowany obraz",
+    "useAvatar": "Użyj jako awatara",
+    "edit": "Edytuj"
+  }
+}

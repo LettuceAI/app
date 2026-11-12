@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Vytvořit",
+  "new": {
+    "character": "Nová postava",
+    "characterBody": "Vytvoř postavu povídáním",
+    "persona": "Nová persona",
+    "personaBody": "Napiš personu s AI"
+  },
+  "kind": {
+    "character": "Postava",
+    "persona": "Persona"
+  },
+  "editWithAi": "Upravit s AI",
+  "editWithAiBody": "Zkontroluj koncept před uložením změn",
+  "settings": "Nastavení",
+  "openCreator": "Otevřít Smart creator",
+  "openCreatorBody": "Vytvářej nebo vylepšuj postavy a persony",
+  "drafts": "Tvoje práce",
+  "empty": "Zatím žádné koncepty",
+  "emptyBody": "Začni výběrem postavy nebo persony",
+  "untitled": "Nepojmenovaný koncept",
+  "saved": "Uloženo",
+  "notSaved": "Koncept",
+  "savedBody": "Tahle verze je uložená. Pro pokračování v úpravách otevři uloženou položku.",
+  "openSaved": "Otevřít uloženou položku",
+  "loadMore": "Načíst další",
+  "chat": "Chat",
+  "draft": "Koncept",
+  "views": "Zobrazení tvůrce",
+  "name": "Jméno",
+  "definition": "Popis",
+  "description": "Úvod",
+  "scenes": "Úvodní scény",
+  "discard": "Zahodit změny",
+  "saveDraft": "Uložit změny konceptu",
+  "leaveTitle": "Zahodit neuložené úpravy?",
+  "leaveBody": "Uložený koncept zůstane. Ztratí se jen tyhle neuložené úpravy.",
+  "keepEditing": "Pokračovat v úpravách",
+  "placeholder": "Popiš, co chceš vytvořit nebo změnit",
+  "startTitle": "Co chceš vytvořit?",
+  "startBody": "Popiš svůj nápad. Koncept můžeš vylepšit společně, nebo si ho upravit sám.",
+  "model": "Model tvůrce",
+  "chooseModel": "Vybrat model",
+  "defaultModel": "Použít výchozí model Smart creator",
+  "appDefault": "Použít výchozí model aplikace",
+  "modelUnavailable": "Vybraný model není dostupný",
+  "modelMissing": "Pro chat vyber textový model. Koncept můžeš upravit už teď.",
+  "streaming": "Průběžné odpovědi",
+  "toolFormat": "Formát nástrojů",
+  "history": "Historie konceptu",
+  "version": "Verze {{number}}",
+  "restoreVersion": "Použít tuhle verzi",
+  "before": "Před",
+  "after": "Po",
+  "changes": "Zobrazit změny",
+  "regenerate": "Vygenerovat znovu",
+  "retry": "Zkusit znovu",
+  "review": "Zkontrolovat a uložit",
+  "reviewShort": "Zkontrolovat",
+  "reviewEdit": "Tyhle změny aktualizují existující položku",
+  "reviewNew": "Zkontroluj, co se přidá do tvé knihovny",
+  "saveChanges": "Uložit změny",
+  "createAndChat": "Vytvořit a chatovat",
+  "turn": {
+    "pending": "Pracuje",
+    "succeeded": "Koncept aktualizován",
+    "failed": "Odpověď selhala. Předchozí koncept zůstává.",
+    "cancelled": "Zastaveno. Předchozí koncept zůstává.",
+    "interrupted": "Přerušeno. Zkus to znovu a pokračuj ze svého uloženého konceptu."
+  },
+  "unsavedStatus": "Neuložené změny konceptu",
+  "noChanges": "V téhle verzi se nic nezměnilo.",
+  "back": "Zpět",
+  "current": "Aktuální",
+  "streamingBody": "Zobrazovat odpovědi, jak se píšou",
+  "incomplete": "Před uložením přidej jméno a popis.",
+  "tools": {
+    "label": "Změny konceptu",
+    "running": "Pracuje",
+    "succeeded": "Hotovo",
+    "failed": "Selhalo",
+    "name": {
+      "write_definition": "Aktualizovat popis",
+      "write_scene": "Přidat úvodní scénu",
+      "set_name": "Nastavit jméno",
+      "edit_scene": "Upravit úvodní scénu",
+      "delete_scene": "Odebrat úvodní scénu",
+      "show_preview": "Zobrazit náhled",
+      "request_confirmation": "Požádat o kontrolu",
+      "use_uploaded_image": "Nastavit avatar",
+      "generate_image": "Vygenerovat obrázek",
+      "edit_avatar_image": "Upravit obrázek"
+    }
+  },
+  "settingsPage": {
+    "loading": "Načítání nastavení Smart creator",
+    "modelGroup": "Model",
+    "repliesGroup": "Odpovědi",
+    "streamingNeedsNative": "Průběžné odpovědi potřebují nativní volání nástrojů",
+    "nativeTitle": "Nativní volání nástrojů",
+    "nativeBody": "Model volá nástroje tvůrce přímo. Nejlepší pro modely, které podporují nástroje.",
+    "toolFormatHint": "JSON a XML nutí model psát volání nástrojů jako text, pro modely bez nativní podpory nástrojů."
+  },
+  "scene": "Scéna {{number}}",
+  "copy": "Kopírovat text",
+  "copied": "Zkopírováno",
+  "copyFailed": "Nepodařilo se dostat do schránky",
+  "targetChanged": {
+    "character": "Tahle postava byla po tvém začátku změněna jinde, takže tenhle koncept přes ni nelze uložit.",
+    "persona": "Tahle persona byla po tvém začátku změněna jinde, takže tenhle koncept přes ni nelze uložit.",
+    "carry": "Pokračovat v nejnovější verzi"
+  },
+  "source": {
+    "start": "Výchozí bod",
+    "creator": "Smart creator",
+    "edit": "Tvoje úprava",
+    "review": "Zkontrolováno"
+  },
+  "attach": {
+    "title": "Přiložit",
+    "image": "Obrázek",
+    "imageBody": "Přidej obrázky, které může tvůrce použít",
+    "character": "Postava",
+    "characterBody": "Nech tvůrce přečíst postavu",
+    "persona": "Persona",
+    "personaBody": "Nech tvůrce přečíst personu"
+  },
+  "references": {
+    "characterTitle": "Přiložit postavy",
+    "personaTitle": "Přiložit persony",
+    "description": "Tvůrce přečte jejich aktuální text spolu s tvou zprávou",
+    "search": "Hledat",
+    "done": "Hotovo",
+    "noCharacters": "Zatím žádné postavy",
+    "noPersonas": "Zatím žádné persony",
+    "missing": {
+      "character": "Smazaná postava",
+      "persona": "Smazaná persona"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Vybrat avatar",
+    "remove": "Odebrat avatar",
+    "sessionImages": "Obrázky v téhle relaci",
+    "origin": {
+      "upload": "Nahraný obrázek",
+      "generated": "Vygenerovaný obrázek",
+      "edited": "Upravený obrázek"
+    }
+  },
+  "image": {
+    "label": "Vygenerovaný obrázek",
+    "useAvatar": "Použít jako avatar",
+    "edit": "Upravit"
+  }
+}

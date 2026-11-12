@@ -557,6 +557,16 @@
     "refresh": "Segarkan"
   },
   "providers": {
+    "models": "Model obrolan dan gambar",
+    "optionalKey": "Kunci API (opsional)",
+    "webUiCredentials": "username:password atau token proxy",
+    "comfyTxt2img": "Alur kerja teks-ke-gambar (API JSON)",
+    "comfyImg2img": "Alur kerja gambar-ke-gambar (API JSON, opsional)",
+    "comfyWorkflowHint": "Ekspor alur kerja dalam format API dari ComfyUI. Ganti input yang berubah dengan token di bawah.",
+    "comfyInvalidWorkflow": "Gunakan objek JSON format API dengan class_type dan inputs untuk setiap node (hingga 4 MiB).",
+    "comfyTokens": "Teks: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% atau %IMAGE0%. Angka: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Pertahankan token teks dalam tanda kutip JSON.",
+    "webUiHint": "Mulai WebUI dengan --api. Setelah menyimpan, tambahkan model gambar dari daftar checkpoint server di Model.",
+    "imageModelHint": "Setelah menyimpan, tambahkan model gambar dari daftar checkpoint server di Model.",
     "type": "Jenis penyedia",
     "language": "Model bahasa",
     "audio": "Audio",
@@ -676,6 +686,21 @@
     "mobileDownloads": "Unduhan GGUF lokal tersedia di desktop."
   },
   "customProvider": {
+    "imageRoutes": "Rute gambar kustom",
+    "imageRoutesHint": "Menggunakan autentikasi yang sama seperti obrolan. Default ke API gambar OpenAI.",
+    "imageGenerationPath": "Jalur pembuatan gambar",
+    "imageEditPath": "Jalur pengeditan gambar",
+    "imageEditHint": "Biarkan kosong untuk menonaktifkan pengeditan gambar.",
+    "imageEditFormat": "Format permintaan pengeditan gambar",
+    "imageMultipart": "File multipart (OpenAI)",
+    "imageJson": "URL data JSON (NanoGPT)",
+    "imageListPath": "Jalur respons daftar gambar",
+    "imageListHint": "Jalur JSON bertitik. Biarkan kosong untuk membaca root respons.",
+    "imageUrlPath": "Jalur URL gambar per item",
+    "imageB64Path": "Jalur gambar Base64 per item",
+    "imageExtraBody": "Parameter gambar tambahan (JSON)",
+    "imageExtraBodyHint": "Nilai khusus penyedia, seperti quality atau output_format. Input model, prompt, dan gambar mempertahankan nilai saat ini.",
+    "imageExtraBodyInvalid": "Masukkan objek JSON, hingga 64 KiB.",
     "chatPath": "Endpoint obrolan",
     "auth": "Autentikasi",
     "authModes": {
@@ -716,6 +741,9 @@
     "urlRequired": "Wajib. URL dasar server kustom Anda."
   },
   "modelEditor": {
+    "modelType": "Jenis model",
+    "chatModel": "Obrolan",
+    "imageModel": "Pembuatan gambar",
     "fields": {
       "temperature": "Temperatur",
       "topP": "Top P",

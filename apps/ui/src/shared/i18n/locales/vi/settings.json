@@ -557,6 +557,16 @@
     "refresh": "Làm mới"
   },
   "providers": {
+    "models": "Mô hình trò chuyện và hình ảnh",
+    "optionalKey": "API key (tùy chọn)",
+    "webUiCredentials": "username:password hoặc token proxy",
+    "comfyTxt2img": "Quy trình văn bản sang ảnh (API JSON)",
+    "comfyImg2img": "Quy trình ảnh sang ảnh (API JSON, tùy chọn)",
+    "comfyWorkflowHint": "Xuất quy trình ở định dạng API từ ComfyUI. Thay các đầu vào thay đổi bằng token bên dưới.",
+    "comfyInvalidWorkflow": "Dùng đối tượng JSON định dạng API với class_type và inputs cho mỗi nút (tối đa 4 MiB).",
+    "comfyTokens": "Văn bản: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% hoặc %IMAGE0%. Số: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Giữ token văn bản trong dấu ngoặc kép JSON.",
+    "webUiHint": "Khởi động WebUI với --api. Sau khi lưu, thêm mô hình hình ảnh từ danh sách checkpoint của máy chủ trong Mô hình.",
+    "imageModelHint": "Sau khi lưu, thêm mô hình hình ảnh từ danh sách checkpoint của máy chủ trong Mô hình.",
     "type": "Loại nhà cung cấp",
     "language": "Mô hình ngôn ngữ",
     "audio": "Âm thanh",
@@ -676,6 +686,21 @@
     "mobileDownloads": "Tải GGUF cục bộ có trên máy tính để bàn."
   },
   "customProvider": {
+    "imageRoutes": "Tuyến hình ảnh tùy chỉnh",
+    "imageRoutesHint": "Dùng chung xác thực với trò chuyện. Mặc định là API hình ảnh OpenAI.",
+    "imageGenerationPath": "Đường dẫn tạo hình ảnh",
+    "imageEditPath": "Đường dẫn sửa hình ảnh",
+    "imageEditHint": "Để trống để tắt sửa hình ảnh.",
+    "imageEditFormat": "Định dạng yêu cầu sửa hình ảnh",
+    "imageMultipart": "Tệp multipart (OpenAI)",
+    "imageJson": "URL dữ liệu JSON (NanoGPT)",
+    "imageListPath": "Đường dẫn phản hồi danh sách hình ảnh",
+    "imageListHint": "Đường dẫn JSON dạng chấm. Để trống để đọc gốc phản hồi.",
+    "imageUrlPath": "Đường dẫn URL hình ảnh mỗi mục",
+    "imageB64Path": "Đường dẫn hình ảnh Base64 mỗi mục",
+    "imageExtraBody": "Tham số hình ảnh bổ sung (JSON)",
+    "imageExtraBodyHint": "Giá trị riêng của nhà cung cấp, như quality hoặc output_format. Đầu vào mô hình, lời nhắc và hình ảnh giữ nguyên giá trị hiện tại.",
+    "imageExtraBodyInvalid": "Nhập đối tượng JSON, tối đa 64 KiB.",
     "chatPath": "Điểm cuối trò chuyện",
     "auth": "Xác thực",
     "authModes": {
@@ -716,6 +741,9 @@
     "urlRequired": "Bắt buộc. URL gốc của máy chủ tùy chỉnh."
   },
   "modelEditor": {
+    "modelType": "Loại mô hình",
+    "chatModel": "Trò chuyện",
+    "imageModel": "Tạo hình ảnh",
     "fields": {
       "temperature": "Nhiệt độ",
       "topP": "Top P",

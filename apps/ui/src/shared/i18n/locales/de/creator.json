@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Erstellen",
+  "new": {
+    "character": "Neuer Charakter",
+    "characterBody": "Erstelle einen Charakter im Chat",
+    "persona": "Neue Persona",
+    "personaBody": "Schreibe eine Persona mit AI"
+  },
+  "kind": {
+    "character": "Charakter",
+    "persona": "Persona"
+  },
+  "editWithAi": "Mit AI bearbeiten",
+  "editWithAiBody": "Entwurf prüfen, bevor Änderungen gespeichert werden",
+  "settings": "Einstellungen",
+  "openCreator": "Smart creator öffnen",
+  "openCreatorBody": "Charaktere und Personas erstellen oder verbessern",
+  "drafts": "Deine Arbeiten",
+  "empty": "Noch keine Entwürfe",
+  "emptyBody": "Wähle einen Charakter oder eine Persona, um zu beginnen",
+  "untitled": "Unbenannter Entwurf",
+  "saved": "Gespeichert",
+  "notSaved": "Entwurf",
+  "savedBody": "Diese Version ist gespeichert. Öffne das gespeicherte Element, um weiter zu bearbeiten.",
+  "openSaved": "Gespeichertes Element öffnen",
+  "loadMore": "Mehr laden",
+  "chat": "Chat",
+  "draft": "Entwurf",
+  "views": "Creator-Ansichten",
+  "name": "Name",
+  "definition": "Definition",
+  "description": "Beschreibung",
+  "scenes": "Einstiegsszenen",
+  "discard": "Änderungen verwerfen",
+  "saveDraft": "Entwurfsänderungen speichern",
+  "leaveTitle": "Nicht gespeicherte Änderungen verwerfen?",
+  "leaveBody": "Dein gespeicherter Entwurf bleibt erhalten. Nur diese nicht gespeicherten Änderungen gehen verloren.",
+  "keepEditing": "Weiter bearbeiten",
+  "placeholder": "Beschreibe, was du erstellen oder ändern möchtest",
+  "startTitle": "Was möchtest du erstellen?",
+  "startBody": "Beschreibe deine Idee. Du kannst den Entwurf gemeinsam verfeinern oder selbst bearbeiten.",
+  "model": "Creator-Modell",
+  "chooseModel": "Modell wählen",
+  "defaultModel": "Standard von Smart creator verwenden",
+  "appDefault": "App-Standard verwenden",
+  "modelUnavailable": "Das ausgewählte Modell ist nicht verfügbar",
+  "modelMissing": "Wähle ein Textmodell für den Chat. Du kannst den Entwurf jetzt bearbeiten.",
+  "streaming": "Antworten streamen",
+  "toolFormat": "Tool-Format",
+  "history": "Entwurfsverlauf",
+  "version": "Version {{number}}",
+  "restoreVersion": "Diese Version verwenden",
+  "before": "Vorher",
+  "after": "Nachher",
+  "changes": "Änderungen anzeigen",
+  "regenerate": "Neu generieren",
+  "retry": "Erneut versuchen",
+  "review": "Prüfen und speichern",
+  "reviewShort": "Prüfen",
+  "reviewEdit": "Diese Änderungen aktualisieren das vorhandene Element",
+  "reviewNew": "Prüfe, was deiner Bibliothek hinzugefügt wird",
+  "saveChanges": "Änderungen speichern",
+  "createAndChat": "Erstellen und chatten",
+  "turn": {
+    "pending": "Arbeitet",
+    "succeeded": "Entwurf aktualisiert",
+    "failed": "Die Antwort ist fehlgeschlagen. Dein vorheriger Entwurf bleibt erhalten.",
+    "cancelled": "Gestoppt. Dein vorheriger Entwurf bleibt erhalten.",
+    "interrupted": "Unterbrochen. Versuche erneut, um von deinem gespeicherten Entwurf fortzufahren."
+  },
+  "unsavedStatus": "Nicht gespeicherte Entwurfsänderungen",
+  "noChanges": "In dieser Version hat sich nichts geändert.",
+  "back": "Zurück",
+  "current": "Aktuell",
+  "streamingBody": "Antworten anzeigen, während sie geschrieben werden",
+  "incomplete": "Füge einen Namen und eine Definition hinzu, bevor du speicherst.",
+  "tools": {
+    "label": "Entwurfsänderungen",
+    "running": "Arbeitet",
+    "succeeded": "Fertig",
+    "failed": "Fehlgeschlagen",
+    "name": {
+      "write_definition": "Definition aktualisieren",
+      "write_scene": "Einstiegsszene hinzufügen",
+      "set_name": "Namen festlegen",
+      "edit_scene": "Einstiegsszene bearbeiten",
+      "delete_scene": "Einstiegsszene entfernen",
+      "show_preview": "Vorschau anzeigen",
+      "request_confirmation": "Um Prüfung bitten",
+      "use_uploaded_image": "Avatar festlegen",
+      "generate_image": "Bild generieren",
+      "edit_avatar_image": "Bild bearbeiten"
+    }
+  },
+  "settingsPage": {
+    "loading": "Smart creator-Einstellungen werden geladen",
+    "modelGroup": "Modell",
+    "repliesGroup": "Antworten",
+    "streamingNeedsNative": "Streaming erfordert native Tool-Aufrufe",
+    "nativeTitle": "Native Tool-Aufrufe",
+    "nativeBody": "Das Modell ruft die Tools des Creators direkt auf. Am besten für Modelle mit Tool-Unterstützung.",
+    "toolFormatHint": "JSON und XML bitten das Modell, seine Tool-Aufrufe als Text zu schreiben, für Modelle ohne native Tool-Unterstützung."
+  },
+  "scene": "Szene {{number}}",
+  "copy": "Text kopieren",
+  "copied": "Kopiert",
+  "copyFailed": "Zwischenablage nicht erreichbar",
+  "targetChanged": {
+    "character": "Dieser Charakter wurde nach deinem Start an anderer Stelle geändert, daher kann dieser Entwurf nicht darüber gespeichert werden.",
+    "persona": "Diese Persona wurde nach deinem Start an anderer Stelle geändert, daher kann dieser Entwurf nicht darüber gespeichert werden.",
+    "carry": "Mit der neuesten Version fortfahren"
+  },
+  "source": {
+    "start": "Ausgangspunkt",
+    "creator": "Smart creator",
+    "edit": "Deine Bearbeitung",
+    "review": "Geprüft"
+  },
+  "attach": {
+    "title": "Anhängen",
+    "image": "Bild",
+    "imageBody": "Bilder hinzufügen, die der Creator verwenden kann",
+    "character": "Charakter",
+    "characterBody": "Den Creator einen Charakter lesen lassen",
+    "persona": "Persona",
+    "personaBody": "Den Creator eine Persona lesen lassen"
+  },
+  "references": {
+    "characterTitle": "Charaktere anhängen",
+    "personaTitle": "Personas anhängen",
+    "description": "Der Creator liest ihren aktuellen Text zusammen mit deiner Nachricht",
+    "search": "Suchen",
+    "done": "Fertig",
+    "noCharacters": "Noch keine Charaktere",
+    "noPersonas": "Noch keine Personas",
+    "missing": {
+      "character": "Gelöschter Charakter",
+      "persona": "Gelöschte Persona"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Avatar wählen",
+    "remove": "Avatar entfernen",
+    "sessionImages": "Bilder in dieser Sitzung",
+    "origin": {
+      "upload": "Hochgeladenes Bild",
+      "generated": "Generiertes Bild",
+      "edited": "Bearbeitetes Bild"
+    }
+  },
+  "image": {
+    "label": "Generiertes Bild",
+    "useAvatar": "Als Avatar verwenden",
+    "edit": "Bearbeiten"
+  }
+}

@@ -561,6 +561,16 @@
     "refresh": "I-refresh"
   },
   "providers": {
+    "models": "Mga chat at image model",
+    "optionalKey": "API key (opsyonal)",
+    "webUiCredentials": "username:password o proxy token",
+    "comfyTxt2img": "Text-to-image workflow (API JSON)",
+    "comfyImg2img": "Image-to-image workflow (API JSON, opsyonal)",
+    "comfyWorkflowHint": "I-export ang workflow sa API format mula sa ComfyUI. Palitan ang mga nagbabagong input ng mga token sa ibaba.",
+    "comfyInvalidWorkflow": "Gumamit ng JSON object sa API format na may class_type at inputs para sa bawat node (hanggang 4 MiB).",
+    "comfyTokens": "Text: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% o %IMAGE0%. Numbers: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Panatilihin ang mga text token sa JSON quotes.",
+    "webUiHint": "Simulan ang WebUI gamit ang --api. Pagkatapos mag-save, magdagdag ng image model mula sa checkpoint list ng server sa Models.",
+    "imageModelHint": "Pagkatapos mag-save, magdagdag ng image model mula sa checkpoint list ng server sa Models.",
     "type": "Uri ng provider",
     "language": "Mga language model",
     "audio": "Audio",
@@ -683,6 +693,21 @@
     "mobileDownloads": "Available sa desktop ang mga local GGUF download."
   },
   "customProvider": {
+    "imageRoutes": "Mga custom na ruta ng larawan",
+    "imageRoutesHint": "Ginagamit ang parehong authentication tulad ng chat. Default sa OpenAI image API.",
+    "imageGenerationPath": "Path ng paggawa ng larawan",
+    "imageEditPath": "Path ng pag-edit ng larawan",
+    "imageEditHint": "Iwanang walang laman para i-disable ang pag-edit ng larawan.",
+    "imageEditFormat": "Format ng request sa pag-edit ng larawan",
+    "imageMultipart": "Mga multipart file (OpenAI)",
+    "imageJson": "Mga JSON data URL (NanoGPT)",
+    "imageListPath": "Path ng tugon ng listahan ng larawan",
+    "imageListHint": "Dotted JSON path. Iwanang walang laman para basahin ang root ng tugon.",
+    "imageUrlPath": "Path ng URL ng larawan bawat item",
+    "imageB64Path": "Path ng Base64 na larawan bawat item",
+    "imageExtraBody": "Mga karagdagang parameter ng larawan (JSON)",
+    "imageExtraBodyHint": "Mga value na partikular sa provider, tulad ng quality o output_format. Pinapanatili ng model, prompt at image input ang kasalukuyang value.",
+    "imageExtraBodyInvalid": "Maglagay ng JSON object, hanggang 64 KiB.",
     "chatPath": "Chat endpoint",
     "auth": "Authentication",
     "authModes": {
@@ -723,6 +748,9 @@
     "urlRequired": "Kinakailangan. Ang base URL ng custom server mo."
   },
   "modelEditor": {
+    "modelType": "Uri ng modelo",
+    "chatModel": "Chat",
+    "imageModel": "Paggawa ng larawan",
     "fields": {
       "temperature": "Temperature",
       "topP": "Top P",

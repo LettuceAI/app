@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Maken",
+  "new": {
+    "character": "Nieuw karakter",
+    "characterBody": "Maak een karakter door te chatten",
+    "persona": "Nieuwe persona",
+    "personaBody": "Schrijf een persona met AI"
+  },
+  "kind": {
+    "character": "Karakter",
+    "persona": "Persona"
+  },
+  "editWithAi": "Bewerken met AI",
+  "editWithAiBody": "Bekijk een concept voordat je wijzigingen opslaat",
+  "settings": "Instellingen",
+  "openCreator": "Smart creator openen",
+  "openCreatorBody": "Maak of verbeter karakters en persona's",
+  "drafts": "Je werk",
+  "empty": "Nog geen concepten",
+  "emptyBody": "Kies een karakter of persona om te beginnen",
+  "untitled": "Naamloos concept",
+  "saved": "Opgeslagen",
+  "notSaved": "Concept",
+  "savedBody": "Deze versie is opgeslagen. Open het opgeslagen item om verder te bewerken.",
+  "openSaved": "Opgeslagen item openen",
+  "loadMore": "Meer laden",
+  "chat": "Chat",
+  "draft": "Concept",
+  "views": "Creator-weergaven",
+  "name": "Naam",
+  "definition": "Definitie",
+  "description": "Beschrijving",
+  "scenes": "Openingsscènes",
+  "discard": "Wijzigingen verwerpen",
+  "saveDraft": "Conceptwijzigingen opslaan",
+  "leaveTitle": "Niet-opgeslagen wijzigingen verwerpen?",
+  "leaveBody": "Je opgeslagen concept blijft bewaard. Alleen deze niet-opgeslagen wijzigingen gaan verloren.",
+  "keepEditing": "Doorgaan met bewerken",
+  "placeholder": "Beschrijf wat je wilt maken of wijzigen",
+  "startTitle": "Wat wil je maken?",
+  "startBody": "Beschrijf je idee. Je kunt het concept samen verfijnen of zelf bewerken.",
+  "model": "Creator-model",
+  "chooseModel": "Kies een model",
+  "defaultModel": "De standaard van Smart creator gebruiken",
+  "appDefault": "De app-standaard gebruiken",
+  "modelUnavailable": "Het gekozen model is niet beschikbaar",
+  "modelMissing": "Kies een tekstmodel om te chatten. Je kunt het concept nu bewerken.",
+  "streaming": "Antwoorden streamen",
+  "toolFormat": "Toolindeling",
+  "history": "Conceptgeschiedenis",
+  "version": "Versie {{number}}",
+  "restoreVersion": "Deze versie gebruiken",
+  "before": "Voor",
+  "after": "Na",
+  "changes": "Wijzigingen bekijken",
+  "regenerate": "Opnieuw genereren",
+  "retry": "Opnieuw proberen",
+  "review": "Beoordelen en opslaan",
+  "reviewShort": "Beoordelen",
+  "reviewEdit": "Deze wijzigingen werken het bestaande item bij",
+  "reviewNew": "Bekijk wat er aan je bibliotheek wordt toegevoegd",
+  "saveChanges": "Wijzigingen opslaan",
+  "createAndChat": "Maken en chatten",
+  "turn": {
+    "pending": "Bezig",
+    "succeeded": "Concept bijgewerkt",
+    "failed": "Het antwoord is mislukt. Je vorige concept blijft bewaard.",
+    "cancelled": "Gestopt. Je vorige concept blijft bewaard.",
+    "interrupted": "Onderbroken. Probeer opnieuw om verder te gaan vanaf je opgeslagen concept."
+  },
+  "unsavedStatus": "Niet-opgeslagen conceptwijzigingen",
+  "noChanges": "Er is niets veranderd in deze versie.",
+  "back": "Terug",
+  "current": "Huidig",
+  "streamingBody": "Antwoorden tonen terwijl ze worden geschreven",
+  "incomplete": "Voeg een naam en een definitie toe voordat je opslaat.",
+  "tools": {
+    "label": "Conceptwijzigingen",
+    "running": "Bezig",
+    "succeeded": "Klaar",
+    "failed": "Mislukt",
+    "name": {
+      "write_definition": "De definitie bijwerken",
+      "write_scene": "Een openingsscène toevoegen",
+      "set_name": "De naam instellen",
+      "edit_scene": "Een openingsscène bewerken",
+      "delete_scene": "Een openingsscène verwijderen",
+      "show_preview": "Een voorbeeld tonen",
+      "request_confirmation": "Om beoordeling vragen",
+      "use_uploaded_image": "De avatar instellen",
+      "generate_image": "Een afbeelding genereren",
+      "edit_avatar_image": "Een afbeelding bewerken"
+    }
+  },
+  "settingsPage": {
+    "loading": "Instellingen van Smart creator laden",
+    "modelGroup": "Model",
+    "repliesGroup": "Antwoorden",
+    "streamingNeedsNative": "Streaming vereist native tool-aanroepen",
+    "nativeTitle": "Native tool-aanroepen",
+    "nativeBody": "Het model roept de tools van de creator rechtstreeks aan. Het beste voor modellen die tools ondersteunen.",
+    "toolFormatHint": "JSON en XML vragen het model om zijn tool-aanroepen als tekst te schrijven, voor modellen zonder native toolondersteuning."
+  },
+  "scene": "Scène {{number}}",
+  "copy": "Tekst kopiëren",
+  "copied": "Gekopieerd",
+  "copyFailed": "Kon het klembord niet bereiken",
+  "targetChanged": {
+    "character": "Dit karakter is elders gewijzigd nadat je begon, dus dit concept kan er niet overheen worden opgeslagen.",
+    "persona": "Deze persona is elders gewijzigd nadat je begon, dus dit concept kan er niet overheen worden opgeslagen.",
+    "carry": "Doorgaan op de nieuwste versie"
+  },
+  "source": {
+    "start": "Startpunt",
+    "creator": "Smart creator",
+    "edit": "Jouw bewerking",
+    "review": "Beoordeeld"
+  },
+  "attach": {
+    "title": "Bijvoegen",
+    "image": "Afbeelding",
+    "imageBody": "Voeg afbeeldingen toe die de creator kan gebruiken",
+    "character": "Karakter",
+    "characterBody": "Laat de creator een karakter lezen",
+    "persona": "Persona",
+    "personaBody": "Laat de creator een persona lezen"
+  },
+  "references": {
+    "characterTitle": "Karakters bijvoegen",
+    "personaTitle": "Persona's bijvoegen",
+    "description": "De creator leest hun huidige tekst met je bericht",
+    "search": "Zoeken",
+    "done": "Klaar",
+    "noCharacters": "Nog geen karakters",
+    "noPersonas": "Nog geen persona's",
+    "missing": {
+      "character": "Verwijderd karakter",
+      "persona": "Verwijderde persona"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Kies een avatar",
+    "remove": "Avatar verwijderen",
+    "sessionImages": "Afbeeldingen in deze sessie",
+    "origin": {
+      "upload": "Geüploade afbeelding",
+      "generated": "Gegenereerde afbeelding",
+      "edited": "Bewerkte afbeelding"
+    }
+  },
+  "image": {
+    "label": "Gegenereerde afbeelding",
+    "useAvatar": "Als avatar gebruiken",
+    "edit": "Bewerken"
+  }
+}

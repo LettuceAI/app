@@ -557,6 +557,16 @@
     "refresh": "更新"
   },
   "providers": {
+    "models": "チャットと画像モデル",
+    "optionalKey": "APIキー（任意）",
+    "webUiCredentials": "ユーザー名:パスワードまたはプロキシトークン",
+    "comfyTxt2img": "テキストから画像へのワークフロー（API JSON）",
+    "comfyImg2img": "画像から画像へのワークフロー（API JSON、任意）",
+    "comfyWorkflowHint": "ComfyUIからワークフローをAPI形式でエクスポートします。変化する入力は以下のトークンに置き換えてください。",
+    "comfyInvalidWorkflow": "各ノードにclass_typeとinputsを含むAPI形式のJSONオブジェクトを使用してください（最大4 MiB）。",
+    "comfyTokens": "テキスト: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% または %IMAGE0%。数値: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%。テキストのトークンはJSONの引用符内に保ってください。",
+    "webUiHint": "WebUIを--api付きで起動します。保存後、モデルのサーバーのcheckpointリストから画像モデルを追加してください。",
+    "imageModelHint": "保存後、モデルのサーバーのcheckpointリストから画像モデルを追加してください。",
     "type": "プロバイダーの種類",
     "language": "言語モデル",
     "audio": "音声",
@@ -676,6 +686,21 @@
     "mobileDownloads": "ローカルGGUFのダウンロードはデスクトップで利用できます。"
   },
   "customProvider": {
+    "imageRoutes": "カスタム画像ルート",
+    "imageRoutesHint": "チャットと同じ認証を使用します。デフォルトはOpenAI画像APIです。",
+    "imageGenerationPath": "画像生成パス",
+    "imageEditPath": "画像編集パス",
+    "imageEditHint": "画像編集を無効にするには空欄にしてください。",
+    "imageEditFormat": "画像編集リクエスト形式",
+    "imageMultipart": "マルチパートファイル（OpenAI）",
+    "imageJson": "JSONデータURL（NanoGPT）",
+    "imageListPath": "画像リストのレスポンスパス",
+    "imageListHint": "ドット区切りのJSONパス。レスポンスのルートを読むには空欄にしてください。",
+    "imageUrlPath": "項目ごとの画像URLパス",
+    "imageB64Path": "項目ごとのBase64画像パス",
+    "imageExtraBody": "追加の画像パラメータ（JSON）",
+    "imageExtraBodyHint": "qualityやoutput_formatなど、プロバイダー固有の値。モデル、プロンプト、画像入力は現在の値を保ちます。",
+    "imageExtraBodyInvalid": "最大64 KiBのJSONオブジェクトを入力してください。",
     "chatPath": "チャットエンドポイント",
     "auth": "認証",
     "authModes": {
@@ -716,6 +741,9 @@
     "urlRequired": "必須。カスタムサーバーのベースURL。"
   },
   "modelEditor": {
+    "modelType": "モデルタイプ",
+    "chatModel": "チャット",
+    "imageModel": "画像生成",
     "fields": {
       "temperature": "温度",
       "topP": "Top P",

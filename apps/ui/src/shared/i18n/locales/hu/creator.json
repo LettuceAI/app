@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Létrehozás",
+  "new": {
+    "character": "Új karakter",
+    "characterBody": "Karakter építése beszélgetéssel",
+    "persona": "Új persona",
+    "personaBody": "Persona írása AI-val"
+  },
+  "kind": {
+    "character": "Karakter",
+    "persona": "Persona"
+  },
+  "editWithAi": "Szerkesztés AI-val",
+  "editWithAiBody": "Nézd át a piszkozatot a módosítások mentése előtt",
+  "settings": "Beállítások",
+  "openCreator": "Smart creator megnyitása",
+  "openCreatorBody": "Karakterek és personák létrehozása vagy fejlesztése",
+  "drafts": "A munkáid",
+  "empty": "Még nincsenek piszkozatok",
+  "emptyBody": "Válassz egy karaktert vagy personát a kezdéshez",
+  "untitled": "Névtelen piszkozat",
+  "saved": "Mentve",
+  "notSaved": "Piszkozat",
+  "savedBody": "Ez a verzió mentve van. A szerkesztés folytatásához nyisd meg a mentett elemet.",
+  "openSaved": "Mentett elem megnyitása",
+  "loadMore": "Továbbiak betöltése",
+  "chat": "Beszélgetés",
+  "draft": "Piszkozat",
+  "views": "Alkotói nézetek",
+  "name": "Név",
+  "definition": "Leírás",
+  "description": "Bevezető",
+  "scenes": "Nyitójelenetek",
+  "discard": "Módosítások elvetése",
+  "saveDraft": "Piszkozat módosításainak mentése",
+  "leaveTitle": "Elveted a nem mentett módosításokat?",
+  "leaveBody": "A mentett piszkozat megmarad. Csak ezek a nem mentett módosítások vesznek el.",
+  "keepEditing": "Szerkesztés folytatása",
+  "placeholder": "Írd le, mit szeretnél létrehozni vagy módosítani",
+  "startTitle": "Mit szeretnél alkotni?",
+  "startBody": "Írd le az ötleted. A piszkozatot közösen finomíthatjátok, vagy magad is szerkesztheted.",
+  "model": "Alkotó modell",
+  "chooseModel": "Modell választása",
+  "defaultModel": "A Smart creator alapértelmezésének használata",
+  "appDefault": "Az alkalmazás alapértelmezésének használata",
+  "modelUnavailable": "A kiválasztott modell nem érhető el",
+  "modelMissing": "Válassz szövegmodellt a beszélgetéshez. A piszkozatot most is szerkesztheted.",
+  "streaming": "Válaszok folyamatos megjelenítése",
+  "toolFormat": "Eszközformátum",
+  "history": "Piszkozat előzményei",
+  "version": "{{number}}. verzió",
+  "restoreVersion": "Verzió használata",
+  "before": "Előtte",
+  "after": "Utána",
+  "changes": "Módosítások megtekintése",
+  "regenerate": "Újragenerálás",
+  "retry": "Újrapróbálás",
+  "review": "Átnézés és mentés",
+  "reviewShort": "Átnézés",
+  "reviewEdit": "Ezek a módosítások frissítik a meglévő elemet",
+  "reviewNew": "Nézd át, mi kerül a könyvtáradba",
+  "saveChanges": "Módosítások mentése",
+  "createAndChat": "Létrehozás és beszélgetés",
+  "turn": {
+    "pending": "Dolgozik",
+    "succeeded": "Piszkozat frissítve",
+    "failed": "A válasz nem sikerült. Az előző piszkozat megmarad.",
+    "cancelled": "Leállítva. Az előző piszkozat megmarad.",
+    "interrupted": "Megszakítva. Próbáld újra a mentett piszkozattól való folytatáshoz."
+  },
+  "unsavedStatus": "Nem mentett piszkozatmódosítások",
+  "noChanges": "Ebben a verzióban semmi sem változott.",
+  "back": "Vissza",
+  "current": "Jelenlegi",
+  "streamingBody": "Válaszok megjelenítése írás közben",
+  "incomplete": "Mentés előtt adj hozzá egy nevet és egy leírást.",
+  "tools": {
+    "label": "Piszkozat módosításai",
+    "running": "Dolgozik",
+    "succeeded": "Kész",
+    "failed": "Sikertelen",
+    "name": {
+      "write_definition": "Leírás frissítése",
+      "write_scene": "Nyitójelenet hozzáadása",
+      "set_name": "Név beállítása",
+      "edit_scene": "Nyitójelenet szerkesztése",
+      "delete_scene": "Nyitójelenet eltávolítása",
+      "show_preview": "Előnézet megjelenítése",
+      "request_confirmation": "Átnézés kérése",
+      "use_uploaded_image": "Avatar beállítása",
+      "generate_image": "Kép generálása",
+      "edit_avatar_image": "Kép szerkesztése"
+    }
+  },
+  "settingsPage": {
+    "loading": "Smart creator beállításainak betöltése",
+    "modelGroup": "Modell",
+    "repliesGroup": "Válaszok",
+    "streamingNeedsNative": "A folyamatos megjelenítéshez natív eszközhívások kellenek",
+    "nativeTitle": "Natív eszközhívások",
+    "nativeBody": "A modell közvetlenül hívja az alkotó eszközeit. Az eszközöket támogató modellekhez a legjobb.",
+    "toolFormatHint": "A JSON és az XML arra kéri a modellt, hogy szövegként írja az eszközhívásokat, a natív eszköztámogatás nélküli modellekhez."
+  },
+  "scene": "{{number}}. jelenet",
+  "copy": "Szöveg másolása",
+  "copied": "Másolva",
+  "copyFailed": "Nem sikerült elérni a vágólapot",
+  "targetChanged": {
+    "character": "Ezt a karaktert a kezdés után máshol módosították, ezért ez a piszkozat nem menthető rá.",
+    "persona": "Ezt a personát a kezdés után máshol módosították, ezért ez a piszkozat nem menthető rá.",
+    "carry": "Folytatás a legújabb verzióval"
+  },
+  "source": {
+    "start": "Kiindulópont",
+    "creator": "Smart creator",
+    "edit": "A te szerkesztésed",
+    "review": "Átnézve"
+  },
+  "attach": {
+    "title": "Csatolás",
+    "image": "Kép",
+    "imageBody": "Adj hozzá képeket, amelyeket az alkotó használhat",
+    "character": "Karakter",
+    "characterBody": "Engedd, hogy az alkotó elolvasson egy karaktert",
+    "persona": "Persona",
+    "personaBody": "Engedd, hogy az alkotó elolvasson egy personát"
+  },
+  "references": {
+    "characterTitle": "Karakterek csatolása",
+    "personaTitle": "Personák csatolása",
+    "description": "Az alkotó a jelenlegi szövegüket az üzeneteddel együtt olvassa el",
+    "search": "Keresés",
+    "done": "Kész",
+    "noCharacters": "Még nincsenek karakterek",
+    "noPersonas": "Még nincsenek personák",
+    "missing": {
+      "character": "Törölt karakter",
+      "persona": "Törölt persona"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Avatar választása",
+    "remove": "Avatar eltávolítása",
+    "sessionImages": "Képek ebben a munkamenetben",
+    "origin": {
+      "upload": "Feltöltött kép",
+      "generated": "Generált kép",
+      "edited": "Szerkesztett kép"
+    }
+  },
+  "image": {
+    "label": "Generált kép",
+    "useAvatar": "Használat avatarként",
+    "edit": "Szerkesztés"
+  }
+}

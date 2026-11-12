@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Criar",
+  "new": {
+    "character": "Novo personagem",
+    "characterBody": "Crie um personagem conversando",
+    "persona": "Nova persona",
+    "personaBody": "Escreva uma persona com AI"
+  },
+  "kind": {
+    "character": "Personagem",
+    "persona": "Persona"
+  },
+  "editWithAi": "Editar com AI",
+  "editWithAiBody": "Revise um rascunho antes de salvar as alterações",
+  "settings": "Configurações",
+  "openCreator": "Abrir Smart creator",
+  "openCreatorBody": "Crie ou melhore personagens e personas",
+  "drafts": "Seu trabalho",
+  "empty": "Nenhum rascunho ainda",
+  "emptyBody": "Escolha um personagem ou uma persona para começar",
+  "untitled": "Rascunho sem título",
+  "saved": "Salvo",
+  "notSaved": "Rascunho",
+  "savedBody": "Esta versão está salva. Abra o item salvo para continuar editando.",
+  "openSaved": "Abrir item salvo",
+  "loadMore": "Carregar mais",
+  "chat": "Conversa",
+  "draft": "Rascunho",
+  "views": "Visualizações do creator",
+  "name": "Nome",
+  "definition": "Definição",
+  "description": "Descrição",
+  "scenes": "Cenas iniciais",
+  "discard": "Descartar alterações",
+  "saveDraft": "Salvar alterações do rascunho",
+  "leaveTitle": "Descartar edições não salvas?",
+  "leaveBody": "Seu rascunho salvo permanece. Apenas estas edições não salvas serão perdidas.",
+  "keepEditing": "Continuar editando",
+  "placeholder": "Descreva o que você quer criar ou mudar",
+  "startTitle": "O que você gostaria de criar?",
+  "startBody": "Descreva sua ideia. Você pode refinar o rascunho juntos ou editá-lo sozinho.",
+  "model": "Modelo do creator",
+  "chooseModel": "Escolher um modelo",
+  "defaultModel": "Usar o padrão do Smart creator",
+  "appDefault": "Usar o padrão do app",
+  "modelUnavailable": "O modelo selecionado não está disponível",
+  "modelMissing": "Escolha um modelo de texto para conversar. Você pode editar o rascunho agora.",
+  "streaming": "Transmitir respostas",
+  "toolFormat": "Formato de ferramentas",
+  "history": "Histórico do rascunho",
+  "version": "Versão {{number}}",
+  "restoreVersion": "Usar esta versão",
+  "before": "Antes",
+  "after": "Depois",
+  "changes": "Ver alterações",
+  "regenerate": "Gerar de novo",
+  "retry": "Tentar de novo",
+  "review": "Revisar e salvar",
+  "reviewShort": "Revisar",
+  "reviewEdit": "Estas alterações atualizarão o item existente",
+  "reviewNew": "Revise o que será adicionado à sua biblioteca",
+  "saveChanges": "Salvar alterações",
+  "createAndChat": "Criar e conversar",
+  "turn": {
+    "pending": "Trabalhando",
+    "succeeded": "Rascunho atualizado",
+    "failed": "A resposta falhou. Seu rascunho anterior foi mantido.",
+    "cancelled": "Parado. Seu rascunho anterior foi mantido.",
+    "interrupted": "Interrompido. Tente de novo para continuar do seu rascunho salvo."
+  },
+  "unsavedStatus": "Alterações do rascunho não salvas",
+  "noChanges": "Nada mudou nesta versão.",
+  "back": "Voltar",
+  "current": "Atual",
+  "streamingBody": "Mostrar as respostas enquanto são escritas",
+  "incomplete": "Adicione um nome e uma definição antes de salvar.",
+  "tools": {
+    "label": "Alterações do rascunho",
+    "running": "Trabalhando",
+    "succeeded": "Concluído",
+    "failed": "Falhou",
+    "name": {
+      "write_definition": "Atualizar a definição",
+      "write_scene": "Adicionar uma cena inicial",
+      "set_name": "Definir o nome",
+      "edit_scene": "Editar uma cena inicial",
+      "delete_scene": "Remover uma cena inicial",
+      "show_preview": "Mostrar uma prévia",
+      "request_confirmation": "Pedir revisão",
+      "use_uploaded_image": "Definir o avatar",
+      "generate_image": "Gerar uma imagem",
+      "edit_avatar_image": "Editar uma imagem"
+    }
+  },
+  "settingsPage": {
+    "loading": "Carregando configurações do Smart creator",
+    "modelGroup": "Modelo",
+    "repliesGroup": "Respostas",
+    "streamingNeedsNative": "O streaming precisa de chamadas nativas de ferramentas",
+    "nativeTitle": "Chamadas nativas de ferramentas",
+    "nativeBody": "O modelo chama as ferramentas do creator diretamente. Melhor para modelos com suporte a ferramentas.",
+    "toolFormatHint": "JSON e XML pedem ao modelo que escreva suas chamadas de ferramentas como texto, para modelos sem suporte nativo a ferramentas."
+  },
+  "scene": "Cena {{number}}",
+  "copy": "Copiar texto",
+  "copied": "Copiado",
+  "copyFailed": "Não foi possível acessar a área de transferência",
+  "targetChanged": {
+    "character": "Este personagem mudou em outro lugar depois que você começou, então este rascunho não pode ser salvo por cima.",
+    "persona": "Esta persona mudou em outro lugar depois que você começou, então este rascunho não pode ser salvo por cima.",
+    "carry": "Continuar na versão mais recente"
+  },
+  "source": {
+    "start": "Ponto de partida",
+    "creator": "Smart creator",
+    "edit": "Sua edição",
+    "review": "Revisado"
+  },
+  "attach": {
+    "title": "Anexar",
+    "image": "Imagem",
+    "imageBody": "Adicione imagens que o creator pode usar",
+    "character": "Personagem",
+    "characterBody": "Deixe o creator ler um personagem",
+    "persona": "Persona",
+    "personaBody": "Deixe o creator ler uma persona"
+  },
+  "references": {
+    "characterTitle": "Anexar personagens",
+    "personaTitle": "Anexar personas",
+    "description": "O creator lê o texto atual deles com sua mensagem",
+    "search": "Pesquisar",
+    "done": "Concluído",
+    "noCharacters": "Nenhum personagem ainda",
+    "noPersonas": "Nenhuma persona ainda",
+    "missing": {
+      "character": "Personagem excluído",
+      "persona": "Persona excluída"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Escolher um avatar",
+    "remove": "Remover avatar",
+    "sessionImages": "Imagens nesta sessão",
+    "origin": {
+      "upload": "Imagem enviada",
+      "generated": "Imagem gerada",
+      "edited": "Imagem editada"
+    }
+  },
+  "image": {
+    "label": "Imagem gerada",
+    "useAvatar": "Usar como avatar",
+    "edit": "Editar"
+  }
+}

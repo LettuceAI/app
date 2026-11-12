@@ -565,6 +565,16 @@
     "refresh": "Actualiser"
   },
   "providers": {
+    "models": "Modèles de discussion et d'image",
+    "optionalKey": "Clé API (facultatif)",
+    "webUiCredentials": "nom d'utilisateur:mot de passe ou jeton proxy",
+    "comfyTxt2img": "Workflow texte-vers-image (JSON d'API)",
+    "comfyImg2img": "Workflow image-vers-image (JSON d'API, facultatif)",
+    "comfyWorkflowHint": "Exportez le workflow au format API depuis ComfyUI. Remplacez les entrées variables par les jetons ci-dessous.",
+    "comfyInvalidWorkflow": "Utilisez un objet JSON au format API avec class_type et inputs pour chaque nœud (jusqu'à 4 MiB).",
+    "comfyTokens": "Texte : %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% ou %IMAGE0%. Nombres : %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%. Gardez les jetons de texte entre guillemets JSON.",
+    "webUiHint": "Démarrez WebUI avec --api. Après l'enregistrement, ajoutez un modèle d'image depuis la liste des checkpoints du serveur dans Modèles.",
+    "imageModelHint": "Après l'enregistrement, ajoutez un modèle d'image depuis la liste des checkpoints du serveur dans Modèles.",
     "type": "Type de fournisseur",
     "language": "Modèles de langage",
     "audio": "Audio",
@@ -690,6 +700,21 @@
     "mobileDownloads": "Les téléchargements GGUF locaux sont disponibles sur ordinateur."
   },
   "customProvider": {
+    "imageRoutes": "Routes d'image personnalisées",
+    "imageRoutesHint": "Utilise la même authentification que la discussion. Par défaut, l'API d'image OpenAI.",
+    "imageGenerationPath": "Chemin de génération d'image",
+    "imageEditPath": "Chemin de modification d'image",
+    "imageEditHint": "Laissez vide pour désactiver la modification d'image.",
+    "imageEditFormat": "Format de requête de modification d'image",
+    "imageMultipart": "Fichiers multipart (OpenAI)",
+    "imageJson": "URL de données JSON (NanoGPT)",
+    "imageListPath": "Chemin de la liste d'images dans la réponse",
+    "imageListHint": "Chemin JSON à points. Laissez vide pour lire la racine de la réponse.",
+    "imageUrlPath": "Chemin de l'URL d'image par élément",
+    "imageB64Path": "Chemin de l'image Base64 par élément",
+    "imageExtraBody": "Paramètres d'image supplémentaires (JSON)",
+    "imageExtraBodyHint": "Valeurs propres au fournisseur, comme quality ou output_format. Le modèle, le prompt et les images d'entrée conservent leurs valeurs actuelles.",
+    "imageExtraBodyInvalid": "Saisissez un objet JSON, jusqu'à 64 KiB.",
     "chatPath": "Point de terminaison de discussion",
     "auth": "Authentification",
     "authModes": {
@@ -730,6 +755,9 @@
     "urlRequired": "Requis. L'URL de base de votre serveur personnalisé."
   },
   "modelEditor": {
+    "modelType": "Type de modèle",
+    "chatModel": "Discussion",
+    "imageModel": "Génération d'images",
     "fields": {
       "temperature": "Température",
       "topP": "Top P",

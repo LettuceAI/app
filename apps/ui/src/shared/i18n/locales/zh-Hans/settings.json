@@ -557,6 +557,16 @@
     "refresh": "刷新"
   },
   "providers": {
+    "models": "聊天和图片模型",
+    "optionalKey": "API 密钥（可选）",
+    "webUiCredentials": "用户名:密码或代理令牌",
+    "comfyTxt2img": "文生图工作流（API JSON）",
+    "comfyImg2img": "图生图工作流（API JSON，可选）",
+    "comfyWorkflowHint": "从 ComfyUI 以 API 格式导出工作流。将变化的输入替换为下方令牌。",
+    "comfyInvalidWorkflow": "使用 API 格式的 JSON 对象，每个节点包含 class_type 和 inputs（最大 4 MiB）。",
+    "comfyTokens": "文本: %PROMPT%, %NEGATIVE%, %CKPT%, %SAMPLER%, %IMAGE% 或 %IMAGE0%。数字: %WIDTH%, %HEIGHT%, %STEPS%, %CFG%, %SEED%, %DENOISE%, %IMAGE_COUNT%, %BATCH_SIZE%。请将文本令牌保留在 JSON 引号内。",
+    "webUiHint": "使用 --api 启动 WebUI。保存后，在模型的服务器 checkpoint 列表中添加图片模型。",
+    "imageModelHint": "保存后，在模型的服务器 checkpoint 列表中添加图片模型。",
     "type": "服务商类型",
     "language": "语言模型",
     "audio": "音频",
@@ -676,6 +686,21 @@
     "mobileDownloads": "本地 GGUF 下载仅在桌面端提供。"
   },
   "customProvider": {
+    "imageRoutes": "自定义图片路由",
+    "imageRoutesHint": "使用与聊天相同的身份验证。默认为 OpenAI 图片 API。",
+    "imageGenerationPath": "图片生成路径",
+    "imageEditPath": "图片编辑路径",
+    "imageEditHint": "留空以禁用图片编辑。",
+    "imageEditFormat": "图片编辑请求格式",
+    "imageMultipart": "多部分文件（OpenAI）",
+    "imageJson": "JSON 数据 URL（NanoGPT）",
+    "imageListPath": "图片列表响应路径",
+    "imageListHint": "点分隔的 JSON 路径。留空以读取响应根。",
+    "imageUrlPath": "每项的图片 URL 路径",
+    "imageB64Path": "每项的 Base64 图片路径",
+    "imageExtraBody": "额外图片参数（JSON）",
+    "imageExtraBodyHint": "服务商特定值，例如 quality 或 output_format。模型、提示词和图片输入保持当前值。",
+    "imageExtraBodyInvalid": "请输入 JSON 对象，最大 64 KiB。",
     "chatPath": "聊天端点",
     "auth": "认证",
     "authModes": {
@@ -716,6 +741,9 @@
     "urlRequired": "必需。你自定义服务器的基础 URL。"
   },
   "modelEditor": {
+    "modelType": "模型类型",
+    "chatModel": "聊天",
+    "imageModel": "图片生成",
     "fields": {
       "temperature": "温度",
       "topP": "Top P",
