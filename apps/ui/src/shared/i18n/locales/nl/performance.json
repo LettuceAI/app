@@ -9,23 +9,22 @@
   "cleared": "Prestatiegeschiedenis gewist",
   "stats": {
     "runs": "Geregistreerde runs",
-    "avgSpeed": "Gem. decodeersnelheid",
-    "peakSpeed": "Piekdecodeersnelheid",
-    "avgTtft": "Gem. eerste token"
+    "promptSpeed": "Promptsnelheid",
+    "median": "Mediaan"
   },
   "charts": {
-    "speedByRun": "Decodeersnelheid per run",
-    "speedByRunSub": "Tokens per seconde, van oud naar nieuw",
-    "speedVsContext": "Snelheid versus contextgrootte",
-    "speedVsContextSub": "Decodeersnelheid tegenover contextlengte",
     "detailTitle": "Generatiedetail",
     "latestTitle": "Laatste generatie, seconde voor seconde",
     "latestSub": "Decodeersnelheid en contextvulling tijdens de meest recente run",
     "speedAxis": "tok/s",
     "legendSpeed": "Decodeersnelheid (tok/s)",
     "legendContext": "Contextvulling (%)",
-    "contextSizeAxis": "Contextgrootte (tokens)",
-    "noSamples": "Er zijn geen per-seconde-metingen geregistreerd voor deze generatie."
+    "noSamples": "Er zijn geen per-seconde-metingen geregistreerd voor deze generatie.",
+    "speedOverTime": "Decodeersnelheid door de tijd",
+    "speedOverTimeSub": "Elke run, van oud naar nieuw",
+    "speedVsPrompt": "Snelheid vs. promptlengte",
+    "speedVsPromptSub": "Hoe de decodeersnelheid standhoudt als de prompt groeit",
+    "promptAxis": "Prompttokens"
   },
   "detail": {
     "decodeSpeed": "Decodeersnelheid",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU-lagen",
     "kvType": "KV-cache",
     "modelSize": "Modelgrootte",
-    "finishReason": "Beëindigingsreden"
+    "finishReason": "Beëindigingsreden",
+    "modelMedian": "Mediaan van het model {{value}}",
+    "timeline": "Seconde per seconde",
+    "groupTokens": "Tokens",
+    "groupTime": "Enginetijden",
+    "groupSetup": "Instellingen",
+    "cachedPromptTokens": "Gecachte prompttokens"
   },
   "list": {
     "title": "Recente generaties",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modellen",
+    "description": "Typische snelheden per model. Kies er een om alleen die runs te zien.",
+    "model": "Model"
+  },
+  "filter": {
+    "label": "Model",
+    "all": "Alle modellen"
   }
 }

@@ -9,23 +9,22 @@
   "cleared": "Histórico de desempenho limpo",
   "stats": {
     "runs": "Execuções registradas",
-    "avgSpeed": "Velocidade média de decodificação",
-    "peakSpeed": "Velocidade máxima de decodificação",
-    "avgTtft": "Tempo médio até o primeiro token"
+    "promptSpeed": "Velocidade do prompt",
+    "median": "Mediana"
   },
   "charts": {
-    "speedByRun": "Velocidade de decodificação por execução",
-    "speedByRunSub": "Tokens por segundo, do mais antigo ao mais recente",
-    "speedVsContext": "Velocidade em função do tamanho do contexto",
-    "speedVsContextSub": "Velocidade de decodificação em relação ao comprimento do contexto",
     "detailTitle": "Detalhes da geração",
     "latestTitle": "Última geração, segundo a segundo",
     "latestSub": "Velocidade de decodificação e preenchimento de contexto na execução mais recente",
     "speedAxis": "tok/s",
     "legendSpeed": "Velocidade de decodificação (tok/s)",
     "legendContext": "Preenchimento de contexto (%)",
-    "contextSizeAxis": "Tamanho do contexto (tokens)",
-    "noSamples": "Nenhuma amostra por segundo foi registrada para esta geração."
+    "noSamples": "Nenhuma amostra por segundo foi registrada para esta geração.",
+    "speedOverTime": "Velocidade de decodificação ao longo do tempo",
+    "speedOverTimeSub": "Cada execução, da mais antiga à mais recente",
+    "speedVsPrompt": "Velocidade vs. tamanho do prompt",
+    "speedVsPromptSub": "Como a velocidade de decodificação se mantém conforme o prompt cresce",
+    "promptAxis": "Tokens do prompt"
   },
   "detail": {
     "decodeSpeed": "Velocidade de decodificação",
@@ -45,7 +44,13 @@
     "gpuLayers": "Camadas de GPU",
     "kvType": "Cache KV",
     "modelSize": "Tamanho do modelo",
-    "finishReason": "Motivo de conclusão"
+    "finishReason": "Motivo de conclusão",
+    "modelMedian": "Mediana do modelo {{value}}",
+    "timeline": "Segundo a segundo",
+    "groupTokens": "Tokens",
+    "groupTime": "Tempos do motor",
+    "groupSetup": "Configuração",
+    "cachedPromptTokens": "Tokens do prompt em cache"
   },
   "list": {
     "title": "Gerações recentes",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modelos",
+    "description": "Velocidades típicas por modelo. Escolha um para ver só as execuções dele.",
+    "model": "Modelo"
+  },
+  "filter": {
+    "label": "Modelo",
+    "all": "Todos os modelos"
   }
 }

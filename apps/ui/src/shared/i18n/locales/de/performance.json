@@ -9,23 +9,22 @@
   "cleared": "Leistungsverlauf gelöscht",
   "stats": {
     "runs": "Läufe erfasst",
-    "avgSpeed": "Ø Dekodiergeschwindigkeit",
-    "peakSpeed": "Spitzen-Dekodiergeschwindigkeit",
-    "avgTtft": "Ø erstes Token"
+    "promptSpeed": "Prompt-Geschwindigkeit",
+    "median": "Median"
   },
   "charts": {
-    "speedByRun": "Dekodiergeschwindigkeit pro Lauf",
-    "speedByRunSub": "Tokens pro Sekunde, älteste zuerst",
-    "speedVsContext": "Geschwindigkeit vs. Kontextgröße",
-    "speedVsContextSub": "Dekodiergeschwindigkeit im Verhältnis zur Kontextlänge",
     "detailTitle": "Generierungsdetails",
     "latestTitle": "Neueste Generierung, Sekunde für Sekunde",
     "latestSub": "Dekodiergeschwindigkeit und Kontextfüllung über den letzten Lauf hinweg",
     "speedAxis": "tok/s",
     "legendSpeed": "Dekodiergeschwindigkeit (tok/s)",
     "legendContext": "Kontextfüllung (%)",
-    "contextSizeAxis": "Kontextgröße (Token)",
-    "noSamples": "Für diese Generierung wurden keine Sekundenwerte erfasst."
+    "noSamples": "Für diese Generierung wurden keine Sekundenwerte erfasst.",
+    "speedOverTime": "Dekodiergeschwindigkeit im Zeitverlauf",
+    "speedOverTimeSub": "Jeder Lauf, vom ältesten zum neuesten",
+    "speedVsPrompt": "Geschwindigkeit vs. Prompt-Länge",
+    "speedVsPromptSub": "Wie sich die Dekodiergeschwindigkeit bei längeren Prompts hält",
+    "promptAxis": "Prompt-Token"
   },
   "detail": {
     "decodeSpeed": "Dekodiergeschwindigkeit",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU-Schichten",
     "kvType": "KV-Cache",
     "modelSize": "Modellgröße",
-    "finishReason": "Abschlussgrund"
+    "finishReason": "Abschlussgrund",
+    "modelMedian": "Median des Modells {{value}}",
+    "timeline": "Sekunde für Sekunde",
+    "groupTokens": "Token",
+    "groupTime": "Engine-Zeiten",
+    "groupSetup": "Einrichtung",
+    "cachedPromptTokens": "Zwischengespeicherte Prompt-Token"
   },
   "list": {
     "title": "Letzte Generierungen",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modelle",
+    "description": "Typische Geschwindigkeiten pro Modell. Wähle eines, um nur seine Läufe zu sehen.",
+    "model": "Modell"
+  },
+  "filter": {
+    "label": "Modell",
+    "all": "Alle Modelle"
   }
 }

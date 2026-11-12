@@ -9,23 +9,22 @@
   "cleared": "Nabura ang kasaysayan ng performance",
   "stats": {
     "runs": "Mga naitalang run",
-    "avgSpeed": "Avg na bilis ng decode",
-    "peakSpeed": "Pinakamataas na bilis ng decode",
-    "avgTtft": "Avg na oras hanggang sa unang token"
+    "promptSpeed": "Bilis ng prompt",
+    "median": "Median"
   },
   "charts": {
-    "speedByRun": "Bilis ng decode ayon sa run",
-    "speedByRunSub": "Mga token bawat segundo, mula sa pinakaluma hanggang sa pinakabago",
-    "speedVsContext": "Bilis kumpara sa laki ng konteksto",
-    "speedVsContextSub": "Bilis ng decode kumpara sa haba ng konteksto",
     "detailTitle": "Detalye ng generation",
     "latestTitle": "Pinakabagong generation, bawat segundo",
     "latestSub": "Bilis ng decode at pagpuno ng konteksto sa pinakabagong run",
     "speedAxis": "tok/s",
     "legendSpeed": "Bilis ng decode (tok/s)",
     "legendContext": "Pagpuno ng konteksto (%)",
-    "contextSizeAxis": "Laki ng konteksto (mga token)",
-    "noSamples": "Walang naitalang per-second sample para sa generation na ito."
+    "noSamples": "Walang naitalang per-second sample para sa generation na ito.",
+    "speedOverTime": "Bilis ng decode sa paglipas ng panahon",
+    "speedOverTimeSub": "Bawat run, mula pinakaluma hanggang pinakabago",
+    "speedVsPrompt": "Bilis kumpara sa haba ng prompt",
+    "speedVsPromptSub": "Paano tumatagal ang bilis ng decode habang humahaba ang prompt",
+    "promptAxis": "Mga prompt token"
   },
   "detail": {
     "decodeSpeed": "Bilis ng decode",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU layers",
     "kvType": "KV cache",
     "modelSize": "Model size",
-    "finishReason": "Finish reason"
+    "finishReason": "Finish reason",
+    "modelMedian": "Median ng model {{value}}",
+    "timeline": "Bawat segundo",
+    "groupTokens": "Mga token",
+    "groupTime": "Timing ng engine",
+    "groupSetup": "Setup",
+    "cachedPromptTokens": "Mga naka-cache na prompt token"
   },
   "list": {
     "title": "Mga kamakailang generation",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Mga model",
+    "description": "Karaniwang bilis ng bawat model. Pumili ng isa para makita lang ang mga run nito.",
+    "model": "Model"
+  },
+  "filter": {
+    "label": "Model",
+    "all": "Lahat ng model"
   }
 }

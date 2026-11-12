@@ -9,23 +9,22 @@
   "cleared": "Đã xóa lịch sử hiệu năng",
   "stats": {
     "runs": "Lượt đã ghi nhận",
-    "avgSpeed": "Tốc độ giải mã trung bình",
-    "peakSpeed": "Tốc độ giải mã cao nhất",
-    "avgTtft": "Token đầu tiên trung bình"
+    "promptSpeed": "Tốc độ prompt",
+    "median": "Trung vị"
   },
   "charts": {
-    "speedByRun": "Tốc độ giải mã theo lượt",
-    "speedByRunSub": "Token mỗi giây, từ cũ nhất đến mới nhất",
-    "speedVsContext": "Tốc độ so với kích thước ngữ cảnh",
-    "speedVsContextSub": "Tốc độ giải mã theo độ dài ngữ cảnh",
     "detailTitle": "Chi tiết lượt tạo",
     "latestTitle": "Lượt tạo gần nhất, theo từng giây",
     "latestSub": "Tốc độ giải mã và mức lấp đầy ngữ cảnh trong lượt gần nhất",
     "speedAxis": "tok/s",
     "legendSpeed": "Tốc độ giải mã (tok/s)",
     "legendContext": "Mức lấp đầy ngữ cảnh (%)",
-    "contextSizeAxis": "Kích thước ngữ cảnh (token)",
-    "noSamples": "Không có mẫu theo giây nào được ghi nhận cho lượt tạo này."
+    "noSamples": "Không có mẫu theo giây nào được ghi nhận cho lượt tạo này.",
+    "speedOverTime": "Tốc độ giải mã theo thời gian",
+    "speedOverTimeSub": "Mỗi lượt chạy, từ cũ nhất đến mới nhất",
+    "speedVsPrompt": "Tốc độ so với độ dài prompt",
+    "speedVsPromptSub": "Tốc độ giải mã thay đổi thế nào khi prompt dài ra",
+    "promptAxis": "Token prompt"
   },
   "detail": {
     "decodeSpeed": "Tốc độ giải mã",
@@ -45,7 +44,13 @@
     "gpuLayers": "Lớp GPU",
     "kvType": "KV cache",
     "modelSize": "Kích thước mô hình",
-    "finishReason": "Lý do kết thúc"
+    "finishReason": "Lý do kết thúc",
+    "modelMedian": "Trung vị của mô hình {{value}}",
+    "timeline": "Từng giây",
+    "groupTokens": "Token",
+    "groupTime": "Thời gian của engine",
+    "groupSetup": "Thiết lập",
+    "cachedPromptTokens": "Token prompt đã lưu đệm"
   },
   "list": {
     "title": "Lượt tạo gần đây",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Mô hình",
+    "description": "Tốc độ điển hình của từng mô hình. Chọn một mô hình để chỉ xem các lượt chạy của nó.",
+    "model": "Mô hình"
+  },
+  "filter": {
+    "label": "Mô hình",
+    "all": "Tất cả mô hình"
   }
 }

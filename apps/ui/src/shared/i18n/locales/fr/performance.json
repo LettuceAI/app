@@ -9,23 +9,22 @@
   "cleared": "Historique de performance effacé",
   "stats": {
     "runs": "Exécutions enregistrées",
-    "avgSpeed": "Vitesse de décodage moy.",
-    "peakSpeed": "Vitesse de décodage max.",
-    "avgTtft": "Premier token moy."
+    "promptSpeed": "Vitesse du prompt",
+    "median": "Médiane"
   },
   "charts": {
-    "speedByRun": "Vitesse de décodage par exécution",
-    "speedByRunSub": "Tokens par seconde, du plus ancien au plus récent",
-    "speedVsContext": "Vitesse par rapport à la taille du contexte",
-    "speedVsContextSub": "Vitesse de décodage en fonction de la longueur du contexte",
     "detailTitle": "Détail de la génération",
     "latestTitle": "Dernière génération, seconde par seconde",
     "latestSub": "Vitesse de décodage et remplissage du contexte sur la dernière exécution",
     "speedAxis": "tok/s",
     "legendSpeed": "Vitesse de décodage (tok/s)",
     "legendContext": "Remplissage du contexte (%)",
-    "contextSizeAxis": "Taille du contexte (tokens)",
-    "noSamples": "Aucun échantillon par seconde n'a été enregistré pour cette génération."
+    "noSamples": "Aucun échantillon par seconde n'a été enregistré pour cette génération.",
+    "speedOverTime": "Vitesse de décodage dans le temps",
+    "speedOverTimeSub": "Chaque exécution, de la plus ancienne à la plus récente",
+    "speedVsPrompt": "Vitesse selon la longueur du prompt",
+    "speedVsPromptSub": "Comment la vitesse de décodage tient quand le prompt s'allonge",
+    "promptAxis": "Tokens du prompt"
   },
   "detail": {
     "decodeSpeed": "Vitesse de décodage",
@@ -45,7 +44,13 @@
     "gpuLayers": "Couches GPU",
     "kvType": "Cache KV",
     "modelSize": "Taille du modèle",
-    "finishReason": "Raison de fin"
+    "finishReason": "Raison de fin",
+    "modelMedian": "Médiane du modèle {{value}}",
+    "timeline": "Seconde par seconde",
+    "groupTokens": "Tokens",
+    "groupTime": "Temps du moteur",
+    "groupSetup": "Configuration",
+    "cachedPromptTokens": "Tokens du prompt en cache"
   },
   "list": {
     "title": "Générations récentes",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modèles",
+    "description": "Vitesses typiques par modèle. Choisissez-en un pour ne voir que ses exécutions.",
+    "model": "Modèle"
+  },
+  "filter": {
+    "label": "Modèle",
+    "all": "Tous les modèles"
   }
 }

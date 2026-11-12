@@ -9,23 +9,22 @@
   "cleared": "성능 기록이 지워졌습니다",
   "stats": {
     "runs": "기록된 실행",
-    "avgSpeed": "평균 디코드 속도",
-    "peakSpeed": "최고 디코드 속도",
-    "avgTtft": "평균 첫 토큰"
+    "promptSpeed": "프롬프트 속도",
+    "median": "중앙값"
   },
   "charts": {
-    "speedByRun": "실행별 디코드 속도",
-    "speedByRunSub": "초당 토큰 수, 오래된 순",
-    "speedVsContext": "속도 vs 컨텍스트 크기",
-    "speedVsContextSub": "컨텍스트 길이에 따른 디코드 속도",
     "detailTitle": "생성 세부 정보",
     "latestTitle": "최근 생성, 초 단위",
     "latestSub": "가장 최근 실행의 디코드 속도와 컨텍스트 채움",
     "speedAxis": "tok/s",
     "legendSpeed": "디코드 속도 (tok/s)",
     "legendContext": "컨텍스트 채움 (%)",
-    "contextSizeAxis": "컨텍스트 크기 (토큰)",
-    "noSamples": "이 생성에 대해 기록된 초 단위 샘플이 없습니다."
+    "noSamples": "이 생성에 대해 기록된 초 단위 샘플이 없습니다.",
+    "speedOverTime": "시간에 따른 디코딩 속도",
+    "speedOverTimeSub": "각 실행, 오래된 순",
+    "speedVsPrompt": "속도와 프롬프트 길이",
+    "speedVsPromptSub": "프롬프트가 길어질 때 디코딩 속도가 어떻게 변하는지",
+    "promptAxis": "프롬프트 토큰"
   },
   "detail": {
     "decodeSpeed": "디코드 속도",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU 레이어",
     "kvType": "KV 캐시",
     "modelSize": "모델 크기",
-    "finishReason": "종료 이유"
+    "finishReason": "종료 이유",
+    "modelMedian": "모델 중앙값 {{value}}",
+    "timeline": "초 단위",
+    "groupTokens": "토큰",
+    "groupTime": "엔진 시간",
+    "groupSetup": "설정",
+    "cachedPromptTokens": "캐시된 프롬프트 토큰"
   },
   "list": {
     "title": "최근 생성",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "모델",
+    "description": "모델별 일반적인 속도입니다. 하나를 선택하면 그 모델의 실행만 표시됩니다.",
+    "model": "모델"
+  },
+  "filter": {
+    "label": "모델",
+    "all": "모든 모델"
   }
 }

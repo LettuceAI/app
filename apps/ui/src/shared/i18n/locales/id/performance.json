@@ -9,23 +9,22 @@
   "cleared": "Riwayat performa dibersihkan",
   "stats": {
     "runs": "Generasi tercatat",
-    "avgSpeed": "Rata-rata kecepatan decode",
-    "peakSpeed": "Kecepatan decode puncak",
-    "avgTtft": "Rata-rata token pertama"
+    "promptSpeed": "Kecepatan prompt",
+    "median": "Median"
   },
   "charts": {
-    "speedByRun": "Kecepatan decode per generasi",
-    "speedByRunSub": "Token per detik, dari yang terlama ke terbaru",
-    "speedVsContext": "Kecepatan vs ukuran konteks",
-    "speedVsContextSub": "Kecepatan decode terhadap panjang konteks",
     "detailTitle": "Detail generasi",
     "latestTitle": "Generasi terbaru, detik demi detik",
     "latestSub": "Kecepatan decode dan pengisian konteks selama generasi terbaru",
     "speedAxis": "tok/d",
     "legendSpeed": "Kecepatan decode (tok/d)",
     "legendContext": "Pengisian konteks (%)",
-    "contextSizeAxis": "Ukuran konteks (token)",
-    "noSamples": "Tidak ada sampel per detik yang tercatat untuk generasi ini."
+    "noSamples": "Tidak ada sampel per detik yang tercatat untuk generasi ini.",
+    "speedOverTime": "Kecepatan decode dari waktu ke waktu",
+    "speedOverTimeSub": "Setiap run, dari terlama ke terbaru",
+    "speedVsPrompt": "Kecepatan vs panjang prompt",
+    "speedVsPromptSub": "Bagaimana kecepatan decode bertahan saat prompt makin panjang",
+    "promptAxis": "Token prompt"
   },
   "detail": {
     "decodeSpeed": "Kecepatan decode",
@@ -45,7 +44,13 @@
     "gpuLayers": "Layer GPU",
     "kvType": "KV cache",
     "modelSize": "Ukuran model",
-    "finishReason": "Alasan selesai"
+    "finishReason": "Alasan selesai",
+    "modelMedian": "Median model {{value}}",
+    "timeline": "Detik demi detik",
+    "groupTokens": "Token",
+    "groupTime": "Waktu mesin",
+    "groupSetup": "Pengaturan",
+    "cachedPromptTokens": "Token prompt dari cache"
   },
   "list": {
     "title": "Generasi terbaru",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/d",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Model",
+    "description": "Kecepatan umum per model. Pilih satu untuk melihat run-nya saja.",
+    "model": "Model"
+  },
+  "filter": {
+    "label": "Model",
+    "all": "Semua model"
   }
 }

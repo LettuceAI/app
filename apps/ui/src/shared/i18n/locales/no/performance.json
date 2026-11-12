@@ -9,23 +9,22 @@
   "cleared": "Ytelseshistorikk tømt",
   "stats": {
     "runs": "Registrerte kjøringer",
-    "avgSpeed": "Gjennomsnittlig dekodingshastighet",
-    "peakSpeed": "Topp dekodingshastighet",
-    "avgTtft": "Gjennomsnittlig første token"
+    "promptSpeed": "Prompthastighet",
+    "median": "Median"
   },
   "charts": {
-    "speedByRun": "Dekodingshastighet per kjøring",
-    "speedByRunSub": "Tokens per sekund, eldst til nyest",
-    "speedVsContext": "Hastighet vs. kontekststørrelse",
-    "speedVsContextSub": "Dekodingshastighet mot kontekstlengde",
     "detailTitle": "Genereringsdetaljer",
     "latestTitle": "Siste generering, sekund for sekund",
     "latestSub": "Dekodingshastighet og kontekstfylling over den siste kjøringen",
     "speedAxis": "tok/s",
     "legendSpeed": "Dekodingshastighet (tok/s)",
     "legendContext": "Kontekstfylling (%)",
-    "contextSizeAxis": "Kontekststørrelse (tokens)",
-    "noSamples": "Ingen sekundmålinger ble registrert for denne genereringen."
+    "noSamples": "Ingen sekundmålinger ble registrert for denne genereringen.",
+    "speedOverTime": "Dekodehastighet over tid",
+    "speedOverTimeSub": "Hver kjøring, fra eldst til nyest",
+    "speedVsPrompt": "Hastighet mot promptlengde",
+    "speedVsPromptSub": "Hvordan dekodehastigheten holder seg når prompten vokser",
+    "promptAxis": "Prompt-tokens"
   },
   "detail": {
     "decodeSpeed": "Dekodingshastighet",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU-lag",
     "kvType": "KV-buffer",
     "modelSize": "Modellstørrelse",
-    "finishReason": "Ferdigårsak"
+    "finishReason": "Ferdigårsak",
+    "modelMedian": "Modellens median {{value}}",
+    "timeline": "Sekund for sekund",
+    "groupTokens": "Tokens",
+    "groupTime": "Motortider",
+    "groupSetup": "Oppsett",
+    "cachedPromptTokens": "Hurtigbufrede prompt-tokens"
   },
   "list": {
     "title": "Nylige genereringer",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modeller",
+    "description": "Typiske hastigheter per modell. Velg én for å se bare dens kjøringer.",
+    "model": "Modell"
+  },
+  "filter": {
+    "label": "Modell",
+    "all": "Alle modeller"
   }
 }

@@ -129,12 +129,17 @@ describe("settings routes", () => {
       llmMetricsList: list,
       llmMetricsGet: ({ id }) => ({ status: "ok", data: { ...metric(id, 2, 30), samples: [{ tMs: 1000, tps: 30, ctxFill: 0.5 }] } }),
     });
-    expect(await screen.findByText("b.gguf")).toBeTruthy();
-    expect(screen.getByText("a.gguf")).toBeTruthy();
-    expect(screen.getByText("20 tok/s")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /^b\.gguf/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^a\.gguf/ })).toBeNull();
     expect(list).toHaveBeenCalledTimes(2);
-    fireEvent.click(screen.getByRole("button", { name: /^b\.gguf/ }));
-    expect(await screen.findByText("Generation detail")).toBeTruthy();
+    fireEvent.click(screen.getByRole("combobox", { name: "Model" }));
+    fireEvent.click(await screen.findByRole("option", { name: /^All models/ }));
+    expect(await screen.findByRole("table")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /^a\.gguf/ })).toHaveLength(2);
+    expect(screen.getAllByText("20 tok/s").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: /^b\.gguf/ }).at(-1)!);
+    expect(await screen.findByText("Second by second")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "b.gguf" })).toBeTruthy();
   });
 
   it("hides local LLM performance on mobile", async () => {

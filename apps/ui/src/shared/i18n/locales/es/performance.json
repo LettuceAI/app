@@ -9,23 +9,22 @@
   "cleared": "Historial de rendimiento borrado",
   "stats": {
     "runs": "Ejecuciones registradas",
-    "avgSpeed": "Velocidad media de decodificación",
-    "peakSpeed": "Velocidad máxima de decodificación",
-    "avgTtft": "Primer token medio"
+    "promptSpeed": "Velocidad del prompt",
+    "median": "Mediana"
   },
   "charts": {
-    "speedByRun": "Velocidad de decodificación por ejecución",
-    "speedByRunSub": "Tokens por segundo, de más antiguo a más reciente",
-    "speedVsContext": "Velocidad frente al tamaño de contexto",
-    "speedVsContextSub": "Velocidad de decodificación según la longitud de contexto",
     "detailTitle": "Detalle de la generación",
     "latestTitle": "Última generación, segundo a segundo",
     "latestSub": "Velocidad de decodificación y llenado de contexto durante la ejecución más reciente",
     "speedAxis": "tok/s",
     "legendSpeed": "Velocidad de decodificación (tok/s)",
     "legendContext": "Llenado de contexto (%)",
-    "contextSizeAxis": "Tamaño de contexto (tokens)",
-    "noSamples": "No se registraron muestras por segundo para esta generación."
+    "noSamples": "No se registraron muestras por segundo para esta generación.",
+    "speedOverTime": "Velocidad de decodificación en el tiempo",
+    "speedOverTimeSub": "Cada ejecución, de la más antigua a la más reciente",
+    "speedVsPrompt": "Velocidad vs. longitud del prompt",
+    "speedVsPromptSub": "Cómo se mantiene la velocidad de decodificación al crecer el prompt",
+    "promptAxis": "Tokens del prompt"
   },
   "detail": {
     "decodeSpeed": "Velocidad de decodificación",
@@ -45,7 +44,13 @@
     "gpuLayers": "Capas de GPU",
     "kvType": "Caché KV",
     "modelSize": "Tamaño del modelo",
-    "finishReason": "Motivo de finalización"
+    "finishReason": "Motivo de finalización",
+    "modelMedian": "Mediana del modelo {{value}}",
+    "timeline": "Segundo a segundo",
+    "groupTokens": "Tokens",
+    "groupTime": "Tiempos del motor",
+    "groupSetup": "Configuración",
+    "cachedPromptTokens": "Tokens del prompt en caché"
   },
   "list": {
     "title": "Generaciones recientes",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modelos",
+    "description": "Velocidades típicas por modelo. Elige uno para ver solo sus ejecuciones.",
+    "model": "Modelo"
+  },
+  "filter": {
+    "label": "Modelo",
+    "all": "Todos los modelos"
   }
 }

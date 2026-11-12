@@ -20,18 +20,18 @@ const tooltip = {
   labelStyle: { color: "var(--color-fg-3)" },
 } as const;
 
-/** Decode speed against the context length each run had. */
-export function SpeedVsContextChart({ points }: { points: readonly { ctx: number; tps: number }[] }) {
+/** Decode speed against how long each run's prompt was. */
+export function SpeedVsPromptChart({ points }: { points: readonly { prompt: number; tps: number }[] }) {
   const { t } = useTranslation("performance");
   return (
     <div className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <ScatterChart margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
           <CartesianGrid stroke="var(--color-line)" />
-          <XAxis type="number" dataKey="ctx" name={t("charts.contextSizeAxis")} {...axis} />
+          <XAxis type="number" dataKey="prompt" name={t("charts.promptAxis")} {...axis} />
           <YAxis type="number" dataKey="tps" name={t("charts.speedAxis")} width={48} {...axis} />
           <Tooltip cursor={{ stroke: "var(--color-line-2)" }} {...tooltip} />
-          <Scatter data={points as { ctx: number; tps: number }[]} fill="var(--color-info)" />
+          <Scatter data={points as { prompt: number; tps: number }[]} fill="var(--color-info)" />
         </ScatterChart>
       </ResponsiveContainer>
     </div>

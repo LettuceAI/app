@@ -9,23 +9,22 @@
   "cleared": "Teljesítményelőzmények törölve",
   "stats": {
     "runs": "Rögzített futások",
-    "avgSpeed": "Átl. dekódolási sebesség",
-    "peakSpeed": "Csúcs dekódolási sebesség",
-    "avgTtft": "Átl. első token"
+    "promptSpeed": "Prompt sebesség",
+    "median": "Medián"
   },
   "charts": {
-    "speedByRun": "Dekódolási sebesség futásonként",
-    "speedByRunSub": "Token másodpercenként, a legrégebbitől a legújabbig",
-    "speedVsContext": "Sebesség és kontextusméret",
-    "speedVsContextSub": "Dekódolási sebesség a kontextushossz függvényében",
     "detailTitle": "Generálás részletei",
     "latestTitle": "Legutóbbi generálás másodpercenként",
     "latestSub": "Dekódolási sebesség és kontextustelítettség a legutóbbi futásban",
     "speedAxis": "tok/s",
     "legendSpeed": "Dekódolási sebesség (tok/s)",
     "legendContext": "Kontextustelítettség (%)",
-    "contextSizeAxis": "Kontextusméret (token)",
-    "noSamples": "Ehhez a generáláshoz nem készültek másodpercenkénti minták."
+    "noSamples": "Ehhez a generáláshoz nem készültek másodpercenkénti minták.",
+    "speedOverTime": "Dekódolási sebesség időben",
+    "speedOverTimeSub": "Minden futás, a legrégebbitől a legújabbig",
+    "speedVsPrompt": "Sebesség és prompthossz",
+    "speedVsPromptSub": "Hogyan alakul a dekódolási sebesség, ahogy nő a prompt",
+    "promptAxis": "Prompt tokenek"
   },
   "detail": {
     "decodeSpeed": "Dekódolási sebesség",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU rétegek",
     "kvType": "KV gyorsítótár",
     "modelSize": "Modellméret",
-    "finishReason": "Befejezés oka"
+    "finishReason": "Befejezés oka",
+    "modelMedian": "Modell mediánja {{value}}",
+    "timeline": "Másodpercről másodpercre",
+    "groupTokens": "Tokenek",
+    "groupTime": "Motoridők",
+    "groupSetup": "Beállítás",
+    "cachedPromptTokens": "Gyorsítótárazott prompt tokenek"
   },
   "list": {
     "title": "Legutóbbi generálások",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modellek",
+    "description": "Jellemző sebességek modellenként. Válassz egyet, hogy csak annak futásait lásd.",
+    "model": "Modell"
+  },
+  "filter": {
+    "label": "Modell",
+    "all": "Minden modell"
   }
 }

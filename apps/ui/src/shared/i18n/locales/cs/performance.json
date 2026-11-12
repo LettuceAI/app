@@ -9,23 +9,22 @@
   "cleared": "Historie výkonu vymazána",
   "stats": {
     "runs": "Zaznamenané běhy",
-    "avgSpeed": "Prům. rychlost dekódování",
-    "peakSpeed": "Max. rychlost dekódování",
-    "avgTtft": "Prům. první token"
+    "promptSpeed": "Rychlost promptu",
+    "median": "Medián"
   },
   "charts": {
-    "speedByRun": "Rychlost dekódování podle běhu",
-    "speedByRunSub": "Tokeny za sekundu, od nejstaršího po nejnovější",
-    "speedVsContext": "Rychlost vs. velikost kontextu",
-    "speedVsContextSub": "Rychlost dekódování vůči délce kontextu",
     "detailTitle": "Detail generace",
     "latestTitle": "Poslední generace po sekundách",
     "latestSub": "Rychlost dekódování a zaplnění kontextu v posledním běhu",
     "speedAxis": "tok/s",
     "legendSpeed": "Rychlost dekódování (tok/s)",
     "legendContext": "Zaplnění kontextu (%)",
-    "contextSizeAxis": "Velikost kontextu (tokeny)",
-    "noSamples": "Pro tuto generaci nebyly zaznamenány vzorky po sekundách."
+    "noSamples": "Pro tuto generaci nebyly zaznamenány vzorky po sekundách.",
+    "speedOverTime": "Rychlost dekódování v čase",
+    "speedOverTimeSub": "Každý běh, od nejstaršího po nejnovější",
+    "speedVsPrompt": "Rychlost vs. délka promptu",
+    "speedVsPromptSub": "Jak se drží rychlost dekódování s rostoucím promptem",
+    "promptAxis": "Tokeny promptu"
   },
   "detail": {
     "decodeSpeed": "Rychlost dekódování",
@@ -45,7 +44,13 @@
     "gpuLayers": "Vrstvy na GPU",
     "kvType": "KV cache",
     "modelSize": "Velikost modelu",
-    "finishReason": "Důvod ukončení"
+    "finishReason": "Důvod ukončení",
+    "modelMedian": "Medián modelu {{value}}",
+    "timeline": "Po sekundách",
+    "groupTokens": "Tokeny",
+    "groupTime": "Časy enginu",
+    "groupSetup": "Nastavení",
+    "cachedPromptTokens": "Tokeny promptu z cache"
   },
   "list": {
     "title": "Nedávné generace",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modely",
+    "description": "Typické rychlosti podle modelu. Vyberte model a uvidíte jen jeho běhy.",
+    "model": "Model"
+  },
+  "filter": {
+    "label": "Model",
+    "all": "Všechny modely"
   }
 }

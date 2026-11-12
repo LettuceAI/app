@@ -9,23 +9,22 @@
   "cleared": "प्रदर्शन इतिहास साफ़ हो गया",
   "stats": {
     "runs": "रिकॉर्ड किए गए रन",
-    "avgSpeed": "औसत डिकोड गति",
-    "peakSpeed": "पीक डिकोड गति",
-    "avgTtft": "औसत पहला टोकन"
+    "promptSpeed": "प्रॉम्प्ट स्पीड",
+    "median": "माध्यिका"
   },
   "charts": {
-    "speedByRun": "रन के अनुसार डिकोड गति",
-    "speedByRunSub": "टोकन प्रति सेकंड, सबसे पुराने से नवीनतम तक",
-    "speedVsContext": "गति बनाम कॉन्टेक्स्ट साइज़",
-    "speedVsContextSub": "कॉन्टेक्स्ट लंबाई के मुकाबले डिकोड गति",
     "detailTitle": "जनरेशन विवरण",
     "latestTitle": "नवीनतम जनरेशन, सेकंड दर सेकंड",
     "latestSub": "सबसे हाल के रन में डिकोड गति और कॉन्टेक्स्ट फिल",
     "speedAxis": "tok/s",
     "legendSpeed": "डिकोड गति (tok/s)",
     "legendContext": "कॉन्टेक्स्ट फिल (%)",
-    "contextSizeAxis": "कॉन्टेक्स्ट साइज़ (टोकन)",
-    "noSamples": "इस जनरेशन के लिए कोई प्रति-सेकंड सैंपल रिकॉर्ड नहीं किए गए।"
+    "noSamples": "इस जनरेशन के लिए कोई प्रति-सेकंड सैंपल रिकॉर्ड नहीं किए गए।",
+    "speedOverTime": "समय के साथ डिकोड स्पीड",
+    "speedOverTimeSub": "हर रन, सबसे पुराने से नए तक",
+    "speedVsPrompt": "स्पीड बनाम प्रॉम्प्ट लंबाई",
+    "speedVsPromptSub": "प्रॉम्प्ट बढ़ने पर डिकोड स्पीड कैसी रहती है",
+    "promptAxis": "प्रॉम्प्ट टोकन"
   },
   "detail": {
     "decodeSpeed": "डिकोड गति",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU लेयर्स",
     "kvType": "KV कैश",
     "modelSize": "मॉडल साइज़",
-    "finishReason": "समाप्ति का कारण"
+    "finishReason": "समाप्ति का कारण",
+    "modelMedian": "मॉडल माध्यिका {{value}}",
+    "timeline": "सेकंड दर सेकंड",
+    "groupTokens": "टोकन",
+    "groupTime": "इंजन समय",
+    "groupSetup": "सेटअप",
+    "cachedPromptTokens": "कैश किए गए प्रॉम्प्ट टोकन"
   },
   "list": {
     "title": "हाल के जनरेशन",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "मॉडल",
+    "description": "हर मॉडल की सामान्य स्पीड। केवल उसके रन देखने के लिए एक चुनें।",
+    "model": "मॉडल"
+  },
+  "filter": {
+    "label": "मॉडल",
+    "all": "सभी मॉडल"
   }
 }

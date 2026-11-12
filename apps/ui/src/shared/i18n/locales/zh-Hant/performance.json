@@ -9,23 +9,22 @@
   "cleared": "效能記錄已清除",
   "stats": {
     "runs": "已記錄的執行次數",
-    "avgSpeed": "平均解碼速度",
-    "peakSpeed": "尖峰解碼速度",
-    "avgTtft": "平均首個 Token"
+    "promptSpeed": "提示詞速度",
+    "median": "中位數"
   },
   "charts": {
-    "speedByRun": "各次執行的解碼速度",
-    "speedByRunSub": "Token 每秒，由舊到新",
-    "speedVsContext": "速度與上下文大小",
-    "speedVsContextSub": "解碼速度對上下文長度",
     "detailTitle": "生成詳細資訊",
     "latestTitle": "最近一次生成，逐秒顯示",
     "latestSub": "最近一次執行的解碼速度與上下文填充狀況",
     "speedAxis": "tok/s",
     "legendSpeed": "解碼速度（tok/s）",
     "legendContext": "上下文填充（%）",
-    "contextSizeAxis": "上下文大小（token）",
-    "noSamples": "此次生成沒有記錄逐秒取樣資料。"
+    "noSamples": "此次生成沒有記錄逐秒取樣資料。",
+    "speedOverTime": "解碼速度隨時間變化",
+    "speedOverTimeSub": "每次執行，從舊到新",
+    "speedVsPrompt": "速度與提示詞長度",
+    "speedVsPromptSub": "提示詞變長時解碼速度的變化",
+    "promptAxis": "提示詞 token"
   },
   "detail": {
     "decodeSpeed": "解碼速度",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU 層數",
     "kvType": "KV 快取",
     "modelSize": "模型大小",
-    "finishReason": "結束原因"
+    "finishReason": "結束原因",
+    "modelMedian": "模型中位數 {{value}}",
+    "timeline": "逐秒",
+    "groupTokens": "Token",
+    "groupTime": "引擎耗時",
+    "groupSetup": "設定",
+    "cachedPromptTokens": "已快取的提示詞 token"
   },
   "list": {
     "title": "近期生成",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} 毫秒 (ms)",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} 毫秒 (ms)"
+  },
+  "models": {
+    "title": "模型",
+    "description": "每個模型的典型速度。選擇一個模型即可只看它的執行紀錄。",
+    "model": "模型"
+  },
+  "filter": {
+    "label": "模型",
+    "all": "所有模型"
   }
 }

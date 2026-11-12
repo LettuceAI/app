@@ -9,23 +9,22 @@
   "cleared": "Performans geçmişi temizlendi",
   "stats": {
     "runs": "Kaydedilen çalıştırmalar",
-    "avgSpeed": "Ort. kod çözme hızı",
-    "peakSpeed": "En yüksek kod çözme hızı",
-    "avgTtft": "Ort. ilk token"
+    "promptSpeed": "Prompt hızı",
+    "median": "Medyan"
   },
   "charts": {
-    "speedByRun": "Çalıştırmaya göre kod çözme hızı",
-    "speedByRunSub": "Saniyedeki token sayısı, en eskiden en yeniye",
-    "speedVsContext": "Bağlam boyutuna göre hız",
-    "speedVsContextSub": "Bağlam uzunluğuna göre kod çözme hızı",
     "detailTitle": "Üretim detayı",
     "latestTitle": "Son üretim, saniye saniye",
     "latestSub": "En son çalıştırmada kod çözme hızı ve bağlam doluluğu",
     "speedAxis": "tok/s",
     "legendSpeed": "Kod çözme hızı (tok/s)",
     "legendContext": "Bağlam doluluğu (%)",
-    "contextSizeAxis": "Bağlam boyutu (token)",
-    "noSamples": "Bu üretim için saniye başına örnek kaydedilmedi."
+    "noSamples": "Bu üretim için saniye başına örnek kaydedilmedi.",
+    "speedOverTime": "Zaman içinde decode hızı",
+    "speedOverTimeSub": "Her çalıştırma, eskiden yeniye",
+    "speedVsPrompt": "Hız ve prompt uzunluğu",
+    "speedVsPromptSub": "Prompt uzadıkça decode hızının nasıl değiştiği",
+    "promptAxis": "Prompt token'ları"
   },
   "detail": {
     "decodeSpeed": "Kod çözme hızı",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU katmanları",
     "kvType": "KV cache",
     "modelSize": "Model boyutu",
-    "finishReason": "Bitiş nedeni"
+    "finishReason": "Bitiş nedeni",
+    "modelMedian": "Model medyanı {{value}}",
+    "timeline": "Saniye saniye",
+    "groupTokens": "Token'lar",
+    "groupTime": "Motor süreleri",
+    "groupSetup": "Kurulum",
+    "cachedPromptTokens": "Önbellekteki prompt token'ları"
   },
   "list": {
     "title": "Son üretimler",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Modeller",
+    "description": "Modele göre tipik hızlar. Yalnızca çalıştırmalarını görmek için birini seç.",
+    "model": "Model"
+  },
+  "filter": {
+    "label": "Model",
+    "all": "Tüm modeller"
   }
 }

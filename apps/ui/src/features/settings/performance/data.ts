@@ -17,6 +17,7 @@ export interface MetricSummary {
   kvType: string | null;
   modelSizeBytes: number | null;
   promptTokens: number | null;
+  cachedPromptTokens: number | null;
   completionTokens: number | null;
   totalTokens: number | null;
   ttftMs: number | null;
@@ -54,6 +55,7 @@ export function summaryOf(view: LlmMetricView): MetricSummary {
     kvType: text(summary.kvType),
     modelSizeBytes: number(summary.modelSizeBytes),
     promptTokens: number(summary.promptTokens),
+    cachedPromptTokens: number(summary.cachedPromptTokens),
     completionTokens: number(summary.completionTokens),
     totalTokens: number(summary.totalTokens),
     ttftMs: number(summary.ttftMs),

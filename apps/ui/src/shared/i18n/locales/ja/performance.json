@@ -9,23 +9,22 @@
   "cleared": "パフォーマンス履歴をクリアしました",
   "stats": {
     "runs": "記録された実行回数",
-    "avgSpeed": "平均デコード速度",
-    "peakSpeed": "最大デコード速度",
-    "avgTtft": "平均初回トークン時間"
+    "promptSpeed": "プロンプト速度",
+    "median": "中央値"
   },
   "charts": {
-    "speedByRun": "実行ごとのデコード速度",
-    "speedByRunSub": "秒間トークン数（古い順から新しい順）",
-    "speedVsContext": "速度とコンテキストサイズ",
-    "speedVsContextSub": "コンテキスト長に対するデコード速度",
     "detailTitle": "生成の詳細",
     "latestTitle": "最新の生成（秒単位）",
     "latestSub": "直近の実行におけるデコード速度とコンテキスト使用率",
     "speedAxis": "tok/s",
     "legendSpeed": "デコード速度 (tok/s)",
     "legendContext": "コンテキスト使用率 (%)",
-    "contextSizeAxis": "コンテキストサイズ（トークン）",
-    "noSamples": "この生成には秒単位のサンプルが記録されていません。"
+    "noSamples": "この生成には秒単位のサンプルが記録されていません。",
+    "speedOverTime": "デコード速度の推移",
+    "speedOverTimeSub": "各実行、古い順",
+    "speedVsPrompt": "速度とプロンプト長",
+    "speedVsPromptSub": "プロンプトが長くなるとデコード速度がどう変わるか",
+    "promptAxis": "プロンプトトークン"
   },
   "detail": {
     "decodeSpeed": "デコード速度",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPUレイヤー",
     "kvType": "KVキャッシュ",
     "modelSize": "モデルサイズ",
-    "finishReason": "終了理由"
+    "finishReason": "終了理由",
+    "modelMedian": "モデルの中央値 {{value}}",
+    "timeline": "1秒ごと",
+    "groupTokens": "トークン",
+    "groupTime": "エンジンの時間",
+    "groupSetup": "構成",
+    "cachedPromptTokens": "キャッシュ済みプロンプトトークン"
   },
   "list": {
     "title": "最近の生成",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "モデル",
+    "description": "モデルごとの代表的な速度。選ぶとそのモデルの実行だけを表示します。",
+    "model": "モデル"
+  },
+  "filter": {
+    "label": "モデル",
+    "all": "すべてのモデル"
   }
 }

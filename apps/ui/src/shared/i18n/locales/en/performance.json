@@ -9,23 +9,22 @@
   "cleared": "Performance history cleared",
   "stats": {
     "runs": "Runs recorded",
-    "avgSpeed": "Avg decode speed",
-    "peakSpeed": "Peak decode speed",
-    "avgTtft": "Avg first token"
+    "promptSpeed": "Prompt speed",
+    "median": "Median"
   },
   "charts": {
-    "speedByRun": "Decode speed by run",
-    "speedByRunSub": "Tokens per second, oldest to newest",
-    "speedVsContext": "Speed vs context size",
-    "speedVsContextSub": "Decode speed against context length",
     "detailTitle": "Generation detail",
     "latestTitle": "Latest generation, second by second",
     "latestSub": "Decode speed and context fill over the most recent run",
     "speedAxis": "tok/s",
     "legendSpeed": "Decode speed (tok/s)",
     "legendContext": "Context fill (%)",
-    "contextSizeAxis": "Context size (tokens)",
-    "noSamples": "No per-second samples were recorded for this generation."
+    "noSamples": "No per-second samples were recorded for this generation.",
+    "speedOverTime": "Decode speed over time",
+    "speedOverTimeSub": "Each run, oldest to newest",
+    "speedVsPrompt": "Speed vs prompt length",
+    "speedVsPromptSub": "How decode speed holds up as the prompt grows",
+    "promptAxis": "Prompt tokens"
   },
   "detail": {
     "decodeSpeed": "Decode speed",
@@ -45,7 +44,13 @@
     "gpuLayers": "GPU layers",
     "kvType": "KV cache",
     "modelSize": "Model size",
-    "finishReason": "Finish reason"
+    "finishReason": "Finish reason",
+    "modelMedian": "Model median {{value}}",
+    "timeline": "Second by second",
+    "groupTokens": "Tokens",
+    "groupTime": "Engine timings",
+    "groupSetup": "Setup",
+    "cachedPromptTokens": "Cached prompt tokens"
   },
   "list": {
     "title": "Recent generations",
@@ -53,7 +58,15 @@
   },
   "units": {
     "speed": "{{value}} tok/s",
-    "ms": "{{value}} ms",
-    "tokens": "{{value}} tok"
+    "ms": "{{value}} ms"
+  },
+  "models": {
+    "title": "Models",
+    "description": "Typical speeds per model. Pick one to see only its runs.",
+    "model": "Model"
+  },
+  "filter": {
+    "label": "Model",
+    "all": "All models"
   }
 }
