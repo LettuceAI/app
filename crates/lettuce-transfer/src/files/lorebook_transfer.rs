@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use lettuce_context::SecondaryKeywordLogic;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -36,6 +37,8 @@ pub struct LorebookTransferEntry {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    pub secondary_keywords: Vec<String>,
+    pub secondary_logic: SecondaryKeywordLogic,
     pub case_sensitive: bool,
     pub keyword_match_mode: PackagedKeywordMatchMode,
     pub content: String,
@@ -60,6 +63,8 @@ pub struct ImportedWorldInfoEntry {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    pub secondary_keywords: Vec<String>,
+    pub secondary_logic: SecondaryKeywordLogic,
     pub case_sensitive: bool,
     pub content: String,
     pub priority: i32,
@@ -123,6 +128,35 @@ struct WorldInfoImport {
     entries: Value,
 }
 
+pub(crate) const fn secondary_logic_name(logic: SecondaryKeywordLogic) -> &'static str {
+    match logic {
+        SecondaryKeywordLogic::AndAny => "and_any",
+        SecondaryKeywordLogic::NotAll => "not_all",
+        SecondaryKeywordLogic::NotAny => "not_any",
+        SecondaryKeywordLogic::AndAll => "and_all",
+    }
+}
+
+/// SillyTavern's `selectiveLogic` number; a missing or unknown value is
+/// `and_any`.
+pub(crate) const fn secondary_logic_from_value(value: Option<i64>) -> SecondaryKeywordLogic {
+    match value {
+        Some(1) => SecondaryKeywordLogic::NotAll,
+        Some(2) => SecondaryKeywordLogic::NotAny,
+        Some(3) => SecondaryKeywordLogic::AndAll,
+        _ => SecondaryKeywordLogic::AndAny,
+    }
+}
+
+const fn secondary_logic_value(logic: SecondaryKeywordLogic) -> i32 {
+    match logic {
+        SecondaryKeywordLogic::AndAny => 0,
+        SecondaryKeywordLogic::NotAll => 1,
+        SecondaryKeywordLogic::NotAny => 2,
+        SecondaryKeywordLogic::AndAll => 3,
+    }
+}
+
 const fn detection_mode_name(mode: PackagedKeywordDetectionMode) -> &'static str {
     match mode {
         PackagedKeywordDetectionMode::RecentMessageWindow => "recentMessageWindow",
@@ -131,7 +165,9 @@ const fn detection_mode_name(mode: PackagedKeywordDetectionMode) -> &'static str
 }
 
 /// Pretty-printed World Info; entries are keyed `"1"`, `"2"`, … in lexical
-/// order and the keyword match mode is not written.
+/// order and the keyword match mode is not written. Secondary keywords are
+/// written as `keysecondary` and `secondary_keys` with `selective` set when
+/// there are any, and the logic as `selectiveLogic`.
 pub fn export_world_info(lorebook: &LorebookTransfer) -> Result<String, LorebookTransferError> {
     let entries = lorebook
         .entries
@@ -144,12 +180,12 @@ pub fn export_world_info(lorebook: &LorebookTransfer) -> Result<String, Lorebook
                 WorldInfoExportEntry {
                     uid: seq,
                     key: entry.keywords.clone(),
-                    keysecondary: Vec::new(),
+                    keysecondary: entry.secondary_keywords.clone(),
                     comment: String::new(),
                     content: entry.content.clone(),
                     constant: entry.always_active,
-                    selective: false,
-                    selective_logic: 0,
+                    selective: !entry.secondary_keywords.is_empty(),
+                    selective_logic: secondary_logic_value(entry.secondary_logic),
                     order: entry.priority,
                     position: 1,
                     disable: !entry.enabled,
@@ -158,7 +194,7 @@ pub fn export_world_info(lorebook: &LorebookTransfer) -> Result<String, Lorebook
                     probability: 100,
                     display_index: index as i32 + 1,
                     use_probability: true,
-                    secondary_keys: Vec::new(),
+                    secondary_keys: entry.secondary_keywords.clone(),
                     keys: entry.keywords.clone(),
                     id: seq,
                     priority: entry.priority,
@@ -213,8 +249,10 @@ fn string_list(value: Option<&Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Reads World Info: `keys`, else `key`; secondary keys are ignored; entries
-/// without content are skipped; every keyword matches literally.
+/// Reads World Info: `keys`, else `key`; secondary keywords from
+/// `keysecondary`, else `secondary_keys`, count unless `selective` is false,
+/// with `selectiveLogic` (else `extensions.selectiveLogic`) as the logic;
+/// entries without content are skipped; every keyword matches literally.
 pub fn parse_world_info(json: &str) -> Result<ImportedWorldInfo, LorebookTransferError> {
     let parsed: WorldInfoImport = serde_json::from_str(json)
         .map_err(|error| LorebookTransferError::InvalidImport(error.to_string()))?;
@@ -239,6 +277,25 @@ pub fn parse_world_info(json: &str) -> Result<ImportedWorldInfo, LorebookTransfe
             if keywords.is_empty() {
                 keywords = string_list(entry.get("key"));
             }
+            let secondary_keywords = if entry.get("selective") == Some(&Value::Bool(false)) {
+                Vec::new()
+            } else {
+                let mut secondary = string_list(entry.get("keysecondary"));
+                if secondary.is_empty() {
+                    secondary = string_list(entry.get("secondary_keys"));
+                }
+                secondary
+            };
+            let secondary_logic = secondary_logic_from_value(
+                entry
+                    .get("selectiveLogic")
+                    .or_else(|| {
+                        entry
+                            .get("extensions")
+                            .and_then(|value| value.get("selectiveLogic"))
+                    })
+                    .and_then(Value::as_i64),
+            );
             let content = entry
                 .get("content")
                 .and_then(Value::as_str)
@@ -279,6 +336,8 @@ pub fn parse_world_info(json: &str) -> Result<ImportedWorldInfo, LorebookTransfe
                     .and_then(Value::as_bool)
                     .unwrap_or(false),
                 keywords,
+                secondary_keywords,
+                secondary_logic,
                 case_sensitive: entry
                     .get("case_sensitive")
                     .and_then(Value::as_bool)
@@ -357,6 +416,8 @@ pub fn parse_lorebook_import(json: &str) -> Result<ImportedWorldInfo, LorebookTr
                     enabled: entry.enabled,
                     always_active: entry.always_active,
                     keywords: entry.keywords,
+                    secondary_keywords: Vec::new(),
+                    secondary_logic: SecondaryKeywordLogic::AndAny,
                     case_sensitive: entry.case_sensitive,
                     content: entry.content,
                     priority: entry.priority,
@@ -409,6 +470,8 @@ mod tests {
             enabled: index != 2,
             always_active: index == 1,
             keywords: vec![format!("k{index}")],
+            secondary_keywords: Vec::new(),
+            secondary_logic: SecondaryKeywordLogic::AndAny,
             case_sensitive: false,
             keyword_match_mode: PackagedKeywordMatchMode::Regex,
             content: format!("content {index}"),
@@ -461,6 +524,95 @@ mod tests {
         assert!(!read.entries[2].enabled);
         assert!(read.entries[1].always_active);
         assert_eq!(read.entries[3].priority, 30);
+    }
+
+    fn secondary_entry(
+        keywords: &[&str],
+        secondary: &[&str],
+        logic: SecondaryKeywordLogic,
+    ) -> LorebookTransferEntry {
+        LorebookTransferEntry {
+            keywords: keywords.iter().map(|value| (*value).to_owned()).collect(),
+            secondary_keywords: secondary.iter().map(|value| (*value).to_owned()).collect(),
+            secondary_logic: logic,
+            ..lorebook().entries.remove(0)
+        }
+    }
+
+    #[test]
+    fn world_info_round_trips_secondary_keywords_with_every_logic() {
+        for (logic, value) in [
+            (SecondaryKeywordLogic::AndAny, 0),
+            (SecondaryKeywordLogic::NotAll, 1),
+            (SecondaryKeywordLogic::NotAny, 2),
+            (SecondaryKeywordLogic::AndAll, 3),
+        ] {
+            let mut book = lorebook();
+            book.entries = vec![secondary_entry(&["a"], &["b", "c"], logic)];
+            let exported = export_world_info(&book).expect("export");
+            let json: Value = serde_json::from_str(&exported).expect("json");
+            let entry = &json["entries"]["1"];
+            assert_eq!(entry["keysecondary"], json!(["b", "c"]));
+            assert_eq!(entry["secondary_keys"], json!(["b", "c"]));
+            assert_eq!(entry["selective"], true);
+            assert_eq!(entry["selectiveLogic"], value);
+            let read = parse_world_info(&exported).expect("read back");
+            assert_eq!(read.entries[0].keywords, vec!["a".to_owned()]);
+            assert_eq!(
+                read.entries[0].secondary_keywords,
+                vec!["b".to_owned(), "c".to_owned()]
+            );
+            assert_eq!(read.entries[0].secondary_logic, logic);
+        }
+    }
+
+    #[test]
+    fn world_info_without_secondary_keywords_exports_not_selective() {
+        let mut book = lorebook();
+        book.entries = vec![secondary_entry(&["a"], &[], SecondaryKeywordLogic::AndAny)];
+        let json: Value =
+            serde_json::from_str(&export_world_info(&book).expect("export")).expect("json");
+        assert_eq!(json["entries"]["1"]["selective"], false);
+        assert_eq!(json["entries"]["1"]["selectiveLogic"], 0);
+        assert_eq!(json["entries"]["1"]["keysecondary"], json!([]));
+    }
+
+    #[test]
+    fn world_info_import_reads_secondary_keywords_and_selective_flag() {
+        let read = parse_world_info(
+            &json!({
+                "name": "Notes",
+                "entries": {
+                    "0": {"keys": ["a"], "keysecondary": ["x"], "selective": true, "selectiveLogic": 2, "content": "one"},
+                    "1": {"keys": ["b"], "secondary_keys": ["y", " "], "content": "two", "extensions": {"selectiveLogic": 1}},
+                    "2": {"keys": ["c"], "keysecondary": ["z"], "selective": false, "selectiveLogic": 3, "content": "three"},
+                    "3": {"keys": ["d"], "keysecondary": [], "selective": true, "selectiveLogic": 3, "content": "four"},
+                    "4": {"keys": ["e"], "keysecondary": ["w"], "selective": true, "selectiveLogic": 9, "content": "five"}
+                }
+            })
+            .to_string(),
+        )
+        .expect("world info");
+        let view = |index: usize| {
+            (
+                read.entries[index].secondary_keywords.clone(),
+                read.entries[index].secondary_logic,
+            )
+        };
+        assert_eq!(
+            view(0),
+            (vec!["x".to_owned()], SecondaryKeywordLogic::NotAny)
+        );
+        assert_eq!(
+            view(1),
+            (vec!["y".to_owned()], SecondaryKeywordLogic::NotAll)
+        );
+        assert_eq!(view(2).0, Vec::<String>::new());
+        assert_eq!(view(3).0, Vec::<String>::new());
+        assert_eq!(
+            view(4),
+            (vec!["w".to_owned()], SecondaryKeywordLogic::AndAny)
+        );
     }
 
     #[test]

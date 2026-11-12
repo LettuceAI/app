@@ -259,6 +259,11 @@ const MIGRATION_38: Migration = Migration {
     sql: include_str!("../migrations/0038_memory_duplicate_threshold.sql"),
 };
 
+const MIGRATION_39: Migration = Migration {
+    id: 39,
+    sql: include_str!("../migrations/0039_lorebook_secondary_keywords.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -298,6 +303,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_36,
     MIGRATION_37,
     MIGRATION_38,
+    MIGRATION_39,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -3331,6 +3337,8 @@ mod tests {
                 enabled: true,
                 always_active: false,
                 keywords: vec![format!("chapter{index}")],
+                secondary_keywords: Vec::new(),
+                secondary_logic: Default::default(),
                 case_sensitive: false,
                 match_mode: Default::default(),
                 content: "w".repeat(3_500_000),
@@ -3460,6 +3468,8 @@ mod tests {
                 enabled: true,
                 always_active: false,
                 keywords: vec!["harbor".into(), "docks".into()],
+                secondary_keywords: Vec::new(),
+                secondary_logic: Default::default(),
                 case_sensitive: false,
                 match_mode: Default::default(),
                 content: "The harbor never sleeps.".into(),

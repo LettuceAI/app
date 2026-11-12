@@ -960,6 +960,16 @@ pub enum KeywordMatchModeV1 {
     Regex,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SecondaryKeywordLogicV1 {
+    #[default]
+    AndAny,
+    NotAll,
+    NotAny,
+    AndAll,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LorebookBehaviorVersionV1 {
@@ -975,6 +985,10 @@ pub struct LorebookEntryV1 {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_logic: SecondaryKeywordLogicV1,
     pub case_sensitive: bool,
     pub match_mode: KeywordMatchModeV1,
     pub content: String,
@@ -1026,6 +1040,14 @@ impl SnapshotDocumentBody for LorebookSnapshotBodyV1 {
             for keyword in &entry.keywords {
                 validate_text(
                     "lorebook_document.entries.keywords",
+                    keyword,
+                    MAX_AUTHORED_TEXT_BYTES,
+                    true,
+                )?;
+            }
+            for keyword in &entry.secondary_keywords {
+                validate_text(
+                    "lorebook_document.entries.secondary_keywords",
                     keyword,
                     MAX_AUTHORED_TEXT_BYTES,
                     true,
@@ -1525,6 +1547,8 @@ mod tests {
                     enabled: true,
                     always_active: false,
                     keywords: vec!["lighthouse".into(), "beacon".into()],
+                    secondary_keywords: Vec::new(),
+                    secondary_logic: SecondaryKeywordLogicV1::AndAny,
                     case_sensitive: false,
                     match_mode: KeywordMatchModeV1::Literal,
                     content: "The lighthouse has been dark for years.".into(),
@@ -1537,6 +1561,8 @@ mod tests {
                     enabled: true,
                     always_active: false,
                     keywords: vec!["harbourmaster".into()],
+                    secondary_keywords: Vec::new(),
+                    secondary_logic: SecondaryKeywordLogicV1::AndAny,
                     case_sensitive: false,
                     match_mode: KeywordMatchModeV1::Literal,
                     content: "She keeps every ledger by hand.".into(),

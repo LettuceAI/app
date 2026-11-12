@@ -932,3 +932,60 @@ fn migration_38_raises_only_the_old_default_duplicate_threshold() {
     assert_eq!(stored["dynamic_memory"]["max_entries"], 200);
     assert_eq!(stored["group_dynamic_memory"]["duplicate_threshold_basis_points"], 8500);
 }
+
+#[test]
+fn migration_39_gives_existing_lorebook_entries_no_secondary_condition() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let before: Vec<_> = MIGRATIONS
+        .iter()
+        .copied()
+        .filter(|migration| migration.id <= 38)
+        .collect();
+    apply_migrations(&mut connection, &before).expect("old schema");
+    let book = lettuce_types::LorebookId::new();
+    let entry = lettuce_types::LorebookEntryId::new();
+    connection
+        .execute(
+            "INSERT INTO lorebooks(id,status,name,detection_policy,behavior_version,revision,created_at,updated_at) VALUES (?1,'active','Harbour','recent_message_window','legacy_v1',1,1,1)",
+            [book.to_string()],
+        )
+        .expect("lorebook");
+    connection
+        .execute(
+            "INSERT INTO lorebook_entries(id,lorebook_id,title,enabled,always_active,keywords_json,case_sensitive,match_mode,content,priority,ordinal,revision,created_at,updated_at) VALUES (?1,?2,'Lamp',1,0,?3,0,'literal','A lamp',0,0,1,1,1)",
+            params![
+                entry.to_string(),
+                book.to_string(),
+                r#"{"format_version":1,"value":["lamp"]}"#
+            ],
+        )
+        .expect("entry");
+    apply_migrations(&mut connection, MIGRATIONS).expect("upgrade");
+    let stored: (String, String) = connection
+        .query_row(
+            "SELECT secondary_keywords_json,secondary_logic FROM lorebook_entries WHERE id=?1",
+            [entry.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("stored entry");
+    assert_eq!(stored.0, r#"{"format_version":1,"value":[]}"#);
+    assert_eq!(stored.1, "and_any");
+    let details = crate::lorebook::lorebook_adapter::load_details(&connection, book)
+        .expect("load")
+        .expect("lorebook");
+    assert_eq!(details.entries[0].keywords, vec!["lamp".to_owned()]);
+    assert!(details.entries[0].secondary_keywords.is_empty());
+    assert_eq!(
+        details.entries[0].secondary_logic,
+        lettuce_context::SecondaryKeywordLogic::AndAny
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE lorebook_entries SET secondary_logic='sometimes' WHERE id=?1",
+                [entry.to_string()],
+            )
+            .is_err()
+    );
+}

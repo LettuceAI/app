@@ -215,6 +215,10 @@ pub struct PackagedLorebookEntry {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_logic: lettuce_context::SecondaryKeywordLogic,
     pub case_sensitive: bool,
     #[serde(default)]
     pub keyword_match_mode: PackagedKeywordMatchMode,

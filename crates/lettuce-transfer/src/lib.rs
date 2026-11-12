@@ -526,6 +526,19 @@ pub fn reconcile_legacy_lorebook_keywords(lorebooks: &mut LegacyLorebookPlan) {
                 index += 1;
                 keep
             });
+            let mut index = 0_usize;
+            entry.secondary_keywords.retain(|keyword| {
+                let keep = lettuce_context::validate_regex_keyword(keyword, case_sensitive).is_ok();
+                if !keep {
+                    skipped.push(LegacyImportSkip {
+                        kind: LegacyImportSkipKind::LorebookEntryKeyword,
+                        source_key: format!("{entry_id}:secondary:{index}"),
+                        reason: LegacyImportSkipReason::InvalidRegex,
+                    });
+                }
+                index += 1;
+                keep
+            });
         }
     }
     lorebooks.skipped.extend(skipped);
@@ -690,6 +703,8 @@ pub struct LegacyLorebookEntryCandidate {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    pub secondary_keywords: Vec<String>,
+    pub secondary_logic: lettuce_context::SecondaryKeywordLogic,
     pub case_sensitive: bool,
     pub match_mode: LegacyKeywordMatchMode,
     pub content: String,

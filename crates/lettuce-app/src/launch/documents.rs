@@ -7,7 +7,7 @@ use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LorebookBehaviorVersion, LorebookDetails,
     PromptBehaviorVersion, PromptDocument, PromptEntryChatMode, PromptEntryCondition,
     PromptEntryImageSlot, PromptEntryInfoSource, PromptEntryPayload, PromptEntryPosition,
-    PromptEntryRole, PromptPurpose,
+    PromptEntryRole, PromptPurpose, SecondaryKeywordLogic,
 };
 use lettuce_conversations::{
     ArtifactError, CharacterMediaLinkV1, CharacterMediaSlotV1, CharacterSnapshotBodyV1, ChatModeV1,
@@ -19,7 +19,7 @@ use lettuce_conversations::{
     PromptEntryInfoSourceV1, PromptEntryPayloadV1, PromptEntryPositionV1, PromptEntryRoleV1,
     PromptEntryV1, PromptPurposeV1, PromptSnapshotBodyV1, ProviderProtocolV1, SceneAssetLinkV1,
     SceneAssetSlotV1, SceneOwnerV1, ScenePartV1, SceneSnapshotBodyV1, SceneVariantBodyV1,
-    SnapshotArtifactDraft, SnapshotDocumentBody, SnapshotEnvelopeV1, SnapshotProviderDescriptorV1,
+    SecondaryKeywordLogicV1, SnapshotArtifactDraft, SnapshotDocumentBody, SnapshotEnvelopeV1, SnapshotProviderDescriptorV1,
     SpeakerSelectionV1, StarterMessageV1, StarterRoleV1, StarterSnapshotBodyV1,
     build_snapshot_draft,
 };
@@ -273,6 +273,13 @@ pub(crate) fn lorebook_body(details: &LorebookDetails) -> LorebookSnapshotBodyV1
                 enabled: entry.enabled,
                 always_active: entry.always_active,
                 keywords: entry.keywords.clone(),
+                secondary_keywords: entry.secondary_keywords.clone(),
+                secondary_logic: match entry.secondary_logic {
+                    SecondaryKeywordLogic::AndAny => SecondaryKeywordLogicV1::AndAny,
+                    SecondaryKeywordLogic::NotAll => SecondaryKeywordLogicV1::NotAll,
+                    SecondaryKeywordLogic::NotAny => SecondaryKeywordLogicV1::NotAny,
+                    SecondaryKeywordLogic::AndAll => SecondaryKeywordLogicV1::AndAll,
+                },
                 case_sensitive: entry.case_sensitive,
                 match_mode: match entry.match_mode {
                     KeywordMatchMode::Literal => KeywordMatchModeV1::Literal,

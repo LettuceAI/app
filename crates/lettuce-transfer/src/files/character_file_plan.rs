@@ -20,6 +20,7 @@ use lettuce_types::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use super::lorebook_transfer::{secondary_logic_from_value, secondary_logic_name};
 use crate::legacy::legacy_backup_authored::{
     CharacterRowReferences, map_character_row, map_lorebooks,
 };
@@ -114,6 +115,8 @@ pub fn plan_character_file(
                     "enabled": entry.enabled,
                     "always_active": entry.always_active,
                     "keywords": serde_json::to_string(&entry.keywords).unwrap_or_else(|_| "[]".to_owned()),
+                    "secondary_keywords": serde_json::to_string(&entry.secondary_keywords).unwrap_or_else(|_| "[]".to_owned()),
+                    "secondary_logic": secondary_logic_name(entry.secondary_logic),
                     "case_sensitive": entry.case_sensitive,
                     "keyword_match_mode": match entry.keyword_match_mode {
                         PackagedKeywordMatchMode::Literal => "literal",
@@ -386,8 +389,10 @@ pub fn plan_character_file(
 }
 
 /// A card's embedded `character_book` as a new lorebook row and its id, or
-/// `None` without entries. Keys and secondary keys merge into keywords, a
-/// `constant` entry is always active, and `insertion_order` orders entries.
+/// `None` without entries. `keys` are the keywords, `secondary_keys` the
+/// secondary keywords unless `selective` is false, `extensions.selectiveLogic`
+/// the secondary logic, a `constant` entry is always active, and
+/// `insertion_order` orders entries.
 fn character_book_row(
     book: &Value,
     character_name: &str,
@@ -412,18 +417,31 @@ fn character_book_row(
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            let mut keywords: Vec<String> = Vec::new();
-            for key in ["keys", "secondary_keys"]
-                .into_iter()
-                .filter_map(|field| item.get(field).and_then(Value::as_array))
-                .flatten()
-                .map(|key| text(Some(key)))
-                .filter(|key| !key.is_empty())
-            {
-                if !keywords.contains(&key) {
-                    keywords.push(key);
+            let list = |field: &str| {
+                let mut keywords: Vec<String> = Vec::new();
+                for key in item
+                    .get(field)
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .map(|key| text(Some(key)))
+                    .filter(|key| !key.is_empty())
+                {
+                    if !keywords.contains(&key) {
+                        keywords.push(key);
+                    }
                 }
-            }
+                keywords
+            };
+            let keywords = list("keys");
+            let secondary_keywords = if item.get("selective") == Some(&Value::Bool(false)) {
+                Vec::new()
+            } else {
+                list("secondary_keys")
+            };
+            let secondary_logic = secondary_logic_from_value(
+                item.pointer("/extensions/selectiveLogic").and_then(Value::as_i64),
+            );
             let title = Some(text(item.get("name")))
                 .filter(|title| !title.is_empty())
                 .or_else(|| keywords.first().cloned())
@@ -439,6 +457,8 @@ fn character_book_row(
                 "enabled": item.get("enabled") != Some(&Value::Bool(false)),
                 "always_active": item.get("constant") == Some(&Value::Bool(true)),
                 "keywords": serde_json::to_string(&keywords).unwrap_or_else(|_| "[]".to_owned()),
+                "secondary_keywords": serde_json::to_string(&secondary_keywords).unwrap_or_else(|_| "[]".to_owned()),
+                "secondary_logic": secondary_logic_name(secondary_logic),
                 "case_sensitive": item.get("case_sensitive") == Some(&Value::Bool(true)),
                 "keyword_match_mode": "literal",
                 "content": text(item.get("content")),
@@ -845,7 +865,7 @@ mod tests {
                 "activeLorebookIds": ["book-1", "00000000-0000-0000-0000-00000000beef"],
                 "lorebooks": [{
                     "lorebook": {"id": "book-1", "name": "Harbour", "avatarPath": null, "keywordDetectionMode": "latestUserMessage", "createdAt": 1, "updatedAt": 1},
-                    "entries": [{"id": "e1", "lorebookId": "book-1", "title": "Key", "enabled": true, "alwaysActive": false, "keywords": ["key"], "caseSensitive": false, "keywordMatchMode": "regex", "content": "Ada keeps it", "priority": 2, "displayOrder": 0, "createdAt": 1, "updatedAt": 1}]
+                    "entries": [{"id": "e1", "lorebookId": "book-1", "title": "Key", "enabled": true, "alwaysActive": false, "keywords": ["key"], "secondaryKeywords": ["lock"], "secondaryLogic": "not_any", "caseSensitive": false, "keywordMatchMode": "regex", "content": "Ada keeps it", "priority": 2, "displayOrder": 0, "createdAt": 1, "updatedAt": 1}]
                 }],
                 "promptTemplateId": "prompt-1",
                 "systemPrompt": null,
@@ -907,6 +927,14 @@ mod tests {
             "Warm"
         );
         assert_eq!(plan.lorebooks.len(), 1);
+        assert_eq!(
+            plan.lorebooks[0].entries[0].secondary_keywords,
+            vec!["lock".to_owned()]
+        );
+        assert_eq!(
+            plan.lorebooks[0].entries[0].secondary_logic,
+            lettuce_context::SecondaryKeywordLogic::NotAny
+        );
         assert_eq!(
             character.active_lorebook_ids,
             vec![
@@ -1075,8 +1103,8 @@ mod tests {
             "description": "Keeper",
             "first_mes": "Hello",
             "character_book": {"entries": [
-                {"keys": [" lamp ", ""], "secondary_keys": ["lamp", "tower"], "content": " The lamp burns. ", "enabled": true, "constant": true, "case_sensitive": true, "priority": 4, "insertion_order": 7},
-                {"name": "Harbour", "keys": ["dock"], "content": "Boats", "enabled": false, "insertion_order": 1},
+                {"keys": [" lamp ", ""], "secondary_keys": ["tower", " tower ", ""], "selective": true, "extensions": {"selectiveLogic": 3}, "content": " The lamp burns. ", "enabled": true, "constant": true, "case_sensitive": true, "priority": 4, "insertion_order": 7},
+                {"name": "Harbour", "keys": ["dock"], "secondary_keys": ["pier"], "selective": false, "extensions": {"selectiveLogic": 2}, "content": "Boats", "enabled": false, "insertion_order": 1},
                 {"content": "No keys", "enabled": true}
             ]}
         }));
@@ -1094,15 +1122,25 @@ mod tests {
                 .expect("entry")
         };
         let lamp = by_title("lamp");
-        assert_eq!(lamp.keywords, vec!["lamp".to_owned(), "tower".to_owned()]);
+        assert_eq!(lamp.keywords, vec!["lamp".to_owned()]);
+        assert_eq!(lamp.secondary_keywords, vec!["tower".to_owned()]);
+        assert_eq!(
+            lamp.secondary_logic,
+            lettuce_context::SecondaryKeywordLogic::AndAll
+        );
         assert_eq!(lamp.content, "The lamp burns.");
         assert!(lamp.enabled && lamp.always_active && lamp.case_sensitive);
         assert_eq!((lamp.priority, lamp.display_order), (4, 7));
         let harbour = by_title("Harbour");
         assert!(!harbour.enabled && !harbour.always_active);
+        assert!(harbour.secondary_keywords.is_empty());
         assert_eq!(harbour.display_order, 1);
         let fallback = by_title("Entry 3");
         assert!(fallback.keywords.is_empty() && fallback.enabled);
+        assert_eq!(
+            fallback.secondary_logic,
+            lettuce_context::SecondaryKeywordLogic::AndAny
+        );
         assert_eq!(fallback.display_order, 0);
         let raw = json!({"entries": [{"keys": ["a"], "content": "x"}, {"content": "y", "enabled": null}]});
         let (_, row) = character_book_row(&raw, "Mira", 1, &mut ids()).expect("character book row");

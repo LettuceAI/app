@@ -58,7 +58,7 @@ pub fn canonical_character_payload(
 
 pub const LOREBOOK_SYNC_KIND: &str = "lorebook";
 pub const LOREBOOK_SYNC_SCHEMA: &str = "lorebook.snapshot";
-pub const LOREBOOK_SYNC_VERSION: u32 = 1;
+pub const LOREBOOK_SYNC_VERSION: u32 = 2;
 pub const CHARACTER_LOREBOOK_BINDINGS_SYNC_KIND: &str = "character_lorebook_bindings";
 pub const PERSONA_LOREBOOK_BINDINGS_SYNC_KIND: &str = "persona_lorebook_bindings";
 pub const LOREBOOK_BINDINGS_SYNC_SCHEMA: &str = "lorebook.bindings";

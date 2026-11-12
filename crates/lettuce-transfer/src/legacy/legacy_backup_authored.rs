@@ -215,6 +215,10 @@ struct LorebookEntryRow {
     always_active: bool,
     #[serde(default = "empty_json_array")]
     keywords: String,
+    #[serde(default = "empty_json_array")]
+    secondary_keywords: String,
+    #[serde(default = "default_secondary_logic")]
+    secondary_logic: String,
     #[serde(default, deserialize_with = "nullable_bool")]
     case_sensitive: bool,
     #[serde(default = "default_keyword_match")]
@@ -717,6 +721,29 @@ pub(crate) fn map_lorebooks(
                     ));
                     Vec::new()
                 });
+            let secondary_keywords = serde_json::from_str::<Vec<String>>(&entry.secondary_keywords)
+                .unwrap_or_else(|_| {
+                    skipped.push(crate::legacy_value_skip(
+                        "lorebook_entries.secondary_keywords",
+                        &entry_id.to_string(),
+                        crate::LegacyImportSkipReason::MalformedLegacyValue,
+                    ));
+                    Vec::new()
+                });
+            let secondary_logic = match entry.secondary_logic.as_str() {
+                "and_any" => lettuce_context::SecondaryKeywordLogic::AndAny,
+                "not_all" => lettuce_context::SecondaryKeywordLogic::NotAll,
+                "not_any" => lettuce_context::SecondaryKeywordLogic::NotAny,
+                "and_all" => lettuce_context::SecondaryKeywordLogic::AndAll,
+                _ => {
+                    skipped.push(crate::legacy_value_skip(
+                        "lorebook_entries.secondary_logic",
+                        &entry_id.to_string(),
+                        crate::LegacyImportSkipReason::UnknownLegacyValue,
+                    ));
+                    lettuce_context::SecondaryKeywordLogic::AndAny
+                }
+            };
             let match_mode = match entry.keyword_match_mode.as_str() {
                 "literal" => LegacyKeywordMatchMode::Literal,
                 "regex" => LegacyKeywordMatchMode::Regex,
@@ -735,6 +762,8 @@ pub(crate) fn map_lorebooks(
                 enabled: entry.enabled,
                 always_active: entry.always_active,
                 keywords,
+                secondary_keywords,
+                secondary_logic,
                 case_sensitive: entry.case_sensitive,
                 match_mode,
                 content: entry.content,
@@ -2272,6 +2301,9 @@ fn default_true() -> bool {
 }
 fn default_detection_policy() -> String {
     "recent_message_window".to_owned()
+}
+fn default_secondary_logic() -> String {
+    "and_any".to_owned()
 }
 fn default_keyword_match() -> String {
     "literal".to_owned()

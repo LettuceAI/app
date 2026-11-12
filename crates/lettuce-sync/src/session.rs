@@ -562,13 +562,18 @@ mod tests {
         );
         assert_eq!(crate::GROUP_COMPANION_MESSAGE_SYNC_VERSION, 1);
         assert_eq!(
+            crate::LOREBOOK_SYNC_VERSION,
+            2,
+            "lorebook entries carry secondary keywords and their logic"
+        );
+        assert_eq!(
             crate::MEMORY_ITEM_SYNC_VERSION,
             5,
             "memory items can belong to a member's perspective space"
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "f44d998afe596bac473fc81550c996b7f6dd7a493ca06a4a1fad187d476f1f7a"
+            "253a5714eb6e2167c3e0e2771bd987f1133304bd9a071000dca7ae157c077d70"
         );
     }
 

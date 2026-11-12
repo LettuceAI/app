@@ -8,7 +8,8 @@ fn lorebook() -> Value {
             "updatedAt": 20, "authors": ["Ada"], "license": "CC0", "sources": ["https://example.org"]},
         "entity": {"name": "Harbour", "icon": "asset:a1", "detection": "latest_user_message",
             "behaviorVersion": "deterministic_v2", "entries": [{"title": "Ships", "enabled": false,
-                "alwaysActive": true, "keywords": ["ship.*", " sea "], "caseSensitive": true,
+                "alwaysActive": true, "keywords": ["ship.*", " sea "], "secondaryKeywords": ["dock", "tide"],
+                "secondaryLogic": "not_all", "caseSensitive": true,
                 "matchMode": "regex", "content": "The harbour", "priority": -7}]},
         "dependencies": [], "state": null,
         "assets": {"a1": {"mime": "image/png", "blake3": blake3::hash(b"image").to_hex().as_str(), "data": "aW1hZ2U="}}
@@ -39,6 +40,26 @@ fn every_lorebook_field_round_trips() {
     assert_eq!(
         serde_json::from_slice::<Value>(&output).expect("json"),
         source
+    );
+}
+
+#[test]
+fn lorebook_entries_without_secondary_fields_read_as_no_condition() {
+    let mut source = lorebook();
+    let entry = source["entity"]["entries"][0]
+        .as_object_mut()
+        .expect("entry");
+    entry.remove("secondaryKeywords");
+    entry.remove("secondaryLogic");
+    let card = uec3::read(&source.to_string(), |_, _, _| Ok(())).expect("read");
+    assert!(card.warnings.is_empty());
+    let Entity::Lorebook(book) = &card.document.entity else {
+        panic!("lorebook entity");
+    };
+    assert!(book.entries[0].secondary_keywords.is_empty());
+    assert_eq!(
+        book.entries[0].secondary_logic,
+        lettuce_context::SecondaryKeywordLogic::AndAny
     );
 }
 
@@ -119,8 +140,14 @@ fn model_profile_round_trips_typed_parameters_and_portable_runtime_settings() {
         output["entity"]["capabilities"],
         source["entity"]["capabilities"]
     );
-    assert_eq!(output["entity"]["llamaCpp"]["sampler"]["topNSigma"], json!(2.0));
-    assert_eq!(output["entity"]["llamaCpp"]["sampler"]["order"], json!(["top_n_sigma", "temp"]));
+    assert_eq!(
+        output["entity"]["llamaCpp"]["sampler"]["topNSigma"],
+        json!(2.0)
+    );
+    assert_eq!(
+        output["entity"]["llamaCpp"]["sampler"]["order"],
+        json!(["top_n_sigma", "temp"])
+    );
     assert_eq!(output["entity"]["provider"], source["entity"]["provider"]);
     let again = uec3::read(&output.to_string(), |_, _, _| panic!("no assets")).expect("again");
     assert_eq!(again.document, read.document);

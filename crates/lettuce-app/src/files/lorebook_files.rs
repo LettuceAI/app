@@ -74,6 +74,8 @@ pub(crate) fn prepare_import(
                 enabled: entry.enabled,
                 always_active: entry.always_active,
                 keywords: entry.keywords,
+                secondary_keywords: entry.secondary_keywords,
+                secondary_logic: entry.secondary_logic,
                 case_sensitive: entry.case_sensitive,
                 match_mode: KeywordMatchMode::Literal,
                 content: entry.content,
@@ -103,6 +105,8 @@ pub(crate) fn lorebook_transfer(details: &LorebookDetails) -> LorebookTransfer {
                 enabled: entry.enabled,
                 always_active: entry.always_active,
                 keywords: entry.keywords,
+                secondary_keywords: entry.secondary_keywords,
+                secondary_logic: entry.secondary_logic,
                 case_sensitive: entry.case_sensitive,
                 keyword_match_mode: match entry.match_mode {
                     KeywordMatchMode::Literal => PackagedKeywordMatchMode::Literal,
@@ -160,6 +164,30 @@ mod tests {
         assert_eq!(entry.priority, -7);
         assert_eq!(entry.match_mode, KeywordMatchMode::Literal);
         assert_eq!(entry.created_at, TimestampMillis::new(30));
+    }
+
+    #[test]
+    fn world_info_secondary_keywords_import_with_their_logic() {
+        let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let imported = backend
+            .lorebook_files()
+            .import_world_info(
+                &serde_json::json!({
+                    "name": "Harbour",
+                    "entries": {"0": {"keys": ["ship"], "keysecondary": ["sea", "storm"],
+                        "selective": true, "selectiveLogic": 3, "content": "A ship"}}
+                })
+                .to_string(),
+                TimestampMillis::new(30),
+            )
+            .expect("World Info import");
+        let entry = &imported.entries[0];
+        assert_eq!(entry.keywords, ["ship"]);
+        assert_eq!(entry.secondary_keywords, ["sea", "storm"]);
+        assert_eq!(
+            entry.secondary_logic,
+            lettuce_context::SecondaryKeywordLogic::AndAll
+        );
     }
 
     #[test]

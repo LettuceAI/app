@@ -32,6 +32,8 @@ pub(in crate::api) fn entry(
         keywords: keyword
             .map(|keyword| vec![keyword.into()])
             .unwrap_or_default(),
+        secondary_keywords: Vec::new(),
+        secondary_logic: dto::LorebookSecondaryLogic::AndAny,
         case_sensitive: false,
         keyword_mode: dto::LorebookKeywordMode::Literal,
         content: content.into(),
@@ -1429,4 +1431,51 @@ async fn trigger_preview_attributes_each_books_actual_detection_source() {
     assert!(editor.scanned_message_ids.is_empty());
     assert!(editor.entries[0].matched_message_ids.is_empty());
     assert!(editor.entries[0].matched_in_composer);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn editor_trigger_preview_applies_secondary_keywords_and_reports_them() {
+    let harness = harness(Reply::Text("A reply."));
+    let book = create(
+        &harness,
+        "secondary",
+        "Secondary lore",
+        vec![
+            dto::LorebookEntryInput {
+                secondary_keywords: vec!["storm".into(), "sea".into()],
+                secondary_logic: dto::LorebookSecondaryLogic::AndAll,
+                ..entry("Ship", "A ship.", Some("ship"))
+            },
+            dto::LorebookEntryInput {
+                secondary_keywords: vec!["storm".into()],
+                secondary_logic: dto::LorebookSecondaryLogic::NotAny,
+                ..entry("Calm", "Calm waters.", Some("ship"))
+            },
+        ],
+    )
+    .await;
+    assert_eq!(book.entries[0].secondary_keywords, ["storm", "sea"]);
+    assert_eq!(
+        book.entries[0].secondary_logic,
+        dto::LorebookSecondaryLogic::AndAll
+    );
+    let editor = |text: &str| {
+        lorebook_trigger_preview(
+            &harness.context,
+            dto::LorebookTriggerPreviewRequest::Editor {
+                lorebook_id: book.lorebook.id.clone(),
+                text: text.into(),
+            },
+        )
+    };
+    let stormy = editor("a ship in a storm on the sea").await.expect("preview");
+    assert_eq!(stormy.entries.len(), 1);
+    assert_eq!(stormy.entries[0].title, "Ship");
+    assert_eq!(stormy.entries[0].matched_keywords, ["ship"]);
+    assert_eq!(stormy.entries[0].matched_secondary_keywords, ["storm", "sea"]);
+    assert!(stormy.entries[0].matched_in_composer);
+    let calm = editor("a ship in the harbour").await.expect("preview");
+    assert_eq!(calm.entries.len(), 1);
+    assert_eq!(calm.entries[0].title, "Calm");
+    assert!(calm.entries[0].matched_secondary_keywords.is_empty());
 }

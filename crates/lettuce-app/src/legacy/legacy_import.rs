@@ -2382,6 +2382,8 @@ mod tests {
                 .iter()
                 .map(|keyword| (*keyword).to_owned())
                 .collect(),
+            secondary_keywords: Vec::new(),
+            secondary_logic: Default::default(),
             case_sensitive: false,
             match_mode,
             content: "Lore".into(),

@@ -4805,6 +4805,8 @@ fn lore_entry(content: &str) -> lettuce_context::LorebookEntryDraft {
         enabled: true,
         always_active: true,
         keywords: Vec::new(),
+        secondary_keywords: Vec::new(),
+        secondary_logic: Default::default(),
         case_sensitive: false,
         match_mode: lettuce_context::KeywordMatchMode::Literal,
         content: content.into(),

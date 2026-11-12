@@ -164,9 +164,9 @@ export const commands = {
 	promptPreview: (request: PromptPreviewRequest_Deserialize) => typedError<PromptPreview, ApiError_Serialize>(__TAURI_INVOKE("prompt_preview", { request })),
 	lorebooksList: (request: LorebooksListRequest) => typedError<LorebookPage_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebooks_list", { request })),
 	lorebookGet: (request: LorebookGetRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_get", { request })),
-	lorebookCreate: (request: LorebookCreateRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_create", { request })),
+	lorebookCreate: (request: LorebookCreateRequest_Deserialize) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_create", { request })),
 	lorebookUpdateMetadata: (request: LorebookUpdateMetadataRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_update_metadata", { request })),
-	lorebookEntriesMutate: (request: LorebookEntriesMutateRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_entries_mutate", { request })),
+	lorebookEntriesMutate: (request: LorebookEntriesMutateRequest_Deserialize) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_entries_mutate", { request })),
 	lorebookArchive: (request: LorebookRevisionRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_archive", { request })),
 	lorebookRestore: (request: LorebookRevisionRequest) => typedError<LorebookView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_restore", { request })),
 	lorebookDelete: (request: LorebookRevisionRequest) => typedError<SourceDeleteResult, ApiError_Serialize>(__TAURI_INVOKE("lorebook_delete", { request })),
@@ -5994,10 +5994,18 @@ export type LorasUpdateKeywordsRequest = {
 
 export type LorebookCoherenceChangeView = { kind: "merge_keys"; id: string; plan_id: string; remove_keys: string[]; reason: string } | { kind: "rename_term"; id: string; old_term: string; new_term: string; plan_ids: string[] | null; reason: string } | { kind: "flag_contradiction"; id: string; plan_ids: string[]; description: string } | { kind: "toggle_always_active"; id: string; plan_id: string; new_value: boolean; reason: string };
 
-export type LorebookCreateRequest = {
+export type LorebookCreateRequest = LorebookCreateRequest_Serialize | LorebookCreateRequest_Deserialize;
+
+export type LorebookCreateRequest_Deserialize = {
 	client_operation_id: string,
 	metadata: LorebookMetadataInput,
-	entries: LorebookEntryInput[],
+	entries: LorebookEntryInput_Deserialize[],
+};
+
+export type LorebookCreateRequest_Serialize = {
+	client_operation_id: string,
+	metadata: LorebookMetadataInput,
+	entries: LorebookEntryInput_Serialize[],
 };
 
 /**
@@ -6028,11 +6036,28 @@ export type LorebookDraftView = {
  *  Applies every mutation in order under one revision check; nothing is
  *  written when one of them fails.
  */
-export type LorebookEntriesMutateRequest = {
+export type LorebookEntriesMutateRequest = LorebookEntriesMutateRequest_Serialize | LorebookEntriesMutateRequest_Deserialize;
+
+/**
+ *  Applies every mutation in order under one revision check; nothing is
+ *  written when one of them fails.
+ */
+export type LorebookEntriesMutateRequest_Deserialize = {
 	client_operation_id: string,
 	lorebook_id: string,
 	expected_revision: number,
-	mutations: LorebookEntryMutationInput[],
+	mutations: LorebookEntryMutationInput_Deserialize[],
+};
+
+/**
+ *  Applies every mutation in order under one revision check; nothing is
+ *  written when one of them fails.
+ */
+export type LorebookEntriesMutateRequest_Serialize = {
+	client_operation_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	mutations: LorebookEntryMutationInput_Serialize[],
 };
 
 /**
@@ -6061,11 +6086,28 @@ export type LorebookEntryDraftResult = {
 
 export type LorebookEntryDraftSource = "messages" | "memory" | "mixed";
 
-export type LorebookEntryInput = {
+export type LorebookEntryInput = LorebookEntryInput_Serialize | LorebookEntryInput_Deserialize;
+
+export type LorebookEntryInput_Deserialize = {
 	title: string,
 	enabled: boolean,
 	always_active: boolean,
 	keywords: string[],
+	secondary_keywords?: string[],
+	secondary_logic?: LorebookSecondaryLogic,
+	case_sensitive: boolean,
+	keyword_mode: LorebookKeywordMode,
+	content: string,
+	priority: number,
+};
+
+export type LorebookEntryInput_Serialize = {
+	title: string,
+	enabled: boolean,
+	always_active: boolean,
+	keywords: string[],
+	secondary_keywords: string[],
+	secondary_logic: LorebookSecondaryLogic,
 	case_sensitive: boolean,
 	keyword_mode: LorebookKeywordMode,
 	content: string,
@@ -6076,7 +6118,19 @@ export type LorebookEntryInput = {
  *  One change to a book's entries. `index` is the position after the
  *  mutations before it; an add without one appends.
  */
-export type LorebookEntryMutationInput = { type: "add"; entry: LorebookEntryInput; index: number | null } | { type: "update"; entry_id: string; entry: LorebookEntryInput } | { type: "remove"; entry_id: string } | { type: "reorder"; entry_id: string; index: number };
+export type LorebookEntryMutationInput = LorebookEntryMutationInput_Serialize | LorebookEntryMutationInput_Deserialize;
+
+/**
+ *  One change to a book's entries. `index` is the position after the
+ *  mutations before it; an add without one appends.
+ */
+export type LorebookEntryMutationInput_Deserialize = { type: "add"; entry: LorebookEntryInput_Deserialize; index: number | null } | { type: "update"; entry_id: string; entry: LorebookEntryInput_Deserialize } | { type: "remove"; entry_id: string } | { type: "reorder"; entry_id: string; index: number };
+
+/**
+ *  One change to a book's entries. `index` is the position after the
+ *  mutations before it; an add without one appends.
+ */
+export type LorebookEntryMutationInput_Serialize = { type: "add"; entry: LorebookEntryInput_Serialize; index: number | null } | { type: "update"; entry_id: string; entry: LorebookEntryInput_Serialize } | { type: "remove"; entry_id: string } | { type: "reorder"; entry_id: string; index: number };
 
 export type LorebookEntryView = {
 	id: string,
@@ -6084,6 +6138,8 @@ export type LorebookEntryView = {
 	enabled: boolean,
 	always_active: boolean,
 	keywords: string[],
+	secondary_keywords: string[],
+	secondary_logic: LorebookSecondaryLogic,
 	case_sensitive: boolean,
 	keyword_mode: LorebookKeywordMode,
 	content: string,
@@ -6177,6 +6233,7 @@ export type LorebookPreviewEntry = {
 	entry_id: string,
 	title: string,
 	matched_keywords: string[],
+	matched_secondary_keywords: string[],
 	matched_message_ids: string[],
 	matched_in_composer: boolean,
 	always_active: boolean,
@@ -6366,6 +6423,17 @@ export type LorebookRevisionRequest = {
 	lorebook_id: string,
 	expected_revision: number,
 };
+
+/**  How an entry's secondary keywords gate a primary keyword match. */
+export type LorebookSecondaryLogic =
+/**  At least one secondary keyword matches. */
+"and_any" |
+/**  Not every secondary keyword matches. */
+"not_all" |
+/**  No secondary keyword matches. */
+"not_any" |
+/**  Every secondary keyword matches. */
+"and_all";
 
 export type LorebookSkipReason = "missing" | "archived" | "duplicate";
 

@@ -1552,6 +1552,8 @@ fn plan_legacy_lorebooks_in(
             enabled,
             always_active,
             keywords,
+            secondary_keywords: Vec::new(),
+            secondary_logic: Default::default(),
             case_sensitive,
             match_mode,
             content,

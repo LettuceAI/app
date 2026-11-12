@@ -41,6 +41,22 @@ pub enum LorebookBehaviorVersion {
     DeterministicV2,
 }
 
+/// How an entry's secondary keywords gate a primary keyword match. The four
+/// modes mirror SillyTavern's `selectiveLogic` values 0 to 3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SecondaryKeywordLogic {
+    /// At least one secondary keyword matches.
+    #[default]
+    AndAny,
+    /// Not every secondary keyword matches.
+    NotAll,
+    /// No secondary keyword matches.
+    NotAny,
+    /// Every secondary keyword matches.
+    AndAll,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lorebook {
@@ -64,6 +80,10 @@ pub struct LorebookEntry {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_logic: SecondaryKeywordLogic,
     pub case_sensitive: bool,
     pub match_mode: KeywordMatchMode,
     pub content: String,
@@ -83,6 +103,10 @@ pub struct LorebookEntryDraft {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_logic: SecondaryKeywordLogic,
     pub case_sensitive: bool,
     pub match_mode: KeywordMatchMode,
     pub content: String,
@@ -94,6 +118,7 @@ impl LorebookEntryDraft {
         validate_entry_fields(
             &self.title,
             &self.keywords,
+            &self.secondary_keywords,
             self.match_mode,
             self.case_sensitive,
             &self.content,
@@ -108,6 +133,8 @@ impl From<LorebookEntry> for LorebookEntryDraft {
             enabled: entry.enabled,
             always_active: entry.always_active,
             keywords: entry.keywords,
+            secondary_keywords: entry.secondary_keywords,
+            secondary_logic: entry.secondary_logic,
             case_sensitive: entry.case_sensitive,
             match_mode: entry.match_mode,
             content: entry.content,
@@ -234,6 +261,7 @@ impl LorebookEntry {
         validate_entry_fields(
             &self.title,
             &self.keywords,
+            &self.secondary_keywords,
             self.match_mode,
             self.case_sensitive,
             &self.content,
@@ -244,6 +272,7 @@ impl LorebookEntry {
 fn validate_entry_fields(
     title: &str,
     keywords: &[String],
+    secondary_keywords: &[String],
     match_mode: KeywordMatchMode,
     case_sensitive: bool,
     content: &str,
@@ -252,12 +281,13 @@ fn validate_entry_fields(
     validate_prose(content, "lorebook entry content")?;
     if keywords
         .iter()
+        .chain(secondary_keywords)
         .any(|keyword| keyword.len() > MAX_PROSE_BYTES)
     {
         return Err(LorebookValidationError::KeywordTooLarge);
     }
     if match_mode == KeywordMatchMode::Regex {
-        for keyword in keywords {
+        for keyword in keywords.iter().chain(secondary_keywords) {
             validate_regex_keyword(keyword, case_sensitive)?;
         }
     }
@@ -275,6 +305,7 @@ fn validate_entry_drafts(drafts: &[LorebookEntryDraft]) -> Result<(), LorebookVa
                 draft
                     .keywords
                     .iter()
+                    .chain(&draft.secondary_keywords)
                     .try_fold(value, |total, keyword| total.checked_add(keyword.len()))
             })
             .ok_or(LorebookValidationError::AuthoredPayloadTooLarge)?;
@@ -309,6 +340,7 @@ pub fn validate_entries(
                 entry
                     .keywords
                     .iter()
+                    .chain(&entry.secondary_keywords)
                     .try_fold(value, |total, keyword| total.checked_add(keyword.len()))
             })
             .ok_or(LorebookValidationError::AuthoredPayloadTooLarge)?;
@@ -431,10 +463,81 @@ fn compile_regex(
         .map_err(|error| LorebookValidationError::InvalidRegex(error.to_string()))
 }
 
+/// The outcome of matching one entry's keyword lists against a context.
+///
+/// `secondary_met` is true when the entry has no usable secondary keywords or
+/// when its secondary condition holds. Blank secondary keywords are ignored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryKeywordMatch {
+    pub matched_keywords: Vec<String>,
+    pub matched_secondary_keywords: Vec<String>,
+    pub secondary_met: bool,
+}
+
+impl EntryKeywordMatch {
+    /// A keyword entry fires when a primary keyword matched and the secondary
+    /// condition holds.
+    #[must_use]
+    pub fn fires(&self, has_keywords: bool) -> bool {
+        has_keywords && !self.matched_keywords.is_empty() && self.secondary_met
+    }
+}
+
+fn matching_keywords(
+    keywords: &[String],
+    context: &str,
+    case_sensitive: bool,
+    match_mode: KeywordMatchMode,
+) -> Vec<String> {
+    keywords
+        .iter()
+        .filter(|keyword| {
+            keyword_matches_with_mode(keyword, context, case_sensitive, match_mode).unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Shared by every matcher: matches the primary keywords, then evaluates the
+/// secondary condition with the entry's case sensitivity and match mode.
+pub fn match_entry_keywords(
+    keywords: &[String],
+    secondary_keywords: &[String],
+    secondary_logic: SecondaryKeywordLogic,
+    context: &str,
+    case_sensitive: bool,
+    match_mode: KeywordMatchMode,
+) -> EntryKeywordMatch {
+    let matched_keywords = matching_keywords(keywords, context, case_sensitive, match_mode);
+    let usable_secondary = secondary_keywords
+        .iter()
+        .filter(|keyword| !keyword.trim().is_empty())
+        .count();
+    let matched_secondary_keywords =
+        matching_keywords(secondary_keywords, context, case_sensitive, match_mode);
+    let matched_secondary = matched_secondary_keywords.len();
+    let secondary_met = if usable_secondary == 0 {
+        true
+    } else {
+        match secondary_logic {
+            SecondaryKeywordLogic::AndAny => matched_secondary > 0,
+            SecondaryKeywordLogic::NotAll => matched_secondary < usable_secondary,
+            SecondaryKeywordLogic::NotAny => matched_secondary == 0,
+            SecondaryKeywordLogic::AndAll => matched_secondary == usable_secondary,
+        }
+    };
+    EntryKeywordMatch {
+        matched_keywords,
+        matched_secondary_keywords,
+        secondary_met,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LorebookEntryMatch {
     pub entry: LorebookEntry,
     pub matched_keywords: Vec<String>,
+    pub matched_secondary_keywords: Vec<String>,
     pub always_active: bool,
 }
 
@@ -450,6 +553,7 @@ pub struct LorebookEntryExplanation {
     pub active: bool,
     pub reason: &'static str,
     pub matched_keywords: Vec<String>,
+    pub matched_secondary_keywords: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -489,24 +593,19 @@ impl LorebookMatcher {
         )?;
         let mut matches = Vec::new();
         for entry in entries.iter().filter(|entry| entry.enabled) {
-            let matched_keywords = entry
-                .keywords
-                .iter()
-                .filter(|keyword| {
-                    keyword_matches_with_mode(
-                        keyword,
-                        &context,
-                        entry.case_sensitive,
-                        entry.match_mode,
-                    )
-                    .unwrap_or(false)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            if entry.always_active || !matched_keywords.is_empty() && !entry.keywords.is_empty() {
+            let outcome = match_entry_keywords(
+                &entry.keywords,
+                &entry.secondary_keywords,
+                entry.secondary_logic,
+                &context,
+                entry.case_sensitive,
+                entry.match_mode,
+            );
+            if entry.always_active || outcome.fires(!entry.keywords.is_empty()) {
                 matches.push(LorebookEntryMatch {
                     entry: entry.clone(),
-                    matched_keywords,
+                    matched_keywords: outcome.matched_keywords,
+                    matched_secondary_keywords: outcome.matched_secondary_keywords,
                     always_active: entry.always_active,
                 });
             }
@@ -539,28 +638,24 @@ impl LorebookMatcher {
         let entries = entries
             .iter()
             .map(|entry| {
-                let matched_keywords = entry
-                    .keywords
-                    .iter()
-                    .filter(|keyword| {
-                        keyword_matches_with_mode(
-                            keyword,
-                            &context,
-                            entry.case_sensitive,
-                            entry.match_mode,
-                        )
-                        .unwrap_or(false)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
+                let outcome = match_entry_keywords(
+                    &entry.keywords,
+                    &entry.secondary_keywords,
+                    entry.secondary_logic,
+                    &context,
+                    entry.case_sensitive,
+                    entry.match_mode,
+                );
                 let (active, reason) = if !entry.enabled {
                     (false, "disabled")
                 } else if entry.always_active {
                     (true, "always_active")
                 } else if entry.keywords.is_empty() {
                     (false, "no_keywords")
-                } else if matched_keywords.is_empty() {
+                } else if outcome.matched_keywords.is_empty() {
                     (false, "no_keyword_match")
+                } else if !outcome.secondary_met {
+                    (false, "secondary_not_met")
                 } else {
                     (true, "keyword_match")
                 };
@@ -568,7 +663,8 @@ impl LorebookMatcher {
                     entry_id: entry.id,
                     active,
                     reason,
-                    matched_keywords,
+                    matched_keywords: outcome.matched_keywords,
+                    matched_secondary_keywords: outcome.matched_secondary_keywords,
                 }
             })
             .collect();
@@ -705,6 +801,7 @@ pub struct ResolvedLorebookEntry {
     pub entry: LorebookEntry,
     pub source: ResolvedLorebookSource,
     pub matched_keywords: Vec<String>,
+    pub matched_secondary_keywords: Vec<String>,
     pub always_active: bool,
 }
 
@@ -728,6 +825,8 @@ pub struct LorebookSnapshotActivationEntry {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    pub secondary_keywords: Vec<String>,
+    pub secondary_logic: SecondaryKeywordLogic,
     pub case_sensitive: bool,
     pub match_mode: KeywordMatchMode,
     pub content: String,
@@ -764,6 +863,7 @@ pub struct ResolvedLorebookSnapshotEntry {
     pub entry: LorebookSnapshotActivationEntry,
     pub source: ResolvedLorebookSnapshotSource,
     pub matched_keywords: Vec<String>,
+    pub matched_secondary_keywords: Vec<String>,
     pub always_active: bool,
 }
 
@@ -784,6 +884,7 @@ fn validate_snapshot_entry(
     validate_entry_fields(
         &entry.title,
         &entry.keywords,
+        &entry.secondary_keywords,
         entry.match_mode,
         entry.case_sensitive,
         &entry.content,
@@ -813,6 +914,7 @@ fn validate_snapshot_source(
                 entry
                     .keywords
                     .iter()
+                    .chain(&entry.secondary_keywords)
                     .try_fold(value, |total, keyword| total.checked_add(keyword.len()))
             })
             .ok_or(LorebookValidationError::AuthoredPayloadTooLarge)?;
@@ -859,21 +961,15 @@ pub fn resolve_lorebook_snapshot_activation(
             scan_depth,
         )?;
         for entry in source.entries.iter().filter(|entry| entry.enabled) {
-            let matched_keywords = entry
-                .keywords
-                .iter()
-                .filter(|keyword| {
-                    keyword_matches_with_mode(
-                        keyword,
-                        &context,
-                        entry.case_sensitive,
-                        entry.match_mode,
-                    )
-                    .unwrap_or(false)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            if !entry.always_active && (matched_keywords.is_empty() || entry.keywords.is_empty()) {
+            let outcome = match_entry_keywords(
+                &entry.keywords,
+                &entry.secondary_keywords,
+                entry.secondary_logic,
+                &context,
+                entry.case_sensitive,
+                entry.match_mode,
+            );
+            if !entry.always_active && !outcome.fires(!entry.keywords.is_empty()) {
                 continue;
             }
             if active_content_bytes.saturating_add(entry.content.len())
@@ -887,7 +983,8 @@ pub fn resolve_lorebook_snapshot_activation(
                 ResolvedLorebookSnapshotEntry {
                     entry: entry.clone(),
                     source: resolved_source.clone(),
-                    matched_keywords,
+                    matched_keywords: outcome.matched_keywords,
+                    matched_secondary_keywords: outcome.matched_secondary_keywords,
                     always_active: entry.always_active,
                 },
             ));
@@ -1009,6 +1106,7 @@ pub fn resolve_lorebook_activation(
                     entry: matched.entry,
                     source: resolved.clone(),
                     matched_keywords: matched.matched_keywords,
+                    matched_secondary_keywords: matched.matched_secondary_keywords,
                     always_active: matched.always_active,
                 },
             ));
@@ -1204,6 +1302,8 @@ mod tests {
             enabled: true,
             always_active: false,
             keywords: vec![keyword.into()],
+            secondary_keywords: Vec::new(),
+            secondary_logic: SecondaryKeywordLogic::AndAny,
             case_sensitive: false,
             match_mode: KeywordMatchMode::Literal,
             content: "Lore".into(),
@@ -1222,6 +1322,8 @@ mod tests {
             enabled: true,
             always_active: false,
             keywords: vec![keyword.into()],
+            secondary_keywords: Vec::new(),
+            secondary_logic: SecondaryKeywordLogic::AndAny,
             case_sensitive: false,
             match_mode: KeywordMatchMode::Literal,
             content: "Lore".into(),
@@ -1245,6 +1347,183 @@ mod tests {
             behavior_version: LorebookBehaviorVersion::LegacyV1,
             entries,
         }
+    }
+
+    fn secondary_entry(
+        logic: SecondaryKeywordLogic,
+        secondary: &[&str],
+    ) -> (Lorebook, LorebookEntry) {
+        let book = book(DetectionPolicy::LatestUserMessage);
+        let mut value = entry(&book, 0, "needle");
+        value.secondary_keywords = secondary.iter().map(|keyword| (*keyword).into()).collect();
+        value.secondary_logic = logic;
+        (book, value)
+    }
+
+    fn fires(logic: SecondaryKeywordLogic, secondary: &[&str], message: &str) -> bool {
+        let (book, entry) = secondary_entry(logic, secondary);
+        let matcher = LorebookMatcher::new(DEPTH);
+        let activated = !matcher
+            .activate(&book, std::slice::from_ref(&entry), &[], Some(message))
+            .expect("valid lorebook")
+            .entries
+            .is_empty();
+        let explained = matcher
+            .explain(&book, &[entry], &[], Some(message))
+            .expect("valid lorebook")
+            .entries[0]
+            .active;
+        assert_eq!(activated, explained);
+        activated
+    }
+
+    #[test]
+    fn secondary_logic_and_any_needs_one_secondary_match() {
+        use SecondaryKeywordLogic::AndAny;
+        assert!(fires(AndAny, &["red", "blue"], "needle and blue"));
+        assert!(!fires(AndAny, &["red", "blue"], "needle only"));
+        assert!(!fires(AndAny, &["red"], "red without the primary"));
+    }
+
+    #[test]
+    fn secondary_logic_not_all_fails_only_when_every_secondary_matches() {
+        use SecondaryKeywordLogic::NotAll;
+        assert!(fires(NotAll, &["red", "blue"], "needle and red"));
+        assert!(fires(NotAll, &["red", "blue"], "needle only"));
+        assert!(!fires(NotAll, &["red", "blue"], "needle red blue"));
+    }
+
+    #[test]
+    fn secondary_logic_not_any_fails_when_one_secondary_matches() {
+        use SecondaryKeywordLogic::NotAny;
+        assert!(fires(NotAny, &["red", "blue"], "needle only"));
+        assert!(!fires(NotAny, &["red", "blue"], "needle and red"));
+    }
+
+    #[test]
+    fn secondary_logic_and_all_needs_every_secondary_match() {
+        use SecondaryKeywordLogic::AndAll;
+        assert!(fires(AndAll, &["red", "blue"], "needle red blue"));
+        assert!(!fires(AndAll, &["red", "blue"], "needle and red"));
+        assert!(!fires(AndAll, &["red", "blue"], "needle only"));
+    }
+
+    #[test]
+    fn empty_secondary_list_means_no_condition_for_every_logic() {
+        for logic in [
+            SecondaryKeywordLogic::AndAny,
+            SecondaryKeywordLogic::NotAll,
+            SecondaryKeywordLogic::NotAny,
+            SecondaryKeywordLogic::AndAll,
+        ] {
+            assert!(fires(logic, &[], "needle"));
+            assert!(fires(logic, &["  "], "needle"));
+            assert!(!fires(logic, &[], "nothing"));
+        }
+    }
+
+    #[test]
+    fn secondary_keywords_use_the_entry_match_mode_and_case_rules() {
+        let (book, mut value) = secondary_entry(SecondaryKeywordLogic::AndAny, &["re+d"]);
+        value.match_mode = KeywordMatchMode::Regex;
+        value.keywords = vec!["needle".into()];
+        let activate = |value: &LorebookEntry, message: &str| {
+            !LorebookMatcher::new(DEPTH)
+                .activate(&book, std::slice::from_ref(value), &[], Some(message))
+                .expect("valid lorebook")
+                .entries
+                .is_empty()
+        };
+        assert!(activate(&value, "needle\nreed"));
+        value.secondary_keywords = vec!["RED".into()];
+        value.match_mode = KeywordMatchMode::Literal;
+        value.case_sensitive = true;
+        assert!(!activate(&value, "needle red"));
+        assert!(activate(&value, "needle RED"));
+    }
+
+    #[test]
+    fn explain_reports_secondary_not_met_and_matched_secondary_keywords() {
+        let (book, value) = secondary_entry(SecondaryKeywordLogic::NotAny, &["red", "blue"]);
+        let explained = LorebookMatcher::new(DEPTH)
+            .explain(&book, &[value.clone()], &[], Some("needle and red"))
+            .expect("valid lorebook");
+        assert_eq!(explained.entries[0].reason, "secondary_not_met");
+        assert!(!explained.entries[0].active);
+        assert_eq!(explained.entries[0].matched_keywords, vec!["needle"]);
+        assert_eq!(explained.entries[0].matched_secondary_keywords, vec!["red"]);
+
+        let explained = LorebookMatcher::new(DEPTH)
+            .explain(&book, &[value], &[], Some("needle"))
+            .expect("valid lorebook");
+        assert_eq!(explained.entries[0].reason, "keyword_match");
+        assert!(explained.entries[0].matched_secondary_keywords.is_empty());
+    }
+
+    #[test]
+    fn always_active_entries_ignore_secondary_keywords() {
+        let (book, mut value) = secondary_entry(SecondaryKeywordLogic::AndAll, &["red"]);
+        value.always_active = true;
+        let activated = LorebookMatcher::new(DEPTH)
+            .activate(&book, &[value], &[], Some("nothing"))
+            .expect("valid lorebook");
+        assert_eq!(activated.entries.len(), 1);
+    }
+
+    #[test]
+    fn snapshot_activation_applies_secondary_logic() {
+        let mut gated = snapshot_entry(0, "needle");
+        gated.secondary_keywords = vec!["red".into()];
+        gated.secondary_logic = SecondaryKeywordLogic::AndAll;
+        let source = snapshot_source(
+            LorebookId::new(),
+            Revision::INITIAL,
+            0,
+            DetectionPolicy::LatestUserMessage,
+            vec![gated.clone()],
+        );
+        let blocked = resolve_lorebook_snapshot_activation(
+            std::slice::from_ref(&source),
+            &[],
+            Some("needle"),
+            DEPTH,
+        )
+        .expect("valid snapshot source");
+        assert!(blocked.entries.is_empty());
+        let allowed =
+            resolve_lorebook_snapshot_activation(&[source], &[], Some("needle red"), DEPTH)
+                .expect("valid snapshot source");
+        assert_eq!(allowed.activated_entry_ids, vec![gated.entry_id]);
+    }
+
+    #[test]
+    fn secondary_keywords_validate_like_primary_keywords() {
+        let (book, mut value) = secondary_entry(SecondaryKeywordLogic::AndAny, &["["]);
+        assert!(value.validate().is_ok());
+        value.match_mode = KeywordMatchMode::Regex;
+        assert!(matches!(
+            LorebookMatcher::new(DEPTH).activate(&book, &[value.clone()], &[], None),
+            Err(LorebookValidationError::InvalidRegex(_))
+        ));
+        value.match_mode = KeywordMatchMode::Literal;
+        value.secondary_keywords = vec!["k".repeat(MAX_PROSE_BYTES + 1)];
+        assert_eq!(
+            value.validate(),
+            Err(LorebookValidationError::KeywordTooLarge)
+        );
+    }
+
+    #[test]
+    fn entry_json_without_secondary_fields_reads_as_no_condition() {
+        let book = book(DetectionPolicy::LatestUserMessage);
+        let mut value = serde_json::to_value(LorebookEntryDraft::from(entry(&book, 0, "needle")))
+            .expect("draft value");
+        let object = value.as_object_mut().expect("draft object");
+        object.remove("secondary_keywords");
+        object.remove("secondary_logic");
+        let draft = serde_json::from_value::<LorebookEntryDraft>(value).expect("legacy draft");
+        assert!(draft.secondary_keywords.is_empty());
+        assert_eq!(draft.secondary_logic, SecondaryKeywordLogic::AndAny);
     }
 
     #[test]

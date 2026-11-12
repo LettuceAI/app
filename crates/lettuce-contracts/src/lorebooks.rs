@@ -18,6 +18,22 @@ pub enum LorebookKeywordMode {
     Regex,
 }
 
+/// How an entry's secondary keywords gate a primary keyword match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LorebookSecondaryLogic {
+    /// At least one secondary keyword matches.
+    #[default]
+    AndAny,
+    /// Not every secondary keyword matches.
+    NotAll,
+    /// No secondary keyword matches.
+    NotAny,
+    /// Every secondary keyword matches.
+    AndAll,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
@@ -52,6 +68,8 @@ pub struct LorebookEntryView {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    pub secondary_keywords: Vec<String>,
+    pub secondary_logic: LorebookSecondaryLogic,
     pub case_sensitive: bool,
     pub keyword_mode: LorebookKeywordMode,
     pub content: String,
@@ -117,6 +135,10 @@ pub struct LorebookEntryInput {
     pub enabled: bool,
     pub always_active: bool,
     pub keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_keywords: Vec<String>,
+    #[serde(default)]
+    pub secondary_logic: LorebookSecondaryLogic,
     pub case_sensitive: bool,
     pub keyword_mode: LorebookKeywordMode,
     pub content: String,
@@ -253,6 +275,7 @@ pub struct LorebookPreviewEntry {
     pub entry_id: String,
     pub title: String,
     pub matched_keywords: Vec<String>,
+    pub matched_secondary_keywords: Vec<String>,
     pub matched_message_ids: Vec<String>,
     pub matched_in_composer: bool,
     pub always_active: bool,

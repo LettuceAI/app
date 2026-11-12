@@ -63,6 +63,8 @@ fn fixture(database: &Database, kind: &str) -> (String, CanonicalPayload) {
                     enabled: true,
                     always_active: false,
                     keywords: vec!["initial".into()],
+                    secondary_keywords: Vec::new(),
+                    secondary_logic: Default::default(),
                     case_sensitive: false,
                     match_mode: lettuce_context::KeywordMatchMode::Literal,
                     content: "Initial content".into(),

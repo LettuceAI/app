@@ -816,6 +816,8 @@ async fn the_snapshot_preserves_distinct_lore_titles_for_identical_placed_conten
                 enabled,
                 always_active: true,
                 keywords: Vec::new(),
+                secondary_keywords: Vec::new(),
+                secondary_logic: Default::default(),
                 case_sensitive: false,
                 match_mode: lettuce_context::KeywordMatchMode::Literal,
                 content: "  same {{char}}  ".into(),

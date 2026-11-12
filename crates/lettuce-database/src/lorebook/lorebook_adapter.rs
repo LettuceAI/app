@@ -16,7 +16,7 @@ use lettuce_context::{
     LorebookDetails, LorebookEntry, LorebookEntryDraft, LorebookEntryInsertionTarget,
     LorebookEntryMutation, LorebookLibraryQuery, LorebookMetadataDraft, LorebookMutationResult,
     LorebookReference, LorebookRepository, LorebookRepositoryError, LorebookValidationError,
-    PersonaLorebookBindingRepository,
+    PersonaLorebookBindingRepository, SecondaryKeywordLogic,
 };
 use lettuce_types::{
     CharacterId, GroupId, LorebookEntryId, LorebookId, Page, PersonaId, Revision, TimestampMillis,
@@ -168,6 +168,25 @@ fn match_mode(value: &str) -> rusqlite::Result<KeywordMatchMode> {
     }
 }
 
+fn secondary_logic_name(value: SecondaryKeywordLogic) -> &'static str {
+    match value {
+        SecondaryKeywordLogic::AndAny => "and_any",
+        SecondaryKeywordLogic::NotAll => "not_all",
+        SecondaryKeywordLogic::NotAny => "not_any",
+        SecondaryKeywordLogic::AndAll => "and_all",
+    }
+}
+
+fn secondary_logic(value: &str) -> rusqlite::Result<SecondaryKeywordLogic> {
+    match value {
+        "and_any" => Ok(SecondaryKeywordLogic::AndAny),
+        "not_all" => Ok(SecondaryKeywordLogic::NotAll),
+        "not_any" => Ok(SecondaryKeywordLogic::NotAny),
+        "and_all" => Ok(SecondaryKeywordLogic::AndAll),
+        _ => Err(invalid()),
+    }
+}
+
 fn bool_value(value: i64) -> rusqlite::Result<bool> {
     match value {
         0 => Ok(false),
@@ -236,6 +255,7 @@ fn parse_entry(row: &Row<'_>, book: LorebookId) -> rusqlite::Result<LorebookEntr
         return Err(invalid());
     }
     let keywords: Vec<String> = decode(&row.get::<_, String>(5)?)?;
+    let secondary_keywords: Vec<String> = decode(&row.get::<_, String>(14)?)?;
     Ok(LorebookEntry {
         id,
         lorebook_id: stored_book,
@@ -243,6 +263,8 @@ fn parse_entry(row: &Row<'_>, book: LorebookId) -> rusqlite::Result<LorebookEntr
         enabled: bool_value(row.get(3)?)?,
         always_active: bool_value(row.get(4)?)?,
         keywords,
+        secondary_keywords,
+        secondary_logic: secondary_logic(&row.get::<_, String>(15)?)?,
         case_sensitive: bool_value(row.get(6)?)?,
         match_mode: match_mode(&row.get::<_, String>(7)?)?,
         content: row.get(8)?,
@@ -269,7 +291,7 @@ pub(crate) fn load_details(
         return Ok(None);
     };
     let mut statement = connection.prepare(
-        "SELECT id,lorebook_id,title,enabled,always_active,keywords_json,case_sensitive,match_mode,content,priority,ordinal,revision,created_at,updated_at FROM lorebook_entries WHERE lorebook_id=?1 ORDER BY ordinal,id",
+        "SELECT id,lorebook_id,title,enabled,always_active,keywords_json,case_sensitive,match_mode,content,priority,ordinal,revision,created_at,updated_at,secondary_keywords_json,secondary_logic FROM lorebook_entries WHERE lorebook_id=?1 ORDER BY ordinal,id",
     )?;
     let mut rows = statement.query([id.to_string()])?;
     let mut entries = Vec::new();
@@ -346,7 +368,7 @@ fn insert_entry(
     entry: &LorebookEntry,
 ) -> Result<(), LorebookRepositoryError> {
     tx.execute(
-        "INSERT INTO lorebook_entries (id,lorebook_id,title,enabled,always_active,keywords_json,case_sensitive,match_mode,content,priority,ordinal,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+        "INSERT INTO lorebook_entries (id,lorebook_id,title,enabled,always_active,keywords_json,case_sensitive,match_mode,content,priority,ordinal,revision,created_at,updated_at,secondary_keywords_json,secondary_logic) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
         params![
             entry.id.to_string(),
             entry.lorebook_id.to_string(),
@@ -362,6 +384,8 @@ fn insert_entry(
             sql_revision(entry.revision)?,
             entry.created_at.get(),
             entry.updated_at.get(),
+            encode(&entry.secondary_keywords)?,
+            secondary_logic_name(entry.secondary_logic),
         ],
     )
     .map_err(db_error)?;
@@ -382,6 +406,8 @@ fn initial_entry(
         enabled: draft.enabled,
         always_active: draft.always_active,
         keywords: draft.keywords,
+        secondary_keywords: draft.secondary_keywords,
+        secondary_logic: draft.secondary_logic,
         case_sensitive: draft.case_sensitive,
         match_mode: draft.match_mode,
         content: draft.content,
@@ -407,6 +433,8 @@ fn updated_entry(
         enabled: draft.enabled,
         always_active: draft.always_active,
         keywords: draft.keywords,
+        secondary_keywords: draft.secondary_keywords,
+        secondary_logic: draft.secondary_logic,
         case_sensitive: draft.case_sensitive,
         match_mode: draft.match_mode,
         content: draft.content,
@@ -1710,6 +1738,8 @@ mod tests {
             enabled: true,
             always_active: false,
             keywords: vec![title.into()],
+            secondary_keywords: Vec::new(),
+            secondary_logic: Default::default(),
             case_sensitive: false,
             match_mode: KeywordMatchMode::Literal,
             content: content.into(),
@@ -1860,6 +1890,62 @@ mod tests {
             .expect("stored book");
         assert_eq!(stored.entries[0].title, "");
         assert_eq!(stored.entries[0].content, "");
+    }
+
+    #[test]
+    fn secondary_keywords_and_logic_round_trip_through_create_and_update() {
+        let database = Database::open_in_memory().expect("database");
+        let mut gated = draft("Lamp", "A lamp");
+        gated.secondary_keywords = vec!["tower".into(), "night".into()];
+        gated.secondary_logic = SecondaryKeywordLogic::NotAll;
+        let created = LorebookRepository::create(
+            &database,
+            metadata(),
+            vec![gated.clone()],
+            TimestampMillis::new(1),
+        )
+        .expect("create");
+        let stored = LorebookRepository::get(&database, created.book.id)
+            .expect("get")
+            .expect("stored book");
+        assert_eq!(
+            stored.entries[0].secondary_keywords,
+            gated.secondary_keywords
+        );
+        assert_eq!(
+            stored.entries[0].secondary_logic,
+            SecondaryKeywordLogic::NotAll
+        );
+
+        let mut changed = gated;
+        changed.secondary_keywords = vec!["harbour".into()];
+        changed.secondary_logic = SecondaryKeywordLogic::AndAll;
+        let updated = LorebookRepository::mutate_entries(
+            &database,
+            created.book.id,
+            created.book.revision,
+            LorebookEntryMutation::Update {
+                entry_id: stored.entries[0].id,
+                draft: changed,
+            },
+            TimestampMillis::new(2),
+        )
+        .expect("update");
+        assert_eq!(
+            updated.details.entries[0].secondary_keywords,
+            vec!["harbour".to_owned()]
+        );
+        let reread = LorebookRepository::get(&database, created.book.id)
+            .expect("get")
+            .expect("stored book");
+        assert_eq!(
+            reread.entries[0].secondary_logic,
+            SecondaryKeywordLogic::AndAll
+        );
+        assert_eq!(
+            reread.entries[0].secondary_keywords,
+            vec!["harbour".to_owned()]
+        );
     }
 
     #[test]

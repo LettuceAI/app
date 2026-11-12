@@ -279,3 +279,5 @@ The application broadcasts SyncConflictsChanged through the database commit feed
 Pending media is returned in stable asset-id pages. The coordinator visits every page, attempts each unavailable hash once per session, and reports how many assets remain unavailable while leaving their dependent changes deferred for the next session.
 
 A conflict with a deleted current candidate can be acknowledged through Current, which journals a fresh delete and closes the record. Other cannot recreate an entity the delete purged. A resolve transaction checks both the observed change identity and the materialized snapshot before changing the entity, journal and inbox together.
+
+Lorebook snapshots use schema version 2: every entry carries its secondary keywords and their logic (`and_any`, `not_all`, `not_any` or `and_all`). The schema fingerprint changes with this version, so the journal restarts like after any schema change.

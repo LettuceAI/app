@@ -4154,6 +4154,8 @@ mod tests {
                 enabled: true,
                 always_active: true,
                 keywords: Vec::new(),
+                secondary_keywords: Vec::new(),
+                secondary_logic: Default::default(),
                 case_sensitive: false,
                 match_mode: lettuce_context::KeywordMatchMode::Literal,
                 content: "body".into(),
@@ -4173,6 +4175,7 @@ mod tests {
                 source_order: 0,
             },
             matched_keywords: Vec::new(),
+            matched_secondary_keywords: Vec::new(),
             always_active: true,
         };
         let attribution = lore_attributions(&[

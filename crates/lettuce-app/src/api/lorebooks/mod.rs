@@ -12,7 +12,7 @@ use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LifecycleStatus, Lorebook, LorebookBehaviorVersion,
     LorebookDetails, LorebookEntry, LorebookEntryDraft, LorebookEntryInsertionTarget,
     LorebookEntryMutation, LorebookLibraryQuery, LorebookMetadataDraft, LorebookRepository,
-    LorebookSourceProvenance, LorebookSourceSkipReason,
+    LorebookSourceProvenance, LorebookSourceSkipReason, SecondaryKeywordLogic,
 };
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_database::ApiOperationError;
@@ -80,6 +80,13 @@ fn entry_view(entry: &LorebookEntry) -> dto::LorebookEntryView {
         enabled: entry.enabled,
         always_active: entry.always_active,
         keywords: entry.keywords.clone(),
+        secondary_keywords: entry.secondary_keywords.clone(),
+        secondary_logic: match entry.secondary_logic {
+            SecondaryKeywordLogic::AndAny => dto::LorebookSecondaryLogic::AndAny,
+            SecondaryKeywordLogic::NotAll => dto::LorebookSecondaryLogic::NotAll,
+            SecondaryKeywordLogic::NotAny => dto::LorebookSecondaryLogic::NotAny,
+            SecondaryKeywordLogic::AndAll => dto::LorebookSecondaryLogic::AndAll,
+        },
         case_sensitive: entry.case_sensitive,
         keyword_mode: match entry.match_mode {
             KeywordMatchMode::Literal => dto::LorebookKeywordMode::Literal,
@@ -123,6 +130,13 @@ pub(super) fn entry_draft(input: dto::LorebookEntryInput) -> LorebookEntryDraft 
         enabled: input.enabled,
         always_active: input.always_active,
         keywords: input.keywords,
+        secondary_keywords: input.secondary_keywords,
+        secondary_logic: match input.secondary_logic {
+            dto::LorebookSecondaryLogic::AndAny => SecondaryKeywordLogic::AndAny,
+            dto::LorebookSecondaryLogic::NotAll => SecondaryKeywordLogic::NotAll,
+            dto::LorebookSecondaryLogic::NotAny => SecondaryKeywordLogic::NotAny,
+            dto::LorebookSecondaryLogic::AndAll => SecondaryKeywordLogic::AndAll,
+        },
         case_sensitive: input.case_sensitive,
         match_mode: match input.keyword_mode {
             dto::LorebookKeywordMode::Literal => KeywordMatchMode::Literal,
@@ -578,6 +592,7 @@ pub async fn lorebook_trigger_preview(
                         entry_id: entry.entry.id.to_string(),
                         title: entry.entry.title.clone(),
                         matched_keywords: entry.matched_keywords.clone(),
+                        matched_secondary_keywords: entry.matched_secondary_keywords.clone(),
                         matched_message_ids: scanned_messages
                             .iter()
                             .filter(|(id, text)| {
@@ -626,17 +641,23 @@ pub async fn lorebook_trigger_preview(
         .await
 }
 
+/// Whether `text` holds one of the keywords, primary or secondary, that made
+/// the entry fire.
 fn preview_keyword_match(entry: &lettuce_context::ResolvedLorebookEntry, text: &str) -> bool {
     !entry.always_active
-        && entry.matched_keywords.iter().any(|keyword| {
-            lettuce_context::keyword_matches_with_mode(
-                keyword,
-                text,
-                entry.entry.case_sensitive,
-                entry.entry.match_mode,
-            )
-            .unwrap_or(false)
-        })
+        && entry
+            .matched_keywords
+            .iter()
+            .chain(&entry.matched_secondary_keywords)
+            .any(|keyword| {
+                lettuce_context::keyword_matches_with_mode(
+                    keyword,
+                    text,
+                    entry.entry.case_sensitive,
+                    entry.entry.match_mode,
+                )
+                .unwrap_or(false)
+            })
 }
 
 pub(super) fn emit_deletion(context: &ApiContext, result: &dto::SourceDeleteResult) {

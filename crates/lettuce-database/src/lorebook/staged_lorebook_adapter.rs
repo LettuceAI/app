@@ -1087,7 +1087,7 @@ pub(crate) fn commit_staged_lorebook_in(
 ) -> Result<lettuce_creation::StagedLorebookCommitReceipt, StagedLorebookRepositoryError> {
     use lettuce_context::{
         DetectionPolicy, KeywordMatchMode, LifecycleStatus, Lorebook, LorebookBehaviorVersion,
-        LorebookDetails, LorebookEntry,
+        LorebookDetails, LorebookEntry, SecondaryKeywordLogic,
     };
     use lettuce_creation::{StagedLorebookCommitReceipt, StagedLorebookCommitTarget};
     let mut run = load_in(transaction, request.project_request_id)?
@@ -1170,6 +1170,8 @@ pub(crate) fn commit_staged_lorebook_in(
             enabled: true,
             always_active: draft.always_active,
             keywords: draft.keywords.clone(),
+            secondary_keywords: Vec::new(),
+            secondary_logic: SecondaryKeywordLogic::AndAny,
             case_sensitive: false,
             match_mode: KeywordMatchMode::Literal,
             content: draft.content.clone(),

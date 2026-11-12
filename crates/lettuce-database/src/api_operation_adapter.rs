@@ -1380,6 +1380,8 @@ mod tests {
                                             enabled: true,
                                             always_active: true,
                                             keywords: vec![],
+                                            secondary_keywords: Vec::new(),
+                                            secondary_logic: Default::default(),
                                             case_sensitive: false,
                                             match_mode: KeywordMatchMode::Literal,
                                             content: "District content".into(),

@@ -284,6 +284,8 @@ pub fn lorebook_details_from_candidate(
                 enabled: entry.enabled,
                 always_active: entry.always_active,
                 keywords: entry.keywords.clone(),
+                secondary_keywords: entry.secondary_keywords.clone(),
+                secondary_logic: entry.secondary_logic,
                 case_sensitive: entry.case_sensitive,
                 match_mode: match entry.match_mode {
                     LegacyKeywordMatchMode::Literal => KeywordMatchMode::Literal,

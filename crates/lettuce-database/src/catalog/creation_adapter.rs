@@ -8,6 +8,7 @@ use lettuce_characters::{
 use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LifecycleStatus as LorebookLifecycleStatus, Lorebook,
     LorebookBehaviorVersion, LorebookDetails, LorebookEntry, LorebookRepositoryError,
+    SecondaryKeywordLogic,
 };
 use lettuce_creation::{
     AdmittedCreationToolCall, ConfirmedCharacterApply, ConfirmedCharacterRevisionApply,
@@ -1635,6 +1636,8 @@ impl CreationApplyRepository for Database {
                     enabled: true,
                     always_active: true,
                     keywords: Vec::new(),
+                    secondary_keywords: Vec::new(),
+                    secondary_logic: SecondaryKeywordLogic::AndAny,
                     case_sensitive: false,
                     match_mode: KeywordMatchMode::Literal,
                     content: draft.content,
@@ -1773,6 +1776,8 @@ impl CreationApplyRepository for Database {
                         enabled: true,
                         always_active: true,
                         keywords: Vec::new(),
+                        secondary_keywords: Vec::new(),
+                        secondary_logic: SecondaryKeywordLogic::AndAny,
                         case_sensitive: false,
                         match_mode: KeywordMatchMode::Literal,
                         content: draft.content,
@@ -1803,6 +1808,8 @@ impl CreationApplyRepository for Database {
                     enabled: previous.enabled,
                     always_active: previous.always_active,
                     keywords: previous.keywords,
+                    secondary_keywords: previous.secondary_keywords,
+                    secondary_logic: previous.secondary_logic,
                     case_sensitive: previous.case_sensitive,
                     match_mode: previous.match_mode,
                     content: draft.content,
@@ -3921,6 +3928,8 @@ mod tests {
             enabled,
             always_active,
             keywords: keywords.into_iter().map(str::to_owned).collect(),
+            secondary_keywords: Vec::new(),
+            secondary_logic: Default::default(),
             case_sensitive,
             match_mode: KeywordMatchMode::Literal,
             content: content.into(),
