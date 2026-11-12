@@ -20,11 +20,17 @@ function check(pattern: string, caseSensitive: boolean): PatternCheck {
 
 /** One regular expression per row, each checked as you type, with a sentence to try them on. */
 export function PatternEditor({
+  rowLabel,
+  addLabel,
+  tryable = true,
   value,
   caseSensitive,
   disabled,
   onChange,
 }: {
+  rowLabel: (number: number) => string;
+  addLabel: string;
+  tryable?: boolean;
   value: readonly string[];
   caseSensitive: boolean;
   disabled: boolean;
@@ -53,7 +59,7 @@ export function PatternEditor({
               <div className="flex items-center gap-2">
                 <Input
                   className="flex-1 font-mono"
-                  aria-label={t("patternLabel", { number: index + 1 })}
+                  aria-label={rowLabel(index + 1)}
                   aria-invalid={result.kind === "invalid" || result.kind === "unsupported"}
                   value={row}
                   disabled={disabled}
@@ -89,14 +95,14 @@ export function PatternEditor({
         })}
       </ul>
       <Button variant="ghost" size="sm" leading={<Plus size={icon.sm} />} disabled={disabled} onClick={() => setRows([...rows, ""])}>
-        {t("addPattern")}
+        {addLabel}
       </Button>
-      <Field
+      {tryable && <Field
         label={t("tryLabel")}
         hint={sample.trim() ? t(fires ? "tryFires" : "tryQuiet") : t("tryHint")}
       >
         <Input value={sample} disabled={disabled} placeholder={t("tryPlaceholder")} onChange={(event) => setSample(event.target.value)} />
-      </Field>
+      </Field>}
     </div>
   );
 }

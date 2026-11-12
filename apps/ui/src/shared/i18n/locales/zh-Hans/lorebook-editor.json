@@ -68,8 +68,23 @@
   "tryLabel": "试一试",
   "tryHint": "输入一句话，看看哪些模式会匹配",
   "tryPlaceholder": "聊天中的一行",
-  "tryFires": "该条目会被加入",
-  "tryQuiet": "该条目不会被加入",
+  "tryFires": "至少有一个模式匹配",
+  "tryQuiet": "没有模式匹配",
   "tryMatch": "匹配",
-  "tryNoMatch": "不匹配"
+  "tryNoMatch": "不匹配",
+  "secondary": "次要关键词",
+  "secondaryLogicLabel": "次要条件",
+  "secondaryPlaceholder": "可选。输入关键词后按 Enter",
+  "secondaryPatternLabel": "次要模式 {{number}}",
+  "secondaryLogic": {
+    "and_any": "还需要其中之一",
+    "and_anyHint": "只有其中之一也出现时才会加入。留空表示没有条件。",
+    "and_all": "还需要全部这些",
+    "and_allHint": "只有这些全部也出现时才会加入。",
+    "not_any": "不能有其中任何一个",
+    "not_anyHint": "其中任何一个出现时都不会加入。",
+    "not_all": "不能同时有全部这些",
+    "not_allHint": "只有这些全部同时出现时才不会加入。"
+  },
+  "addSecondaryPattern": "添加次要模式"
 }

@@ -37,6 +37,8 @@ const entry = (id: string, patch: Partial<LorebookEntryView> = {}): LorebookEntr
   title: id,
   content: `${id} content`,
   keywords: [`${id.toLowerCase()} key`],
+  secondary_keywords: [],
+  secondary_logic: "and_any",
   enabled: true,
   always_active: false,
   case_sensitive: false,
@@ -303,11 +305,32 @@ describe("lorebook editor page", () => {
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Try it" }), {
       target: { value: "Then Doc fixes his arm." },
     });
-    expect(within(dialog).getByText("This entry would come in")).toBeTruthy();
+    expect(within(dialog).getByText("At least one pattern matches")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Save entry" }));
     await waitFor(() => expect(store.writes).toHaveLength(1));
     expect(store.writes[0]).toMatchObject({
       mutations: [{ entry: { keyword_mode: "regex", keywords: ["doc(tor)? (patches|fixes)", "field medic"] } }],
+    });
+  });
+
+  it("saves secondary keywords split on commas with the chosen condition", async () => {
+    const { store } = await setup();
+    await screen.findByText("Gate content");
+    fireEvent.click(screen.getByRole("button", { name: "New entry" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Content" }), {
+      target: { value: "Doc patches people up." },
+    });
+    expect(within(dialog).getByText("Comes in only when one of these also appears. Leave empty for no condition.")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Secondary condition" }));
+    fireEvent.click(await screen.findByRole("option", { name: /^Must not have any of these/ }));
+    const secondary = within(dialog).getByPlaceholderText("Optional. Type a keyword and press Enter");
+    fireEvent.change(secondary, { target: { value: "dream, flashback" } });
+    fireEvent.keyDown(secondary, { key: "Enter" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save entry" }));
+    await waitFor(() => expect(store.writes).toHaveLength(1));
+    expect(store.writes[0]).toMatchObject({
+      mutations: [{ entry: { secondary_keywords: ["dream", "flashback"], secondary_logic: "not_any" } }],
     });
   });
 

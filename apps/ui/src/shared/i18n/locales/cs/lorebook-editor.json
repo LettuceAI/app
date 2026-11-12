@@ -71,8 +71,23 @@
   "tryLabel": "Vyzkoušet",
   "tryHint": "Napište větu a uvidíte, které vzory odpovídají",
   "tryPlaceholder": "Řádek z chatu",
-  "tryFires": "Tato položka by se přidala",
-  "tryQuiet": "Tato položka by se nepřidala",
+  "tryFires": "Alespoň jeden vzor odpovídá",
+  "tryQuiet": "Žádný vzor neodpovídá",
   "tryMatch": "Odpovídá",
-  "tryNoMatch": "Neodpovídá"
+  "tryNoMatch": "Neodpovídá",
+  "secondary": "Vedlejší klíčová slova",
+  "secondaryLogicLabel": "Vedlejší podmínka",
+  "secondaryPlaceholder": "Volitelné. Napište slovo a stiskněte Enter",
+  "secondaryPatternLabel": "Vedlejší vzor {{number}}",
+  "secondaryLogic": {
+    "and_any": "Musí obsahovat i jedno z těchto",
+    "and_anyHint": "Přidá se jen tehdy, když se objeví i jedno z těchto. Bez podmínky nechte prázdné.",
+    "and_all": "Musí obsahovat i všechna tato",
+    "and_allHint": "Přidá se jen tehdy, když se objeví i všechna tato.",
+    "not_any": "Nesmí obsahovat žádné z těchto",
+    "not_anyHint": "Nepřidá se, když se objeví kterékoli z těchto.",
+    "not_all": "Nesmí obsahovat všechna tato",
+    "not_allHint": "Nepřidá se jen tehdy, když se objeví všechna tato najednou."
+  },
+  "addSecondaryPattern": "Přidat vedlejší vzor"
 }

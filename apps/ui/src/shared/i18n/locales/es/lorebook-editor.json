@@ -70,8 +70,23 @@
   "tryLabel": "Probar",
   "tryHint": "Escribe una frase para ver qué patrones coinciden",
   "tryPlaceholder": "Una línea del chat",
-  "tryFires": "Esta entrada se incluiría",
-  "tryQuiet": "Esta entrada quedaría fuera",
+  "tryFires": "Al menos un patrón coincide",
+  "tryQuiet": "Ningún patrón coincide",
   "tryMatch": "Coincide",
-  "tryNoMatch": "No coincide"
+  "tryNoMatch": "No coincide",
+  "secondary": "Palabras clave secundarias",
+  "secondaryLogicLabel": "Condición secundaria",
+  "secondaryPlaceholder": "Opcional. Escribe una palabra y pulsa Intro",
+  "secondaryPatternLabel": "Patrón secundario {{number}}",
+  "secondaryLogic": {
+    "and_any": "También necesita una de estas",
+    "and_anyHint": "Solo entra cuando también aparece una de estas. Déjalo vacío para no poner condición.",
+    "and_all": "También necesita todas estas",
+    "and_allHint": "Solo entra cuando también aparecen todas estas.",
+    "not_any": "No debe tener ninguna de estas",
+    "not_anyHint": "Queda fuera si aparece cualquiera de estas.",
+    "not_all": "No debe tener todas estas",
+    "not_allHint": "Solo queda fuera si aparecen todas estas juntas."
+  },
+  "addSecondaryPattern": "Añadir patrón secundario"
 }

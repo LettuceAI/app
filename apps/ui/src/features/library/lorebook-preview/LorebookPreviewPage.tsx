@@ -123,6 +123,7 @@ function LoadingPanel() {
 
 export function LorebookPreviewPage() {
   const { t } = useTranslation("lorebook-preview");
+  const { t: editor } = useTranslation("lorebook-editor");
   const api = useApi();
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -389,6 +390,21 @@ export function LorebookPreviewPage() {
                         </Chip>
                       ))}
                     </div>
+                    {entry.secondary_keywords.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-xs text-fg-3">{editor(`secondaryLogic.${entry.secondary_logic}`)}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {entry.secondary_keywords.map((keyword) => (
+                            <Chip
+                              key={keyword}
+                              selected={Boolean(match?.matched_secondary_keywords.includes(keyword))}
+                            >
+                              {keyword}
+                            </Chip>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <p className="line-clamp-4 whitespace-pre-wrap text-sm text-fg-2">
                       {entry.content}
                     </p>

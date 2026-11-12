@@ -69,8 +69,23 @@
   "tryLabel": "Ausprobieren",
   "tryHint": "Gib einen Satz ein, um zu sehen, welche Muster passen",
   "tryPlaceholder": "Eine Zeile aus dem Chat",
-  "tryFires": "Dieser Eintrag würde einbezogen",
-  "tryQuiet": "Dieser Eintrag bliebe draußen",
+  "tryFires": "Mindestens ein Muster passt",
+  "tryQuiet": "Kein Muster passt",
   "tryMatch": "Passt",
-  "tryNoMatch": "Passt nicht"
+  "tryNoMatch": "Passt nicht",
+  "secondary": "Sekundäre Schlüsselwörter",
+  "secondaryLogicLabel": "Sekundäre Bedingung",
+  "secondaryPlaceholder": "Optional. Gib ein Wort ein und drücke Enter",
+  "secondaryPatternLabel": "Sekundäres Muster {{number}}",
+  "secondaryLogic": {
+    "and_any": "Braucht auch eines davon",
+    "and_anyHint": "Kommt nur hinein, wenn auch eines davon vorkommt. Leer lassen für keine Bedingung.",
+    "and_all": "Braucht auch alle davon",
+    "and_allHint": "Kommt nur hinein, wenn auch alle davon vorkommen.",
+    "not_any": "Darf keines davon enthalten",
+    "not_anyHint": "Bleibt draußen, wenn eines davon vorkommt.",
+    "not_all": "Darf nicht alle davon enthalten",
+    "not_allHint": "Bleibt nur draußen, wenn alle davon zusammen vorkommen."
+  },
+  "addSecondaryPattern": "Sekundäres Muster hinzufügen"
 }

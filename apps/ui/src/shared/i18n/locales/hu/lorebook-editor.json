@@ -69,8 +69,23 @@
   "tryLabel": "Kipróbálás",
   "tryHint": "Írj be egy mondatot, hogy lásd, mely minták illeszkednek",
   "tryPlaceholder": "Egy sor a csevegésből",
-  "tryFires": "Ez a bejegyzés bekerülne",
-  "tryQuiet": "Ez a bejegyzés kimaradna",
+  "tryFires": "Legalább egy minta illeszkedik",
+  "tryQuiet": "Egy minta sem illeszkedik",
   "tryMatch": "Illeszkedik",
-  "tryNoMatch": "Nem illeszkedik"
+  "tryNoMatch": "Nem illeszkedik",
+  "secondary": "Másodlagos kulcsszavak",
+  "secondaryLogicLabel": "Másodlagos feltétel",
+  "secondaryPlaceholder": "Nem kötelező. Írj be egy szót, és nyomj Entert",
+  "secondaryPatternLabel": "{{number}}. másodlagos minta",
+  "secondaryLogic": {
+    "and_any": "Ezek közül egy is kell",
+    "and_anyHint": "Csak akkor kerül be, ha ezek közül egy is megjelenik. Feltétel nélkül hagyd üresen.",
+    "and_all": "Ezek mindegyike is kell",
+    "and_allHint": "Csak akkor kerül be, ha ezek mindegyike is megjelenik.",
+    "not_any": "Egyik sem lehet ezek közül",
+    "not_anyHint": "Kimarad, ha ezek közül bármelyik megjelenik.",
+    "not_all": "Nem lehet mindegyik ezek közül",
+    "not_allHint": "Csak akkor marad ki, ha ezek mind együtt megjelennek."
+  },
+  "addSecondaryPattern": "Másodlagos minta hozzáadása"
 }

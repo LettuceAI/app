@@ -68,8 +68,23 @@
   "tryLabel": "테스트",
   "tryHint": "문장을 입력하면 어떤 패턴이 일치하는지 볼 수 있습니다",
   "tryPlaceholder": "채팅의 한 줄",
-  "tryFires": "이 항목이 들어갑니다",
-  "tryQuiet": "이 항목은 들어가지 않습니다",
+  "tryFires": "하나 이상의 패턴이 일치",
+  "tryQuiet": "일치하는 패턴 없음",
   "tryMatch": "일치",
-  "tryNoMatch": "불일치"
+  "tryNoMatch": "불일치",
+  "secondary": "보조 키워드",
+  "secondaryLogicLabel": "보조 조건",
+  "secondaryPlaceholder": "선택 사항. 키워드를 입력하고 Enter",
+  "secondaryPatternLabel": "보조 패턴 {{number}}",
+  "secondaryLogic": {
+    "and_any": "이 중 하나도 필요",
+    "and_anyHint": "이 중 하나도 나올 때만 들어갑니다. 조건이 없으면 비워 두세요.",
+    "and_all": "이것들이 모두 필요",
+    "and_allHint": "이것들이 모두 나올 때만 들어갑니다.",
+    "not_any": "이 중 아무것도 없어야 함",
+    "not_anyHint": "이 중 하나라도 나오면 들어가지 않습니다.",
+    "not_all": "이것들이 모두 있으면 안 됨",
+    "not_allHint": "이것들이 모두 함께 나올 때만 들어가지 않습니다."
+  },
+  "addSecondaryPattern": "보조 패턴 추가"
 }

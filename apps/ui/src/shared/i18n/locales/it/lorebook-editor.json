@@ -70,8 +70,23 @@
   "tryLabel": "Prova",
   "tryHint": "Scrivi una frase per vedere quali pattern corrispondono",
   "tryPlaceholder": "Una riga della chat",
-  "tryFires": "Questa voce verrebbe inclusa",
-  "tryQuiet": "Questa voce resterebbe fuori",
+  "tryFires": "Almeno un pattern corrisponde",
+  "tryQuiet": "Nessun pattern corrisponde",
   "tryMatch": "Corrisponde",
-  "tryNoMatch": "Nessuna corrispondenza"
+  "tryNoMatch": "Nessuna corrispondenza",
+  "secondary": "Parole chiave secondarie",
+  "secondaryLogicLabel": "Condizione secondaria",
+  "secondaryPlaceholder": "Facoltativo. Scrivi una parola e premi Invio",
+  "secondaryPatternLabel": "Pattern secondario {{number}}",
+  "secondaryLogic": {
+    "and_any": "Richiede anche una di queste",
+    "and_anyHint": "Entra solo se compare anche una di queste. Lascia vuoto per nessuna condizione.",
+    "and_all": "Richiede anche tutte queste",
+    "and_allHint": "Entra solo se compaiono anche tutte queste.",
+    "not_any": "Non deve contenere nessuna di queste",
+    "not_anyHint": "Resta fuori se compare una qualsiasi di queste.",
+    "not_all": "Non deve contenere tutte queste",
+    "not_allHint": "Resta fuori solo se compaiono tutte insieme."
+  },
+  "addSecondaryPattern": "Aggiungi pattern secondario"
 }

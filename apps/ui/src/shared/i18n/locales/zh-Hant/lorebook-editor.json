@@ -68,8 +68,23 @@
   "tryLabel": "試試看",
   "tryHint": "輸入一句話，看看哪些模式會比對成功",
   "tryPlaceholder": "聊天中的一行",
-  "tryFires": "此條目會被加入",
-  "tryQuiet": "此條目不會被加入",
+  "tryFires": "至少有一個模式符合",
+  "tryQuiet": "沒有模式符合",
   "tryMatch": "符合",
-  "tryNoMatch": "不符合"
+  "tryNoMatch": "不符合",
+  "secondary": "次要關鍵字",
+  "secondaryLogicLabel": "次要條件",
+  "secondaryPlaceholder": "選填。輸入關鍵字後按 Enter",
+  "secondaryPatternLabel": "次要模式 {{number}}",
+  "secondaryLogic": {
+    "and_any": "還需要其中之一",
+    "and_anyHint": "只有其中之一也出現時才會加入。留空表示沒有條件。",
+    "and_all": "還需要全部這些",
+    "and_allHint": "只有這些全部也出現時才會加入。",
+    "not_any": "不能有其中任何一個",
+    "not_anyHint": "其中任何一個出現時都不會加入。",
+    "not_all": "不能同時有全部這些",
+    "not_allHint": "只有這些全部同時出現時才不會加入。"
+  },
+  "addSecondaryPattern": "新增次要模式"
 }

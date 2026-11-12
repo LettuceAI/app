@@ -70,8 +70,23 @@
   "tryLabel": "Essayer",
   "tryHint": "Tapez une phrase pour voir quels motifs correspondent",
   "tryPlaceholder": "Une ligne de la discussion",
-  "tryFires": "Cette entrée serait ajoutée",
-  "tryQuiet": "Cette entrée resterait à l'écart",
+  "tryFires": "Au moins un motif correspond",
+  "tryQuiet": "Aucun motif ne correspond",
   "tryMatch": "Correspond",
-  "tryNoMatch": "Ne correspond pas"
+  "tryNoMatch": "Ne correspond pas",
+  "secondary": "Mots-clés secondaires",
+  "secondaryLogicLabel": "Condition secondaire",
+  "secondaryPlaceholder": "Facultatif. Tapez un mot puis Entrée",
+  "secondaryPatternLabel": "Motif secondaire {{number}}",
+  "secondaryLogic": {
+    "and_any": "Nécessite aussi l'un de ceux-ci",
+    "and_anyHint": "N'est ajoutée que si l'un de ceux-ci apparaît aussi. Laissez vide pour aucune condition.",
+    "and_all": "Nécessite aussi tous ceux-ci",
+    "and_allHint": "N'est ajoutée que si tous ceux-ci apparaissent aussi.",
+    "not_any": "Ne doit contenir aucun de ceux-ci",
+    "not_anyHint": "Reste à l'écart si l'un de ceux-ci apparaît.",
+    "not_all": "Ne doit pas contenir tous ceux-ci",
+    "not_allHint": "Reste à l'écart seulement si tous ceux-ci apparaissent ensemble."
+  },
+  "addSecondaryPattern": "Ajouter un motif secondaire"
 }

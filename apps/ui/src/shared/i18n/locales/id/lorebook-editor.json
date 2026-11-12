@@ -68,8 +68,23 @@
   "tryLabel": "Coba",
   "tryHint": "Ketik kalimat untuk melihat pola mana yang cocok",
   "tryPlaceholder": "Satu baris dari obrolan",
-  "tryFires": "Entri ini akan masuk",
-  "tryQuiet": "Entri ini tidak akan masuk",
+  "tryFires": "Setidaknya satu pola cocok",
+  "tryQuiet": "Tidak ada pola yang cocok",
   "tryMatch": "Cocok",
-  "tryNoMatch": "Tidak cocok"
+  "tryNoMatch": "Tidak cocok",
+  "secondary": "Kata kunci sekunder",
+  "secondaryLogicLabel": "Syarat sekunder",
+  "secondaryPlaceholder": "Opsional. Ketik kata kunci lalu tekan Enter",
+  "secondaryPatternLabel": "Pola sekunder {{number}}",
+  "secondaryLogic": {
+    "and_any": "Juga butuh salah satu dari ini",
+    "and_anyHint": "Hanya masuk jika salah satu dari ini juga muncul. Kosongkan jika tanpa syarat.",
+    "and_all": "Juga butuh semua ini",
+    "and_allHint": "Hanya masuk jika semua ini juga muncul.",
+    "not_any": "Tidak boleh ada satu pun dari ini",
+    "not_anyHint": "Tidak masuk jika salah satu dari ini muncul.",
+    "not_all": "Tidak boleh ada semua ini",
+    "not_allHint": "Hanya tidak masuk jika semua ini muncul bersamaan."
+  },
+  "addSecondaryPattern": "Tambah pola sekunder"
 }

@@ -68,8 +68,23 @@
   "tryLabel": "Thử",
   "tryHint": "Nhập một câu để xem mẫu nào khớp",
   "tryPlaceholder": "Một dòng trong cuộc trò chuyện",
-  "tryFires": "Mục này sẽ được đưa vào",
-  "tryQuiet": "Mục này sẽ không được đưa vào",
+  "tryFires": "Có ít nhất một mẫu khớp",
+  "tryQuiet": "Không có mẫu nào khớp",
   "tryMatch": "Khớp",
-  "tryNoMatch": "Không khớp"
+  "tryNoMatch": "Không khớp",
+  "secondary": "Từ khóa phụ",
+  "secondaryLogicLabel": "Điều kiện phụ",
+  "secondaryPlaceholder": "Không bắt buộc. Nhập từ khóa rồi nhấn Enter",
+  "secondaryPatternLabel": "Mẫu phụ {{number}}",
+  "secondaryLogic": {
+    "and_any": "Cần thêm một trong số này",
+    "and_anyHint": "Chỉ được đưa vào khi một trong số này cũng xuất hiện. Để trống nếu không cần điều kiện.",
+    "and_all": "Cần thêm tất cả những từ này",
+    "and_allHint": "Chỉ được đưa vào khi tất cả những từ này cũng xuất hiện.",
+    "not_any": "Không được có từ nào trong số này",
+    "not_anyHint": "Không được đưa vào khi bất kỳ từ nào trong số này xuất hiện.",
+    "not_all": "Không được có tất cả những từ này",
+    "not_allHint": "Chỉ không được đưa vào khi tất cả cùng xuất hiện."
+  },
+  "addSecondaryPattern": "Thêm mẫu phụ"
 }

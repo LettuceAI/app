@@ -69,8 +69,23 @@
   "tryLabel": "Prøv",
   "tryHint": "Skriv en setning for å se hvilke mønstre som treffer",
   "tryPlaceholder": "En linje fra chatten",
-  "tryFires": "Denne oppføringen ville blitt tatt med",
-  "tryQuiet": "Denne oppføringen ville blitt utelatt",
+  "tryFires": "Minst ett mønster treffer",
+  "tryQuiet": "Ingen mønstre treffer",
   "tryMatch": "Treff",
-  "tryNoMatch": "Ikke treff"
+  "tryNoMatch": "Ikke treff",
+  "secondary": "Sekundære nøkkelord",
+  "secondaryLogicLabel": "Sekundær betingelse",
+  "secondaryPlaceholder": "Valgfritt. Skriv et nøkkelord og trykk Enter",
+  "secondaryPatternLabel": "Sekundært mønster {{number}}",
+  "secondaryLogic": {
+    "and_any": "Trenger også ett av disse",
+    "and_anyHint": "Tas bare med når også ett av disse dukker opp. La stå tomt for ingen betingelse.",
+    "and_all": "Trenger også alle disse",
+    "and_allHint": "Tas bare med når også alle disse dukker opp.",
+    "not_any": "Kan ikke ha noen av disse",
+    "not_anyHint": "Utelates når noen av disse dukker opp.",
+    "not_all": "Kan ikke ha alle disse",
+    "not_allHint": "Utelates bare når alle disse dukker opp samtidig."
+  },
+  "addSecondaryPattern": "Legg til sekundært mønster"
 }

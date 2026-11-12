@@ -69,8 +69,23 @@
   "tryLabel": "Subukan",
   "tryHint": "Mag-type ng pangungusap para makita kung aling pattern ang tumutugma",
   "tryPlaceholder": "Isang linya mula sa chat",
-  "tryFires": "Papasok ang entry na ito",
-  "tryQuiet": "Hindi papasok ang entry na ito",
+  "tryFires": "Kahit isang pattern ang tumutugma",
+  "tryQuiet": "Walang pattern na tumutugma",
   "tryMatch": "Tumutugma",
-  "tryNoMatch": "Hindi tumutugma"
+  "tryNoMatch": "Hindi tumutugma",
+  "secondary": "Mga pangalawang keyword",
+  "secondaryLogicLabel": "Pangalawang kondisyon",
+  "secondaryPlaceholder": "Opsyonal. Mag-type ng keyword at pindutin ang Enter",
+  "secondaryPatternLabel": "Pangalawang pattern {{number}}",
+  "secondaryLogic": {
+    "and_any": "Kailangan din ng isa sa mga ito",
+    "and_anyHint": "Papasok lang kapag lumitaw din ang isa sa mga ito. Iwanang blangko kung walang kondisyon.",
+    "and_all": "Kailangan din ang lahat ng ito",
+    "and_allHint": "Papasok lang kapag lumitaw din ang lahat ng ito.",
+    "not_any": "Hindi dapat may alinman sa mga ito",
+    "not_anyHint": "Hindi papasok kapag lumitaw ang alinman sa mga ito.",
+    "not_all": "Hindi dapat may lahat ng ito",
+    "not_allHint": "Hindi papasok lang kapag sabay-sabay na lumitaw ang lahat ng ito."
+  },
+  "addSecondaryPattern": "Magdagdag ng pangalawang pattern"
 }

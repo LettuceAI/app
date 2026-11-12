@@ -69,8 +69,23 @@
   "tryLabel": "Dene",
   "tryHint": "Hangi kalıpların eşleştiğini görmek için bir cümle yaz",
   "tryPlaceholder": "Sohbetten bir satır",
-  "tryFires": "Bu entry eklenirdi",
-  "tryQuiet": "Bu entry eklenmezdi",
+  "tryFires": "En az bir kalıp eşleşiyor",
+  "tryQuiet": "Hiçbir kalıp eşleşmiyor",
   "tryMatch": "Eşleşiyor",
-  "tryNoMatch": "Eşleşmiyor"
+  "tryNoMatch": "Eşleşmiyor",
+  "secondary": "İkincil anahtar kelimeler",
+  "secondaryLogicLabel": "İkincil şart",
+  "secondaryPlaceholder": "İsteğe bağlı. Bir kelime yaz ve Enter'a bas",
+  "secondaryPatternLabel": "İkincil kalıp {{number}}",
+  "secondaryLogic": {
+    "and_any": "Bunlardan biri de olmalı",
+    "and_anyHint": "Sadece bunlardan biri de geçtiğinde eklenir. Şart istemiyorsan boş bırak.",
+    "and_all": "Bunların hepsi de olmalı",
+    "and_allHint": "Sadece bunların hepsi de geçtiğinde eklenir.",
+    "not_any": "Bunlardan hiçbiri olmamalı",
+    "not_anyHint": "Bunlardan biri geçerse eklenmez.",
+    "not_all": "Bunların hepsi birden olmamalı",
+    "not_allHint": "Sadece bunların hepsi birlikte geçerse eklenmez."
+  },
+  "addSecondaryPattern": "İkincil kalıp ekle"
 }

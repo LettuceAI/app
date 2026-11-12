@@ -69,8 +69,23 @@
   "tryLabel": "Try it",
   "tryHint": "Type a sentence to see which patterns match",
   "tryPlaceholder": "A line from the chat",
-  "tryFires": "This entry would come in",
-  "tryQuiet": "This entry would stay out",
+  "tryFires": "At least one pattern matches",
+  "tryQuiet": "No pattern matches",
   "tryMatch": "Matches",
-  "tryNoMatch": "No match"
+  "tryNoMatch": "No match",
+  "secondary": "Secondary keywords",
+  "secondaryLogicLabel": "Secondary condition",
+  "secondaryPlaceholder": "Optional. Type a keyword and press Enter",
+  "secondaryPatternLabel": "Secondary pattern {{number}}",
+  "secondaryLogic": {
+    "and_any": "Also needs one of these",
+    "and_anyHint": "Comes in only when one of these also appears. Leave empty for no condition.",
+    "and_all": "Also needs all of these",
+    "and_allHint": "Comes in only when every one of these also appears.",
+    "not_any": "Must not have any of these",
+    "not_anyHint": "Stays out when any of these appears.",
+    "not_all": "Must not have all of these",
+    "not_allHint": "Stays out only when all of these appear together."
+  },
+  "addSecondaryPattern": "Add secondary pattern"
 }

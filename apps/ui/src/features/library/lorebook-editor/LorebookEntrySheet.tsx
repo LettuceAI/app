@@ -23,7 +23,8 @@ import {
 } from "@lettuceai/crisp";
 import type {
   LorebookEntriesMutateRequest,
-  LorebookEntryInput,
+  LorebookEntryInput_Serialize,
+  LorebookSecondaryLogic,
   LorebookEntryView,
   LorebookView_Serialize,
 } from "@/api/generated/bindings";
@@ -35,12 +36,17 @@ import { FailureState } from "@/shared/ui/FailureState";
 import { lorebookBookKey } from "./data";
 import { splitTags } from "@/shared/formatting/splitTags";
 import { PatternEditor } from "./PatternEditor";
+import { SelectMenuField } from "@/shared/ui/SelectMenuField";
 
-const blank: LorebookEntryInput = {
+const secondaryLogics: readonly LorebookSecondaryLogic[] = ["and_any", "and_all", "not_any", "not_all"];
+
+const blank: LorebookEntryInput_Serialize = {
   title: "",
   enabled: true,
   always_active: false,
   keywords: [],
+  secondary_keywords: [],
+  secondary_logic: "and_any",
   case_sensitive: false,
   keyword_mode: "literal",
   content: "",
@@ -74,13 +80,15 @@ export function LorebookEntrySheet({
   const api = useApi();
   const client = useQueryClient();
   const bookKey = lorebookBookKey(book.lorebook.id);
-  const [draft, setDraft] = useState<LorebookEntryInput>(() =>
+  const [draft, setDraft] = useState<LorebookEntryInput_Serialize>(() =>
     entry
       ? {
           title: entry.title,
           enabled: entry.enabled,
           always_active: entry.always_active,
           keywords: entry.keywords,
+          secondary_keywords: entry.secondary_keywords,
+          secondary_logic: entry.secondary_logic,
           case_sensitive: entry.case_sensitive,
           keyword_mode: entry.keyword_mode,
           content: entry.content,
@@ -90,7 +98,7 @@ export function LorebookEntrySheet({
   );
   const pending = useRef<LorebookEntriesMutateRequest | null>(null);
   const [revision, setRevision] = useState(book.lorebook.revision);
-  const update = (patch: Partial<LorebookEntryInput>) => {
+  const update = (patch: Partial<LorebookEntryInput_Serialize>) => {
     pending.current = null;
     mutation.reset();
     setDraft((value) => ({ ...value, ...patch }));
@@ -323,6 +331,9 @@ export function LorebookEntrySheet({
               >
                 {draft.keyword_mode === "regex" ? (
                   <PatternEditor
+                    key="primary"
+                    rowLabel={(number) => t("patternLabel", { number })}
+                    addLabel={t("addPattern")}
                     value={draft.keywords}
                     caseSensitive={draft.case_sensitive}
                     disabled={busy}
@@ -336,6 +347,43 @@ export function LorebookEntrySheet({
                     placeholder={t("keywordPlaceholder")}
                   />
                 )}
+              </Field>
+              <Field
+                label={t("secondary")}
+                hint={t(`secondaryLogic.${draft.secondary_logic}Hint`)}
+              >
+                <div className="space-y-2">
+                  <SelectMenuField
+                    aria-label={t("secondaryLogicLabel")}
+                    value={draft.secondary_logic}
+                    disabled={busy}
+                    onChange={(value) => value && update({ secondary_logic: value as LorebookSecondaryLogic })}
+                    options={secondaryLogics.map((logic) => ({
+                      value: logic,
+                      label: t(`secondaryLogic.${logic}`),
+                      description: t(`secondaryLogic.${logic}Hint`),
+                    }))}
+                  />
+                  {draft.keyword_mode === "regex" ? (
+                    <PatternEditor
+                      key="secondary"
+                      rowLabel={(number) => t("secondaryPatternLabel", { number })}
+                      addLabel={t("addSecondaryPattern")}
+                      tryable={false}
+                      value={draft.secondary_keywords}
+                      caseSensitive={draft.case_sensitive}
+                      disabled={busy}
+                      onChange={(secondary_keywords) => update({ secondary_keywords })}
+                    />
+                  ) : (
+                    <TagInput
+                      value={draft.secondary_keywords}
+                      disabled={busy}
+                      onChange={(secondary_keywords) => update({ secondary_keywords: splitTags(secondary_keywords) })}
+                      placeholder={t("secondaryPlaceholder")}
+                    />
+                  )}
+                </div>
               </Field>
               <div className="flex flex-wrap gap-2">
                 <Chip

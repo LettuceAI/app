@@ -68,8 +68,23 @@
   "tryLabel": "試す",
   "tryHint": "文を入力すると、どのパターンが一致するか確認できます",
   "tryPlaceholder": "チャットの1行",
-  "tryFires": "このエントリーは入ります",
-  "tryQuiet": "このエントリーは入りません",
+  "tryFires": "少なくとも1つのパターンが一致",
+  "tryQuiet": "どのパターンも一致しません",
   "tryMatch": "一致",
-  "tryNoMatch": "不一致"
+  "tryNoMatch": "不一致",
+  "secondary": "サブキーワード",
+  "secondaryLogicLabel": "サブ条件",
+  "secondaryPlaceholder": "任意。キーワードを入力してEnter",
+  "secondaryPatternLabel": "サブパターン {{number}}",
+  "secondaryLogic": {
+    "and_any": "これらのどれかも必要",
+    "and_anyHint": "これらのどれかも出たときだけ入ります。条件なしなら空のままにします。",
+    "and_all": "これらすべても必要",
+    "and_allHint": "これらすべても出たときだけ入ります。",
+    "not_any": "これらのどれも含まない",
+    "not_anyHint": "これらのどれかが出ると入りません。",
+    "not_all": "これらすべては含まない",
+    "not_allHint": "これらすべてが同時に出たときだけ入りません。"
+  },
+  "addSecondaryPattern": "サブパターンを追加"
 }

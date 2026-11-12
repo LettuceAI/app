@@ -71,8 +71,23 @@
   "tryLabel": "Wypróbuj",
   "tryHint": "Wpisz zdanie, aby zobaczyć, które wzorce pasują",
   "tryPlaceholder": "Wiersz z czatu",
-  "tryFires": "Ten wpis zostałby dodany",
-  "tryQuiet": "Ten wpis zostałby pominięty",
+  "tryFires": "Co najmniej jeden wzorzec pasuje",
+  "tryQuiet": "Żaden wzorzec nie pasuje",
   "tryMatch": "Pasuje",
-  "tryNoMatch": "Nie pasuje"
+  "tryNoMatch": "Nie pasuje",
+  "secondary": "Dodatkowe słowa kluczowe",
+  "secondaryLogicLabel": "Warunek dodatkowy",
+  "secondaryPlaceholder": "Opcjonalne. Wpisz słowo i naciśnij Enter",
+  "secondaryPatternLabel": "Dodatkowy wzorzec {{number}}",
+  "secondaryLogic": {
+    "and_any": "Wymaga też jednego z nich",
+    "and_anyHint": "Wchodzi tylko, gdy pojawi się też jedno z nich. Zostaw puste, aby nie dodawać warunku.",
+    "and_all": "Wymaga też wszystkich",
+    "and_allHint": "Wchodzi tylko, gdy pojawią się też wszystkie.",
+    "not_any": "Nie może zawierać żadnego z nich",
+    "not_anyHint": "Nie wchodzi, gdy pojawi się którekolwiek z nich.",
+    "not_all": "Nie może zawierać wszystkich",
+    "not_allHint": "Nie wchodzi tylko, gdy wszystkie pojawią się razem."
+  },
+  "addSecondaryPattern": "Dodaj dodatkowy wzorzec"
 }

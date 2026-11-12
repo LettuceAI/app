@@ -70,8 +70,23 @@
   "tryLabel": "Testar",
   "tryHint": "Digite uma frase para ver quais padrões correspondem",
   "tryPlaceholder": "Uma linha do chat",
-  "tryFires": "Esta entrada seria incluída",
-  "tryQuiet": "Esta entrada ficaria de fora",
+  "tryFires": "Pelo menos um padrão corresponde",
+  "tryQuiet": "Nenhum padrão corresponde",
   "tryMatch": "Corresponde",
-  "tryNoMatch": "Não corresponde"
+  "tryNoMatch": "Não corresponde",
+  "secondary": "Palavras-chave secundárias",
+  "secondaryLogicLabel": "Condição secundária",
+  "secondaryPlaceholder": "Opcional. Digite uma palavra e pressione Enter",
+  "secondaryPatternLabel": "Padrão secundário {{number}}",
+  "secondaryLogic": {
+    "and_any": "Também precisa de uma destas",
+    "and_anyHint": "Só entra quando uma destas também aparece. Deixe vazio para nenhuma condição.",
+    "and_all": "Também precisa de todas estas",
+    "and_allHint": "Só entra quando todas estas também aparecem.",
+    "not_any": "Não pode ter nenhuma destas",
+    "not_anyHint": "Fica de fora quando qualquer uma destas aparece.",
+    "not_all": "Não pode ter todas estas",
+    "not_allHint": "Só fica de fora quando todas aparecem juntas."
+  },
+  "addSecondaryPattern": "Adicionar padrão secundário"
 }

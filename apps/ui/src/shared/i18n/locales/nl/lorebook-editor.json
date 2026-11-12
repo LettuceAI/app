@@ -69,8 +69,23 @@
   "tryLabel": "Uitproberen",
   "tryHint": "Typ een zin om te zien welke patronen overeenkomen",
   "tryPlaceholder": "Een regel uit de chat",
-  "tryFires": "Dit item zou erbij komen",
-  "tryQuiet": "Dit item zou wegblijven",
+  "tryFires": "Minstens één patroon komt overeen",
+  "tryQuiet": "Geen patroon komt overeen",
   "tryMatch": "Komt overeen",
-  "tryNoMatch": "Geen overeenkomst"
+  "tryNoMatch": "Geen overeenkomst",
+  "secondary": "Secundaire trefwoorden",
+  "secondaryLogicLabel": "Secundaire voorwaarde",
+  "secondaryPlaceholder": "Optioneel. Typ een trefwoord en druk op Enter",
+  "secondaryPatternLabel": "Secundair patroon {{number}}",
+  "secondaryLogic": {
+    "and_any": "Heeft ook een van deze nodig",
+    "and_anyHint": "Komt er alleen bij als ook een van deze voorkomt. Laat leeg voor geen voorwaarde.",
+    "and_all": "Heeft ook al deze nodig",
+    "and_allHint": "Komt er alleen bij als ook al deze voorkomen.",
+    "not_any": "Mag geen van deze bevatten",
+    "not_anyHint": "Blijft weg als een van deze voorkomt.",
+    "not_all": "Mag niet al deze bevatten",
+    "not_allHint": "Blijft alleen weg als al deze samen voorkomen."
+  },
+  "addSecondaryPattern": "Secundair patroon toevoegen"
 }
