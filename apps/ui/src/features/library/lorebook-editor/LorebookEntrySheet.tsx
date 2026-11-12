@@ -32,6 +32,7 @@ import { queryKeys } from "@/api/query-keys";
 import { watchJob } from "@/entities/job";
 import { FailureState } from "@/shared/ui/FailureState";
 import { lorebookBookKey } from "./data";
+import { splitTags } from "@/shared/formatting/splitTags";
 
 const blank: LorebookEntryInput = {
   title: "",
@@ -247,7 +248,7 @@ export function LorebookEntrySheet({
         </Field>
         <Field label={t("contentField")} required hint={t("contentHint", { count: words })}>
           <Textarea
-            rows={phone ? 5 : 8}
+            rows={phone ? 9 : 12}
             value={draft.content}
             disabled={busy}
             onChange={(event) => update({ content: event.target.value })}
@@ -310,7 +311,7 @@ export function LorebookEntrySheet({
                   separators={draft.keyword_mode === "regex" ? [] : [","]}
                   value={draft.keywords}
                   disabled={busy || suggesting}
-                  onChange={(keywords) => update({ keywords })}
+                  onChange={(keywords) => update({ keywords: draft.keyword_mode === "regex" ? keywords : splitTags(keywords) })}
                   placeholder={t(
                     draft.keyword_mode === "regex" ? "regexPlaceholder" : "keywordPlaceholder",
                   )}

@@ -3,6 +3,7 @@ import { Chip, Field, Input, TagInput, Textarea } from "@lettuceai/crisp";
 import { wordCount } from "../data/form";
 import { draftSetters } from "./draft-setters";
 import type { FormProps } from "./step-props";
+import { splitTags } from "@/shared/formatting/splitTags";
 
 export function NameField({ form, update, focus }: FormProps & { focus?: boolean }) {
   const { t } = useTranslation("characters");
@@ -60,7 +61,7 @@ export function TagsField({ form, update }: FormProps) {
   const { t } = useTranslation("characters");
   const { setProvenance } = draftSetters(update);
   return <Field label={t("extras.tags")}>
-    <TagInput value={form.draft.provenance.tags} placeholder={t("extras.tagsPlaceholder")} onChange={(tags) => setProvenance({ tags })} />
+    <TagInput value={form.draft.provenance.tags} placeholder={t("extras.tagsPlaceholder")} onChange={(tags) => setProvenance({ tags: splitTags(tags) })} />
   </Field>;
 }
 

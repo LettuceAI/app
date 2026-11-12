@@ -23,6 +23,7 @@ import type {
   LorebookPlanView,
 } from "@/api/generated/bindings";
 import { categories, category, type PastedSource } from "../data/lorebook-projects";
+import { splitTags } from "@/shared/formatting/splitTags";
 
 function Footer({
   busy,
@@ -181,7 +182,7 @@ export function PlanEditor({
           />
         </Field>
         <Field label={t("keywords")} hint={t("suggestedKeys")}>
-          <TagInput value={keys} onChange={setKeys} placeholder={t("keywordPlaceholder")} />
+          <TagInput value={keys} onChange={(next) => setKeys(splitTags(next))} placeholder={t("keywordPlaceholder")} />
         </Field>
         <Field label={t("coverage")} hint={t("coverageHint")}>
           <Textarea
@@ -276,7 +277,7 @@ export function DraftEditor({
           <Field label={t("keywords")} hint={t("keysHint")}>
             <TagInput
               value={keywords}
-              onChange={setKeywords}
+              onChange={(next) => setKeywords(splitTags(next))}
               placeholder={t("keywordPlaceholder")}
             />
           </Field>
