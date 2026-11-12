@@ -35,7 +35,6 @@
   "keywordsHint": "Cualquiera de estas en la conversación trae la entrada",
   "keywordPlaceholder": "Escribe una palabra clave y pulsa Enter",
   "regexPlaceholder": "manzana|plátano",
-  "regex": "Expresiones regulares",
   "caseSensitive": "Distinguir mayúsculas",
   "suggest": "Sugerir",
   "suggestNone": "No hay palabras clave nuevas que sugerir",
@@ -57,5 +56,22 @@
       "title": "World Info JSON",
       "body": "Archivo World Info JSON."
     }
-  }
+  },
+  "matchBy": "Coincidir por",
+  "modeKeywords": "Palabras clave",
+  "modeRegex": "Regex",
+  "patterns": "Patrones",
+  "patternsHint": "Una expresión regular por fila. Cualquier coincidencia añade la entrada.",
+  "patternLabel": "Patrón {{number}}",
+  "removePattern": "Quitar patrón",
+  "addPattern": "Añadir patrón",
+  "patternInvalid": "No es un patrón válido",
+  "patternUnsupported": "No se admiten lookarounds ni referencias inversas",
+  "tryLabel": "Probar",
+  "tryHint": "Escribe una frase para ver qué patrones coinciden",
+  "tryPlaceholder": "Una línea del chat",
+  "tryFires": "Esta entrada se incluiría",
+  "tryQuiet": "Esta entrada quedaría fuera",
+  "tryMatch": "Coincide",
+  "tryNoMatch": "No coincide"
 }

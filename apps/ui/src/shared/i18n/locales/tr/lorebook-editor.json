@@ -34,7 +34,6 @@
   "keywordsHint": "Konuşmadaki bunlardan herhangi biri girdiyi getirir",
   "keywordPlaceholder": "Bir anahtar kelime yazıp Enter'a basın",
   "regexPlaceholder": "apple|banana",
-  "regex": "Düzenli ifadeler",
   "caseSensitive": "Büyük/küçük harfe duyarlı",
   "suggest": "Öner",
   "suggestNone": "Önerilecek yeni anahtar kelime yok",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON dosyası."
     }
-  }
+  },
+  "matchBy": "Eşleşme türü",
+  "modeKeywords": "Anahtar kelimeler",
+  "modeRegex": "Regex",
+  "patterns": "Kalıplar",
+  "patternsHint": "Her satırda bir regex. Herhangi biri eşleşirse entry eklenir.",
+  "patternLabel": "Kalıp {{number}}",
+  "removePattern": "Kalıbı kaldır",
+  "addPattern": "Kalıp ekle",
+  "patternInvalid": "Geçerli bir kalıp değil",
+  "patternUnsupported": "İleri/geri bakış ve geri referanslar desteklenmiyor",
+  "tryLabel": "Dene",
+  "tryHint": "Hangi kalıpların eşleştiğini görmek için bir cümle yaz",
+  "tryPlaceholder": "Sohbetten bir satır",
+  "tryFires": "Bu entry eklenirdi",
+  "tryQuiet": "Bu entry eklenmezdi",
+  "tryMatch": "Eşleşiyor",
+  "tryNoMatch": "Eşleşmiyor"
 }

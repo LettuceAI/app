@@ -34,7 +34,6 @@
   "keywordsHint": "Hvis noen av disse finnes i samtalen, tas oppføringen med",
   "keywordPlaceholder": "Skriv et nøkkelord og trykk Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Regulære uttrykk",
   "caseSensitive": "Skill mellom store og små bokstaver",
   "suggest": "Foreslå",
   "suggestNone": "Ingen nye nøkkelord å foreslå",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON-fil."
     }
-  }
+  },
+  "matchBy": "Match etter",
+  "modeKeywords": "Nøkkelord",
+  "modeRegex": "Regex",
+  "patterns": "Mønstre",
+  "patternsHint": "Ett regulært uttrykk per linje. Ethvert treff tar med oppføringen.",
+  "patternLabel": "Mønster {{number}}",
+  "removePattern": "Fjern mønster",
+  "addPattern": "Legg til mønster",
+  "patternInvalid": "Ikke et gyldig mønster",
+  "patternUnsupported": "Lookaround og tilbakereferanser støttes ikke",
+  "tryLabel": "Prøv",
+  "tryHint": "Skriv en setning for å se hvilke mønstre som treffer",
+  "tryPlaceholder": "En linje fra chatten",
+  "tryFires": "Denne oppføringen ville blitt tatt med",
+  "tryQuiet": "Denne oppføringen ville blitt utelatt",
+  "tryMatch": "Treff",
+  "tryNoMatch": "Ikke treff"
 }

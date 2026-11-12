@@ -36,7 +36,6 @@
   "keywordsHint": "Будь-яке з них у розмові додає запис",
   "keywordPlaceholder": "Введіть ключове слово й натисніть Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Регулярні вирази",
   "caseSensitive": "Враховувати регістр",
   "suggest": "Запропонувати",
   "suggestNone": "Немає нових ключових слів для пропозиції",
@@ -58,5 +57,22 @@
       "title": "World Info JSON",
       "body": "Файл World Info JSON."
     }
-  }
+  },
+  "matchBy": "Збіг за",
+  "modeKeywords": "Ключові слова",
+  "modeRegex": "Regex",
+  "patterns": "Шаблони",
+  "patternsHint": "Один регулярний вираз на рядок. Будь-який збіг додає запис.",
+  "patternLabel": "Шаблон {{number}}",
+  "removePattern": "Видалити шаблон",
+  "addPattern": "Додати шаблон",
+  "patternInvalid": "Недійсний шаблон",
+  "patternUnsupported": "Lookaround і зворотні посилання не підтримуються",
+  "tryLabel": "Перевірити",
+  "tryHint": "Введіть речення, щоб побачити, які шаблони збігаються",
+  "tryPlaceholder": "Рядок із чату",
+  "tryFires": "Цей запис було б додано",
+  "tryQuiet": "Цей запис не було б додано",
+  "tryMatch": "Збігається",
+  "tryNoMatch": "Не збігається"
 }

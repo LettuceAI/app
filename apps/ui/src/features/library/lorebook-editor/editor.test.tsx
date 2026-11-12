@@ -275,6 +275,42 @@ describe("lorebook editor page", () => {
     expect(await screen.findByText("Ended three months ago.")).toBeTruthy();
   });
 
+  it("edits regex patterns one per row, flags bad ones and tries them on a sentence", async () => {
+    const { store } = await setup();
+    await screen.findByText("Gate content");
+    fireEvent.click(screen.getByRole("button", { name: "New entry" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Content" }), {
+      target: { value: "Doc patches people up." },
+    });
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Regex" }));
+    expect(within(dialog).queryByRole("button", { name: "Suggest" })).toBeNull();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Pattern 1" }), {
+      target: { value: "(?<=doc) medic" },
+    });
+    expect(within(dialog).getByText("Lookarounds and backreferences are not supported")).toBeTruthy();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Pattern 1" }), {
+      target: { value: "doc(tor)? (patches|fixes)" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add pattern" }));
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Pattern 2" }), {
+      target: { value: "(medic" },
+    });
+    expect(within(dialog).getByText("Not a valid pattern")).toBeTruthy();
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Pattern 2" }), {
+      target: { value: "field medic" },
+    });
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Try it" }), {
+      target: { value: "Then Doc fixes his arm." },
+    });
+    expect(within(dialog).getByText("This entry would come in")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save entry" }));
+    await waitFor(() => expect(store.writes).toHaveLength(1));
+    expect(store.writes[0]).toMatchObject({
+      mutations: [{ entry: { keyword_mode: "regex", keywords: ["doc(tor)? (patches|fixes)", "field medic"] } }],
+    });
+  });
+
   it("starts a second new entry empty", async () => {
     await setup();
     await screen.findByText("Gate content");

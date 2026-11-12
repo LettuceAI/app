@@ -35,7 +35,6 @@
   "keywordsHint": "N'importe lequel de ces mots dans la conversation fait apparaître l'entrée",
   "keywordPlaceholder": "Saisissez un mot-clé et appuyez sur Entrée",
   "regexPlaceholder": "apple|banana",
-  "regex": "Expressions régulières",
   "caseSensitive": "Sensible à la casse",
   "suggest": "Suggérer",
   "suggestNone": "Aucun nouveau mot-clé à suggérer",
@@ -57,5 +56,22 @@
       "title": "World Info JSON",
       "body": "Fichier World Info JSON."
     }
-  }
+  },
+  "matchBy": "Correspondance par",
+  "modeKeywords": "Mots-clés",
+  "modeRegex": "Regex",
+  "patterns": "Motifs",
+  "patternsHint": "Une expression régulière par ligne. Toute correspondance ajoute l'entrée.",
+  "patternLabel": "Motif {{number}}",
+  "removePattern": "Retirer le motif",
+  "addPattern": "Ajouter un motif",
+  "patternInvalid": "Motif non valide",
+  "patternUnsupported": "Les lookarounds et références arrière ne sont pas pris en charge",
+  "tryLabel": "Essayer",
+  "tryHint": "Tapez une phrase pour voir quels motifs correspondent",
+  "tryPlaceholder": "Une ligne de la discussion",
+  "tryFires": "Cette entrée serait ajoutée",
+  "tryQuiet": "Cette entrée resterait à l'écart",
+  "tryMatch": "Correspond",
+  "tryNoMatch": "Ne correspond pas"
 }

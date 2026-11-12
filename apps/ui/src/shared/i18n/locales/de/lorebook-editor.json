@@ -34,7 +34,6 @@
   "keywordsHint": "Jedes davon im Gespräch ruft den Eintrag auf",
   "keywordPlaceholder": "Schlüsselwort eingeben und Enter drücken",
   "regexPlaceholder": "apfel|banane",
-  "regex": "Reguläre Ausdrücke",
   "caseSensitive": "Groß-/Kleinschreibung beachten",
   "suggest": "Vorschlagen",
   "suggestNone": "Keine neuen Schlüsselwörter zum Vorschlagen",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "World-Info-JSON-Datei."
     }
-  }
+  },
+  "matchBy": "Abgleich über",
+  "modeKeywords": "Schlüsselwörter",
+  "modeRegex": "Regex",
+  "patterns": "Muster",
+  "patternsHint": "Ein regulärer Ausdruck pro Zeile. Jeder Treffer bringt den Eintrag hinein.",
+  "patternLabel": "Muster {{number}}",
+  "removePattern": "Muster entfernen",
+  "addPattern": "Muster hinzufügen",
+  "patternInvalid": "Kein gültiges Muster",
+  "patternUnsupported": "Lookarounds und Rückverweise werden nicht unterstützt",
+  "tryLabel": "Ausprobieren",
+  "tryHint": "Gib einen Satz ein, um zu sehen, welche Muster passen",
+  "tryPlaceholder": "Eine Zeile aus dem Chat",
+  "tryFires": "Dieser Eintrag würde einbezogen",
+  "tryQuiet": "Dieser Eintrag bliebe draußen",
+  "tryMatch": "Passt",
+  "tryNoMatch": "Passt nicht"
 }

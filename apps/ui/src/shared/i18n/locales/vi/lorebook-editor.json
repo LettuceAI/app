@@ -33,7 +33,6 @@
   "keywordsHint": "Bất kỳ từ nào trong số này xuất hiện trong cuộc trò chuyện sẽ kéo mục vào",
   "keywordPlaceholder": "Nhập từ khóa rồi nhấn Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Biểu thức chính quy",
   "caseSensitive": "Phân biệt chữ hoa/thường",
   "suggest": "Gợi ý",
   "suggestNone": "Không có từ khóa mới để gợi ý",
@@ -55,5 +54,22 @@
       "title": "World Info JSON",
       "body": "Tệp World Info JSON."
     }
-  }
+  },
+  "matchBy": "Khớp theo",
+  "modeKeywords": "Từ khóa",
+  "modeRegex": "Regex",
+  "patterns": "Mẫu",
+  "patternsHint": "Mỗi dòng một biểu thức chính quy. Bất kỳ mẫu nào khớp sẽ đưa mục vào.",
+  "patternLabel": "Mẫu {{number}}",
+  "removePattern": "Xóa mẫu",
+  "addPattern": "Thêm mẫu",
+  "patternInvalid": "Mẫu không hợp lệ",
+  "patternUnsupported": "Không hỗ trợ lookaround và tham chiếu ngược",
+  "tryLabel": "Thử",
+  "tryHint": "Nhập một câu để xem mẫu nào khớp",
+  "tryPlaceholder": "Một dòng trong cuộc trò chuyện",
+  "tryFires": "Mục này sẽ được đưa vào",
+  "tryQuiet": "Mục này sẽ không được đưa vào",
+  "tryMatch": "Khớp",
+  "tryNoMatch": "Không khớp"
 }

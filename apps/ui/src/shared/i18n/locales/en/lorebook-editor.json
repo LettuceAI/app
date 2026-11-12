@@ -34,7 +34,6 @@
   "keywordsHint": "Any of these in the conversation brings the entry in",
   "keywordPlaceholder": "Type a keyword and press Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Regular expressions",
   "caseSensitive": "Case sensitive",
   "suggest": "Suggest",
   "suggestNone": "No new keywords to suggest",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON file."
     }
-  }
+  },
+  "matchBy": "Match by",
+  "modeKeywords": "Keywords",
+  "modeRegex": "Regex",
+  "patterns": "Patterns",
+  "patternsHint": "One regular expression per row. Any match brings the entry in.",
+  "patternLabel": "Pattern {{number}}",
+  "removePattern": "Remove pattern",
+  "addPattern": "Add pattern",
+  "patternInvalid": "Not a valid pattern",
+  "patternUnsupported": "Lookarounds and backreferences are not supported",
+  "tryLabel": "Try it",
+  "tryHint": "Type a sentence to see which patterns match",
+  "tryPlaceholder": "A line from the chat",
+  "tryFires": "This entry would come in",
+  "tryQuiet": "This entry would stay out",
+  "tryMatch": "Matches",
+  "tryNoMatch": "No match"
 }

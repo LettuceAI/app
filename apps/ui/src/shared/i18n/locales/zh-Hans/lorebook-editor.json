@@ -33,7 +33,6 @@
   "keywordsHint": "对话中出现任意一个，就会引入该条目",
   "keywordPlaceholder": "输入关键词后按回车",
   "regexPlaceholder": "苹果|香蕉",
-  "regex": "正则表达式",
   "caseSensitive": "区分大小写",
   "suggest": "建议",
   "suggestNone": "没有可建议的新关键词",
@@ -55,5 +54,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON 文件。"
     }
-  }
+  },
+  "matchBy": "匹配方式",
+  "modeKeywords": "关键词",
+  "modeRegex": "正则",
+  "patterns": "模式",
+  "patternsHint": "每行一个正则表达式。任一匹配即加入该条目。",
+  "patternLabel": "模式 {{number}}",
+  "removePattern": "移除模式",
+  "addPattern": "添加模式",
+  "patternInvalid": "不是有效的模式",
+  "patternUnsupported": "不支持前后查找和反向引用",
+  "tryLabel": "试一试",
+  "tryHint": "输入一句话，看看哪些模式会匹配",
+  "tryPlaceholder": "聊天中的一行",
+  "tryFires": "该条目会被加入",
+  "tryQuiet": "该条目不会被加入",
+  "tryMatch": "匹配",
+  "tryNoMatch": "不匹配"
 }

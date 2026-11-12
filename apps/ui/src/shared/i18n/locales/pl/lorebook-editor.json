@@ -36,7 +36,6 @@
   "keywordsHint": "Każde z nich w rozmowie przywołuje wpis",
   "keywordPlaceholder": "Wpisz słowo kluczowe i naciśnij Enter",
   "regexPlaceholder": "jabłko|banan",
-  "regex": "Wyrażenia regularne",
   "caseSensitive": "Uwzględniaj wielkość liter",
   "suggest": "Zaproponuj",
   "suggestNone": "Brak nowych słów kluczowych do zaproponowania",
@@ -58,5 +57,22 @@
       "title": "World Info JSON",
       "body": "Plik World Info JSON."
     }
-  }
+  },
+  "matchBy": "Dopasowanie przez",
+  "modeKeywords": "Słowa kluczowe",
+  "modeRegex": "Regex",
+  "patterns": "Wzorce",
+  "patternsHint": "Jedno wyrażenie regularne w wierszu. Każde dopasowanie dodaje wpis.",
+  "patternLabel": "Wzorzec {{number}}",
+  "removePattern": "Usuń wzorzec",
+  "addPattern": "Dodaj wzorzec",
+  "patternInvalid": "Nieprawidłowy wzorzec",
+  "patternUnsupported": "Lookaround i odwołania wsteczne nie są obsługiwane",
+  "tryLabel": "Wypróbuj",
+  "tryHint": "Wpisz zdanie, aby zobaczyć, które wzorce pasują",
+  "tryPlaceholder": "Wiersz z czatu",
+  "tryFires": "Ten wpis zostałby dodany",
+  "tryQuiet": "Ten wpis zostałby pominięty",
+  "tryMatch": "Pasuje",
+  "tryNoMatch": "Nie pasuje"
 }

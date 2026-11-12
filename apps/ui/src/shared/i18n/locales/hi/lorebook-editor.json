@@ -34,7 +34,6 @@
   "keywordsHint": "बातचीत में इनमें से कोई भी एंट्री को सामने लाता है",
   "keywordPlaceholder": "कीवर्ड लिखें और Enter दबाएँ",
   "regexPlaceholder": "apple|banana",
-  "regex": "रेगुलर एक्सप्रेशन",
   "caseSensitive": "केस संवेदी",
   "suggest": "सुझाएँ",
   "suggestNone": "सुझाने के लिए नए कीवर्ड नहीं",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON फ़ाइल।"
     }
-  }
+  },
+  "matchBy": "मिलान का तरीका",
+  "modeKeywords": "कीवर्ड",
+  "modeRegex": "Regex",
+  "patterns": "पैटर्न",
+  "patternsHint": "हर पंक्ति में एक रेगुलर एक्सप्रेशन। कोई भी मिलान एंट्री जोड़ देता है।",
+  "patternLabel": "पैटर्न {{number}}",
+  "removePattern": "पैटर्न हटाएँ",
+  "addPattern": "पैटर्न जोड़ें",
+  "patternInvalid": "मान्य पैटर्न नहीं है",
+  "patternUnsupported": "लुकअराउंड और बैकरेफ़रेंस समर्थित नहीं हैं",
+  "tryLabel": "आज़माएँ",
+  "tryHint": "कौन से पैटर्न मिलते हैं, यह देखने के लिए एक वाक्य लिखें",
+  "tryPlaceholder": "चैट की एक पंक्ति",
+  "tryFires": "यह एंट्री जुड़ जाती",
+  "tryQuiet": "यह एंट्री बाहर रहती",
+  "tryMatch": "मिलता है",
+  "tryNoMatch": "नहीं मिलता"
 }

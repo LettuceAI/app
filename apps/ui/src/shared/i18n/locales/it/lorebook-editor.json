@@ -35,7 +35,6 @@
   "keywordsHint": "Una qualsiasi di queste nella conversazione richiama la voce",
   "keywordPlaceholder": "Scrivi una parola chiave e premi Invio",
   "regexPlaceholder": "mela|banana",
-  "regex": "Espressioni regolari",
   "caseSensitive": "Distingui maiuscole/minuscole",
   "suggest": "Suggerisci",
   "suggestNone": "Nessuna nuova parola chiave da suggerire",
@@ -57,5 +56,22 @@
       "title": "World Info JSON",
       "body": "File World Info JSON."
     }
-  }
+  },
+  "matchBy": "Corrispondenza per",
+  "modeKeywords": "Parole chiave",
+  "modeRegex": "Regex",
+  "patterns": "Pattern",
+  "patternsHint": "Un'espressione regolare per riga. Qualsiasi corrispondenza aggiunge la voce.",
+  "patternLabel": "Pattern {{number}}",
+  "removePattern": "Rimuovi pattern",
+  "addPattern": "Aggiungi pattern",
+  "patternInvalid": "Pattern non valido",
+  "patternUnsupported": "Lookaround e riferimenti all'indietro non sono supportati",
+  "tryLabel": "Prova",
+  "tryHint": "Scrivi una frase per vedere quali pattern corrispondono",
+  "tryPlaceholder": "Una riga della chat",
+  "tryFires": "Questa voce verrebbe inclusa",
+  "tryQuiet": "Questa voce resterebbe fuori",
+  "tryMatch": "Corrisponde",
+  "tryNoMatch": "Nessuna corrispondenza"
 }

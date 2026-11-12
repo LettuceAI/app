@@ -34,7 +34,6 @@
   "keywordsHint": "Elk van deze in het gesprek haalt het item erbij",
   "keywordPlaceholder": "Typ een trefwoord en druk op Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Reguliere expressies",
   "caseSensitive": "Hoofdlettergevoelig",
   "suggest": "Suggestie",
   "suggestNone": "Geen nieuwe trefwoorden om voor te stellen",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON-bestand."
     }
-  }
+  },
+  "matchBy": "Overeenkomst via",
+  "modeKeywords": "Trefwoorden",
+  "modeRegex": "Regex",
+  "patterns": "Patronen",
+  "patternsHint": "Eén reguliere expressie per regel. Elke overeenkomst haalt het item erbij.",
+  "patternLabel": "Patroon {{number}}",
+  "removePattern": "Patroon verwijderen",
+  "addPattern": "Patroon toevoegen",
+  "patternInvalid": "Geen geldig patroon",
+  "patternUnsupported": "Lookarounds en terugverwijzingen worden niet ondersteund",
+  "tryLabel": "Uitproberen",
+  "tryHint": "Typ een zin om te zien welke patronen overeenkomen",
+  "tryPlaceholder": "Een regel uit de chat",
+  "tryFires": "Dit item zou erbij komen",
+  "tryQuiet": "Dit item zou wegblijven",
+  "tryMatch": "Komt overeen",
+  "tryNoMatch": "Geen overeenkomst"
 }

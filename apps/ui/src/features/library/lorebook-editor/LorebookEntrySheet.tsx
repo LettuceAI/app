@@ -14,6 +14,7 @@ import {
   ListGroup,
   ListRow,
   motion as m,
+  Segmented,
   Sheet,
   Switch,
   TagInput,
@@ -33,6 +34,7 @@ import { watchJob } from "@/entities/job";
 import { FailureState } from "@/shared/ui/FailureState";
 import { lorebookBookKey } from "./data";
 import { splitTags } from "@/shared/formatting/splitTags";
+import { PatternEditor } from "./PatternEditor";
 
 const blank: LorebookEntryInput = {
   title: "",
@@ -289,44 +291,53 @@ export function LorebookEntrySheet({
               transition={m.settle}
               className="space-y-4 overflow-hidden"
             >
+              <Segmented
+                block
+                aria-label={t("matchBy")}
+                value={draft.keyword_mode}
+                onChange={(keyword_mode) => update({ keyword_mode })}
+                options={[
+                  { value: "literal", label: t("modeKeywords") },
+                  { value: "regex", label: t("modeRegex") },
+                ]}
+              />
               <Field
                 label={
                   <span className="flex items-center justify-between">
-                    <span>{t("keywords")}</span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      loading={suggesting}
-                      leading={<Sparkles size={icon.xs} />}
-                      disabled={busy || !draft.content.trim()}
-                      onClick={() => void suggest()}
-                    >
-                      {t("suggest")}
-                    </Button>
+                    <span>{t(draft.keyword_mode === "regex" ? "patterns" : "keywords")}</span>
+                    {draft.keyword_mode === "literal" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={suggesting}
+                        leading={<Sparkles size={icon.xs} />}
+                        disabled={busy || !draft.content.trim()}
+                        onClick={() => void suggest()}
+                      >
+                        {t("suggest")}
+                      </Button>
+                    )}
                   </span>
                 }
-                hint={t("keywordsHint")}
+                hint={t(draft.keyword_mode === "regex" ? "patternsHint" : "keywordsHint")}
               >
-                <TagInput
-                  separators={draft.keyword_mode === "regex" ? [] : [","]}
-                  value={draft.keywords}
-                  disabled={busy || suggesting}
-                  onChange={(keywords) => update({ keywords: draft.keyword_mode === "regex" ? keywords : splitTags(keywords) })}
-                  placeholder={t(
-                    draft.keyword_mode === "regex" ? "regexPlaceholder" : "keywordPlaceholder",
-                  )}
-                />
+                {draft.keyword_mode === "regex" ? (
+                  <PatternEditor
+                    value={draft.keywords}
+                    caseSensitive={draft.case_sensitive}
+                    disabled={busy}
+                    onChange={(keywords) => update({ keywords })}
+                  />
+                ) : (
+                  <TagInput
+                    value={draft.keywords}
+                    disabled={busy || suggesting}
+                    onChange={(keywords) => update({ keywords: splitTags(keywords) })}
+                    placeholder={t("keywordPlaceholder")}
+                  />
+                )}
               </Field>
               <div className="flex flex-wrap gap-2">
-                <Chip
-                  selected={draft.keyword_mode === "regex"}
-                  disabled={busy || suggesting}
-                  onClick={() =>
-                    update({ keyword_mode: draft.keyword_mode === "regex" ? "literal" : "regex" })
-                  }
-                >
-                  {t("regex")}
-                </Chip>
                 <Chip
                   selected={draft.case_sensitive}
                   disabled={busy || suggesting}

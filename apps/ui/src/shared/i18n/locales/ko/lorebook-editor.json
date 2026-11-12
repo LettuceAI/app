@@ -33,7 +33,6 @@
   "keywordsHint": "대화에 이 중 하나라도 나오면 항목이 포함돼요",
   "keywordPlaceholder": "키워드를 입력하고 Enter를 누르세요",
   "regexPlaceholder": "apple|banana",
-  "regex": "정규식",
   "caseSensitive": "대소문자 구분",
   "suggest": "추천",
   "suggestNone": "추천할 새 키워드가 없어요",
@@ -55,5 +54,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON 파일이에요."
     }
-  }
+  },
+  "matchBy": "일치 기준",
+  "modeKeywords": "키워드",
+  "modeRegex": "정규식",
+  "patterns": "패턴",
+  "patternsHint": "한 줄에 정규식 하나. 하나라도 일치하면 항목이 들어갑니다.",
+  "patternLabel": "패턴 {{number}}",
+  "removePattern": "패턴 삭제",
+  "addPattern": "패턴 추가",
+  "patternInvalid": "올바른 패턴이 아닙니다",
+  "patternUnsupported": "전후방 탐색과 역참조는 지원하지 않습니다",
+  "tryLabel": "테스트",
+  "tryHint": "문장을 입력하면 어떤 패턴이 일치하는지 볼 수 있습니다",
+  "tryPlaceholder": "채팅의 한 줄",
+  "tryFires": "이 항목이 들어갑니다",
+  "tryQuiet": "이 항목은 들어가지 않습니다",
+  "tryMatch": "일치",
+  "tryNoMatch": "불일치"
 }

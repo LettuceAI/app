@@ -33,7 +33,6 @@
   "keywordsHint": "会話にこれらのいずれかがあるとエントリーが呼び出されます",
   "keywordPlaceholder": "キーワードを入力してEnter",
   "regexPlaceholder": "apple|banana",
-  "regex": "正規表現",
   "caseSensitive": "大文字と小文字を区別",
   "suggest": "提案",
   "suggestNone": "提案できる新しいキーワードはありません",
@@ -55,5 +54,22 @@
       "title": "World Info JSON",
       "body": "World Info JSONファイル。"
     }
-  }
+  },
+  "matchBy": "一致方法",
+  "modeKeywords": "キーワード",
+  "modeRegex": "正規表現",
+  "patterns": "パターン",
+  "patternsHint": "1行に1つの正規表現。どれかが一致するとエントリーが入ります。",
+  "patternLabel": "パターン {{number}}",
+  "removePattern": "パターンを削除",
+  "addPattern": "パターンを追加",
+  "patternInvalid": "有効なパターンではありません",
+  "patternUnsupported": "先読み・後読みと後方参照には対応していません",
+  "tryLabel": "試す",
+  "tryHint": "文を入力すると、どのパターンが一致するか確認できます",
+  "tryPlaceholder": "チャットの1行",
+  "tryFires": "このエントリーは入ります",
+  "tryQuiet": "このエントリーは入りません",
+  "tryMatch": "一致",
+  "tryNoMatch": "不一致"
 }

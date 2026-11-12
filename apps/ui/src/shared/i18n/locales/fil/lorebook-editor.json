@@ -34,7 +34,6 @@
   "keywordsHint": "Kapag may alinman sa mga ito sa usapan, papasok ang entry",
   "keywordPlaceholder": "I-type ang keyword at pindutin ang Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Mga regular expression",
   "caseSensitive": "Case sensitive",
   "suggest": "Magmungkahi",
   "suggestNone": "Walang bagong keyword na imumungkahi",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON na file."
     }
-  }
+  },
+  "matchBy": "I-match gamit ang",
+  "modeKeywords": "Mga keyword",
+  "modeRegex": "Regex",
+  "patterns": "Mga pattern",
+  "patternsHint": "Isang regular expression bawat hilera. Kapag may tumugma, papasok ang entry.",
+  "patternLabel": "Pattern {{number}}",
+  "removePattern": "Alisin ang pattern",
+  "addPattern": "Magdagdag ng pattern",
+  "patternInvalid": "Hindi wastong pattern",
+  "patternUnsupported": "Hindi suportado ang lookaround at backreference",
+  "tryLabel": "Subukan",
+  "tryHint": "Mag-type ng pangungusap para makita kung aling pattern ang tumutugma",
+  "tryPlaceholder": "Isang linya mula sa chat",
+  "tryFires": "Papasok ang entry na ito",
+  "tryQuiet": "Hindi papasok ang entry na ito",
+  "tryMatch": "Tumutugma",
+  "tryNoMatch": "Hindi tumutugma"
 }

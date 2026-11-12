@@ -34,7 +34,6 @@
   "keywordsHint": "Οποιαδήποτε από αυτές στη συνομιλία φέρνει την καταχώριση",
   "keywordPlaceholder": "Πληκτρολογήστε μια λέξη-κλειδί και πατήστε Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Κανονικές εκφράσεις",
   "caseSensitive": "Διάκριση πεζών-κεφαλαίων",
   "suggest": "Πρόταση",
   "suggestNone": "Δεν υπάρχουν νέες λέξεις-κλειδιά για πρόταση",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "Αρχείο World Info JSON."
     }
-  }
+  },
+  "matchBy": "Αντιστοίχιση με",
+  "modeKeywords": "Λέξεις-κλειδιά",
+  "modeRegex": "Regex",
+  "patterns": "Μοτίβα",
+  "patternsHint": "Μία κανονική έκφραση ανά γραμμή. Οποιαδήποτε αντιστοίχιση φέρνει την καταχώριση.",
+  "patternLabel": "Μοτίβο {{number}}",
+  "removePattern": "Αφαίρεση μοτίβου",
+  "addPattern": "Προσθήκη μοτίβου",
+  "patternInvalid": "Μη έγκυρο μοτίβο",
+  "patternUnsupported": "Τα lookaround και οι αναφορές προς τα πίσω δεν υποστηρίζονται",
+  "tryLabel": "Δοκιμή",
+  "tryHint": "Γράψτε μια πρόταση για να δείτε ποια μοτίβα ταιριάζουν",
+  "tryPlaceholder": "Μια γραμμή από τη συνομιλία",
+  "tryFires": "Αυτή η καταχώριση θα έμπαινε",
+  "tryQuiet": "Αυτή η καταχώριση θα έμενε εκτός",
+  "tryMatch": "Ταιριάζει",
+  "tryNoMatch": "Δεν ταιριάζει"
 }

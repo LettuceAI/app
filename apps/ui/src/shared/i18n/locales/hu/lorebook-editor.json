@@ -34,7 +34,6 @@
   "keywordsHint": "Ha bármelyik szerepel a beszélgetésben, bekerül a bejegyzés",
   "keywordPlaceholder": "Írj be egy kulcsszót, és nyomj Entert",
   "regexPlaceholder": "apple|banana",
-  "regex": "Reguláris kifejezések",
   "caseSensitive": "Kis- és nagybetű érzékeny",
   "suggest": "Javaslat",
   "suggestNone": "Nincs új javasolható kulcsszó",
@@ -56,5 +55,22 @@
       "title": "World Info JSON",
       "body": "World Info JSON-fájl."
     }
-  }
+  },
+  "matchBy": "Egyezés módja",
+  "modeKeywords": "Kulcsszavak",
+  "modeRegex": "Regex",
+  "patterns": "Minták",
+  "patternsHint": "Soronként egy reguláris kifejezés. Bármely egyezés behozza a bejegyzést.",
+  "patternLabel": "{{number}}. minta",
+  "removePattern": "Minta eltávolítása",
+  "addPattern": "Minta hozzáadása",
+  "patternInvalid": "Érvénytelen minta",
+  "patternUnsupported": "A lookaround és a visszahivatkozás nem támogatott",
+  "tryLabel": "Kipróbálás",
+  "tryHint": "Írj be egy mondatot, hogy lásd, mely minták illeszkednek",
+  "tryPlaceholder": "Egy sor a csevegésből",
+  "tryFires": "Ez a bejegyzés bekerülne",
+  "tryQuiet": "Ez a bejegyzés kimaradna",
+  "tryMatch": "Illeszkedik",
+  "tryNoMatch": "Nem illeszkedik"
 }

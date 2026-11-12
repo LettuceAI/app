@@ -33,7 +33,6 @@
   "keywordsHint": "Salah satu dari ini dalam percakapan akan memunculkan entri",
   "keywordPlaceholder": "Ketik kata kunci lalu tekan Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Ekspresi reguler",
   "caseSensitive": "Peka huruf besar/kecil",
   "suggest": "Saran",
   "suggestNone": "Tidak ada kata kunci baru untuk disarankan",
@@ -55,5 +54,22 @@
       "title": "World Info JSON",
       "body": "File JSON World Info."
     }
-  }
+  },
+  "matchBy": "Cocokkan dengan",
+  "modeKeywords": "Kata kunci",
+  "modeRegex": "Regex",
+  "patterns": "Pola",
+  "patternsHint": "Satu ekspresi reguler per baris. Kecocokan apa pun memasukkan entri.",
+  "patternLabel": "Pola {{number}}",
+  "removePattern": "Hapus pola",
+  "addPattern": "Tambah pola",
+  "patternInvalid": "Pola tidak valid",
+  "patternUnsupported": "Lookaround dan backreference tidak didukung",
+  "tryLabel": "Coba",
+  "tryHint": "Ketik kalimat untuk melihat pola mana yang cocok",
+  "tryPlaceholder": "Satu baris dari obrolan",
+  "tryFires": "Entri ini akan masuk",
+  "tryQuiet": "Entri ini tidak akan masuk",
+  "tryMatch": "Cocok",
+  "tryNoMatch": "Tidak cocok"
 }

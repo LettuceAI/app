@@ -36,7 +36,6 @@
   "keywordsHint": "Kdykoli se některé z nich objeví v konverzaci, záznam se přidá",
   "keywordPlaceholder": "Napiš klíčové slovo a stiskni Enter",
   "regexPlaceholder": "jablko|banán",
-  "regex": "Regulární výrazy",
   "caseSensitive": "Rozlišovat velikost písmen",
   "suggest": "Navrhnout",
   "suggestNone": "Žádná nová klíčová slova k navržení",
@@ -58,5 +57,22 @@
       "title": "World Info JSON",
       "body": "Soubor World Info JSON."
     }
-  }
+  },
+  "matchBy": "Shoda podle",
+  "modeKeywords": "Klíčová slova",
+  "modeRegex": "Regex",
+  "patterns": "Vzory",
+  "patternsHint": "Jeden regulární výraz na řádek. Jakákoli shoda přidá položku.",
+  "patternLabel": "Vzor {{number}}",
+  "removePattern": "Odebrat vzor",
+  "addPattern": "Přidat vzor",
+  "patternInvalid": "Neplatný vzor",
+  "patternUnsupported": "Lookaround a zpětné odkazy nejsou podporovány",
+  "tryLabel": "Vyzkoušet",
+  "tryHint": "Napište větu a uvidíte, které vzory odpovídají",
+  "tryPlaceholder": "Řádek z chatu",
+  "tryFires": "Tato položka by se přidala",
+  "tryQuiet": "Tato položka by se nepřidala",
+  "tryMatch": "Odpovídá",
+  "tryNoMatch": "Neodpovídá"
 }

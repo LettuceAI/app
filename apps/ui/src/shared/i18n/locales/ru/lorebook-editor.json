@@ -36,7 +36,6 @@
   "keywordsHint": "Любое из них в разговоре подтягивает запись",
   "keywordPlaceholder": "Введите ключевое слово и нажмите Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "Регулярные выражения",
   "caseSensitive": "С учётом регистра",
   "suggest": "Предложить",
   "suggestNone": "Новых ключевых слов для предложения нет",
@@ -58,5 +57,22 @@
       "title": "World Info JSON",
       "body": "Файл World Info JSON."
     }
-  }
+  },
+  "matchBy": "Совпадение по",
+  "modeKeywords": "Ключевые слова",
+  "modeRegex": "Regex",
+  "patterns": "Шаблоны",
+  "patternsHint": "Одно регулярное выражение на строку. Любое совпадение добавляет запись.",
+  "patternLabel": "Шаблон {{number}}",
+  "removePattern": "Удалить шаблон",
+  "addPattern": "Добавить шаблон",
+  "patternInvalid": "Недопустимый шаблон",
+  "patternUnsupported": "Lookaround и обратные ссылки не поддерживаются",
+  "tryLabel": "Проверить",
+  "tryHint": "Введите фразу, чтобы увидеть, какие шаблоны совпадают",
+  "tryPlaceholder": "Строка из чата",
+  "tryFires": "Эта запись была бы добавлена",
+  "tryQuiet": "Эта запись не была бы добавлена",
+  "tryMatch": "Совпадает",
+  "tryNoMatch": "Не совпадает"
 }

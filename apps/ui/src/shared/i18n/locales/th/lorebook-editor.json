@@ -33,7 +33,6 @@
   "keywordsHint": "คำใดคำหนึ่งเหล่านี้ในบทสนทนาจะดึงรายการเข้ามา",
   "keywordPlaceholder": "พิมพ์คำสำคัญแล้วกด Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "นิพจน์ปกติ",
   "caseSensitive": "ตรงตามตัวพิมพ์",
   "suggest": "แนะนำ",
   "suggestNone": "ไม่มีคำสำคัญใหม่ให้แนะนำ",
@@ -55,5 +54,22 @@
       "title": "World Info JSON",
       "body": "ไฟล์ World Info JSON"
     }
-  }
+  },
+  "matchBy": "จับคู่ด้วย",
+  "modeKeywords": "คีย์เวิร์ด",
+  "modeRegex": "Regex",
+  "patterns": "รูปแบบ",
+  "patternsHint": "หนึ่ง regular expression ต่อแถว ถ้ามีรูปแบบใดตรง รายการจะถูกเพิ่ม",
+  "patternLabel": "รูปแบบ {{number}}",
+  "removePattern": "ลบรูปแบบ",
+  "addPattern": "เพิ่มรูปแบบ",
+  "patternInvalid": "รูปแบบไม่ถูกต้อง",
+  "patternUnsupported": "ไม่รองรับ lookaround และ backreference",
+  "tryLabel": "ลองดู",
+  "tryHint": "พิมพ์ประโยคเพื่อดูว่ารูปแบบใดตรง",
+  "tryPlaceholder": "หนึ่งบรรทัดจากแชต",
+  "tryFires": "รายการนี้จะถูกเพิ่ม",
+  "tryQuiet": "รายการนี้จะไม่ถูกเพิ่ม",
+  "tryMatch": "ตรง",
+  "tryNoMatch": "ไม่ตรง"
 }

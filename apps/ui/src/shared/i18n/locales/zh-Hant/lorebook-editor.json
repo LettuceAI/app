@@ -33,7 +33,6 @@
   "keywordsHint": "對話中出現任一個就會帶入條目",
   "keywordPlaceholder": "輸入關鍵字後按 Enter",
   "regexPlaceholder": "apple|banana",
-  "regex": "規則運算式",
   "caseSensitive": "區分大小寫",
   "suggest": "建議",
   "suggestNone": "沒有可建議的新關鍵字",
@@ -55,5 +54,22 @@
       "title": "世界資訊 JSON",
       "body": "世界資訊 JSON 檔案。"
     }
-  }
+  },
+  "matchBy": "比對方式",
+  "modeKeywords": "關鍵字",
+  "modeRegex": "正規",
+  "patterns": "模式",
+  "patternsHint": "每行一個正規表示式。任一比對成功即加入該條目。",
+  "patternLabel": "模式 {{number}}",
+  "removePattern": "移除模式",
+  "addPattern": "新增模式",
+  "patternInvalid": "不是有效的模式",
+  "patternUnsupported": "不支援前後查找與反向參照",
+  "tryLabel": "試試看",
+  "tryHint": "輸入一句話，看看哪些模式會比對成功",
+  "tryPlaceholder": "聊天中的一行",
+  "tryFires": "此條目會被加入",
+  "tryQuiet": "此條目不會被加入",
+  "tryMatch": "符合",
+  "tryNoMatch": "不符合"
 }
