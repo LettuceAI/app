@@ -106,7 +106,13 @@ pub(crate) async fn load_attachments(
     tokio::task::spawn_blocking(move || {
         wanted
             .into_iter()
-            .filter_map(|asset_id| media.load(asset_id).ok().map(|loaded| (asset_id, loaded)))
+            .filter_map(|asset_id| match media.load(asset_id) {
+                Ok(loaded) => Some((asset_id, loaded)),
+                Err(error) => {
+                    tracing::warn!(%asset_id, ?error, "an attachment could not be read and is left out");
+                    None
+                }
+            })
             .collect()
     })
     .await

@@ -1,6 +1,6 @@
 //! Provider requests read attachments from the local media store.
 
-use std::io::Read;
+use std::{io::Read, sync::Arc};
 
 use lettuce_media::{LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
 use lettuce_providers::{ProviderMedia, ProviderMediaError, ProviderMediaSource};
@@ -8,7 +8,7 @@ use lettuce_types::AssetId;
 
 /// Ready media assets as provider attachments.
 #[derive(Debug)]
-pub struct StoredProviderMedia<BR, AR>(pub LocalMediaBlobStore<BR, AR>);
+pub struct StoredProviderMedia<BR, AR>(pub Arc<LocalMediaBlobStore<BR, AR>>);
 
 impl<BR, AR> ProviderMediaSource for StoredProviderMedia<BR, AR>
 where
@@ -86,7 +86,7 @@ mod tests {
                 ),
             )
             .expect("ingest");
-        let media = StoredProviderMedia(store);
+        let media = StoredProviderMedia(std::sync::Arc::new(store));
         let loaded = media.load(ingested.asset.id).expect("load");
         assert_eq!(loaded.mime_type, "image/png");
         assert_eq!(loaded.bytes, bytes);

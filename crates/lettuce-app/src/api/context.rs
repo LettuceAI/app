@@ -401,7 +401,7 @@ impl ApiContext {
                 })?
         };
         let backend = Arc::new(backend);
-        let media = LocalMediaBlobStore::new(
+        let media = Arc::new(LocalMediaBlobStore::new(
             authority.managed_files(),
             authority
                 .read_capability(ManagedRoot::MediaBlobs)
@@ -411,7 +411,7 @@ impl ApiContext {
                 .map_err(|error| storage_error("media store", error))?,
             Database::open(&path).map_err(|error| storage_error("media catalog", error))?,
             Database::open(&path).map_err(|error| storage_error("media catalog", error))?,
-        );
+        ));
         let tls = backend
             .tls_policy()
             .map_err(|error| storage_error("device settings", error))?;
@@ -422,7 +422,8 @@ impl ApiContext {
                     ApiErrorCode::Unavailable,
                     format!("provider runtime could not start: {error}"),
                 )
-            })?;
+            })?
+            .with_media_source(Arc::new(crate::StoredProviderMedia(Arc::clone(&media))));
         let content_filter = provider.content_filter();
         let inference: Arc<dyn InferencePort> = Arc::new(provider);
         let image_provider: Arc<dyn ImageProviderPort> = Arc::new(
@@ -443,7 +444,7 @@ impl ApiContext {
                 image_provider,
                 models: Arc::new(InstalledModels),
                 speech: Arc::new(super::speech::InstalledSpeech::new(microphone)),
-                media: Some(Arc::new(media)),
+                media: Some(media),
                 events,
                 clock,
                 files,
