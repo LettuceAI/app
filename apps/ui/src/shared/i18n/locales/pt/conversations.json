@@ -996,7 +996,31 @@
       "undoConfirm": "Desfazer atualização",
       "keep": "Manter",
       "undone": "Atualização desfeita",
-      "loadMore": "Mostrar atualizações mais antigas"
+      "loadMore": "Mostrar atualizações mais antigas",
+      "skipReason": {
+        "missing_text": "Nenhum texto foi fornecido",
+        "invalid_text": "Não foi possível usar o texto",
+        "empty_text": "O texto estava vazio",
+        "text_too_long": "Mais de 280 caracteres",
+        "refusal_text": "Interpretado como uma recusa",
+        "meta_text": "Interpretado como uma nota sobre o chat, não uma memória",
+        "missing_category": "Nenhuma categoria foi fornecida",
+        "invalid_category": "Categoria desconhecida",
+        "missing_target": "Nenhuma memória foi indicada",
+        "unsupported_tool": "Indisponível neste chat",
+        "malformed_arguments": "Não foi possível ler a chamada",
+        "user_edited": "Você editou esta memória",
+        "already_applied": "Já feito",
+        "pinned_target": "A memória está fixada"
+      },
+      "duplicate": {
+        "matches": "Corresponde a “{{text}}”",
+        "missing": "Corresponde a uma memória que não existe mais",
+        "similarity": "({{similarity}}% semelhante, limite {{threshold}}%)",
+        "same_text": "(mesmo texto)",
+        "same_meaning": "(mesmo significado)",
+        "same_words": "(mesmas palavras)"
+      }
     },
     "pinnedTab": {
       "empty": "Nenhuma mensagem fixada",

@@ -975,7 +975,31 @@
       "undoConfirm": "Aktualisierung rückgängig machen",
       "keep": "Behalten",
       "undone": "Aktualisierung rückgängig gemacht",
-      "loadMore": "Ältere Aktualisierungen anzeigen"
+      "loadMore": "Ältere Aktualisierungen anzeigen",
+      "skipReason": {
+        "missing_text": "Kein Text angegeben",
+        "invalid_text": "Der Text war nicht verwendbar",
+        "empty_text": "Der Text war leer",
+        "text_too_long": "Länger als 280 Zeichen",
+        "refusal_text": "Als Ablehnung erkannt",
+        "meta_text": "Als Hinweis zum Chat erkannt, nicht als Erinnerung",
+        "missing_category": "Keine Kategorie angegeben",
+        "invalid_category": "Unbekannte Kategorie",
+        "missing_target": "Keine Erinnerung angegeben",
+        "unsupported_tool": "In diesem Chat nicht verfügbar",
+        "malformed_arguments": "Der Aufruf konnte nicht gelesen werden",
+        "user_edited": "Du hast diese Erinnerung bearbeitet",
+        "already_applied": "Bereits erledigt",
+        "pinned_target": "Die Erinnerung ist angeheftet"
+      },
+      "duplicate": {
+        "matches": "Entspricht „{{text}}“",
+        "missing": "Entspricht einer Erinnerung, die nicht mehr existiert",
+        "similarity": "({{similarity}} % ähnlich, Grenze {{threshold}} %)",
+        "same_text": "(gleicher Text)",
+        "same_meaning": "(gleiche Bedeutung)",
+        "same_words": "(gleiche Wörter)"
+      }
     },
     "pinnedTab": {
       "empty": "Keine angehefteten Nachrichten",

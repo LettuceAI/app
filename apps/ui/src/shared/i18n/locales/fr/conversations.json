@@ -996,7 +996,31 @@
       "undoConfirm": "Annuler la mise à jour",
       "keep": "Conserver",
       "undone": "Mise à jour annulée",
-      "loadMore": "Afficher les mises à jour plus anciennes"
+      "loadMore": "Afficher les mises à jour plus anciennes",
+      "skipReason": {
+        "missing_text": "Aucun texte fourni",
+        "invalid_text": "Le texte n'a pas pu être utilisé",
+        "empty_text": "Le texte était vide",
+        "text_too_long": "Plus de 280 caractères",
+        "refusal_text": "Interprété comme un refus",
+        "meta_text": "Interprété comme une note sur la discussion, pas un souvenir",
+        "missing_category": "Aucune catégorie fournie",
+        "invalid_category": "Catégorie inconnue",
+        "missing_target": "Aucun souvenir indiqué",
+        "unsupported_tool": "Non disponible dans cette discussion",
+        "malformed_arguments": "L'appel n'a pas pu être lu",
+        "user_edited": "Vous avez modifié ce souvenir",
+        "already_applied": "Déjà fait",
+        "pinned_target": "Le souvenir est épinglé"
+      },
+      "duplicate": {
+        "matches": "Correspond à « {{text}} »",
+        "missing": "Correspond à un souvenir qui n'existe plus",
+        "similarity": "({{similarity}} % de similarité, limite {{threshold}} %)",
+        "same_text": "(même texte)",
+        "same_meaning": "(même sens)",
+        "same_words": "(mêmes mots)"
+      }
     },
     "pinnedTab": {
       "empty": "Aucun message épinglé",

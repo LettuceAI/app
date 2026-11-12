@@ -438,9 +438,9 @@ describe("memory status card", () => {
 
 describe("memory activity and pinned tabs", () => {
   const cycles = [
-    cycle("r3", { window_start: 41, window_end: 60, label: "41-60", summary: "The trip took shape.", actions: [{ kind: "created", memory_id: "m1", text: "Afraid of flying." }], revertable: true }),
+    cycle("r3", { window_start: 41, window_end: 60, label: "41-60", summary: "The trip took shape.", actions: [{ kind: "created", memory_id: "m1", text: "Afraid of flying.", proposed_text: null, skip_reason: null, duplicate: null }], revertable: true }),
     cycle("r2", { window_start: 21, window_end: 40, label: "21-40", status: "failed", failure: "timed_out" }),
-    cycle("r1", { window_start: 1, window_end: 20, label: "1-20", revertable: false, blocked_by: "r3", actions: [{ kind: "soft_deleted", memory_id: null, text: "The safehouse." }] }),
+    cycle("r1", { window_start: 1, window_end: 20, label: "1-20", revertable: false, blocked_by: "r3", actions: [{ kind: "soft_deleted", memory_id: null, text: "The safehouse.", proposed_text: null, skip_reason: null, duplicate: null }] }),
   ];
 
   it("pages the cycles, explains a blocked undo and undoes after confirmation", async () => {
@@ -464,6 +464,20 @@ describe("memory activity and pinned tabs", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Undo update" }));
     await waitFor(() => expect(called("memoryCycleRevert")).toHaveLength(1));
     expect(called("memoryCycleRevert")[0]?.request).toMatchObject({ run_id: "r3", expected_revision: 5 });
+  });
+
+  it("says why a proposed memory was skipped or already known", async () => {
+    const reasons = [cycle("r4", { window_start: 61, window_end: 80, label: "61-80", actions: [
+      { kind: "skipped", memory_id: null, text: null, proposed_text: "Mira keeps every letter her brother sent.", skip_reason: "text_too_long", duplicate: null },
+      { kind: "duplicate_skipped", memory_id: "m1", text: null, proposed_text: "Fears flying.", skip_reason: null, duplicate: { kind: "same_meaning", existing_text: "Afraid of flying.", similarity_basis_points: 9512, threshold_basis_points: 9300 } },
+    ] })];
+    await open({ world: { cycles: reasons } });
+    fireEvent.click(await screen.findByRole("tab", { name: /^Activity/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Messages 61 to 80/ }));
+    expect(await screen.findByText("Mira keeps every letter her brother sent.")).toBeTruthy();
+    expect(screen.getByText("Longer than 280 characters")).toBeTruthy();
+    expect(screen.getByText("Fears flying.")).toBeTruthy();
+    expect(screen.getByText("Matches “Afraid of flying.” (95% similar, limit 93%)")).toBeTruthy();
   });
 
   const pinnedMessage = message("p1", "assistant", "Karsk was a choice.", { pinned: true });
@@ -786,7 +800,7 @@ describe("group companion member memory", () => {
   });
 
   it("says what undoing a companion-mode group update keeps", async () => {
-    const world = { cycles: [cycle("r3", { window_start: 41, window_end: 60, label: "41-60", actions: [{ kind: "created", memory_id: "m1", text: "Ada and Bea made up." }], revertable: true })] };
+    const world = { cycles: [cycle("r3", { window_start: 41, window_end: 60, label: "41-60", actions: [{ kind: "created", memory_id: "m1", text: "Ada and Bea made up.", proposed_text: null, skip_reason: null, duplicate: null }], revertable: true })] };
     await open({ world, calls: groupCalls(true, { revision: 7, items: [] }, []) });
     fireEvent.click(await screen.findByRole("tab", { name: /^Activity/ }));
     fireEvent.click(await screen.findByRole("button", { name: /Messages 41 to 60/ }));

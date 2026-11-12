@@ -975,7 +975,31 @@
       "undoConfirm": "अपडेट पूर्ववत करें",
       "keep": "रखें",
       "undone": "अपडेट पूर्ववत हो गया",
-      "loadMore": "पुराने अपडेट दिखाएँ"
+      "loadMore": "पुराने अपडेट दिखाएँ",
+      "skipReason": {
+        "missing_text": "कोई टेक्स्ट नहीं दिया गया",
+        "invalid_text": "टेक्स्ट का उपयोग नहीं हो सका",
+        "empty_text": "टेक्स्ट खाली था",
+        "text_too_long": "280 अक्षरों से लंबा",
+        "refusal_text": "इनकार के रूप में पढ़ा गया",
+        "meta_text": "चैट के बारे में नोट के रूप में पढ़ा गया, याद के रूप में नहीं",
+        "missing_category": "कोई श्रेणी नहीं दी गई",
+        "invalid_category": "अज्ञात श्रेणी",
+        "missing_target": "किसी याद का नाम नहीं दिया गया",
+        "unsupported_tool": "इस चैट में उपलब्ध नहीं",
+        "malformed_arguments": "कॉल पढ़ी नहीं जा सकी",
+        "user_edited": "आपने यह याद संपादित की",
+        "already_applied": "पहले ही हो चुका",
+        "pinned_target": "याद पिन की हुई है"
+      },
+      "duplicate": {
+        "matches": "“{{text}}” से मेल खाता है",
+        "missing": "ऐसी याद से मेल खाता है जो अब नहीं है",
+        "similarity": "({{similarity}}% समान, सीमा {{threshold}}%)",
+        "same_text": "(वही टेक्स्ट)",
+        "same_meaning": "(वही अर्थ)",
+        "same_words": "(वही शब्द)"
+      }
     },
     "pinnedTab": {
       "empty": "कोई पिन किया संदेश नहीं",

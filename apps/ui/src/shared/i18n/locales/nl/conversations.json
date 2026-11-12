@@ -975,7 +975,31 @@
       "undoConfirm": "Update ongedaan maken",
       "keep": "Behouden",
       "undone": "Update ongedaan gemaakt",
-      "loadMore": "Oudere updates tonen"
+      "loadMore": "Oudere updates tonen",
+      "skipReason": {
+        "missing_text": "Er is geen tekst opgegeven",
+        "invalid_text": "De tekst kon niet worden gebruikt",
+        "empty_text": "De tekst was leeg",
+        "text_too_long": "Langer dan 280 tekens",
+        "refusal_text": "Gelezen als een weigering",
+        "meta_text": "Gelezen als een notitie over de chat, geen herinnering",
+        "missing_category": "Er is geen categorie opgegeven",
+        "invalid_category": "Onbekende categorie",
+        "missing_target": "Er is geen herinnering genoemd",
+        "unsupported_tool": "Niet beschikbaar in deze chat",
+        "malformed_arguments": "De aanroep kon niet worden gelezen",
+        "user_edited": "Je hebt deze herinnering bewerkt",
+        "already_applied": "Al gedaan",
+        "pinned_target": "De herinnering is vastgezet"
+      },
+      "duplicate": {
+        "matches": "Komt overeen met “{{text}}”",
+        "missing": "Komt overeen met een herinnering die niet meer bestaat",
+        "similarity": "({{similarity}}% gelijk, grens {{threshold}}%)",
+        "same_text": "(zelfde tekst)",
+        "same_meaning": "(zelfde betekenis)",
+        "same_words": "(zelfde woorden)"
+      }
     },
     "pinnedTab": {
       "empty": "Geen vastgezette berichten",

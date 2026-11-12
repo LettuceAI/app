@@ -954,7 +954,31 @@
       "undoConfirm": "업데이트 취소",
       "keep": "유지",
       "undone": "업데이트를 취소했어요",
-      "loadMore": "이전 업데이트 보기"
+      "loadMore": "이전 업데이트 보기",
+      "skipReason": {
+        "missing_text": "텍스트가 없습니다",
+        "invalid_text": "텍스트를 사용할 수 없습니다",
+        "empty_text": "텍스트가 비어 있습니다",
+        "text_too_long": "280자를 넘습니다",
+        "refusal_text": "거절로 판단됨",
+        "meta_text": "기억이 아닌 채팅에 대한 메모로 판단됨",
+        "missing_category": "카테고리가 없습니다",
+        "invalid_category": "알 수 없는 카테고리",
+        "missing_target": "지정된 기억이 없습니다",
+        "unsupported_tool": "이 채팅에서는 사용할 수 없습니다",
+        "malformed_arguments": "호출을 읽을 수 없습니다",
+        "user_edited": "직접 수정한 기억입니다",
+        "already_applied": "이미 적용됨",
+        "pinned_target": "고정된 기억입니다"
+      },
+      "duplicate": {
+        "matches": "“{{text}}”와 일치",
+        "missing": "지금은 없는 기억과 일치",
+        "similarity": "(유사도 {{similarity}}%, 기준 {{threshold}}%)",
+        "same_text": "(같은 텍스트)",
+        "same_meaning": "(같은 의미)",
+        "same_words": "(같은 단어)"
+      }
     },
     "pinnedTab": {
       "empty": "고정된 메시지가 없어요",

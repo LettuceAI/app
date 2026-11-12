@@ -12,6 +12,8 @@ pub struct MemoryActivityCycle {
     pub run: DynamicMemoryRun,
     pub latest_attempt: DynamicMemoryAttempt,
     pub results: Vec<MemoryToolResult>,
+    /// The memory text each result's call proposed, in result order; `None` for calls without one.
+    pub proposed_texts: Vec<Option<String>>,
     pub checkpoint: Option<MemorySummary>,
     pub reverted: bool,
 }

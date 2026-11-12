@@ -138,15 +138,16 @@ fn read_memory_scope_in(
         let run = dynamic_memory_run_adapter::load_run_in(tx, run_id).map_err(storage)?;
         let attempt: String = tx.query_row("SELECT id FROM dynamic_memory_run_attempts WHERE run_id=?1 ORDER BY ordinal DESC LIMIT 1", [&id], |row| row.get(0)).map_err(storage)?;
         let latest_attempt = dynamic_memory_run_adapter::load_attempt_in(tx, DynamicMemoryAttemptId::from_str(&attempt).map_err(storage)?).map_err(storage)?;
-        let rows = tx.prepare("SELECT call_id,outcome_json FROM dynamic_memory_background_tool_results WHERE run_id=?1 ORDER BY settled_at,ordinal").and_then(|mut statement| statement.query_map([&id], |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()).map_err(storage)?;
-        let results = rows.into_iter().map(|(call,outcome)| Ok::<_, MemoryRepositoryError>(MemoryToolResult { execution_id: call.parse().map_err(storage)?,outcome:crate::decode_versioned(&outcome,1).map_err(storage)? })).collect::<Result<Vec<_>, _>>()?;
+        let rows = tx.prepare("SELECT result.call_id,result.outcome_json,json_extract(call.arguments_json,'$.value.text') FROM dynamic_memory_background_tool_results result LEFT JOIN dynamic_memory_admitted_tool_calls call ON call.id=result.call_id WHERE result.run_id=?1 ORDER BY result.settled_at,result.ordinal").and_then(|mut statement| statement.query_map([&id], |row| Ok((row.get::<_, String>(0)?,row.get::<_, String>(1)?,row.get::<_, Option<String>>(2).ok().flatten())))?.collect::<rusqlite::Result<Vec<_>>>()).map_err(storage)?;
+        let proposed_texts = rows.iter().map(|(_, _, text)| text.clone()).collect();
+        let results = rows.into_iter().map(|(call,outcome,_)| Ok::<_, MemoryRepositoryError>(MemoryToolResult { execution_id: call.parse().map_err(storage)?,outcome:crate::decode_versioned(&outcome,1).map_err(storage)? })).collect::<Result<Vec<_>, _>>()?;
         let reverted = tx.query_row(
             &format!("SELECT {} FROM dynamic_memory_runs run WHERE run.id=?1", super::memory_cycle_revert_adapter::UNDONE),
             [&id],
             |row| row.get(0),
         ).map_err(storage)?;
         let checkpoint = dynamic_memory_run_adapter::load_summary_checkpoint_in(tx, run_id).map_err(storage)?.map(|checkpoint| checkpoint.summary);
-        Ok(MemoryActivityCycle { run,latest_attempt,results,checkpoint,reverted })
+        Ok(MemoryActivityCycle { run,latest_attempt,results,proposed_texts,checkpoint,reverted })
     }).collect::<Result<Vec<_>, MemoryRepositoryError>>()?;
     let dismissed_job = tx
         .query_row(

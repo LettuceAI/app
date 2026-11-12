@@ -975,7 +975,31 @@
       "undoConfirm": "Angre oppdatering",
       "keep": "Behold",
       "undone": "Oppdateringen er angret",
-      "loadMore": "Vis eldre oppdateringer"
+      "loadMore": "Vis eldre oppdateringer",
+      "skipReason": {
+        "missing_text": "Ingen tekst ble oppgitt",
+        "invalid_text": "Teksten kunne ikke brukes",
+        "empty_text": "Teksten var tom",
+        "text_too_long": "Lengre enn 280 tegn",
+        "refusal_text": "Tolket som et avslag",
+        "meta_text": "Tolket som en merknad om chatten, ikke et minne",
+        "missing_category": "Ingen kategori ble oppgitt",
+        "invalid_category": "Ukjent kategori",
+        "missing_target": "Ingen minne ble nevnt",
+        "unsupported_tool": "Ikke tilgjengelig i denne chatten",
+        "malformed_arguments": "Kallet kunne ikke leses",
+        "user_edited": "Du redigerte dette minnet",
+        "already_applied": "Allerede gjort",
+        "pinned_target": "Minnet er festet"
+      },
+      "duplicate": {
+        "matches": "Samsvarer med «{{text}}»",
+        "missing": "Samsvarer med et minne som ikke finnes lenger",
+        "similarity": "({{similarity}} % likt, grense {{threshold}} %)",
+        "same_text": "(samme tekst)",
+        "same_meaning": "(samme betydning)",
+        "same_words": "(samme ord)"
+      }
     },
     "pinnedTab": {
       "empty": "Ingen festede meldinger",

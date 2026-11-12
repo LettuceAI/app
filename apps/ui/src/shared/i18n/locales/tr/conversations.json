@@ -975,7 +975,31 @@
       "undoConfirm": "Güncellemeyi geri al",
       "keep": "Tut",
       "undone": "Güncelleme geri alındı",
-      "loadMore": "Daha eski güncellemeleri göster"
+      "loadMore": "Daha eski güncellemeleri göster",
+      "skipReason": {
+        "missing_text": "Metin verilmedi",
+        "invalid_text": "Metin kullanılamadı",
+        "empty_text": "Metin boştu",
+        "text_too_long": "280 karakterden uzun",
+        "refusal_text": "Ret cevabı olarak algılandı",
+        "meta_text": "Anı değil, sohbet hakkında not olarak algılandı",
+        "missing_category": "Kategori verilmedi",
+        "invalid_category": "Bilinmeyen kategori",
+        "missing_target": "Hiçbir anı belirtilmedi",
+        "unsupported_tool": "Bu sohbette kullanılamaz",
+        "malformed_arguments": "Çağrı okunamadı",
+        "user_edited": "Bu anıyı sen düzenledin",
+        "already_applied": "Zaten yapılmış",
+        "pinned_target": "Anı sabitlenmiş"
+      },
+      "duplicate": {
+        "matches": "“{{text}}” ile eşleşiyor",
+        "missing": "Artık olmayan bir anıyla eşleşiyor",
+        "similarity": "(%{{similarity}} benzer, sınır %{{threshold}})",
+        "same_text": "(aynı metin)",
+        "same_meaning": "(aynı anlam)",
+        "same_words": "(aynı kelimeler)"
+      }
     },
     "pinnedTab": {
       "empty": "Sabitlenmiş mesaj yok",

@@ -954,7 +954,31 @@
       "undoConfirm": "復原更新",
       "keep": "保留",
       "undone": "已復原更新",
-      "loadMore": "顯示較舊的更新"
+      "loadMore": "顯示較舊的更新",
+      "skipReason": {
+        "missing_text": "未提供文字",
+        "invalid_text": "無法使用該文字",
+        "empty_text": "文字為空",
+        "text_too_long": "超過 280 個字元",
+        "refusal_text": "被判定為拒絕",
+        "meta_text": "被判定為關於聊天的備註，而非記憶",
+        "missing_category": "未提供類別",
+        "invalid_category": "未知類別",
+        "missing_target": "未指定記憶",
+        "unsupported_tool": "此聊天中無法使用",
+        "malformed_arguments": "無法讀取該呼叫",
+        "user_edited": "你編輯過這則記憶",
+        "already_applied": "已完成",
+        "pinned_target": "該記憶已釘選"
+      },
+      "duplicate": {
+        "matches": "與「{{text}}」相同",
+        "missing": "與一則已不存在的記憶相同",
+        "similarity": "(相似度 {{similarity}}%，門檻 {{threshold}}%)",
+        "same_text": "(文字相同)",
+        "same_meaning": "(含義相同)",
+        "same_words": "(用詞相同)"
+      }
     },
     "pinnedTab": {
       "empty": "沒有已標記的訊息",

@@ -1017,7 +1017,31 @@
       "undoConfirm": "Скасувати оновлення",
       "keep": "Залишити",
       "undone": "Оновлення скасовано",
-      "loadMore": "Показати давніші оновлення"
+      "loadMore": "Показати давніші оновлення",
+      "skipReason": {
+        "missing_text": "Текст не вказано",
+        "invalid_text": "Текст не вдалося використати",
+        "empty_text": "Текст був порожнім",
+        "text_too_long": "Довше за 280 символів",
+        "refusal_text": "Розпізнано як відмову",
+        "meta_text": "Розпізнано як примітку про чат, а не спогад",
+        "missing_category": "Категорію не вказано",
+        "invalid_category": "Невідома категорія",
+        "missing_target": "Спогад не вказано",
+        "unsupported_tool": "Недоступно в цьому чаті",
+        "malformed_arguments": "Не вдалося прочитати виклик",
+        "user_edited": "Ви змінили цей спогад",
+        "already_applied": "Уже зроблено",
+        "pinned_target": "Спогад закріплено"
+      },
+      "duplicate": {
+        "matches": "Збігається з «{{text}}»",
+        "missing": "Збігається зі спогадом, якого вже немає",
+        "similarity": "(схожість {{similarity}}%, поріг {{threshold}}%)",
+        "same_text": "(той самий текст)",
+        "same_meaning": "(той самий зміст)",
+        "same_words": "(ті самі слова)"
+      }
     },
     "pinnedTab": {
       "empty": "Немає закріплених повідомлень",

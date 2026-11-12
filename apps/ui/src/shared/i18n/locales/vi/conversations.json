@@ -954,7 +954,31 @@
       "undoConfirm": "Hoàn tác cập nhật",
       "keep": "Giữ",
       "undone": "Đã hoàn tác cập nhật",
-      "loadMore": "Hiện cập nhật cũ hơn"
+      "loadMore": "Hiện cập nhật cũ hơn",
+      "skipReason": {
+        "missing_text": "Không có văn bản",
+        "invalid_text": "Không thể dùng văn bản này",
+        "empty_text": "Văn bản trống",
+        "text_too_long": "Dài hơn 280 ký tự",
+        "refusal_text": "Được hiểu là lời từ chối",
+        "meta_text": "Được hiểu là ghi chú về cuộc trò chuyện, không phải ký ức",
+        "missing_category": "Không có danh mục",
+        "invalid_category": "Danh mục không xác định",
+        "missing_target": "Không chỉ định ký ức nào",
+        "unsupported_tool": "Không khả dụng trong cuộc trò chuyện này",
+        "malformed_arguments": "Không đọc được lệnh gọi",
+        "user_edited": "Bạn đã sửa ký ức này",
+        "already_applied": "Đã thực hiện",
+        "pinned_target": "Ký ức đã được ghim"
+      },
+      "duplicate": {
+        "matches": "Trùng với “{{text}}”",
+        "missing": "Trùng với một ký ức không còn nữa",
+        "similarity": "(giống {{similarity}}%, ngưỡng {{threshold}}%)",
+        "same_text": "(cùng văn bản)",
+        "same_meaning": "(cùng ý nghĩa)",
+        "same_words": "(cùng từ ngữ)"
+      }
     },
     "pinnedTab": {
       "empty": "Không có tin nhắn đã ghim",

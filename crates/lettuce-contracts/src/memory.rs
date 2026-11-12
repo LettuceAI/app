@@ -268,6 +268,51 @@ pub struct MemoryCycleAction {
     pub kind: MemoryCycleActionKind,
     pub memory_id: Option<String>,
     pub text: Option<String>,
+    /// The memory the call proposed, for a create that was skipped or already known.
+    pub proposed_text: Option<String>,
+    pub skip_reason: Option<MemorySkipReason>,
+    pub duplicate: Option<MemoryDuplicateMatch>,
+}
+
+/// Why a call was skipped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemorySkipReason {
+    MissingText,
+    InvalidText,
+    EmptyText,
+    TextTooLong,
+    RefusalText,
+    MetaText,
+    MissingCategory,
+    InvalidCategory,
+    MissingTarget,
+    UnsupportedTool,
+    MalformedArguments,
+    UserEdited,
+    AlreadyApplied,
+    PinnedTarget,
+}
+
+/// The existing memory a create matched. The similarity and threshold, in basis points, are set for a meaning
+/// match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct MemoryDuplicateMatch {
+    pub kind: MemoryDuplicateKind,
+    pub existing_text: Option<String>,
+    pub similarity_basis_points: Option<u16>,
+    pub threshold_basis_points: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryDuplicateKind {
+    SameText,
+    SameMeaning,
+    SameWords,
 }
 
 /// One memory cycle of the activity log, newest first. `blocked_by` names

@@ -954,7 +954,31 @@
       "undoConfirm": "เลิกทำการอัปเดต",
       "keep": "เก็บไว้",
       "undone": "เลิกทำการอัปเดตแล้ว",
-      "loadMore": "แสดงการอัปเดตเก่ากว่า"
+      "loadMore": "แสดงการอัปเดตเก่ากว่า",
+      "skipReason": {
+        "missing_text": "ไม่มีข้อความ",
+        "invalid_text": "ใช้ข้อความนี้ไม่ได้",
+        "empty_text": "ข้อความว่างเปล่า",
+        "text_too_long": "ยาวเกิน 280 ตัวอักษร",
+        "refusal_text": "ถูกมองว่าเป็นการปฏิเสธ",
+        "meta_text": "ถูกมองว่าเป็นบันทึกเกี่ยวกับแชต ไม่ใช่ความทรงจำ",
+        "missing_category": "ไม่มีหมวดหมู่",
+        "invalid_category": "ไม่รู้จักหมวดหมู่นี้",
+        "missing_target": "ไม่ได้ระบุความทรงจำ",
+        "unsupported_tool": "ใช้ไม่ได้ในแชตนี้",
+        "malformed_arguments": "อ่านการเรียกไม่ได้",
+        "user_edited": "คุณแก้ไขความทรงจำนี้แล้ว",
+        "already_applied": "ทำไปแล้ว",
+        "pinned_target": "ความทรงจำนี้ถูกปักหมุด"
+      },
+      "duplicate": {
+        "matches": "ตรงกับ “{{text}}”",
+        "missing": "ตรงกับความทรงจำที่ไม่มีอยู่แล้ว",
+        "similarity": "(คล้ายกัน {{similarity}}%, เกณฑ์ {{threshold}}%)",
+        "same_text": "(ข้อความเดียวกัน)",
+        "same_meaning": "(ความหมายเดียวกัน)",
+        "same_words": "(คำเดียวกัน)"
+      }
     },
     "pinnedTab": {
       "empty": "ไม่มีข้อความที่ปักหมุด",

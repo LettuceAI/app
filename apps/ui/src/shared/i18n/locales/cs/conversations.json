@@ -1017,7 +1017,31 @@
       "undoConfirm": "Vrátit aktualizaci",
       "keep": "Ponechat",
       "undone": "Aktualizace vrácena",
-      "loadMore": "Zobrazit starší aktualizace"
+      "loadMore": "Zobrazit starší aktualizace",
+      "skipReason": {
+        "missing_text": "Nebyl zadán text",
+        "invalid_text": "Text nelze použít",
+        "empty_text": "Text byl prázdný",
+        "text_too_long": "Delší než 280 znaků",
+        "refusal_text": "Vyhodnoceno jako odmítnutí",
+        "meta_text": "Vyhodnoceno jako poznámka k chatu, ne vzpomínka",
+        "missing_category": "Nebyla zadána kategorie",
+        "invalid_category": "Neznámá kategorie",
+        "missing_target": "Nebyla uvedena žádná vzpomínka",
+        "unsupported_tool": "V tomto chatu není k dispozici",
+        "malformed_arguments": "Volání nelze přečíst",
+        "user_edited": "Tuto vzpomínku jste upravili",
+        "already_applied": "Již provedeno",
+        "pinned_target": "Vzpomínka je připnutá"
+      },
+      "duplicate": {
+        "matches": "Shoduje se s „{{text}}“",
+        "missing": "Shoduje se se vzpomínkou, která už neexistuje",
+        "similarity": "({{similarity}}% podobnost, limit {{threshold}}%)",
+        "same_text": "(stejný text)",
+        "same_meaning": "(stejný význam)",
+        "same_words": "(stejná slova)"
+      }
     },
     "pinnedTab": {
       "empty": "Žádné připnuté zprávy",

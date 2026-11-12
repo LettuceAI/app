@@ -975,7 +975,31 @@
       "undoConfirm": "I-undo ang update",
       "keep": "Panatilihin",
       "undone": "Na-undo ang update",
-      "loadMore": "Ipakita ang mga lumang update"
+      "loadMore": "Ipakita ang mga lumang update",
+      "skipReason": {
+        "missing_text": "Walang ibinigay na teksto",
+        "invalid_text": "Hindi magamit ang teksto",
+        "empty_text": "Walang laman ang teksto",
+        "text_too_long": "Mas mahaba sa 280 character",
+        "refusal_text": "Itinuring na pagtanggi",
+        "meta_text": "Itinuring na tala tungkol sa chat, hindi alaala",
+        "missing_category": "Walang ibinigay na kategorya",
+        "invalid_category": "Hindi kilalang kategorya",
+        "missing_target": "Walang binanggit na alaala",
+        "unsupported_tool": "Hindi available sa chat na ito",
+        "malformed_arguments": "Hindi mabasa ang call",
+        "user_edited": "In-edit mo ang alaalang ito",
+        "already_applied": "Tapos na",
+        "pinned_target": "Naka-pin ang alaala"
+      },
+      "duplicate": {
+        "matches": "Tugma sa “{{text}}”",
+        "missing": "Tugma sa alaalang wala na ngayon",
+        "similarity": "({{similarity}}% magkatulad, limitasyon {{threshold}}%)",
+        "same_text": "(parehong teksto)",
+        "same_meaning": "(parehong kahulugan)",
+        "same_words": "(parehong mga salita)"
+      }
     },
     "pinnedTab": {
       "empty": "Walang naka-pin na mensahe",

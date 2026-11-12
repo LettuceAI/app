@@ -954,7 +954,31 @@
       "undoConfirm": "撤销更新",
       "keep": "保留",
       "undone": "更新已撤销",
-      "loadMore": "显示更早的更新"
+      "loadMore": "显示更早的更新",
+      "skipReason": {
+        "missing_text": "未提供文本",
+        "invalid_text": "无法使用该文本",
+        "empty_text": "文本为空",
+        "text_too_long": "超过 280 个字符",
+        "refusal_text": "被判定为拒绝",
+        "meta_text": "被判定为关于聊天的备注，而非记忆",
+        "missing_category": "未提供类别",
+        "invalid_category": "未知类别",
+        "missing_target": "未指定记忆",
+        "unsupported_tool": "此聊天中不可用",
+        "malformed_arguments": "无法读取该调用",
+        "user_edited": "你编辑过这条记忆",
+        "already_applied": "已完成",
+        "pinned_target": "该记忆已置顶"
+      },
+      "duplicate": {
+        "matches": "与“{{text}}”相同",
+        "missing": "与一条已不存在的记忆相同",
+        "similarity": "(相似度 {{similarity}}%，阈值 {{threshold}}%)",
+        "same_text": "(文本相同)",
+        "same_meaning": "(含义相同)",
+        "same_words": "(用词相同)"
+      }
     },
     "pinnedTab": {
       "empty": "没有已固定的消息",

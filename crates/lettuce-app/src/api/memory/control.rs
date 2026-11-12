@@ -333,7 +333,70 @@ pub async fn memory_error_dismiss(
         .await
 }
 
-fn action(outcome: &MemoryToolOutcome) -> dto::MemoryCycleAction {
+fn skip_reason(reason: lettuce_memory::MemoryToolSkipReason) -> dto::MemorySkipReason {
+    use dto::MemorySkipReason as D;
+    use lettuce_memory::MemoryToolSkipReason as R;
+    match reason {
+        R::MissingText => D::MissingText,
+        R::InvalidText => D::InvalidText,
+        R::EmptyText => D::EmptyText,
+        R::TextTooLong => D::TextTooLong,
+        R::RefusalText => D::RefusalText,
+        R::MetaText => D::MetaText,
+        R::MissingCategory => D::MissingCategory,
+        R::InvalidCategory => D::InvalidCategory,
+        R::MissingTarget => D::MissingTarget,
+        R::UnsupportedTool => D::UnsupportedTool,
+        R::MalformedArguments => D::MalformedArguments,
+        R::UserEdited => D::UserEdited,
+        R::AlreadyApplied => D::AlreadyApplied,
+        R::PinnedTarget => D::PinnedTarget,
+    }
+}
+
+/// One activity row: what the call did, and for a skipped or already known create what it proposed and why.
+fn action(
+    outcome: &MemoryToolOutcome,
+    proposed_text: Option<&String>,
+    items: &[lettuce_memory::MemoryItem],
+) -> dto::MemoryCycleAction {
+    let mut row = outcome_action(outcome);
+    match outcome {
+        MemoryToolOutcome::DuplicateSkipped { existing_id, kind } => {
+            row.proposed_text = proposed_text.cloned();
+            let (kind, similarity, threshold) = match kind {
+                lettuce_memory::DuplicateKind::NormalizedText => {
+                    (dto::MemoryDuplicateKind::SameText, None, None)
+                }
+                lettuce_memory::DuplicateKind::Semantic { cosine, threshold } => (
+                    dto::MemoryDuplicateKind::SameMeaning,
+                    Some(cosine.basis_points()),
+                    Some(threshold.basis_points()),
+                ),
+                lettuce_memory::DuplicateKind::LexicalOverlap => {
+                    (dto::MemoryDuplicateKind::SameWords, None, None)
+                }
+            };
+            row.duplicate = Some(dto::MemoryDuplicateMatch {
+                kind,
+                existing_text: items
+                    .iter()
+                    .find(|item| item.id == *existing_id)
+                    .map(|item| item.text.clone()),
+                similarity_basis_points: similarity,
+                threshold_basis_points: threshold,
+            });
+        }
+        MemoryToolOutcome::Skipped { reason } => {
+            row.proposed_text = proposed_text.cloned();
+            row.skip_reason = Some(skip_reason(*reason));
+        }
+        _ => {}
+    }
+    row
+}
+
+fn outcome_action(outcome: &MemoryToolOutcome) -> dto::MemoryCycleAction {
     use dto::MemoryCycleActionKind as K;
     let (kind, memory_id, text) = match outcome {
         MemoryToolOutcome::Created {
@@ -374,6 +437,9 @@ fn action(outcome: &MemoryToolOutcome) -> dto::MemoryCycleAction {
         kind,
         memory_id,
         text,
+        proposed_text: None,
+        skip_reason: None,
+        duplicate: None,
     }
 }
 
@@ -467,14 +533,23 @@ pub async fn memory_cycles(
                         actions: cycle
                             .results
                             .iter()
-                            .filter(|result| {
+                            .zip(
+                                cycle
+                                    .proposed_texts
+                                    .iter()
+                                    .map(Option::as_ref)
+                                    .chain(std::iter::repeat(None)),
+                            )
+                            .filter(|(result, _)| {
                                 !matches!(
                                     result.outcome,
                                     MemoryToolOutcome::SocialEventRecorded
                                         | MemoryToolOutcome::AudienceCorrected { .. }
                                 )
                             })
-                            .map(|result| action(&result.outcome))
+                            .map(|(result, proposed)| {
+                                action(&result.outcome, proposed, &scope.memory.items)
+                            })
                             .collect(),
                         reverted: cycle.reverted,
                         revertable: !cycle.reverted

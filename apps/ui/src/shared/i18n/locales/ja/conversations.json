@@ -954,7 +954,31 @@
       "undoConfirm": "更新を元に戻す",
       "keep": "保持",
       "undone": "更新を元に戻しました",
-      "loadMore": "古い更新を表示"
+      "loadMore": "古い更新を表示",
+      "skipReason": {
+        "missing_text": "テキストが指定されていません",
+        "invalid_text": "テキストを使用できませんでした",
+        "empty_text": "テキストが空でした",
+        "text_too_long": "280文字を超えています",
+        "refusal_text": "拒否と判断されました",
+        "meta_text": "記憶ではなくチャットについてのメモと判断されました",
+        "missing_category": "カテゴリが指定されていません",
+        "invalid_category": "不明なカテゴリ",
+        "missing_target": "記憶が指定されていません",
+        "unsupported_tool": "このチャットでは使用できません",
+        "malformed_arguments": "呼び出しを読み取れませんでした",
+        "user_edited": "この記憶はあなたが編集しました",
+        "already_applied": "適用済み",
+        "pinned_target": "この記憶はピン留めされています"
+      },
+      "duplicate": {
+        "matches": "「{{text}}」と一致",
+        "missing": "すでに存在しない記憶と一致",
+        "similarity": "(類似度 {{similarity}}%、しきい値 {{threshold}}%)",
+        "same_text": "(同じテキスト)",
+        "same_meaning": "(同じ意味)",
+        "same_words": "(同じ単語)"
+      }
     },
     "pinnedTab": {
       "empty": "固定されたメッセージはありません",

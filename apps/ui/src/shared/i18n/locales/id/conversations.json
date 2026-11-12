@@ -954,7 +954,31 @@
       "undoConfirm": "Urungkan pembaruan",
       "keep": "Pertahankan",
       "undone": "Pembaruan diurungkan",
-      "loadMore": "Tampilkan pembaruan lama"
+      "loadMore": "Tampilkan pembaruan lama",
+      "skipReason": {
+        "missing_text": "Tidak ada teks yang diberikan",
+        "invalid_text": "Teks tidak dapat digunakan",
+        "empty_text": "Teks kosong",
+        "text_too_long": "Lebih dari 280 karakter",
+        "refusal_text": "Dibaca sebagai penolakan",
+        "meta_text": "Dibaca sebagai catatan tentang obrolan, bukan memori",
+        "missing_category": "Tidak ada kategori yang diberikan",
+        "invalid_category": "Kategori tidak dikenal",
+        "missing_target": "Tidak ada memori yang disebutkan",
+        "unsupported_tool": "Tidak tersedia di obrolan ini",
+        "malformed_arguments": "Panggilan tidak dapat dibaca",
+        "user_edited": "Kamu mengedit memori ini",
+        "already_applied": "Sudah dilakukan",
+        "pinned_target": "Memori disematkan"
+      },
+      "duplicate": {
+        "matches": "Cocok dengan “{{text}}”",
+        "missing": "Cocok dengan memori yang sudah tidak ada",
+        "similarity": "({{similarity}}% mirip, batas {{threshold}}%)",
+        "same_text": "(teks sama)",
+        "same_meaning": "(makna sama)",
+        "same_words": "(kata-kata sama)"
+      }
     },
     "pinnedTab": {
       "empty": "Tidak ada pesan disematkan",

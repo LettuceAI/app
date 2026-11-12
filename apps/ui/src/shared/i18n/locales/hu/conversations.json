@@ -975,7 +975,31 @@
       "undoConfirm": "Frissítés visszavonása",
       "keep": "Megtartás",
       "undone": "Frissítés visszavonva",
-      "loadMore": "Régebbi frissítések mutatása"
+      "loadMore": "Régebbi frissítések mutatása",
+      "skipReason": {
+        "missing_text": "Nem adott meg szöveget",
+        "invalid_text": "A szöveg nem használható",
+        "empty_text": "A szöveg üres volt",
+        "text_too_long": "Hosszabb 280 karakternél",
+        "refusal_text": "Elutasításnak értelmezve",
+        "meta_text": "A csevegésről szóló megjegyzésnek értelmezve, nem emléknek",
+        "missing_category": "Nem adott meg kategóriát",
+        "invalid_category": "Ismeretlen kategória",
+        "missing_target": "Nem nevezett meg emléket",
+        "unsupported_tool": "Ebben a csevegésben nem érhető el",
+        "malformed_arguments": "A hívás nem olvasható",
+        "user_edited": "Ezt az emléket te szerkesztetted",
+        "already_applied": "Már megtörtént",
+        "pinned_target": "Az emlék ki van tűzve"
+      },
+      "duplicate": {
+        "matches": "Egyezik ezzel: „{{text}}”",
+        "missing": "Egy már nem létező emlékkel egyezik",
+        "similarity": "({{similarity}}% hasonló, határ {{threshold}}%)",
+        "same_text": "(azonos szöveg)",
+        "same_meaning": "(azonos jelentés)",
+        "same_words": "(azonos szavak)"
+      }
     },
     "pinnedTab": {
       "empty": "Nincsenek rögzített üzenetek",

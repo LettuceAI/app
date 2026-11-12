@@ -975,7 +975,31 @@
       "undoConfirm": "Undo update",
       "keep": "Keep",
       "undone": "Update undone",
-      "loadMore": "Show older updates"
+      "loadMore": "Show older updates",
+      "skipReason": {
+        "missing_text": "No text was given",
+        "invalid_text": "The text could not be used",
+        "empty_text": "The text was empty",
+        "text_too_long": "Longer than 280 characters",
+        "refusal_text": "Read as a refusal",
+        "meta_text": "Read as a note about the chat, not a memory",
+        "missing_category": "No category was given",
+        "invalid_category": "Unknown category",
+        "missing_target": "No memory was named",
+        "unsupported_tool": "Not available in this chat",
+        "malformed_arguments": "The call could not be read",
+        "user_edited": "You edited this memory",
+        "already_applied": "Already done",
+        "pinned_target": "The memory is pinned"
+      },
+      "duplicate": {
+        "matches": "Matches “{{text}}”",
+        "missing": "Matches a memory that is gone now",
+        "similarity": "({{similarity}}% similar, limit {{threshold}}%)",
+        "same_text": "(same text)",
+        "same_meaning": "(same meaning)",
+        "same_words": "(same words)"
+      }
     },
     "pinnedTab": {
       "empty": "No pinned messages",

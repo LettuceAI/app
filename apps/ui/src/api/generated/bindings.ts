@@ -6584,6 +6584,10 @@ export type MemoryCycleAction = {
 	kind: MemoryCycleActionKind,
 	memory_id: string | null,
 	text: string | null,
+	/**  The memory the call proposed, for a create that was skipped or already known. */
+	proposed_text: string | null,
+	skip_reason: MemorySkipReason | null,
+	duplicate: MemoryDuplicateMatch | null,
 };
 
 /**  What one tool call of a cycle did. */
@@ -6646,6 +6650,19 @@ export type MemoryDeleteRequest_Serialize = {
 	expected_revision: number,
 	client_operation_id: string,
 	perspective_character_id: string | null,
+};
+
+export type MemoryDuplicateKind = "same_text" | "same_meaning" | "same_words";
+
+/**
+ *  The existing memory a create matched. The similarity and threshold, in basis points, are set for a meaning
+ *  match.
+ */
+export type MemoryDuplicateMatch = {
+	kind: MemoryDuplicateKind,
+	existing_text: string | null,
+	similarity_basis_points: number | null,
+	threshold_basis_points: number | null,
 };
 
 export type MemoryEditResult = {
@@ -6729,6 +6746,9 @@ export type MemoryRewindRetryRequest = {
 };
 
 export type MemoryRunMode = "auto" | "ask_first" | "manual";
+
+/**  Why a call was skipped. */
+export type MemorySkipReason = "missing_text" | "invalid_text" | "empty_text" | "text_too_long" | "refusal_text" | "meta_text" | "missing_category" | "invalid_category" | "missing_target" | "unsupported_tool" | "malformed_arguments" | "user_edited" | "already_applied" | "pinned_target";
 
 export type MemorySkipRequest = {
 	conversation_id: string,

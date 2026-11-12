@@ -1017,7 +1017,31 @@
       "undoConfirm": "Cofnij aktualizację",
       "keep": "Zachowaj",
       "undone": "Cofnięto aktualizację",
-      "loadMore": "Pokaż starsze aktualizacje"
+      "loadMore": "Pokaż starsze aktualizacje",
+      "skipReason": {
+        "missing_text": "Nie podano tekstu",
+        "invalid_text": "Nie można było użyć tekstu",
+        "empty_text": "Tekst był pusty",
+        "text_too_long": "Dłuższe niż 280 znaków",
+        "refusal_text": "Odczytano jako odmowę",
+        "meta_text": "Odczytano jako uwagę o czacie, nie wspomnienie",
+        "missing_category": "Nie podano kategorii",
+        "invalid_category": "Nieznana kategoria",
+        "missing_target": "Nie wskazano wspomnienia",
+        "unsupported_tool": "Niedostępne w tym czacie",
+        "malformed_arguments": "Nie można odczytać wywołania",
+        "user_edited": "Edytowałeś to wspomnienie",
+        "already_applied": "Już zrobione",
+        "pinned_target": "Wspomnienie jest przypięte"
+      },
+      "duplicate": {
+        "matches": "Pasuje do „{{text}}”",
+        "missing": "Pasuje do wspomnienia, którego już nie ma",
+        "similarity": "({{similarity}}% podobieństwa, limit {{threshold}}%)",
+        "same_text": "(ten sam tekst)",
+        "same_meaning": "(to samo znaczenie)",
+        "same_words": "(te same słowa)"
+      }
     },
     "pinnedTab": {
       "empty": "Brak przypiętych wiadomości",

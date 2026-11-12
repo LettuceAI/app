@@ -85,7 +85,23 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
                     {cycle.actions.map((action, index) => (
                       <li key={index} className="flex gap-2 text-sm">
                         <span className={cn("w-24 shrink-0 text-fg-3", action.kind === "created" && "text-accent")}>{t(`memory.activity.actions.${action.kind}`)}</span>
-                        {action.text && <span className="min-w-0 text-fg-2">{action.text}</span>}
+                        <span className="min-w-0 space-y-0.5">
+                          {(action.text ?? action.proposed_text) && <span className="block text-fg-2">{action.text ?? action.proposed_text}</span>}
+                          {action.skip_reason && <span className="block text-fg-3">{t(`memory.activity.skipReason.${action.skip_reason}`)}</span>}
+                          {action.duplicate && (
+                            <span className="block text-fg-3">
+                              {action.duplicate.existing_text
+                                ? t("memory.activity.duplicate.matches", { text: action.duplicate.existing_text })
+                                : t("memory.activity.duplicate.missing")}
+                              {action.duplicate.similarity_basis_points !== null && action.duplicate.threshold_basis_points !== null
+                                ? ` ${t("memory.activity.duplicate.similarity", {
+                                    similarity: Math.round(action.duplicate.similarity_basis_points / 100),
+                                    threshold: Math.round(action.duplicate.threshold_basis_points / 100),
+                                  })}`
+                                : ` ${t(`memory.activity.duplicate.${action.duplicate.kind}`)}`}
+                            </span>
+                          )}
+                        </span>
                       </li>
                     ))}
                   </ul>
