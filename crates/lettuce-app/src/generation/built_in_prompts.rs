@@ -553,7 +553,9 @@ fn validate_conditional_blocks(
 fn is_legacy_variable_allowed_for(purpose: PromptPurpose, value: &str) -> bool {
     if matches!(
         value,
-        "char.name"
+        "char"
+            | "user"
+            | "char.name"
             | "char.desc"
             | "persona.name"
             | "persona.desc"
@@ -703,6 +705,8 @@ fn is_registered_legacy_variable(value: &str) -> bool {
         "scene_cast"
             | "scene_cast_lora"
             | "subject_role"
+            | "char"
+            | "user"
             | "char.name"
             | "char.desc"
             | "char.definition"
