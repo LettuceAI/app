@@ -22,6 +22,15 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new()
         .commands(collect_commands![
             host::opened_files_take,
+            commands::creator::creator_start,
+            commands::creator::creator_get,
+            commands::creator::creators_list,
+            commands::creator::creator_edit,
+            commands::creator::creator_review,
+            commands::creator::creator_apply,
+            commands::creator::creator_send,
+            commands::creator::creator_regenerate,
+
             commands::sync::sync_share_start,
             commands::sync::sync_share_approve,
             commands::sync::sync_share_begin,

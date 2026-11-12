@@ -1,5 +1,5 @@
 use lettuce_types::{
-    CharacterId, CreationProposalId, CreationTurnId, CreationWorkflowId, LorebookEntryId,
+    AssetId, CharacterId, CreationProposalId, CreationTurnId, CreationWorkflowId, LorebookEntryId,
     LorebookId, PersonaId, Revision, SceneId, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
@@ -84,10 +84,14 @@ pub enum CreationDraft {
         name: Option<String>,
         definition: Option<String>,
         scenes: Vec<CreationScene>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        avatar: Option<AssetId>,
     },
     Persona {
         name: Option<String>,
         description: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        avatar: Option<AssetId>,
     },
     Lorebook {
         name: Option<String>,
@@ -106,12 +110,21 @@ impl CreationDraft {
         }
     }
 
+    #[must_use]
+    pub const fn avatar(&self) -> Option<AssetId> {
+        match self {
+            Self::Character { avatar, .. } | Self::Persona { avatar, .. } => *avatar,
+            Self::Lorebook { .. } => None,
+        }
+    }
+
     pub(crate) fn validate(&self) -> Result<(), super::CreationProposalError> {
         match self {
             Self::Character {
                 name,
                 definition,
                 scenes,
+                ..
             } => {
                 validate_optional(name)?;
                 validate_optional(definition)?;
@@ -121,7 +134,9 @@ impl CreationDraft {
                 }
                 ensure_unique(scenes.iter().map(|scene| scene.id))?;
             }
-            Self::Persona { name, description } => {
+            Self::Persona {
+                name, description, ..
+            } => {
                 validate_optional(name)?;
                 validate_optional(description)?;
             }
@@ -222,6 +237,53 @@ pub struct CreationWorkflow {
     pub updated_at: TimestampMillis,
 }
 
+/// An image a creator tool call asked for, as backups carry it. Until `asset_id` is set or `failed` is true, `job_id`
+/// was still making it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreationGeneratedImage {
+    pub call_ordinal: u16,
+    pub job_id: Option<lettuce_types::JobId>,
+    pub asset_id: Option<AssetId>,
+    pub failed: bool,
+    pub prompt: String,
+    pub source_asset_id: Option<AssetId>,
+    pub created_at: TimestampMillis,
+}
+
+/// A character or persona the user attached to a message so the creator reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CreationReference {
+    Character { id: CharacterId },
+    Persona { id: PersonaId },
+}
+
+/// What the user attached to a message besides its text.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreationTurnInputs {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<CreationReference>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<AssetId>,
+}
+
+impl CreationTurnInputs {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.references.is_empty() && self.images.is_empty()
+    }
+
+    pub fn validate(&self) -> Result<(), super::CreationProposalError> {
+        ensure_unique(self.references.iter().map(|reference| match reference {
+            CreationReference::Character { id } => (0, id.to_string()),
+            CreationReference::Persona { id } => (1, id.to_string()),
+        }))?;
+        ensure_unique(self.images.iter().copied())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewCreationTurn {
     pub id: CreationTurnId,
@@ -260,6 +322,8 @@ pub struct CreationTurn {
     /// draft it started from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub regenerated_turn_id: Option<CreationTurnId>,
+    #[serde(default, skip_serializing_if = "CreationTurnInputs::is_empty")]
+    pub inputs: CreationTurnInputs,
     pub created_at: TimestampMillis,
 }
 

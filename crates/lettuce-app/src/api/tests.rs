@@ -396,6 +396,10 @@ pub(super) fn harness(reply: Reply) -> Harness {
     harness_with(reply, Arc::new(SystemClock), None)
 }
 
+pub(super) fn media_harness(reply: Reply, root: &std::path::Path) -> Harness {
+    harness_with(reply, Arc::new(SystemClock), Some(media_store(root)))
+}
+
 fn harness_with(
     reply: Reply,
     clock: Arc<dyn lettuce_jobs::Clock>,

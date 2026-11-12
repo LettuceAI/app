@@ -1,23 +1,26 @@
 use lettuce_context::{
-    PromptConditionContext, PromptEntryRole, PromptRenderContext, PromptRenderValues,
-    PromptVariable as Variable, render_prompt,
+    PromptConditionContext, PromptEntryRole, PromptRenderContext, PromptVariable as Variable,
+    render_prompt,
 };
+use lettuce_conversations::MediaAssetRole;
 use lettuce_conversations::{
     MessagePart, MessageRole, ProposedToolCall, ProviderContextPart, ProviderNeutralMessage,
     ToolOutput,
 };
 use lettuce_creation::{
     CreationDialogueTurn, CreationDraft, CreationOperation, CreationOperationError,
-    CreationOperationOutcome, CreationRejection, CreationTargetKind,
+    CreationOperationOutcome, CreationReference, CreationRejection, CreationTargetKind,
+    CreationTurnInputs, creation_image_label,
 };
 use lettuce_models::ProviderProtocol;
+use lettuce_types::AssetId;
 use serde_json::Value;
 
 use crate::generation::runtime_text::{RuntimeText, RuntimeTextError};
 
 /// Every draft-view fragment of `prompt_app_creation_runtime`.
 #[cfg(test)]
-pub(crate) const DRAFT_VIEW_KEYS: [&str; 14] = [
+pub(crate) const DRAFT_VIEW_KEYS: [&str; 20] = [
     "creation_target_character",
     "creation_target_persona",
     "creation_target_lorebook",
@@ -30,13 +33,19 @@ pub(crate) const DRAFT_VIEW_KEYS: [&str; 14] = [
     "creation_draft_scene",
     "creation_draft_entries",
     "creation_draft_entry",
+    "creation_draft_avatar",
+    "creation_draft_images",
+    "creation_draft_image_uploaded",
+    "creation_draft_image_generated",
+    "creation_draft_image_edited",
+    "creation_draft_image_active",
     "creation_draft_preview",
     "creation_draft_preview_truncated",
 ];
 
 /// Every tool-result fragment of `prompt_app_creation_runtime`.
 #[cfg(test)]
-pub(crate) const RESULT_KEYS: [&str; 34] = [
+pub(crate) const RESULT_KEYS: [&str; 43] = [
     "creation_result_set_name",
     "creation_result_write_definition",
     "creation_result_write_scene",
@@ -48,6 +57,9 @@ pub(crate) const RESULT_KEYS: [&str; 34] = [
     "creation_result_reorder_lore_entries",
     "creation_result_show_preview",
     "creation_result_request_confirmation",
+    "creation_result_use_uploaded_image",
+    "creation_result_generate_image",
+    "creation_result_edit_avatar_image",
     "creation_error_message",
     "creation_error_unknown_tool",
     "creation_error_scene_not_found",
@@ -71,6 +83,23 @@ pub(crate) const RESULT_KEYS: [&str; 34] = [
     "creation_error_edit_lore_entry_content",
     "creation_error_delete_lore_entry_id",
     "creation_error_reorder_lore_entries_order",
+    "creation_error_use_uploaded_image_image_id",
+    "creation_error_image_not_found",
+    "creation_error_generate_image_prompt",
+    "creation_error_edit_avatar_image_image_id",
+    "creation_error_edit_avatar_image_edit_prompt",
+    "creation_error_image_failed",
+];
+
+/// Every fragment of `prompt_app_creation_runtime` that renders what the user attached to a message.
+#[cfg(test)]
+pub(crate) const INPUT_KEYS: [&str; 6] = [
+    "creation_message_attachments",
+    "creation_reference_character",
+    "creation_reference_persona",
+    "creation_reference_no_definition",
+    "creation_reference_no_description",
+    "creation_uploaded_image",
 ];
 
 /// Every structured-fallback fragment of `prompt_app_creation_runtime`.
@@ -83,8 +112,37 @@ pub(crate) const FALLBACK_KEYS: [&str; 5] = [
     "creation_fallback_no_arguments",
 ];
 
-const DEFINITION_PREVIEW_CHARS: usize = 80;
 const ITEM_PREVIEW_CHARS: usize = 60;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CreationImageOrigin {
+    Uploaded,
+    Generated,
+    Edited,
+}
+
+/// An image of the session's gallery, in the order the creator lists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CreationPromptImage {
+    pub asset_id: AssetId,
+    pub origin: CreationImageOrigin,
+}
+
+/// A referenced character or persona as it reads now; `text` is its definition or description.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreationReferenceText {
+    pub name: String,
+    pub text: Option<String>,
+}
+
+/// The session's images and references for one request. References that no longer exist are left out of `references`
+/// and so out of the prompt; uploads become image parts only when the model accepts image input.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CreationPromptMedia {
+    pub gallery: Vec<CreationPromptImage>,
+    pub references: std::collections::HashMap<CreationReference, CreationReferenceText>,
+    pub image_input: bool,
+}
 
 /// The creation helper's system messages (the `prompt_app_creation_helper`
 /// entries with the target label and draft view), the earlier dialogue and the
@@ -96,22 +154,26 @@ const ITEM_PREVIEW_CHARS: usize = 60;
 /// For the local llama.cpp engine every entry is trimmed and the non-empty ones
 /// are joined with a blank line into one leading system message, because chat
 /// templates such as Gemma reject a second system message.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn creation_context_messages(
     helper: &RuntimeText,
     runtime: &RuntimeText,
     draft: &CreationDraft,
+    media: &CreationPromptMedia,
     dialogue: &[CreationDialogueTurn],
     user_message: &str,
+    inputs: &CreationTurnInputs,
     protocol: ProviderProtocol,
     fallback_protocol: Option<&str>,
 ) -> Result<Vec<ProviderNeutralMessage>, RuntimeTextError> {
-    let mut values = PromptRenderValues::default();
+    let mut values = crate::generation::runtime_text::literal_name_values();
     values
         .purpose_values
         .insert(Variable::TargetLabel, target_label(runtime, draft.kind())?);
-    values
-        .purpose_values
-        .insert(Variable::DraftState, render_draft_view(runtime, draft)?);
+    values.purpose_values.insert(
+        Variable::DraftState,
+        render_draft_view(runtime, draft, &media.gallery)?,
+    );
     let rendered = render_prompt(
         helper.document(),
         &PromptRenderContext {
@@ -157,7 +219,12 @@ pub(crate) fn creation_context_messages(
         )
     };
     for turn in dialogue {
-        messages.push(text_message(MessageRole::User, turn.user_message.clone()));
+        messages.push(user_turn_message(
+            runtime,
+            &turn.user_message,
+            &turn.inputs,
+            media,
+        )?);
         let reply = turn
             .assistant_parts
             .iter()
@@ -171,7 +238,7 @@ pub(crate) fn creation_context_messages(
             messages.push(text_message(MessageRole::Assistant, reply));
         }
     }
-    messages.push(text_message(MessageRole::User, user_message.to_owned()));
+    messages.push(user_turn_message(runtime, user_message, inputs, media)?);
     crate::companion::companion_memory_inference::insert_in_chat_messages(&mut messages, in_chat);
     Ok(messages)
 }
@@ -251,6 +318,7 @@ pub(crate) fn fallback_protocol(
 pub(crate) fn render_draft_view(
     text: &RuntimeText,
     draft: &CreationDraft,
+    gallery: &[CreationPromptImage],
 ) -> Result<String, RuntimeTextError> {
     let mut view = String::new();
     push_line(
@@ -264,7 +332,9 @@ pub(crate) fn render_draft_view(
         CreationDraft::Character {
             name, definition, ..
         } => (name, definition.as_ref()),
-        CreationDraft::Persona { name, description } => (name, description.as_ref()),
+        CreationDraft::Persona {
+            name, description, ..
+        } => (name, description.as_ref()),
         CreationDraft::Lorebook { name, .. } => (name, None),
     };
     let name = match name {
@@ -282,10 +352,7 @@ pub(crate) fn render_draft_view(
                 "creation_draft_definition",
                 [
                     (Variable::TextChars, definition.chars().count().to_string()),
-                    (
-                        Variable::TextQuote,
-                        preview(text, definition, DEFINITION_PREVIEW_CHARS)?,
-                    ),
+                    (Variable::TextQuote, full_text(text, definition)?),
                 ],
             )?,
             None => text.render_with("creation_draft_definition_unset", [])?,
@@ -305,10 +372,7 @@ pub(crate) fn render_draft_view(
                                 Variable::TextChars,
                                 scene.content.chars().count().to_string(),
                             ),
-                            (
-                                Variable::TextQuote,
-                                preview(text, &scene.content, ITEM_PREVIEW_CHARS)?,
-                            ),
+                            (Variable::TextQuote, full_text(text, &scene.content)?),
                         ],
                     )?,
                 );
@@ -341,17 +405,67 @@ pub(crate) fn render_draft_view(
         | CreationDraft::Persona { .. }
         | CreationDraft::Lorebook { .. } => {}
     }
+    let avatar = draft.avatar();
+    if let Some(avatar) = avatar {
+        push_line(
+            &mut view,
+            text.render_with(
+                "creation_draft_avatar",
+                [(Variable::DraftItemId, creation_image_label(avatar))],
+            )?,
+        );
+    }
+    if !gallery.is_empty() {
+        push_line(&mut view, text.render_with("creation_draft_images", [])?);
+        for (index, image) in gallery.iter().enumerate() {
+            let mut line = text.render_with(
+                match image.origin {
+                    CreationImageOrigin::Uploaded => "creation_draft_image_uploaded",
+                    CreationImageOrigin::Generated => "creation_draft_image_generated",
+                    CreationImageOrigin::Edited => "creation_draft_image_edited",
+                },
+                [
+                    (Variable::ItemNumber, (index + 1).to_string()),
+                    (Variable::DraftItemId, creation_image_label(image.asset_id)),
+                ],
+            )?;
+            if avatar == Some(image.asset_id) {
+                line.push_str(&text.render_with("creation_draft_image_active", [])?);
+            }
+            push_line(&mut view, line);
+        }
+    }
     Ok(view)
 }
 
 /// The tool result for one call: `{success, message, error?, ...}`; preview
 /// and confirmation also carry `action` and the draft.
+/// The answer to one tool call. `image` is what an image call produced: the image, or `None` when it could not be
+/// made.
 pub(crate) fn render_tool_output(
     text: &RuntimeText,
     call: &ProposedToolCall,
     outcome: &CreationOperationOutcome,
     draft: &CreationDraft,
+    image: Option<AssetId>,
 ) -> Result<ToolOutput, RuntimeTextError> {
+    if outcome.error.is_none()
+        && matches!(outcome.operation, CreationOperation::GenerateImage { .. })
+        && image.is_none()
+    {
+        let reason = text.render_with("creation_error_image_failed", [])?;
+        return Ok(ToolOutput {
+            value: serde_json::json!({
+                "success": false,
+                "message": text.render_with(
+                    "creation_error_message",
+                    [(Variable::ToolError, reason.clone())],
+                )?,
+                "error": reason,
+            }),
+            is_error: true,
+        });
+    }
     let Some(error) = outcome.error else {
         let mut value = serde_json::Map::new();
         value.insert("success".to_owned(), Value::Bool(true));
@@ -360,7 +474,7 @@ pub(crate) fn render_tool_output(
                 "creation_result_set_name",
                 [(Variable::DraftName, value.clone())],
             )?,
-            CreationOperation::SetDescription { .. } => {
+            CreationOperation::SetDescription { .. } | CreationOperation::ReplaceDraft { .. } => {
                 text.render_with("creation_result_write_definition", [])?
             }
             CreationOperation::AddScene { id, .. } => {
@@ -393,6 +507,31 @@ pub(crate) fn render_tool_output(
             }
             CreationOperation::ReorderLorebookEntries { .. } => {
                 text.render_with("creation_result_reorder_lore_entries", [])?
+            }
+            CreationOperation::SetAvatar { asset_id } => {
+                if let Some(asset_id) = asset_id {
+                    value.insert(
+                        "image_id".to_owned(),
+                        Value::String(creation_image_label(*asset_id)),
+                    );
+                }
+                text.render_with("creation_result_use_uploaded_image", [])?
+            }
+            CreationOperation::GenerateImage { source, .. } => {
+                if let Some(image) = image {
+                    value.insert(
+                        "image_id".to_owned(),
+                        Value::String(creation_image_label(image)),
+                    );
+                }
+                text.render_with(
+                    if source.is_some() {
+                        "creation_result_edit_avatar_image"
+                    } else {
+                        "creation_result_generate_image"
+                    },
+                    [],
+                )?
             }
             CreationOperation::ShowPreview | CreationOperation::RequestConfirmation => {
                 let action = if matches!(outcome.operation, CreationOperation::ShowPreview) {
@@ -462,6 +601,9 @@ pub(crate) fn render_tool_output(
             "edit_scene" => text.render_with("creation_error_scene_not_found", [])?,
             "delete_scene" => item("creation_error_delete_scene_not_found", id.clone())?,
             "reorder_lore_entries" => text.render_with("creation_error_entries_not_found", [])?,
+            "use_uploaded_image" | "edit_avatar_image" => {
+                item("creation_error_image_not_found", id.clone())?
+            }
             _ => item("creation_error_entry_not_found", id.clone())?,
         },
         (CreationOperation::UpdateScene { .. }, CreationOperationError::NotFound) => {
@@ -512,6 +654,13 @@ fn target_label(text: &RuntimeText, kind: CreationTargetKind) -> Result<String, 
     )
 }
 
+fn full_text(text: &RuntimeText, value: &str) -> Result<String, RuntimeTextError> {
+    text.render_with(
+        "creation_draft_preview",
+        [(Variable::TextPreview, value.to_owned())],
+    )
+}
+
 fn preview(text: &RuntimeText, value: &str, max: usize) -> Result<String, RuntimeTextError> {
     let shown = value
         .chars()
@@ -543,6 +692,84 @@ const fn entry_role(role: PromptEntryRole) -> MessageRole {
     }
 }
 
+/// A user message with what was attached to it: the referenced characters and personas and the uploaded images' ids
+/// follow the text after a separator, as legacy appended them, and the images themselves follow as image parts when
+/// the model accepts image input.
+fn user_turn_message(
+    text: &RuntimeText,
+    message: &str,
+    inputs: &CreationTurnInputs,
+    media: &CreationPromptMedia,
+) -> Result<ProviderNeutralMessage, RuntimeTextError> {
+    let mut blocks = Vec::new();
+    for reference in &inputs.references {
+        let Some(found) = media.references.get(reference) else {
+            continue;
+        };
+        let (key, id, missing) = match reference {
+            CreationReference::Character { id } => (
+                "creation_reference_character",
+                id.to_string(),
+                "creation_reference_no_definition",
+            ),
+            CreationReference::Persona { id } => (
+                "creation_reference_persona",
+                id.to_string(),
+                "creation_reference_no_description",
+            ),
+        };
+        let description = match found.text.as_deref().filter(|text| !text.trim().is_empty()) {
+            Some(description) => description.to_owned(),
+            None => text.render_with(missing, [])?,
+        };
+        blocks.push(text.render_with(
+            key,
+            [
+                (Variable::SubjectName, found.name.clone()),
+                (Variable::DraftItemId, id),
+                (Variable::SubjectDescription, description),
+            ],
+        )?);
+    }
+    let uploads = inputs
+        .images
+        .iter()
+        .map(|asset_id| {
+            text.render_with(
+                "creation_uploaded_image",
+                [(Variable::DraftItemId, creation_image_label(*asset_id))],
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !uploads.is_empty() {
+        blocks.push(uploads.join("\n"));
+    }
+    let mut content = message.to_owned();
+    if !blocks.is_empty() {
+        content = format!(
+            "{content}\n\n{}\n{}",
+            text.render_with("creation_message_attachments", [])?,
+            blocks.join("\n\n")
+        );
+    }
+    let mut parts = vec![ProviderContextPart::Text { text: content }];
+    if media.image_input {
+        parts.extend(
+            inputs
+                .images
+                .iter()
+                .map(|asset_id| ProviderContextPart::MediaAsset {
+                    asset_id: *asset_id,
+                    role: MediaAssetRole::Attachment,
+                }),
+        );
+    }
+    Ok(ProviderNeutralMessage {
+        role: MessageRole::User,
+        parts,
+    })
+}
+
 fn text_message(role: MessageRole, text: String) -> ProviderNeutralMessage {
     ProviderNeutralMessage {
         role,
@@ -559,9 +786,10 @@ mod tests {
     use lettuce_models::ProviderProtocol;
     use lettuce_types::{CreationTurnId, LorebookEntryId, SceneId};
 
-    use super::{creation_context_messages, render_draft_view};
+    use super::{CreationPromptMedia, creation_context_messages, render_draft_view};
     use crate::BuiltInPromptId;
     use crate::generation::runtime_text::RuntimeText;
+    use lettuce_creation::CreationTurnInputs;
 
     fn text_of(message: &lettuce_conversations::ProviderNeutralMessage) -> &str {
         match &message.parts[0] {
@@ -571,7 +799,7 @@ mod tests {
     }
 
     #[test]
-    fn draft_view_matches_the_legacy_summary() {
+    fn draft_view_shows_full_texts_and_previews_lore_entries() {
         let text = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime);
         let scene = SceneId::new();
         let draft = CreationDraft::Character {
@@ -582,11 +810,12 @@ mod tests {
                 content: "She looks up.\nThe door shuts.".into(),
                 direction: None,
             }],
+            avatar: None,
         };
         assert_eq!(
-            render_draft_view(&text, &draft).expect("view"),
+            render_draft_view(&text, &draft, &[]).expect("view"),
             format!(
-                "DRAFT (character):\n  name: Lys\n  definition: <85 chars> \"{}…\"\n  scenes:\n    {scene} <29 chars> \"She looks up. The door shuts.\"\n",
+                "DRAFT (character):\n  name: Lys\n  definition: <85 chars> \"{}\nmore\"\n  scenes:\n    {scene} <29 chars> \"She looks up.\nThe door shuts.\"\n",
                 "a".repeat(80)
             )
         );
@@ -595,8 +824,10 @@ mod tests {
                 &text,
                 &CreationDraft::Persona {
                     name: None,
-                    description: None
-                }
+                    description: None,
+                    avatar: None,
+                },
+                &[]
             )
             .expect("persona"),
             "DRAFT (persona):\n  name: <unset>\n  definition: <unset>\n"
@@ -613,7 +844,8 @@ mod tests {
                         title: "Pact".into(),
                         content: "Sworn.".into(),
                     }],
-                }
+                },
+                &[]
             )
             .expect("lorebook"),
             format!(
@@ -629,15 +861,18 @@ mod tests {
         let draft = CreationDraft::Persona {
             name: None,
             description: None,
+            avatar: None,
         };
         let messages = creation_context_messages(
             &helper,
             &runtime,
             &draft,
+            &CreationPromptMedia::default(),
             &[
                 CreationDialogueTurn {
                     turn_id: CreationTurnId::new(),
                     user_message: "Hi! I want to create a new persona.".into(),
+                    inputs: Default::default(),
                     assistant_parts: vec![
                         MessagePart::ReasoningSummary {
                             text: "hidden".into(),
@@ -654,10 +889,12 @@ mod tests {
                 CreationDialogueTurn {
                     turn_id: CreationTurnId::new(),
                     user_message: "Quiet.".into(),
+                    inputs: Default::default(),
                     assistant_parts: Vec::new(),
                 },
             ],
             "You decide.",
+            &CreationTurnInputs::default(),
             ProviderProtocol::OpenAiCompatible,
             None,
         )
@@ -690,23 +927,62 @@ mod tests {
     }
 
     #[test]
+    fn manual_draft_context_keeps_text_beyond_the_short_summary() {
+        let helper = RuntimeText::from_seed(BuiltInPromptId::CreationHelper);
+        let runtime = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime);
+        let description = format!(
+            "{}Remember the brass compass.",
+            "A long description. ".repeat(20)
+        );
+        let messages = creation_context_messages(
+            &helper,
+            &runtime,
+            &CreationDraft::Persona {
+                name: Some("Mira".into()),
+                description: Some(description.clone()),
+                avatar: None,
+            },
+            &CreationPromptMedia::default(),
+            &[],
+            "Keep her background.",
+            &CreationTurnInputs::default(),
+            ProviderProtocol::OpenAiCompatible,
+            None,
+        )
+        .expect("context");
+        assert!(text_of(&messages[6]).contains(&description));
+    }
+
+    #[test]
     fn llama_cpp_gets_one_leading_system_message_and_remote_providers_keep_entries() {
         let helper = RuntimeText::from_seed(BuiltInPromptId::CreationHelper);
         let runtime = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime);
         let draft = CreationDraft::Persona {
             name: Some("Ari".into()),
             description: None,
+            avatar: None,
         };
         let dialogue = [CreationDialogueTurn {
             turn_id: CreationTurnId::new(),
             user_message: "Hi.".into(),
+            inputs: Default::default(),
             assistant_parts: vec![MessagePart::Text {
                 text: "Hello.".into(),
             }],
         }];
         let build = |protocol| {
-            creation_context_messages(&helper, &runtime, &draft, &dialogue, "Go.", protocol, None)
-                .expect("context")
+            creation_context_messages(
+                &helper,
+                &runtime,
+                &draft,
+                &CreationPromptMedia::default(),
+                &dialogue,
+                "Go.",
+                &CreationTurnInputs::default(),
+                protocol,
+                None,
+            )
+            .expect("context")
         };
         let remote = build(ProviderProtocol::OpenAiCompatible);
         let entries = remote
@@ -749,6 +1025,7 @@ mod tests {
             .map(|index| CreationDialogueTurn {
                 turn_id: CreationTurnId::new(),
                 user_message: format!("turn {index}"),
+                inputs: Default::default(),
                 assistant_parts: vec![MessagePart::Text {
                     text: format!("reply {index}"),
                 }],
@@ -760,9 +1037,12 @@ mod tests {
             &CreationDraft::Persona {
                 name: None,
                 description: None,
+                avatar: None,
             },
+            &CreationPromptMedia::default(),
             &dialogue,
             "latest",
+            &CreationTurnInputs::default(),
             ProviderProtocol::OpenAiCompatible,
             None,
         )
@@ -784,6 +1064,7 @@ mod tests {
         let draft = CreationDraft::Persona {
             name: Some("Ari".into()),
             description: None,
+            avatar: None,
         };
         let render = |name: &str,
                       arguments: serde_json::Value,
@@ -804,6 +1085,7 @@ mod tests {
                     error,
                 },
                 &draft,
+                None,
             )
             .expect("render")
         };
@@ -947,10 +1229,126 @@ mod tests {
                 error: None,
             },
             &draft,
+            None,
         )
         .expect("render");
         output.validate().expect("bounded result");
         assert!(output.value.get("draft").is_some());
         assert_eq!(output.value["action"], "show_preview");
+    }
+
+    #[test]
+    fn attachments_follow_the_message_and_the_gallery_marks_the_avatar() {
+        use super::{CreationImageOrigin, CreationPromptImage, CreationReferenceText};
+        use lettuce_creation::CreationReference;
+        let helper = RuntimeText::from_seed(BuiltInPromptId::CreationHelper);
+        let runtime = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime);
+        let upload = lettuce_types::AssetId::new();
+        let ada = lettuce_types::CharacterId::new();
+        let gone = lettuce_types::PersonaId::new();
+        let label = lettuce_creation::creation_image_label(upload);
+        let draft = CreationDraft::Persona {
+            name: Some("Mira".into()),
+            description: None,
+            avatar: Some(upload),
+        };
+        let mut media = CreationPromptMedia {
+            gallery: vec![CreationPromptImage {
+                asset_id: upload,
+                origin: CreationImageOrigin::Uploaded,
+            }],
+            ..CreationPromptMedia::default()
+        };
+        media.references.insert(
+            CreationReference::Character { id: ada },
+            CreationReferenceText {
+                name: "Ada".into(),
+                text: None,
+            },
+        );
+        let inputs = CreationTurnInputs {
+            references: vec![
+                CreationReference::Character { id: ada },
+                CreationReference::Persona { id: gone },
+            ],
+            images: vec![upload],
+        };
+        let build = |media: &CreationPromptMedia| {
+            creation_context_messages(
+                &helper,
+                &runtime,
+                &draft,
+                media,
+                &[],
+                "Make a persona for her.",
+                &inputs,
+                ProviderProtocol::OpenAiCompatible,
+                None,
+            )
+            .expect("context")
+        };
+        let messages = build(&media);
+        let last = messages.last().expect("user message");
+        assert_eq!(
+            text_of(last),
+            format!(
+                "Make a persona for her.\n\n---\n[Referenced Character: \"Ada\" (id:{ada})]\nNo definition available.\n\n[Uploaded Image (id:{label})]"
+            )
+        );
+        assert_eq!(last.parts.len(), 1);
+        assert!(text_of(&messages[6]).contains(&format!(
+            "  avatar: {label}\n  generated_images:\n    [1] id={label} uploaded [active avatar]\n"
+        )));
+        media.image_input = true;
+        let seeing = build(&media);
+        assert!(matches!(
+            seeing.last().expect("user message").parts[1],
+            ProviderContextPart::MediaAsset { asset_id, .. } if asset_id == upload
+        ));
+    }
+
+    #[test]
+    fn the_helper_teaches_name_placeholders_and_keeps_them_in_the_draft() {
+        let helper = RuntimeText::from_seed(BuiltInPromptId::CreationHelper);
+        let runtime = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime).with_literal_names();
+        let draft = CreationDraft::Persona {
+            name: Some("Mira".into()),
+            description: Some("{{user}} keeps the lighthouse.".into()),
+            avatar: None,
+        };
+        let messages = creation_context_messages(
+            &helper,
+            &runtime,
+            &draft,
+            &CreationPromptMedia::default(),
+            &[],
+            "Go.",
+            &CreationTurnInputs::default(),
+            ProviderProtocol::OpenAiCompatible,
+            None,
+        )
+        .expect("context");
+        let system = messages
+            .iter()
+            .take_while(|message| message.role == MessageRole::System)
+            .map(text_of)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(system.contains("marked `{{user}}:`"));
+        assert!(system.contains("{{char}}: \""));
+        assert!(system.contains("{{user}} keeps the lighthouse."));
+        let tools = lettuce_creation::describe_creation_tools(
+            &lettuce_creation::creation_tool_request(
+                lettuce_creation::CreationTargetKind::Character,
+            ),
+            &|key| runtime.render_with(key, []).unwrap_or_default(),
+        );
+        let scene = tools
+            .definitions
+            .iter()
+            .find(|definition| definition.name == "write_scene")
+            .and_then(|definition| definition.description.clone())
+            .expect("scene tool");
+        assert!(scene.contains("{{char}}") && scene.contains("{{user}}"));
     }
 }

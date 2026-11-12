@@ -186,6 +186,8 @@ pub struct BackupCreationWorkflow {
 pub struct BackupCreationAttempt {
     pub attempt: lettuce_creation::CreationInferenceAttempt,
     pub rounds: Vec<lettuce_creation::CreationInferenceRound>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<lettuce_creation::CreationGeneratedImage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

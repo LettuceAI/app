@@ -44,9 +44,35 @@ impl<T: PromptRepository + ?Sized> RuntimeTextSource for T {
 pub(crate) struct RuntimeText {
     id: BuiltInPromptId,
     document: PromptDocument,
+    literal_names: bool,
+}
+
+/// Values that render `{{char}}`, `{{user}}` and `{{persona}}` as themselves, for text that teaches a model to write
+/// those placeholders.
+pub(crate) fn literal_name_values() -> PromptRenderValues {
+    PromptRenderValues {
+        character_name: "{{char}}".to_owned(),
+        user_name: "{{user}}".to_owned(),
+        persona_name: "{{persona}}".to_owned(),
+        ..PromptRenderValues::default()
+    }
 }
 
 impl RuntimeText {
+    pub(crate) fn from_document(id: BuiltInPromptId, document: PromptDocument) -> Self {
+        Self {
+            id,
+            document,
+            literal_names: false,
+        }
+    }
+
+    /// Renders `{{char}}`, `{{user}}` and `{{persona}}` as themselves instead of empty names.
+    #[must_use]
+    pub(crate) fn with_literal_names(mut self) -> Self {
+        self.literal_names = true;
+        self
+    }
     pub(crate) fn load<R: RuntimeTextSource + ?Sized>(
         repository: &R,
         id: BuiltInPromptId,
@@ -54,7 +80,11 @@ impl RuntimeText {
         repository
             .runtime_text_document(id)
             .map_err(|_| RuntimeTextError::Unavailable)?
-            .map(|document| Self { id, document })
+            .map(|document| Self {
+                id,
+                document,
+                literal_names: false,
+            })
             .ok_or(RuntimeTextError::Unavailable)
     }
 
@@ -63,6 +93,7 @@ impl RuntimeText {
         Self {
             id,
             document: crate::generation::built_in_prompts::seed_document(id),
+            literal_names: false,
         }
     }
 
@@ -114,7 +145,11 @@ impl RuntimeText {
         key: &str,
         variables: impl IntoIterator<Item = (PromptVariable, String)>,
     ) -> Result<String, RuntimeTextError> {
-        let mut values = PromptRenderValues::default();
+        let mut values = if self.literal_names {
+            literal_name_values()
+        } else {
+            PromptRenderValues::default()
+        };
         values.purpose_values.extend(variables);
         self.render(key, &values).map(Option::unwrap_or_default)
     }

@@ -239,6 +239,10 @@ fn apply(
             settings.help_me_reply = convert(value, "help_me_reply")?;
             "help_me_reply"
         }
+        dto::SettingsPatch::CreationHelper { value } => {
+            settings.creation_helper = convert(value, "creation_helper")?;
+            "creation_helper"
+        }
         dto::SettingsPatch::LorebookGenerator { value } => {
             if value
                 .default_target_count

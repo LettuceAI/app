@@ -7,6 +7,14 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	/**  Returns the items opened since the last call and clears the inbox. */
 	openedFilesTake: () => __TAURI_INVOKE<OpenedItem[]>("opened_files_take"),
+	creatorStart: (request: CreatorStartRequest_Deserialize) => typedError<CreatorView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("creator_start", { request })),
+	creatorGet: (request: CreatorGetRequest) => typedError<CreatorView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("creator_get", { request })),
+	creatorsList: (request: CreatorsListRequest) => typedError<CreatorPage, ApiError_Serialize>(__TAURI_INVOKE("creators_list", { request })),
+	creatorEdit: (request: CreatorEditRequest_Deserialize) => typedError<CreatorView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("creator_edit", { request })),
+	creatorReview: (request: CreatorRevisionRequest) => typedError<CreatorView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("creator_review", { request })),
+	creatorApply: (request: CreatorRevisionRequest) => typedError<CreatorView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("creator_apply", { request })),
+	creatorSend: (request: CreatorSendRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("creator_send", { request })),
+	creatorRegenerate: (request: CreatorRegenerateRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("creator_regenerate", { request })),
 	syncShareStart: () => typedError<SyncSharing, ApiError_Serialize>(__TAURI_INVOKE("sync_share_start")),
 	syncShareApprove: (request: SyncShareApproveRequest) => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_share_approve", { request })),
 	syncShareBegin: () => typedError<SyncStatus_Serialize, ApiError_Serialize>(__TAURI_INVOKE("sync_share_begin")),
@@ -2306,6 +2314,298 @@ export type ConversationsListRequest = {
 	/**  Group chats launched from this group. */
 	source_group_id: string | null,
 	lifecycle: LifecycleFilter | null,
+	cursor: string | null,
+	limit: number | null,
+};
+
+export type CreatorDraft = CreatorDraft_Serialize | CreatorDraft_Deserialize;
+
+export type CreatorDraft_Deserialize = {
+	name: string,
+	definition: string,
+	scenes: CreatorScene[],
+	/**  Only `asset_id` is read from a request. */
+	avatar: AssetRef_Deserialize | null,
+};
+
+export type CreatorDraft_Serialize = {
+	name: string,
+	definition: string,
+	scenes: CreatorScene[],
+	/**  Only `asset_id` is read from a request. */
+	avatar: AssetRef_Serialize | null,
+};
+
+export type CreatorEditRequest = CreatorEditRequest_Serialize | CreatorEditRequest_Deserialize;
+
+export type CreatorEditRequest_Deserialize = {
+	workflow_id: string,
+	expected_revision: number,
+	draft: CreatorDraft_Deserialize,
+	client_operation_id: string,
+};
+
+export type CreatorEditRequest_Serialize = {
+	workflow_id: string,
+	expected_revision: number,
+	draft: CreatorDraft_Serialize,
+	client_operation_id: string,
+};
+
+export type CreatorGetRequest = {
+	workflow_id: string,
+};
+
+export type CreatorImageOrigin = "upload" | "generated" | "edited";
+
+/**  An image of the session: uploaded with a message or made by the creator. */
+export type CreatorImageView = CreatorImageView_Serialize | CreatorImageView_Deserialize;
+
+/**  An image of the session: uploaded with a message or made by the creator. */
+export type CreatorImageView_Deserialize = {
+	asset: AssetRef_Deserialize,
+	origin: CreatorImageOrigin,
+	turn_id: string,
+};
+
+/**  An image of the session: uploaded with a message or made by the creator. */
+export type CreatorImageView_Serialize = {
+	asset: AssetRef_Serialize,
+	origin: CreatorImageOrigin,
+	turn_id: string,
+};
+
+export type CreatorKind = "character" | "persona";
+
+export type CreatorPage = {
+	items: CreatorSummary[],
+	next_cursor: string | null,
+};
+
+/**
+ *  Where a draft version came from: the session's starting point, a creator reply, a hand edit, or the copy made
+ *  when the draft was reviewed for saving.
+ */
+export type CreatorProposalSource = "start" | "creator" | "edit" | "review";
+
+export type CreatorProposalView = CreatorProposalView_Serialize | CreatorProposalView_Deserialize;
+
+export type CreatorProposalView_Deserialize = {
+	id: string,
+	parent_id: string | null,
+	ordinal: number,
+	source: CreatorProposalSource,
+	draft: CreatorDraft_Deserialize,
+	created_at: number,
+};
+
+export type CreatorProposalView_Serialize = {
+	id: string,
+	parent_id: string | null,
+	ordinal: number,
+	source: CreatorProposalSource,
+	draft: CreatorDraft_Serialize,
+	created_at: number,
+};
+
+/**  A character or persona attached to a message. */
+export type CreatorReference = {
+	kind: CreatorKind,
+	id: string,
+};
+
+/**  An attached reference as it reads now; `name` is `None` once the item was deleted or archived. */
+export type CreatorReferenceView = {
+	kind: CreatorKind,
+	id: string,
+	name: string | null,
+};
+
+export type CreatorRegenerateRequest = {
+	workflow_id: string,
+	expected_revision: number,
+	turn_id: string,
+	model_profile_id: string | null,
+	client_operation_id: string,
+};
+
+export type CreatorRevisionRequest = {
+	workflow_id: string,
+	expected_revision: number,
+	proposal_id: string,
+	client_operation_id: string,
+};
+
+export type CreatorScene = {
+	id: string,
+	content: string,
+	direction: string | null,
+};
+
+export type CreatorSendRequest = {
+	workflow_id: string,
+	expected_revision: number,
+	message: string,
+	references: CreatorReference[],
+	/**  Asset ids of images picked for this message. */
+	images: string[],
+	model_profile_id: string | null,
+	client_operation_id: string,
+};
+
+export type CreatorStartRequest = CreatorStartRequest_Serialize | CreatorStartRequest_Deserialize;
+
+export type CreatorStartRequest_Deserialize = {
+	kind: CreatorKind,
+	target_id: string | null,
+	draft: CreatorDraft_Deserialize | null,
+	client_operation_id: string,
+};
+
+export type CreatorStartRequest_Serialize = {
+	kind: CreatorKind,
+	target_id: string | null,
+	draft: CreatorDraft_Serialize | null,
+	client_operation_id: string,
+};
+
+export type CreatorSummary = {
+	id: string,
+	kind: CreatorKind,
+	name: string,
+	target_id: string | null,
+	applied_id: string | null,
+	updated_at: number,
+};
+
+export type CreatorToolImage = CreatorToolImage_Serialize | CreatorToolImage_Deserialize;
+
+export type CreatorToolImage_Deserialize = {
+	asset: AssetRef_Deserialize | null,
+	job_id: string | null,
+	failed: boolean,
+};
+
+export type CreatorToolImage_Serialize = {
+	asset: AssetRef_Serialize | null,
+	job_id: string | null,
+	failed: boolean,
+};
+
+export type CreatorToolStatus = "running" | "succeeded" | "failed";
+
+/**  One tool call the creator made during a turn, in call order. */
+export type CreatorToolView = CreatorToolView_Serialize | CreatorToolView_Deserialize;
+
+/**  One tool call the creator made during a turn, in call order. */
+export type CreatorToolView_Deserialize = {
+	name: string,
+	status: CreatorToolStatus,
+	/**  What an image call made so far: the image, or the job still making it. */
+	image: CreatorToolImage_Deserialize | null,
+};
+
+/**  One tool call the creator made during a turn, in call order. */
+export type CreatorToolView_Serialize = {
+	name: string,
+	status: CreatorToolStatus,
+	/**  What an image call made so far: the image, or the job still making it. */
+	image: CreatorToolImage_Serialize | null,
+};
+
+export type CreatorTurnStatus = "pending" | "succeeded" | "failed" | "cancelled" | "interrupted";
+
+/**
+ *  One piece of a turn's reply in the order the creator produced it: text it wrote, or the tool call at `index` in
+ *  `CreatorTurnView::tools`.
+ */
+export type CreatorTurnStep = { kind: "text"; text: string } | { kind: "tool"; index: number };
+
+export type CreatorTurnView = CreatorTurnView_Serialize | CreatorTurnView_Deserialize;
+
+export type CreatorTurnView_Deserialize = {
+	id: string,
+	message: string,
+	reply: string,
+	/**  The model's visible reasoning across the turn's rounds; empty when it showed none. */
+	reasoning: string,
+	status: CreatorTurnStatus,
+	job_id: string,
+	base_proposal_id: string,
+	result_proposal_id: string | null,
+	regenerated: boolean,
+	/**
+	 *  Whether this turn can be answered again now: it is the session's latest turn, it has settled, and the draft
+	 *  still holds what it left behind.
+	 */
+	regenerable: boolean,
+	references: CreatorReferenceView[],
+	images: AssetRef_Deserialize[],
+	tools: CreatorToolView_Deserialize[],
+	steps: CreatorTurnStep[],
+};
+
+export type CreatorTurnView_Serialize = {
+	id: string,
+	message: string,
+	reply: string,
+	/**  The model's visible reasoning across the turn's rounds; empty when it showed none. */
+	reasoning: string,
+	status: CreatorTurnStatus,
+	job_id: string,
+	base_proposal_id: string,
+	result_proposal_id: string | null,
+	regenerated: boolean,
+	/**
+	 *  Whether this turn can be answered again now: it is the session's latest turn, it has settled, and the draft
+	 *  still holds what it left behind.
+	 */
+	regenerable: boolean,
+	references: CreatorReferenceView[],
+	images: AssetRef_Serialize[],
+	tools: CreatorToolView_Serialize[],
+	steps: CreatorTurnStep[],
+};
+
+export type CreatorView = CreatorView_Serialize | CreatorView_Deserialize;
+
+export type CreatorView_Deserialize = {
+	summary: CreatorSummary,
+	revision: number,
+	proposal: CreatorProposalView_Deserialize,
+	history: CreatorProposalView_Deserialize[],
+	turns: CreatorTurnView_Deserialize[],
+	active_job_id: string | null,
+	reviewed: boolean,
+	/**
+	 *  The saved character or persona changed or was archived after this session started, so this draft can no
+	 *  longer be saved over it.
+	 */
+	target_changed: boolean,
+	/**  The model chosen for the latest reply, when one was picked for this session instead of the default. */
+	model_profile_id: string | null,
+	images: CreatorImageView_Deserialize[],
+};
+
+export type CreatorView_Serialize = {
+	summary: CreatorSummary,
+	revision: number,
+	proposal: CreatorProposalView_Serialize,
+	history: CreatorProposalView_Serialize[],
+	turns: CreatorTurnView_Serialize[],
+	active_job_id: string | null,
+	reviewed: boolean,
+	/**
+	 *  The saved character or persona changed or was archived after this session started, so this draft can no
+	 *  longer be saved over it.
+	 */
+	target_changed: boolean,
+	/**  The model chosen for the latest reply, when one was picked for this session instead of the default. */
+	model_profile_id: string | null,
+	images: CreatorImageView_Serialize[],
+};
+
+export type CreatorsListRequest = {
 	cursor: string | null,
 	limit: number | null,
 };
@@ -8888,9 +9188,9 @@ export type SettingsOpenRouterOptions = {
 
 export type SettingsPatch = SettingsPatch_Serialize | SettingsPatch_Deserialize;
 
-export type SettingsPatch_Deserialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_onnx"; model: SettingsOnnxModel; keep_model_loaded: boolean } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Deserialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
+export type SettingsPatch_Deserialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "creation_helper"; value: SettingsCreationHelperSettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_onnx"; model: SettingsOnnxModel; keep_model_loaded: boolean } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Deserialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
 
-export type SettingsPatch_Serialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_onnx"; model: SettingsOnnxModel; keep_model_loaded: boolean } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Serialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
+export type SettingsPatch_Serialize = { section: "general"; pure_mode: SettingsPureMode | null; analytics_enabled: boolean | null; update_checks_enabled: boolean | null; developer_mode_enabled: boolean | null; auto_download_character_card_avatars: boolean | null; manual_mode_context_window: number | null; lorebook_scan_depth: number | null } | { section: "dynamic_memory"; value: SettingsDynamicMemorySettings } | { section: "group_dynamic_memory"; value: SettingsDynamicMemorySettings | null } | { section: "dynamic_memory_prompts"; value: SettingsDynamicMemoryPromptSelection } | { section: "dynamic_memory_sampler"; enabled: boolean } | { section: "help_me_reply"; value: SettingsHelpMeReplySettings } | { section: "creation_helper"; value: SettingsCreationHelperSettings } | { section: "lorebook_generator"; value: SettingsLorebookGeneratorSettings } | { section: "lorebook_entry_generator"; value: SettingsLorebookEntryGeneratorSettings } | { section: "companion_soul_writer"; value: SettingsCompanionSoulWriterSettings } | { section: "image_generation"; value: SettingsImageGenerationSettings } | { section: "embedding"; value: SettingsEmbeddingSettings } | { section: "device_onnx"; model: SettingsOnnxModel; keep_model_loaded: boolean } | { section: "device_embedding"; model_version: SettingsEmbeddingVersion | null; max_tokens: number | null; keep_model_loaded: boolean } | { section: "local_runtime"; context_length: number | null; kv_cache_type: SettingsLlamaDefaultKvCacheType | null } | { section: "ui_preferences"; changes: UiPreferenceChange_Serialize[] } | { section: "selections"; default_model: IdChange | null; default_prompt: IdChange | null; dynamic_memory_model: IdChange | null; group_speaker_model: IdChange | null };
 
 export type SettingsPromptCacheRetention = "in_memory" | "five_minutes" | "one_hour" | "twenty_four_hours";
 

@@ -8,7 +8,7 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{CreationStage, CreationTargetKind, creation_tool_request};
+use crate::{CreationStage, CreationTargetKind, is_creation_tool_request};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,12 +96,13 @@ pub struct NewCreationTurnAttempt {
     pub attempt_id: GenerationAttemptId,
     pub planned_proposal_id: CreationProposalId,
     pub user_message: String,
+    pub inputs: crate::CreationTurnInputs,
     pub job_id: JobId,
     pub profile_fingerprint: CreationInferenceProfileFingerprint,
     pub now: TimestampMillis,
 }
 
-/// Regenerates the latest answered turn: the workflow returns to the
+/// Regenerates the latest settled turn, answered or failed: the workflow returns to the
 /// proposal that turn started from and a new turn with the same message is
 /// admitted there.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,7 +190,7 @@ impl CreationInferenceAttempt {
             .map_err(|_| CreationAttemptError::InvalidContract {
                 reason: "tool request failed validation",
             })?;
-        if creation_tool_request(self.target) != self.tool_request {
+        if !is_creation_tool_request(self.target, &self.tool_request) {
             return Err(CreationAttemptError::InvalidContract {
                 reason: "tool request does not match the target kind",
             });
@@ -392,6 +393,7 @@ impl NewCreationInferenceRound {
 pub struct CreationDialogueTurn {
     pub turn_id: CreationTurnId,
     pub user_message: String,
+    pub inputs: crate::CreationTurnInputs,
     pub assistant_parts: Vec<MessagePart>,
 }
 
@@ -519,6 +521,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::creation_tool_request;
 
     fn attempt() -> CreationInferenceAttempt {
         CreationInferenceAttempt {
@@ -579,6 +582,21 @@ mod tests {
                 .transition(CreationAttemptStatus::Failed, None, TimestampMillis::new(3))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn attempt_keeps_the_contract_from_before_the_image_tools() {
+        let mut attempt = attempt();
+        attempt.tool_request.definitions.retain(|definition| {
+            !["generate_image", "edit_avatar_image", "use_uploaded_image"]
+                .contains(&definition.name.as_str())
+        });
+        attempt.validate().expect("earlier contract");
+        attempt.tool_request.definitions.pop();
+        assert!(matches!(
+            attempt.validate(),
+            Err(CreationAttemptError::InvalidContract { .. })
+        ));
     }
 
     #[test]

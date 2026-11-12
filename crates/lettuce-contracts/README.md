@@ -1,5 +1,7 @@
 # lettuce-contracts
 
+Smart Creator contracts in `creator.rs` expose character/persona workflows, typed draft scenes, proposal history, attempt status, job identities and explicit review/apply requests. Every mutation carries an operation identity; updates also carry the expected workflow revision. Model generation is admitted as an existing `JobAccepted` and streamed through `job_watch`. `SettingsPatch::CreationHelper` updates helper defaults through the shared settings CAS.
+
 `ConversationSettingsView.time` is present for every direct and group chat and contains `enabled` (time awareness), `mode` (`live`, `frozen`, `ticking`), nullable epoch-millisecond `anchor_at` and `set_at`, and epoch-millisecond `effective_at`. `ConversationSettingsPatch.time` accepts `{ type: "set", mode, anchor_at }` or `{ type: "reset" }`, and `ConversationSettingsPatch.time_awareness` turns awareness on or off while keeping the stored override. Frozen and ticking require an anchor; live requires no anchor. The server owns ticking's `set_at`; reset preserves time awareness. An absent change preserves both the clock and the serialized shape used by existing settings operation digests.
 
 The serde types that cross the IPC boundary between the Rust backend and the frontend. They are owned transport DTOs, kept separate from the domain and provider types so that an internal change never silently changes what the frontend receives, and so the frontend never has to guess a provider's wire values or feature combinations.

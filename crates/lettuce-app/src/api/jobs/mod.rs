@@ -3,6 +3,8 @@
 //! conversation generation worker does not run.
 
 mod feed;
+mod creator;
+pub use creator::CreatorHandler;
 mod image;
 mod image_tools;
 pub(super) mod install;

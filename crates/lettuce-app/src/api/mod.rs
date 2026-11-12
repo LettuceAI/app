@@ -14,6 +14,8 @@ pub use app::themes::{settings_theme_export, settings_theme_read};
 pub use library::delete::{character_delete, group_delete, persona_delete};
 pub(crate) mod companion;
 mod context;
+pub(crate) mod creator;
+pub use creator::{creator_start, creator_get, creators_list, creator_edit, creator_review, creator_apply, creator_send, creator_regenerate};
 pub(crate) mod conversations;
 mod error;
 pub(crate) mod events;
@@ -108,6 +110,7 @@ pub use image::{
 pub use jobs::CatalogVariant;
 pub(crate) use jobs::MemoryJobOutput;
 pub use jobs::{
+    CreatorHandler,
     ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, ImageToolHandler, InstallFinish,
     InstallSources, InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner,
     MemoryExtractionHandler, ModelPullHandler, ModelsFolderMoveHandler, NetworkInstallSources,

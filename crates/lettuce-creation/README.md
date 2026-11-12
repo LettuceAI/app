@@ -47,9 +47,11 @@ When the helper's tool fallback setting is JSON or XML, the request carries no n
 
 ### Regenerate
 
-`admit_creation_regeneration` regenerates the workflow's latest turn with a succeeded attempt, while the workflow still points at that turn's result. In one transaction the workflow returns to the proposal the turn started from (bumping the revision when the turn had changed the draft), and a new turn with the same user message and `regenerated_turn_id` set is admitted with its first attempt at the current profile. The discarded turn and its proposal stay as history, and `list_creation_dialogue` leaves regenerated turns out. Backup restore replays turns in ordinal order and moves the workflow back to a turn's base when it differs.
+`admit_creation_regeneration` regenerates the workflow's latest turn once its attempts have settled, while the workflow still points at that turn's result (or at its base when it failed, was cancelled or was interrupted). In one transaction the workflow returns to the proposal the turn started from (bumping the revision when the turn had changed the draft), and a new turn with the same user message and `regenerated_turn_id` set is admitted with its first attempt at the current profile. The discarded turn and its proposal stay as history, and `list_creation_dialogue` leaves regenerated turns out. Backup restore replays turns in ordinal order and moves the workflow back to a turn's base when it differs.
 
 ### Apply
+
+Manual workspace edits use `ReplaceDraft`, a validated operation that cannot change target kind and is never exposed as a model tool. They form ordinary immutable proposal revisions. The public Creator API records an explicit user review as a replacement followed by confirmation; a model's `request_confirmation` remains advisory. Manual edits can restore an earlier draft while preserving its history.
 
 `CreationApplyRepository` applies a confirmed proposal. Every apply persists an immutable receipt atomically with the authored change, so a crash retry returns the original result after the target's revision has moved, while a stale or changed command conflicts. Applying is refused while an attempt of the workflow is created or running, and an applied workflow is closed: no new turns, attempts, proposals or settlements (enforced in the adapter and by triggers).
 

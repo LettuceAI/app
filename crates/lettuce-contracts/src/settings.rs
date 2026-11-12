@@ -672,6 +672,9 @@ pub enum SettingsPatch {
     HelpMeReply {
         value: SettingsHelpMeReplySettings,
     },
+    CreationHelper {
+        value: SettingsCreationHelperSettings,
+    },
     LorebookGenerator {
         value: SettingsLorebookGeneratorSettings,
     },

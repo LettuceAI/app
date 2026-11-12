@@ -32,10 +32,10 @@ pub use lorebook_keyword::*;
 pub use model::{
     ConfirmedCharacterApply, ConfirmedCharacterRevisionApply, ConfirmedLorebookApply,
     ConfirmedLorebookRevisionApply, ConfirmedPersonaApply, ConfirmedPersonaRevisionApply,
-    CreationApplyReceipt, CreationCharacterApplyReceipt, CreationDraft,
-    CreationLorebookApplyReceipt, CreationLorebookEntry, CreationScene, CreationStage,
-    CreationTarget, CreationTargetKind, CreationTurn, CreationWorkflow, NewCreationTurn,
-    NewCreationWorkflow,
+    CreationApplyReceipt, CreationCharacterApplyReceipt, CreationDraft, CreationGeneratedImage,
+    CreationLorebookApplyReceipt, CreationLorebookEntry, CreationReference, CreationScene,
+    CreationStage, CreationTarget, CreationTargetKind, CreationTurn, CreationTurnInputs,
+    CreationWorkflow, NewCreationTurn, NewCreationWorkflow,
 };
 pub use port::{
     CreationApplyRepository, CreationAttemptRepository, CreationRepositoryError,
@@ -50,6 +50,6 @@ pub use staged_lorebook_sources::*;
 pub use tool::{
     AdmittedCreationToolCall, CREATION_TOOL_TEXT_KEYS, CREATION_TOOL_VERSION, CreationToolApply,
     CreationToolBatch, CreationToolCommit, CreationToolContractError, apply_creation_tool_calls,
-    canonical_tool_name, creation_tool_request, describe_creation_tools,
-    reduce_creation_tool_calls, validate_creation_tool_calls,
+    canonical_tool_name, creation_image_label, creation_tool_request, describe_creation_tools,
+    is_creation_tool_request, reduce_creation_tool_calls, validate_creation_tool_calls,
 };

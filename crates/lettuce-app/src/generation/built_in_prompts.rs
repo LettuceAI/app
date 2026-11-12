@@ -1552,11 +1552,13 @@ mod tests {
                 + crate::creation::creation_prompt::DRAFT_VIEW_KEYS.len()
                 + crate::creation::creation_prompt::RESULT_KEYS.len()
                 + crate::creation::creation_prompt::FALLBACK_KEYS.len()
+                + crate::creation::creation_prompt::INPUT_KEYS.len()
         );
         for key in crate::creation::creation_prompt::DRAFT_VIEW_KEYS
             .into_iter()
             .chain(crate::creation::creation_prompt::RESULT_KEYS)
             .chain(crate::creation::creation_prompt::FALLBACK_KEYS)
+            .chain(crate::creation::creation_prompt::INPUT_KEYS)
         {
             creation_text(key);
         }

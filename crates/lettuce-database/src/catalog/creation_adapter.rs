@@ -25,8 +25,8 @@ use lettuce_creation::{
     reduce_creation_tool_calls, validate_creation_tool_calls,
 };
 use lettuce_types::{
-    CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId, Revision,
-    TimestampMillis,
+    AssetId, CreationProposalId, CreationTurnId, CreationWorkflowId, GenerationAttemptId, JobId,
+    Revision, TimestampMillis,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
@@ -458,6 +458,27 @@ fn workflow_has_active_attempt(
         .map_err(storage)
 }
 
+/// The images a workflow's tool calls may name: message uploads, generated images and every avatar its drafts held.
+pub(crate) fn workflow_images_in(
+    connection: &Connection,
+    workflow_id: CreationWorkflowId,
+) -> Result<Vec<AssetId>, CreationRepositoryError> {
+    connection
+        .prepare(
+            "SELECT image.value FROM creation_turns turn, json_each(turn.inputs_json,'$.images') image \
+             WHERE turn.workflow_id=?1 \
+             UNION SELECT asset_id FROM creation_generated_images \
+             WHERE workflow_id=?1 AND asset_id IS NOT NULL \
+             UNION SELECT json_extract(draft_json,'$.avatar') FROM creation_proposals \
+             WHERE workflow_id=?1 AND json_extract(draft_json,'$.avatar') IS NOT NULL",
+        )
+        .map_err(storage)?
+        .query_map([workflow_id.to_string()], |row| parse_id(row.get(0)?))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<AssetId>>>()
+        .map_err(storage)
+}
+
 fn load_turn_conn(
     connection: &Connection,
     id: CreationTurnId,
@@ -465,7 +486,7 @@ fn load_turn_conn(
     let turn = connection
         .query_row(
             "SELECT workflow_id,ordinal,base_proposal_id,user_message,created_at,\
-                    regenerated_turn_id \
+                    regenerated_turn_id,inputs_json \
              FROM creation_turns WHERE id=?1",
             [id.to_string()],
             |row| {
@@ -480,6 +501,8 @@ fn load_turn_conn(
                         .get::<_, Option<String>>(5)?
                         .map(parse_id)
                         .transpose()?,
+                    inputs: serde_json::from_str(&row.get::<_, String>(6)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     created_at: TimestampMillis::new(row.get(4)?),
                 })
             },
@@ -996,7 +1019,23 @@ pub(crate) fn read_workflows_in(
                 },
                 attempt.id,
             )?;
-            Ok(lettuce_transfer::BackupCreationAttempt { attempt, rounds })
+            let images = workspace::generated_images_in(transaction, "attempt_id", attempt.id.to_string())?
+                .into_iter()
+                .map(|image| lettuce_creation::CreationGeneratedImage {
+                    call_ordinal: image.call_ordinal,
+                    job_id: image.job_id,
+                    asset_id: image.asset_id,
+                    failed: image.failed,
+                    prompt: image.prompt,
+                    source_asset_id: image.source_asset_id,
+                    created_at: image.created_at,
+                })
+                .collect();
+            Ok(lettuce_transfer::BackupCreationAttempt {
+                attempt,
+                rounds,
+                images,
+            })
         })
         .collect::<Result<Vec<_>, CreationRepositoryError>>()?;
         workflows.push(lettuce_transfer::BackupCreationWorkflow {
@@ -1077,8 +1116,8 @@ pub(crate) fn insert_restored_workflow_in(
             transaction
                 .execute(
                     "INSERT INTO creation_turns \
-                 (id,workflow_id,ordinal,base_proposal_id,user_message,regenerated_turn_id,created_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                 (id,workflow_id,ordinal,base_proposal_id,user_message,regenerated_turn_id,created_at,inputs_json) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
                     params![
                         turn.id.to_string(),
                         workflow.id.to_string(),
@@ -1087,6 +1126,7 @@ pub(crate) fn insert_restored_workflow_in(
                         turn.user_message,
                         turn.regenerated_turn_id.map(|id| id.to_string()),
                         turn.created_at.get(),
+                        encode(&turn.inputs)?,
                     ],
                 )
                 .map_err(storage)?;
@@ -1138,6 +1178,26 @@ pub(crate) fn insert_restored_workflow_in(
                 }
                 for round in &value.rounds {
                     insert_round_rows_in(transaction, round)?;
+                }
+                for image in &value.images {
+                    transaction
+                        .execute(
+                            "INSERT INTO creation_generated_images \
+                             (attempt_id,call_ordinal,workflow_id,job_id,asset_id,failed,prompt,source_asset_id,created_at) \
+                             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                            params![
+                                attempt.id.to_string(),
+                                i64::from(image.call_ordinal),
+                                attempt.workflow_id.to_string(),
+                                image.job_id.map(|id| id.to_string()),
+                                image.asset_id.map(|id| id.to_string()),
+                                image.failed,
+                                image.prompt,
+                                image.source_asset_id.map(|id| id.to_string()),
+                                image.created_at.get(),
+                            ],
+                        )
+                        .map_err(storage)?;
                 }
                 if !matches!(
                     attempt.status,
@@ -1390,8 +1450,8 @@ pub(crate) fn sync_merge_workflow(
                 transaction
                     .execute(
                         "INSERT INTO creation_turns \
-                         (id,workflow_id,ordinal,base_proposal_id,user_message,regenerated_turn_id,created_at) \
-                         VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                         (id,workflow_id,ordinal,base_proposal_id,user_message,regenerated_turn_id,created_at,inputs_json) \
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
                         params![
                             turn.id.to_string(),
                             id.to_string(),
@@ -1400,6 +1460,7 @@ pub(crate) fn sync_merge_workflow(
                             turn.user_message,
                             turn.regenerated_turn_id.map(|turn| turn.to_string()),
                             turn.created_at.get(),
+                            encode(&turn.inputs)?,
                         ],
                     )
                     .map_err(storage)?;
@@ -1473,63 +1534,9 @@ impl CreationApplyRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        if let Some(receipt) = load_apply_receipt(&transaction, request.workflow_id)? {
-            if receipt.workflow_revision == request.expected_workflow_revision
-                && receipt.proposal_id == request.proposal_id
-                && receipt.persona_id == request.destination_persona_id
-            {
-                transaction.commit().map_err(storage)?;
-                return Ok(receipt);
-            }
-            return Err(CreationRepositoryError::Conflict);
-        }
-
-        let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
-        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        if workflow.target != CreationTarget::NewPersona
-            || workflow.stage != CreationStage::AwaitingConfirmation
-            || workflow.revision != request.expected_workflow_revision
-            || workflow.current_proposal_id != request.proposal_id
-            || request.now.get() < workflow.updated_at.get()
-        {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let proposal = load_proposal_conn(&transaction, request.proposal_id)?;
-        let (Some(title), Some(description)) = (match proposal.draft {
-            lettuce_creation::CreationDraft::Persona { name, description } => (name, description),
-            _ => return Err(CreationRepositoryError::Conflict),
-        }) else {
-            return Err(CreationRepositoryError::Invalid {
-                reason: "apply new persona: a value failed validation",
-            });
-        };
-        let persona = Persona::new(
-            request.destination_persona_id,
-            title,
-            description,
-            request.now,
-        )
-        .map_err(|error| {
-            tracing::warn!(%error, "apply new persona failed");
-            CreationRepositoryError::Invalid {
-                reason: "apply new persona: a value could not be read or converted",
-            }
-        })?;
-        let persona = crate::catalog::persona_adapter::insert_persona(&transaction, persona)
-            .map_err(authored_error)?;
-        let receipt = CreationApplyReceipt {
-            workflow_id: request.workflow_id,
-            workflow_revision: request.expected_workflow_revision,
-            proposal_id: request.proposal_id,
-            persona_id: persona.id,
-            persona_revision: persona.revision,
-            applied_at: request.now,
-        };
-        insert_apply_receipt(&transaction, &receipt)?;
+        let result = apply_new_persona_in(&transaction, request)?;
         transaction.commit().map_err(storage)?;
-        Ok(receipt)
+        Ok(result)
     }
 
     fn apply_existing_persona(
@@ -1540,83 +1547,9 @@ impl CreationApplyRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let expected_target = CreationTarget::ExistingPersona {
-            id: request.persona_id,
-            revision: request.expected_persona_revision,
-        };
-        if let Some(receipt) = load_apply_receipt(&transaction, request.workflow_id)? {
-            let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
-            let expected_result_revision =
-                request.expected_persona_revision.next().map_err(|error| {
-                    tracing::warn!(%error, "apply existing persona failed");
-                    CreationRepositoryError::Invalid {
-                        reason: "apply existing persona: a value could not be read or converted",
-                    }
-                })?;
-            if workflow.target == expected_target
-                && receipt.workflow_revision == request.expected_workflow_revision
-                && receipt.proposal_id == request.proposal_id
-                && receipt.persona_id == request.persona_id
-                && receipt.persona_revision == expected_result_revision
-            {
-                transaction.commit().map_err(storage)?;
-                return Ok(receipt);
-            }
-            return Err(CreationRepositoryError::Conflict);
-        }
-
-        let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
-        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        if workflow.target != expected_target
-            || workflow.stage != CreationStage::AwaitingConfirmation
-            || workflow.revision != request.expected_workflow_revision
-            || workflow.current_proposal_id != request.proposal_id
-            || request.now.get() < workflow.updated_at.get()
-        {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let proposal = load_proposal_conn(&transaction, request.proposal_id)?;
-        let (Some(title), Some(description)) = (match proposal.draft {
-            lettuce_creation::CreationDraft::Persona { name, description } => (name, description),
-            _ => return Err(CreationRepositoryError::Conflict),
-        }) else {
-            return Err(CreationRepositoryError::Invalid {
-                reason: "apply existing persona: a value failed validation",
-            });
-        };
-        let current =
-            crate::catalog::persona_adapter::get_persona(&transaction, request.persona_id)
-                .map_err(authored_error)?
-                .ok_or(CreationRepositoryError::NotFound)?;
-        let draft = PersonaDraftUpdate {
-            title,
-            description,
-            nickname: current.nickname,
-            design_description: current.design_description,
-            avatar_crop: current.avatar_crop,
-            image_recommendation: current.image_recommendation,
-        };
-        let persona = crate::catalog::persona_adapter::revise_persona(
-            &transaction,
-            request.persona_id,
-            request.expected_persona_revision,
-            draft,
-            request.now,
-        )
-        .map_err(authored_error)?;
-        let receipt = CreationApplyReceipt {
-            workflow_id: request.workflow_id,
-            workflow_revision: request.expected_workflow_revision,
-            proposal_id: request.proposal_id,
-            persona_id: persona.id,
-            persona_revision: persona.revision,
-            applied_at: request.now,
-        };
-        insert_apply_receipt(&transaction, &receipt)?;
+        let result = apply_existing_persona_in(&transaction, request)?;
         transaction.commit().map_err(storage)?;
-        Ok(receipt)
+        Ok(result)
     }
 
     fn apply_new_character(
@@ -1627,129 +1560,9 @@ impl CreationApplyRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        if let Some(receipt) = load_character_apply_receipt(&transaction, request.workflow_id)? {
-            let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
-            if workflow.target == CreationTarget::NewCharacter
-                && receipt.workflow_revision == request.expected_workflow_revision
-                && receipt.proposal_id == request.proposal_id
-                && receipt.character_id == request.destination_character_id
-            {
-                applied_character_exists(&transaction, receipt.character_id)?;
-                transaction.commit().map_err(storage)?;
-                return Ok(receipt);
-            }
-            return Err(CreationRepositoryError::Conflict);
-        }
-
-        let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
-        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        if workflow.target != CreationTarget::NewCharacter
-            || workflow.stage != CreationStage::AwaitingConfirmation
-            || workflow.revision != request.expected_workflow_revision
-            || workflow.current_proposal_id != request.proposal_id
-            || request.now.get() < workflow.updated_at.get()
-        {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let proposal = load_proposal_conn(&transaction, request.proposal_id)?;
-        let (Some(name), Some(definition), draft_scenes) = (match proposal.draft {
-            lettuce_creation::CreationDraft::Character {
-                name,
-                definition,
-                scenes,
-            } => (name, definition, scenes),
-            _ => return Err(CreationRepositoryError::Conflict),
-        }) else {
-            return Err(CreationRepositoryError::Invalid {
-                reason: "apply new character: a value failed validation",
-            });
-        };
-        let character = Character::new(
-            request.destination_character_id,
-            CharacterProfile {
-                name,
-                nickname: None,
-                description: None,
-                definition: Some(definition),
-                design_description: None,
-                scenario: None,
-            },
-            CharacterProvenance::default(),
-            CharacterDefaults::default(),
-            CharacterPresentationV1::default(),
-            None,
-            CharacterMedia::default(),
-            request.now,
-        )
-        .map_err(|error| {
-            tracing::warn!(%error, "apply new character failed");
-            CreationRepositoryError::Invalid {
-                reason: "apply new character: a value could not be read or converted",
-            }
-        })?;
-        let scenes = draft_scenes
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, draft)| {
-                let mut scene = Scene::new(
-                    draft.id,
-                    SceneOwner::Character(request.destination_character_id),
-                    u32::try_from(ordinal).map_err(|error| {
-                        tracing::warn!(%error, "apply new character failed");
-                        CreationRepositoryError::Invalid {
-                            reason: "apply new character: a value could not be read or converted",
-                        }
-                    })?,
-                    SceneDocumentV1::new(vec![ScenePart::Text {
-                        text: draft.content,
-                    }])
-                    .map_err(|error| {
-                        tracing::warn!(%error, "apply new character failed");
-                        CreationRepositoryError::Invalid {
-                            reason: "apply new character: a value could not be read or converted",
-                        }
-                    })?,
-                    request.now,
-                )
-                .map_err(|error| {
-                    tracing::warn!(%error, "apply new character failed");
-                    CreationRepositoryError::Invalid {
-                        reason: "apply new character: a value could not be read or converted",
-                    }
-                })?;
-                scene.direction = draft.direction;
-                scene.validate().map_err(|error| {
-                    tracing::warn!(%error, "apply new character failed");
-                    CreationRepositoryError::Invalid {
-                        reason: "apply new character: a value could not be read or converted",
-                    }
-                })?;
-                Ok(scene)
-            })
-            .collect::<Result<Vec<_>, CreationRepositoryError>>()?;
-        let details = crate::catalog::character_adapter::insert_character_plan(
-            &transaction,
-            &CreateCharacterPlan {
-                character,
-                scenes,
-                variants: Vec::new(),
-                starters: Vec::new(),
-            },
-        )
-        .map_err(authored_error)?;
-        let receipt = CreationCharacterApplyReceipt {
-            workflow_id: request.workflow_id,
-            workflow_revision: request.expected_workflow_revision,
-            proposal_id: request.proposal_id,
-            character_id: details.character.id,
-            character_revision: details.character.revision,
-            applied_at: request.now,
-        };
-        insert_character_apply_receipt(&transaction, &receipt)?;
+        let result = apply_new_character_in(&transaction, request)?;
         transaction.commit().map_err(storage)?;
-        Ok(receipt)
+        Ok(result)
     }
 
     fn apply_existing_character(
@@ -1760,169 +1573,9 @@ impl CreationApplyRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let expected_target = CreationTarget::ExistingCharacter {
-            id: request.character_id,
-            revision: request.expected_character_revision,
-        };
-        if let Some(receipt) = load_character_apply_receipt(&transaction, request.workflow_id)? {
-            let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
-            let expected_result_revision = request.expected_character_revision.next().map_err(
-                |error| {
-                    tracing::warn!(%error, "apply existing character failed");
-                    CreationRepositoryError::Invalid {
-                        reason: "apply existing character: a value could not be read or converted",
-                    }
-                },
-            )?;
-            if workflow.target == expected_target
-                && receipt.workflow_revision == request.expected_workflow_revision
-                && receipt.proposal_id == request.proposal_id
-                && receipt.character_id == request.character_id
-                && receipt.character_revision == expected_result_revision
-            {
-                applied_character_exists(&transaction, receipt.character_id)?;
-                transaction.commit().map_err(storage)?;
-                return Ok(receipt);
-            }
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let workflow = load_workflow_conn(&transaction, request.workflow_id)?;
-        if workflow_has_active_attempt(&transaction, request.workflow_id)? {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        if workflow.target != expected_target
-            || workflow.stage != CreationStage::AwaitingConfirmation
-            || workflow.revision != request.expected_workflow_revision
-            || workflow.current_proposal_id != request.proposal_id
-            || request.now.get() < workflow.updated_at.get()
-        {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let proposal = load_proposal_conn(&transaction, request.proposal_id)?;
-        let (Some(name), Some(definition), draft_scenes) = (match proposal.draft {
-            lettuce_creation::CreationDraft::Character {
-                name,
-                definition,
-                scenes,
-            } => (name, definition, scenes),
-            _ => return Err(CreationRepositoryError::Conflict),
-        }) else {
-            return Err(CreationRepositoryError::Invalid {
-                reason: "apply existing character: a value failed validation",
-            });
-        };
-        let current = crate::catalog::character_adapter::load_character_details(
-            &transaction,
-            request.character_id,
-        )
-        .map_err(authored_error)?
-        .ok_or(CreationRepositoryError::NotFound)?;
-        if current.character.status == lettuce_characters::LifecycleStatus::Archived
-            || current.character.revision != request.expected_character_revision
-            || request.now.get() < current.character.updated_at.get()
-        {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let previous_by_id: HashMap<_, _> = current
-            .scenes
-            .iter()
-            .cloned()
-            .map(|scene| (scene.id, scene))
-            .collect();
-        let scenes = draft_scenes
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, draft)| {
-                let ordinal =
-                    u32::try_from(ordinal).map_err(|error| { tracing::warn!(%error, "apply existing character failed"); CreationRepositoryError::Invalid { reason: "apply existing character: a value could not be read or converted" } })?;
-                let content = SceneDocumentV1::new(vec![ScenePart::Text {
-                    text: draft.content,
-                }])
-                .map_err(|error| { tracing::warn!(%error, "apply existing character failed"); CreationRepositoryError::Invalid { reason: "apply existing character: a value could not be read or converted" } })?;
-                let Some(previous) = previous_by_id.get(&draft.id) else {
-                    let mut scene = Scene::new(
-                        draft.id,
-                        SceneOwner::Character(request.character_id),
-                        ordinal,
-                        content,
-                        request.now,
-                    )
-                    .map_err(|error| { tracing::warn!(%error, "apply existing character failed"); CreationRepositoryError::Invalid { reason: "apply existing character: a value could not be read or converted" } })?;
-                    scene.direction = draft.direction;
-                    scene
-                        .validate()
-                        .map_err(|error| { tracing::warn!(%error, "apply existing character failed"); CreationRepositoryError::Invalid { reason: "apply existing character: a value could not be read or converted" } })?;
-                    return Ok(scene);
-                };
-                let changed = previous.content != content
-                    || previous.direction != draft.direction
-                    || previous.ordinal != ordinal;
-                Ok(Scene {
-                    ordinal,
-                    content,
-                    direction: draft.direction,
-                    revision: if changed {
-                        previous
-                            .revision
-                            .next()
-                            .map_err(|error| { tracing::warn!(%error, "apply existing character failed"); CreationRepositoryError::Storage { reason: "apply existing character: a storage step failed" } })?
-                    } else {
-                        previous.revision
-                    },
-                    updated_at: if changed {
-                        request.now
-                    } else {
-                        previous.updated_at
-                    },
-                    ..previous.clone()
-                })
-            })
-            .collect::<Result<Vec<_>, CreationRepositoryError>>()?;
-        let retained_scene_ids: std::collections::HashSet<_> =
-            scenes.iter().map(|scene| scene.id).collect();
-        let mut profile = current.character.profile.clone();
-        profile.name = name;
-        profile.definition = Some(definition);
-        let plan = CreateCharacterPlan {
-            character: Character {
-                profile,
-                revision: request
-                    .expected_character_revision
-                    .next()
-                    .map_err(|error| {
-                        tracing::warn!(%error, "apply existing character failed");
-                        CreationRepositoryError::Storage {
-                            reason: "apply existing character: a storage step failed",
-                        }
-                    })?,
-                updated_at: request.now,
-                ..current.character
-            },
-            scenes,
-            variants: current
-                .variants
-                .into_iter()
-                .filter(|variant| retained_scene_ids.contains(&variant.scene_id))
-                .collect(),
-            starters: current.starters,
-        };
-        let details = crate::catalog::character_adapter::replace_character_profile_scenes(
-            &transaction,
-            request.expected_character_revision,
-            &plan,
-        )
-        .map_err(authored_error)?;
-        let receipt = CreationCharacterApplyReceipt {
-            workflow_id: request.workflow_id,
-            workflow_revision: request.expected_workflow_revision,
-            proposal_id: request.proposal_id,
-            character_id: details.character.id,
-            character_revision: details.character.revision,
-            applied_at: request.now,
-        };
-        insert_character_apply_receipt(&transaction, &receipt)?;
+        let result = apply_existing_character_in(&transaction, request)?;
         transaction.commit().map_err(storage)?;
-        Ok(receipt)
+        Ok(result)
     }
 
     fn apply_new_lorebook(
@@ -2433,124 +2086,13 @@ impl CreationAttemptRepository for Database {
         &self,
         input: NewCreationTurnAttempt,
     ) -> Result<CreationTurnAttemptAdmission, CreationRepositoryError> {
-        NewCreationTurn {
-            id: input.turn_id,
-            workflow_id: input.workflow_id,
-            base_proposal_id: input.base_proposal_id,
-            user_message: input.user_message.clone(),
-            now: input.now,
-        }
-        .validate()
-        .map_err(|error| {
-            tracing::warn!(%error, "admit creation turn attempt failed");
-            CreationRepositoryError::Invalid {
-                reason: "admit creation turn attempt: a value could not be read or converted",
-            }
-        })?;
-        if input.base_proposal_id == input.planned_proposal_id {
-            return Err(CreationRepositoryError::Invalid {
-                reason: "admit creation turn attempt: a value failed validation",
-            });
-        }
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        match load_attempt_conn(&transaction, input.attempt_id) {
-            Ok(attempt) => {
-                let turn = load_turn_conn(&transaction, input.turn_id)?;
-                if turn.workflow_id == input.workflow_id
-                    && turn.base_proposal_id == input.base_proposal_id
-                    && turn.user_message == input.user_message
-                    && turn.created_at == input.now
-                    && attempt.workflow_id == input.workflow_id
-                    && attempt.turn_id == input.turn_id
-                    && attempt.ordinal == 0
-                    && attempt.retry_parent_id.is_none()
-                    && attempt.base_proposal_id == input.base_proposal_id
-                    && attempt.planned_proposal_id == input.planned_proposal_id
-                    && attempt.job_id == input.job_id
-                    && attempt.profile_fingerprint == input.profile_fingerprint
-                    && attempt.workflow_revision == input.expected_workflow_revision
-                    && attempt.created_at == input.now
-                {
-                    transaction.commit().map_err(storage)?;
-                    return Ok(CreationTurnAttemptAdmission { turn, attempt });
-                }
-                return Err(CreationRepositoryError::Conflict);
-            }
-            Err(CreationRepositoryError::NotFound) => {}
-            Err(error) => return Err(error),
-        }
-        match load_turn_conn(&transaction, input.turn_id) {
-            Ok(_) => return Err(CreationRepositoryError::Conflict),
-            Err(CreationRepositoryError::NotFound) => {}
-            Err(error) => return Err(error),
-        }
-        let workflow = load_workflow_conn(&transaction, input.workflow_id)?;
-        let base = load_proposal_conn(&transaction, input.base_proposal_id)?;
-        if workflow_applied(&transaction, input.workflow_id)?
-            || workflow.revision != input.expected_workflow_revision
-            || workflow.current_proposal_id != input.base_proposal_id
-            || workflow.stage != base.stage
-            || workflow.target.kind() != base.draft.kind()
-            || input.now < workflow.updated_at
-        {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let tool_request = creation_tool_request(workflow.target.kind());
-        let turn_ordinal = next_ordinal(&transaction, "creation_turns", input.workflow_id)?;
-        transaction
-            .execute(
-                "INSERT INTO creation_turns \
-                 (id,workflow_id,ordinal,base_proposal_id,user_message,created_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6)",
-                params![
-                    input.turn_id.to_string(),
-                    input.workflow_id.to_string(),
-                    i64::from(turn_ordinal),
-                    input.base_proposal_id.to_string(),
-                    input.user_message,
-                    input.now.get(),
-                ],
-            )
-            .map_err(|error| match error.sqlite_error_code() {
-                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
-                _ => CreationRepositoryError::Storage {
-                    reason: "admit creation turn attempt: a stored value is not recognised",
-                },
-            })?;
-        transaction
-            .execute(
-                "INSERT INTO creation_inference_attempts \
-                 (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
-                  planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
-                  workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at) \
-                 VALUES (?1,?2,?3,0,NULL,?4,?5,?6,?7,?8,?9,?10,?11,'created',NULL,1,?12,NULL,NULL,?12)",
-                params![
-                    input.workflow_id.to_string(),
-                    input.turn_id.to_string(),
-                    input.attempt_id.to_string(),
-                    input.base_proposal_id.to_string(),
-                    input.planned_proposal_id.to_string(),
-                    target_name(workflow.target.kind()),
-                    stage_name(workflow.stage),
-                    encode_versioned(&tool_request, CREATION_JSON_VERSION)
-                        .map_err(|error| { tracing::warn!(%error, "admit creation turn attempt failed"); CreationRepositoryError::Invalid { reason: "admit creation turn attempt: a value could not be read or converted" } })?,
-                    input.job_id.to_string(),
-                    input.profile_fingerprint.as_slice(),
-                    sql_u64(input.expected_workflow_revision.get())?,
-                    input.now.get(),
-                ],
-            )
-            .map_err(|error| match error.sqlite_error_code() {
-                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
-                _ => CreationRepositoryError::Storage { reason: "admit creation turn attempt: a stored value is not recognised" },
-            })?;
-        let turn = load_turn_conn(&transaction, input.turn_id)?;
-        let attempt = load_attempt_conn(&transaction, input.attempt_id)?;
+        let result = admit_turn_in(&transaction, input)?;
         transaction.commit().map_err(storage)?;
-        Ok(CreationTurnAttemptAdmission { turn, attempt })
+        Ok(result)
     }
 
     fn admit_creation_regeneration(
@@ -2561,161 +2103,9 @@ impl CreationAttemptRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        match load_attempt_conn(&transaction, input.attempt_id) {
-            Ok(attempt) => {
-                let turn = load_turn_conn(&transaction, input.turn_id)?;
-                if turn.workflow_id == input.workflow_id
-                    && turn.regenerated_turn_id == Some(input.regenerated_turn_id)
-                    && turn.created_at == input.now
-                    && attempt.workflow_id == input.workflow_id
-                    && attempt.turn_id == input.turn_id
-                    && attempt.ordinal == 0
-                    && attempt.planned_proposal_id == input.planned_proposal_id
-                    && attempt.job_id == input.job_id
-                    && attempt.profile_fingerprint == input.profile_fingerprint
-                    && attempt.created_at == input.now
-                {
-                    transaction.commit().map_err(storage)?;
-                    return Ok(CreationTurnAttemptAdmission { turn, attempt });
-                }
-                return Err(CreationRepositoryError::Conflict);
-            }
-            Err(CreationRepositoryError::NotFound) => {}
-            Err(error) => return Err(error),
-        }
-        match load_turn_conn(&transaction, input.turn_id) {
-            Ok(_) => return Err(CreationRepositoryError::Conflict),
-            Err(CreationRepositoryError::NotFound) => {}
-            Err(error) => return Err(error),
-        }
-        let workflow = load_workflow_conn(&transaction, input.workflow_id)?;
-        let regenerated = load_turn_conn(&transaction, input.regenerated_turn_id)?;
-        if workflow_applied(&transaction, input.workflow_id)?
-            || workflow_has_active_attempt(&transaction, input.workflow_id)?
-            || workflow.revision != input.expected_workflow_revision
-            || regenerated.workflow_id != input.workflow_id
-            || regenerated.base_proposal_id == input.planned_proposal_id
-            || input.now < workflow.updated_at
-            || next_ordinal(&transaction, "creation_turns", input.workflow_id)?
-                != regenerated
-                    .ordinal
-                    .checked_add(1)
-                    .ok_or(CreationRepositoryError::Storage {
-                        reason: "admit creation regeneration: a required value is missing",
-                    })?
-        {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let answered: bool = transaction
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM creation_inference_attempts \
-                 WHERE workflow_id=?1 AND turn_id=?2 AND status='succeeded')",
-                params![
-                    input.workflow_id.to_string(),
-                    input.regenerated_turn_id.to_string()
-                ],
-                |row| row.get(0),
-            )
-            .map_err(storage)?;
-        let produced: Option<String> = transaction
-            .query_row(
-                "SELECT id FROM creation_proposals WHERE workflow_id=?1 AND turn_id=?2",
-                params![
-                    input.workflow_id.to_string(),
-                    input.regenerated_turn_id.to_string()
-                ],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(storage)?;
-        let produced = produced
-            .map(|id| id.parse::<CreationProposalId>().map_err(storage))
-            .transpose()?;
-        if !answered
-            || workflow.current_proposal_id != produced.unwrap_or(regenerated.base_proposal_id)
-        {
-            return Err(CreationRepositoryError::Conflict);
-        }
-        let base = load_proposal_conn(&transaction, regenerated.base_proposal_id)?;
-        let mut revision = workflow.revision;
-        if workflow.current_proposal_id != base.id {
-            revision = revision.next().map_err(|error| {
-                tracing::warn!(%error, "admit creation regeneration failed");
-                CreationRepositoryError::Storage {
-                    reason: "admit creation regeneration: a storage step failed",
-                }
-            })?;
-            let changed = transaction
-                .execute(
-                    "UPDATE creation_workflows SET stage=?2,current_proposal_id=?3,revision=?4,updated_at=?5 \
-                     WHERE id=?1 AND revision=?6 AND current_proposal_id=?7",
-                    params![
-                        workflow.id.to_string(),
-                        stage_name(base.stage),
-                        base.id.to_string(),
-                        sql_u64(revision.get())?,
-                        input.now.get(),
-                        sql_u64(workflow.revision.get())?,
-                        workflow.current_proposal_id.to_string(),
-                    ],
-                )
-                .map_err(storage)?;
-            if changed != 1 {
-                return Err(CreationRepositoryError::Conflict);
-            }
-        }
-        let tool_request = creation_tool_request(workflow.target.kind());
-        let turn_ordinal = next_ordinal(&transaction, "creation_turns", input.workflow_id)?;
-        transaction
-            .execute(
-                "INSERT INTO creation_turns \
-                 (id,workflow_id,ordinal,base_proposal_id,user_message,regenerated_turn_id,created_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
-                params![
-                    input.turn_id.to_string(),
-                    input.workflow_id.to_string(),
-                    i64::from(turn_ordinal),
-                    base.id.to_string(),
-                    regenerated.user_message,
-                    input.regenerated_turn_id.to_string(),
-                    input.now.get(),
-                ],
-            )
-            .map_err(|error| match error.sqlite_error_code() {
-                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
-                _ => CreationRepositoryError::Storage { reason: "admit creation regeneration: a stored value is not recognised" },
-            })?;
-        transaction
-            .execute(
-                "INSERT INTO creation_inference_attempts \
-                 (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
-                  planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
-                  workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at) \
-                 VALUES (?1,?2,?3,0,NULL,?4,?5,?6,?7,?8,?9,?10,?11,'created',NULL,1,?12,NULL,NULL,?12)",
-                params![
-                    input.workflow_id.to_string(),
-                    input.turn_id.to_string(),
-                    input.attempt_id.to_string(),
-                    base.id.to_string(),
-                    input.planned_proposal_id.to_string(),
-                    target_name(workflow.target.kind()),
-                    stage_name(base.stage),
-                    encode_versioned(&tool_request, CREATION_JSON_VERSION)
-                        .map_err(|error| { tracing::warn!(%error, "admit creation regeneration failed"); CreationRepositoryError::Invalid { reason: "admit creation regeneration: a value could not be read or converted" } })?,
-                    input.job_id.to_string(),
-                    input.profile_fingerprint.as_slice(),
-                    sql_u64(revision.get())?,
-                    input.now.get(),
-                ],
-            )
-            .map_err(|error| match error.sqlite_error_code() {
-                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
-                _ => CreationRepositoryError::Storage { reason: "admit creation regeneration: a stored value is not recognised" },
-            })?;
-        let turn = load_turn_conn(&transaction, input.turn_id)?;
-        let attempt = load_attempt_conn(&transaction, input.attempt_id)?;
+        let result = admit_regeneration_in(&transaction, input)?;
         transaction.commit().map_err(storage)?;
-        Ok(CreationTurnAttemptAdmission { turn, attempt })
+        Ok(result)
     }
 
     fn create_creation_attempt(
@@ -2997,6 +2387,13 @@ impl CreationAttemptRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
         let attempt = load_attempt_conn(&transaction, input.attempt_id)?;
+        let stopped: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND idempotency_key LIKE 'creator-%' AND state IN ('cancellation_requested','cleaning_up','cancelled','interrupted','failed'))",
+            [attempt.job_id.to_string()], |row| row.get(0),
+        ).map_err(storage)?;
+        if stopped {
+            return Err(CreationRepositoryError::Conflict);
+        }
         if attempt.workflow_id != input.owner.workflow_id || attempt.turn_id != input.owner.turn_id
         {
             return Err(CreationRepositoryError::Conflict);
@@ -3085,11 +2482,13 @@ impl CreationAttemptRepository for Database {
                     })
                     .collect::<Vec<_>>();
                 let base = load_proposal_conn(&transaction, attempt.base_proposal_id)?;
+                let images = workflow_images_in(&transaction, attempt.workflow_id)?;
                 let derived = reduce_creation_tool_calls(
                     &base,
                     attempt.planned_proposal_id,
                     attempt.turn_id,
                     &admitted,
+                    &images,
                     input.now,
                 )
                 .map_err(|error| { tracing::warn!(%error, "settle creation attempt success failed"); CreationRepositoryError::Invalid { reason: "settle creation attempt success: a value could not be read or converted" } })?
@@ -3462,12 +2861,766 @@ impl CreationAttemptRepository for Database {
             dialogue.push(CreationDialogueTurn {
                 turn_id,
                 user_message: turn.user_message,
+                inputs: turn.inputs,
                 assistant_parts,
             });
         }
         transaction.commit().map_err(storage)?;
         Ok(dialogue)
     }
+}
+
+fn admit_turn_in(
+    transaction: &Transaction<'_>,
+    input: NewCreationTurnAttempt,
+) -> Result<CreationTurnAttemptAdmission, CreationRepositoryError> {
+    NewCreationTurn {
+        id: input.turn_id,
+        workflow_id: input.workflow_id,
+        base_proposal_id: input.base_proposal_id,
+        user_message: input.user_message.clone(),
+        now: input.now,
+    }
+    .validate()
+    .map_err(|error| {
+        tracing::warn!(%error, "admit creation turn attempt failed");
+        CreationRepositoryError::Invalid {
+            reason: "admit creation turn attempt: a value could not be read or converted",
+        }
+    })?;
+    input
+        .inputs
+        .validate()
+        .map_err(|_| CreationRepositoryError::Invalid {
+            reason: "admit creation turn attempt: a message attachment is repeated",
+        })?;
+    if input.base_proposal_id == input.planned_proposal_id {
+        return Err(CreationRepositoryError::Invalid {
+            reason: "admit creation turn attempt: a value failed validation",
+        });
+    }
+    match load_attempt_conn(transaction, input.attempt_id) {
+        Ok(attempt) => {
+            let turn = load_turn_conn(transaction, input.turn_id)?;
+            if turn.workflow_id == input.workflow_id
+                && turn.base_proposal_id == input.base_proposal_id
+                && turn.user_message == input.user_message
+                && turn.inputs == input.inputs
+                && turn.created_at == input.now
+                && attempt.workflow_id == input.workflow_id
+                && attempt.turn_id == input.turn_id
+                && attempt.ordinal == 0
+                && attempt.retry_parent_id.is_none()
+                && attempt.base_proposal_id == input.base_proposal_id
+                && attempt.planned_proposal_id == input.planned_proposal_id
+                && attempt.job_id == input.job_id
+                && attempt.profile_fingerprint == input.profile_fingerprint
+                && attempt.workflow_revision == input.expected_workflow_revision
+                && attempt.created_at == input.now
+            {
+                return Ok(CreationTurnAttemptAdmission { turn, attempt });
+            }
+            return Err(CreationRepositoryError::Conflict);
+        }
+        Err(CreationRepositoryError::NotFound) => {}
+        Err(error) => return Err(error),
+    }
+    match load_turn_conn(transaction, input.turn_id) {
+        Ok(_) => return Err(CreationRepositoryError::Conflict),
+        Err(CreationRepositoryError::NotFound) => {}
+        Err(error) => return Err(error),
+    }
+    let workflow = load_workflow_conn(transaction, input.workflow_id)?;
+    let base = load_proposal_conn(transaction, input.base_proposal_id)?;
+    if workflow_applied(transaction, input.workflow_id)?
+        || workflow.revision != input.expected_workflow_revision
+        || workflow.current_proposal_id != input.base_proposal_id
+        || workflow.stage != base.stage
+        || workflow.target.kind() != base.draft.kind()
+        || input.now < workflow.updated_at
+    {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let tool_request = creation_tool_request(workflow.target.kind());
+    let turn_ordinal = next_ordinal(transaction, "creation_turns", input.workflow_id)?;
+    transaction
+        .execute(
+            "INSERT INTO creation_turns \
+                 (id,workflow_id,ordinal,base_proposal_id,user_message,created_at,inputs_json) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                input.turn_id.to_string(),
+                input.workflow_id.to_string(),
+                i64::from(turn_ordinal),
+                input.base_proposal_id.to_string(),
+                input.user_message,
+                input.now.get(),
+                encode(&input.inputs)?,
+            ],
+        )
+        .map_err(|error| match error.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+            _ => CreationRepositoryError::Storage {
+                reason: "admit creation turn attempt: a stored value is not recognised",
+            },
+        })?;
+    transaction
+            .execute(
+                "INSERT INTO creation_inference_attempts \
+                 (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
+                  planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
+                  workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at) \
+                 VALUES (?1,?2,?3,0,NULL,?4,?5,?6,?7,?8,?9,?10,?11,'created',NULL,1,?12,NULL,NULL,?12)",
+                params![
+                    input.workflow_id.to_string(),
+                    input.turn_id.to_string(),
+                    input.attempt_id.to_string(),
+                    input.base_proposal_id.to_string(),
+                    input.planned_proposal_id.to_string(),
+                    target_name(workflow.target.kind()),
+                    stage_name(workflow.stage),
+                    encode_versioned(&tool_request, CREATION_JSON_VERSION)
+                        .map_err(|error| { tracing::warn!(%error, "admit creation turn attempt failed"); CreationRepositoryError::Invalid { reason: "admit creation turn attempt: a value could not be read or converted" } })?,
+                    input.job_id.to_string(),
+                    input.profile_fingerprint.as_slice(),
+                    sql_u64(input.expected_workflow_revision.get())?,
+                    input.now.get(),
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+                _ => CreationRepositoryError::Storage { reason: "admit creation turn attempt: a stored value is not recognised" },
+            })?;
+    let turn = load_turn_conn(transaction, input.turn_id)?;
+    let attempt = load_attempt_conn(transaction, input.attempt_id)?;
+    Ok(CreationTurnAttemptAdmission { turn, attempt })
+}
+
+fn admit_regeneration_in(
+    transaction: &Transaction<'_>,
+    input: NewCreationRegeneration,
+) -> Result<CreationTurnAttemptAdmission, CreationRepositoryError> {
+    match load_attempt_conn(transaction, input.attempt_id) {
+        Ok(attempt) => {
+            let turn = load_turn_conn(transaction, input.turn_id)?;
+            if turn.workflow_id == input.workflow_id
+                && turn.regenerated_turn_id == Some(input.regenerated_turn_id)
+                && turn.created_at == input.now
+                && attempt.workflow_id == input.workflow_id
+                && attempt.turn_id == input.turn_id
+                && attempt.ordinal == 0
+                && attempt.planned_proposal_id == input.planned_proposal_id
+                && attempt.job_id == input.job_id
+                && attempt.profile_fingerprint == input.profile_fingerprint
+                && attempt.created_at == input.now
+            {
+                return Ok(CreationTurnAttemptAdmission { turn, attempt });
+            }
+            return Err(CreationRepositoryError::Conflict);
+        }
+        Err(CreationRepositoryError::NotFound) => {}
+        Err(error) => return Err(error),
+    }
+    match load_turn_conn(transaction, input.turn_id) {
+        Ok(_) => return Err(CreationRepositoryError::Conflict),
+        Err(CreationRepositoryError::NotFound) => {}
+        Err(error) => return Err(error),
+    }
+    let workflow = load_workflow_conn(transaction, input.workflow_id)?;
+    let regenerated = load_turn_conn(transaction, input.regenerated_turn_id)?;
+    if workflow_applied(transaction, input.workflow_id)?
+        || workflow_has_active_attempt(transaction, input.workflow_id)?
+        || workflow.revision != input.expected_workflow_revision
+        || regenerated.workflow_id != input.workflow_id
+        || regenerated.base_proposal_id == input.planned_proposal_id
+        || input.now < workflow.updated_at
+        || next_ordinal(transaction, "creation_turns", input.workflow_id)?
+            != regenerated
+                .ordinal
+                .checked_add(1)
+                .ok_or(CreationRepositoryError::Storage {
+                    reason: "admit creation regeneration: a required value is missing",
+                })?
+    {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let settled: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM creation_inference_attempts \
+                 WHERE workflow_id=?1 AND turn_id=?2)",
+            params![
+                input.workflow_id.to_string(),
+                input.regenerated_turn_id.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    let produced: Option<String> = transaction
+        .query_row(
+            "SELECT id FROM creation_proposals WHERE workflow_id=?1 AND turn_id=?2",
+            params![
+                input.workflow_id.to_string(),
+                input.regenerated_turn_id.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    let produced = produced
+        .map(|id| id.parse::<CreationProposalId>().map_err(storage))
+        .transpose()?;
+    if !settled || workflow.current_proposal_id != produced.unwrap_or(regenerated.base_proposal_id)
+    {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let base = load_proposal_conn(transaction, regenerated.base_proposal_id)?;
+    let mut revision = workflow.revision;
+    if workflow.current_proposal_id != base.id {
+        revision = revision.next().map_err(|error| {
+            tracing::warn!(%error, "admit creation regeneration failed");
+            CreationRepositoryError::Storage {
+                reason: "admit creation regeneration: a storage step failed",
+            }
+        })?;
+        let changed = transaction
+                .execute(
+                    "UPDATE creation_workflows SET stage=?2,current_proposal_id=?3,revision=?4,updated_at=?5 \
+                     WHERE id=?1 AND revision=?6 AND current_proposal_id=?7",
+                    params![
+                        workflow.id.to_string(),
+                        stage_name(base.stage),
+                        base.id.to_string(),
+                        sql_u64(revision.get())?,
+                        input.now.get(),
+                        sql_u64(workflow.revision.get())?,
+                        workflow.current_proposal_id.to_string(),
+                    ],
+                )
+                .map_err(storage)?;
+        if changed != 1 {
+            return Err(CreationRepositoryError::Conflict);
+        }
+    }
+    let tool_request = creation_tool_request(workflow.target.kind());
+    let turn_ordinal = next_ordinal(transaction, "creation_turns", input.workflow_id)?;
+    transaction
+            .execute(
+                "INSERT INTO creation_turns \
+                 (id,workflow_id,ordinal,base_proposal_id,user_message,regenerated_turn_id,created_at,inputs_json) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    input.turn_id.to_string(),
+                    input.workflow_id.to_string(),
+                    i64::from(turn_ordinal),
+                    base.id.to_string(),
+                    regenerated.user_message,
+                    input.regenerated_turn_id.to_string(),
+                    input.now.get(),
+                    encode(&regenerated.inputs)?,
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+                _ => CreationRepositoryError::Storage { reason: "admit creation regeneration: a stored value is not recognised" },
+            })?;
+    transaction
+            .execute(
+                "INSERT INTO creation_inference_attempts \
+                 (workflow_id,turn_id,id,ordinal,retry_parent_id,base_proposal_id,\
+                  planned_proposal_id,target,stage,tool_request_json,job_id,profile_fingerprint,\
+                  workflow_revision,status,failure,revision,created_at,started_at,finished_at,updated_at) \
+                 VALUES (?1,?2,?3,0,NULL,?4,?5,?6,?7,?8,?9,?10,?11,'created',NULL,1,?12,NULL,NULL,?12)",
+                params![
+                    input.workflow_id.to_string(),
+                    input.turn_id.to_string(),
+                    input.attempt_id.to_string(),
+                    base.id.to_string(),
+                    input.planned_proposal_id.to_string(),
+                    target_name(workflow.target.kind()),
+                    stage_name(base.stage),
+                    encode_versioned(&tool_request, CREATION_JSON_VERSION)
+                        .map_err(|error| { tracing::warn!(%error, "admit creation regeneration failed"); CreationRepositoryError::Invalid { reason: "admit creation regeneration: a value could not be read or converted" } })?,
+                    input.job_id.to_string(),
+                    input.profile_fingerprint.as_slice(),
+                    sql_u64(revision.get())?,
+                    input.now.get(),
+                ],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(rusqlite::ErrorCode::ConstraintViolation) => CreationRepositoryError::Conflict,
+                _ => CreationRepositoryError::Storage { reason: "admit creation regeneration: a stored value is not recognised" },
+            })?;
+    let turn = load_turn_conn(transaction, input.turn_id)?;
+    let attempt = load_attempt_conn(transaction, input.attempt_id)?;
+    Ok(CreationTurnAttemptAdmission { turn, attempt })
+}
+
+mod workspace;
+pub use workspace::{
+    CreatorDialogue, CreatorGeneratedImage, CreatorUserEdit, CreatorWorkspace,
+    NewCreatorGeneratedImage,
+};
+
+fn apply_new_persona_in(
+    transaction: &Transaction<'_>,
+    request: ConfirmedPersonaApply,
+) -> Result<CreationApplyReceipt, CreationRepositoryError> {
+    if let Some(receipt) = load_apply_receipt(transaction, request.workflow_id)? {
+        if receipt.workflow_revision == request.expected_workflow_revision
+            && receipt.proposal_id == request.proposal_id
+            && receipt.persona_id == request.destination_persona_id
+        {
+            return Ok(receipt);
+        }
+        return Err(CreationRepositoryError::Conflict);
+    }
+
+    let workflow = load_workflow_conn(transaction, request.workflow_id)?;
+    if workflow_has_active_attempt(transaction, request.workflow_id)? {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    if workflow.target != CreationTarget::NewPersona
+        || workflow.stage != CreationStage::AwaitingConfirmation
+        || workflow.revision != request.expected_workflow_revision
+        || workflow.current_proposal_id != request.proposal_id
+        || request.now.get() < workflow.updated_at.get()
+    {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let proposal = load_proposal_conn(transaction, request.proposal_id)?;
+    let (Some(title), Some(description)) = (match proposal.draft {
+        lettuce_creation::CreationDraft::Persona {
+            name, description, ..
+        } => (name, description),
+        _ => return Err(CreationRepositoryError::Conflict),
+    }) else {
+        return Err(CreationRepositoryError::Invalid {
+            reason: "apply new persona: a value failed validation",
+        });
+    };
+    let persona = Persona::new(
+        request.destination_persona_id,
+        title,
+        description,
+        request.now,
+    )
+    .map_err(|error| {
+        tracing::warn!(%error, "apply new persona failed");
+        CreationRepositoryError::Invalid {
+            reason: "apply new persona: a value could not be read or converted",
+        }
+    })?;
+    let persona = crate::catalog::persona_adapter::insert_persona(transaction, persona)
+        .map_err(authored_error)?;
+    let receipt = CreationApplyReceipt {
+        workflow_id: request.workflow_id,
+        workflow_revision: request.expected_workflow_revision,
+        proposal_id: request.proposal_id,
+        persona_id: persona.id,
+        persona_revision: persona.revision,
+        applied_at: request.now,
+    };
+    insert_apply_receipt(transaction, &receipt)?;
+    Ok(receipt)
+}
+
+fn apply_existing_persona_in(
+    transaction: &Transaction<'_>,
+    request: ConfirmedPersonaRevisionApply,
+) -> Result<CreationApplyReceipt, CreationRepositoryError> {
+    let expected_target = CreationTarget::ExistingPersona {
+        id: request.persona_id,
+        revision: request.expected_persona_revision,
+    };
+    if let Some(receipt) = load_apply_receipt(transaction, request.workflow_id)? {
+        let workflow = load_workflow_conn(transaction, request.workflow_id)?;
+        let expected_result_revision =
+            request.expected_persona_revision.next().map_err(|error| {
+                tracing::warn!(%error, "apply existing persona failed");
+                CreationRepositoryError::Invalid {
+                    reason: "apply existing persona: a value could not be read or converted",
+                }
+            })?;
+        if workflow.target == expected_target
+            && receipt.workflow_revision == request.expected_workflow_revision
+            && receipt.proposal_id == request.proposal_id
+            && receipt.persona_id == request.persona_id
+            && receipt.persona_revision == expected_result_revision
+        {
+            return Ok(receipt);
+        }
+        return Err(CreationRepositoryError::Conflict);
+    }
+
+    let workflow = load_workflow_conn(transaction, request.workflow_id)?;
+    if workflow_has_active_attempt(transaction, request.workflow_id)? {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    if workflow.target != expected_target
+        || workflow.stage != CreationStage::AwaitingConfirmation
+        || workflow.revision != request.expected_workflow_revision
+        || workflow.current_proposal_id != request.proposal_id
+        || request.now.get() < workflow.updated_at.get()
+    {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let proposal = load_proposal_conn(transaction, request.proposal_id)?;
+    let (Some(title), Some(description)) = (match proposal.draft {
+        lettuce_creation::CreationDraft::Persona {
+            name, description, ..
+        } => (name, description),
+        _ => return Err(CreationRepositoryError::Conflict),
+    }) else {
+        return Err(CreationRepositoryError::Invalid {
+            reason: "apply existing persona: a value failed validation",
+        });
+    };
+    let current = crate::catalog::persona_adapter::get_persona(transaction, request.persona_id)
+        .map_err(authored_error)?
+        .ok_or(CreationRepositoryError::NotFound)?;
+    let draft = PersonaDraftUpdate {
+        title,
+        description,
+        nickname: current.nickname,
+        design_description: current.design_description,
+        avatar_crop: current.avatar_crop,
+        image_recommendation: current.image_recommendation,
+    };
+    let persona = crate::catalog::persona_adapter::revise_persona(
+        transaction,
+        request.persona_id,
+        request.expected_persona_revision,
+        draft,
+        request.now,
+    )
+    .map_err(authored_error)?;
+    let receipt = CreationApplyReceipt {
+        workflow_id: request.workflow_id,
+        workflow_revision: request.expected_workflow_revision,
+        proposal_id: request.proposal_id,
+        persona_id: persona.id,
+        persona_revision: persona.revision,
+        applied_at: request.now,
+    };
+    insert_apply_receipt(transaction, &receipt)?;
+    Ok(receipt)
+}
+
+fn apply_new_character_in(
+    transaction: &Transaction<'_>,
+    request: ConfirmedCharacterApply,
+) -> Result<CreationCharacterApplyReceipt, CreationRepositoryError> {
+    if let Some(receipt) = load_character_apply_receipt(transaction, request.workflow_id)? {
+        let workflow = load_workflow_conn(transaction, request.workflow_id)?;
+        if workflow.target == CreationTarget::NewCharacter
+            && receipt.workflow_revision == request.expected_workflow_revision
+            && receipt.proposal_id == request.proposal_id
+            && receipt.character_id == request.destination_character_id
+        {
+            applied_character_exists(transaction, receipt.character_id)?;
+            return Ok(receipt);
+        }
+        return Err(CreationRepositoryError::Conflict);
+    }
+
+    let workflow = load_workflow_conn(transaction, request.workflow_id)?;
+    if workflow_has_active_attempt(transaction, request.workflow_id)? {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    if workflow.target != CreationTarget::NewCharacter
+        || workflow.stage != CreationStage::AwaitingConfirmation
+        || workflow.revision != request.expected_workflow_revision
+        || workflow.current_proposal_id != request.proposal_id
+        || request.now.get() < workflow.updated_at.get()
+    {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let proposal = load_proposal_conn(transaction, request.proposal_id)?;
+    let (Some(name), Some(definition), draft_scenes) = (match proposal.draft {
+        lettuce_creation::CreationDraft::Character {
+            name,
+            definition,
+            scenes,
+            ..
+        } => (name, definition, scenes),
+        _ => return Err(CreationRepositoryError::Conflict),
+    }) else {
+        return Err(CreationRepositoryError::Invalid {
+            reason: "apply new character: a value failed validation",
+        });
+    };
+    let character = Character::new(
+        request.destination_character_id,
+        CharacterProfile {
+            name,
+            nickname: None,
+            description: None,
+            definition: Some(definition),
+            design_description: None,
+            scenario: None,
+        },
+        CharacterProvenance::default(),
+        CharacterDefaults::default(),
+        CharacterPresentationV1::default(),
+        None,
+        CharacterMedia::default(),
+        request.now,
+    )
+    .map_err(|error| {
+        tracing::warn!(%error, "apply new character failed");
+        CreationRepositoryError::Invalid {
+            reason: "apply new character: a value could not be read or converted",
+        }
+    })?;
+    let scenes = draft_scenes
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, draft)| {
+            let mut scene = Scene::new(
+                draft.id,
+                SceneOwner::Character(request.destination_character_id),
+                u32::try_from(ordinal).map_err(|error| {
+                    tracing::warn!(%error, "apply new character failed");
+                    CreationRepositoryError::Invalid {
+                        reason: "apply new character: a value could not be read or converted",
+                    }
+                })?,
+                SceneDocumentV1::new(vec![ScenePart::Text {
+                    text: draft.content,
+                }])
+                .map_err(|error| {
+                    tracing::warn!(%error, "apply new character failed");
+                    CreationRepositoryError::Invalid {
+                        reason: "apply new character: a value could not be read or converted",
+                    }
+                })?,
+                request.now,
+            )
+            .map_err(|error| {
+                tracing::warn!(%error, "apply new character failed");
+                CreationRepositoryError::Invalid {
+                    reason: "apply new character: a value could not be read or converted",
+                }
+            })?;
+            scene.direction = draft.direction;
+            scene.validate().map_err(|error| {
+                tracing::warn!(%error, "apply new character failed");
+                CreationRepositoryError::Invalid {
+                    reason: "apply new character: a value could not be read or converted",
+                }
+            })?;
+            Ok(scene)
+        })
+        .collect::<Result<Vec<_>, CreationRepositoryError>>()?;
+    let details = crate::catalog::character_adapter::insert_character_plan(
+        transaction,
+        &CreateCharacterPlan {
+            character,
+            scenes,
+            variants: Vec::new(),
+            starters: Vec::new(),
+        },
+    )
+    .map_err(authored_error)?;
+    let receipt = CreationCharacterApplyReceipt {
+        workflow_id: request.workflow_id,
+        workflow_revision: request.expected_workflow_revision,
+        proposal_id: request.proposal_id,
+        character_id: details.character.id,
+        character_revision: details.character.revision,
+        applied_at: request.now,
+    };
+    insert_character_apply_receipt(transaction, &receipt)?;
+    Ok(receipt)
+}
+
+fn apply_existing_character_in(
+    transaction: &Transaction<'_>,
+    request: ConfirmedCharacterRevisionApply,
+) -> Result<CreationCharacterApplyReceipt, CreationRepositoryError> {
+    let expected_target = CreationTarget::ExistingCharacter {
+        id: request.character_id,
+        revision: request.expected_character_revision,
+    };
+    if let Some(receipt) = load_character_apply_receipt(transaction, request.workflow_id)? {
+        let workflow = load_workflow_conn(transaction, request.workflow_id)?;
+        let expected_result_revision =
+            request
+                .expected_character_revision
+                .next()
+                .map_err(|error| {
+                    tracing::warn!(%error, "apply existing character failed");
+                    CreationRepositoryError::Invalid {
+                        reason: "apply existing character: a value could not be read or converted",
+                    }
+                })?;
+        if workflow.target == expected_target
+            && receipt.workflow_revision == request.expected_workflow_revision
+            && receipt.proposal_id == request.proposal_id
+            && receipt.character_id == request.character_id
+            && receipt.character_revision == expected_result_revision
+        {
+            applied_character_exists(transaction, receipt.character_id)?;
+            return Ok(receipt);
+        }
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let workflow = load_workflow_conn(transaction, request.workflow_id)?;
+    if workflow_has_active_attempt(transaction, request.workflow_id)? {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    if workflow.target != expected_target
+        || workflow.stage != CreationStage::AwaitingConfirmation
+        || workflow.revision != request.expected_workflow_revision
+        || workflow.current_proposal_id != request.proposal_id
+        || request.now.get() < workflow.updated_at.get()
+    {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let proposal = load_proposal_conn(transaction, request.proposal_id)?;
+    let (Some(name), Some(definition), draft_scenes) = (match proposal.draft {
+        lettuce_creation::CreationDraft::Character {
+            name,
+            definition,
+            scenes,
+            ..
+        } => (name, definition, scenes),
+        _ => return Err(CreationRepositoryError::Conflict),
+    }) else {
+        return Err(CreationRepositoryError::Invalid {
+            reason: "apply existing character: a value failed validation",
+        });
+    };
+    let current = crate::catalog::character_adapter::load_character_details(
+        transaction,
+        request.character_id,
+    )
+    .map_err(authored_error)?
+    .ok_or(CreationRepositoryError::NotFound)?;
+    if current.character.status == lettuce_characters::LifecycleStatus::Archived
+        || current.character.revision != request.expected_character_revision
+        || request.now.get() < current.character.updated_at.get()
+    {
+        return Err(CreationRepositoryError::Conflict);
+    }
+    let previous_by_id: HashMap<_, _> = current
+        .scenes
+        .iter()
+        .cloned()
+        .map(|scene| (scene.id, scene))
+        .collect();
+    let scenes = draft_scenes
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, draft)| {
+            let ordinal = u32::try_from(ordinal).map_err(|error| {
+                tracing::warn!(%error, "apply existing character failed");
+                CreationRepositoryError::Invalid {
+                    reason: "apply existing character: a value could not be read or converted",
+                }
+            })?;
+            let content = SceneDocumentV1::new(vec![ScenePart::Text {
+                text: draft.content,
+            }])
+            .map_err(|error| {
+                tracing::warn!(%error, "apply existing character failed");
+                CreationRepositoryError::Invalid {
+                    reason: "apply existing character: a value could not be read or converted",
+                }
+            })?;
+            let Some(previous) = previous_by_id.get(&draft.id) else {
+                let mut scene = Scene::new(
+                    draft.id,
+                    SceneOwner::Character(request.character_id),
+                    ordinal,
+                    content,
+                    request.now,
+                )
+                .map_err(|error| {
+                    tracing::warn!(%error, "apply existing character failed");
+                    CreationRepositoryError::Invalid {
+                        reason: "apply existing character: a value could not be read or converted",
+                    }
+                })?;
+                scene.direction = draft.direction;
+                scene.validate().map_err(|error| {
+                    tracing::warn!(%error, "apply existing character failed");
+                    CreationRepositoryError::Invalid {
+                        reason: "apply existing character: a value could not be read or converted",
+                    }
+                })?;
+                return Ok(scene);
+            };
+            let changed = previous.content != content
+                || previous.direction != draft.direction
+                || previous.ordinal != ordinal;
+            Ok(Scene {
+                ordinal,
+                content,
+                direction: draft.direction,
+                revision: if changed {
+                    previous.revision.next().map_err(|error| {
+                        tracing::warn!(%error, "apply existing character failed");
+                        CreationRepositoryError::Storage {
+                            reason: "apply existing character: a storage step failed",
+                        }
+                    })?
+                } else {
+                    previous.revision
+                },
+                updated_at: if changed {
+                    request.now
+                } else {
+                    previous.updated_at
+                },
+                ..previous.clone()
+            })
+        })
+        .collect::<Result<Vec<_>, CreationRepositoryError>>()?;
+    let retained_scene_ids: std::collections::HashSet<_> =
+        scenes.iter().map(|scene| scene.id).collect();
+    let mut profile = current.character.profile.clone();
+    profile.name = name;
+    profile.definition = Some(definition);
+    let plan = CreateCharacterPlan {
+        character: Character {
+            profile,
+            revision: request
+                .expected_character_revision
+                .next()
+                .map_err(|error| {
+                    tracing::warn!(%error, "apply existing character failed");
+                    CreationRepositoryError::Storage {
+                        reason: "apply existing character: a storage step failed",
+                    }
+                })?,
+            updated_at: request.now,
+            ..current.character
+        },
+        scenes,
+        variants: current
+            .variants
+            .into_iter()
+            .filter(|variant| retained_scene_ids.contains(&variant.scene_id))
+            .collect(),
+        starters: current.starters,
+    };
+    let details = crate::catalog::character_adapter::replace_character_profile_scenes(
+        transaction,
+        request.expected_character_revision,
+        &plan,
+    )
+    .map_err(authored_error)?;
+    let receipt = CreationCharacterApplyReceipt {
+        workflow_id: request.workflow_id,
+        workflow_revision: request.expected_workflow_revision,
+        proposal_id: request.proposal_id,
+        character_id: details.character.id,
+        character_revision: details.character.revision,
+        applied_at: request.now,
+    };
+    insert_character_apply_receipt(transaction, &receipt)?;
+    Ok(receipt)
 }
 
 #[cfg(test)]
@@ -3648,6 +3801,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: Some("Navigator".into()),
                     description: None,
+                    avatar: None,
                 },
                 now: TimestampMillis::new(10),
             })
@@ -3855,6 +4009,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Navigator".into()),
                 description: Some("Keeps the journey on course.".into()),
+                avatar: None,
             },
             10,
         );
@@ -3942,6 +4097,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: Some(" ".into()),
                     description: Some("Description".into()),
+                    avatar: None,
                 },
                 now: TimestampMillis::new(1),
             }),
@@ -3950,6 +4106,7 @@ mod tests {
         let draft = CreationDraft::Persona {
             name: Some("Complete".into()),
             description: Some("Complete description".into()),
+            avatar: None,
         };
         let drafting_id = CreationWorkflowId::new();
         let drafting_proposal_id = CreationProposalId::new();
@@ -4002,6 +4159,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Incomplete".into()),
                 description: None,
+                avatar: None,
             },
             20,
         );
@@ -4023,6 +4181,7 @@ mod tests {
                 name: Some("Wrong target".into()),
                 definition: Some("Not a persona".into()),
                 scenes: Vec::new(),
+                avatar: None,
             },
             30,
         );
@@ -4074,6 +4233,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Revised".into()),
                 description: Some("Revised description".into()),
+                avatar: None,
             },
             10,
         );
@@ -4158,6 +4318,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Revised again".into()),
                 description: Some("Second revision".into()),
+                avatar: None,
             },
             100,
         );
@@ -4201,6 +4362,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: Some("Drafting".into()),
                     description: Some("Not confirmed".into()),
+                    avatar: None,
                 },
                 now: TimestampMillis::new(2),
             })
@@ -4222,6 +4384,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Wrong target".into()),
                 description: Some("Not an existing target".into()),
+                avatar: None,
             },
             4,
         );
@@ -4245,6 +4408,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Stale edit".into()),
                 description: Some("Should conflict".into()),
+                avatar: None,
             },
             10,
         );
@@ -4296,6 +4460,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Archived edit".into()),
                 description: Some("Should conflict".into()),
+                avatar: None,
             },
             30,
         );
@@ -4321,6 +4486,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Missing".into()),
                 description: Some("Missing persona".into()),
+                avatar: None,
             },
             40,
         );
@@ -4346,6 +4512,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Incomplete edit".into()),
                 description: None,
+                avatar: None,
             },
             50,
         );
@@ -4385,6 +4552,7 @@ mod tests {
                         direction: None,
                     },
                 ],
+                avatar: None,
             },
             10,
         );
@@ -4513,6 +4681,7 @@ mod tests {
                             direction: None,
                         },
                     ],
+                    avatar: None,
                 },
                 now: TimestampMillis::new(1),
             }),
@@ -4529,6 +4698,7 @@ mod tests {
                     name: Some("Drafting".into()),
                     definition: Some("Not confirmed".into()),
                     scenes: Vec::new(),
+                    avatar: None,
                 },
                 now: TimestampMillis::new(2),
             })
@@ -4550,6 +4720,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Wrong target".into()),
                 description: Some("Not a character".into()),
+                avatar: None,
             },
             10,
         );
@@ -4572,6 +4743,7 @@ mod tests {
                     name: name.map(str::to_owned),
                     definition: definition.map(str::to_owned),
                     scenes: Vec::new(),
+                    avatar: None,
                 },
                 20,
             );
@@ -4594,6 +4766,7 @@ mod tests {
                 name: Some("Minimal".into()),
                 definition: Some("A complete minimal character.".into()),
                 scenes: Vec::new(),
+                avatar: None,
             },
             30,
         );
@@ -4621,6 +4794,7 @@ mod tests {
                 name: Some("Duplicate destination".into()),
                 definition: Some("Must roll back".into()),
                 scenes: Vec::new(),
+                avatar: None,
             },
             40,
         );
@@ -4732,6 +4906,7 @@ mod tests {
                         direction: None,
                     },
                 ],
+                avatar: None,
             },
             10,
         );
@@ -4837,6 +5012,7 @@ mod tests {
                 name: Some("Final name".into()),
                 definition: Some("Final definition".into()),
                 scenes: unchanged_scenes,
+                avatar: None,
             },
             20,
         );
@@ -4948,6 +5124,7 @@ mod tests {
                     content: "Second greeting".into(),
                     direction: None,
                 }],
+                avatar: None,
             },
             10,
         );
@@ -5041,6 +5218,7 @@ mod tests {
                     content: "Default scene".into(),
                     direction: None,
                 }],
+                avatar: None,
             },
             20,
         );
@@ -5066,6 +5244,7 @@ mod tests {
                 name: Some("Missing".into()),
                 definition: Some("Missing".into()),
                 scenes: Vec::new(),
+                avatar: None,
             },
             30,
         );
@@ -5101,6 +5280,7 @@ mod tests {
                     content: "Default scene".into(),
                     direction: None,
                 }],
+                avatar: None,
             },
             41,
         );
@@ -5393,6 +5573,7 @@ mod tests {
             CreationDraft::Persona {
                 name: Some("Wrong target".into()),
                 description: Some("Not a lorebook".into()),
+                avatar: None,
             },
             10,
         );
@@ -6039,6 +6220,7 @@ mod tests {
                 name: None,
                 definition: None,
                 scenes: Vec::new(),
+                avatar: None,
             },
             now: TimestampMillis::new(10),
         };
@@ -6232,6 +6414,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: None,
                     description: None,
+                    avatar: None,
                 },
                 now: TimestampMillis::new(1),
             })
@@ -6305,6 +6488,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: None,
                     description: None,
+                    avatar: None,
                 },
                 now: TimestampMillis::new(1),
             })
@@ -6395,7 +6579,10 @@ mod tests {
         assert_eq!(admitted.calls.len(), 2);
         assert_eq!(admitted.parts.len(), 1);
         assert_eq!(admitted.calls[0].call.provider_replay, Some(replay.clone()));
-        assert_eq!(admitted.calls[0].call.raw_arguments, parent_calls[0].call.raw_arguments);
+        assert_eq!(
+            admitted.calls[0].call.raw_arguments,
+            parent_calls[0].call.raw_arguments
+        );
         assert_eq!(
             database
                 .admit_creation_inference_round(owner, parent_id, 0, 0, parent_round.clone())
@@ -6701,6 +6888,7 @@ mod tests {
                     call: evidence.call.clone(),
                 })
                 .collect::<Vec<_>>(),
+            &[],
             TimestampMillis::new(at + 2),
         )
         .expect("reduce")
@@ -6732,6 +6920,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: None,
                     description: None,
+                    avatar: None,
                 },
                 now: TimestampMillis::new(1),
             })
@@ -6745,6 +6934,7 @@ mod tests {
                 attempt_id: GenerationAttemptId::new(),
                 planned_proposal_id: CreationProposalId::new(),
                 user_message: "Name her Ada".to_owned(),
+                inputs: lettuce_creation::CreationTurnInputs::default(),
                 job_id: JobId::new(),
                 profile_fingerprint: [1; 32],
                 now: TimestampMillis::new(2),

@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
 use lettuce_types::{
-    CreationProposalId, CreationTurnId, CreationWorkflowId, LorebookEntryId, Revision, SceneId,
-    TimestampMillis,
+    AssetId, CreationProposalId, CreationTurnId, CreationWorkflowId, LorebookEntryId, Revision,
+    SceneId, TimestampMillis,
 };
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -20,11 +20,38 @@ pub const CREATION_TOOL_VERSION: u32 = TOOL_VERSION;
 
 /// Catalog keys of the model-facing tool texts: `(tool, parameter, key)`,
 /// where a `None` parameter names the tool description itself.
-pub const CREATION_TOOL_TEXT_KEYS: [(&str, Option<&str>, &str); 16] = [
+pub const CREATION_TOOL_TEXT_KEYS: [(&str, Option<&str>, &str); 23] = [
     ("write_definition", None, "creation_write_definition_tool"),
     ("write_scene", None, "creation_write_scene_tool"),
     ("write_lore_entry", None, "creation_write_lore_entry_tool"),
     ("set_name", None, "creation_set_name_tool"),
+    (
+        "use_uploaded_image",
+        None,
+        "creation_use_uploaded_image_tool",
+    ),
+    (
+        "use_uploaded_image",
+        Some("image_id"),
+        "creation_use_uploaded_image_image_id",
+    ),
+    ("generate_image", None, "creation_generate_image_tool"),
+    (
+        "generate_image",
+        Some("prompt"),
+        "creation_generate_image_prompt",
+    ),
+    ("edit_avatar_image", None, "creation_edit_avatar_image_tool"),
+    (
+        "edit_avatar_image",
+        Some("image_id"),
+        "creation_edit_avatar_image_image_id",
+    ),
+    (
+        "edit_avatar_image",
+        Some("edit_prompt"),
+        "creation_edit_avatar_image_edit_prompt",
+    ),
     ("edit_scene", None, "creation_edit_scene_tool"),
     ("edit_scene", Some("id"), "creation_edit_scene_id"),
     ("edit_scene", Some("content"), "creation_edit_scene_content"),
@@ -71,12 +98,18 @@ pub fn creation_tool_request(target: CreationTargetKind) -> ToolRequest {
             "set_name",
             "edit_scene",
             "delete_scene",
+            "generate_image",
+            "edit_avatar_image",
+            "use_uploaded_image",
             "show_preview",
             "request_confirmation",
         ],
         CreationTargetKind::Persona => &[
             "write_definition",
             "set_name",
+            "generate_image",
+            "edit_avatar_image",
+            "use_uploaded_image",
             "show_preview",
             "request_confirmation",
         ],
@@ -102,6 +135,24 @@ pub fn creation_tool_request(target: CreationTargetKind) -> ToolRequest {
             .collect(),
         choice: ToolChoice::Auto,
     }
+}
+
+/// The tools added after the first creation tool contract.
+const IMAGE_TOOLS: [&str; 3] = ["generate_image", "edit_avatar_image", "use_uploaded_image"];
+
+/// Whether `request` is a contract this target was ever offered: the current one, or the one from before the image
+/// tools, which older attempts still carry.
+#[must_use]
+pub fn is_creation_tool_request(target: CreationTargetKind, request: &ToolRequest) -> bool {
+    let current = creation_tool_request(target);
+    if *request == current {
+        return true;
+    }
+    let mut earlier = current;
+    earlier
+        .definitions
+        .retain(|definition| !IMAGE_TOOLS.contains(&definition.name.as_str()));
+    *request == earlier
 }
 
 /// Adds the catalog descriptions to a creation tool request. A blank text
@@ -166,6 +217,24 @@ fn tool_parameters(name: &str) -> Value {
             "type": "object",
             "properties": { "name": { "type": "string" } },
             "required": ["name"]
+        }),
+        "generate_image" => json!({
+            "type": "object",
+            "properties": { "prompt": { "type": "string" } },
+            "required": ["prompt"]
+        }),
+        "edit_avatar_image" => json!({
+            "type": "object",
+            "properties": {
+                "image_id": { "type": "string" },
+                "edit_prompt": { "type": "string" }
+            },
+            "required": ["image_id", "edit_prompt"]
+        }),
+        "use_uploaded_image" => json!({
+            "type": "object",
+            "properties": { "image_id": { "type": "string" } },
+            "required": ["image_id"]
         }),
         "edit_scene" => json!({
             "type": "object",
@@ -233,14 +302,17 @@ pub struct CreationToolApply {
     pub now: TimestampMillis,
 }
 
+/// Reduces the calls against `base`. `images` are the session's images a call may name, such as the uploads and
+/// the images the creator generated; any other image id is rejected as unknown.
 pub fn reduce_creation_tool_calls(
     base: &CreationProposal,
     proposal_id: CreationProposalId,
     turn_id: CreationTurnId,
     calls: &[AdmittedCreationToolCall],
+    images: &[AssetId],
     now: TimestampMillis,
 ) -> Result<CreationToolBatch, CreationToolContractError> {
-    let operations = validate_and_parse_creation_tool_calls(base, proposal_id, calls)?;
+    let operations = validate_and_parse_creation_tool_calls(base, proposal_id, calls, images)?;
     let proposal = base.apply(proposal_id, turn_id, operations, now)?;
     Ok(CreationToolBatch { proposal })
 }
@@ -250,13 +322,14 @@ pub fn validate_creation_tool_calls(
     proposal_id: CreationProposalId,
     calls: &[AdmittedCreationToolCall],
 ) -> Result<(), CreationToolContractError> {
-    validate_and_parse_creation_tool_calls(base, proposal_id, calls).map(|_| ())
+    validate_and_parse_creation_tool_calls(base, proposal_id, calls, &[]).map(|_| ())
 }
 
 fn validate_and_parse_creation_tool_calls(
     base: &CreationProposal,
     proposal_id: CreationProposalId,
     calls: &[AdmittedCreationToolCall],
+    images: &[AssetId],
 ) -> Result<Vec<CreationOperation>, CreationToolContractError> {
     let request = creation_tool_request(base.draft.kind());
     request
@@ -303,6 +376,7 @@ fn validate_and_parse_creation_tool_calls(
             &admitted.call.arguments,
             proposal_id,
             ordinal,
+            images,
         ));
     }
     Ok(operations)
@@ -318,6 +392,7 @@ pub fn apply_creation_tool_calls(
         request.proposal_id,
         request.turn_id,
         &request.calls,
+        &[],
         request.now,
     )?;
     let workflow = repository.append_proposal(
@@ -348,6 +423,7 @@ fn parse_operation(
     arguments: &Value,
     proposal_id: CreationProposalId,
     ordinal: usize,
+    images: &[AssetId],
 ) -> CreationOperation {
     let empty = Map::new();
     let object = arguments.as_object().unwrap_or(&empty);
@@ -448,6 +524,26 @@ fn parse_operation(
                         .collect::<Result<_, _>>()?,
                 }
             }
+            "generate_image" => CreationOperation::GenerateImage {
+                prompt: text(object, &["prompt", "note"]).ok_or_else(|| missing("prompt"))?,
+                source: None,
+            },
+            "edit_avatar_image" => {
+                let id = text(object, &["image_id", "id"]).ok_or_else(|| missing("image_id"))?;
+                let prompt = text(object, &["edit_prompt", "prompt"])
+                    .ok_or_else(|| missing("edit_prompt"))?;
+                CreationOperation::GenerateImage {
+                    prompt,
+                    source: Some(session_image(&id, images).ok_or_else(|| rejected(unknown(&id)))?),
+                }
+            }
+            "use_uploaded_image" => {
+                let id = text(object, &["image_id", "id"]).ok_or_else(|| missing("image_id"))?;
+                let asset_id = session_image(&id, images).ok_or_else(|| rejected(unknown(&id)))?;
+                CreationOperation::SetAvatar {
+                    asset_id: Some(asset_id),
+                }
+            }
             "show_preview" => CreationOperation::ShowPreview,
             "request_confirmation" => CreationOperation::RequestConfirmation,
             _ => CreationOperation::UndeclaredTool {
@@ -471,6 +567,25 @@ fn text(object: &Map<String, Value>, names: &[&str]) -> Option<String> {
         Value::Bool(value) => Some(value.to_string()),
         _ => None,
     })
+}
+
+/// The short id the creator sees for a session image: the first eight hex digits of its asset id.
+#[must_use]
+pub fn creation_image_label(asset_id: AssetId) -> String {
+    asset_id.as_uuid().simple().to_string()[..8].to_owned()
+}
+
+/// The session image an id names: a full asset id, or a prefix of at least eight hex digits that only one image has.
+fn session_image(id: &str, images: &[AssetId]) -> Option<AssetId> {
+    let wanted = id.trim().to_ascii_lowercase().replace('-', "");
+    if wanted.len() < 8 {
+        return None;
+    }
+    let mut matches = images
+        .iter()
+        .filter(|asset_id| asset_id.as_uuid().simple().to_string().starts_with(&wanted));
+    let found = matches.next().copied();
+    matches.next().is_none().then_some(found).flatten()
 }
 
 fn parse_id<T: std::str::FromStr>(id: &str) -> Option<T> {
@@ -556,6 +671,9 @@ mod tests {
                 "set_name",
                 "edit_scene",
                 "delete_scene",
+                "generate_image",
+                "edit_avatar_image",
+                "use_uploaded_image",
                 "show_preview",
                 "request_confirmation"
             ]
@@ -565,6 +683,9 @@ mod tests {
             [
                 "write_definition",
                 "set_name",
+                "generate_image",
+                "edit_avatar_image",
+                "use_uploaded_image",
                 "show_preview",
                 "request_confirmation"
             ]
@@ -615,6 +736,7 @@ mod tests {
                 name: None,
                 definition: None,
                 scenes: Vec::new(),
+                avatar: None,
             },
             TimestampMillis::new(1),
         )
@@ -640,6 +762,7 @@ mod tests {
             proposal_id,
             turn_id,
             &calls,
+            &[],
             TimestampMillis::new(2),
         )
         .expect("first reduction");
@@ -648,6 +771,7 @@ mod tests {
             proposal_id,
             turn_id,
             &calls,
+            &[],
             TimestampMillis::new(2),
         )
         .expect("stable retry");
@@ -674,6 +798,7 @@ mod tests {
             name,
             definition,
             scenes,
+            ..
         } = first.proposal.draft
         else {
             panic!("character draft");
@@ -696,6 +821,7 @@ mod tests {
                     content: "Welcome.".to_owned(),
                     direction: Some("calmly".to_owned()),
                 }],
+                avatar: None,
             },
             TimestampMillis::new(2),
         )
@@ -712,6 +838,7 @@ mod tests {
                 call("delete_scene", json!({"id": scenes[0].id})),
                 call("delete_scene", json!({"id": scenes[0].id})),
             ],
+            &[],
             TimestampMillis::new(3),
         )
         .expect("edit and delete scene");
@@ -755,6 +882,7 @@ mod tests {
                     json!({"title": "Oath", "content": "Kept."}),
                 ),
             ],
+            &[],
             TimestampMillis::new(2),
         )
         .expect("write entries");
@@ -784,6 +912,7 @@ mod tests {
                 call("reorder_lore_entries", json!({"order": [ids[2], ids[2]]})),
                 call("delete_lore_entry", json!({"id": ids[0]})),
             ],
+            &[],
             TimestampMillis::new(3),
         )
         .expect("change entries");
@@ -821,6 +950,7 @@ mod tests {
             CreationDraft::Persona {
                 name: None,
                 description: None,
+                avatar: None,
             },
             TimestampMillis::new(1),
         )
@@ -831,6 +961,7 @@ mod tests {
                 CreationProposalId::new(),
                 CreationTurnId::new(),
                 calls,
+                &[],
                 TimestampMillis::new(2),
             )
         };
@@ -916,6 +1047,7 @@ mod tests {
                     content: "Welcome.".into(),
                     direction: None,
                 }],
+                avatar: None,
             },
             TimestampMillis::new(1),
         )
@@ -936,6 +1068,7 @@ mod tests {
                     json!({"content": "Second.", "direction": " "}),
                 ),
             ],
+            &[],
             TimestampMillis::new(2),
         )
         .expect("batch");
@@ -956,5 +1089,45 @@ mod tests {
         assert_eq!(name.as_deref(), Some("Aster"));
         assert_eq!(scenes[0].content, "Revised.");
         assert_eq!(scenes[1].direction, None);
+    }
+
+    #[test]
+    fn use_uploaded_image_accepts_only_the_session_images() {
+        let base = crate::CreationProposal::initial(
+            CreationProposalId::new(),
+            CreationDraft::Persona {
+                name: None,
+                description: None,
+                avatar: None,
+            },
+            TimestampMillis::new(1),
+        )
+        .expect("base");
+        let known = lettuce_types::AssetId::new();
+        let stranger = lettuce_types::AssetId::new();
+        let batch = reduce_creation_tool_calls(
+            &base,
+            CreationProposalId::new(),
+            CreationTurnId::new(),
+            &[
+                call(
+                    "use_uploaded_image",
+                    json!({"image_id": stranger.to_string()}),
+                ),
+                call(
+                    "use_uploaded_image",
+                    json!({"image_id": crate::creation_image_label(known)}),
+                ),
+            ],
+            &[known],
+            TimestampMillis::new(2),
+        )
+        .expect("reduction");
+        assert_eq!(
+            batch.proposal.outcomes[0].error,
+            Some(CreationOperationError::NotFound)
+        );
+        assert!(batch.proposal.outcomes[1].succeeded());
+        assert_eq!(batch.proposal.draft.avatar(), Some(known));
     }
 }

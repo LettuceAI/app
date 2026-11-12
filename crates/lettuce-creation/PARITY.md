@@ -1,5 +1,7 @@
 # lettuce-creation: legacy parity notes
 
+The public Smart Creator workspace adds validated `ReplaceDraft` operations for user edits and historical restoration. These are not model tools. User review is recorded independently of `request_confirmation`; the public apply API requires that user revision. Legacy completed new sessions before handing their drafts to an unsaved editor (`old-code/src/ui/pages/characters/CreationHelperPage.tsx:1048-1102`); Creator applies directly and keeps its immutable result. The underlying lorebook domain remains available to the existing lorebook generator and is not exposed as a new Creator target.
+
 Facts about how `lettuce-creation` relates to the legacy app (2.2.x). The crate README describes the current design; this file keeps the comparison.
 
 ## Legacy parity
@@ -23,6 +25,14 @@ Facts about how `lettuce-creation` relates to the legacy app (2.2.x). The crate 
 - The staged commit keeps legacy's explicit-name then initial-name precedence.
 
 ## Deliberate differences from legacy
+
+- The helper's output contract, scene tool and examples teach `{{char}}` and `{{user}}`: the full name appears once in the biography and the placeholders everywhere else, with sample exchanges marked `{{user}}:` and `{{char}}:` instead of `User:` and the character's name. Creator prompts render those placeholders as themselves.
+
+- Generated and edited images are added to the session gallery and shown to the user; legacy applied them as the avatar right away. `use_uploaded_image` makes one the avatar. Background and persona-avatar roles are not offered.
+- References are stored on the turn and rendered from catalog entries with the item's current text each turn; legacy pasted the definition into the message once. Uploaded images reach the model as images when it accepts image input; legacy only sent their ids.
+
+- Regeneration also accepts a latest turn whose reply failed, was cancelled or was interrupted, so a retry replaces that turn instead of repeating the message.
+- The draft summary in the helper context shows the full definition and scene texts instead of legacy's 80- and 60-character previews, so hand edits reach the model. Lorebook entries keep the preview.
 
 - Lorebook apply receipts keep the applied id and name after source deletion, including backup (slice 6 decision 14). Legacy lorebook deletion was a hard row delete (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`); durable helper apply receipts are a rewrite mechanism.
 

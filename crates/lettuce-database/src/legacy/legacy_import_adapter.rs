@@ -997,6 +997,7 @@ impl LegacyImportRepository for Database {
                                 direction: scene.direction.clone(),
                             })
                             .collect(),
+                        avatar: None,
                     },
                 ),
                 LegacyBackupCreationGoal::Persona => (
@@ -1004,6 +1005,7 @@ impl LegacyImportRepository for Database {
                     CreationDraft::Persona {
                         name: draft.name.clone(),
                         description: draft.description.clone(),
+                        avatar: None,
                     },
                 ),
                 LegacyBackupCreationGoal::Lorebook => (

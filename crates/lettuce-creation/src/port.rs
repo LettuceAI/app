@@ -52,7 +52,7 @@ pub trait CreationAttemptRepository: Send + Sync {
         admission: NewCreationTurnAttempt,
     ) -> Result<CreationTurnAttemptAdmission, CreationRepositoryError>;
 
-    /// Discards the latest answered turn and admits its regeneration.
+    /// Discards the latest settled turn, answered or failed, and admits its regeneration.
     fn admit_creation_regeneration(
         &self,
         regeneration: NewCreationRegeneration,

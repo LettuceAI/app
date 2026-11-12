@@ -1,5 +1,5 @@
 use lettuce_types::{
-    CreationProposalId, CreationTurnId, LorebookEntryId, SceneId, TimestampMillis,
+    AssetId, CreationProposalId, CreationTurnId, LorebookEntryId, SceneId, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +11,9 @@ pub const MAX_CREATION_PROPOSAL_BYTES: usize = lettuce_types::limits::MAX_DOCUME
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CreationOperation {
+    ReplaceDraft {
+        draft: CreationDraft,
+    },
     SetName {
         value: String,
     },
@@ -45,6 +48,16 @@ pub enum CreationOperation {
     },
     ReorderLorebookEntries {
         order: Vec<LorebookEntryId>,
+    },
+    /// Makes one of the session's images the avatar, or clears it.
+    SetAvatar {
+        asset_id: Option<AssetId>,
+    },
+    /// Asks for a new image from `prompt`, or an edit of `source`. The draft does not change; the image joins the
+    /// session's gallery once it is made.
+    GenerateImage {
+        prompt: String,
+        source: Option<AssetId>,
     },
     ShowPreview,
     RequestConfirmation,
@@ -228,6 +241,7 @@ fn apply_one(
         operation,
         CreationOperation::ShowPreview
             | CreationOperation::RequestConfirmation
+            | CreationOperation::GenerateImage { .. }
             | CreationOperation::UndeclaredTool { .. }
             | CreationOperation::Rejected { .. }
     );
@@ -244,6 +258,15 @@ fn apply_change(
     operation: &CreationOperation,
 ) -> Result<(), CreationOperationError> {
     match operation {
+        CreationOperation::ReplaceDraft { draft: replacement } => {
+            if replacement.kind() != draft.kind() {
+                return Err(CreationOperationError::WrongTarget);
+            }
+            replacement
+                .validate()
+                .map_err(|_| CreationOperationError::InvalidText)?;
+            draft.clone_from(replacement);
+        }
         CreationOperation::SetName { value } => {
             validate_text(value)?;
             match draft {
@@ -374,6 +397,18 @@ fn apply_change(
                 .ok_or(CreationOperationError::NotFound)?;
             entries.remove(index);
         }
+        CreationOperation::SetAvatar { asset_id } => match draft {
+            CreationDraft::Character { avatar, .. } | CreationDraft::Persona { avatar, .. } => {
+                *avatar = *asset_id;
+            }
+            CreationDraft::Lorebook { .. } => return Err(CreationOperationError::WrongTarget),
+        },
+        CreationOperation::GenerateImage { prompt, .. } => {
+            validate_text(prompt)?;
+            if matches!(draft, CreationDraft::Lorebook { .. }) {
+                return Err(CreationOperationError::WrongTarget);
+            }
+        }
         CreationOperation::ShowPreview => *stage = CreationStage::AwaitingReview,
         CreationOperation::RequestConfirmation => *stage = CreationStage::AwaitingConfirmation,
         CreationOperation::UndeclaredTool { .. } => {
@@ -435,6 +470,7 @@ mod tests {
                 name: None,
                 definition: None,
                 scenes: Vec::new(),
+                avatar: None,
             },
             TimestampMillis::new(1),
         )
@@ -480,6 +516,7 @@ mod tests {
                     content: "hello".to_owned(),
                     direction: Some("softly".to_owned()),
                 }],
+                avatar: None,
             }
         );
     }
@@ -499,6 +536,7 @@ mod tests {
                 name: Some("Aster".to_owned()),
                 definition: Some("d".repeat(512 * 1024)),
                 scenes,
+                avatar: None,
             },
             TimestampMillis::new(1),
         )
@@ -555,6 +593,7 @@ mod tests {
             CreationDraft::Persona {
                 name: None,
                 description: None,
+                avatar: None,
             },
             TimestampMillis::new(1),
         )

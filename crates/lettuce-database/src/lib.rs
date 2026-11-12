@@ -244,6 +244,16 @@ const MIGRATION_35: Migration = Migration {
     sql: include_str!("../migrations/0035_group_companion_growth.sql"),
 };
 
+const MIGRATION_36: Migration = Migration {
+    id: 36,
+    sql: include_str!("../migrations/0036_creator_media.sql"),
+};
+
+const MIGRATION_37: Migration = Migration {
+    id: 37,
+    sql: include_str!("../migrations/0037_creator_image_jobs.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -280,6 +290,8 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_33,
     MIGRATION_34,
     MIGRATION_35,
+    MIGRATION_36,
+    MIGRATION_37,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -6195,6 +6207,7 @@ mod tests {
                 "creation_admitted_tool_calls",
                 "creation_apply_receipts",
                 "creation_character_apply_receipts",
+                "creation_generated_images",
                 "creation_inference_attempts",
                 "creation_inference_rounds",
                 "creation_lorebook_apply_receipts",
@@ -6463,3 +6476,8 @@ pub use backup_index::BackupIndexRecord;
 
 #[cfg(test)]
 mod entity_import_tests;
+
+pub use catalog::creation_adapter::{
+    CreatorDialogue, CreatorGeneratedImage, CreatorUserEdit, CreatorWorkspace,
+    NewCreatorGeneratedImage,
+};

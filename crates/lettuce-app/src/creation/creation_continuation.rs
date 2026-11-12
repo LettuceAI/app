@@ -1,3 +1,4 @@
+use crate::creation::creation_prompt::CreationPromptMedia;
 use crate::jobs::job_inference_usage::{JobInferenceError, run_job_inference};
 use lettuce_conversations::{
     ContextAttributions, ContextBudgetReport, FinishReason, GenerationOperation, InferenceOutcome,
@@ -56,6 +57,7 @@ pub fn admit_creation_turn_dispatch<R: CreationAttemptRepository + ?Sized>(
             attempt_id: request.attempt_id,
             planned_proposal_id: request.planned_proposal_id,
             user_message: request.user_message,
+            inputs: lettuce_creation::CreationTurnInputs::default(),
             job_id: handle.id(),
             profile_fingerprint,
             now: request.now,
@@ -141,11 +143,66 @@ pub fn recover_creation_dispatch<R: CreationAttemptRepository + ?Sized>(
         .map_err(Into::into)
 }
 
+pub trait CreationRoundObserver: std::fmt::Debug + Send + Sync {
+    fn committed(&self);
+}
+
+/// An image a creator tool call asks for, with the subject the avatar prompt describes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreationImageRequest {
+    pub workflow_id: lettuce_types::CreationWorkflowId,
+    pub attempt_id: GenerationAttemptId,
+    pub call_ordinal: u16,
+    pub prompt: String,
+    pub source: Option<lettuce_types::AssetId>,
+    pub subject_name: String,
+    pub subject_description: String,
+}
+
+/// The session's images and references, read when an attempt runs, and the image jobs its tool calls start.
+#[async_trait::async_trait]
+pub(crate) trait CreationSessionMedia: std::fmt::Debug + Send + Sync {
+    fn images(
+        &self,
+        workflow_id: lettuce_types::CreationWorkflowId,
+    ) -> Result<CreationSessionImages, CreationRepositoryError>;
+    fn reference(
+        &self,
+        reference: &lettuce_creation::CreationReference,
+    ) -> Option<crate::creation::creation_prompt::CreationReferenceText>;
+    fn image_input(&self) -> bool;
+    /// The images the attempt's calls produced so far, by call ordinal.
+    fn made_images(
+        &self,
+        attempt_id: GenerationAttemptId,
+    ) -> Result<std::collections::HashMap<u16, lettuce_types::AssetId>, CreationRepositoryError>;
+    /// Makes the image and records it, or records that it failed; returns once it settled. Cancelling `cancellation`
+    /// cancels the image job.
+    async fn make_image(
+        &self,
+        request: CreationImageRequest,
+        cancellation: &lettuce_jobs::handle::CancellationToken,
+    ) -> Result<(), CreationRepositoryError>;
+}
+
+/// `known` are the images tool calls may name; `gallery` is what the creator sees listed.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CreationSessionImages {
+    pub known: Vec<lettuce_types::AssetId>,
+    pub gallery: Vec<crate::creation::creation_prompt::CreationPromptImage>,
+}
+
 #[derive(Debug)]
 pub struct CreationContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
     tool_fallback: Option<lettuce_creation::CreationFallbackFormat>,
+    prompt_documents: Option<(
+        lettuce_context::PromptDocument,
+        lettuce_context::PromptDocument,
+    )>,
+    round_observer: Option<&'a dyn CreationRoundObserver>,
+    session_media: Option<&'a dyn CreationSessionMedia>,
 }
 
 impl<
@@ -164,6 +221,9 @@ impl<
             repository,
             inference,
             tool_fallback: None,
+            prompt_documents: None,
+            round_observer: None,
+            session_media: None,
         }
     }
 
@@ -185,6 +245,55 @@ impl<
             }
         };
         self
+    }
+
+    #[must_use]
+    pub fn with_prompt_documents(
+        mut self,
+        helper: lettuce_context::PromptDocument,
+        runtime: lettuce_context::PromptDocument,
+    ) -> Self {
+        self.prompt_documents = Some((helper, runtime));
+        self
+    }
+
+    #[must_use]
+    pub const fn with_round_observer(mut self, observer: &'a dyn CreationRoundObserver) -> Self {
+        self.round_observer = Some(observer);
+        self
+    }
+
+    #[must_use]
+    pub(crate) const fn with_session_media(mut self, media: &'a dyn CreationSessionMedia) -> Self {
+        self.session_media = Some(media);
+        self
+    }
+
+    fn session(
+        &self,
+        attempt: &CreationInferenceAttempt,
+        turn: &lettuce_creation::CreationTurn,
+        text: &CreationPromptText,
+    ) -> Result<(Vec<lettuce_types::AssetId>, CreationPromptMedia), CreationContinuationError> {
+        let Some(source) = self.session_media else {
+            return Ok((Vec::new(), CreationPromptMedia::default()));
+        };
+        let images = source.images(attempt.workflow_id)?;
+        let references = text
+            .dialogue
+            .iter()
+            .flat_map(|turn| &turn.inputs.references)
+            .chain(&turn.inputs.references)
+            .filter_map(|reference| Some((*reference, source.reference(reference)?)))
+            .collect();
+        Ok((
+            images.known,
+            CreationPromptMedia {
+                gallery: images.gallery,
+                references,
+                image_input: source.image_input(),
+            },
+        ))
     }
 
     pub async fn run(
@@ -245,11 +354,13 @@ impl<
             });
         }
         let prepared = self.prompt_text(&attempt).and_then(|text| {
+            let (images, media) = self.session(&attempt, &turn, &text)?;
             build_creation_inference_request(
                 &attempt,
                 &turn,
                 &base,
                 &text,
+                &media,
                 profile,
                 handle,
                 stream_sink,
@@ -261,10 +372,14 @@ impl<
                 {
                     snapshot.character_id = Some(id);
                 }
-                (text, request)
+                (text, images, request)
             })
         });
-        let (text, mut request) = self.fail_unless_storage(&attempt, now, prepared)?;
+        let (text, mut images, mut request) = self.fail_unless_storage(&attempt, now, prepared)?;
+        let mut made = match self.session_media {
+            Some(media) => media.made_images(attempt.id)?,
+            None => std::collections::HashMap::new(),
+        };
         let mut rounds = self
             .repository
             .list_creation_inference_rounds(owner, attempt.id)?;
@@ -287,6 +402,8 @@ impl<
                     &request.context,
                     &calls,
                     round,
+                    &images,
+                    &made,
                 ),
             )?;
             request.context = replayed.context;
@@ -300,7 +417,7 @@ impl<
             }
         }
         if terminal || attempt_limit_reached(&rounds, &calls) {
-            return self.commit_success(attempt, workflow, rounds, calls, visible_parts);
+            return self.commit_success(attempt, workflow, rounds, calls, visible_parts, &images);
         }
 
         loop {
@@ -404,6 +521,19 @@ impl<
                     return Err(error.into());
                 }
             };
+            if let Some(observer) = self.round_observer {
+                observer.committed();
+            }
+            if let Some(media) = self.session_media
+                && self
+                    .make_images(
+                        media, &attempt, &base, &calls, &round, &images, &made, handle,
+                    )
+                    .await?
+            {
+                made = media.made_images(attempt.id)?;
+                images = media.images(attempt.workflow_id)?.known;
+            }
             let replayed = self.fail_unless_storage(
                 &attempt,
                 now,
@@ -414,6 +544,8 @@ impl<
                     &request.context,
                     &calls,
                     &round,
+                    &images,
+                    &made,
                 ),
             )?;
             request.context = replayed.context;
@@ -422,9 +554,98 @@ impl<
             terminal = replayed.terminal;
             rounds.push(round);
             if terminal || attempt_limit_reached(&rounds, &calls) {
-                return self.commit_success(attempt, workflow, rounds, calls, visible_parts);
+                return self.commit_success(
+                    attempt,
+                    workflow,
+                    rounds,
+                    calls,
+                    visible_parts,
+                    &images,
+                );
             }
         }
+    }
+
+    /// Runs the image calls of a newly admitted round that are valid and have no image yet, one after another.
+    /// Returns whether any ran.
+    #[allow(clippy::too_many_arguments)]
+    async fn make_images(
+        &self,
+        media: &dyn CreationSessionMedia,
+        attempt: &CreationInferenceAttempt,
+        base: &CreationProposal,
+        prior_calls: &[AdmittedCreationToolCall],
+        round: &CreationInferenceRound,
+        images: &[lettuce_types::AssetId],
+        made: &std::collections::HashMap<u16, lettuce_types::AssetId>,
+        handle: &JobHandle,
+    ) -> Result<bool, CreationContinuationError> {
+        let mut calls = prior_calls.to_vec();
+        calls.extend(round.calls.iter().map(|evidence| AdmittedCreationToolCall {
+            definition_version: evidence.definition_version,
+            call: evidence.call.clone(),
+        }));
+        if calls.is_empty() {
+            return Ok(false);
+        }
+        let first = usize::from(round.first_call_ordinal);
+        let mut ran = false;
+        for index in first..calls.len() {
+            let ordinal = u16::try_from(index).map_err(|error| {
+                CreationContinuationError::InvalidRoundHistory {
+                    reason: error.to_string(),
+                }
+            })?;
+            if made.contains_key(&ordinal) {
+                continue;
+            }
+            let batch = reduce_creation_tool_calls(
+                base,
+                attempt.planned_proposal_id,
+                attempt.turn_id,
+                &calls[..=index],
+                images,
+                round.admitted_at,
+            )?;
+            let Some(outcome) = batch.proposal.outcomes.get(index) else {
+                continue;
+            };
+            let lettuce_creation::CreationOperation::GenerateImage { prompt, source } =
+                &outcome.operation
+            else {
+                continue;
+            };
+            if !outcome.succeeded() || handle.cancellation_token().is_cancelled() {
+                continue;
+            }
+            let (subject_name, subject_description) = match &batch.proposal.draft {
+                lettuce_creation::CreationDraft::Character {
+                    name, definition, ..
+                } => (name.clone(), definition.clone()),
+                lettuce_creation::CreationDraft::Persona {
+                    name, description, ..
+                }
+                | lettuce_creation::CreationDraft::Lorebook {
+                    name, description, ..
+                } => (name.clone(), description.clone()),
+            };
+            media
+                .make_image(
+                    CreationImageRequest {
+                        workflow_id: attempt.workflow_id,
+                        attempt_id: attempt.id,
+                        call_ordinal: ordinal,
+                        prompt: prompt.clone(),
+                        source: *source,
+                        subject_name: subject_name.unwrap_or_default(),
+                        subject_description: subject_description.unwrap_or_default(),
+                    },
+                    &handle.cancellation_token(),
+                )
+                .await?;
+            ran = true;
+        }
+        Ok(ran)
     }
 
     /// Fails the attempt on a non-storage error so it does not stay running;
@@ -451,16 +672,29 @@ impl<
     ) -> Result<CreationPromptText, CreationContinuationError> {
         Ok(CreationPromptText {
             tool_fallback: self.tool_fallback,
-            helper: crate::generation::runtime_text::RuntimeText::load(
-                self.repository,
-                crate::BuiltInPromptId::CreationHelper,
-            )
-            .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
-            runtime: crate::generation::runtime_text::RuntimeText::load(
-                self.repository,
-                crate::BuiltInPromptId::CreationRuntime,
-            )
-            .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
+            helper: match &self.prompt_documents {
+                Some((helper, _)) => crate::generation::runtime_text::RuntimeText::from_document(
+                    crate::BuiltInPromptId::CreationHelper,
+                    helper.clone(),
+                ),
+                None => crate::generation::runtime_text::RuntimeText::load(
+                    self.repository,
+                    crate::BuiltInPromptId::CreationHelper,
+                )
+                .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
+            },
+            runtime: match &self.prompt_documents {
+                Some((_, runtime)) => crate::generation::runtime_text::RuntimeText::from_document(
+                    crate::BuiltInPromptId::CreationRuntime,
+                    runtime.clone(),
+                ),
+                None => crate::generation::runtime_text::RuntimeText::load(
+                    self.repository,
+                    crate::BuiltInPromptId::CreationRuntime,
+                )
+                .map_err(|_| CreationContinuationError::RuntimeTextUnavailable)?,
+            }
+            .with_literal_names(),
             dialogue: self
                 .repository
                 .list_creation_dialogue(attempt.workflow_id, attempt.turn_id)?,
@@ -505,6 +739,7 @@ impl<
         rounds: Vec<CreationInferenceRound>,
         calls: Vec<AdmittedCreationToolCall>,
         visible_parts: Vec<MessagePart>,
+        images: &[lettuce_types::AssetId],
     ) -> Result<CreationContinuationResult, CreationContinuationError> {
         let finished_at = rounds.last().map(|round| round.admitted_at).ok_or(
             CreationContinuationError::InvalidRoundHistory {
@@ -520,6 +755,7 @@ impl<
                     attempt.planned_proposal_id,
                     attempt.turn_id,
                     &calls,
+                    images,
                     finished_at,
                 )?
                 .proposal,
@@ -607,11 +843,25 @@ struct CreationPromptText {
     dialogue: Vec<lettuce_creation::CreationDialogueTurn>,
 }
 
+fn media_grants(context: &ProviderNeutralContext) -> Vec<lettuce_types::AssetId> {
+    let mut grants = Vec::new();
+    for part in context.messages.iter().flat_map(|message| &message.parts) {
+        if let ProviderContextPart::MediaAsset { asset_id, .. } = part
+            && !grants.contains(asset_id)
+        {
+            grants.push(*asset_id);
+        }
+    }
+    grants
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_creation_inference_request(
     attempt: &CreationInferenceAttempt,
     turn: &lettuce_creation::CreationTurn,
     base: &CreationProposal,
     text: &CreationPromptText,
+    media: &CreationPromptMedia,
     profile: ResolvedInferenceProfile,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
@@ -648,8 +898,10 @@ fn build_creation_inference_request(
         &text.helper,
         &text.runtime,
         &base.draft,
+        media,
         &text.dialogue,
         &turn.user_message,
+        &turn.inputs,
         profile.chat_profile.provider_protocol,
         fallback_protocol.as_deref(),
     )
@@ -697,6 +949,7 @@ fn build_creation_inference_request(
             truncated: false,
         },
     };
+    let grants = media_grants(&context);
     let request = InferenceRequest {
         turn_id: GenerationTurnId::from_uuid(turn.id.as_uuid()),
         attempt_id: attempt.id,
@@ -705,7 +958,7 @@ fn build_creation_inference_request(
         context,
         cancellation: Some(handle.id()),
         stream_sink,
-        media_grants: Vec::new(),
+        media_grants: grants,
         tools: tool_fallback.is_none().then_some(tools),
         prompt_cache_key: None,
     };
@@ -777,6 +1030,8 @@ fn replay_round(
     context: &ProviderNeutralContext,
     prior_calls: &[AdmittedCreationToolCall],
     round: &CreationInferenceRound,
+    images: &[lettuce_types::AssetId],
+    made: &std::collections::HashMap<u16, lettuce_types::AssetId>,
 ) -> Result<ReplayedRound, CreationContinuationError> {
     round
         .validate()
@@ -796,6 +1051,7 @@ fn replay_round(
             attempt.planned_proposal_id,
             attempt.turn_id,
             &calls,
+            images,
             round.admitted_at,
         )?;
         let first = usize::from(round.first_call_ordinal);
@@ -817,6 +1073,7 @@ fn replay_round(
                     attempt.planned_proposal_id,
                     attempt.turn_id,
                     &calls[..=index],
+                    images,
                     round.admitted_at,
                 )?
                 .proposal
@@ -826,7 +1083,13 @@ fn replay_round(
             };
             outputs.push(
                 crate::creation::creation_prompt::render_tool_output(
-                    text, &call.call, outcome, &draft,
+                    text,
+                    &call.call,
+                    outcome,
+                    &draft,
+                    u16::try_from(index)
+                        .ok()
+                        .and_then(|ordinal| made.get(&ordinal).copied()),
                 )
                 .map_err(|error| CreationContinuationError::PromptRender {
                     reason: error.to_string(),
@@ -1337,6 +1600,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: None,
                     description: None,
+                    avatar: None,
                 },
                 now: TimestampMillis::new(1),
             })
@@ -1470,7 +1734,7 @@ mod tests {
         let proposal = result.proposal.as_ref().expect("proposal");
         assert!(matches!(
             &proposal.draft,
-            CreationDraft::Persona { name, description }
+            CreationDraft::Persona { name, description, .. }
                 if name.as_deref() == Some("Navigator")
                     && description.as_deref() == Some("Maps careful routes.")
         ));
@@ -1614,6 +1878,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: None,
                     description: None,
+                    avatar: None,
                 },
                 now: TimestampMillis::new(1),
             })
@@ -1690,6 +1955,7 @@ mod tests {
                 initial_draft: CreationDraft::Persona {
                     name: None,
                     description: None,
+                    avatar: None,
                 },
                 now: TimestampMillis::new(1),
             })
