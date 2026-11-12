@@ -6,7 +6,7 @@ Facts about how `lettuce-context` relates to the legacy app (2.2.x). The crate R
 
 - Explicit built-in reset keeps a user-renamed document name while restoring seed content and entries, as `old-code/src-tauri/src/chat_manager/prompting/prompts.rs:1067-1081` did (slice 6 decision 7).
 
-- `LorebookMatcher` preserves the verified legacy matching: the latest ten messages for recent-message detection, the newest user message for latest-user detection, punctuation normalized for literal matching, word boundaries for one-word keywords, substring matching for multiword keywords, trailing `*` as a word-prefix operator, and normalized substring matching for CJK/Thai/Lao/Myanmar/Khmer/Hangul text.
+- `LorebookMatcher` preserves the verified legacy matching: the latest ten messages for recent-message detection, the newest user message for latest-user detection, punctuation normalized for literal matching, word boundaries for one-word keywords, substring matching for multiword keywords, trailing `*` as a word-prefix operator, and normalized substring matching for CJK/Thai/Lao/Myanmar/Khmer/Hangul text. Phrase patterns (`(a|b)` groups and a standalone `*`) and secondary keywords are new; keywords without that syntax match exactly as before.
 - `LegacyV1` lorebooks ignore entry priority and order active entries by the legacy ordinal, then creation time, then source order.
 - Lorebook entry titles may be empty, as legacy blank entries are.
 - Direct and companion chat rendering moves a `Relative` entry that names a volatile turn value to in-chat depth 0, as legacy did.

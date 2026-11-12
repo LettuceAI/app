@@ -87,5 +87,6 @@
     "not_all": "Nem lehet mindegyik ezek közül",
     "not_allHint": "Csak akkor marad ki, ha ezek mind együtt megjelennek."
   },
-  "addSecondaryPattern": "Másodlagos minta hozzáadása"
+  "addSecondaryPattern": "Másodlagos minta hozzáadása",
+  "keywordSyntax": "Változatokhoz használd a (a|b) formát, a köztes szavakhoz a * jelet, például (went|go) to the * bar."
 }

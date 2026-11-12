@@ -86,5 +86,6 @@
     "not_all": "Không được có tất cả những từ này",
     "not_allHint": "Chỉ không được đưa vào khi tất cả cùng xuất hiện."
   },
-  "addSecondaryPattern": "Thêm mẫu phụ"
+  "addSecondaryPattern": "Thêm mẫu phụ",
+  "keywordSyntax": "Dùng (a|b) cho các lựa chọn và * cho bất kỳ từ nào ở giữa, như (went|go) to the * bar."
 }

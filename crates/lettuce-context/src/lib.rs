@@ -8,6 +8,7 @@
 
 mod bindings;
 mod lorebook;
+mod lorebook_pattern;
 mod prompt;
 mod prompt_placeholders;
 mod token_count;

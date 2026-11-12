@@ -89,5 +89,6 @@
     "not_all": "Nie może zawierać wszystkich",
     "not_allHint": "Nie wchodzi tylko, gdy wszystkie pojawią się razem."
   },
-  "addSecondaryPattern": "Dodaj dodatkowy wzorzec"
+  "addSecondaryPattern": "Dodaj dodatkowy wzorzec",
+  "keywordSyntax": "Użyj (a|b) dla wariantów i * dla dowolnych słów pomiędzy, np. (went|go) to the * bar."
 }

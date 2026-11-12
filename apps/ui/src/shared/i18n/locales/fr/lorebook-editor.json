@@ -88,5 +88,6 @@
     "not_all": "Ne doit pas contenir tous ceux-ci",
     "not_allHint": "Reste à l'écart seulement si tous ceux-ci apparaissent ensemble."
   },
-  "addSecondaryPattern": "Ajouter un motif secondaire"
+  "addSecondaryPattern": "Ajouter un motif secondaire",
+  "keywordSyntax": "Utilisez (a|b) pour des variantes et * pour n'importe quels mots entre les deux, comme (went|go) to the * bar."
 }

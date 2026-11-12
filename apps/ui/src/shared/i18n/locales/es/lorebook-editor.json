@@ -88,5 +88,6 @@
     "not_all": "No debe tener todas estas",
     "not_allHint": "Solo queda fuera si aparecen todas estas juntas."
   },
-  "addSecondaryPattern": "Añadir patrón secundario"
+  "addSecondaryPattern": "Añadir patrón secundario",
+  "keywordSyntax": "Usa (a|b) para opciones y * para cualquier palabra en medio, como (went|go) to the * bar."
 }

@@ -86,5 +86,6 @@
     "not_all": "不能同時有全部這些",
     "not_allHint": "只有這些全部同時出現時才不會加入。"
   },
-  "addSecondaryPattern": "新增次要模式"
+  "addSecondaryPattern": "新增次要模式",
+  "keywordSyntax": "用 (a|b) 表示可選項，用 * 表示中間任意詞，例如 (went|go) to the * bar。"
 }

@@ -86,5 +86,6 @@
     "not_all": "これらすべては含まない",
     "not_allHint": "これらすべてが同時に出たときだけ入りません。"
   },
-  "addSecondaryPattern": "サブパターンを追加"
+  "addSecondaryPattern": "サブパターンを追加",
+  "keywordSyntax": "選択肢には (a|b)、間の任意の語には * を使います。例: (went|go) to the * bar"
 }

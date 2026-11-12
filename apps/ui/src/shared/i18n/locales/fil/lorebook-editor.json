@@ -87,5 +87,6 @@
     "not_all": "Hindi dapat may lahat ng ito",
     "not_allHint": "Hindi papasok lang kapag sabay-sabay na lumitaw ang lahat ng ito."
   },
-  "addSecondaryPattern": "Magdagdag ng pangalawang pattern"
+  "addSecondaryPattern": "Magdagdag ng pangalawang pattern",
+  "keywordSyntax": "Gamitin ang (a|b) para sa mga pagpipilian at * para sa anumang salita sa pagitan, gaya ng (went|go) to the * bar."
 }

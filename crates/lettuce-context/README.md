@@ -73,14 +73,15 @@ A `Lorebook` has a name, a lifecycle status, an optional icon, a `DetectionPolic
 
 ### Matching
 
-`LorebookMatcher` decides which entries of one book are active for a turn. The text it searches depends on the book's detection policy: the latest `scan_depth` messages joined together (`RecentMessageWindow`; the matcher is built with the depth, which the app reads from its settings), or only the newest user message (`LatestUserMessage`, unaffected by the depth). `resolve_lorebook_activation` and `resolve_lorebook_snapshot_activation` take the same depth. Prompt entry keyword conditions (`KeywordAny`, `KeywordAll`, `KeywordNone`) search the same window of the latest `scan_depth` messages. An entry is active when it is enabled and either `always_active` or one of its keywords matches.
+`LorebookMatcher` decides which entries of one book are active for a turn. The text it searches depends on the book's detection policy: the latest `scan_depth` messages joined together (`RecentMessageWindow`; the matcher is built with the depth, which the app reads from its settings), or only the newest user message (`LatestUserMessage`, unaffected by the depth). `resolve_lorebook_activation` and `resolve_lorebook_snapshot_activation` take the same depth. Prompt entry keyword conditions (`KeywordAny`, `KeywordAll`, `KeywordNone`) search the same window of the latest `scan_depth` messages. An entry is active when it is enabled and either `always_active` or one of its keywords matches and its secondary condition holds. Secondary keywords use the entry's match mode and case rule; with `and_any` one of them must match, `and_all` all of them, `not_any` none of them, and `not_all` not all of them. An empty secondary list sets no condition.
 
 Literal keywords are matched after normalizing punctuation to spaces and, unless the entry is case-sensitive, lowercasing:
 
 - a one-word keyword must equal a whole word;
 - a multi-word keyword matches as a substring;
 - a trailing `*` makes the keyword a word prefix;
-- text in scripts written without spaces (CJK, Thai, Lao, Myanmar, Khmer, Hangul) always matches as a substring.
+- text in scripts written without spaces (CJK, Thai, Lao, Myanmar, Khmer, Hangul) always matches as a substring;
+- a keyword with a `(a|b)` group or a standalone `*` is a phrase pattern: each group picks one alternative (an empty alternative makes it optional, and a group can sit inside a word, as in `run(s|ning|)`), `*` stands for any words in between, and the expanded phrase must match whole words in order. Parentheses without `|` stay plain text. In scripts written without spaces, the pieces between `*` must appear in order as substrings.
 
 Regex keywords are trimmed and compiled without changing the pattern, using a case-insensitive flag unless the entry is case-sensitive and the `regex` crate's default size limits. Save validation and runtime matching use the same compiler, preserving escape classes and named groups.
 

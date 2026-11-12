@@ -88,5 +88,6 @@
     "not_all": "Non deve contenere tutte queste",
     "not_allHint": "Resta fuori solo se compaiono tutte insieme."
   },
-  "addSecondaryPattern": "Aggiungi pattern secondario"
+  "addSecondaryPattern": "Aggiungi pattern secondario",
+  "keywordSyntax": "Usa (a|b) per le varianti e * per qualsiasi parola nel mezzo, come (went|go) to the * bar."
 }

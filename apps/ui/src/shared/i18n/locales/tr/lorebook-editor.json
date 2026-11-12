@@ -87,5 +87,6 @@
     "not_all": "Bunların hepsi birden olmamalı",
     "not_allHint": "Sadece bunların hepsi birlikte geçerse eklenmez."
   },
-  "addSecondaryPattern": "İkincil kalıp ekle"
+  "addSecondaryPattern": "İkincil kalıp ekle",
+  "keywordSyntax": "Seçenekler için (a|b), aradaki herhangi kelimeler için * kullan: (went|go) to the * bar gibi."
 }

@@ -87,5 +87,6 @@
     "not_all": "Darf nicht alle davon enthalten",
     "not_allHint": "Bleibt nur draußen, wenn alle davon zusammen vorkommen."
   },
-  "addSecondaryPattern": "Sekundäres Muster hinzufügen"
+  "addSecondaryPattern": "Sekundäres Muster hinzufügen",
+  "keywordSyntax": "Nutze (a|b) für Varianten und * für beliebige Wörter dazwischen, etwa (went|go) to the * bar."
 }

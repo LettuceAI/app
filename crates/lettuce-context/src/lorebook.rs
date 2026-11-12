@@ -417,6 +417,14 @@ pub fn keyword_matches_with_mode(
     } else {
         text.to_lowercase()
     };
+    if let Some(matched) = crate::lorebook_pattern::phrase_pattern_matches(
+        &search_keyword,
+        &normalize_literal(&search_text),
+        normalize_literal,
+        contains_unsegmented_script,
+    ) {
+        return Ok(matched);
+    }
 
     if let Some(prefix) = search_keyword.strip_suffix('*') {
         if prefix.is_empty() {
@@ -445,6 +453,15 @@ pub fn keyword_matches_with_mode(
         .split_whitespace()
         .any(|word| word == normalized_keyword))
 }
+
+/// A regular expression equivalent to a literal keyword, for exporting to
+/// formats that only know plain keys and `/regex/` keys.
+#[must_use]
+pub fn literal_keyword_regex(keyword: &str) -> String {
+    crate::lorebook_pattern::literal_regex(keyword, normalize_literal, contains_unsegmented_script)
+}
+
+pub use crate::lorebook_pattern::is_phrase_pattern;
 
 pub fn validate_regex_keyword(
     keyword: &str,

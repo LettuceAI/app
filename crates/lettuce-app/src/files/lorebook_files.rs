@@ -77,7 +77,12 @@ pub(crate) fn prepare_import(
                 secondary_keywords: entry.secondary_keywords,
                 secondary_logic: entry.secondary_logic,
                 case_sensitive: entry.case_sensitive,
-                match_mode: KeywordMatchMode::Literal,
+                match_mode: match entry.keyword_match_mode {
+                    lettuce_transfer::PackagedKeywordMatchMode::Literal => {
+                        KeywordMatchMode::Literal
+                    }
+                    lettuce_transfer::PackagedKeywordMatchMode::Regex => KeywordMatchMode::Regex,
+                },
                 content: entry.content,
                 priority: entry.priority,
             })

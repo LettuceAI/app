@@ -86,5 +86,6 @@
     "not_all": "Tidak boleh ada semua ini",
     "not_allHint": "Hanya tidak masuk jika semua ini muncul bersamaan."
   },
-  "addSecondaryPattern": "Tambah pola sekunder"
+  "addSecondaryPattern": "Tambah pola sekunder",
+  "keywordSyntax": "Gunakan (a|b) untuk pilihan dan * untuk kata apa pun di antaranya, seperti (went|go) to the * bar."
 }

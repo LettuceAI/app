@@ -86,5 +86,6 @@
     "not_all": "이것들이 모두 있으면 안 됨",
     "not_allHint": "이것들이 모두 함께 나올 때만 들어가지 않습니다."
   },
-  "addSecondaryPattern": "보조 패턴 추가"
+  "addSecondaryPattern": "보조 패턴 추가",
+  "keywordSyntax": "선택지는 (a|b), 사이의 아무 단어는 *로 쓰세요. 예: (went|go) to the * bar"
 }

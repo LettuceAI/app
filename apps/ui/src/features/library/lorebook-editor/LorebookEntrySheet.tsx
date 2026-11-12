@@ -340,12 +340,15 @@ export function LorebookEntrySheet({
                     onChange={(keywords) => update({ keywords })}
                   />
                 ) : (
-                  <TagInput
-                    value={draft.keywords}
-                    disabled={busy || suggesting}
-                    onChange={(keywords) => update({ keywords: splitTags(keywords) })}
-                    placeholder={t("keywordPlaceholder")}
-                  />
+                  <div className="space-y-1.5">
+                    <TagInput
+                      value={draft.keywords}
+                      disabled={busy || suggesting}
+                      onChange={(keywords) => update({ keywords: splitTags(keywords) })}
+                      placeholder={t("keywordPlaceholder")}
+                    />
+                    <p className="text-xs text-fg-3">{t("keywordSyntax")}</p>
+                  </div>
                 )}
               </Field>
               <Field

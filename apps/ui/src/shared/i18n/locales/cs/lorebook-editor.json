@@ -89,5 +89,6 @@
     "not_all": "Nesmí obsahovat všechna tato",
     "not_allHint": "Nepřidá se jen tehdy, když se objeví všechna tato najednou."
   },
-  "addSecondaryPattern": "Přidat vedlejší vzor"
+  "addSecondaryPattern": "Přidat vedlejší vzor",
+  "keywordSyntax": "Pro možnosti použijte (a|b) a pro libovolná slova mezi nimi *, třeba (went|go) to the * bar."
 }

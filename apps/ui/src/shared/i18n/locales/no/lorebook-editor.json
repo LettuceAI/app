@@ -87,5 +87,6 @@
     "not_all": "Kan ikke ha alle disse",
     "not_allHint": "Utelates bare når alle disse dukker opp samtidig."
   },
-  "addSecondaryPattern": "Legg til sekundært mønster"
+  "addSecondaryPattern": "Legg til sekundært mønster",
+  "keywordSyntax": "Bruk (a|b) for alternativer og * for vilkårlige ord imellom, som (went|go) to the * bar."
 }

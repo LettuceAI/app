@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use lettuce_context::SecondaryKeywordLogic;
+use lettuce_context::{SecondaryKeywordLogic, is_phrase_pattern, literal_keyword_regex};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -66,6 +66,7 @@ pub struct ImportedWorldInfoEntry {
     pub secondary_keywords: Vec<String>,
     pub secondary_logic: SecondaryKeywordLogic,
     pub case_sensitive: bool,
+    pub keyword_match_mode: PackagedKeywordMatchMode,
     pub content: String,
     pub priority: i32,
     pub display_order: i32,
@@ -175,12 +176,14 @@ pub fn export_world_info(lorebook: &LorebookTransfer) -> Result<String, Lorebook
         .enumerate()
         .map(|(index, entry)| {
             let seq = index as i64 + 1;
+            let keys = export_keys(entry, &entry.keywords);
+            let secondary = export_keys(entry, &entry.secondary_keywords);
             (
                 seq.to_string(),
                 WorldInfoExportEntry {
                     uid: seq,
-                    key: entry.keywords.clone(),
-                    keysecondary: entry.secondary_keywords.clone(),
+                    key: keys.clone(),
+                    keysecondary: secondary.clone(),
                     comment: String::new(),
                     content: entry.content.clone(),
                     constant: entry.always_active,
@@ -194,8 +197,8 @@ pub fn export_world_info(lorebook: &LorebookTransfer) -> Result<String, Lorebook
                     probability: 100,
                     display_index: index as i32 + 1,
                     use_probability: true,
-                    secondary_keys: entry.secondary_keywords.clone(),
-                    keys: entry.keywords.clone(),
+                    secondary_keys: secondary,
+                    keys,
                     id: seq,
                     priority: entry.priority,
                     insertion_order: entry.display_order,
@@ -227,6 +230,40 @@ pub fn export_world_info(lorebook: &LorebookTransfer) -> Result<String, Lorebook
         entries,
     })
     .map_err(|_| LorebookTransferError::Serialize)
+}
+
+/// A SillyTavern `/pattern/flags` key as its pattern and whether it ignores case.
+fn slash_regex(key: &str) -> Option<(String, bool)> {
+    let rest = key.strip_prefix('/')?;
+    let end = rest.rfind('/')?;
+    let (pattern, flags) = (&rest[..end], &rest[end + 1..]);
+    (!pattern.is_empty() && flags.chars().all(|flag| "dgimsuvy".contains(flag)))
+        .then(|| (pattern.to_owned(), flags.contains('i')))
+}
+
+/// Keys as SillyTavern reads them: a regex entry, or a literal entry that uses
+/// phrase patterns, is written as `/pattern/flags` keys, every other entry as
+/// plain keys.
+fn export_keys(entry: &LorebookTransferEntry, keys: &[String]) -> Vec<String> {
+    let ignore_case = if entry.case_sensitive { "" } else { "i" };
+    match entry.keyword_match_mode {
+        PackagedKeywordMatchMode::Regex => keys
+            .iter()
+            .map(|key| format!("/{key}/{ignore_case}"))
+            .collect(),
+        PackagedKeywordMatchMode::Literal
+            if entry
+                .keywords
+                .iter()
+                .chain(&entry.secondary_keywords)
+                .any(|key| is_phrase_pattern(key)) =>
+        {
+            keys.iter()
+                .map(|key| format!("/{}/{ignore_case}u", literal_keyword_regex(key)))
+                .collect()
+        }
+        PackagedKeywordMatchMode::Literal => keys.to_vec(),
+    }
 }
 
 fn number_to_i32(value: Option<&Value>) -> Option<i32> {
@@ -328,6 +365,32 @@ pub fn parse_world_info(json: &str) -> Result<ImportedWorldInfo, LorebookTransfe
                         .map(|n| n.saturating_sub(1))
                 })
                 .unwrap_or(index as i32);
+            let mut case_sensitive = entry
+                .get("case_sensitive")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let mut keyword_match_mode = PackagedKeywordMatchMode::Literal;
+            let (mut keywords, mut secondary_keywords) = (keywords, secondary_keywords);
+            if !keywords.is_empty()
+                && keywords
+                    .iter()
+                    .chain(&secondary_keywords)
+                    .all(|keyword| slash_regex(keyword).is_some())
+            {
+                let parsed = keywords
+                    .iter()
+                    .chain(&secondary_keywords)
+                    .filter_map(|keyword| slash_regex(keyword))
+                    .collect::<Vec<_>>();
+                case_sensitive = !parsed.iter().any(|(_, insensitive)| *insensitive);
+                keyword_match_mode = PackagedKeywordMatchMode::Regex;
+                let strip = |list: &[String]| {
+                    list.iter()
+                        .filter_map(|keyword| slash_regex(keyword).map(|(pattern, _)| pattern))
+                        .collect::<Vec<_>>()
+                };
+                (keywords, secondary_keywords) = (strip(&keywords), strip(&secondary_keywords));
+            }
             Some(ImportedWorldInfoEntry {
                 title,
                 enabled,
@@ -338,10 +401,8 @@ pub fn parse_world_info(json: &str) -> Result<ImportedWorldInfo, LorebookTransfe
                 keywords,
                 secondary_keywords,
                 secondary_logic,
-                case_sensitive: entry
-                    .get("case_sensitive")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
+                case_sensitive,
+                keyword_match_mode,
                 content,
                 priority: number_to_i32(entry.get("priority"))
                     .or_else(|| number_to_i32(entry.get("order")))
@@ -419,6 +480,7 @@ pub fn parse_lorebook_import(json: &str) -> Result<ImportedWorldInfo, LorebookTr
                     secondary_keywords: Vec::new(),
                     secondary_logic: SecondaryKeywordLogic::AndAny,
                     case_sensitive: entry.case_sensitive,
+                    keyword_match_mode: PackagedKeywordMatchMode::Literal,
                     content: entry.content,
                     priority: entry.priority,
                     display_order: i32::try_from(index).map_err(|_| {
@@ -473,7 +535,7 @@ mod tests {
             secondary_keywords: Vec::new(),
             secondary_logic: SecondaryKeywordLogic::AndAny,
             case_sensitive: false,
-            keyword_match_mode: PackagedKeywordMatchMode::Regex,
+            keyword_match_mode: PackagedKeywordMatchMode::Literal,
             content: format!("content {index}"),
             priority: index * 10,
             display_order: index,
@@ -488,6 +550,63 @@ mod tests {
             created_at: 1,
             updated_at: 2,
         }
+    }
+
+    #[test]
+    fn world_info_writes_regex_and_phrase_pattern_entries_as_slash_keys_and_reads_them_back() {
+        let mut book = lorebook();
+        book.entries.truncate(2);
+        book.entries[0].keyword_match_mode = PackagedKeywordMatchMode::Regex;
+        book.entries[0].keywords = vec!["doc(tor)?".into()];
+        book.entries[0].case_sensitive = true;
+        book.entries[1].keywords = vec!["Doc * medic".into(), "Lazaro".into()];
+        book.entries[1].secondary_keywords = vec!["(field|combat) work".into()];
+        let exported = export_world_info(&book).expect("export");
+        let value: Value = serde_json::from_str(&exported).expect("json");
+        assert_eq!(value["entries"]["1"]["key"], json!(["/doc(tor)?/"]));
+        let pattern_keys = value["entries"]["2"]["key"].as_array().expect("keys");
+        assert!(pattern_keys.iter().all(|key| {
+            key.as_str()
+                .is_some_and(|key| key.starts_with('/') && key.ends_with("/iu"))
+        }));
+        let imported = parse_world_info(&exported).expect("import");
+        assert_eq!(
+            imported.entries[0].keyword_match_mode,
+            PackagedKeywordMatchMode::Regex
+        );
+        assert_eq!(imported.entries[0].keywords, ["doc(tor)?"]);
+        assert!(imported.entries[0].case_sensitive);
+        let phrase = &imported.entries[1];
+        assert_eq!(phrase.keyword_match_mode, PackagedKeywordMatchMode::Regex);
+        assert!(!phrase.case_sensitive);
+        let fires = |keywords: &[String], text: &str| {
+            keywords.iter().any(|keyword| {
+                lettuce_context::keyword_matches_with_mode(
+                    keyword,
+                    text,
+                    false,
+                    lettuce_context::KeywordMatchMode::Regex,
+                )
+                .expect("valid regex")
+            })
+        };
+        assert!(fires(&phrase.keywords, "Doc is our medic"));
+        assert!(fires(&phrase.keywords, "lazaro"));
+        assert!(!fires(&phrase.keywords, "The medic saw Doc"));
+        assert!(fires(&phrase.secondary_keywords, "He does combat work"));
+    }
+
+    #[test]
+    fn world_info_keys_are_regex_only_when_every_key_is_a_slash_pattern() {
+        let imported = parse_world_info(
+            &json!({"name": "Mixed", "entries": {"1": {"key": ["/a+/i", "plain"], "content": "x"}}}).to_string(),
+        )
+        .expect("import");
+        assert_eq!(
+            imported.entries[0].keyword_match_mode,
+            PackagedKeywordMatchMode::Literal
+        );
+        assert_eq!(imported.entries[0].keywords, ["/a+/i", "plain"]);
     }
 
     #[test]

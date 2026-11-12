@@ -87,5 +87,6 @@
     "not_all": "Mag niet al deze bevatten",
     "not_allHint": "Blijft alleen weg als al deze samen voorkomen."
   },
-  "addSecondaryPattern": "Secundair patroon toevoegen"
+  "addSecondaryPattern": "Secundair patroon toevoegen",
+  "keywordSyntax": "Gebruik (a|b) voor varianten en * voor willekeurige woorden ertussen, zoals (went|go) to the * bar."
 }
