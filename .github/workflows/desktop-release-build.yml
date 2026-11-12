@@ -370,7 +370,8 @@ jobs:
     name: Linux Build (CUDA)
     needs: prepare_release
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_cuda_linux == true }}
-    runs-on: ubuntu-latest
+    # CUDA 13.1 packages are available for Ubuntu 24.04, not newer runner images.
+    runs-on: ubuntu-24.04
     env:
       APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
       CMAKE_CUDA_ARCHITECTURES: "75-virtual;80-virtual;86-real;89-real;90-virtual;120a-real"
@@ -431,11 +432,28 @@ jobs:
           echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
           printf '#include <stdbool.h>\n' | clang -E -x c - >/dev/null
 
+      - name: Pin the Linux CUDA host compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc_major="$(cat scripts/cuda-gcc-version)"
+          [[ "$gcc_major" =~ ^[0-9]+$ ]]
+          sudo apt-get install -y --no-install-recommends "gcc-$gcc_major" "g++-$gcc_major"
+          "/usr/bin/gcc-$gcc_major" --version
+          "/usr/bin/g++-$gcc_major" --version
+          {
+            echo "CC=/usr/bin/gcc-$gcc_major"
+            echo "CXX=/usr/bin/g++-$gcc_major"
+            echo "CUDAHOSTCXX=/usr/bin/g++-$gcc_major"
+            echo "NVCC_CCBIN=/usr/bin/g++-$gcc_major"
+          } >> "$GITHUB_ENV"
+
       - name: Setup CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.30
+        uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d # v0.2.36
         with:
           cuda: "13.1.0"
           method: "network"
+          log-file-suffix: linux-cuda
 
       - name: Verify CUDA toolchain
         run: |
@@ -921,6 +939,8 @@ jobs:
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Setup CMake
         uses: lukka/get-cmake@latest
@@ -946,11 +966,29 @@ jobs:
         shell: pwsh
         run: choco install ninja -y --no-progress
 
+      - name: Configure Windows MSVC and Ninja
+        shell: pwsh
+        run: |
+          $tools = Join-Path $env:VCToolsInstallDir 'bin/Hostx64/x64'
+          $compiler = Join-Path $tools 'cl.exe'
+          $linker = Join-Path $tools 'link.exe'
+          if (!(Test-Path $compiler) -or !(Test-Path $linker)) { throw 'MSVC compiler or linker is missing' }
+          $ninja = (Get-Command ninja.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          $ninjaVersion = & $ninja --version
+          if ($LASTEXITCODE -ne 0 -or [version]$ninjaVersion -lt [version]'1.12') { throw 'Ninja 1.12 or newer is required for Windows long paths' }
+          $ninjaVersion
+          (Split-Path $ninja) >> $env:GITHUB_PATH
+          "CC=$compiler" >> $env:GITHUB_ENV
+          "CXX=$compiler" >> $env:GITHUB_ENV
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" >> $env:GITHUB_ENV
+          'CMAKE_GENERATOR=Ninja' >> $env:GITHUB_ENV
+
       - name: Setup CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.30
+        uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d # v0.2.36
         with:
           cuda: "13.1.0"
           method: "network"
+          log-file-suffix: windows-cuda
 
       - name: Verify CUDA toolchain
         shell: pwsh
