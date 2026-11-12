@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { createMemoryHistory } from "@tanstack/react-router";
 import { toast } from "@lettuceai/crisp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CharacterSummary, CreatorEditRequest, CreatorRegenerateRequest, CreatorSendRequest, CreatorRevisionRequest, CreatorStartRequest, CreatorView, SettingsView_Serialize } from "@/api/generated/bindings";
+import type { CharacterSummary, CreatorEditRequest, CreatorRegenerateRequest, CreatorSendRequest, CreatorRevisionRequest, CreatorStartRequest, CreatorView, SettingsView } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -32,7 +32,7 @@ async function setup(overrides: MockCallHandlers = {}, phone = false, path = "/c
   const applies: CreatorRevisionRequest[] = [];
   const transport = createMockTransport({ calls: {
     appStatus: () => ok({ ...mockAppStatus, platform: phone ? "android" : "other", ui_state: { onboarding: { completed: true } } }),
-    settingsGet: () => ok({ revision: 1, default_model_profile_id: null, global: { dynamic_memory: { enabled: false }, creation_helper: { model_profile_id: null, streaming: true, enabled_tools: null, tool_fallback: "native" } } } as unknown as SettingsView_Serialize),
+    settingsGet: () => ok({ revision: 1, default_model_profile_id: null, global: { dynamic_memory: { enabled: false }, creation_helper: { model_profile_id: null, streaming: true, enabled_tools: null, tool_fallback: "native" } } } as unknown as SettingsView),
     modelsList: () => ok({ models: [], default_model_id: null, revision: 1 }),
     libraryCounts: () => ok({ characters: 0, personas: 0, lorebooks: 0, images: 0, audio: 0 }),
     charactersList: () => ok({ items: [], next_cursor: null }),
@@ -177,7 +177,7 @@ describe("Smart creator", () => {
     const sends: CreatorSendRequest[] = [];
     await setup({
       charactersList: () => ok({ items: [cassian], next_cursor: null }),
-      settingsGet: () => ok({ revision: 1, default_model_profile_id: "model", global: { dynamic_memory: { enabled: false }, creation_helper: { model_profile_id: null, streaming: true, enabled_tools: null, tool_fallback: "native" } } } as unknown as SettingsView_Serialize),
+      settingsGet: () => ok({ revision: 1, default_model_profile_id: "model", global: { dynamic_memory: { enabled: false }, creation_helper: { model_profile_id: null, streaming: true, enabled_tools: null, tool_fallback: "native" } } } as unknown as SettingsView),
       creatorSend: (request) => { sends.push(request); return ok({ job_id: "job" }); },
     });
     fireEvent.click(screen.getAllByRole("button", { name: /attach/i })[0]!);
@@ -203,7 +203,7 @@ describe("Smart creator", () => {
     const sends: CreatorSendRequest[] = [];
     await setup({
       creatorGet: () => ok({ ...work, turns: [turn], images: [{ asset, origin: "generated" as const, turn_id: "turn" }] }),
-      settingsGet: () => ok({ revision: 1, default_model_profile_id: "model", global: { dynamic_memory: { enabled: false }, creation_helper: { model_profile_id: null, streaming: true, enabled_tools: null, tool_fallback: "native" } } } as unknown as SettingsView_Serialize),
+      settingsGet: () => ok({ revision: 1, default_model_profile_id: "model", global: { dynamic_memory: { enabled: false }, creation_helper: { model_profile_id: null, streaming: true, enabled_tools: null, tool_fallback: "native" } } } as unknown as SettingsView),
       creatorSend: (request) => { sends.push(request); return ok({ job_id: "job-2" }); },
     });
     const steps = await screen.findByRole("list", { name: "Draft changes" });
