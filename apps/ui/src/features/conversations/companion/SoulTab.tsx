@@ -9,7 +9,7 @@ import type { CompanionSoulView, SoulCategory, SoulFactView } from "@/api/genera
 import { createOperationIds } from "../memory/operation-ids";
 import { SectionHead } from "./presentation";
 import { companionSoulQuery } from "./queries";
-import { useOverlayBack } from "./use-overlay-back";
+import { useOverlayBack } from "@/shared/hooks/useOverlayBack";
 
 const soulCategories: readonly SoulCategory[] = ["essence", "traits", "backstory", "appearance", "goals", "likes", "voice", "relational_style", "vulnerabilities", "fears", "habits", "boundaries"];
 

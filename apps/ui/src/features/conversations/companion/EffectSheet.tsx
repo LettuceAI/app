@@ -8,7 +8,7 @@ import { FailureState } from "@/shared/ui/FailureState";
 import { textOf } from "../data/messages";
 import { changedAxes, dataLabel, numericEntries, signed } from "./values";
 import { companionEffectQuery } from "./queries";
-import { useOverlayBack } from "./use-overlay-back";
+import { useOverlayBack } from "@/shared/hooks/useOverlayBack";
 
 export function CompanionEffectRow({ api, conversationId, message, onOpen }: { api: ApiClient; conversationId: string; message: TimelineMessage; onOpen: () => void }) {
   const { t, i18n } = useTranslation("conversations");

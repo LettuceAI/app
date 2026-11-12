@@ -4,7 +4,7 @@ import { Button, ImageViewer, LoadingState, toast } from "@lettuceai/crisp";
 import { useApi } from "@/api/use-api";
 import { queryKeys } from "@/api/query-keys";
 import { FailureState } from "@/shared/ui/FailureState";
-import { useOverlayBack } from "../companion/use-overlay-back";
+import { useOverlayBack } from "@/shared/hooks/useOverlayBack";
 import type { MediaItem } from "../data/messages";
 
 export function MessageImageViewer({ images, index, onIndexChange }: { images: readonly MediaItem[]; index: number | null; onIndexChange: (index: number | null) => void }) {

@@ -4,7 +4,7 @@ import { datePickerStrings } from "./date-picker-strings";
 import { Button, CrispStringsProvider, DatePicker, Field, ListGroup, ListRow, Segmented, Sheet } from "@lettuceai/crisp";
 import type { TimeMode, TimeView } from "@/api/generated/bindings";
 import type { PanelCtx } from "./context";
-import { useOverlayBack } from "../../companion/use-overlay-back";
+import { useOverlayBack } from "@/shared/hooks/useOverlayBack";
 
 export function TimeSheet({ ctx, value }: { ctx: PanelCtx; value: TimeView }) {
   const { t, i18n } = useTranslation("conversations");

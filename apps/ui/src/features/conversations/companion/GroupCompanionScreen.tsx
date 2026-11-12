@@ -21,7 +21,7 @@ import { companionSoulQuery, emotionStatusQuery, groupCompanionStateQuery } from
 import { EmotionInstallNotice } from "./EmotionInstallNotice";
 import { SoulTab } from "./SoulTab";
 import { closenessBand, signed, stanceAxes } from "./values";
-import { useOverlayBack } from "./use-overlay-back";
+import { useOverlayBack } from "@/shared/hooks/useOverlayBack";
 
 export type GroupCompanionTab = "relationship" | "memories" | "soul" | "activity";
 

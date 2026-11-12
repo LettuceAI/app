@@ -21,7 +21,7 @@ import { BondTiles, Drivers, EmotionGroup, SectionHead } from "./presentation";
 import { companionSoulQuery, companionStateQuery, emotionStatusQuery } from "./queries";
 import { RelationshipTab } from "./RelationshipTab";
 import { SoulTab } from "./SoulTab";
-import { useOverlayBack } from "./use-overlay-back";
+import { useOverlayBack } from "@/shared/hooks/useOverlayBack";
 import { EffectSheet } from "./EffectSheet";
 import { GroupCompanionScreen } from "./GroupCompanionScreen";
 

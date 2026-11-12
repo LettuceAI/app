@@ -15,7 +15,7 @@ import {
 import { ReplyDetails } from "./ReplyDetails";
 import { SceneImageStatus } from "../scene-images/SceneImageStatus";
 import { MessageImageViewer } from "./MessageImageViewer";
-import { useOverlayBack } from "../companion/use-overlay-back";
+import { useOverlayBack } from "@/shared/hooks/useOverlayBack";
 import { formatMessageTime } from "@/shared/formatting/messageTime";
 
 function EmbeddedImageViewer({ image, onClose }: { image: { src: string; alt: string }; onClose: () => void }) {
