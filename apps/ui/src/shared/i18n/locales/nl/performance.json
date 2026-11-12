@@ -1,0 +1,59 @@
+{
+  "subtitle": "Decodeersnelheid en contextgebruik van je lokale generaties",
+  "emptyTitle": "Nog geen generaties",
+  "empty": "Nog geen lokale generaties geregistreerd. Voer een lokaal model uit in de chat om prestatiegrafieken te zien.",
+  "refresh": "Vernieuwen",
+  "clear": "Geschiedenis wissen",
+  "clearConfirmTitle": "Prestatiegeschiedenis wissen?",
+  "clearConfirmBody": "Dit verwijdert alle geregistreerde statistieken van lokale generaties en kan niet ongedaan worden gemaakt.",
+  "cleared": "Prestatiegeschiedenis gewist",
+  "stats": {
+    "runs": "Geregistreerde runs",
+    "avgSpeed": "Gem. decodeersnelheid",
+    "peakSpeed": "Piekdecodeersnelheid",
+    "avgTtft": "Gem. eerste token"
+  },
+  "charts": {
+    "speedByRun": "Decodeersnelheid per run",
+    "speedByRunSub": "Tokens per seconde, van oud naar nieuw",
+    "speedVsContext": "Snelheid versus contextgrootte",
+    "speedVsContextSub": "Decodeersnelheid tegenover contextlengte",
+    "detailTitle": "Generatiedetail",
+    "latestTitle": "Laatste generatie, seconde voor seconde",
+    "latestSub": "Decodeersnelheid en contextvulling tijdens de meest recente run",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Decodeersnelheid (tok/s)",
+    "legendContext": "Contextvulling (%)",
+    "contextSizeAxis": "Contextgrootte (tokens)",
+    "noSamples": "Er zijn geen per-seconde-metingen geregistreerd voor deze generatie."
+  },
+  "detail": {
+    "decodeSpeed": "Decodeersnelheid",
+    "nativePromptSpeed": "Native promptsnelheid",
+    "nativeGenerationSpeed": "Native generatiesnelheid",
+    "firstToken": "Eerste token",
+    "elapsed": "Generatietijd",
+    "nativeGenerationTime": "Native generatieberekening",
+    "appOverhead": "App-overhead",
+    "promptTokens": "Prompttokens",
+    "outputTokens": "Uitvoertokens",
+    "totalTokens": "Totaal tokens",
+    "context": "Contextvenster",
+    "batch": "Logische batch",
+    "microbatch": "Microbatch",
+    "backend": "Backend",
+    "gpuLayers": "GPU-lagen",
+    "kvType": "KV-cache",
+    "modelSize": "Modelgrootte",
+    "finishReason": "Beëindigingsreden"
+  },
+  "list": {
+    "title": "Recente generaties",
+    "unknownModel": "Onbekend model"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

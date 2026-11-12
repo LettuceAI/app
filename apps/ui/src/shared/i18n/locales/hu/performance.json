@@ -1,0 +1,59 @@
+{
+  "subtitle": "Dekódolási sebesség és kontextushasználat a helyi generálásokban",
+  "emptyTitle": "Még nincs generálás",
+  "empty": "Még nincs rögzített helyi generálás. Futtass egy helyi modellt a csevegésben a teljesítménygrafikonokhoz.",
+  "refresh": "Frissítés",
+  "clear": "Előzmények törlése",
+  "clearConfirmTitle": "Törlöd a teljesítményelőzményeket?",
+  "clearConfirmBody": "Ez eltávolítja az összes rögzített helyi generálási mérést, és nem vonható vissza.",
+  "cleared": "Teljesítményelőzmények törölve",
+  "stats": {
+    "runs": "Rögzített futások",
+    "avgSpeed": "Átl. dekódolási sebesség",
+    "peakSpeed": "Csúcs dekódolási sebesség",
+    "avgTtft": "Átl. első token"
+  },
+  "charts": {
+    "speedByRun": "Dekódolási sebesség futásonként",
+    "speedByRunSub": "Token másodpercenként, a legrégebbitől a legújabbig",
+    "speedVsContext": "Sebesség és kontextusméret",
+    "speedVsContextSub": "Dekódolási sebesség a kontextushossz függvényében",
+    "detailTitle": "Generálás részletei",
+    "latestTitle": "Legutóbbi generálás másodpercenként",
+    "latestSub": "Dekódolási sebesség és kontextustelítettség a legutóbbi futásban",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Dekódolási sebesség (tok/s)",
+    "legendContext": "Kontextustelítettség (%)",
+    "contextSizeAxis": "Kontextusméret (token)",
+    "noSamples": "Ehhez a generáláshoz nem készültek másodpercenkénti minták."
+  },
+  "detail": {
+    "decodeSpeed": "Dekódolási sebesség",
+    "nativePromptSpeed": "Natív prompt sebesség",
+    "nativeGenerationSpeed": "Natív generálási sebesség",
+    "firstToken": "Első token",
+    "elapsed": "Generálási idő",
+    "nativeGenerationTime": "Natív generálási számítás",
+    "appOverhead": "Alkalmazás többletideje",
+    "promptTokens": "Prompt tokenek",
+    "outputTokens": "Kimeneti tokenek",
+    "totalTokens": "Összes token",
+    "context": "Kontextusablak",
+    "batch": "Logikai köteg",
+    "microbatch": "Mikroköteg",
+    "backend": "Backend",
+    "gpuLayers": "GPU rétegek",
+    "kvType": "KV gyorsítótár",
+    "modelSize": "Modellméret",
+    "finishReason": "Befejezés oka"
+  },
+  "list": {
+    "title": "Legutóbbi generálások",
+    "unknownModel": "Ismeretlen modell"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

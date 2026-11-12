@@ -1,0 +1,59 @@
+{
+  "subtitle": "Dekodiergeschwindigkeit und Kontextnutzung über deine lokalen Generierungen hinweg",
+  "emptyTitle": "Noch keine Generierungen",
+  "empty": "Noch keine lokalen Generierungen erfasst. Führe ein lokales Modell im Chat aus, um Leistungsdiagramme zu sehen.",
+  "refresh": "Aktualisieren",
+  "clear": "Verlauf löschen",
+  "clearConfirmTitle": "Leistungsverlauf löschen?",
+  "clearConfirmBody": "Dies entfernt alle erfassten lokalen Generierungsmetriken und kann nicht rückgängig gemacht werden.",
+  "cleared": "Leistungsverlauf gelöscht",
+  "stats": {
+    "runs": "Läufe erfasst",
+    "avgSpeed": "Ø Dekodiergeschwindigkeit",
+    "peakSpeed": "Spitzen-Dekodiergeschwindigkeit",
+    "avgTtft": "Ø erstes Token"
+  },
+  "charts": {
+    "speedByRun": "Dekodiergeschwindigkeit pro Lauf",
+    "speedByRunSub": "Tokens pro Sekunde, älteste zuerst",
+    "speedVsContext": "Geschwindigkeit vs. Kontextgröße",
+    "speedVsContextSub": "Dekodiergeschwindigkeit im Verhältnis zur Kontextlänge",
+    "detailTitle": "Generierungsdetails",
+    "latestTitle": "Neueste Generierung, Sekunde für Sekunde",
+    "latestSub": "Dekodiergeschwindigkeit und Kontextfüllung über den letzten Lauf hinweg",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Dekodiergeschwindigkeit (tok/s)",
+    "legendContext": "Kontextfüllung (%)",
+    "contextSizeAxis": "Kontextgröße (Token)",
+    "noSamples": "Für diese Generierung wurden keine Sekundenwerte erfasst."
+  },
+  "detail": {
+    "decodeSpeed": "Dekodiergeschwindigkeit",
+    "nativePromptSpeed": "Native Prompt-Geschwindigkeit",
+    "nativeGenerationSpeed": "Native Generierungsgeschwindigkeit",
+    "firstToken": "Erstes Token",
+    "elapsed": "Generierungszeit",
+    "nativeGenerationTime": "Native Generierungsberechnung",
+    "appOverhead": "App-Overhead",
+    "promptTokens": "Prompt-Tokens",
+    "outputTokens": "Ausgabe-Tokens",
+    "totalTokens": "Tokens insgesamt",
+    "context": "Kontextfenster",
+    "batch": "Logischer Batch",
+    "microbatch": "Microbatch",
+    "backend": "Backend",
+    "gpuLayers": "GPU-Schichten",
+    "kvType": "KV-Cache",
+    "modelSize": "Modellgröße",
+    "finishReason": "Abschlussgrund"
+  },
+  "list": {
+    "title": "Letzte Generierungen",
+    "unknownModel": "Unbekanntes Modell"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

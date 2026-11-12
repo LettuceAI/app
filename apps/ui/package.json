@@ -35,6 +35,7 @@
     "react-dom": "^19.3.1",
     "react-i18next": "^17.1.12",
     "react-qr-code": "^2.2.0",
+    "recharts": "^3.10.1",
     "tailwindcss": "^4.3.4"
   },
   "devDependencies": {

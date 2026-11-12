@@ -20,6 +20,7 @@ import { SecurityPage } from "./security/SecurityPage";
 import { CustomizationPage } from "./customization/CustomizationPage";
 import { DeveloperPage } from "./developer/DeveloperPage";
 import { CreatorSettingsPage } from "./smart-creator/CreatorSettingsPage";
+import { PerformancePage } from "./performance/PerformancePage";
 
 /** The page of one settings section; the route only lets through sections that have one. */
 export function SettingsSectionPage() {
@@ -29,6 +30,7 @@ export function SettingsSectionPage() {
   if (section === "logs") return <LogsPage />;
   if (section === "lorebooks") return <LorebooksPage />;
   if (section === "usage") return <UsagePage />;
+  if (section === "performance") return <PerformancePage />;
   if (section === "companions") return <CompanionsPage />;
   if (section === "customization") return <CustomizationPage />;
   if (section === "speech") return <SpeechPage />;

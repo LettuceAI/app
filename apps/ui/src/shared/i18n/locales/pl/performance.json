@@ -1,0 +1,59 @@
+{
+  "subtitle": "Prędkość dekodowania i wykorzystanie kontekstu we wszystkich twoich lokalnych generacjach",
+  "emptyTitle": "Brak generacji",
+  "empty": "Nie zarejestrowano jeszcze żadnych lokalnych generacji. Uruchom model lokalny w czacie, aby zobaczyć wykresy wydajności.",
+  "refresh": "Odśwież",
+  "clear": "Wyczyść historię",
+  "clearConfirmTitle": "Wyczyścić historię wydajności?",
+  "clearConfirmBody": "Usunie to wszystkie zarejestrowane metryki lokalnych generacji i nie można tego cofnąć.",
+  "cleared": "Historia wydajności została wyczyszczona",
+  "stats": {
+    "runs": "Zarejestrowane przebiegi",
+    "avgSpeed": "Średnia prędkość dekodowania",
+    "peakSpeed": "Szczytowa prędkość dekodowania",
+    "avgTtft": "Średni czas do pierwszego tokenu"
+  },
+  "charts": {
+    "speedByRun": "Prędkość dekodowania według przebiegu",
+    "speedByRunSub": "Tokeny na sekundę, od najstarszego do najnowszego",
+    "speedVsContext": "Prędkość w zależności od rozmiaru kontekstu",
+    "speedVsContextSub": "Prędkość dekodowania względem długości kontekstu",
+    "detailTitle": "Szczegóły generacji",
+    "latestTitle": "Najnowsza generacja, sekunda po sekundzie",
+    "latestSub": "Prędkość dekodowania i zapełnienie kontekstu podczas ostatniego przebiegu",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Prędkość dekodowania (tok/s)",
+    "legendContext": "Zapełnienie kontekstu (%)",
+    "contextSizeAxis": "Rozmiar kontekstu (tokeny)",
+    "noSamples": "Dla tej generacji nie zarejestrowano próbek co sekundę."
+  },
+  "detail": {
+    "decodeSpeed": "Prędkość dekodowania",
+    "nativePromptSpeed": "Natywna prędkość promptu",
+    "nativeGenerationSpeed": "Natywna prędkość generowania",
+    "firstToken": "Pierwszy token",
+    "elapsed": "Czas generowania",
+    "nativeGenerationTime": "Natywne obliczenia generowania",
+    "appOverhead": "Narzut aplikacji",
+    "promptTokens": "Tokeny promptu",
+    "outputTokens": "Tokeny wyjściowe",
+    "totalTokens": "Tokeny łącznie",
+    "context": "Okno kontekstu",
+    "batch": "Partia logiczna",
+    "microbatch": "Mikropartia",
+    "backend": "Backend",
+    "gpuLayers": "Warstwy GPU",
+    "kvType": "KV cache",
+    "modelSize": "Rozmiar modelu",
+    "finishReason": "Powód zakończenia"
+  },
+  "list": {
+    "title": "Ostatnie generacje",
+    "unknownModel": "Nieznany model"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

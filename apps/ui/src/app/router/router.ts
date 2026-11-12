@@ -425,6 +425,10 @@ const settingsSectionRoute = createRoute({
   beforeLoad: ({ params, context }) => {
     if (!isSettingsSection(params.section) || !builtSettingsSections.has(params.section))
       throw notFound();
+    if (params.section === "performance")
+      return context.queryClient.ensureQueryData(appStatusQuery(context.api)).then((status) => {
+        if (status.platform === "android" || status.platform === "ios") throw notFound();
+      });
     if (params.section !== "developer") return;
     return context.queryClient
       .ensureQueryData({

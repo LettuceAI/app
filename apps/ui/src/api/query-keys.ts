@@ -116,6 +116,11 @@ export const queryKeys = {
     clock: () => ["usage", "clock"] as const,
     nano: (id: string) => ["usage", "nano", id] as const,
   },
+  llmMetrics: {
+    all: ["llm-metrics"] as const,
+    list: () => ["llm-metrics", "list"] as const,
+    detail: (id: string) => ["llm-metrics", "detail", id] as const,
+  },
   backups: { all: ["backups"] as const, list: () => ["backups", "list"] as const },
   sync: {
     all: ["sync"] as const,

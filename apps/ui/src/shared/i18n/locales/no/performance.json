@@ -1,0 +1,59 @@
+{
+  "subtitle": "Dekodingshastighet og kontekstbruk på tvers av dine lokale genereringer",
+  "emptyTitle": "Ingen genereringer ennå",
+  "empty": "Ingen lokale genereringer registrert ennå. Kjør en lokal modell i chatten for å se ytelsesgrafer.",
+  "refresh": "Oppdater",
+  "clear": "Tøm historikk",
+  "clearConfirmTitle": "Tøm ytelseshistorikk?",
+  "clearConfirmBody": "Dette fjerner alle registrerte målinger for lokale genereringer og kan ikke angres.",
+  "cleared": "Ytelseshistorikk tømt",
+  "stats": {
+    "runs": "Registrerte kjøringer",
+    "avgSpeed": "Gjennomsnittlig dekodingshastighet",
+    "peakSpeed": "Topp dekodingshastighet",
+    "avgTtft": "Gjennomsnittlig første token"
+  },
+  "charts": {
+    "speedByRun": "Dekodingshastighet per kjøring",
+    "speedByRunSub": "Tokens per sekund, eldst til nyest",
+    "speedVsContext": "Hastighet vs. kontekststørrelse",
+    "speedVsContextSub": "Dekodingshastighet mot kontekstlengde",
+    "detailTitle": "Genereringsdetaljer",
+    "latestTitle": "Siste generering, sekund for sekund",
+    "latestSub": "Dekodingshastighet og kontekstfylling over den siste kjøringen",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Dekodingshastighet (tok/s)",
+    "legendContext": "Kontekstfylling (%)",
+    "contextSizeAxis": "Kontekststørrelse (tokens)",
+    "noSamples": "Ingen sekundmålinger ble registrert for denne genereringen."
+  },
+  "detail": {
+    "decodeSpeed": "Dekodingshastighet",
+    "nativePromptSpeed": "Nativ prompt-hastighet",
+    "nativeGenerationSpeed": "Nativ genereringshastighet",
+    "firstToken": "Første token",
+    "elapsed": "Genereringstid",
+    "nativeGenerationTime": "Nativ genereringsberegning",
+    "appOverhead": "App-overhead",
+    "promptTokens": "Prompt-tokens",
+    "outputTokens": "Utdata-tokens",
+    "totalTokens": "Totale tokens",
+    "context": "Kontekstvindu",
+    "batch": "Logisk batch",
+    "microbatch": "Mikrobatch",
+    "backend": "Backend",
+    "gpuLayers": "GPU-lag",
+    "kvType": "KV-buffer",
+    "modelSize": "Modellstørrelse",
+    "finishReason": "Ferdigårsak"
+  },
+  "list": {
+    "title": "Nylige genereringer",
+    "unknownModel": "Ukjent modell"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "subtitle": "Vitesse de décodage et utilisation du contexte pour vos générations locales",
+  "emptyTitle": "Aucune génération pour l'instant",
+  "empty": "Aucune génération locale enregistrée pour l'instant. Exécutez un modèle local dans une discussion pour voir les graphiques de performance.",
+  "refresh": "Actualiser",
+  "clear": "Effacer l'historique",
+  "clearConfirmTitle": "Effacer l'historique de performance ?",
+  "clearConfirmBody": "Cela supprime toutes les métriques de génération locale enregistrées et cette action est irréversible.",
+  "cleared": "Historique de performance effacé",
+  "stats": {
+    "runs": "Exécutions enregistrées",
+    "avgSpeed": "Vitesse de décodage moy.",
+    "peakSpeed": "Vitesse de décodage max.",
+    "avgTtft": "Premier token moy."
+  },
+  "charts": {
+    "speedByRun": "Vitesse de décodage par exécution",
+    "speedByRunSub": "Tokens par seconde, du plus ancien au plus récent",
+    "speedVsContext": "Vitesse par rapport à la taille du contexte",
+    "speedVsContextSub": "Vitesse de décodage en fonction de la longueur du contexte",
+    "detailTitle": "Détail de la génération",
+    "latestTitle": "Dernière génération, seconde par seconde",
+    "latestSub": "Vitesse de décodage et remplissage du contexte sur la dernière exécution",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Vitesse de décodage (tok/s)",
+    "legendContext": "Remplissage du contexte (%)",
+    "contextSizeAxis": "Taille du contexte (tokens)",
+    "noSamples": "Aucun échantillon par seconde n'a été enregistré pour cette génération."
+  },
+  "detail": {
+    "decodeSpeed": "Vitesse de décodage",
+    "nativePromptSpeed": "Vitesse native du prompt",
+    "nativeGenerationSpeed": "Vitesse native de génération",
+    "firstToken": "Premier token",
+    "elapsed": "Temps de génération",
+    "nativeGenerationTime": "Calcul natif de génération",
+    "appOverhead": "Surcharge de l'application",
+    "promptTokens": "Tokens de prompt",
+    "outputTokens": "Tokens de sortie",
+    "totalTokens": "Tokens totaux",
+    "context": "Fenêtre de contexte",
+    "batch": "Lot logique",
+    "microbatch": "Micro-lot",
+    "backend": "Backend",
+    "gpuLayers": "Couches GPU",
+    "kvType": "Cache KV",
+    "modelSize": "Taille du modèle",
+    "finishReason": "Raison de fin"
+  },
+  "list": {
+    "title": "Générations récentes",
+    "unknownModel": "Modèle inconnu"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

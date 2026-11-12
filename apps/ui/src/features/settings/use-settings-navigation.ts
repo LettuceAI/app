@@ -32,8 +32,11 @@ export function useSettingsNavigation(onOpen: (id: SettingsSectionId) => void) {
   return { open, openWhatsNew, openSetupGuide, externalPending: external.isPending };
 }
 
-export function settingsSectionVisible(section: SettingsSection, developerMode: boolean): boolean {
-  return section.id !== "developer" || developerMode;
+/** Local LLM performance is desktop only: phones and tablets do not run local models. */
+export function settingsSectionVisible(section: SettingsSection, developerMode: boolean, mobile: boolean): boolean {
+  if (section.id === "developer") return developerMode;
+  if (section.id === "performance") return !mobile;
+  return true;
 }
 
 export function settingsSectionAvailable(section: SettingsSection, built: boolean): boolean {

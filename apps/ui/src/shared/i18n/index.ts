@@ -8,6 +8,7 @@ import lorebookEditor from "./locales/en/lorebook-editor.json";
 import lorebookPreview from "./locales/en/lorebook-preview.json";
 import lorebookCreate from "./locales/en/lorebook-create.json";
 import usage from "./locales/en/usage.json";
+import performance from "./locales/en/performance.json";
 import companions from "./locales/en/companions.json";
 import customization from "./locales/en/customization.json";
 import common from "./locales/en/common.json";
@@ -37,6 +38,7 @@ const english = {
     "lorebook-editor": lorebookEditor,
     "lorebook-preview": lorebookPreview,
     usage,
+    performance,
     companions,
     customization,
     prompts,

@@ -1,0 +1,59 @@
+{
+  "subtitle": "ローカル生成全体のデコード速度とコンテキスト使用状況",
+  "emptyTitle": "まだ生成がありません",
+  "empty": "まだローカル生成の記録がありません。チャットでローカルモデルを実行すると、パフォーマンスグラフが表示されます。",
+  "refresh": "更新",
+  "clear": "履歴をクリア",
+  "clearConfirmTitle": "パフォーマンス履歴をクリアしますか？",
+  "clearConfirmBody": "記録されたすべてのローカル生成の指標が削除されます。この操作は元に戻せません。",
+  "cleared": "パフォーマンス履歴をクリアしました",
+  "stats": {
+    "runs": "記録された実行回数",
+    "avgSpeed": "平均デコード速度",
+    "peakSpeed": "最大デコード速度",
+    "avgTtft": "平均初回トークン時間"
+  },
+  "charts": {
+    "speedByRun": "実行ごとのデコード速度",
+    "speedByRunSub": "秒間トークン数（古い順から新しい順）",
+    "speedVsContext": "速度とコンテキストサイズ",
+    "speedVsContextSub": "コンテキスト長に対するデコード速度",
+    "detailTitle": "生成の詳細",
+    "latestTitle": "最新の生成（秒単位）",
+    "latestSub": "直近の実行におけるデコード速度とコンテキスト使用率",
+    "speedAxis": "tok/s",
+    "legendSpeed": "デコード速度 (tok/s)",
+    "legendContext": "コンテキスト使用率 (%)",
+    "contextSizeAxis": "コンテキストサイズ（トークン）",
+    "noSamples": "この生成には秒単位のサンプルが記録されていません。"
+  },
+  "detail": {
+    "decodeSpeed": "デコード速度",
+    "nativePromptSpeed": "ネイティブプロンプト速度",
+    "nativeGenerationSpeed": "ネイティブ生成速度",
+    "firstToken": "最初のトークンまでの時間",
+    "elapsed": "生成時間",
+    "nativeGenerationTime": "ネイティブ生成計算",
+    "appOverhead": "アプリのオーバーヘッド",
+    "promptTokens": "プロンプトトークン",
+    "outputTokens": "出力トークン",
+    "totalTokens": "合計トークン",
+    "context": "コンテキストウィンドウ",
+    "batch": "論理バッチ",
+    "microbatch": "マイクロバッチ",
+    "backend": "バックエンド",
+    "gpuLayers": "GPUレイヤー",
+    "kvType": "KVキャッシュ",
+    "modelSize": "モデルサイズ",
+    "finishReason": "終了理由"
+  },
+  "list": {
+    "title": "最近の生成",
+    "unknownModel": "不明なモデル"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "subtitle": "आपके लोकल जनरेशन में डिकोड गति और कॉन्टेक्स्ट उपयोग",
+  "emptyTitle": "अभी तक कोई जनरेशन नहीं",
+  "empty": "अभी तक कोई लोकल जनरेशन रिकॉर्ड नहीं हुआ। प्रदर्शन ग्राफ़ देखने के लिए चैट में एक लोकल मॉडल चलाएँ।",
+  "refresh": "रिफ्रेश करें",
+  "clear": "इतिहास साफ़ करें",
+  "clearConfirmTitle": "प्रदर्शन इतिहास साफ़ करें?",
+  "clearConfirmBody": "इससे सभी रिकॉर्ड किए गए लोकल जनरेशन मेट्रिक्स हट जाते हैं और इसे पूर्ववत नहीं किया जा सकता।",
+  "cleared": "प्रदर्शन इतिहास साफ़ हो गया",
+  "stats": {
+    "runs": "रिकॉर्ड किए गए रन",
+    "avgSpeed": "औसत डिकोड गति",
+    "peakSpeed": "पीक डिकोड गति",
+    "avgTtft": "औसत पहला टोकन"
+  },
+  "charts": {
+    "speedByRun": "रन के अनुसार डिकोड गति",
+    "speedByRunSub": "टोकन प्रति सेकंड, सबसे पुराने से नवीनतम तक",
+    "speedVsContext": "गति बनाम कॉन्टेक्स्ट साइज़",
+    "speedVsContextSub": "कॉन्टेक्स्ट लंबाई के मुकाबले डिकोड गति",
+    "detailTitle": "जनरेशन विवरण",
+    "latestTitle": "नवीनतम जनरेशन, सेकंड दर सेकंड",
+    "latestSub": "सबसे हाल के रन में डिकोड गति और कॉन्टेक्स्ट फिल",
+    "speedAxis": "tok/s",
+    "legendSpeed": "डिकोड गति (tok/s)",
+    "legendContext": "कॉन्टेक्स्ट फिल (%)",
+    "contextSizeAxis": "कॉन्टेक्स्ट साइज़ (टोकन)",
+    "noSamples": "इस जनरेशन के लिए कोई प्रति-सेकंड सैंपल रिकॉर्ड नहीं किए गए।"
+  },
+  "detail": {
+    "decodeSpeed": "डिकोड गति",
+    "nativePromptSpeed": "नेटिव प्रॉम्प्ट गति",
+    "nativeGenerationSpeed": "नेटिव जनरेशन गति",
+    "firstToken": "पहला टोकन",
+    "elapsed": "जनरेशन समय",
+    "nativeGenerationTime": "नेटिव जनरेशन कंप्यूट",
+    "appOverhead": "ऐप ओवरहेड",
+    "promptTokens": "प्रॉम्प्ट टोकन",
+    "outputTokens": "आउटपुट टोकन",
+    "totalTokens": "कुल टोकन",
+    "context": "कॉन्टेक्स्ट विंडो",
+    "batch": "लॉजिकल बैच",
+    "microbatch": "माइक्रोबैच",
+    "backend": "बैकएंड",
+    "gpuLayers": "GPU लेयर्स",
+    "kvType": "KV कैश",
+    "modelSize": "मॉडल साइज़",
+    "finishReason": "समाप्ति का कारण"
+  },
+  "list": {
+    "title": "हाल के जनरेशन",
+    "unknownModel": "अज्ञात मॉडल"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

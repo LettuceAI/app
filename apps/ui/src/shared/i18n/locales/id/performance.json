@@ -1,0 +1,59 @@
+{
+  "subtitle": "Kecepatan decode dan penggunaan konteks di seluruh generasi lokal Anda",
+  "emptyTitle": "Belum ada generasi",
+  "empty": "Belum ada generasi lokal yang tercatat. Jalankan model lokal di obrolan untuk melihat grafik performa.",
+  "refresh": "Segarkan",
+  "clear": "Bersihkan riwayat",
+  "clearConfirmTitle": "Bersihkan riwayat performa?",
+  "clearConfirmBody": "Ini menghapus semua metrik generasi lokal yang tercatat dan tidak dapat dibatalkan.",
+  "cleared": "Riwayat performa dibersihkan",
+  "stats": {
+    "runs": "Generasi tercatat",
+    "avgSpeed": "Rata-rata kecepatan decode",
+    "peakSpeed": "Kecepatan decode puncak",
+    "avgTtft": "Rata-rata token pertama"
+  },
+  "charts": {
+    "speedByRun": "Kecepatan decode per generasi",
+    "speedByRunSub": "Token per detik, dari yang terlama ke terbaru",
+    "speedVsContext": "Kecepatan vs ukuran konteks",
+    "speedVsContextSub": "Kecepatan decode terhadap panjang konteks",
+    "detailTitle": "Detail generasi",
+    "latestTitle": "Generasi terbaru, detik demi detik",
+    "latestSub": "Kecepatan decode dan pengisian konteks selama generasi terbaru",
+    "speedAxis": "tok/d",
+    "legendSpeed": "Kecepatan decode (tok/d)",
+    "legendContext": "Pengisian konteks (%)",
+    "contextSizeAxis": "Ukuran konteks (token)",
+    "noSamples": "Tidak ada sampel per detik yang tercatat untuk generasi ini."
+  },
+  "detail": {
+    "decodeSpeed": "Kecepatan decode",
+    "nativePromptSpeed": "Kecepatan prompt native",
+    "nativeGenerationSpeed": "Kecepatan generasi native",
+    "firstToken": "Token pertama",
+    "elapsed": "Waktu generasi",
+    "nativeGenerationTime": "Komputasi generasi native",
+    "appOverhead": "Overhead aplikasi",
+    "promptTokens": "Token prompt",
+    "outputTokens": "Token output",
+    "totalTokens": "Total token",
+    "context": "Jendela konteks",
+    "batch": "Batch logis",
+    "microbatch": "Microbatch",
+    "backend": "Backend",
+    "gpuLayers": "Layer GPU",
+    "kvType": "KV cache",
+    "modelSize": "Ukuran model",
+    "finishReason": "Alasan selesai"
+  },
+  "list": {
+    "title": "Generasi terbaru",
+    "unknownModel": "Model tidak dikenal"
+  },
+  "units": {
+    "speed": "{{value}} tok/d",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

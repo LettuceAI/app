@@ -1,0 +1,59 @@
+{
+  "subtitle": "Yerel üretimleriniz genelinde kod çözme hızı ve bağlam kullanımı",
+  "emptyTitle": "Henüz üretim yok",
+  "empty": "Henüz kayıtlı bir yerel üretim yok. Performans grafiklerini görmek için sohbette bir yerel model çalıştır.",
+  "refresh": "Yenile",
+  "clear": "Geçmişi temizle",
+  "clearConfirmTitle": "Performans geçmişi temizlensin mi?",
+  "clearConfirmBody": "Bu, kaydedilen tüm yerel üretim ölçümlerini kaldırır ve geri alınamaz.",
+  "cleared": "Performans geçmişi temizlendi",
+  "stats": {
+    "runs": "Kaydedilen çalıştırmalar",
+    "avgSpeed": "Ort. kod çözme hızı",
+    "peakSpeed": "En yüksek kod çözme hızı",
+    "avgTtft": "Ort. ilk token"
+  },
+  "charts": {
+    "speedByRun": "Çalıştırmaya göre kod çözme hızı",
+    "speedByRunSub": "Saniyedeki token sayısı, en eskiden en yeniye",
+    "speedVsContext": "Bağlam boyutuna göre hız",
+    "speedVsContextSub": "Bağlam uzunluğuna göre kod çözme hızı",
+    "detailTitle": "Üretim detayı",
+    "latestTitle": "Son üretim, saniye saniye",
+    "latestSub": "En son çalıştırmada kod çözme hızı ve bağlam doluluğu",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Kod çözme hızı (tok/s)",
+    "legendContext": "Bağlam doluluğu (%)",
+    "contextSizeAxis": "Bağlam boyutu (token)",
+    "noSamples": "Bu üretim için saniye başına örnek kaydedilmedi."
+  },
+  "detail": {
+    "decodeSpeed": "Kod çözme hızı",
+    "nativePromptSpeed": "Native prompt hızı",
+    "nativeGenerationSpeed": "Native üretim hızı",
+    "firstToken": "İlk token",
+    "elapsed": "Üretim süresi",
+    "nativeGenerationTime": "Native üretim hesaplaması",
+    "appOverhead": "Uygulama ek yükü",
+    "promptTokens": "Prompt tokenleri",
+    "outputTokens": "Çıktı tokenleri",
+    "totalTokens": "Toplam token",
+    "context": "Bağlam penceresi",
+    "batch": "Mantıksal batch",
+    "microbatch": "Mikrobatch",
+    "backend": "Arka uç",
+    "gpuLayers": "GPU katmanları",
+    "kvType": "KV cache",
+    "modelSize": "Model boyutu",
+    "finishReason": "Bitiş nedeni"
+  },
+  "list": {
+    "title": "Son üretimler",
+    "unknownModel": "Bilinmeyen model"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

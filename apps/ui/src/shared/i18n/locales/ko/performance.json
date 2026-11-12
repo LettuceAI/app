@@ -1,0 +1,59 @@
+{
+  "subtitle": "로컬 생성 전반의 디코드 속도와 컨텍스트 사용량",
+  "emptyTitle": "아직 생성 기록이 없습니다",
+  "empty": "아직 기록된 로컬 생성이 없습니다. 채팅에서 로컬 모델을 실행하면 성능 그래프를 확인할 수 있습니다.",
+  "refresh": "새로고침",
+  "clear": "기록 지우기",
+  "clearConfirmTitle": "성능 기록을 지울까요?",
+  "clearConfirmBody": "기록된 모든 로컬 생성 지표가 삭제되며 되돌릴 수 없습니다.",
+  "cleared": "성능 기록이 지워졌습니다",
+  "stats": {
+    "runs": "기록된 실행",
+    "avgSpeed": "평균 디코드 속도",
+    "peakSpeed": "최고 디코드 속도",
+    "avgTtft": "평균 첫 토큰"
+  },
+  "charts": {
+    "speedByRun": "실행별 디코드 속도",
+    "speedByRunSub": "초당 토큰 수, 오래된 순",
+    "speedVsContext": "속도 vs 컨텍스트 크기",
+    "speedVsContextSub": "컨텍스트 길이에 따른 디코드 속도",
+    "detailTitle": "생성 세부 정보",
+    "latestTitle": "최근 생성, 초 단위",
+    "latestSub": "가장 최근 실행의 디코드 속도와 컨텍스트 채움",
+    "speedAxis": "tok/s",
+    "legendSpeed": "디코드 속도 (tok/s)",
+    "legendContext": "컨텍스트 채움 (%)",
+    "contextSizeAxis": "컨텍스트 크기 (토큰)",
+    "noSamples": "이 생성에 대해 기록된 초 단위 샘플이 없습니다."
+  },
+  "detail": {
+    "decodeSpeed": "디코드 속도",
+    "nativePromptSpeed": "네이티브 프롬프트 속도",
+    "nativeGenerationSpeed": "네이티브 생성 속도",
+    "firstToken": "첫 토큰",
+    "elapsed": "생성 시간",
+    "nativeGenerationTime": "네이티브 생성 연산",
+    "appOverhead": "앱 오버헤드",
+    "promptTokens": "프롬프트 토큰",
+    "outputTokens": "출력 토큰",
+    "totalTokens": "전체 토큰",
+    "context": "컨텍스트 윈도우",
+    "batch": "논리 배치",
+    "microbatch": "마이크로배치",
+    "backend": "백엔드",
+    "gpuLayers": "GPU 레이어",
+    "kvType": "KV 캐시",
+    "modelSize": "모델 크기",
+    "finishReason": "종료 이유"
+  },
+  "list": {
+    "title": "최근 생성",
+    "unknownModel": "알 수 없는 모델"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

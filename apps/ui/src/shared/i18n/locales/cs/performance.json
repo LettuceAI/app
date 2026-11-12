@@ -1,0 +1,59 @@
+{
+  "subtitle": "Rychlost dekódování a využití kontextu napříč místními generacemi",
+  "emptyTitle": "Zatím žádné generace",
+  "empty": "Zatím nejsou zaznamenány žádné místní generace. Spusťte místní model v chatu a uvidíte grafy výkonu.",
+  "refresh": "Obnovit",
+  "clear": "Vymazat historii",
+  "clearConfirmTitle": "Vymazat historii výkonu?",
+  "clearConfirmBody": "Tímto odstraníte všechny zaznamenané metriky místních generací. Akci nelze vrátit.",
+  "cleared": "Historie výkonu vymazána",
+  "stats": {
+    "runs": "Zaznamenané běhy",
+    "avgSpeed": "Prům. rychlost dekódování",
+    "peakSpeed": "Max. rychlost dekódování",
+    "avgTtft": "Prům. první token"
+  },
+  "charts": {
+    "speedByRun": "Rychlost dekódování podle běhu",
+    "speedByRunSub": "Tokeny za sekundu, od nejstaršího po nejnovější",
+    "speedVsContext": "Rychlost vs. velikost kontextu",
+    "speedVsContextSub": "Rychlost dekódování vůči délce kontextu",
+    "detailTitle": "Detail generace",
+    "latestTitle": "Poslední generace po sekundách",
+    "latestSub": "Rychlost dekódování a zaplnění kontextu v posledním běhu",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Rychlost dekódování (tok/s)",
+    "legendContext": "Zaplnění kontextu (%)",
+    "contextSizeAxis": "Velikost kontextu (tokeny)",
+    "noSamples": "Pro tuto generaci nebyly zaznamenány vzorky po sekundách."
+  },
+  "detail": {
+    "decodeSpeed": "Rychlost dekódování",
+    "nativePromptSpeed": "Nativní rychlost promptu",
+    "nativeGenerationSpeed": "Nativní rychlost generování",
+    "firstToken": "První token",
+    "elapsed": "Doba generování",
+    "nativeGenerationTime": "Nativní výpočet generování",
+    "appOverhead": "Režie aplikace",
+    "promptTokens": "Tokeny promptu",
+    "outputTokens": "Výstupní tokeny",
+    "totalTokens": "Tokeny celkem",
+    "context": "Kontextové okno",
+    "batch": "Logická dávka",
+    "microbatch": "Mikrodávka",
+    "backend": "Backend",
+    "gpuLayers": "Vrstvy na GPU",
+    "kvType": "KV cache",
+    "modelSize": "Velikost modelu",
+    "finishReason": "Důvod ukončení"
+  },
+  "list": {
+    "title": "Nedávné generace",
+    "unknownModel": "Neznámý model"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

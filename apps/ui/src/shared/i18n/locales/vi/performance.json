@@ -1,0 +1,59 @@
+{
+  "subtitle": "Tốc độ giải mã và mức dùng ngữ cảnh trong các lượt tạo cục bộ của bạn",
+  "emptyTitle": "Chưa có lượt tạo nào",
+  "empty": "Chưa ghi nhận lượt tạo cục bộ nào. Chạy một mô hình cục bộ trong trò chuyện để xem biểu đồ hiệu năng.",
+  "refresh": "Làm mới",
+  "clear": "Xóa lịch sử",
+  "clearConfirmTitle": "Xóa lịch sử hiệu năng?",
+  "clearConfirmBody": "Thao tác này xóa toàn bộ số liệu tạo cục bộ đã ghi nhận và không thể hoàn tác.",
+  "cleared": "Đã xóa lịch sử hiệu năng",
+  "stats": {
+    "runs": "Lượt đã ghi nhận",
+    "avgSpeed": "Tốc độ giải mã trung bình",
+    "peakSpeed": "Tốc độ giải mã cao nhất",
+    "avgTtft": "Token đầu tiên trung bình"
+  },
+  "charts": {
+    "speedByRun": "Tốc độ giải mã theo lượt",
+    "speedByRunSub": "Token mỗi giây, từ cũ nhất đến mới nhất",
+    "speedVsContext": "Tốc độ so với kích thước ngữ cảnh",
+    "speedVsContextSub": "Tốc độ giải mã theo độ dài ngữ cảnh",
+    "detailTitle": "Chi tiết lượt tạo",
+    "latestTitle": "Lượt tạo gần nhất, theo từng giây",
+    "latestSub": "Tốc độ giải mã và mức lấp đầy ngữ cảnh trong lượt gần nhất",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Tốc độ giải mã (tok/s)",
+    "legendContext": "Mức lấp đầy ngữ cảnh (%)",
+    "contextSizeAxis": "Kích thước ngữ cảnh (token)",
+    "noSamples": "Không có mẫu theo giây nào được ghi nhận cho lượt tạo này."
+  },
+  "detail": {
+    "decodeSpeed": "Tốc độ giải mã",
+    "nativePromptSpeed": "Tốc độ xử lý prompt gốc",
+    "nativeGenerationSpeed": "Tốc độ tạo phản hồi gốc",
+    "firstToken": "Token đầu tiên",
+    "elapsed": "Thời gian tạo",
+    "nativeGenerationTime": "Thời gian tính toán tạo phản hồi gốc",
+    "appOverhead": "Chi phí ứng dụng",
+    "promptTokens": "Token prompt",
+    "outputTokens": "Token đầu ra",
+    "totalTokens": "Tổng số token",
+    "context": "Cửa sổ ngữ cảnh",
+    "batch": "Batch logic",
+    "microbatch": "Microbatch",
+    "backend": "Backend",
+    "gpuLayers": "Lớp GPU",
+    "kvType": "KV cache",
+    "modelSize": "Kích thước mô hình",
+    "finishReason": "Lý do kết thúc"
+  },
+  "list": {
+    "title": "Lượt tạo gần đây",
+    "unknownModel": "Mô hình không xác định"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

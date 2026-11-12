@@ -18,6 +18,10 @@ export function useSettingsLayout() {
   const standalone = phone || data?.ui_state.sidebarOnDetailPages === false;
   return { phone, standalone, back: standalone ? { onBack: () => void navigate({ to: "/settings" }), backLabel: t("title") } : {} };
 }
+export function useMobilePlatform() {
+  const { data } = useQuery(appStatusQuery(useSettingsApi()));
+  return data?.platform === "android" || data?.platform === "ios";
+}
 export function useDeveloperMode() {
   const api = useSettingsApi();
   return useQuery({ queryKey: queryKeys.settings.detail(), queryFn: () => api.call("settingsGet"), select: (settings) => settings.global.developer_mode_enabled }).data === true;

@@ -1,0 +1,59 @@
+{
+  "subtitle": "Decode speed and context usage across your local generations",
+  "emptyTitle": "No generations yet",
+  "empty": "No local generations recorded yet. Run a local model in chat to see performance graphs.",
+  "refresh": "Refresh",
+  "clear": "Clear history",
+  "clearConfirmTitle": "Clear performance history?",
+  "clearConfirmBody": "This removes all recorded local generation metrics and cannot be undone.",
+  "cleared": "Performance history cleared",
+  "stats": {
+    "runs": "Runs recorded",
+    "avgSpeed": "Avg decode speed",
+    "peakSpeed": "Peak decode speed",
+    "avgTtft": "Avg first token"
+  },
+  "charts": {
+    "speedByRun": "Decode speed by run",
+    "speedByRunSub": "Tokens per second, oldest to newest",
+    "speedVsContext": "Speed vs context size",
+    "speedVsContextSub": "Decode speed against context length",
+    "detailTitle": "Generation detail",
+    "latestTitle": "Latest generation, second by second",
+    "latestSub": "Decode speed and context fill over the most recent run",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Decode speed (tok/s)",
+    "legendContext": "Context fill (%)",
+    "contextSizeAxis": "Context size (tokens)",
+    "noSamples": "No per-second samples were recorded for this generation."
+  },
+  "detail": {
+    "decodeSpeed": "Decode speed",
+    "nativePromptSpeed": "Native prompt speed",
+    "nativeGenerationSpeed": "Native generation speed",
+    "firstToken": "First token",
+    "elapsed": "Generation time",
+    "nativeGenerationTime": "Native generation compute",
+    "appOverhead": "App overhead",
+    "promptTokens": "Prompt tokens",
+    "outputTokens": "Output tokens",
+    "totalTokens": "Total tokens",
+    "context": "Context window",
+    "batch": "Logical batch",
+    "microbatch": "Microbatch",
+    "backend": "Backend",
+    "gpuLayers": "GPU layers",
+    "kvType": "KV cache",
+    "modelSize": "Model size",
+    "finishReason": "Finish reason"
+  },
+  "list": {
+    "title": "Recent generations",
+    "unknownModel": "Unknown model"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

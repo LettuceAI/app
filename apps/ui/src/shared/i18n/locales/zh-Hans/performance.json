@@ -1,0 +1,59 @@
+{
+  "subtitle": "本地生成过程中的解码速度与上下文使用情况",
+  "emptyTitle": "暂无生成记录",
+  "empty": "尚未记录任何本地生成。在聊天中运行本地模型即可查看性能图表。",
+  "refresh": "刷新",
+  "clear": "清除历史记录",
+  "clearConfirmTitle": "清除性能历史记录？",
+  "clearConfirmBody": "这将移除所有已记录的本地生成指标，且无法撤销。",
+  "cleared": "性能历史记录已清除",
+  "stats": {
+    "runs": "已记录运行次数",
+    "avgSpeed": "平均解码速度",
+    "peakSpeed": "峰值解码速度",
+    "avgTtft": "平均首个 Token 耗时"
+  },
+  "charts": {
+    "speedByRun": "各次运行的解码速度",
+    "speedByRunSub": "每秒 Token 数，按时间从旧到新排列",
+    "speedVsContext": "速度与上下文大小对比",
+    "speedVsContextSub": "解码速度与上下文长度的关系",
+    "detailTitle": "生成详情",
+    "latestTitle": "最近一次生成，逐秒记录",
+    "latestSub": "最近一次运行中的解码速度与上下文填充情况",
+    "speedAxis": "tok/s",
+    "legendSpeed": "解码速度（tok/s）",
+    "legendContext": "上下文填充（%）",
+    "contextSizeAxis": "上下文大小（Token 数）",
+    "noSamples": "此次生成没有记录到逐秒采样数据。"
+  },
+  "detail": {
+    "decodeSpeed": "解码速度",
+    "nativePromptSpeed": "原生提示速度",
+    "nativeGenerationSpeed": "原生生成速度",
+    "firstToken": "首个 Token",
+    "elapsed": "生成耗时",
+    "nativeGenerationTime": "原生生成计算耗时",
+    "appOverhead": "应用开销",
+    "promptTokens": "提示 Token 数",
+    "outputTokens": "输出 Token 数",
+    "totalTokens": "总 Token 数",
+    "context": "上下文窗口",
+    "batch": "逻辑批次",
+    "microbatch": "微批次",
+    "backend": "后端",
+    "gpuLayers": "GPU 层数",
+    "kvType": "KV 缓存",
+    "modelSize": "模型大小",
+    "finishReason": "结束原因"
+  },
+  "list": {
+    "title": "近期生成",
+    "unknownModel": "未知模型"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

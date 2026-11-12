@@ -1,0 +1,59 @@
+{
+  "subtitle": "Bilis ng decode at paggamit ng konteksto sa iyong mga lokal na generation",
+  "emptyTitle": "Wala pang generation",
+  "empty": "Wala pang naitalang lokal na generation. Magpatakbo ng lokal na model sa chat para makita ang mga graph ng performance.",
+  "refresh": "I-refresh",
+  "clear": "Burahin ang kasaysayan",
+  "clearConfirmTitle": "Burahin ang kasaysayan ng performance?",
+  "clearConfirmBody": "Aalisin nito ang lahat ng naitalang metrics ng lokal na generation at hindi na ito maibabalik.",
+  "cleared": "Nabura ang kasaysayan ng performance",
+  "stats": {
+    "runs": "Mga naitalang run",
+    "avgSpeed": "Avg na bilis ng decode",
+    "peakSpeed": "Pinakamataas na bilis ng decode",
+    "avgTtft": "Avg na oras hanggang sa unang token"
+  },
+  "charts": {
+    "speedByRun": "Bilis ng decode ayon sa run",
+    "speedByRunSub": "Mga token bawat segundo, mula sa pinakaluma hanggang sa pinakabago",
+    "speedVsContext": "Bilis kumpara sa laki ng konteksto",
+    "speedVsContextSub": "Bilis ng decode kumpara sa haba ng konteksto",
+    "detailTitle": "Detalye ng generation",
+    "latestTitle": "Pinakabagong generation, bawat segundo",
+    "latestSub": "Bilis ng decode at pagpuno ng konteksto sa pinakabagong run",
+    "speedAxis": "tok/s",
+    "legendSpeed": "Bilis ng decode (tok/s)",
+    "legendContext": "Pagpuno ng konteksto (%)",
+    "contextSizeAxis": "Laki ng konteksto (mga token)",
+    "noSamples": "Walang naitalang per-second sample para sa generation na ito."
+  },
+  "detail": {
+    "decodeSpeed": "Bilis ng decode",
+    "nativePromptSpeed": "Native prompt speed",
+    "nativeGenerationSpeed": "Native generation speed",
+    "firstToken": "First token",
+    "elapsed": "Oras ng generation",
+    "nativeGenerationTime": "Native generation compute",
+    "appOverhead": "Overhead ng app",
+    "promptTokens": "Prompt tokens",
+    "outputTokens": "Output tokens",
+    "totalTokens": "Total tokens",
+    "context": "Context window",
+    "batch": "Logical batch",
+    "microbatch": "Microbatch",
+    "backend": "Backend",
+    "gpuLayers": "GPU layers",
+    "kvType": "KV cache",
+    "modelSize": "Model size",
+    "finishReason": "Finish reason"
+  },
+  "list": {
+    "title": "Mga kamakailang generation",
+    "unknownModel": "Hindi kilalang modelo"
+  },
+  "units": {
+    "speed": "{{value}} tok/s",
+    "ms": "{{value}} ms",
+    "tokens": "{{value}} tok"
+  }
+}

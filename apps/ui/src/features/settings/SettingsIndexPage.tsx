@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Badge, ListGroup, ListRowButton, Page } from "@lettuceai/crisp";
 import { builtSettingsSections, settingsGroups } from "./sections";
-import { useDeveloperMode, useSettingsApi, useSettingsLayout } from "./data";
+import { useDeveloperMode, useMobilePlatform, useSettingsApi, useSettingsLayout } from "./data";
 import { openConflictCount, syncConflictsQuery } from "./sync/sync-data";
 import { settingsSectionAvailable, settingsSectionVisible, useSettingsNavigation } from "./use-settings-navigation";
 import { ArrowUpRight } from "lucide-react";
@@ -15,6 +15,7 @@ export function SettingsIndexPage() {
   const { t: common } = useTranslation();
   const { standalone } = useSettingsLayout();
   const developerMode = useDeveloperMode();
+  const mobile = useMobilePlatform();
   const conflictCount = openConflictCount(useQuery(syncConflictsQuery(useSettingsApi())).data);
   const navigate = useNavigate();
   const navigation = useSettingsNavigation(
@@ -30,7 +31,7 @@ export function SettingsIndexPage() {
     >
       {settingsGroups.map((group) => (
         <ListGroup key={group.id} label={t(`groups.${group.id}`)}>
-          {group.sections.filter((section) => settingsSectionVisible(section, developerMode)).map((section) => {
+          {group.sections.filter((section) => settingsSectionVisible(section, developerMode, mobile)).map((section) => {
             const built = settingsSectionAvailable(section, builtSettingsSections.has(section.id));
             return (
               <ListRowButton

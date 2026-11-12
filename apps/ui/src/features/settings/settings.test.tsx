@@ -3,7 +3,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiFailure } from "@/api/client";
 import { openExternalUrl } from "@/api/external-links";
-import { createMockTransport, mockAppStatus } from "@/api/mock-transport";
+import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
@@ -15,7 +15,7 @@ vi.mock("@/api/external-links", () => ({ openExternalUrl: vi.fn().mockResolvedVa
 
 beforeEach(() => vi.mocked(openExternalUrl).mockReset().mockResolvedValue(undefined));
 
-async function renderAt(path: string, platform: "other" | "android" = "other") {
+async function renderAt(path: string, platform: "other" | "android" = "other", calls: MockCallHandlers = {}) {
   const runtime = await createAppRuntime({
     transport: createMockTransport({
       calls: {
@@ -29,6 +29,7 @@ async function renderAt(path: string, platform: "other" | "android" = "other") {
           },
         }),
         jobsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
+        ...calls,
       },
     }),
     history: createMemoryHistory({ initialEntries: [path] }),
@@ -106,10 +107,42 @@ describe("settings routes", () => {
   });
 
   it("does not find a section that has no page, or one that does not exist", async () => {
-    await renderAt("/settings/performance");
+    await renderAt("/settings/whatsNew");
     expect(await screen.findByText("Nothing here")).toBeTruthy();
     cleanup();
     await renderAt("/settings/nope");
+    expect(await screen.findByText("Nothing here")).toBeTruthy();
+  });
+
+  it("shows local LLM performance on desktop, read across every page", async () => {
+    const metric = (id: string, created_at: number, tps: number) => ({
+      id,
+      created_at,
+      summary: { modelName: `/models/${id}.gguf`, backend: "vulkan", nCtx: 8192, completionTokens: 120, ttftMs: 300, decodeTokensPerSecond: tps },
+      samples: null,
+    });
+    const list = vi.fn((request: { cursor: string | null }) => ({
+      status: "ok" as const,
+      data: request.cursor === null ? { items: [metric("b", 2, 30)], next_cursor: "next" } : { items: [metric("a", 1, 10)], next_cursor: null },
+    }));
+    await renderAt("/settings/performance", "other", {
+      llmMetricsList: list,
+      llmMetricsGet: ({ id }) => ({ status: "ok", data: { ...metric(id, 2, 30), samples: [{ tMs: 1000, tps: 30, ctxFill: 0.5 }] } }),
+    });
+    expect(await screen.findByText("b.gguf")).toBeTruthy();
+    expect(screen.getByText("a.gguf")).toBeTruthy();
+    expect(screen.getByText("20 tok/s")).toBeTruthy();
+    expect(list).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: /^b\.gguf/ }));
+    expect(await screen.findByText("Generation detail")).toBeTruthy();
+  });
+
+  it("hides local LLM performance on mobile", async () => {
+    await renderAt("/settings", "android");
+    expect(await screen.findByText("Intelligence")).toBeTruthy();
+    expect(screen.queryByText("Local LLM performance")).toBeNull();
+    cleanup();
+    await renderAt("/settings/performance", "android");
     expect(await screen.findByText("Nothing here")).toBeTruthy();
   });
 
