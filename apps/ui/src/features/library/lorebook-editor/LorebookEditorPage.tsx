@@ -286,7 +286,7 @@ export function LorebookEditorPage() {
                   className={
                     phone
                       ? "mt-0.5"
-                      : "mt-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                      : "mt-0.5 transition-opacity [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100"
                   }
                 >
                   {grip}
