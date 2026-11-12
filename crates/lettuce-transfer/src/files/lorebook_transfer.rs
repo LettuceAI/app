@@ -259,7 +259,7 @@ fn export_keys(entry: &LorebookTransferEntry, keys: &[String]) -> Vec<String> {
                 .any(|key| is_phrase_pattern(key)) =>
         {
             keys.iter()
-                .map(|key| format!("/{}/{ignore_case}u", literal_keyword_regex(key)))
+                .map(|key| format!("/{}/{ignore_case}u", literal_keyword_regex(key, entry.case_sensitive)))
                 .collect()
         }
         PackagedKeywordMatchMode::Literal => keys.to_vec(),

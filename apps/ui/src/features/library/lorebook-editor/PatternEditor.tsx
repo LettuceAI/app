@@ -3,7 +3,10 @@ import { Check, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Field, icon, IconButton, Input } from "@lettuceai/crisp";
 
-type PatternCheck = { kind: "ok"; regex: RegExp } | { kind: "empty" } | { kind: "invalid" } | { kind: "unsupported" };
+type PatternCheck = { kind: "ok"; regex: RegExp; folded: RegExp | null } | { kind: "empty" } | { kind: "invalid" } | { kind: "unsupported" };
+
+/** Same folding as the app's matcher: the Turkish I, İ and ı all count as i. */
+const foldCase = (value: string) => value.toLowerCase().replaceAll("i\u0307", "i").replaceAll("ı", "i");
 
 /** Lookarounds and backreferences compile in the browser but not in the app's matcher. */
 const unsupported = /\(\?<?[=!]|\\[1-9]/;
@@ -12,7 +15,12 @@ function check(pattern: string, caseSensitive: boolean): PatternCheck {
   if (!pattern.trim()) return { kind: "empty" };
   if (unsupported.test(pattern)) return { kind: "unsupported" };
   try {
-    return { kind: "ok", regex: new RegExp(pattern.trim(), caseSensitive ? "u" : "iu") };
+    if (caseSensitive) return { kind: "ok", regex: new RegExp(pattern.trim(), "u"), folded: null };
+    return {
+      kind: "ok",
+      regex: new RegExp(pattern.trim(), "iu"),
+      folded: new RegExp(pattern.trim().replaceAll(/[İı]/g, "i"), "iu"),
+    };
   } catch {
     return { kind: "invalid" };
   }
@@ -45,7 +53,9 @@ export function PatternEditor({
   };
   const checks = rows.map((row) => check(row, caseSensitive));
   const tried = sample.trim()
-    ? checks.map((result) => (result.kind === "ok" ? result.regex.test(sample) : null))
+    ? checks.map((result) =>
+        result.kind === "ok" ? result.regex.test(sample) || Boolean(result.folded?.test(foldCase(sample))) : null,
+      )
     : null;
   const fires = tried?.some(Boolean) ?? false;
   return (

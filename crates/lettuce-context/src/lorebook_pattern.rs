@@ -233,7 +233,7 @@ mod tests {
 
     fn regex_hits(keyword: &str, text: &str) -> bool {
         keyword_matches_with_mode(
-            &literal_keyword_regex(keyword),
+            &literal_keyword_regex(keyword, false),
             text,
             false,
             KeywordMatchMode::Regex,
@@ -294,5 +294,28 @@ mod tests {
             assert_eq!(regex_hits(keyword, text), expected, "{keyword} on {text}");
             assert_eq!(hits(keyword, text), expected, "{keyword} on {text}");
         }
+    }
+
+    #[test]
+    fn every_script_matches_and_turkish_i_folds_together() {
+        for (keyword, text) in [
+            ("(Москва|Киев) * город", "Москва очень большой город"),
+            ("Αθήνα", "Πάμε στην Αθήνα αύριο"),
+            ("istanbul", "İstanbul'a gidiyoruz"),
+            ("İstanbul", "istanbul çok güzel"),
+            ("ılık", "ILIK bir gün"),
+            ("(हिंदी|उर्दू) * हूँ", "मैं हिंदी बोलता हूँ"),
+            ("القاهرة", "سافرت إلى القاهرة أمس"),
+            ("서울", "나는 서울에 산다"),
+            ("Ελένη*", "Η Ελένης φίλη"),
+        ] {
+            assert!(hits(keyword, text), "{keyword} on {text}");
+            assert!(regex_hits(keyword, text), "{keyword} exported on {text}");
+        }
+        assert!(
+            keyword_matches_with_mode("İstanbul", "istanbul", false, KeywordMatchMode::Regex)
+                .expect("regex"),
+            "regex keywords fold the Turkish i too"
+        );
     }
 }

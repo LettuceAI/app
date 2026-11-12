@@ -368,6 +368,16 @@ fn contains_unsegmented_script(text: &str) -> bool {
     })
 }
 
+/// Lowercases for case-insensitive matching and treats the Turkish and
+/// Azerbaijani I, İ and ı as i, which plain lowercasing turns into different
+/// letters or `i` with a combining dot.
+fn fold_case(value: &str) -> String {
+    value
+        .to_lowercase()
+        .replace("i\u{307}", "i")
+        .replace('ı', "i")
+}
+
 fn normalize_literal(value: &str) -> String {
     value
         .chars()
@@ -405,17 +415,22 @@ pub fn keyword_matches_with_mode(
         return Ok(false);
     }
     if mode == KeywordMatchMode::Regex {
-        return Ok(compile_regex(keyword, case_sensitive)?.is_match(text));
+        if case_sensitive {
+            return Ok(compile_regex(keyword, true)?.is_match(text));
+        }
+        let regex = compile_regex(keyword, false)?;
+        let folded = compile_regex(&keyword.replace(['İ', 'ı'], "i"), false)?;
+        return Ok(regex.is_match(text) || folded.is_match(&fold_case(text)));
     }
     let search_keyword = if case_sensitive {
         keyword.to_owned()
     } else {
-        keyword.to_lowercase()
+        fold_case(keyword)
     };
     let search_text = if case_sensitive {
         text.to_owned()
     } else {
-        text.to_lowercase()
+        fold_case(text)
     };
     if let Some(matched) = crate::lorebook_pattern::phrase_pattern_matches(
         &search_keyword,
@@ -457,8 +472,13 @@ pub fn keyword_matches_with_mode(
 /// A regular expression equivalent to a literal keyword, for exporting to
 /// formats that only know plain keys and `/regex/` keys.
 #[must_use]
-pub fn literal_keyword_regex(keyword: &str) -> String {
-    crate::lorebook_pattern::literal_regex(keyword, normalize_literal, contains_unsegmented_script)
+pub fn literal_keyword_regex(keyword: &str, case_sensitive: bool) -> String {
+    let keyword = if case_sensitive {
+        keyword.to_owned()
+    } else {
+        fold_case(keyword)
+    };
+    crate::lorebook_pattern::literal_regex(&keyword, normalize_literal, contains_unsegmented_script)
 }
 
 pub use crate::lorebook_pattern::is_phrase_pattern;
