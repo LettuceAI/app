@@ -254,6 +254,11 @@ const MIGRATION_37: Migration = Migration {
     sql: include_str!("../migrations/0037_creator_image_jobs.sql"),
 };
 
+const MIGRATION_38: Migration = Migration {
+    id: 38,
+    sql: include_str!("../migrations/0038_memory_duplicate_threshold.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -292,6 +297,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_35,
     MIGRATION_36,
     MIGRATION_37,
+    MIGRATION_38,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

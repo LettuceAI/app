@@ -13,7 +13,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 - Reference cleaning of `# * " ' [ ] ( )` is legacy's; stable UUIDs also resolve.
 - Arguments parse as leniently as legacy (unknown keys ignored, bad optional fields defaulted, `confidence` clamped, padded `category` trimmed).
 - A call that cannot be applied settles as `Skipped`, as legacy skipped such calls; a round may repeat `done`.
-- Created text goes through legacy's checks (`normalize_memory_text`), including legacy's false positives: a memory containing `i cannot` or `user:` is dropped.
+- Created text goes through legacy's empty, length, refusal and meta checks (`normalize_memory_text`).
 - The duplicate check runs before the category check, exactly as legacy checked text, embedding, duplicate and then category.
 - Stored memories preserve legacy companion categories and null categories without changing them to `other`. The model tool parser retains the six roleplay categories.
 - The category repair is legacy's single-tool repair contract (`retag_memory`, required tool choice, six categories as an enum); an empty repair answer falls back to legacy's keyword buckets (`guess_memory_category`).
@@ -27,6 +27,8 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 - Retrieval access is recorded as narrow per-row updates, like legacy.
 
 ## Deliberate differences from legacy
+
+- Refusal markers only count at the start of a memory and role labels (`user:`, `assistant:`, `system:`) only at the start of a line. Legacy matched them anywhere, so roleplay memories that quoted someone saying "I can't" or addressing the user were dropped, as was any name ending in "i" before "cannot" ("Ari cannot swim"). The 280 limit counts characters instead of UTF-8 bytes, so non-English memories get the same length.
 
 - `delete_memory` never touches a pinned memory (`Skipped` with `PinnedTarget`) and removes only a memory that is already cold; a hot target goes cold (`SoftDeleted` with `WasHot`) whatever the confidence. Legacy hard-deleted any target, pinned or hot, at confidence 0.7 or higher while its cycle budget lasted (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3971-3974`), and its prompt told the model deleted memories were never lost.
 - Keyword overlap alone no longer suppresses creates: it discards word order, numbers and short words. Normalized text equality preserves internal punctuation, including signs, decimals and names such as C++. Embedding-based duplicate checks remain enabled.

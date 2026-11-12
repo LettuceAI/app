@@ -36,7 +36,7 @@ The crate persists nothing itself. Settings go through the synchronous store tra
 | `cold_threshold_basis_points` | 3000 |
 | `delete_confidence_basis_points` | 5000 |
 | `max_hard_delete_ratio_basis_points` | 5000 |
-| `duplicate_threshold_basis_points` | 7800 |
+| `duplicate_threshold_basis_points` | 9300 |
 | `decay_rate_basis_points` | 800 |
 | `context_enrichment_enabled` | on |
 | `recursive_memory_loops`, `recursive_memory_loop_hard_cap` | off, 20 rounds |

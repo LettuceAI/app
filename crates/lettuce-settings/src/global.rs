@@ -512,7 +512,7 @@ impl Default for DynamicMemorySettings {
             cold_threshold_basis_points: 3_000,
             delete_confidence_basis_points: 5_000,
             max_hard_delete_ratio_basis_points: 5_000,
-            duplicate_threshold_basis_points: 7_800,
+            duplicate_threshold_basis_points: 9_300,
             context_enrichment_enabled: true,
             decay_rate_basis_points: 800,
             recursive_memory_loops: false,

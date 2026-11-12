@@ -902,3 +902,33 @@ fn migration_35_allows_one_growth_run_per_member_of_a_memory_run() {
     let upgraded = recorded_migrations(&connection);
     assert_eq!(upgraded.iter().filter(|entry| entry.0 == 35).count(), 1);
 }
+
+#[test]
+fn migration_38_raises_only_the_old_default_duplicate_threshold() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    let before: Vec<_> = MIGRATIONS
+        .iter()
+        .copied()
+        .filter(|migration| migration.id <= 37)
+        .collect();
+    apply_migrations(&mut connection, &before).expect("old schema");
+    let payload = serde_json::json!({
+        "dynamic_memory": {"duplicate_threshold_basis_points": 7800, "max_entries": 200},
+        "group_dynamic_memory": {"duplicate_threshold_basis_points": 8500}
+    });
+    connection
+        .execute(
+            "INSERT INTO app_settings(id,format_version,payload_json,revision,created_at,updated_at) VALUES (1,1,?1,1,1,1)",
+            [payload.to_string()],
+        )
+        .expect("settings");
+    apply_migrations(&mut connection, MIGRATIONS).expect("upgrade");
+    let stored: String = connection
+        .query_row("SELECT payload_json FROM app_settings WHERE id=1", [], |row| row.get(0))
+        .expect("payload");
+    let stored: serde_json::Value = serde_json::from_str(&stored).expect("json");
+    assert_eq!(stored["dynamic_memory"]["duplicate_threshold_basis_points"], 9300);
+    assert_eq!(stored["dynamic_memory"]["max_entries"], 200);
+    assert_eq!(stored["group_dynamic_memory"]["duplicate_threshold_basis_points"], 8500);
+}

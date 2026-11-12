@@ -7,7 +7,7 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 - Automatic scene images is a separate `scene_automatic_enabled` choice (user decision, 2026-10-22). It defaults on, including for older documents and legacy imports, so existing scene behavior is retained. Legacy coupled image-tag instructions to scene availability; disabling automatic scenes now leaves manual scene generation available.
 
 - Lorebook generator resolution copies legacy's priority: explicit selection, generator setting, then default model or built-in prompt. The target count (default 12, 5..50) and output tokens (default 4096, 256..32768) are legacy's bounds.
-- The dynamic-memory defaults copy legacy's runtime fallbacks: 50 entries, a 2000-token hot budget, 0.35 minimum similarity, five smart results, 0.3 cold threshold, 0.5 delete confidence and per-cycle hard-delete ratio, 0.78 duplicate threshold, and two-message context enrichment.
+- The dynamic-memory defaults copy legacy's runtime fallbacks: 50 entries, a 2000-token hot budget, 0.35 minimum similarity, five smart results, 0.3 cold threshold, 0.5 delete confidence and per-cycle hard-delete ratio, and two-message context enrichment.
 - The post-turn cycle settings follow legacy's schema defaults: disabled until enabled, a 20-message summary interval, `auto` run mode (`ask_first` and `manual` also exist), 0.08 per-cycle decay, recursive memory loops off with a hard cap of 20 rounds, and the `xml` structured fallback format (legacy `dynamicMemoryStructuredFallbackFormat`, `json` the other value).
 - `dynamic_memory_prompts` is legacy `dynamicMemorySummarizerPromptTemplateId` / `dynamicMemoryManagerPromptTemplateId`, shared by direct and group chats.
 - `dynamic_memory_llama_sampler_overwrite_enabled` is legacy `dynamicMemoryLlamaSamplerOverwriteEnabled` (default true).
@@ -29,6 +29,8 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 - `llama_default_context_length` (512 to 1,048,576) and `llama_default_kv_cache_type` (`auto`, `f16`, `q8_0`, `q4_0`) are legacy's `advancedSettings.llamaDefaultContextLength` and `llamaDefaultKvCacheType` (`schemas.ts` 3342-3343), global and synced like legacy; they only feed local runnability estimates (`hf_browser/mod.rs` 1416-1439), and the legacy import carries them (a value outside the range is dropped and recorded).
 
 ## Deliberate differences from legacy
+
+- The duplicate threshold defaults to 0.93 on the calibrated Eidos score instead of legacy's 0.78, which was tuned for the v4 embedder. Measured on roleplay memory pairs, 0.78 flagged most distinct facts about the same characters and every changed fact as already known; migration 38 moves settings still on 0.78 to 0.93.
 
 - Legacy's creation helper failed with "No image generation model configured" when its saved image model was gone. A cleared selection now means the first suitable model, as avatar and scene generation already did.
 - Legacy never cleared the creation helper and lorebook entry writer selections when a model was deleted, so they failed with "Model not found" and "Configured lorebook entry generator model could not be resolved". The cleared selection now falls back like an unset one (default model, first text model).
