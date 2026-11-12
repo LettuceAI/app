@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { BookOpen, Compass, FileUp, User, UserRound, Users, Wand2 } from "lucide-react";
+import { BookOpen, FileUp, User, UserRound, Users, Wand2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
@@ -97,16 +97,6 @@ export function LibraryCreateSheet({
             chevron={false}
             disabled={mutation.isPending}
             onClick={() => mutation.mutate()}
-          />
-          <ListRowButton
-            icon={<Compass size={icon.lg} />}
-            title={common("create.discover")}
-            description={common("create.discoverBody")}
-            disabled={mutation.isPending}
-            onClick={() => {
-              onClose();
-              void navigate({ to: "/discover" });
-            }}
           />
         </ListGroup>
         {mutation.isError && (

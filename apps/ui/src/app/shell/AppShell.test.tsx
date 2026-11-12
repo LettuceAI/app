@@ -166,12 +166,11 @@ describe("desktop sidebar", () => {
     expect(await screen.findByText("Chats you start show up here.")).toBeTruthy();
   });
 
-  it("opens the create sheet and goes to Discover from it", async () => {
-    const runtime = await renderShell();
+  it("opens the create sheet from the sidebar", async () => {
+    await renderShell();
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
     expect(await screen.findByText("Import a file")).toBeTruthy();
-    fireEvent.click(screen.getByText("Browse Discover"));
-    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/discover"));
+    expect(screen.queryByText("Browse Discover")).toBeNull();
   });
 });
 
