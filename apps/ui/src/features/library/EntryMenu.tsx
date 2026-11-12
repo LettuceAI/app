@@ -7,6 +7,7 @@ import { Avatar, Button, icon, ListGroup, ListRowButton, Sheet, toast } from "@l
 import { isApiFailure, type ApiClient } from "@/api/client";
 import type { LorebookExportFormat, PersonaDefaultView } from "@/api/generated/bindings";
 import { useChatNavigation } from "@/features/conversations";
+import { CreatorStartRow } from "@/features/creator";
 import { FailureState } from "@/shared/ui/FailureState";
 import { deleteEntry, exportEntry, refreshLibrary } from "./data/actions";
 import { entryQuery, type Entry } from "./data/queries";
@@ -115,6 +116,7 @@ export function EntryMenu({
       ) : (
         <div className="space-y-4 pb-1">
           <ListGroup>
+            {(entry.kind === "character" || entry.kind === "persona") && <CreatorStartRow api={api} kind={entry.kind} targetId={entry.id} onStarted={onClose} />}
             {entry.kind === "character" && (
               <ListRowButton
                 icon={<MessageSquarePlus size={icon.lg} />}

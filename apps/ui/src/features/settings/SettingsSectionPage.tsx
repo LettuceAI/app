@@ -19,10 +19,12 @@ import { ResetPage } from "./reset/ResetPage";
 import { SecurityPage } from "./security/SecurityPage";
 import { CustomizationPage } from "./customization/CustomizationPage";
 import { DeveloperPage } from "./developer/DeveloperPage";
+import { CreatorSettingsPage } from "./smart-creator/CreatorSettingsPage";
 
 /** The page of one settings section; the route only lets through sections that have one. */
 export function SettingsSectionPage() {
   const { section } = useParams({ from: "/settings/$section" });
+  if (section === "smartCreator") return <CreatorSettingsPage />;
   if (section === "help") return <HelpPage />;
   if (section === "logs") return <LogsPage />;
   if (section === "lorebooks") return <LorebooksPage />;

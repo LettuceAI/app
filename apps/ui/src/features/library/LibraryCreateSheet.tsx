@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { BookOpen, FileUp, User, UserRound } from "lucide-react";
+import { BookOpen, FileUp, User, UserRound, Wand2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
@@ -17,6 +17,7 @@ export function LibraryCreateSheet({
   onClose: () => void;
 }) {
   const { t } = useTranslation("library");
+  const { t: creator } = useTranslation("creator");
   const { t: common } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -51,6 +52,7 @@ export function LibraryCreateSheet({
     >
       <div className="space-y-4 pb-1">
         <ListGroup>
+          <ListRowButton icon={<Wand2 size={icon.lg} />} title={creator("title")} description={creator("openCreatorBody")} disabled={mutation.isPending} onClick={() => { onClose(); void navigate({ to: "/creator" }); }} />
           <ListRowButton
             icon={<User size={icon.lg} />}
             tone="info"

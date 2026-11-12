@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Create",
+  "new": {
+    "character": "New character",
+    "characterBody": "Build a character by chatting",
+    "persona": "New persona",
+    "personaBody": "Write a persona with AI"
+  },
+  "kind": {
+    "character": "Character",
+    "persona": "Persona"
+  },
+  "editWithAi": "Edit with AI",
+  "editWithAiBody": "Review a draft before saving changes",
+  "settings": "Settings",
+  "openCreator": "Open Smart creator",
+  "openCreatorBody": "Create or improve characters and personas",
+  "drafts": "Your work",
+  "empty": "No drafts yet",
+  "emptyBody": "Choose a character or persona to start",
+  "untitled": "Untitled draft",
+  "saved": "Saved",
+  "notSaved": "Draft",
+  "savedBody": "This version is saved. Open the saved item to continue editing.",
+  "openSaved": "Open saved item",
+  "loadMore": "Load more",
+  "chat": "Chat",
+  "draft": "Draft",
+  "views": "Creator views",
+  "name": "Name",
+  "definition": "Definition",
+  "description": "Description",
+  "scenes": "Starting scenes",
+  "discard": "Discard changes",
+  "saveDraft": "Save draft changes",
+  "leaveTitle": "Discard unsaved edits?",
+  "leaveBody": "Your saved draft stays. Only these unsaved edits will be lost.",
+  "keepEditing": "Keep editing",
+  "placeholder": "Describe what you want to create or change",
+  "startTitle": "What would you like to make?",
+  "startBody": "Describe your idea. You can refine the draft together or edit it yourself.",
+  "model": "Creator model",
+  "chooseModel": "Choose a model",
+  "defaultModel": "Use the Smart creator default",
+  "appDefault": "Use the app default",
+  "modelUnavailable": "The selected model is unavailable",
+  "modelMissing": "Choose a text model to chat. You can edit the draft now.",
+  "streaming": "Stream replies",
+  "toolFormat": "Tool format",
+  "history": "Draft history",
+  "version": "Version {{number}}",
+  "restoreVersion": "Use this version",
+  "before": "Before",
+  "after": "After",
+  "changes": "View changes",
+  "regenerate": "Regenerate",
+  "retry": "Try again",
+  "review": "Review and save",
+  "reviewShort": "Review",
+  "reviewEdit": "These changes will update the existing item",
+  "reviewNew": "Review what will be added to your library",
+  "saveChanges": "Save changes",
+  "createAndChat": "Create and chat",
+  "turn": {
+    "pending": "Working",
+    "succeeded": "Draft updated",
+    "failed": "The reply failed. Your previous draft is kept.",
+    "cancelled": "Stopped. Your previous draft is kept.",
+    "interrupted": "Interrupted. Try again to continue from your saved draft."
+  },
+  "unsavedStatus": "Unsaved draft changes",
+  "noChanges": "Nothing changed in this version.",
+  "back": "Back",
+  "current": "Current",
+  "streamingBody": "Show replies as they are written",
+  "incomplete": "Add a name and a definition before saving.",
+  "tools": {
+    "label": "Draft changes",
+    "running": "Working",
+    "succeeded": "Done",
+    "failed": "Failed",
+    "name": {
+      "write_definition": "Update the definition",
+      "write_scene": "Add a starting scene",
+      "set_name": "Set the name",
+      "edit_scene": "Edit a starting scene",
+      "delete_scene": "Remove a starting scene",
+      "show_preview": "Show a preview",
+      "request_confirmation": "Ask for review",
+      "use_uploaded_image": "Set the avatar",
+      "generate_image": "Generate an image",
+      "edit_avatar_image": "Edit an image"
+    }
+  },
+  "settingsPage": {
+    "loading": "Loading Smart creator settings",
+    "modelGroup": "Model",
+    "repliesGroup": "Replies",
+    "streamingNeedsNative": "Streaming needs native tool calls",
+    "nativeTitle": "Native tool calls",
+    "nativeBody": "The model calls the creator's tools directly. Best for models that support tools.",
+    "toolFormatHint": "JSON and XML ask the model to write its tool calls as text, for models without native tool support."
+  },
+  "scene": "Scene {{number}}",
+  "copy": "Copy text",
+  "copied": "Copied",
+  "copyFailed": "Couldn't reach the clipboard",
+  "targetChanged": {
+    "character": "This character was changed elsewhere after you started, so this draft can't be saved over it.",
+    "persona": "This persona was changed elsewhere after you started, so this draft can't be saved over it.",
+    "carry": "Continue on the latest version"
+  },
+  "source": {
+    "start": "Starting point",
+    "creator": "Smart creator",
+    "edit": "Your edit",
+    "review": "Reviewed"
+  },
+  "attach": {
+    "title": "Attach",
+    "image": "Image",
+    "imageBody": "Add images the creator can use",
+    "character": "Character",
+    "characterBody": "Let the creator read a character",
+    "persona": "Persona",
+    "personaBody": "Let the creator read a persona"
+  },
+  "references": {
+    "characterTitle": "Attach characters",
+    "personaTitle": "Attach personas",
+    "description": "The creator reads their current text with your message",
+    "search": "Search",
+    "done": "Done",
+    "noCharacters": "No characters yet",
+    "noPersonas": "No personas yet",
+    "missing": {
+      "character": "Deleted character",
+      "persona": "Deleted persona"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Choose an avatar",
+    "remove": "Remove avatar",
+    "sessionImages": "Images in this session",
+    "origin": {
+      "upload": "Uploaded image",
+      "generated": "Generated image",
+      "edited": "Edited image"
+    }
+  },
+  "image": {
+    "label": "Generated image",
+    "useAvatar": "Use as avatar",
+    "edit": "Edit"
+  }
+}

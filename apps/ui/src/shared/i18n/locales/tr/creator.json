@@ -1,0 +1,158 @@
+{
+  "title": "Smart creator",
+  "create": "Oluştur",
+  "new": {
+    "character": "Yeni karakter",
+    "characterBody": "Sohbet ederek karakter oluştur",
+    "persona": "Yeni persona",
+    "personaBody": "AI ile persona yaz"
+  },
+  "kind": {
+    "character": "Karakter",
+    "persona": "Persona"
+  },
+  "editWithAi": "AI ile düzenle",
+  "editWithAiBody": "Değişiklikleri kaydetmeden önce taslağı incele",
+  "settings": "Ayarlar",
+  "openCreator": "Smart creator'ı aç",
+  "openCreatorBody": "Karakter ve persona oluştur veya geliştir",
+  "drafts": "Çalışmaların",
+  "empty": "Henüz taslak yok",
+  "emptyBody": "Başlamak için karakter veya persona seç",
+  "untitled": "İsimsiz taslak",
+  "saved": "Kaydedildi",
+  "notSaved": "Taslak",
+  "savedBody": "Bu sürüm kaydedildi. Düzenlemeye devam etmek için kaydedilen öğeyi aç.",
+  "openSaved": "Kaydedilen öğeyi aç",
+  "loadMore": "Daha fazla yükle",
+  "chat": "Sohbet",
+  "draft": "Taslak",
+  "views": "Creator görünümleri",
+  "name": "İsim",
+  "definition": "Tanım",
+  "description": "Açıklama",
+  "scenes": "Başlangıç sahneleri",
+  "discard": "Değişiklikleri at",
+  "saveDraft": "Taslak değişikliklerini kaydet",
+  "leaveTitle": "Kaydedilmemiş değişiklikler atılsın mı?",
+  "leaveBody": "Kaydedilen taslağın korunur. Yalnızca bu kaydedilmemiş değişiklikler kaybolur.",
+  "keepEditing": "Düzenlemeye devam et",
+  "placeholder": "Oluşturmak veya değiştirmek istediğini anlat",
+  "startTitle": "Ne oluşturmak istersin?",
+  "startBody": "Fikrini anlat. Taslağı birlikte geliştirebilir veya kendin düzenleyebilirsin.",
+  "model": "Creator modeli",
+  "chooseModel": "Model seç",
+  "defaultModel": "Smart creator varsayılanını kullan",
+  "appDefault": "Uygulama varsayılanını kullan",
+  "modelUnavailable": "Seçili model kullanılamıyor",
+  "modelMissing": "Sohbet için metin modeli seç. Taslağı şimdi düzenleyebilirsin.",
+  "streaming": "Yanıtları akış halinde göster",
+  "toolFormat": "Araç biçimi",
+  "history": "Taslak geçmişi",
+  "version": "Sürüm {{number}}",
+  "restoreVersion": "Bu sürümü kullan",
+  "before": "Önce",
+  "after": "Sonra",
+  "changes": "Değişiklikleri gör",
+  "regenerate": "Yeniden üret",
+  "retry": "Tekrar dene",
+  "review": "İncele ve kaydet",
+  "reviewShort": "İncele",
+  "reviewEdit": "Bu değişiklikler mevcut öğeyi güncelleyecek",
+  "reviewNew": "Kütüphanene eklenecek içeriği incele",
+  "saveChanges": "Değişiklikleri kaydet",
+  "createAndChat": "Oluştur ve sohbet et",
+  "turn": {
+    "pending": "Çalışıyor",
+    "succeeded": "Taslak güncellendi",
+    "failed": "Yanıt başarısız oldu. Önceki taslağın korundu.",
+    "cancelled": "Durduruldu. Önceki taslağın korundu.",
+    "interrupted": "Kesintiye uğradı. Kaydedilen taslağından devam etmek için tekrar dene."
+  },
+  "unsavedStatus": "Kaydedilmemiş taslak değişiklikleri",
+  "noChanges": "Bu sürümde değişiklik yok.",
+  "back": "Geri",
+  "current": "Güncel",
+  "streamingBody": "Yanıtları yazılırken göster",
+  "incomplete": "Kaydetmeden önce bir ad ve tanım ekleyin.",
+  "tools": {
+    "label": "Taslak değişiklikleri",
+    "running": "Çalışıyor",
+    "succeeded": "Tamamlandı",
+    "failed": "Başarısız",
+    "name": {
+      "write_definition": "Tanımı güncelle",
+      "write_scene": "Başlangıç sahnesi ekle",
+      "set_name": "Adı belirle",
+      "edit_scene": "Başlangıç sahnesini düzenle",
+      "delete_scene": "Başlangıç sahnesini kaldır",
+      "show_preview": "Önizleme göster",
+      "request_confirmation": "İnceleme iste",
+      "use_uploaded_image": "Avatarı ayarla",
+      "generate_image": "Görsel üret",
+      "edit_avatar_image": "Görseli düzenle"
+    }
+  },
+  "settingsPage": {
+    "loading": "Smart creator ayarları yükleniyor",
+    "modelGroup": "Model",
+    "repliesGroup": "Yanıtlar",
+    "streamingNeedsNative": "Streaming için yerel tool çağrısı gerekir",
+    "nativeTitle": "Yerel tool çağrısı",
+    "nativeBody": "Model, creator'ın tool'larını doğrudan çağırır. Tool desteği olan modeller için en iyisi.",
+    "toolFormatHint": "JSON ve XML, yerel tool desteği olmayan modellerde modelden tool çağrılarını metin olarak yazmasını ister."
+  },
+  "scene": "Sahne {{number}}",
+  "copy": "Metni kopyala",
+  "copied": "Kopyalandı",
+  "copyFailed": "Panoya erişilemedi",
+  "targetChanged": {
+    "character": "Bu karakter sen başladıktan sonra başka bir yerde değiştirildi, bu yüzden bu taslak onun üzerine kaydedilemez.",
+    "persona": "Bu persona sen başladıktan sonra başka bir yerde değiştirildi, bu yüzden bu taslak onun üzerine kaydedilemez.",
+    "carry": "Son sürümle devam et"
+  },
+  "source": {
+    "start": "Başlangıç",
+    "creator": "Smart creator",
+    "edit": "Senin düzenlemen",
+    "review": "İncelendi"
+  },
+  "attach": {
+    "title": "Ekle",
+    "image": "Görsel",
+    "imageBody": "Creator'ın kullanabileceği görseller ekle",
+    "character": "Karakter",
+    "characterBody": "Creator bir karakteri okusun",
+    "persona": "Persona",
+    "personaBody": "Creator bir personayı okusun"
+  },
+  "references": {
+    "characterTitle": "Karakter ekle",
+    "personaTitle": "Persona ekle",
+    "description": "Creator, mesajınla birlikte bunların güncel metnini okur",
+    "search": "Ara",
+    "done": "Bitti",
+    "noCharacters": "Henüz karakter yok",
+    "noPersonas": "Henüz persona yok",
+    "missing": {
+      "character": "Silinmiş karakter",
+      "persona": "Silinmiş persona"
+    }
+  },
+  "avatar": {
+    "label": "Avatar",
+    "choose": "Avatar seç",
+    "remove": "Avatarı kaldır",
+    "sessionImages": "Bu oturumdaki görseller",
+    "origin": {
+      "upload": "Yüklenen görsel",
+      "generated": "Üretilen görsel",
+      "edited": "Düzenlenen görsel"
+    }
+  },
+  "image": {
+    "label": "Üretilen görsel",
+    "useAvatar": "Avatar yap",
+    "edit": "Düzenle"
+  }
+}

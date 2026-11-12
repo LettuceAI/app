@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, BookText, FileUp, UserPlus, UserRound, Users } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { BookOpen, BookText, FileUp, UserPlus, UserRound, Users, Wand2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
@@ -9,6 +10,8 @@ import { importCharacterCard } from "@/features/home";
 
 export function CreateSheet({ api, open, onClose, onCreate, onDiscover }: { api: ApiClient; open: boolean; onClose: () => void; onCreate: (kind: "character" | "group" | "persona" | "lorebook") => void; onDiscover: () => void }) {
   const { t } = useTranslation();
+  const { t: creator } = useTranslation("creator");
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
 
@@ -30,6 +33,7 @@ export function CreateSheet({ api, open, onClose, onCreate, onDiscover }: { api:
     <Sheet open={open} onClose={onClose} size="sm" title={t("create.title")} description={t("create.description")}>
       <div className="space-y-4 pb-1">
         <ListGroup>
+          <ListRowButton icon={<Wand2 size={icon.lg} />} title={creator("title")} description={creator("openCreatorBody")} onClick={() => { onClose(); void navigate({ to: "/creator" }); }} />
           <ListRowButton
             icon={<UserPlus size={icon.lg} />}
             title={t("create.character")}

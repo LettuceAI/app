@@ -12,6 +12,7 @@ import companions from "./locales/en/companions.json";
 import customization from "./locales/en/customization.json";
 import common from "./locales/en/common.json";
 import conversations from "./locales/en/conversations.json";
+import creator from "./locales/en/creator.json";
 import groups from "./locales/en/groups.json";
 import home from "./locales/en/home.json";
 import imageInput from "./locales/en/image-input.json";
@@ -28,6 +29,7 @@ export const defaultNamespace = "common";
 
 const english = {
   en: {
+    creator,
     help,
     updates,
     logs,

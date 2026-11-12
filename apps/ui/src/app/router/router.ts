@@ -13,6 +13,7 @@ import type { AppStatus } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { CreateCharacterPage, EditCharacterPage } from "@/features/characters";
 import { CreatePersonaPage, EditPersonaPage } from "@/features/personas";
+import { CreatorListPage, CreatorPage } from "@/features/creator";
 import {
   ChatBranchesPage,
   ChatHistoryPage,
@@ -185,6 +186,19 @@ const validateAvatarPanel = (search: Record<string, unknown>): { avatarPanel?: t
   ...(search.avatarPanel === true || search.avatarPanel === "true" ? { avatarPanel: true as const } : {}),
   ...(search.avatarCrop === true || search.avatarCrop === "true" ? { avatarCrop: true as const } : {}),
 });
+const creatorPanels = ["history", "review", "model", "attach", "character", "persona"] as const;
+type CreatorPanel = (typeof creatorPanels)[number];
+const creatorListRoute = createRoute({ getParentRoute: () => rootRoute, path: "/creator", component: CreatorListPage });
+const creatorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/creator/$workflowId",
+  component: CreatorPage,
+  validateSearch: (search: Record<string, unknown>): { tab?: "chat" | "draft"; panel?: CreatorPanel; avatarPanel?: true; avatarCrop?: true } => ({
+    ...(search.tab === "chat" || search.tab === "draft" ? { tab: search.tab } : {}),
+    ...(creatorPanels.includes(String(search.panel) as CreatorPanel) ? { panel: search.panel as CreatorPanel } : {}),
+    ...validateAvatarPanel(search),
+  }),
+});
 const newCharacterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/characters/new",
@@ -233,6 +247,7 @@ const settingsSectionRoute = createRoute({
     prompt?: string;
     promptSource?: string;
     replyPicker?: "model" | "roleplay" | "conversational";
+    creatorModel?: true;
     speechTab?: "model" | "vocabulary" | "corrections" | "examples";
     speechPanel?: "models" | "microphone" | "word" | "correction" | "example";
     speechItem?: string;
@@ -273,6 +288,7 @@ const settingsSectionRoute = createRoute({
     custPanel?: "preview" | "theme";
     custTheme?: string;
   } => ({
+    ...(search.creatorModel === true || search.creatorModel === "true" ? { creatorModel: true as const } : {}),
     ...(typeof search.logFile === "string" ? { logFile: search.logFile } : {}),
     ...(["line", "filters", "parts", "time", "more", "report", "delete-day", "delete-all"].includes(
       String(search.logPanel),
@@ -516,6 +532,8 @@ const routeTree = rootRoute.addChildren([
   lorebookEditorRoute,
   lorebookPreviewRoute,
   newCharacterRoute,
+  creatorListRoute,
+  creatorRoute,
   editCharacterRoute,
   characterHistoryRoute,
   newPersonaRoute,
@@ -554,6 +572,7 @@ export type AppRouter = ReturnType<typeof createAppRouter>;
 
 declare module "@tanstack/history" {
   interface HistoryState {
+    creatorPanelPushed?: boolean;
     hfBrowserPushed?: boolean | undefined;
     settingsPanelPushed?: boolean;
     setupReplayPushed?: boolean;
