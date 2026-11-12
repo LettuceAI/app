@@ -1430,6 +1430,8 @@
       "deleteRatioBody": "Deel van de herinneringen dat één update definitief mag verwijderen",
       "duplicate": "Duplicaatdrempel",
       "duplicateBody": "Hoe gelijk twee herinneringen moeten zijn om als één te tellen",
+      "duplicateCheck": "Herinneringen met dezelfde betekenis overslaan",
+      "duplicateCheckBody": "Gebruikt het embeddingmodel om een nieuwe herinnering over te slaan die hetzelfde zegt als een bestaande. Exacte kopieën worden altijd overgeslagen.",
       "fallback": "Gestructureerde terugval",
       "fallbackBody": "Alleen gebruikt wanneer het model geen tools kan aanroepen"
     },

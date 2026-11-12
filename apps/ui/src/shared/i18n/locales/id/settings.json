@@ -1423,6 +1423,8 @@
       "deleteRatioBody": "Porsi memori yang boleh dihapus permanen oleh satu pembaruan",
       "duplicate": "Ambang duplikat",
       "duplicateBody": "Seberapa mirip dua memori agar dihitung satu",
+      "duplicateCheck": "Lewati memori yang maknanya sama",
+      "duplicateCheckBody": "Memakai model embedding untuk melewati memori baru yang menyatakan hal yang sama dengan memori yang ada. Salinan persis selalu dilewati.",
       "fallback": "Cadangan terstruktur",
       "fallbackBody": "Hanya digunakan saat model tidak dapat memanggil alat"
     },

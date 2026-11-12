@@ -1430,6 +1430,8 @@
       "deleteRatioBody": "Andel minner én oppdatering kan slette for godt",
       "duplicate": "Duplikatterskel",
       "duplicateBody": "Hvor like to minner må være for å telle som ett",
+      "duplicateCheck": "Hopp over minner med samme betydning",
+      "duplicateCheckBody": "Bruker embedding-modellen til å hoppe over et nytt minne som sier det samme som et eksisterende. Nøyaktige kopier hoppes alltid over.",
       "fallback": "Strukturert reserve",
       "fallbackBody": "Brukes bare når modellen ikke kan kalle verktøy"
     },

@@ -109,7 +109,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
         space_id: MemorySpaceId,
         calls: &[DynamicMemoryToolCallEvidence],
         seeds: &[MemoryCreateSeed],
-        duplicate_threshold: lettuce_memory::Score,
+        duplicate_threshold: Option<lettuce_memory::Score>,
         claim: &Claim,
         handle: &JobHandle,
     ) -> Result<Vec<PreparedMemoryCreate>, DynamicMemoryPreparationError> {
@@ -165,7 +165,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
         space_id: MemorySpaceId,
         calls: impl Iterator<Item = (ToolExecutionId, u32, &'b str, &'b serde_json::Value)>,
         seeds: &[MemoryCreateSeed],
-        duplicate_threshold: lettuce_memory::Score,
+        duplicate_threshold: Option<lettuce_memory::Score>,
         claim: &Claim,
         handle: &JobHandle,
     ) -> Result<Vec<PreparedMemoryCreate>, DynamicMemoryPreparationError> {
@@ -227,12 +227,14 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
             );
             let (semantic_duplicates, projection) = match generated {
                 Ok(vector) => {
-                    let evidence = EmbeddingService::semantic_duplicate_matches(
-                        &vector,
-                        &existing,
-                        duplicate_threshold,
-                        &self.engine.calibration(),
-                    );
+                    let evidence = duplicate_threshold.map_or_else(Vec::new, |threshold| {
+                        EmbeddingService::semantic_duplicate_matches(
+                            &vector,
+                            &existing,
+                            threshold,
+                            &self.engine.calibration(),
+                        )
+                    });
                     if evidence.is_empty() {
                         existing.push((seed.id, vector.clone()));
                     }
@@ -495,7 +497,7 @@ mod tests {
                 token_count: Some(4),
                 created_at: TimestampMillis::new(4),
             }],
-            Score::from_basis_points(9_000).expect("score"),
+            Some(Score::from_basis_points(9_000).expect("score")),
             &claim,
             &handle,
         )
@@ -654,7 +656,7 @@ mod tests {
                 space_id,
                 &[first, second],
                 &seeds,
-                Score::from_basis_points(9_000).expect("score"),
+                Some(Score::from_basis_points(9_000).expect("score")),
                 &claim,
                 &handle,
             )
@@ -668,6 +670,39 @@ mod tests {
                 .map(|evidence| evidence.existing_id)
                 .collect::<Vec<_>>(),
             [seeds[0].id]
+        );
+    }
+
+    #[test]
+    fn a_disabled_meaning_check_keeps_the_embedding_but_gathers_no_duplicates() {
+        let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let space_id = space(&backend, Vec::new());
+        let engine = FakeEmbeddingEngine { unavailable: false };
+        let first = create_call("User's dog is named Max");
+        let mut second = create_call("The user has a dog called Max");
+        second.run_id = first.run_id;
+        second.attempt_id = first.attempt_id;
+        second.ordinal = 1;
+        let seeds = [&first, &second].map(|call| MemoryCreateSeed {
+            execution_id: call.id,
+            id: MemoryId::new(),
+            token_count: Some(4),
+            created_at: TimestampMillis::new(4),
+        });
+        let (claim, handle) = admitted_embedding_job();
+        let prepared = DynamicMemoryCreatePreparer::new(&engine, backend.database())
+            .prepare_background_calls(space_id, &[first, second], &seeds, None, &claim, &handle)
+            .expect("prepare");
+        assert!(
+            prepared
+                .iter()
+                .all(|create| create.preparation.semantic_duplicates.is_empty())
+        );
+        assert!(
+            prepared.iter().all(|create| matches!(
+                create.projection,
+                Some(PreparedMemoryProjection::Ready(_))
+            ))
         );
     }
 

@@ -490,6 +490,9 @@ pub struct DynamicMemorySettings {
     pub cold_threshold_basis_points: u16,
     pub delete_confidence_basis_points: u16,
     pub max_hard_delete_ratio_basis_points: u16,
+    /// Whether a new memory is compared by meaning with the embedding model;
+    /// the exact-text check always runs.
+    pub duplicate_check_enabled: bool,
     pub duplicate_threshold_basis_points: u16,
     pub context_enrichment_enabled: bool,
     pub decay_rate_basis_points: u16,
@@ -512,6 +515,7 @@ impl Default for DynamicMemorySettings {
             cold_threshold_basis_points: 3_000,
             delete_confidence_basis_points: 5_000,
             max_hard_delete_ratio_basis_points: 5_000,
+            duplicate_check_enabled: true,
             duplicate_threshold_basis_points: 9_300,
             context_enrichment_enabled: true,
             decay_rate_basis_points: 800,

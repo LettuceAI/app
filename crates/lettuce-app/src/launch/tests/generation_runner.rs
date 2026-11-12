@@ -4863,7 +4863,7 @@ async fn run_plain_dynamic_cycle_with_racing_edits(edits: usize, cancel: bool) {
                 max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
                 decay_rate: Score::from_basis_points(800).expect("score"),
             },
-            Score::from_basis_points(9_000).expect("score"),
+            Some(Score::from_basis_points(9_000).expect("score")),
             &work.claim,
             &work.handle,
             None,

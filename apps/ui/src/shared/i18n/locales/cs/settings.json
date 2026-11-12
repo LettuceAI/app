@@ -1444,6 +1444,8 @@
       "deleteRatioBody": "Podíl pamětí, které může jedna aktualizace nadobro smazat",
       "duplicate": "Práh duplicit",
       "duplicateBody": "Jak podobné musí být dvě paměti, aby se počítaly jako jedna",
+      "duplicateCheck": "Přeskakovat vzpomínky se stejným významem",
+      "duplicateCheckBody": "Pomocí embedding modelu přeskočí novou vzpomínku, která říká totéž co existující. Přesné kopie se přeskakují vždy.",
       "fallback": "Strukturovaná náhrada",
       "fallbackBody": "Použije se jen, když model neumí volat nástroje"
     },

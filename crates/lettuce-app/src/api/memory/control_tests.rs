@@ -1591,7 +1591,7 @@ fn settle(
                 decay_rate: lettuce_memory::Score::from_basis_points(800).expect("score"),
             },
             &seeds,
-            lettuce_memory::Score::from_basis_points(9_000).expect("score"),
+            Some(lettuce_memory::Score::from_basis_points(9_000).expect("score")),
             &round.claim,
             &round.handle,
             harness.context.now(),

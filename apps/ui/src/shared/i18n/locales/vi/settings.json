@@ -1423,6 +1423,8 @@
       "deleteRatioBody": "Phần ký ức một lần cập nhật có thể xóa vĩnh viễn",
       "duplicate": "Ngưỡng trùng lặp",
       "duplicateBody": "Hai ký ức phải giống nhau đến mức nào để tính là một",
+      "duplicateCheck": "Bỏ qua ký ức cùng ý nghĩa",
+      "duplicateCheckBody": "Dùng mô hình embedding để bỏ qua ký ức mới nói điều mà một ký ức có sẵn đã nói. Bản sao giống hệt luôn bị bỏ qua.",
       "fallback": "Dự phòng có cấu trúc",
       "fallbackBody": "Chỉ dùng khi mô hình không gọi được công cụ"
     },

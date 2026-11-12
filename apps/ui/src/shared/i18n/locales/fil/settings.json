@@ -1430,6 +1430,8 @@
       "deleteRatioBody": "Bahagi ng mga memory na puwedeng permanenteng tanggalin ng isang update",
       "duplicate": "Duplicate threshold",
       "duplicateBody": "Gaano dapat magkapareho ang dalawang memory para mabilang na isa",
+      "duplicateCheck": "Laktawan ang mga alaalang pareho ang kahulugan",
+      "duplicateCheckBody": "Gumagamit ng embedding model para laktawan ang bagong alaala na sinasabi na ng isang umiiral. Palaging nilalaktawan ang eksaktong kopya.",
       "fallback": "Structured fallback",
       "fallbackBody": "Ginagamit lang kapag hindi makatawag ng tool ang modelo"
     },

@@ -1437,6 +1437,8 @@
       "deleteRatioBody": "Proporción de memorias que una actualización puede eliminar para siempre",
       "duplicate": "Umbral de duplicados",
       "duplicateBody": "Cuánto deben parecerse dos memorias para contar como una",
+      "duplicateCheck": "Omitir recuerdos con el mismo significado",
+      "duplicateCheckBody": "Usa el modelo de embeddings para omitir un recuerdo nuevo que dice lo mismo que uno existente. Las copias exactas se omiten siempre.",
       "fallback": "Alternativa estructurada",
       "fallbackBody": "Solo se usa cuando el modelo no puede llamar a herramientas"
     },

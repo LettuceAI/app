@@ -217,6 +217,7 @@ pub struct SettingsDynamicMemorySettings {
     pub cold_threshold_basis_points: u16,
     pub delete_confidence_basis_points: u16,
     pub max_hard_delete_ratio_basis_points: u16,
+    pub duplicate_check_enabled: bool,
     pub duplicate_threshold_basis_points: u16,
     pub context_enrichment_enabled: bool,
     pub decay_rate_basis_points: u16,

@@ -1431,6 +1431,8 @@
       "deleteRatioBody": "Bir güncellemenin kalıcı olarak silebileceği anı payı",
       "duplicate": "Yinelenen eşiği",
       "duplicateBody": "İki anının tek sayılması için ne kadar benzer olması gerektiği",
+      "duplicateCheck": "Aynı anlamdaki anıları atla",
+      "duplicateCheckBody": "Mevcut bir anının zaten söylediğini söyleyen yeni anıyı embedding modeliyle atlar. Birebir kopyalar her zaman atlanır.",
       "fallback": "Yapılandırılmış geri dönüş",
       "fallbackBody": "Yalnızca model araç çağıramadığında kullanılır"
     },

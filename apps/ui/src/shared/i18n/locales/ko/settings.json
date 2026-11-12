@@ -1423,6 +1423,8 @@
       "deleteRatioBody": "한 업데이트가 영구 삭제할 수 있는 기억 비율",
       "duplicate": "중복 임계값",
       "duplicateBody": "두 기억이 하나로 간주될 만큼 비슷해야 하는 정도",
+      "duplicateCheck": "같은 의미의 기억 건너뛰기",
+      "duplicateCheckBody": "임베딩 모델로 기존 기억과 같은 내용을 말하는 새 기억을 건너뜁니다. 완전히 같은 기억은 항상 건너뜁니다.",
       "fallback": "구조화 대체",
       "fallbackBody": "모델이 도구를 호출할 수 없을 때만 사용해요"
     },

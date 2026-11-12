@@ -1430,6 +1430,8 @@
       "deleteRatioBody": "A memóriák azon hányada, amelyet egy frissítés véglegesen törölhet",
       "duplicate": "Duplikátumküszöb",
       "duplicateBody": "Mennyire kell hasonlítania két memóriának, hogy egynek számítson",
+      "duplicateCheck": "Azonos jelentésű emlékek kihagyása",
+      "duplicateCheckBody": "Az embedding modellel kihagyja azt az új emléket, amely ugyanazt mondja, mint egy meglévő. A pontos másolatok mindig kimaradnak.",
       "fallback": "Strukturált visszaesés",
       "fallbackBody": "Csak akkor használjuk, ha a modell nem tud eszközöket hívni"
     },

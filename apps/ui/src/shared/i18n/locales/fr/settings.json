@@ -1437,6 +1437,8 @@
       "deleteRatioBody": "Part des souvenirs qu'une mise à jour peut supprimer définitivement",
       "duplicate": "Seuil de doublon",
       "duplicateBody": "Degré de similitude pour que deux souvenirs comptent comme un seul",
+      "duplicateCheck": "Ignorer les souvenirs de même sens",
+      "duplicateCheckBody": "Utilise le modèle d'embeddings pour ignorer un nouveau souvenir qui dit la même chose qu'un souvenir existant. Les copies exactes sont toujours ignorées.",
       "fallback": "Repli structuré",
       "fallbackBody": "Utilisé uniquement lorsque le modèle ne peut pas appeler d'outils"
     },

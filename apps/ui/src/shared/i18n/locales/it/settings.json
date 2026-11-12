@@ -1437,6 +1437,8 @@
       "deleteRatioBody": "Quota di ricordi che un aggiornamento può eliminare definitivamente",
       "duplicate": "Soglia dei duplicati",
       "duplicateBody": "Quanto devono somigliarsi due ricordi per contare come uno",
+      "duplicateCheck": "Salta i ricordi con lo stesso significato",
+      "duplicateCheckBody": "Usa il modello di embedding per saltare un nuovo ricordo che dice ciò che ne dice già uno esistente. Le copie esatte vengono sempre saltate.",
       "fallback": "Ripiego strutturato",
       "fallbackBody": "Usato solo quando il modello non può chiamare strumenti"
     },

@@ -1430,6 +1430,8 @@
       "deleteRatioBody": "Anteil der Erinnerungen, die eine Aktualisierung endgültig löschen darf",
       "duplicate": "Duplikatsschwelle",
       "duplicateBody": "Wie ähnlich sich zwei Erinnerungen sein müssen, um als eine zu gelten",
+      "duplicateCheck": "Erinnerungen mit gleicher Bedeutung überspringen",
+      "duplicateCheckBody": "Überspringt mit dem Embedding-Modell eine neue Erinnerung, die dasselbe sagt wie eine vorhandene. Exakte Kopien werden immer übersprungen.",
       "fallback": "Strukturierter Rückfall",
       "fallbackBody": "Wird nur verwendet, wenn das Modell keine Tools aufrufen kann"
     },

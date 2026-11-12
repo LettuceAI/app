@@ -1431,6 +1431,8 @@
       "deleteRatioBody": "Share of memories one update may delete for good",
       "duplicate": "Duplicate threshold",
       "duplicateBody": "How alike two memories must be to count as one",
+      "duplicateCheck": "Skip same-meaning memories",
+      "duplicateCheckBody": "Uses the embedding model to skip a new memory that says what an existing one already says. Exact copies are always skipped.",
       "fallback": "Structured fallback",
       "fallbackBody": "Used only when the model cannot call tools"
     },

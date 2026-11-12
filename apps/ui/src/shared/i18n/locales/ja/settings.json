@@ -1423,6 +1423,8 @@
       "deleteRatioBody": "1回の更新で完全削除できるメモリの割合",
       "duplicate": "重複しきい値",
       "duplicateBody": "2つのメモリが1つと見なされる類似度",
+      "duplicateCheck": "同じ意味の記憶をスキップ",
+      "duplicateCheckBody": "埋め込みモデルを使い、既存の記憶と同じ内容の新しい記憶をスキップします。完全に同じ記憶は常にスキップされます。",
       "fallback": "構造化フォールバック",
       "fallbackBody": "モデルがツールを呼べない場合にのみ使用"
     },

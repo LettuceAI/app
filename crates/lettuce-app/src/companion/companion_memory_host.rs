@@ -101,7 +101,8 @@ pub struct CompanionMemoryRuntimeInputs {
     pub summary_prompt: PromptDocument,
     pub memory_prompt: PromptDocument,
     pub policy: MemoryPolicy,
-    pub duplicate_threshold: lettuce_memory::Score,
+    /// `None` when the meaning check is off; the exact-text check always runs.
+    pub duplicate_threshold: Option<lettuce_memory::Score>,
 }
 
 /// Why a claimed cycle could not resolve its required runtime inputs.
@@ -878,7 +879,11 @@ where
             summary_prompt,
             memory_prompt,
             policy,
-            duplicate_threshold: score(dynamic.duplicate_threshold_basis_points)?,
+            duplicate_threshold: if dynamic.duplicate_check_enabled {
+                Some(score(dynamic.duplicate_threshold_basis_points)?)
+            } else {
+                None
+            },
         })
     }
 

@@ -1444,6 +1444,8 @@
       "deleteRatioBody": "Udział wspomnień, które jedna aktualizacja może usunąć na zawsze",
       "duplicate": "Próg duplikatów",
       "duplicateBody": "Jak podobne muszą być dwa wspomnienia, aby liczyć się jako jedno",
+      "duplicateCheck": "Pomijaj wspomnienia o tym samym znaczeniu",
+      "duplicateCheckBody": "Używa modelu embeddingów, aby pominąć nowe wspomnienie mówiące to samo co istniejące. Dokładne kopie są zawsze pomijane.",
       "fallback": "Awaryjny format strukturalny",
       "fallbackBody": "Używany tylko, gdy model nie potrafi wywoływać narzędzi"
     },

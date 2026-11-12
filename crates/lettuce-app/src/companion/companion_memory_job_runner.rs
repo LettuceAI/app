@@ -92,7 +92,7 @@ impl<
         summary_prompt: &PromptDocument,
         memory_prompt: &PromptDocument,
         policy: &lettuce_memory::MemoryPolicy,
-        duplicate_threshold: lettuce_memory::Score,
+        duplicate_threshold: Option<lettuce_memory::Score>,
         claim: &Claim,
         handle: &JobHandle,
         stream_sink: Option<RequestId>,

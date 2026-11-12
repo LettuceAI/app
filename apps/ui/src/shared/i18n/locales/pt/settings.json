@@ -1437,6 +1437,8 @@
       "deleteRatioBody": "Parcela de memórias que uma atualização pode excluir de vez",
       "duplicate": "Limite de duplicatas",
       "duplicateBody": "Quão parecidas duas memórias devem ser para contar como uma",
+      "duplicateCheck": "Ignorar memórias com o mesmo significado",
+      "duplicateCheckBody": "Usa o modelo de embeddings para ignorar uma memória nova que diz o mesmo que uma existente. Cópias exatas são sempre ignoradas.",
       "fallback": "Fallback estruturado",
       "fallbackBody": "Usado só quando o modelo não consegue chamar ferramentas"
     },

@@ -31,6 +31,7 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 ## Deliberate differences from legacy
 
 - The duplicate threshold defaults to 0.93 on the calibrated Eidos score instead of legacy's 0.78, which was tuned for the v4 embedder. Measured on roleplay memory pairs, 0.78 flagged most distinct facts about the same characters and every changed fact as already known; migration 38 moves settings still on 0.78 to 0.93.
+- `duplicate_check_enabled` is new: turning it off skips the meaning comparison with the embedding model, while the exact-text duplicate check always runs. Legacy always compared by meaning.
 
 - Legacy's creation helper failed with "No image generation model configured" when its saved image model was gone. A cleared selection now means the first suitable model, as avatar and scene generation already did.
 - Legacy never cleared the creation helper and lorebook entry writer selections when a model was deleted, so they failed with "Model not found" and "Configured lorebook entry generator model could not be resolved". The cleared selection now falls back like an unset one (default model, first text model).

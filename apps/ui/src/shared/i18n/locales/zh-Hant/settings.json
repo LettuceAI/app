@@ -1423,6 +1423,8 @@
       "deleteRatioBody": "單次更新可永久刪除的記憶比例",
       "duplicate": "重複閾值",
       "duplicateBody": "兩則記憶要多相似才算同一則",
+      "duplicateCheck": "略過含義相同的記憶",
+      "duplicateCheckBody": "使用嵌入模型略過與現有記憶含義相同的新記憶。完全相同的內容一律會被略過。",
       "fallback": "結構化備援",
       "fallbackBody": "僅在模型無法呼叫工具時使用"
     },

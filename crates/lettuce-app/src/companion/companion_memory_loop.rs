@@ -65,7 +65,7 @@ impl<
         attempt_id: DynamicMemoryAttemptId,
         policy: &MemoryPolicy,
         loop_policy: crate::CompanionMemoryLoopPolicy,
-        duplicate_threshold: lettuce_memory::Score,
+        duplicate_threshold: Option<lettuce_memory::Score>,
         claim: &Claim,
         handle: &JobHandle,
         stream_sink: Option<RequestId>,

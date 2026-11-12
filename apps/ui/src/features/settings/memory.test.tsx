@@ -28,6 +28,7 @@ const memory: SettingsDynamicMemorySettings = {
   recursive_memory_loop_hard_cap: 20,
   delete_confidence_basis_points: 5000,
   max_hard_delete_ratio_basis_points: 5000,
+  duplicate_check_enabled: true,
   duplicate_threshold_basis_points: 7800,
   structured_fallback_format: "xml",
 };

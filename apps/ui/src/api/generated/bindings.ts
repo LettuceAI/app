@@ -8996,6 +8996,7 @@ export type SettingsDynamicMemorySettings = {
 	cold_threshold_basis_points: number,
 	delete_confidence_basis_points: number,
 	max_hard_delete_ratio_basis_points: number,
+	duplicate_check_enabled: boolean,
 	duplicate_threshold_basis_points: number,
 	context_enrichment_enabled: boolean,
 	decay_rate_basis_points: number,

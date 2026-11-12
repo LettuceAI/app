@@ -105,7 +105,12 @@ export function ScopedSettings({ value, onChange }: { value: Value; onChange: Ch
             )}
             {ratio(t("memory.advanced.deleteConfidence"), t("memory.advanced.deleteConfidenceBody"), "delete_confidence_basis_points")}
             {ratio(t("memory.advanced.deleteRatio"), t("memory.advanced.deleteRatioBody"), "max_hard_delete_ratio_basis_points")}
-            {ratio(t("memory.advanced.duplicate"), t("memory.advanced.duplicateBody"), "duplicate_threshold_basis_points", 0.01)}
+            <ListRow
+              title={t("memory.advanced.duplicateCheck")}
+              description={t("memory.advanced.duplicateCheckBody")}
+              trailing={<Switch checked={value.duplicate_check_enabled} onChange={(next) => void set({ duplicate_check_enabled: next })} aria-label={t("memory.advanced.duplicateCheck")} />}
+            />
+            {value.duplicate_check_enabled && ratio(t("memory.advanced.duplicate"), t("memory.advanced.duplicateBody"), "duplicate_threshold_basis_points", 0.01)}
             <ListRow
               title={t("memory.advanced.fallback")}
               description={t("memory.advanced.fallbackBody")}

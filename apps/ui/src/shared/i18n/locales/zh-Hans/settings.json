@@ -1423,6 +1423,8 @@
       "deleteRatioBody": "一次更新可永久删除的记忆占比",
       "duplicate": "重复阈值",
       "duplicateBody": "两条记忆要多相似才算同一条",
+      "duplicateCheck": "跳过含义相同的记忆",
+      "duplicateCheckBody": "使用嵌入模型跳过与已有记忆含义相同的新记忆。完全相同的内容始终会被跳过。",
       "fallback": "结构化回退",
       "fallbackBody": "仅在模型无法调用工具时使用"
     },
