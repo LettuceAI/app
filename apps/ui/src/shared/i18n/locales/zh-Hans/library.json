@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "角色",
+    "group": "群组",
     "persona": "人设",
     "lorebook": "知识库"
   },
@@ -47,6 +48,7 @@
     "title": "创建",
     "description": "向资源库添加内容。",
     "character": "聊天对象",
+    "group": "多个角色在同一个聊天中",
     "persona": "你在聊天中的身份",
     "lorebook": "角色可以参考的世界设定",
     "import": "导入文件",

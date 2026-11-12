@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Karakter",
+    "group": "Grupo",
     "persona": "Persona",
     "lorebook": "Lorebook"
   },
@@ -48,6 +49,7 @@
     "title": "Gumawa",
     "description": "Magdagdag ng isang bagay sa library mo.",
     "character": "Makikipag-usap",
+    "group": "Mga karakter na magkakasama sa isang chat",
     "persona": "Kung sino ka sa isang chat",
     "lorebook": "Mga katotohanan ng mundo na maaaring gamitin ng karakter",
     "import": "Mag-import ng file",

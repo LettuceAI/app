@@ -22,7 +22,6 @@ import { BuiltInUpdateNotice, isSettingsSection, SidebarSettings, WhatsNewSheet 
 import { LibraryCreateSheet } from "@/features/library";
 import { OpenedFiles, RestoredModelsSheet } from "@/features/opened-files";
 import { DownloadsMenu, DownloadsProvider } from "@/entities/download";
-import { CreateSheet } from "./CreateSheet";
 import { useSidebarExpanded } from "./sidebarState";
 import { destinations, destinationOf, type Destination } from "./navigation";
 import { useAndroidBack } from "./useAndroidBack";
@@ -206,23 +205,7 @@ export function AppShell() {
               <Outlet />
             </CrispAppShell>
           )}
-          {pathname === "/library" ? (
-            <LibraryCreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} />
-          ) : (
-            <CreateSheet
-              api={api}
-              open={createOpen}
-              onClose={() => setCreateOpen(false)}
-              onCreate={(kind) => {
-                if (kind === "group") void navigate({ to: "/groups/new" });
-                else if (kind === "lorebook") void navigate({ to: "/library/lorebooks/new", state: { lorebookFlowPushed: true } });
-                else void navigate({ to: kind === "persona" ? "/personas/new" : "/characters/new" });
-              }}
-              onDiscover={() => {
-                void navigate({ to: destinations.discover });
-              }}
-            />
-          )}
+          <LibraryCreateSheet api={api} open={createOpen} onClose={() => setCreateOpen(false)} />
           <ChatMenu api={api} target={chatMenu} onClose={() => setChatMenu(null)} />
           <OpenedFiles api={api} held={welcome} />
           <WhatsNewSheet />

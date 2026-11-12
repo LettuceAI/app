@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Karakter",
+    "group": "Grup",
     "persona": "Persona",
     "lorebook": "Lore kitabı"
   },
@@ -48,6 +49,7 @@
     "title": "Oluştur",
     "description": "Kütüphanenize bir şey ekleyin.",
     "character": "Sohbet edecek biri",
+    "group": "Karakterler tek bir sohbette",
     "persona": "Bir sohbette kim olduğunuz",
     "lorebook": "Karakterin başvurabileceği dünya bilgileri",
     "import": "Dosya içe aktar",

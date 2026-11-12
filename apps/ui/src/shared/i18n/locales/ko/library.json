@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "캐릭터",
+    "group": "그룹",
     "persona": "페르소나",
     "lorebook": "로어북"
   },
@@ -47,6 +48,7 @@
     "title": "만들기",
     "description": "라이브러리에 항목을 추가해요.",
     "character": "대화할 상대",
+    "group": "한 채팅에 여러 캐릭터",
     "persona": "채팅 속 나",
     "lorebook": "캐릭터가 참고할 세계 설정",
     "import": "파일 가져오기",

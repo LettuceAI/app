@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Postać",
+    "group": "Grupa",
     "persona": "Persona",
     "lorebook": "Lorebook"
   },
@@ -50,6 +51,7 @@
     "title": "Utwórz",
     "description": "Dodaj coś do swojej biblioteki.",
     "character": "Ktoś do rozmowy",
+    "group": "Postacie razem w jednym czacie",
     "persona": "Kim jesteś w czacie",
     "lorebook": "Fakty o świecie, z których postać może czerpać",
     "import": "Importuj plik",

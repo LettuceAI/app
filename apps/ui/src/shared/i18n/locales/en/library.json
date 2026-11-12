@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Character",
+    "group": "Group",
     "persona": "Persona",
     "lorebook": "Lorebook"
   },
@@ -48,6 +49,7 @@
     "title": "Create",
     "description": "Add something to your library.",
     "character": "Someone to talk to",
+    "group": "Characters together in one chat",
     "persona": "Who you are in a chat",
     "lorebook": "World facts a character can draw on",
     "import": "Import a file",

@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Nhân vật",
+    "group": "Nhóm",
     "persona": "Persona",
     "lorebook": "Sách lore"
   },
@@ -47,6 +48,7 @@
     "title": "Tạo",
     "description": "Thêm thứ gì đó vào thư viện.",
     "character": "Một người để trò chuyện",
+    "group": "Các nhân vật cùng trong một cuộc trò chuyện",
     "persona": "Bạn là ai trong cuộc trò chuyện",
     "lorebook": "Thông tin thế giới để nhân vật dựa vào",
     "import": "Nhập tệp",

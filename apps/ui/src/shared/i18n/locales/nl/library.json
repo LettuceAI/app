@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Karakter",
+    "group": "Groep",
     "persona": "Persona",
     "lorebook": "Lorebook"
   },
@@ -48,6 +49,7 @@
     "title": "Aanmaken",
     "description": "Voeg iets toe aan je bibliotheek.",
     "character": "Iemand om mee te praten",
+    "group": "Personages samen in één chat",
     "persona": "Wie je bent in een chat",
     "lorebook": "Wereldfeiten waar een karakter uit kan putten",
     "import": "Een bestand importeren",

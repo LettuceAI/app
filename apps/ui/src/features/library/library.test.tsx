@@ -238,7 +238,7 @@ describe("library operations", () => {
     fireEvent.click(within(menu).getByRole("button", { name: /^Character/ }));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/new"));
     expect(await screen.findByPlaceholderText("Character name")).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("redirects old character-create links to the wizard", async () => {

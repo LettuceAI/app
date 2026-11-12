@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Karakter",
+    "group": "Gruppe",
     "persona": "Persona",
     "lorebook": "Lorebok"
   },
@@ -48,6 +49,7 @@
     "title": "Opprett",
     "description": "Legg noe til i biblioteket.",
     "character": "Noen å snakke med",
+    "group": "Karakterer sammen i én chat",
     "persona": "Hvem du er i en samtale",
     "lorebook": "Verdensfakta en karakter kan bruke",
     "import": "Importer en fil",

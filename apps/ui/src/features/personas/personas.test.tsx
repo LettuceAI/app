@@ -127,7 +127,7 @@ describe("persona creation", () => {
   it("opens from the Create menu", async () => {
     const runtime = await renderCreate({}, false, ["/"]);
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
-    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /^Create a persona/ }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /^Persona/ }));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/personas/new"));
     expect(await screen.findByRole("textbox", { name: "Name" })).toBeTruthy();
   });

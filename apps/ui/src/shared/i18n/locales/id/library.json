@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Karakter",
+    "group": "Grup",
     "persona": "Persona",
     "lorebook": "Lorebook"
   },
@@ -47,6 +48,7 @@
     "title": "Buat",
     "description": "Tambahkan sesuatu ke perpustakaan Anda.",
     "character": "Seseorang untuk diajak bicara",
+    "group": "Karakter bersama dalam satu obrolan",
     "persona": "Siapa Anda dalam obrolan",
     "lorebook": "Fakta dunia yang dapat dirujuk karakter",
     "import": "Impor file",

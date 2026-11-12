@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Postava",
+    "group": "Skupina",
     "persona": "Persona",
     "lorebook": "Lorebook"
   },
@@ -50,6 +51,7 @@
     "title": "Vytvořit",
     "description": "Přidej do knihovny něco nového.",
     "character": "Někdo na povídání",
+    "group": "Postavy společně v jednom chatu",
     "persona": "Kdo jsi v chatu",
     "lorebook": "Reálie světa, o které se postava může opřít",
     "import": "Importovat soubor",

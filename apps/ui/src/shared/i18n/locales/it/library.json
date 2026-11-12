@@ -14,6 +14,7 @@
   },
   "kinds": {
     "character": "Personaggio",
+    "group": "Gruppo",
     "persona": "Persona",
     "lorebook": "Lorebook"
   },
@@ -49,6 +50,7 @@
     "title": "Crea",
     "description": "Aggiungi qualcosa alla tua libreria.",
     "character": "Qualcuno con cui parlare",
+    "group": "Personaggi insieme in una chat",
     "persona": "Chi sei tu in una chat",
     "lorebook": "Fatti del mondo da cui un personaggio può attingere",
     "import": "Importa un file",
