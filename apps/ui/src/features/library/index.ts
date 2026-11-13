@@ -9,3 +9,4 @@ export { LorebookProjectPage } from "./lorebook-create/LorebookProjectPage";
 
 export { LorebookEditorPage } from "./lorebook-editor/LorebookEditorPage";
 export { LorebookPreviewPage } from "./lorebook-preview/LorebookPreviewPage";
+export { EntryRow } from "./lorebook-editor/EntryRow";

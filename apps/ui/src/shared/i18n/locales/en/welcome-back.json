@@ -53,7 +53,60 @@
   "done": {
     "title": "You're all set.",
     "body": "Everything is where you left it.",
+    "whatsNew": "See what's new",
     "open": "Open LettuceAI"
+  },
+  "intro": {
+    "redesign": {
+      "title": "We redesigned everything.",
+      "body": "Every screen, rebuilt from scratch. Here is what is new in 3.0."
+    },
+    "groups": {
+      "title": "Groups can do it all now.",
+      "body": "Scene images, memory, lorebooks and a model per member. Everything one-on-one chats have."
+    },
+    "companionGroups": {
+      "title": "Companion group chats.",
+      "body": "Put your companions in one chat. Each keeps their own memories, feelings and bond with you, and with each other."
+    },
+    "creator": {
+      "title": "Make a character by talking.",
+      "body": "Describe who you want, get a portrait, and approve every change before it is saved.",
+      "review": "Review changes"
+    },
+    "models": {
+      "title": "Our own models.",
+      "body": "Eidos picks what to remember and skips repeats. Thymos reads how a companion feels. Both run on your device.",
+      "thymos": "Thymos",
+      "thymosRole": "How she feels",
+      "eidos": "Eidos",
+      "eidosRole": "What she remembers"
+    },
+    "lorebooks": {
+      "title": "Lorebooks that understand sentences.",
+      "body": "Ask for a second keyword, match phrases like (went|go) to the * bar, and test regex as you type."
+    },
+    "next": "Next",
+    "back": "Back",
+    "start": "See what's new",
+    "open": "Open LettuceAI",
+    "everyChange": "Every change",
+    "readEveryChange": "Read every change",
+    "pages": "Pages",
+    "page": "Page {{number}}"
+  },
+  "changes": {
+    "title": "Everything in 3.0",
+    "count": "{{count}} changes",
+    "shown": "{{shown}} of {{total}}",
+    "back": "What's new",
+    "search": "Search changes",
+    "filter": "Show",
+    "all": "All",
+    "new": "New",
+    "fixed": "Fixed",
+    "emptyTitle": "No changes match",
+    "emptyBody": "Try another word, or show all changes."
   },
   "upgrade": {
     "title": "One step first",

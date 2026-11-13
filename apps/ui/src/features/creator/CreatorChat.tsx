@@ -102,7 +102,7 @@ const knownTools = new Set(["write_definition", "write_scene", "set_name", "edit
 
 /** The image an image call made, with its actions; nothing while it is being made or when it failed, since the tool's
  * status already says so. */
-function ToolImage({ api, image, canAct, onUseAvatar, onEditImage }: {
+export function ToolImage({ api, image, canAct, onUseAvatar, onEditImage }: {
   api: ApiClient;
   image: CreatorToolImage;
   canAct: boolean;
@@ -172,7 +172,7 @@ function ToolGroup({ api, tools, canAct, onUseAvatar, onEditImage }: {
 }
 
 /** A reply in the order the creator made it: its text, and each round's tool calls as quiet status lines after it. */
-function ReplySteps({ api, turn, canAct, onUseAvatar, onEditImage }: {
+export function ReplySteps({ api, turn, canAct, onUseAvatar, onEditImage }: {
   api: ApiClient;
   turn: CreatorTurnView;
   canAct: boolean;
@@ -200,7 +200,7 @@ function ReplySteps({ api, turn, canAct, onUseAvatar, onEditImage }: {
   );
 }
 
-function Turn({ api, turn, canAct, live, steps, onChanges, onRegenerate }: {
+export function Turn({ api, turn, canAct, live, steps, onChanges, onRegenerate }: {
   api: ApiClient;
   turn: CreatorTurnView;
   steps: ReactNode;

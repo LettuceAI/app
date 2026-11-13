@@ -8,7 +8,7 @@ import type { CharacterSummary, ConversationSummary } from "@/api/generated/bind
 import { FailureState } from "@/shared/ui/FailureState";
 import { byRecency, recentChatsQuery } from "../data/recent";
 
-function RecentRow({ chat, character, onOpen, onMenu, held }: { chat: ConversationSummary; character: CharacterSummary | null; onOpen: () => void; onMenu: () => void; held: boolean }) {
+export function RecentRow({ chat, character, onOpen, onMenu, held }: { chat: ConversationSummary; character: CharacterSummary | null; onOpen: () => void; onMenu: () => void; held: boolean }) {
   const { i18n } = useTranslation("home");
   const name = character?.name ?? chat.title;
   const press = useLongPress(onMenu);

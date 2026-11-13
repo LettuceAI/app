@@ -14,8 +14,9 @@ import { StatusList, type StatusRow } from "./components/StatusList";
 import { finishedStages, migrationStages, stageCompletion, useLegacyMigration } from "./data/migration";
 import { DownloadCard } from "@/entities/download";
 import { modelsNeededAfterMove, useModelInstalls } from "./data/models";
+import { IntroFlow, type IntroPage } from "./intro/IntroFlow";
 
-type Step = "welcome" | "migrate" | "models" | "done" | "upgrade";
+type Step = "welcome" | "migrate" | "models" | "done" | "upgrade" | "intro";
 
 const releasesUrl = "https://github.com/LettuceAI/app/releases";
 const helloMs = 2200;
@@ -39,6 +40,7 @@ export function WelcomeBackPage() {
   const [needed, setNeeded] = useState<readonly RequiredModel[]>(noModels);
   const [copied, setCopied] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [introPage, setIntroPage] = useState<IntroPage | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setHello(false), helloMs);
@@ -228,6 +230,7 @@ export function WelcomeBackPage() {
         <p className="mt-4 select-all text-sm text-fg-3">{releasesUrl}</p>
       </>,
     ),
+    intro: <IntroFlow platform={phone ? "phone" : "desktop"} api={api} onPage={setIntroPage} onFinish={() => void finish()} />,
   };
 
   const primary = (label: string, onClick: () => void, options: { leading?: ReactNode; trailing?: boolean; disabled?: boolean } = {}) => (
@@ -276,19 +279,26 @@ export function WelcomeBackPage() {
                 </>
               )
           : step === "done"
-            ? primary(t("done.open"), () => void finish(), { disabled: leaving })
-            : (
+            ? (
               <>
-                {primary(copied ? t("upgrade.copied") : t("upgrade.copy"), () => void copyLink(), { trailing: false })}
-                {secondary(t("upgrade.fresh"), () => void decline())}
+                {primary(t("done.whatsNew"), () => setStep("intro"))}
+                {secondary(t("done.open"), () => void finish())}
               </>
-            );
+            )
+            : step === "upgrade"
+              ? (
+                <>
+                  {primary(copied ? t("upgrade.copied") : t("upgrade.copy"), () => void copyLink(), { trailing: false })}
+                  {secondary(t("upgrade.fresh"), () => void decline())}
+                </>
+              )
+              : null;
 
   const actionKey = `${step}-${hello}-${failed}-${installs.running}-${allInstalled}-${anyFailed}-${copied}`;
 
   return (
     <Surface fg="#ffffff" tone="dark" className="flex h-full flex-col bg-black">
-      <Backdrop finished={step === "done"} dim={step === "migrate" || step === "models"} />
+      <Backdrop finished={step === "done"} dim={step === "migrate" || step === "models"} intro={step === "intro"} warm={step === "intro" && introPage === "models"} />
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={step}
@@ -301,21 +311,23 @@ export function WelcomeBackPage() {
           {screens[step]}
         </motion.div>
       </AnimatePresence>
-      <div className={cn("relative z-10 flex shrink-0 items-center justify-center", phone ? "min-h-36 flex-col gap-2 px-6 pb-[calc(var(--safe-bottom,0px)+1.5rem)]" : "h-36 gap-3 pb-10")}>
-        <AnimatePresence mode="wait" initial={false}>
-          {actions && (
-            <motion.div
-              key={actionKey}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0, transition: { ...m.settle, delay: step === "welcome" ? 0.6 : 0.2 } }}
-              exit={{ opacity: 0 }}
-              className={cn("flex flex-col items-center gap-2", phone && "w-full")}
-            >
-              {actions}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      {step !== "intro" && (
+        <div className={cn("relative z-10 flex shrink-0 items-center justify-center", phone ? "min-h-36 flex-col gap-2 px-6 pb-[calc(var(--safe-bottom,0px)+1.5rem)]" : "h-36 gap-3 pb-10")}>
+          <AnimatePresence mode="wait" initial={false}>
+            {actions && (
+              <motion.div
+                key={actionKey}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0, transition: { ...m.settle, delay: step === "welcome" ? 0.6 : 0.2 } }}
+                exit={{ opacity: 0 }}
+                className={cn("flex flex-col items-center gap-2", phone && "w-full")}
+              >
+                {actions}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </Surface>
   );
 }

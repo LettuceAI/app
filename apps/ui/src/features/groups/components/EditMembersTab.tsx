@@ -17,7 +17,7 @@ export interface EditorMember extends Pick<CharacterSummary, "id" | "name" | "av
 }
 type MemberPanel = { kind: "member" | "model"; id: string } | { kind: "add" };
 
-function MemberCard({ member, handle, position, phone, detail, onMenu }: {
+export function MemberCard({ member, handle, position, phone, detail, onMenu }: {
   member: EditorMember; handle: ReactNode; position: string; phone: boolean; detail: string; onMenu: () => void;
 }) {
   const { t } = useTranslation("groups");

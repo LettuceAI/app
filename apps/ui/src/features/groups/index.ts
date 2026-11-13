@@ -5,3 +5,8 @@ export { AppearanceEditor } from "./components/AppearanceEditor";
 export { appearanceFields, appearanceLook, characterAppearance, withCharacterAppearance, type AppearanceDraft } from "./data/appearance";
 export { AppearancePreviewOverlay, AppearancePreviewPanel } from "./components/AppearancePreview";
 export { useAppearancePreviewChrome } from "./components/use-appearance-preview-chrome";
+export { GroupCard, type GroupEntry } from "./components/GroupCards";
+export { MemberCard, type EditorMember } from "./components/EditMembersTab";
+export { MemoryGroup } from "./components/GroupFields";
+export type { StepProps } from "./components/MembersStep";
+export type { GroupForm } from "./data/form";
