@@ -366,15 +366,60 @@ impl LocalDiffusionEngine {
         release: &str,
         asset: &str,
     ) -> Result<Vec<FitDevice>, String> {
-        let hardware = self.host.gpu_devices().await?;
+        let hardware = self.host.gpu_devices().await.inspect_err(|error| {
+            tracing::warn!(
+                component = "sdcpp_gpu",
+                %error,
+                "could not read the system GPU inventory for image generation",
+            );
+        })?;
         let backend = runtime_backend(asset, self.platform).ok_or_else(|| {
             "The selected engine variant is not supported on this platform.".to_owned()
         })?;
         if backend == "cpu" {
             return Ok(Vec::new());
         }
-        let devices = self.runtime_devices(release, asset).await?;
-        match_runtime_devices(devices, &hardware).map_err(|error| error.to_string())
+        let devices = self.runtime_devices(release, asset).await.inspect_err(|error| {
+            tracing::warn!(
+                component = "sdcpp_gpu",
+                %error,
+                "the selected engine could not list its GPU devices",
+            );
+        })?;
+        tracing::info!(
+            component = "sdcpp_gpu",
+            backend,
+            system_gpus = ?hardware
+                .iter()
+                .map(|device| (device.index, device.name.as_str(), device.description.as_str(), device.memory_total, device.memory_free))
+                .collect::<Vec<_>>(),
+            engine_gpus = ?devices
+                .iter()
+                .map(|device| (device.name.as_str(), device.description.as_str()))
+                .collect::<Vec<_>>(),
+            "resolving image GPU inventory",
+        );
+        match match_runtime_devices(devices, &hardware) {
+            Ok(matched) => {
+                tracing::info!(
+                    component = "sdcpp_gpu",
+                    matched = ?matched
+                        .iter()
+                        .map(|device| (device.id, device.name.as_str()))
+                        .collect::<Vec<_>>(),
+                    "matched image GPU devices to the system inventory",
+                );
+                Ok(matched)
+            }
+            Err(error) => {
+                tracing::warn!(
+                    component = "sdcpp_gpu",
+                    %error,
+                    "could not match the engine's GPU devices to the system GPU inventory",
+                );
+                Err(error.to_string())
+            }
+        }
     }
 
     pub async fn resolve_compute_policy(
@@ -389,8 +434,19 @@ impl LocalDiffusionEngine {
             })?
             .to_owned();
         let mut available_devices = self.matched_runtime_devices(release, asset).await?;
-        validate_compute_policy(policy, &backend, &available_devices)
-            .map_err(|error| error.to_string())?;
+        validate_compute_policy(policy, &backend, &available_devices).map_err(|error| {
+            tracing::warn!(
+                component = "sdcpp_gpu",
+                %error,
+                multi_gpu = policy.multi_gpu_enabled,
+                single_gpu_device_id = ?policy.single_gpu_device_id,
+                selected_device_ids = ?policy.gpu_device_ids,
+                split_mode = policy.split_mode.as_str(),
+                available_device_ids = ?available_devices.iter().map(|device| device.id).collect::<Vec<_>>(),
+                "the saved compute policy does not fit the resolved GPU inventory",
+            );
+            error.to_string()
+        })?;
         let effective_devices = devices_for_policy(policy, available_devices.clone());
         apply_policy_budgets(policy, &mut available_devices);
         Ok(ResolvedComputePolicy {
