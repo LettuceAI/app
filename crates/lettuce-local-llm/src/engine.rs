@@ -585,7 +585,7 @@ fn load_model_with_progress(
                 .cast::<c_void>();
     }
 
-    let raw_model = unsafe { llama_cpp_sys_2::llama_load_model_from_file(path.as_ptr(), params) };
+    let raw_model = unsafe { llama_cpp_sys_2::llama_model_load_from_file(path.as_ptr(), params) };
     let model_ptr = NonNull::new(raw_model).ok_or_else(|| {
         LlamaEngineError::Load("Failed to load llama model: null reference from llama.cpp".into())
     })?;
@@ -632,7 +632,7 @@ pub struct LoadedEngine {
     pub smart_gpu_layer_fallback_activated: bool,
     pub compiled_gpu_backends: Vec<String>,
     pub supports_gpu_offload: bool,
-    pub mtmd_ctx: Option<Arc<MtmdContext>>,
+    pub mtmd_ctx: Option<Arc<Mutex<MtmdContext>>>,
     pub mtp_model: Option<Arc<LlamaModel>>,
 }
 
@@ -684,7 +684,7 @@ struct LlamaState {
     smart_gpu_layer_fallback_activated: bool,
     compiled_gpu_backends: Vec<String>,
     supports_gpu_offload: bool,
-    mtmd_ctx: Option<Arc<MtmdContext>>,
+    mtmd_ctx: Option<Arc<Mutex<MtmdContext>>>,
     mmproj_path: Option<String>,
     mtp_model: Option<Arc<LlamaModel>>,
     mtp_model_path: Option<String>,
@@ -1184,7 +1184,7 @@ impl LlamaEngine {
                         "mtmd loaded"
                     );
                 }
-                guard.mtmd_ctx = Some(Arc::new(mtmd));
+                guard.mtmd_ctx = Some(Arc::new(Mutex::new(mtmd)));
                 guard.mmproj_path = Some(mmproj_path.to_string());
             }
         }

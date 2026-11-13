@@ -429,7 +429,7 @@ impl<'m> DflashRuntime<'m> {
             ));
         }
 
-        let mask_token = draft_model.token_mask();
+        let mask_token = draft_model.vocab().mask();
         if !mask_token_fits(mask_token.0, draft_model.n_vocab(), target_model.n_vocab()) {
             return Err(DflashError(format!(
                 "DFlash draft model has no usable mask token ({})",
@@ -766,7 +766,7 @@ impl<'m> DflashRuntime<'m> {
         let (matched, extra) = verify_drafts(
             &drafted,
             |row| sampler.sample(target, row),
-            |token| model.is_eog_token(token),
+            |token| model.vocab().is_eog(token),
         );
 
         let keep_until = u32::try_from(pos + matched as i32).map_err(|_| {

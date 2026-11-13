@@ -361,7 +361,7 @@ impl<'m> MtpRuntime<'m> {
                     break;
                 }
                 drafted.push(token);
-                if model.is_eog_token(token) {
+                if model.vocab().is_eog(token) {
                     break;
                 }
 
@@ -473,7 +473,7 @@ impl<'m> MtpRuntime<'m> {
                 break;
             }
             drafted.push(token);
-            if model.is_eog_token(token) {
+            if model.vocab().is_eog(token) {
                 break;
             }
             h_prev = self
@@ -812,12 +812,12 @@ mod tests {
             .expect("load");
         let model = &loaded.model;
         let draft_model = loaded.mtp_model.as_ref().expect("draft model");
-        let prompt = model
-            .str_to_token(
-                "The capital of France is Paris. The capital of Germany is",
-                llama_cpp_2::model::AddBos::Always,
-            )
-            .expect("tokens");
+        let prompt = crate::prompt::tokenize_text(
+            model,
+            "The capital of France is Paris. The capital of Germany is",
+            crate::prompt::AddBos::Always,
+        )
+        .expect("tokens");
         let count = 16;
         let expected = greedy_plain(model, &loaded.backend, &prompt, count);
 

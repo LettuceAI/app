@@ -25,7 +25,7 @@ use lettuce_inference::thinking::{
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::context::params::{KvCacheType, LlamaContextParams};
 use llama_cpp_2::llama_batch::LlamaBatch;
-use llama_cpp_2::model::{AddBos, LlamaModel};
+use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::mtmd::{MtmdBitmap, MtmdContext, MtmdInputChunks, MtmdInputText};
 use llama_cpp_2::token::LlamaToken;
 use serde_json::{Value, json};
@@ -54,10 +54,10 @@ use crate::offload::{
     select_mtp_gpu_device,
 };
 use crate::prompt::{
-    BuiltPrompt, OpenAICompatPromptOptions, PromptRequest, ReasoningPrefill, add_bos_label,
+    AddBos, BuiltPrompt, OpenAICompatPromptOptions, PromptRequest, ReasoningPrefill, add_bos_label,
     build_prompt, inject_media_markers, model_tokenizer_add_bos_label, model_tokenizer_adds_bos,
     prepend_reasoning_system_prefix, prompt_add_bos_reason, prompt_mode_label,
-    resolve_prompt_add_bos, token_piece_bytes,
+    resolve_prompt_add_bos, token_piece_bytes, tokenize_text,
 };
 use crate::request::{
     IncrementalStopMatcher, LlamaGenerationRequest, ResolvedRuntime, ResolvedSampling,
@@ -1831,7 +1831,11 @@ impl Run<'_> {
         let mtp_draft_model = engine.mtp_model.clone();
         let model = engine.model.as_ref();
         let backend = engine.backend.as_ref();
-        let mtmd_ctx = engine.mtmd_ctx.as_deref();
+        let mut mtmd_guard = engine.mtmd_ctx.as_ref().map(|mtmd| {
+            mtmd.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        });
+        let mtmd_ctx = mtmd_guard.as_deref();
         if media_requested && mtmd_ctx.is_none() {
             return Err(failed(
                 "llama.cpp multimodal request could not initialize the multimodal projector context",
@@ -2154,8 +2158,7 @@ impl Run<'_> {
             self.prompt_tokens = chunks.total_tokens() as u64;
             PreparedPrompt::Vision(chunks)
         } else {
-            let tokens = model
-                .str_to_token(&built_prompt.prompt, prompt_add_bos)
+            let tokens = tokenize_text(model, &built_prompt.prompt, prompt_add_bos)
                 .map_err(|error| failed(format!("Failed to tokenize prompt: {error}")))?;
             self.prompt_tokens = tokens.len() as u64;
             PreparedPrompt::Text(tokens)
@@ -2830,11 +2833,11 @@ impl Run<'_> {
             }
             PreparedPrompt::Vision(chunks) => {
                 self.check_abort()?;
-                let mtmd_ctx = mtmd_ctx.ok_or_else(|| {
+                let mtmd_ctx = mtmd_guard.as_deref_mut().ok_or_else(|| {
                     failed("llama.cpp multimodal context unavailable during prompt evaluation")
                 })?;
                 global_pos = chunks
-                    .eval_chunks(mtmd_ctx, &ctx, 0, 0, n_batch as i32, true)
+                    .eval_chunks(mtmd_ctx, &mut ctx, 0, 0, n_batch as i32, true)
                     .map_err(|error| {
                         failed(format!(
                             "llama.cpp multimodal prompt evaluation failed: {error}"
@@ -2990,7 +2993,7 @@ impl Run<'_> {
             } else {
                 sampler.sample(&ctx, sample_index)
             };
-            if model.is_eog_token(token) {
+            if model.vocab().is_eog(token) {
                 reached_eos = true;
                 break;
             }

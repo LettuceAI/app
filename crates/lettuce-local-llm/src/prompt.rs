@@ -5,10 +5,9 @@
 //! last resort. BOS is only added to raw completions, following the
 //! tokenizer's metadata.
 
-use llama_cpp_2::TokenToStringError;
-use llama_cpp_2::model::{
-    AddBos, ChatTemplateResult, LlamaChatMessage, LlamaChatTemplate, LlamaModel,
-};
+use std::ffi::{CString, NulError};
+
+use llama_cpp_2::model::{ChatTemplateResult, LlamaChatMessage, LlamaChatTemplate, LlamaModel};
 use llama_cpp_2::openai::OpenAIChatTemplateParams;
 use llama_cpp_2::token::LlamaToken;
 use serde_json::Value;
@@ -16,6 +15,26 @@ use serde_json::Value;
 pub use crate::request::ReasoningPrefill;
 
 pub const TOKENIZER_ADD_BOS_METADATA_KEY: &str = "tokenizer.ggml.add_bos_token";
+
+/// Whether tokenizing prepends the beginning-of-stream token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddBos {
+    Always,
+    Never,
+}
+
+/// Tokenizes text with special tokens parsed. Text containing a NUL byte is
+/// rejected, as llama.cpp reads it as a C string.
+pub fn tokenize_text(
+    model: &LlamaModel,
+    text: &str,
+    add_bos: AddBos,
+) -> Result<Vec<LlamaToken>, NulError> {
+    let text = CString::new(text)?;
+    Ok(model
+        .vocab()
+        .tokenize(text.as_bytes(), add_bos == AddBos::Always, true))
+}
 
 const TOOL_TEMPLATE_MARKERS: &[&str] = &[
     "<tool_call>",
@@ -182,28 +201,16 @@ fn sanitize_text(value: &str) -> String {
 }
 
 pub fn token_piece_bytes(model: &LlamaModel, token: LlamaToken) -> Result<Vec<u8>, PromptError> {
-    fn decode_with_special_mode(
-        model: &LlamaModel,
-        token: LlamaToken,
-        special: bool,
-    ) -> Result<Vec<u8>, TokenToStringError> {
-        match model.token_to_piece_bytes(token, 8, special, None) {
-            Ok(bytes) => Ok(bytes),
-            Err(TokenToStringError::InsufficientBufferSpace(needed)) => {
-                let required = usize::try_from(-needed)
-                    .map_err(|_| TokenToStringError::InsufficientBufferSpace(needed))?;
-                model.token_to_piece_bytes(token, required, special, None)
-            }
-            Err(error) => Err(error),
-        }
+    let vocab = model.vocab();
+    let bytes = vocab.token_to_piece(token, false, None);
+    if !bytes.is_empty() {
+        return Ok(bytes);
     }
-
-    match decode_with_special_mode(model, token, false) {
-        Ok(bytes) => Ok(bytes),
-        Err(TokenToStringError::UnknownTokenType) => decode_with_special_mode(model, token, true)
-            .map_err(|error| PromptError::TokenDecode(error.to_string())),
-        Err(error) => Err(PromptError::TokenDecode(error.to_string())),
+    let bytes = vocab.token_to_piece(token, true, None);
+    if bytes.is_empty() {
+        return Err(PromptError::TokenDecode("Unknown Token Type".to_string()));
     }
+    Ok(bytes)
 }
 
 fn extract_text_content(message: &Value) -> String {

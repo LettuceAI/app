@@ -5,7 +5,7 @@
 //! the order asks for it and a target is set, else `dist` when the
 //! temperature is positive, `greedy` otherwise.
 
-use llama_cpp_2::model::{AddBos, LlamaModel};
+use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
 use serde_json::{Value, json};
 
@@ -204,7 +204,7 @@ pub fn build_sampler(
             active_params.insert("frequency_penalty".to_string(), json!(penalty_freq));
             active_params.insert("presence_penalty".to_string(), json!(penalty_present));
             Some(LlamaSampler::penalties(
-                model,
+                model.n_vocab(),
                 n_pen_range,
                 repeat_penalty as f32,
                 penalty_freq as f32,
@@ -221,7 +221,7 @@ pub fn build_sampler(
         grammar_sampler = Some(if template_result.grammar_lazy {
                 let mut preserved = std::collections::HashSet::new();
                 for token_str in &template_result.preserved_tokens {
-                    let tokens = model.str_to_token(token_str, AddBos::Never).map_err(|e| {
+                    let tokens = crate::prompt::tokenize_text(model, token_str, crate::prompt::AddBos::Never).map_err(|e| {
                         SamplerError(format!(
                                 "Failed to tokenize preserved grammar token '{}': {e}",
                                 token_str
@@ -245,7 +245,7 @@ pub fn build_sampler(
                         }
                         llama_cpp_2::model::GrammarTriggerType::Word => {
                             let tokens =
-                                model.str_to_token(&trigger.value, AddBos::Never).map_err(|e| {
+                                crate::prompt::tokenize_text(model, &trigger.value, crate::prompt::AddBos::Never).map_err(|e| {
                                     SamplerError(format!(
                                             "Failed to tokenize grammar trigger word '{}': {e}",
                                             trigger.value
@@ -492,7 +492,7 @@ mod tests {
         for threshold in [None, Some(-1.0), Some(0.0), Some(f64::NAN), Some(f64::MAX)] {
             assert!(top_n_sigma_sampler(threshold).is_none());
         }
-        let sampler = top_n_sigma_sampler(Some(1.0)).expect("enabled sampler");
+        let mut sampler = top_n_sigma_sampler(Some(1.0)).expect("enabled sampler");
         let mut candidates = LlamaTokenDataArray::new(
             vec![
                 LlamaTokenData::new(LlamaToken(0), 0.0, 0.0),
@@ -501,7 +501,7 @@ mod tests {
             ],
             false,
         );
-        candidates.apply_sampler(&sampler);
+        candidates.apply_sampler(&mut sampler);
         let logits: Vec<_> = candidates.data.iter().map(|token| token.logit()).collect();
         assert_eq!(logits, vec![f32::NEG_INFINITY, f32::NEG_INFINITY, 2.0]);
         let stages = vec![
