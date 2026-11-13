@@ -53,7 +53,8 @@
   "done": {
     "title": "Vše je připraveno.",
     "body": "Všechno je tam, kde jsi to nechal.",
-    "open": "Otevřít LettuceAI"
+    "open": "Otevřít LettuceAI",
+    "whatsNew": "Zobrazit novinky"
   },
   "upgrade": {
     "title": "Ještě jeden krok",
@@ -61,5 +62,57 @@
     "copy": "Kopírovat odkaz ke stažení",
     "copied": "Odkaz zkopírován",
     "fresh": "Radši začít od nuly"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Všechno jsme předělali.",
+      "body": "Každá obrazovka postavená od začátku. Tohle je nového ve 3.0."
+    },
+    "groups": {
+      "title": "Skupiny teď zvládnou všechno.",
+      "body": "Obrázky scén, paměť, lorebooky a model pro každého člena. Vše, co mají chaty jeden na jednoho."
+    },
+    "companionGroups": {
+      "title": "Skupinové chaty s companiony.",
+      "body": "Dejte své companiony do jednoho chatu. Každý si drží vlastní vzpomínky, pocity a pouto k vám i k ostatním."
+    },
+    "creator": {
+      "title": "Vytvořte postavu povídáním.",
+      "body": "Popište, koho chcete, získejte portrét a schvalte každou změnu před uložením.",
+      "review": "Zkontrolovat změny"
+    },
+    "models": {
+      "title": "Naše vlastní modely.",
+      "body": "Eidos vybírá, co si zapamatovat, a přeskakuje opakování. Thymos čte, jak se companion cítí. Oba běží ve vašem zařízení.",
+      "thymos": "Thymos",
+      "thymosRole": "Jak se cítí",
+      "eidos": "Eidos",
+      "eidosRole": "Co si pamatuje"
+    },
+    "lorebooks": {
+      "title": "Lorebooky, které rozumí větám.",
+      "body": "Vyžadujte druhé klíčové slovo, hledejte fráze jako (went|go) to the * bar a testujte regex při psaní."
+    },
+    "next": "Další",
+    "back": "Zpět",
+    "start": "Zobrazit novinky",
+    "open": "Otevřít LettuceAI",
+    "everyChange": "Všechny změny",
+    "readEveryChange": "Přečíst všechny změny",
+    "pages": "Stránky",
+    "page": "Stránka {{number}}"
+  },
+  "changes": {
+    "title": "Vše ve 3.0",
+    "count": "Změny: {{count}}",
+    "shown": "{{shown}} z {{total}}",
+    "back": "Novinky",
+    "search": "Hledat ve změnách",
+    "filter": "Zobrazit",
+    "all": "Vše",
+    "new": "Nové",
+    "fixed": "Opraveno",
+    "emptyTitle": "Žádné odpovídající změny",
+    "emptyBody": "Zkuste jiné slovo nebo zobrazte všechny změny."
   }
 }

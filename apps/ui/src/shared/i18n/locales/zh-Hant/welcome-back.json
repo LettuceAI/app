@@ -53,7 +53,8 @@
   "done": {
     "title": "一切就緒。",
     "body": "所有內容都在你離開的地方。",
-    "open": "開啟 LettuceAI"
+    "open": "開啟 LettuceAI",
+    "whatsNew": "查看新功能"
   },
   "upgrade": {
     "title": "先完成一個步驟",
@@ -61,5 +62,57 @@
     "copy": "複製下載連結",
     "copied": "已複製連結",
     "fresh": "改為重新開始"
+  },
+  "intro": {
+    "redesign": {
+      "title": "我們重新設計了一切。",
+      "body": "每個畫面都從零重建。這是 3.0 的新內容。"
+    },
+    "groups": {
+      "title": "群組現在無所不能。",
+      "body": "場景圖片、記憶、設定集，以及每位成員各自的模型。單聊有的，群聊都有。"
+    },
+    "companionGroups": {
+      "title": "陪伴者群聊。",
+      "body": "把你的陪伴者聚到一個聊天裡。每個人都保留自己的記憶、情感，以及與你和彼此的羈絆。"
+    },
+    "creator": {
+      "title": "透過對話建立角色。",
+      "body": "描述你想要的角色，取得一幅肖像，並在儲存前確認每一處變更。",
+      "review": "檢視變更"
+    },
+    "models": {
+      "title": "我們自己的模型。",
+      "body": "Eidos 決定要記住什麼並略過重複內容。Thymos 讀取陪伴者的情緒。兩者都在你的裝置上執行。",
+      "thymos": "Thymos",
+      "thymosRole": "她的感受",
+      "eidos": "Eidos",
+      "eidosRole": "她記得什麼"
+    },
+    "lorebooks": {
+      "title": "能理解句子的設定集。",
+      "body": "要求第二個關鍵字，比對像 (went|go) to the * bar 這樣的片語，並在輸入時測試正規表示式。"
+    },
+    "next": "下一步",
+    "back": "返回",
+    "start": "查看新功能",
+    "open": "開啟 LettuceAI",
+    "everyChange": "所有變更",
+    "readEveryChange": "閱讀所有變更",
+    "pages": "頁面",
+    "page": "第 {{number}} 頁"
+  },
+  "changes": {
+    "title": "3.0 的全部內容",
+    "count": "{{count}} 項變更",
+    "shown": "{{shown}} / {{total}}",
+    "back": "新功能",
+    "search": "搜尋變更",
+    "filter": "顯示",
+    "all": "全部",
+    "new": "新增",
+    "fixed": "已修正",
+    "emptyTitle": "沒有符合的變更",
+    "emptyBody": "換個詞試試，或顯示全部變更。"
   }
 }

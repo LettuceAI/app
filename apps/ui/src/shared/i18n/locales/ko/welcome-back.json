@@ -53,7 +53,8 @@
   "done": {
     "title": "모두 준비됐어요.",
     "body": "모든 것이 떠난 그대로 있어요.",
-    "open": "LettuceAI 열기"
+    "open": "LettuceAI 열기",
+    "whatsNew": "새로운 기능 보기"
   },
   "upgrade": {
     "title": "먼저 한 단계만",
@@ -61,5 +62,57 @@
     "copy": "다운로드 링크 복사",
     "copied": "링크를 복사했어요",
     "fresh": "대신 새로 시작하기"
+  },
+  "intro": {
+    "redesign": {
+      "title": "모든 것을 새로 디자인했어요.",
+      "body": "모든 화면을 처음부터 다시 만들었어요. 3.0의 새로운 점을 소개합니다."
+    },
+    "groups": {
+      "title": "이제 그룹에서 모든 걸 할 수 있어요.",
+      "body": "장면 이미지, 기억, 로어북, 멤버별 모델까지. 1:1 채팅에 있는 모든 것."
+    },
+    "companionGroups": {
+      "title": "컴패니언 그룹 채팅.",
+      "body": "컴패니언들을 한 채팅에 모아 보세요. 각자 자신의 기억과 감정, 당신 그리고 서로와의 유대를 간직합니다."
+    },
+    "creator": {
+      "title": "대화로 캐릭터 만들기.",
+      "body": "원하는 인물을 설명하고, 초상화를 받고, 저장 전에 모든 변경을 승인하세요.",
+      "review": "변경 사항 검토"
+    },
+    "models": {
+      "title": "우리가 만든 모델.",
+      "body": "Eidos는 기억할 것을 고르고 반복은 건너뜁니다. Thymos는 컴패니언의 감정을 읽습니다. 둘 다 기기에서 실행됩니다.",
+      "thymos": "Thymos",
+      "thymosRole": "그녀의 기분",
+      "eidos": "Eidos",
+      "eidosRole": "그녀가 기억하는 것"
+    },
+    "lorebooks": {
+      "title": "문장을 이해하는 로어북.",
+      "body": "두 번째 키워드를 요구하고, (went|go) to the * bar 같은 구문을 찾고, 입력하면서 정규식을 테스트하세요."
+    },
+    "next": "다음",
+    "back": "뒤로",
+    "start": "새로운 기능 보기",
+    "open": "LettuceAI 열기",
+    "everyChange": "모든 변경 사항",
+    "readEveryChange": "모든 변경 사항 읽기",
+    "pages": "페이지",
+    "page": "{{number}}페이지"
+  },
+  "changes": {
+    "title": "3.0의 모든 것",
+    "count": "변경 사항 {{count}}개",
+    "shown": "{{total}}개 중 {{shown}}개",
+    "back": "새로운 기능",
+    "search": "변경 사항 검색",
+    "filter": "표시",
+    "all": "전체",
+    "new": "새 기능",
+    "fixed": "수정됨",
+    "emptyTitle": "일치하는 변경 사항이 없어요",
+    "emptyBody": "다른 단어로 검색하거나 모든 변경 사항을 보세요."
   }
 }

@@ -53,7 +53,8 @@
   "done": {
     "title": "Alt er klart.",
     "body": "Alt er der du forlot det.",
-    "open": "Åpne LettuceAI"
+    "open": "Åpne LettuceAI",
+    "whatsNew": "Se hva som er nytt"
   },
   "upgrade": {
     "title": "Ett steg først",
@@ -61,5 +62,57 @@
     "copy": "Kopier nedlastingslenken",
     "copied": "Lenken er kopiert",
     "fresh": "Start på nytt i stedet"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Vi har designet alt på nytt.",
+      "body": "Hver skjerm, bygget fra bunnen av. Dette er nytt i 3.0."
+    },
+    "groups": {
+      "title": "Grupper kan alt nå.",
+      "body": "Scenebilder, minne, lorebooks og en modell per medlem. Alt som én-til-én-chatter har."
+    },
+    "companionGroups": {
+      "title": "Companion-gruppechatter.",
+      "body": "Samle companions i én chat. Hver beholder egne minner, følelser og båndet til deg og til hverandre."
+    },
+    "creator": {
+      "title": "Lag en karakter ved å prate.",
+      "body": "Beskriv hvem du vil ha, få et portrett og godkjenn hver endring før den lagres.",
+      "review": "Se gjennom endringer"
+    },
+    "models": {
+      "title": "Våre egne modeller.",
+      "body": "Eidos velger hva som skal huskes og hopper over gjentakelser. Thymos leser hvordan en companion har det. Begge kjører på enheten din.",
+      "thymos": "Thymos",
+      "thymosRole": "Hvordan hun har det",
+      "eidos": "Eidos",
+      "eidosRole": "Hva hun husker"
+    },
+    "lorebooks": {
+      "title": "Lorebooks som forstår setninger.",
+      "body": "Be om et ekstra nøkkelord, finn fraser som (went|go) to the * bar og test regex mens du skriver."
+    },
+    "next": "Neste",
+    "back": "Tilbake",
+    "start": "Se hva som er nytt",
+    "open": "Åpne LettuceAI",
+    "everyChange": "Alle endringer",
+    "readEveryChange": "Les alle endringer",
+    "pages": "Sider",
+    "page": "Side {{number}}"
+  },
+  "changes": {
+    "title": "Alt i 3.0",
+    "count": "{{count}} endringer",
+    "shown": "{{shown}} av {{total}}",
+    "back": "Nytt",
+    "search": "Søk i endringer",
+    "filter": "Vis",
+    "all": "Alle",
+    "new": "Nytt",
+    "fixed": "Fikset",
+    "emptyTitle": "Ingen endringer passer",
+    "emptyBody": "Prøv et annet ord, eller vis alle endringer."
   }
 }

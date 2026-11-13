@@ -53,7 +53,8 @@
   "done": {
     "title": "Ayos na lahat.",
     "body": "Nasa dati nitong lugar pa rin ang lahat.",
-    "open": "Buksan ang LettuceAI"
+    "open": "Buksan ang LettuceAI",
+    "whatsNew": "Tingnan ang bago"
   },
   "upgrade": {
     "title": "Isang hakbang muna",
@@ -61,5 +62,57 @@
     "copy": "Kopyahin ang download link",
     "copied": "Nakopya ang link",
     "fresh": "Simulan na lang mula sa simula"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Binago namin ang disenyo ng lahat.",
+      "body": "Bawat screen, binuo mula sa simula. Narito ang bago sa 3.0."
+    },
+    "groups": {
+      "title": "Kaya na ng mga grupo ang lahat.",
+      "body": "Mga larawan ng eksena, memorya, lorebook at modelo para sa bawat miyembro. Lahat ng mayroon ang one-on-one na chat."
+    },
+    "companionGroups": {
+      "title": "Mga group chat ng companion.",
+      "body": "Pagsamahin ang mga companion mo sa isang chat. Bawat isa ay may sariling alaala, damdamin at ugnayan sa iyo at sa isa't isa."
+    },
+    "creator": {
+      "title": "Gumawa ng karakter sa pakikipag-usap.",
+      "body": "Ilarawan kung sino ang gusto mo, kumuha ng portrait, at aprubahan ang bawat pagbabago bago ito ma-save.",
+      "review": "Suriin ang mga pagbabago"
+    },
+    "models": {
+      "title": "Sarili naming mga modelo.",
+      "body": "Pinipili ng Eidos kung ano ang tatandaan at nilalaktawan ang mga ulit. Binabasa ng Thymos ang nararamdaman ng isang companion. Parehong tumatakbo sa device mo.",
+      "thymos": "Thymos",
+      "thymosRole": "Ang nararamdaman niya",
+      "eidos": "Eidos",
+      "eidosRole": "Ang naaalala niya"
+    },
+    "lorebooks": {
+      "title": "Mga lorebook na nakakaintindi ng pangungusap.",
+      "body": "Humingi ng pangalawang keyword, tumugma sa mga parirala gaya ng (went|go) to the * bar, at subukan ang regex habang nagta-type."
+    },
+    "next": "Susunod",
+    "back": "Bumalik",
+    "start": "Tingnan ang bago",
+    "open": "Buksan ang LettuceAI",
+    "everyChange": "Lahat ng pagbabago",
+    "readEveryChange": "Basahin ang lahat ng pagbabago",
+    "pages": "Mga pahina",
+    "page": "Pahina {{number}}"
+  },
+  "changes": {
+    "title": "Lahat sa 3.0",
+    "count": "{{count}} pagbabago",
+    "shown": "{{shown}} sa {{total}}",
+    "back": "Ano ang bago",
+    "search": "Maghanap sa mga pagbabago",
+    "filter": "Ipakita",
+    "all": "Lahat",
+    "new": "Bago",
+    "fixed": "Naayos",
+    "emptyTitle": "Walang tugmang pagbabago",
+    "emptyBody": "Subukan ang ibang salita, o ipakita ang lahat ng pagbabago."
   }
 }

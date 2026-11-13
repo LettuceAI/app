@@ -53,7 +53,8 @@
   "done": {
     "title": "Minden készen áll.",
     "body": "Minden ott van, ahol hagytad.",
-    "open": "LettuceAI megnyitása"
+    "open": "LettuceAI megnyitása",
+    "whatsNew": "Újdonságok megtekintése"
   },
   "upgrade": {
     "title": "Előbb egy lépés",
@@ -61,5 +62,57 @@
     "copy": "Letöltési link másolása",
     "copied": "Link másolva",
     "fresh": "Inkább tiszta lappal"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Mindent újraterveztünk.",
+      "body": "Minden képernyő az alapoktól újraépítve. Ez újdonság a 3.0-ban."
+    },
+    "groups": {
+      "title": "A csoportok most mindenre képesek.",
+      "body": "Jelenetképek, memória, lorebookok és tagonként külön modell. Minden, ami a kettesbeszélgetésekben megvan."
+    },
+    "companionGroups": {
+      "title": "Companion csoportos csevegések.",
+      "body": "Hozd össze a companionjaidat egy csevegésben. Mindegyik megtartja saját emlékeit, érzéseit, és a kötődését hozzád és egymáshoz."
+    },
+    "creator": {
+      "title": "Készíts karaktert beszélgetve.",
+      "body": "Írd le, kit szeretnél, kapj egy portrét, és hagyj jóvá minden változást mentés előtt.",
+      "review": "Változások áttekintése"
+    },
+    "models": {
+      "title": "Saját modelljeink.",
+      "body": "Az Eidos kiválasztja, mire kell emlékezni, és kihagyja az ismétléseket. A Thymos kiolvassa, hogyan érez egy companion. Mindkettő a te eszközödön fut.",
+      "thymos": "Thymos",
+      "thymosRole": "Hogyan érez",
+      "eidos": "Eidos",
+      "eidosRole": "Mire emlékszik"
+    },
+    "lorebooks": {
+      "title": "Mondatokat értő lorebookok.",
+      "body": "Kérj második kulcsszót, keress olyan kifejezéseket, mint a (went|go) to the * bar, és teszteld a regexet gépelés közben."
+    },
+    "next": "Tovább",
+    "back": "Vissza",
+    "start": "Újdonságok megtekintése",
+    "open": "LettuceAI megnyitása",
+    "everyChange": "Minden változás",
+    "readEveryChange": "Minden változás elolvasása",
+    "pages": "Oldalak",
+    "page": "{{number}}. oldal"
+  },
+  "changes": {
+    "title": "Minden a 3.0-ban",
+    "count": "{{count}} változás",
+    "shown": "{{shown}} / {{total}}",
+    "back": "Újdonságok",
+    "search": "Keresés a változásokban",
+    "filter": "Megjelenítés",
+    "all": "Mind",
+    "new": "Új",
+    "fixed": "Javítva",
+    "emptyTitle": "Nincs egyező változás",
+    "emptyBody": "Próbálj másik szót, vagy mutasd az összes változást."
   }
 }

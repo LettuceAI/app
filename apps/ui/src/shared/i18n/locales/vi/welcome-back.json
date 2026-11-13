@@ -53,7 +53,8 @@
   "done": {
     "title": "Mọi thứ đã xong.",
     "body": "Mọi thứ vẫn ở nơi bạn để lại.",
-    "open": "Mở LettuceAI"
+    "open": "Mở LettuceAI",
+    "whatsNew": "Xem có gì mới"
   },
   "upgrade": {
     "title": "Cần một bước trước",
@@ -61,5 +62,57 @@
     "copy": "Sao chép liên kết tải xuống",
     "copied": "Đã sao chép liên kết",
     "fresh": "Bắt đầu mới thay thế"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Chúng tôi đã thiết kế lại mọi thứ.",
+      "body": "Mọi màn hình đều được làm lại từ đầu. Đây là những điểm mới trong 3.0."
+    },
+    "groups": {
+      "title": "Nhóm giờ làm được mọi thứ.",
+      "body": "Ảnh cảnh, bộ nhớ, lorebook và một mô hình cho mỗi thành viên. Mọi thứ mà trò chuyện riêng có."
+    },
+    "companionGroups": {
+      "title": "Trò chuyện nhóm với companion.",
+      "body": "Đưa các companion vào cùng một cuộc trò chuyện. Mỗi người giữ ký ức, cảm xúc và sự gắn bó riêng với bạn và với nhau."
+    },
+    "creator": {
+      "title": "Tạo nhân vật bằng cách trò chuyện.",
+      "body": "Mô tả người bạn muốn, nhận một bức chân dung và duyệt từng thay đổi trước khi lưu.",
+      "review": "Xem lại thay đổi"
+    },
+    "models": {
+      "title": "Các mô hình của riêng chúng tôi.",
+      "body": "Eidos chọn điều cần nhớ và bỏ qua lặp lại. Thymos đọc cảm xúc của companion. Cả hai đều chạy trên thiết bị của bạn.",
+      "thymos": "Thymos",
+      "thymosRole": "Cô ấy cảm thấy thế nào",
+      "eidos": "Eidos",
+      "eidosRole": "Cô ấy nhớ gì"
+    },
+    "lorebooks": {
+      "title": "Lorebook hiểu được câu.",
+      "body": "Yêu cầu thêm từ khóa thứ hai, khớp cụm từ như (went|go) to the * bar và thử regex ngay khi gõ."
+    },
+    "next": "Tiếp",
+    "back": "Quay lại",
+    "start": "Xem có gì mới",
+    "open": "Mở LettuceAI",
+    "everyChange": "Mọi thay đổi",
+    "readEveryChange": "Đọc mọi thay đổi",
+    "pages": "Trang",
+    "page": "Trang {{number}}"
+  },
+  "changes": {
+    "title": "Mọi thứ trong 3.0",
+    "count": "{{count}} thay đổi",
+    "shown": "{{shown}} / {{total}}",
+    "back": "Có gì mới",
+    "search": "Tìm trong thay đổi",
+    "filter": "Hiển thị",
+    "all": "Tất cả",
+    "new": "Mới",
+    "fixed": "Đã sửa",
+    "emptyTitle": "Không có thay đổi phù hợp",
+    "emptyBody": "Hãy thử từ khác, hoặc hiện mọi thay đổi."
   }
 }

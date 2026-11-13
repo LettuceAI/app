@@ -53,7 +53,8 @@
   "done": {
     "title": "Alles staat klaar.",
     "body": "Alles staat waar je het hebt achtergelaten.",
-    "open": "LettuceAI openen"
+    "open": "LettuceAI openen",
+    "whatsNew": "Bekijk wat er nieuw is"
   },
   "upgrade": {
     "title": "Eerst één stap",
@@ -61,5 +62,57 @@
     "copy": "Downloadlink kopiëren",
     "copied": "Link gekopieerd",
     "fresh": "Liever opnieuw beginnen"
+  },
+  "intro": {
+    "redesign": {
+      "title": "We hebben alles opnieuw ontworpen.",
+      "body": "Elk scherm, vanaf nul opgebouwd. Dit is er nieuw in 3.0."
+    },
+    "groups": {
+      "title": "Groepen kunnen nu alles.",
+      "body": "Scènebeelden, geheugen, lorebooks en een model per lid. Alles wat één-op-éénchats hebben."
+    },
+    "companionGroups": {
+      "title": "Companion-groepschats.",
+      "body": "Zet je companions samen in één chat. Elk houdt eigen herinneringen, gevoelens en een band met jou en met elkaar."
+    },
+    "creator": {
+      "title": "Maak een personage door te praten.",
+      "body": "Beschrijf wie je wilt, krijg een portret en keur elke wijziging goed voordat die wordt opgeslagen.",
+      "review": "Wijzigingen bekijken"
+    },
+    "models": {
+      "title": "Onze eigen modellen.",
+      "body": "Eidos kiest wat onthouden wordt en slaat herhalingen over. Thymos leest hoe een companion zich voelt. Beide draaien op je apparaat.",
+      "thymos": "Thymos",
+      "thymosRole": "Hoe ze zich voelt",
+      "eidos": "Eidos",
+      "eidosRole": "Wat ze onthoudt"
+    },
+    "lorebooks": {
+      "title": "Lorebooks die zinnen begrijpen.",
+      "body": "Vraag om een tweede trefwoord, vind zinnen als (went|go) to the * bar en test regex terwijl je typt."
+    },
+    "next": "Volgende",
+    "back": "Terug",
+    "start": "Bekijk wat er nieuw is",
+    "open": "LettuceAI openen",
+    "everyChange": "Alle wijzigingen",
+    "readEveryChange": "Alle wijzigingen lezen",
+    "pages": "Pagina's",
+    "page": "Pagina {{number}}"
+  },
+  "changes": {
+    "title": "Alles in 3.0",
+    "count": "{{count}} wijzigingen",
+    "shown": "{{shown}} van {{total}}",
+    "back": "Nieuw",
+    "search": "Wijzigingen zoeken",
+    "filter": "Tonen",
+    "all": "Alle",
+    "new": "Nieuw",
+    "fixed": "Opgelost",
+    "emptyTitle": "Geen wijzigingen gevonden",
+    "emptyBody": "Probeer een ander woord of toon alle wijzigingen."
   }
 }

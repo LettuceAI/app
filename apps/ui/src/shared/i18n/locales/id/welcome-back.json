@@ -53,7 +53,8 @@
   "done": {
     "title": "Semua sudah siap.",
     "body": "Semuanya ada di tempat semula.",
-    "open": "Buka LettuceAI"
+    "open": "Buka LettuceAI",
+    "whatsNew": "Lihat yang baru"
   },
   "upgrade": {
     "title": "Satu langkah dulu",
@@ -61,5 +62,57 @@
     "copy": "Salin tautan unduhan",
     "copied": "Tautan disalin",
     "fresh": "Mulai dari awal saja"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Kami mendesain ulang semuanya.",
+      "body": "Setiap layar dibangun ulang dari awal. Inilah yang baru di 3.0."
+    },
+    "groups": {
+      "title": "Grup sekarang bisa melakukan semuanya.",
+      "body": "Gambar adegan, memori, lorebook, dan model untuk tiap anggota. Semua yang dimiliki obrolan satu lawan satu."
+    },
+    "companionGroups": {
+      "title": "Obrolan grup companion.",
+      "body": "Kumpulkan companion-mu dalam satu obrolan. Masing-masing menyimpan kenangan, perasaan, dan ikatannya denganmu dan satu sama lain."
+    },
+    "creator": {
+      "title": "Buat karakter dengan mengobrol.",
+      "body": "Jelaskan siapa yang kamu mau, dapatkan potret, lalu setujui setiap perubahan sebelum disimpan.",
+      "review": "Tinjau perubahan"
+    },
+    "models": {
+      "title": "Model milik kami sendiri.",
+      "body": "Eidos memilih apa yang diingat dan melewati pengulangan. Thymos membaca perasaan companion. Keduanya berjalan di perangkatmu.",
+      "thymos": "Thymos",
+      "thymosRole": "Apa yang ia rasakan",
+      "eidos": "Eidos",
+      "eidosRole": "Apa yang ia ingat"
+    },
+    "lorebooks": {
+      "title": "Lorebook yang memahami kalimat.",
+      "body": "Minta kata kunci kedua, cocokkan frasa seperti (went|go) to the * bar, dan uji regex sambil mengetik."
+    },
+    "next": "Berikutnya",
+    "back": "Kembali",
+    "start": "Lihat yang baru",
+    "open": "Buka LettuceAI",
+    "everyChange": "Semua perubahan",
+    "readEveryChange": "Baca semua perubahan",
+    "pages": "Halaman",
+    "page": "Halaman {{number}}"
+  },
+  "changes": {
+    "title": "Semua di 3.0",
+    "count": "{{count}} perubahan",
+    "shown": "{{shown}} dari {{total}}",
+    "back": "Yang baru",
+    "search": "Cari perubahan",
+    "filter": "Tampilkan",
+    "all": "Semua",
+    "new": "Baru",
+    "fixed": "Diperbaiki",
+    "emptyTitle": "Tidak ada perubahan yang cocok",
+    "emptyBody": "Coba kata lain, atau tampilkan semua perubahan."
   }
 }

@@ -53,7 +53,8 @@
   "done": {
     "title": "Alles bereit.",
     "body": "Alles ist, wo du es gelassen hast.",
-    "open": "LettuceAI öffnen"
+    "open": "LettuceAI öffnen",
+    "whatsNew": "Neuigkeiten ansehen"
   },
   "upgrade": {
     "title": "Erst ein Schritt",
@@ -61,5 +62,57 @@
     "copy": "Download-Link kopieren",
     "copied": "Link kopiert",
     "fresh": "Stattdessen neu anfangen"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Wir haben alles neu gestaltet.",
+      "body": "Jeder Bildschirm, von Grund auf neu gebaut. Das ist neu in 3.0."
+    },
+    "groups": {
+      "title": "Gruppen können jetzt alles.",
+      "body": "Szenenbilder, Erinnerungen, Lorebooks und ein Modell pro Mitglied. Alles, was Einzelchats haben."
+    },
+    "companionGroups": {
+      "title": "Companion-Gruppenchats.",
+      "body": "Bring deine Companions in einen Chat. Jeder behält eigene Erinnerungen, Gefühle und die Bindung zu dir und zueinander."
+    },
+    "creator": {
+      "title": "Erstelle einen Charakter im Gespräch.",
+      "body": "Beschreibe, wen du willst, erhalte ein Porträt und bestätige jede Änderung, bevor sie gespeichert wird.",
+      "review": "Änderungen prüfen"
+    },
+    "models": {
+      "title": "Unsere eigenen Modelle.",
+      "body": "Eidos wählt aus, was erinnert wird, und überspringt Wiederholungen. Thymos liest, wie sich ein Companion fühlt. Beide laufen auf deinem Gerät.",
+      "thymos": "Thymos",
+      "thymosRole": "Wie sie sich fühlt",
+      "eidos": "Eidos",
+      "eidosRole": "Woran sie sich erinnert"
+    },
+    "lorebooks": {
+      "title": "Lorebooks, die Sätze verstehen.",
+      "body": "Verlange ein zweites Schlüsselwort, finde Formulierungen wie (went|go) to the * bar und teste Regex beim Tippen."
+    },
+    "next": "Weiter",
+    "back": "Zurück",
+    "start": "Neuigkeiten ansehen",
+    "open": "LettuceAI öffnen",
+    "everyChange": "Alle Änderungen",
+    "readEveryChange": "Alle Änderungen lesen",
+    "pages": "Seiten",
+    "page": "Seite {{number}}"
+  },
+  "changes": {
+    "title": "Alles in 3.0",
+    "count": "{{count}} Änderungen",
+    "shown": "{{shown}} von {{total}}",
+    "back": "Neuigkeiten",
+    "search": "Änderungen durchsuchen",
+    "filter": "Anzeigen",
+    "all": "Alle",
+    "new": "Neu",
+    "fixed": "Behoben",
+    "emptyTitle": "Keine passenden Änderungen",
+    "emptyBody": "Versuche ein anderes Wort oder zeige alle Änderungen."
   }
 }

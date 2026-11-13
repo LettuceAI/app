@@ -53,7 +53,8 @@
   "done": {
     "title": "Tout est prêt.",
     "body": "Tout est là où vous l'avez laissé.",
-    "open": "Ouvrir LettuceAI"
+    "open": "Ouvrir LettuceAI",
+    "whatsNew": "Voir les nouveautés"
   },
   "upgrade": {
     "title": "Une étape d'abord",
@@ -61,5 +62,57 @@
     "copy": "Copier le lien de téléchargement",
     "copied": "Lien copié",
     "fresh": "Repartir de zéro"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Nous avons tout redessiné.",
+      "body": "Chaque écran, reconstruit de zéro. Voici les nouveautés de la 3.0."
+    },
+    "groups": {
+      "title": "Les groupes savent tout faire.",
+      "body": "Images de scène, mémoire, lorebooks et un modèle par membre. Tout ce qu'offrent les discussions à deux."
+    },
+    "companionGroups": {
+      "title": "Discussions de groupe avec companions.",
+      "body": "Réunissez vos companions dans une discussion. Chacun garde ses souvenirs, ses émotions et son lien avec vous et avec les autres."
+    },
+    "creator": {
+      "title": "Créez un personnage en discutant.",
+      "body": "Décrivez qui vous voulez, obtenez un portrait et validez chaque changement avant qu'il soit enregistré.",
+      "review": "Vérifier les changements"
+    },
+    "models": {
+      "title": "Nos propres modèles.",
+      "body": "Eidos choisit quoi retenir et ignore les doublons. Thymos lit ce que ressent un companion. Les deux tournent sur votre appareil.",
+      "thymos": "Thymos",
+      "thymosRole": "Ce qu'elle ressent",
+      "eidos": "Eidos",
+      "eidosRole": "Ce dont elle se souvient"
+    },
+    "lorebooks": {
+      "title": "Des lorebooks qui comprennent les phrases.",
+      "body": "Demandez un second mot-clé, repérez des phrases comme (went|go) to the * bar et testez une regex en tapant."
+    },
+    "next": "Suivant",
+    "back": "Retour",
+    "start": "Voir les nouveautés",
+    "open": "Ouvrir LettuceAI",
+    "everyChange": "Tous les changements",
+    "readEveryChange": "Lire tous les changements",
+    "pages": "Pages",
+    "page": "Page {{number}}"
+  },
+  "changes": {
+    "title": "Tout dans la 3.0",
+    "count": "{{count}} changements",
+    "shown": "{{shown}} sur {{total}}",
+    "back": "Nouveautés",
+    "search": "Rechercher dans les changements",
+    "filter": "Afficher",
+    "all": "Tous",
+    "new": "Nouveau",
+    "fixed": "Corrigé",
+    "emptyTitle": "Aucun changement ne correspond",
+    "emptyBody": "Essayez un autre mot ou affichez tous les changements."
   }
 }

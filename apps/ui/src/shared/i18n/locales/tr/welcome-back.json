@@ -53,7 +53,8 @@
   "done": {
     "title": "Her şey hazır.",
     "body": "Her şey bıraktığınız yerde.",
-    "open": "LettuceAI'ı aç"
+    "open": "LettuceAI'ı aç",
+    "whatsNew": "Yenilikleri gör"
   },
   "upgrade": {
     "title": "Önce bir adım",
@@ -61,5 +62,57 @@
     "copy": "İndirme bağlantısını kopyala",
     "copied": "Bağlantı kopyalandı",
     "fresh": "Bunun yerine sıfırdan başla"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Her şeyi yeniden tasarladık.",
+      "body": "Her ekran sıfırdan yeniden yapıldı. İşte 3.0'daki yenilikler."
+    },
+    "groups": {
+      "title": "Gruplar artık her şeyi yapabiliyor.",
+      "body": "Sahne görselleri, hafıza, lorebook'lar ve her üyeye ayrı model. Birebir sohbetlerdeki her şey."
+    },
+    "companionGroups": {
+      "title": "Companion grup sohbetleri.",
+      "body": "Companion'larını tek bir sohbette buluştur. Her biri kendi anılarını, duygularını, seninle ve birbirleriyle olan bağını korur."
+    },
+    "creator": {
+      "title": "Konuşarak karakter oluştur.",
+      "body": "Ne istediğini anlat, bir portre al ve kaydedilmeden önce her değişikliği onayla.",
+      "review": "Değişiklikleri incele"
+    },
+    "models": {
+      "title": "Kendi modellerimiz.",
+      "body": "Eidos neyin hatırlanacağını seçer ve tekrarları atlar. Thymos bir companion'ın nasıl hissettiğini okur. İkisi de cihazında çalışır.",
+      "thymos": "Thymos",
+      "thymosRole": "Nasıl hissediyor",
+      "eidos": "Eidos",
+      "eidosRole": "Neyi hatırlıyor"
+    },
+    "lorebooks": {
+      "title": "Cümleleri anlayan lorebook'lar.",
+      "body": "İkinci bir anahtar kelime iste, (went|go) to the * bar gibi kalıpları eşleştir ve regex'i yazarken test et."
+    },
+    "next": "İleri",
+    "back": "Geri",
+    "start": "Yenilikleri gör",
+    "open": "LettuceAI'yi aç",
+    "everyChange": "Tüm değişiklikler",
+    "readEveryChange": "Tüm değişiklikleri oku",
+    "pages": "Sayfalar",
+    "page": "Sayfa {{number}}"
+  },
+  "changes": {
+    "title": "3.0'daki her şey",
+    "count": "{{count}} değişiklik",
+    "shown": "{{shown}} / {{total}}",
+    "back": "Yenilikler",
+    "search": "Değişikliklerde ara",
+    "filter": "Göster",
+    "all": "Tümü",
+    "new": "Yeni",
+    "fixed": "Düzeltildi",
+    "emptyTitle": "Eşleşen değişiklik yok",
+    "emptyBody": "Başka bir kelime dene ya da tüm değişiklikleri göster."
   }
 }

@@ -53,7 +53,8 @@
   "done": {
     "title": "Tudo pronto.",
     "body": "Tudo está onde você deixou.",
-    "open": "Abrir o LettuceAI"
+    "open": "Abrir o LettuceAI",
+    "whatsNew": "Ver novidades"
   },
   "upgrade": {
     "title": "Só um passo antes",
@@ -61,5 +62,57 @@
     "copy": "Copiar link de download",
     "copied": "Link copiado",
     "fresh": "Começar do zero"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Redesenhamos tudo.",
+      "body": "Cada tela, reconstruída do zero. Veja o que há de novo na 3.0."
+    },
+    "groups": {
+      "title": "Os grupos agora fazem de tudo.",
+      "body": "Imagens de cena, memória, lorebooks e um modelo por membro. Tudo o que os chats individuais têm."
+    },
+    "companionGroups": {
+      "title": "Chats em grupo com companions.",
+      "body": "Junte seus companions em um chat. Cada um mantém suas memórias, sentimentos e o vínculo com você e entre si."
+    },
+    "creator": {
+      "title": "Crie um personagem conversando.",
+      "body": "Descreva quem você quer, receba um retrato e aprove cada mudança antes de salvar.",
+      "review": "Revisar mudanças"
+    },
+    "models": {
+      "title": "Nossos próprios modelos.",
+      "body": "O Eidos escolhe o que lembrar e ignora repetições. O Thymos lê como um companion se sente. Ambos rodam no seu dispositivo.",
+      "thymos": "Thymos",
+      "thymosRole": "Como ela se sente",
+      "eidos": "Eidos",
+      "eidosRole": "Do que ela se lembra"
+    },
+    "lorebooks": {
+      "title": "Lorebooks que entendem frases.",
+      "body": "Peça uma segunda palavra-chave, encontre frases como (went|go) to the * bar e teste regex enquanto digita."
+    },
+    "next": "Próximo",
+    "back": "Voltar",
+    "start": "Ver novidades",
+    "open": "Abrir o LettuceAI",
+    "everyChange": "Todas as mudanças",
+    "readEveryChange": "Ler todas as mudanças",
+    "pages": "Páginas",
+    "page": "Página {{number}}"
+  },
+  "changes": {
+    "title": "Tudo na 3.0",
+    "count": "{{count}} mudanças",
+    "shown": "{{shown}} de {{total}}",
+    "back": "Novidades",
+    "search": "Buscar mudanças",
+    "filter": "Mostrar",
+    "all": "Todas",
+    "new": "Novo",
+    "fixed": "Corrigido",
+    "emptyTitle": "Nenhuma mudança encontrada",
+    "emptyBody": "Tente outra palavra ou mostre todas as mudanças."
   }
 }

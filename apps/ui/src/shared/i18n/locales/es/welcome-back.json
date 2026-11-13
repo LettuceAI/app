@@ -53,7 +53,8 @@
   "done": {
     "title": "Todo listo.",
     "body": "Todo está donde lo dejaste.",
-    "open": "Abrir LettuceAI"
+    "open": "Abrir LettuceAI",
+    "whatsNew": "Ver novedades"
   },
   "upgrade": {
     "title": "Un paso primero",
@@ -61,5 +62,57 @@
     "copy": "Copiar enlace de descarga",
     "copied": "Enlace copiado",
     "fresh": "Empezar de cero"
+  },
+  "intro": {
+    "redesign": {
+      "title": "Lo hemos rediseñado todo.",
+      "body": "Cada pantalla, reconstruida desde cero. Esto es lo nuevo en 3.0."
+    },
+    "groups": {
+      "title": "Los grupos ahora lo hacen todo.",
+      "body": "Imágenes de escena, memoria, lorebooks y un modelo por miembro. Todo lo que tienen los chats individuales."
+    },
+    "companionGroups": {
+      "title": "Chats de grupo con companions.",
+      "body": "Reúne a tus companions en un chat. Cada uno conserva sus recuerdos, sentimientos y su vínculo contigo y entre ellos."
+    },
+    "creator": {
+      "title": "Crea un personaje conversando.",
+      "body": "Describe a quién quieres, consigue un retrato y aprueba cada cambio antes de guardarlo.",
+      "review": "Revisar cambios"
+    },
+    "models": {
+      "title": "Nuestros propios modelos.",
+      "body": "Eidos elige qué recordar y omite repeticiones. Thymos lee cómo se siente un companion. Ambos funcionan en tu dispositivo.",
+      "thymos": "Thymos",
+      "thymosRole": "Cómo se siente",
+      "eidos": "Eidos",
+      "eidosRole": "Qué recuerda"
+    },
+    "lorebooks": {
+      "title": "Lorebooks que entienden frases.",
+      "body": "Pide una segunda palabra clave, encuentra frases como (went|go) to the * bar y prueba regex mientras escribes."
+    },
+    "next": "Siguiente",
+    "back": "Atrás",
+    "start": "Ver novedades",
+    "open": "Abrir LettuceAI",
+    "everyChange": "Todos los cambios",
+    "readEveryChange": "Leer todos los cambios",
+    "pages": "Páginas",
+    "page": "Página {{number}}"
+  },
+  "changes": {
+    "title": "Todo en 3.0",
+    "count": "{{count}} cambios",
+    "shown": "{{shown}} de {{total}}",
+    "back": "Novedades",
+    "search": "Buscar cambios",
+    "filter": "Mostrar",
+    "all": "Todos",
+    "new": "Nuevo",
+    "fixed": "Corregido",
+    "emptyTitle": "Ningún cambio coincide",
+    "emptyBody": "Prueba otra palabra o muestra todos los cambios."
   }
 }
