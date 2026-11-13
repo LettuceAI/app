@@ -2,9 +2,16 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/r
 import { useTranslation } from "react-i18next";
 import { fileSize, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
-import type { CivitaiAuthStatus, JobSubjectDetail, LlamaDevice, SdRuntimeAsset } from "@/api/generated/bindings";
+import { isApiFailure } from "@/api/client";
+import type { CivitaiAuthStatus, ImageFailureKind, JobSubjectDetail, LlamaDevice, SdRuntimeAsset } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { useSettingsApi } from "../data";
+
+/** The typed image failure behind an error, when the backend tagged it as one. */
+export function imageFailureKind(error: unknown): ImageFailureKind | null {
+  if (!isApiFailure(error)) return null;
+  return error.details?.type === "image" ? error.details.failure : null;
+}
 
 export type ImageInstallDetail = Extract<JobSubjectDetail, { type: "sd_runtime_install" | "sd_upscaler_install" | "sd_model_install" }>;
 

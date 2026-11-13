@@ -8,7 +8,7 @@ import type { SdInstalledRuntime, SdRuntimeRef } from "@/api/generated/bindings"
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi } from "../data";
 import { EngineInstallSheet } from "./EngineInstallSheet";
-import { inventoryQuery, localImageKeys, useByteSize, useImageAction, type ImageInstallDetail } from "./local-data";
+import { imageFailureKind, inventoryQuery, localImageKeys, useByteSize, useImageAction, type ImageInstallDetail } from "./local-data";
 
 export function EngineView({ open, onJob, onPolicy, activeInstalls, downloadsReady }: { open: boolean; onJob: (id: string, title: string, detail: ImageInstallDetail) => void; onPolicy: (runtime: SdRuntimeRef) => void; activeInstalls: ImageInstallDetail[]; downloadsReady: boolean }) {
   const { t } = useTranslation("settings");
@@ -52,7 +52,7 @@ export function EngineView({ open, onJob, onPolicy, activeInstalls, downloadsRea
         {inventory.data.installed.map((build) => <EngineBuildRow key={`${build.release}/${build.asset}`} build={build} onOpen={() => setSelected(build)} />)}
       </ListGroup>}
       {inventory.data?.active && <ListGroup label={t("image.local.policy.title")}>
-        <ListRowButton icon={<Gauge size={icon.lg} />} title={t("image.local.policy.gpus")} description={policy.data ? t("image.local.policy.summary", { mode: t(policy.data.policy.multi_gpu_enabled ? "image.local.policy.multi" : policy.data.policy.single_gpu_device_id !== null ? "image.local.policy.single" : "image.local.policy.auto"), count: policy.data.devices.length, split: t(policy.data.policy.split_mode === "row" ? "image.local.policy.row" : "image.local.policy.layer"), backend: policy.data.backend }) : policy.isError ? t("image.local.readFailed") : t("image.loading")} onClick={() => onPolicy(inventory.data!.active!)} />
+        <ListRowButton icon={<Gauge size={icon.lg} />} title={t("image.local.policy.gpus")} description={policy.data ? t("image.local.policy.summary", { mode: t(policy.data.policy.multi_gpu_enabled ? "image.local.policy.multi" : policy.data.policy.single_gpu_device_id !== null ? "image.local.policy.single" : "image.local.policy.auto"), count: policy.data.devices.length, split: t(policy.data.policy.split_mode === "row" ? "image.local.policy.row" : "image.local.policy.layer"), backend: policy.data.backend }) : policy.isError ? t(imageFailureKind(policy.error) === "runtime_incompatible" ? "image.local.policy.incompatibleShort" : "image.local.readFailed") : t("image.loading")} onClick={() => onPolicy(inventory.data!.active!)} />
       </ListGroup>}
       <ListGroup>
         <ListRowButton icon={<Download size={icon.lg} />} title={t("image.local.engine.install")} description={t("image.local.engine.chooseBuild")} onClick={openInstall} />

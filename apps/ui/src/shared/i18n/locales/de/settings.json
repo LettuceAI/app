@@ -97,7 +97,10 @@
         "split": "Aufteilung",
         "layer": "Nach Layer",
         "row": "Nach Zeile",
-        "rowUnsupported": "Von diesem Build nicht unterstützt"
+        "rowUnsupported": "Von diesem Build nicht unterstützt",
+        "incompatibleShort": "Engine-Build mit diesem System inkompatibel",
+        "incompatibleTitle": "Engine-Build mit diesem System inkompatibel",
+        "incompatibleBody": "Dieser Engine-Build braucht neuere Systembibliotheken (glibc), als dieser Rechner bereitstellt. Aktualisiere das Host- bzw. Container-Base-Image auf ein neueres OS oder installiere einen Engine-Build, der zu diesem System passt."
       },
       "upscaler": {
         "title": "Upscaler",

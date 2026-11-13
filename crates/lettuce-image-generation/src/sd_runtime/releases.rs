@@ -118,6 +118,24 @@ pub fn runtime_backend(name: &str, platform: RuntimePlatform) -> Option<&'static
     }
 }
 
+/// The message shown when an engine build cannot load because the system's C
+/// library is older than the build was compiled against.
+pub const RUNTIME_LIBRARY_INCOMPATIBLE_MESSAGE: &str = "This image engine build needs newer system libraries (glibc) than this computer provides. Update the host or container base image to a newer OS, or install an engine build that matches this system.";
+
+/// Recognises the dynamic-loader failures that mean an engine build targets a
+/// newer or different system library than the host provides — e.g. a build
+/// compiled for a newer Ubuntu/glibc than the machine (or container) runs. The
+/// linker prints these in English before `main`, so matching the stable markers
+/// lets us explain the mismatch instead of surfacing the raw loader error.
+#[must_use]
+pub fn is_runtime_library_incompatibility(detail: &str) -> bool {
+    let lower = detail.to_ascii_lowercase();
+    lower.contains("glibc_")
+        || lower.contains("error while loading shared libraries")
+        || lower.contains("cannot open shared object file")
+        || (lower.contains("version `") && lower.contains("not found"))
+}
+
 fn digest_sha256(digest: Option<&str>) -> Option<String> {
     digest
         .and_then(|digest| digest.strip_prefix("sha256:"))

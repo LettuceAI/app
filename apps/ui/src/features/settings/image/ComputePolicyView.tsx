@@ -3,16 +3,23 @@ import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, Checkbox, icon, Input, ListGroup, ListRow, ListRowButton, LoadingState } from "@lettuceai/crisp";
+import { Button, Checkbox, ErrorState, icon, Input, ListGroup, ListRow, ListRowButton, LoadingState } from "@lettuceai/crisp";
 import type { SdComputePolicy, SdComputePolicyInfo, SdRuntimeRef } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi } from "../data";
-import { localImageKeys, useByteSize, useImageAction } from "./local-data";
+import { imageFailureKind, localImageKeys, useByteSize, useImageAction } from "./local-data";
 
 export function ComputePolicyView({ runtime, onDone, onClose, footerTarget }: { runtime: SdRuntimeRef; onDone: () => void; onClose: () => void; footerTarget: HTMLElement | null }) {
+  const { t } = useTranslation("settings");
   const api = useSettingsApi();
   const policy = useQuery({ queryKey: localImageKeys.policy(runtime.release, runtime.asset), queryFn: () => api.call("sdComputePolicyGet", runtime) });
-  if (!policy.data) return policy.isError ? <FailureState error={policy.error} onRetry={() => void policy.refetch()} /> : <LoadingState />;
+  if (!policy.data) {
+    if (!policy.isError) return <LoadingState />;
+    if (imageFailureKind(policy.error) === "runtime_incompatible") {
+      return <ErrorState title={t("image.local.policy.incompatibleTitle")} description={t("image.local.policy.incompatibleBody")} size="sm" />;
+    }
+    return <FailureState error={policy.error} onRetry={() => void policy.refetch()} />;
+  }
   return <PolicyForm info={policy.data} onDone={onDone} onClose={onClose} footerTarget={footerTarget} />;
 }
 

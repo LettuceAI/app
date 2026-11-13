@@ -12,7 +12,10 @@ use super::layout::{
     runtime_is_installed, save_active_runtime, save_compute_policy, saved_active_runtime,
 };
 use super::policy::ComputePolicy;
-use super::releases::{RuntimeRelease, runtime_backend};
+use super::releases::{
+    RUNTIME_LIBRARY_INCOMPATIBLE_MESSAGE, RuntimeRelease, is_runtime_library_incompatibility,
+    runtime_backend,
+};
 use super::server::LocalDiffusionEngine;
 use crate::{
     DiffusionComponentRole, DiffusionProfile, DiffusionVariant, ImageError, ImageFailureKind,
@@ -348,7 +351,16 @@ impl LocalDiffusionEngine {
         let resolved = self
             .resolve_compute_policy(release, asset, &policy)
             .await
-            .map_err(|message| ImageError::new(ImageFailureKind::InvalidRequest, message))?;
+            .map_err(|message| {
+                if is_runtime_library_incompatibility(&message) {
+                    ImageError::new(
+                        ImageFailureKind::RuntimeIncompatible,
+                        RUNTIME_LIBRARY_INCOMPATIBLE_MESSAGE,
+                    )
+                } else {
+                    ImageError::new(ImageFailureKind::InvalidRequest, message)
+                }
+            })?;
         Ok(ComputePolicyInfo {
             runtime_release: release.to_owned(),
             runtime_asset: asset.to_owned(),
