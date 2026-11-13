@@ -73,9 +73,9 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-whisper-rs = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git", rev = "cc3c62add61e79d18e7e90863e888328399f782e", features = ["tracing_backend", "llama-ggml"] }
-llama-cpp-2 = { git = "https://github.com/MegalithOfficial/llama-cpp-rs", rev = "3a03f3104eb81ee278a297b701f757f23730cd69", features = ["mtmd"] }
-llama-cpp-sys-2 = { git = "https://github.com/MegalithOfficial/llama-cpp-rs", rev = "3a03f3104eb81ee278a297b701f757f23730cd69" }
+whisper-rs = { git = "https://codeberg.org/MegalithOfficial/whisper-rs.git", rev = "f07c0541e75ecc75c1cf5fd53960251bd6d192fc", features = ["tracing_backend", "llama-ggml"] }
+llama-cpp-2 = { git = "https://github.com/MegalithOfficial/llama-cpp-rs", rev = "68ff4319ea868eff6c7daec281fafa8c1ec4c8b6", features = ["mtmd"] }
+llama-cpp-sys-2 = { git = "https://github.com/MegalithOfficial/llama-cpp-rs", rev = "68ff4319ea868eff6c7daec281fafa8c1ec4c8b6" }
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 windows = { version = "0.58", features = ["Win32_Graphics_Dxgi"] }
 unified-entity-card = "0.2.0"
