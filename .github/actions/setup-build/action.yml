@@ -24,10 +24,14 @@ runs:
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         bun-version: '1.4.3'
-    - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+    - id: rust
+      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       with:
         toolchain: '1.98.0'
         targets: ${{ inputs.targets }}
+    - name: Use the installed Rust toolchain over rust-toolchain.toml
+      shell: bash
+      run: echo "RUSTUP_TOOLCHAIN=${{ steps.rust.outputs.name }}" >> "$GITHUB_ENV"
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         shared-key: release-${{ inputs.cache-key }}

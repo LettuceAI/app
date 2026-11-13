@@ -158,8 +158,8 @@ jobs:
             const matrix = [
               {id: 'linux-x64', runner: 'ubuntu-24.04', target: 'x86_64-unknown-linux-gnu', features: 'vulkan', bundles: 'deb,appimage'},
               {id: 'windows-x64', runner: 'windows-2022', target: 'x86_64-pc-windows-msvc', features: 'vulkan', bundles: 'nsis,msi'},
-              {id: 'macos-arm64', runner: 'macos-15', target: 'aarch64-apple-darwin', features: 'metal', bundles: 'app,dmg'},
-              {id: 'macos-x64', runner: 'macos-15-intel', target: 'x86_64-apple-darwin', features: 'metal', bundles: 'app,dmg'},
+              {id: 'macos-arm64', runner: 'macos-26', target: 'aarch64-apple-darwin', features: 'metal', bundles: 'app,dmg'},
+              {id: 'macos-x64', runner: 'macos-26-intel', target: 'x86_64-apple-darwin', features: 'metal', bundles: 'app,dmg'},
               ...(cuda ? [
                 {id: 'linux-x64-cuda', runner: 'ubuntu-24.04', target: 'x86_64-unknown-linux-gnu', features: 'cuda', bundles: 'deb,appimage'},
                 {id: 'windows-x64-cuda', runner: 'windows-2022', target: 'x86_64-pc-windows-msvc', features: 'cuda', bundles: 'nsis,msi'},
