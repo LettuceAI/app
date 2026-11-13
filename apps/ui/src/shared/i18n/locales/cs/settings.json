@@ -99,7 +99,10 @@
         "split": "Rozdělení",
         "layer": "Po vrstvách",
         "row": "Po řádcích",
-        "rowUnsupported": "Tento build to nepodporuje"
+        "rowUnsupported": "Tento build to nepodporuje",
+        "incompatibleShort": "Sestavení enginu není kompatibilní s tímto systémem",
+        "incompatibleTitle": "Sestavení enginu není kompatibilní s tímto systémem",
+        "incompatibleBody": "Tento build obrazového enginu vyžaduje novější systémové knihovny (glibc), než tento počítač poskytuje. Aktualizujte hostitele nebo základní image kontejneru na novější OS, nebo nainstalujte build enginu odpovídající tomuto systému."
       },
       "upscaler": {
         "title": "Upscaler",

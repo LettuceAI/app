@@ -98,7 +98,10 @@
         "split": "Divisione",
         "layer": "Per layer",
         "row": "Per riga",
-        "rowUnsupported": "Non supportato da questa build"
+        "rowUnsupported": "Non supportato da questa build",
+        "incompatibleShort": "Build del motore non compatibile con questo sistema",
+        "incompatibleTitle": "Build del motore non compatibile con questo sistema",
+        "incompatibleBody": "Questa build del motore di immagini richiede librerie di sistema (glibc) più recenti di quelle fornite da questo computer. Aggiorna l'host o l'immagine base del container a un sistema operativo più recente, oppure installa una build del motore compatibile con questo sistema."
       },
       "upscaler": {
         "title": "Upscaler",

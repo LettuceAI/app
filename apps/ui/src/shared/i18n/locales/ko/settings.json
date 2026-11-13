@@ -96,7 +96,10 @@
         "split": "분할",
         "layer": "레이어 단위",
         "row": "행 단위",
-        "rowUnsupported": "이 빌드에서는 지원하지 않아요"
+        "rowUnsupported": "이 빌드에서는 지원하지 않아요",
+        "incompatibleShort": "엔진 빌드가 이 시스템과 호환되지 않아요",
+        "incompatibleTitle": "엔진 빌드가 이 시스템과 호환되지 않아요",
+        "incompatibleBody": "이 이미지 엔진 빌드는 이 컴퓨터가 제공하는 것보다 새로운 시스템 라이브러리(glibc)가 필요해요. 호스트나 컨테이너 베이스 이미지를 더 새로운 OS로 업데이트하거나, 이 시스템에 맞는 엔진 빌드를 설치하세요."
       },
       "upscaler": {
         "title": "업스케일러",

@@ -97,7 +97,10 @@
         "split": "Bölme",
         "layer": "Katmana göre",
         "row": "Satıra göre",
-        "rowUnsupported": "Bu yapı tarafından desteklenmiyor"
+        "rowUnsupported": "Bu yapı tarafından desteklenmiyor",
+        "incompatibleShort": "Motor derlemesi bu sistemle uyumlu değil",
+        "incompatibleTitle": "Motor derlemesi bu sistemle uyumlu değil",
+        "incompatibleBody": "Bu görüntü motoru derlemesi, bu bilgisayarın sağladığından daha yeni sistem kitaplıkları (glibc) gerektiriyor. Ana makineyi veya kapsayıcı temel görüntüsünü daha yeni bir işletim sistemine güncelleyin ya da bu sisteme uygun bir motor derlemesi yükleyin."
       },
       "upscaler": {
         "title": "Büyütücü",

@@ -98,7 +98,10 @@
         "split": "Divisão",
         "layer": "Por camada",
         "row": "Por linha",
-        "rowUnsupported": "Não compatível com este build"
+        "rowUnsupported": "Não compatível com este build",
+        "incompatibleShort": "Build do motor incompatível com este sistema",
+        "incompatibleTitle": "Build do motor incompatível com este sistema",
+        "incompatibleBody": "Este build do motor de imagens precisa de bibliotecas de sistema (glibc) mais recentes do que as fornecidas por este computador. Atualize o host ou a imagem base do contêiner para um SO mais recente, ou instale um build do motor compatível com este sistema."
       },
       "upscaler": {
         "title": "Upscaler",

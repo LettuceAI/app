@@ -96,7 +96,10 @@
         "split": "Cách chia",
         "layer": "Theo lớp",
         "row": "Theo hàng",
-        "rowUnsupported": "Bản dựng này không hỗ trợ"
+        "rowUnsupported": "Bản dựng này không hỗ trợ",
+        "incompatibleShort": "Bản dựng engine không tương thích với hệ thống này",
+        "incompatibleTitle": "Bản dựng engine không tương thích với hệ thống này",
+        "incompatibleBody": "Bản dựng engine ảnh này cần các thư viện hệ thống (glibc) mới hơn những gì máy tính này cung cấp. Hãy cập nhật host hoặc image gốc của container lên hệ điều hành mới hơn, hoặc cài đặt một bản dựng engine phù hợp với hệ thống này."
       },
       "upscaler": {
         "title": "Bộ phóng to",

@@ -97,7 +97,10 @@
         "split": "Hatiin",
         "layer": "Ayon sa layer",
         "row": "Ayon sa row",
-        "rowUnsupported": "Hindi sinusuportahan ng build na ito"
+        "rowUnsupported": "Hindi sinusuportahan ng build na ito",
+        "incompatibleShort": "Hindi tugma ang build ng engine sa sistemang ito",
+        "incompatibleTitle": "Hindi tugma ang build ng engine sa sistemang ito",
+        "incompatibleBody": "Kailangan ng build na ito ng image engine ng mas bagong system libraries (glibc) kaysa sa ibinibigay ng computer na ito. I-update ang host o base image ng container sa mas bagong OS, o mag-install ng build ng engine na tugma sa sistemang ito."
       },
       "upscaler": {
         "title": "Upscaler",

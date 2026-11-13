@@ -97,7 +97,10 @@
         "split": "Verdelen",
         "layer": "Per laag",
         "row": "Per rij",
-        "rowUnsupported": "Niet ondersteund door deze build"
+        "rowUnsupported": "Niet ondersteund door deze build",
+        "incompatibleShort": "Engine-build niet compatibel met dit systeem",
+        "incompatibleTitle": "Engine-build niet compatibel met dit systeem",
+        "incompatibleBody": "Deze build van de afbeeldings-engine heeft nieuwere systeembibliotheken (glibc) nodig dan deze computer biedt. Werk de host of de basisimage van de container bij naar een nieuwer besturingssysteem, of installeer een engine-build die bij dit systeem past."
       },
       "upscaler": {
         "title": "Upscaler",

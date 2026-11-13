@@ -99,7 +99,10 @@
         "split": "Podział",
         "layer": "Według warstw",
         "row": "Według wierszy",
-        "rowUnsupported": "Nieobsługiwane przez tę kompilację"
+        "rowUnsupported": "Nieobsługiwane przez tę kompilację",
+        "incompatibleShort": "Kompilacja silnika niezgodna z tym systemem",
+        "incompatibleTitle": "Kompilacja silnika niezgodna z tym systemem",
+        "incompatibleBody": "Ta kompilacja silnika obrazów wymaga nowszych bibliotek systemowych (glibc) niż udostępnia ten komputer. Zaktualizuj hosta lub obraz bazowy kontenera do nowszego systemu operacyjnego albo zainstaluj kompilację silnika pasującą do tego systemu."
       },
       "upscaler": {
         "title": "Skaler",

@@ -96,7 +96,10 @@
         "split": "拆分方式",
         "layer": "按层",
         "row": "按行",
-        "rowUnsupported": "此构建不支持"
+        "rowUnsupported": "此构建不支持",
+        "incompatibleShort": "引擎版本与此系统不兼容",
+        "incompatibleTitle": "引擎版本与此系统不兼容",
+        "incompatibleBody": "此图像引擎版本所需的系统库（glibc）比本机提供的更新。请将主机或容器基础镜像更新到更新的操作系统，或安装与此系统匹配的引擎版本。"
       },
       "upscaler": {
         "title": "放大模型",

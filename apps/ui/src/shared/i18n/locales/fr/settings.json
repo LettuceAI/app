@@ -98,7 +98,10 @@
         "split": "Répartition",
         "layer": "Par couche",
         "row": "Par rangée",
-        "rowUnsupported": "Non pris en charge par cette compilation"
+        "rowUnsupported": "Non pris en charge par cette compilation",
+        "incompatibleShort": "Build du moteur incompatible avec ce système",
+        "incompatibleTitle": "Build du moteur incompatible avec ce système",
+        "incompatibleBody": "Ce build du moteur d'images nécessite des bibliothèques système (glibc) plus récentes que celles de cet ordinateur. Mettez à jour l'hôte ou l'image de base du conteneur vers un OS plus récent, ou installez un build du moteur compatible avec ce système."
       },
       "upscaler": {
         "title": "Upscaler",

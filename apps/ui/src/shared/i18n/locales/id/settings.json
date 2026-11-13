@@ -96,7 +96,10 @@
         "split": "Pembagian",
         "layer": "Per lapisan",
         "row": "Per baris",
-        "rowUnsupported": "Tidak didukung oleh build ini"
+        "rowUnsupported": "Tidak didukung oleh build ini",
+        "incompatibleShort": "Build engine tidak kompatibel dengan sistem ini",
+        "incompatibleTitle": "Build engine tidak kompatibel dengan sistem ini",
+        "incompatibleBody": "Build engine gambar ini memerlukan pustaka sistem (glibc) yang lebih baru daripada yang disediakan komputer ini. Perbarui host atau base image kontainer ke OS yang lebih baru, atau pasang build engine yang cocok dengan sistem ini."
       },
       "upscaler": {
         "title": "Peningkat resolusi",

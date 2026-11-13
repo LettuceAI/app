@@ -96,7 +96,10 @@
         "split": "分割",
         "layer": "依層",
         "row": "依列",
-        "rowUnsupported": "此組建不支援"
+        "rowUnsupported": "此組建不支援",
+        "incompatibleShort": "引擎版本與此系統不相容",
+        "incompatibleTitle": "引擎版本與此系統不相容",
+        "incompatibleBody": "此圖像引擎版本所需的系統程式庫（glibc）比本機提供的更新。請將主機或容器基礎映像更新到更新的作業系統，或安裝與此系統相符的引擎版本。"
       },
       "upscaler": {
         "title": "放大器",

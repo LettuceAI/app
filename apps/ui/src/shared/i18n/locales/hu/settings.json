@@ -97,7 +97,10 @@
         "split": "Felosztás",
         "layer": "Rétegenként",
         "row": "Soronként",
-        "rowUnsupported": "Ez a build nem támogatja"
+        "rowUnsupported": "Ez a build nem támogatja",
+        "incompatibleShort": "A motor build nem kompatibilis ezzel a rendszerrel",
+        "incompatibleTitle": "A motor build nem kompatibilis ezzel a rendszerrel",
+        "incompatibleBody": "Ez a képmotor-build újabb rendszerkönyvtárakat (glibc) igényel, mint amit ez a számítógép biztosít. Frissítsd a gazdagépet vagy a konténer alap-képét újabb operációs rendszerre, vagy telepíts ehhez a rendszerhez illő motor-buildet."
       },
       "upscaler": {
         "title": "Felnagyító",

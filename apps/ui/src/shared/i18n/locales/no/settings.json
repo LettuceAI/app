@@ -97,7 +97,10 @@
         "split": "Deling",
         "layer": "Etter lag",
         "row": "Etter rad",
-        "rowUnsupported": "Støttes ikke av dette bygget"
+        "rowUnsupported": "Støttes ikke av dette bygget",
+        "incompatibleShort": "Motor-build er ikke kompatibel med dette systemet",
+        "incompatibleTitle": "Motor-build er ikke kompatibel med dette systemet",
+        "incompatibleBody": "Denne build-en av bildemotoren trenger nyere systembiblioteker (glibc) enn denne datamaskinen tilbyr. Oppdater verten eller container-basisbildet til et nyere OS, eller installer en motor-build som passer til dette systemet."
       },
       "upscaler": {
         "title": "Oppskalerer",

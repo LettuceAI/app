@@ -98,7 +98,10 @@
         "split": "Reparto",
         "layer": "Por capa",
         "row": "Por fila",
-        "rowUnsupported": "No compatible con esta compilación"
+        "rowUnsupported": "No compatible con esta compilación",
+        "incompatibleShort": "La compilación del motor no es compatible con este sistema",
+        "incompatibleTitle": "La compilación del motor no es compatible con este sistema",
+        "incompatibleBody": "Esta compilación del motor de imágenes necesita bibliotecas del sistema (glibc) más recientes de las que proporciona este equipo. Actualiza el host o la imagen base del contenedor a un sistema operativo más reciente, o instala una compilación del motor compatible con este sistema."
       },
       "upscaler": {
         "title": "Escalador",
