@@ -126,6 +126,7 @@ impl MemoryEmbeddingRepository for Database {
                      ON i.space_id = p.space_id AND i.id = p.memory_id AND i.text = p.source_text
                   WHERE p.space_id = ?1 AND p.source_revision = ?2
                     AND p.dimensions = ?3 AND p.status = 'ready'
+                    AND i.superseded_by IS NULL
                   ORDER BY i.ordinal",
             )
             .map_err(storage)?;

@@ -37,6 +37,8 @@ pub struct BackupDynamicMemoryRun {
     pub attempts: Vec<BackupDynamicMemoryAttempt>,
     pub summary_checkpoint: Option<DynamicMemorySummaryCheckpoint>,
     pub changed_item_ids: Vec<lettuce_types::MemoryId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duplicate_consolidation: Option<lettuce_memory::ConsolidationPhase>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,6 +71,19 @@ impl DynamicMemoryBackup {
         self.pending_approvals
             .sort_by_key(|approval| (approval.conversation_id, approval.branch_id));
         for entry in &mut self.runs {
+            if let Some(phase) = &entry.duplicate_consolidation {
+                let ids = phase.groups.iter().map(|group| group.base_id).collect::<BTreeSet<_>>();
+                if phase.groups.len() > lettuce_memory::CONSOLIDATION_MAX_GROUPS
+                    || ids.len() != phase.groups.len()
+                    || phase.sources.iter().any(|source| !entry.run.source_messages.iter().any(|frozen| frozen.message_id == source.message_id && frozen.role == source.role && frozen.effective_time == source.observed_at))
+                    || phase.groups.iter().any(|group| group.proposals.len() < 2
+                        || group.base.as_ref().is_some_and(|base| base.id != group.base_id || lettuce_memory::MemorySpaceSnapshot { id: entry.run.space_id, revision: entry.run.starting_memory.revision, items: vec![base.clone()] }.validate().is_err())
+                        || (group.status == lettuce_memory::ConsolidationStatus::Applied) != group.applied.is_some()
+                        || group.applied.as_ref().is_some_and(|applied| applied.revision <= entry.run.starting_memory.revision || group.replacement_ids.is_empty()))
+                {
+                    return Err(DynamicMemoryBackupError::InvalidData { reason: "invalid duplicate consolidation receipt" });
+                }
+            }
             entry.changed_item_ids.sort();
             if entry
                 .changed_item_ids

@@ -1,4 +1,5 @@
 pub(crate) mod consolidation_adapter;
+pub(crate) mod duplicate_consolidation_adapter;
 pub(crate) mod dynamic_memory_rewind_adapter;
 pub(crate) mod dynamic_memory_run_adapter;
 pub(crate) mod memory_adapter;

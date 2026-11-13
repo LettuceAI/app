@@ -385,13 +385,22 @@ fn fresh_growth_memories(
         .iter()
         .map(|memory| memory.id)
         .collect::<HashSet<_>>();
-    after
-        .items
-        .iter()
-        .filter(|memory| !previous.contains(&memory.id) && !memory.text.trim().is_empty())
-        .take(MAX_GROWTH_MEMORIES)
-        .cloned()
-        .collect()
+    let fresh = after.items.iter().filter(|memory| !previous.contains(&memory.id) && memory.superseded_by.is_none() && !memory.text.trim().is_empty()).collect::<Vec<_>>();
+    let mut selected = Vec::new();
+    let mut groups = HashSet::new();
+    for memory in &fresh {
+        if memory.supersedes.len() == 1 {
+            let base = memory.supersedes[0];
+            if !groups.insert(base) { continue; }
+            let members = fresh.iter().filter(|item| item.supersedes == [base]).collect::<Vec<_>>();
+            if selected.len() + members.len() <= MAX_GROWTH_MEMORIES {
+                selected.extend(members.into_iter().map(|item| (*item).clone()));
+            }
+        } else if selected.len() < MAX_GROWTH_MEMORIES {
+            selected.push((*memory).clone());
+        }
+    }
+    selected
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -493,6 +502,26 @@ mod tests {
             ),
             CompanionMemoryTerminalFailure::Recovery
         );
+    }
+
+    #[test]
+    fn growth_followup_never_takes_only_part_of_a_replacement_set() {
+        let base = memory("historical base");
+        let before = MemorySpaceSnapshot { id: MemorySpaceId::new(), revision: Revision::INITIAL, items: vec![base.clone()] };
+        let mut items = (0..15).map(|index| memory(&format!("new {index}"))).collect::<Vec<_>>();
+        let mut history = base.clone(); history.superseded_by = Some(MemoryId::new());
+        items.push(history);
+        for index in 0..4 {
+            let mut replacement = memory(&format!("replacement {index}"));
+            replacement.supersedes = vec![base.id]; items.push(replacement);
+        }
+        let after = MemorySpaceSnapshot { id: before.id, revision: Revision::new(2), items };
+        let selected = fresh_growth_memories(&before, &after);
+        assert_eq!(selected.len(), 15);
+        assert!(selected.iter().all(|item| item.supersedes.is_empty()));
+        let empty = MemorySpaceSnapshot { items: vec![base], ..before };
+        let after = MemorySpaceSnapshot { items: after.items.into_iter().skip(15).collect(), ..after };
+        assert_eq!(fresh_growth_memories(&empty, &after).len(), 4);
     }
 
     #[test]

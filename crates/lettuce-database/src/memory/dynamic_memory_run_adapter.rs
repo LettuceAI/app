@@ -230,7 +230,7 @@ pub(crate) fn load_run_in(
     Ok(run)
 }
 
-fn ensure_attempt_job_in(
+pub(crate) fn ensure_attempt_job_in(
     connection: &Connection,
     attempt: &DynamicMemoryAttempt,
     at: TimestampMillis,
@@ -894,6 +894,10 @@ pub(crate) fn insert_restored_run_in(
         transaction.execute("INSERT INTO dynamic_memory_changed_items (run_id, memory_id) VALUES (?1, ?2)",
             params![run.id.to_string(), id.to_string()]).map_err(storage)?;
     }
+    if let Some(phase) = &backup.duplicate_consolidation {
+        transaction.execute("INSERT INTO dynamic_memory_duplicate_consolidations (run_id,phase_json) VALUES (?1,?2)",
+            params![run.id.to_string(), encode_versioned(phase, JSON_VERSION).map_err(storage)?]).map_err(storage)?;
+    }
     for (ordinal, source) in run.source_messages.iter().enumerate() {
         let (revision_id, candidate_id) = match source.render_source {
             MessageRenderSource::Revision(id) => (Some(id.to_string()), None),
@@ -1095,7 +1099,7 @@ pub(crate) fn changed_items_in(
     ids.into_iter().map(|id| id.parse().map_err(storage)).collect()
 }
 
-fn record_changed_items_in(
+pub(crate) fn record_changed_items_in(
     transaction: &rusqlite::Transaction<'_>,
     run_id: DynamicMemoryRunId,
     before: &lettuce_memory::MemorySpaceSnapshot,
@@ -1683,6 +1687,19 @@ impl GroupCompanionMemoryRoundWriter for Database {
 }
 
 impl DynamicMemoryRunRepository for Database {
+    fn load_duplicate_consolidation(&self, run_id: DynamicMemoryRunId) -> Result<Option<lettuce_memory::ConsolidationPhase>, DynamicMemoryRunRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        super::duplicate_consolidation_adapter::load(&connection, run_id)
+    }
+
+    fn freeze_duplicate_consolidation(&self, run_id: DynamicMemoryRunId, attempt_id: DynamicMemoryAttemptId, phase: lettuce_memory::ConsolidationPhase, at: TimestampMillis) -> Result<Option<lettuce_memory::ConsolidationPhase>, DynamicMemoryRunRepositoryError> {
+        super::duplicate_consolidation_adapter::freeze(self, run_id, attempt_id, phase, at)
+    }
+
+    fn commit_duplicate_consolidation(&self, commit: lettuce_memory::ConsolidationCommit, at: TimestampMillis) -> Result<lettuce_memory::ConsolidationGroup, DynamicMemoryRunRepositoryError> {
+        super::duplicate_consolidation_adapter::commit(self, commit, at)
+    }
+
     fn apply_dynamic_memory_cycle_finish(
         &self,
         attempt_id: DynamicMemoryAttemptId,
@@ -1710,6 +1727,20 @@ impl DynamicMemoryRunRepository for Database {
             return Err(lettuce_memory::MemoryRepositoryError::Conflict);
         }
         let before = memory_adapter::get_in(&tx, change.space_id)?.ok_or(MemoryRepositoryError::NotFound)?;
+        if let Some(phase) = super::duplicate_consolidation_adapter::load(&tx, run.id)
+            .map_err(|_| MemoryRepositoryError::Failure("consolidation receipt could not be read".into()))?
+        {
+            // A concurrent addition may have changed the trimming choice
+            // since consolidation's preflight. Defer automatic trimming
+            // rather than discard a part of this cycle's replacement set.
+            for group in phase.groups.iter().filter(|group| group.status == lettuce_memory::ConsolidationStatus::Applied) {
+                for id in std::iter::once(&group.base_id).chain(&group.replacement_ids) {
+                    if before.items.iter().any(|item| item.id == *id)
+                        && !change.items.iter().any(|item| item.id == *id)
+                    { return Err(MemoryRepositoryError::Conflict); }
+                }
+            }
+        }
         let snapshot = memory_adapter::compare_and_apply_in(&tx, &change)?;
         record_changed_items_in(&tx, run.id, &before, &snapshot)
             .map_err(|_| MemoryRepositoryError::Failure("memory storage failed".into()))?;
@@ -2508,6 +2539,8 @@ impl DynamicMemoryRunRepository for Database {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    include!("duplicate_consolidation_tests.rs");
+
     use lettuce_companions::{
         CompanionTurnEffectRepository, CompanionTurnEffectSeed, CompanionTurnEffectStatus,
     };
@@ -5868,6 +5901,14 @@ pub(crate) mod tests {
             .expect("child rounds");
         assert_eq!(child_rounds.len(), 3);
         assert_eq!(child_rounds[0].calls[0].call, admitted_round.calls[0].call);
+        let child_settlements = child_rounds.iter().map(|round| {
+            database.load_dynamic_memory_round_settlement(run_id, child_id, round.ordinal)
+                .expect("settlement").expect("settled")
+        }).collect::<Vec<_>>();
+        let candidates = lettuce_memory::collect_duplicate_candidates(&admitted.run, &child_rounds, &child_settlements);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[&memory_id].existing_text.as_deref(), Some("The user prefers tea"));
+        assert_eq!(candidates[&memory_id].proposed_texts, vec!["The user prefers tea"; 3], "manager and repair repetitions occur once after recovery");
         let failed = database
             .transition_dynamic_memory_attempt(
                 child_id,

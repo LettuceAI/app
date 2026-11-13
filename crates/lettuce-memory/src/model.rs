@@ -312,6 +312,13 @@ pub struct MemorySpaceSnapshot {
 }
 
 impl MemorySpaceSnapshot {
+    /// All direct successors, including one-to-many controlled replacements.
+    /// `superseded_by` is a legacy anchor; the reverse edges carry membership.
+    #[must_use]
+    pub fn successors(&self, base_id: MemoryId) -> Vec<&MemoryItem> {
+        self.items.iter().filter(|item| item.supersedes.contains(&base_id)).collect()
+    }
+
     pub fn validate(&self) -> Result<(), MemoryValidationError> {
         if self.revision.get() == 0 {
             return Err(MemoryValidationError::InvalidRevision {

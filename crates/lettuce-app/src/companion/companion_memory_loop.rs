@@ -18,6 +18,8 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompanionMemoryLoopResult {
+    pub duplicate_candidates: lettuce_memory::MemoryDuplicateCandidates,
+    pub consolidation_groups: Vec<lettuce_memory::ConsolidationGroup>,
     pub summary: Option<String>,
     pub completed_rounds: u8,
     pub projection_repairs_pending: Vec<MemoryId>,
@@ -120,6 +122,8 @@ impl<
                             "memory category repair round was not applied; keeping the cycle"
                         );
                         return Ok(CompanionMemoryLoopResult {
+                            duplicate_candidates: Default::default(),
+                            consolidation_groups: Vec::new(),
                             summary: None,
                             completed_rounds: round.ordinal,
                             projection_repairs_pending,
@@ -130,6 +134,8 @@ impl<
             }
             if round.kind == DynamicMemoryRoundKind::Repair {
                 return Ok(CompanionMemoryLoopResult {
+                            duplicate_candidates: Default::default(),
+                            consolidation_groups: Vec::new(),
                     summary: None,
                     completed_rounds: round.ordinal.saturating_add(1),
                     projection_repairs_pending,
@@ -150,6 +156,8 @@ impl<
             {
                 CompanionMemoryContinuationResult::Done { summary } => {
                     return Ok(CompanionMemoryLoopResult {
+                            duplicate_candidates: Default::default(),
+                            consolidation_groups: Vec::new(),
                         summary,
                         completed_rounds: round.ordinal.saturating_add(1),
                         projection_repairs_pending,

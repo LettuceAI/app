@@ -217,6 +217,29 @@ pub trait MemoryTokenCountRepository: Send + Sync {
 }
 
 pub trait DynamicMemoryRunRepository: Send + Sync {
+    fn load_duplicate_consolidation(
+        &self,
+        _run_id: lettuce_types::DynamicMemoryRunId,
+    ) -> Result<Option<crate::ConsolidationPhase>, DynamicMemoryRunRepositoryError> { Ok(None) }
+
+    /// Freeze once per logical run, across attempts. A repository without the
+    /// durable phase capability returns None and does no optional enrichment.
+    fn freeze_duplicate_consolidation(
+        &self,
+        _run_id: lettuce_types::DynamicMemoryRunId,
+        _attempt_id: lettuce_types::DynamicMemoryAttemptId,
+        _phase: crate::ConsolidationPhase,
+        _at: TimestampMillis,
+    ) -> Result<Option<crate::ConsolidationPhase>, DynamicMemoryRunRepositoryError> { Ok(None) }
+
+    fn commit_duplicate_consolidation(
+        &self,
+        _commit: crate::ConsolidationCommit,
+        _at: TimestampMillis,
+    ) -> Result<crate::ConsolidationGroup, DynamicMemoryRunRepositoryError> {
+        Err(DynamicMemoryRunRepositoryError::Invalid { reason: "duplicate consolidation is unsupported" })
+    }
+
     fn apply_dynamic_memory_cycle_finish(
         &self,
         _attempt_id: lettuce_types::DynamicMemoryAttemptId,

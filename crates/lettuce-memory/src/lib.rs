@@ -3,6 +3,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod manual;
+mod duplicate;
+mod duplicate_consolidation;
 mod model;
 mod port;
 mod read;
@@ -18,6 +20,8 @@ pub use manual::{
     MemoryManualHistory, MemoryManualMutation, MemoryManualReduction, reduce_manual_memory,
     undo_manual_memory_edit, undo_manual_memory_edit_preserving,
 };
+pub use duplicate::*;
+pub use duplicate_consolidation::*;
 pub use model::{
     DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_ITEMS, MAX_MEMORY_SUMMARY_BYTES,
     MAX_MEMORY_TEXT_BYTES, MemoryCategory, MemoryItem, MemoryOrigin, MemoryPolicy, MemoryShortId,

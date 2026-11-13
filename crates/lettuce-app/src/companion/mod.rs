@@ -9,6 +9,7 @@ pub(crate) mod companion_growth_execution;
 pub(crate) mod companion_growth_job;
 pub(crate) mod companion_memory_continuation;
 pub(crate) mod companion_memory_dispatch;
+pub(crate) mod companion_memory_duplicates;
 pub(crate) mod companion_memory_effect;
 pub(crate) mod companion_memory_execution;
 pub(crate) mod companion_memory_host;

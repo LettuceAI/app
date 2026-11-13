@@ -1154,6 +1154,8 @@ fn group_memory_result(
         first_round_replayed: false,
         summary_replayed: false,
         loop_result: crate::CompanionMemoryLoopResult {
+            duplicate_candidates: Default::default(),
+            consolidation_groups: Vec::new(),
             summary: None,
             completed_rounds: 0,
             projection_repairs_pending: Vec::new(),

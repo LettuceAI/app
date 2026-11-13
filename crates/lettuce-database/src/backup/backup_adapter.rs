@@ -944,7 +944,7 @@ fn read_memory_projections(
     })
 }
 
-fn read_dynamic_memory(
+pub(crate) fn read_dynamic_memory(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<DynamicMemoryBackup, ProviderBackupSourceError> {
     let pending_rows = transaction
@@ -1114,6 +1114,8 @@ fn read_dynamic_memory(
                     }
                 })?;
         runs.push(BackupDynamicMemoryRun {
+            duplicate_consolidation: crate::memory::duplicate_consolidation_adapter::load(transaction, run_id)
+                .map_err(|_| ProviderBackupSourceError::InvalidData { reason: "duplicate consolidation receipt could not be read" })?,
             run,
             attempts,
             summary_checkpoint,

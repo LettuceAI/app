@@ -309,6 +309,18 @@ impl<
                 }
             }
         }
+        match super::companion_memory_duplicates::cycle_duplicate_candidates(self.repository, dispatch.run.id, dispatch.attempt.id) {
+            Ok(candidates) => loop_result.duplicate_candidates = candidates,
+            Err(error) => tracing::warn!(run_id = %dispatch.run.id, %error, "duplicate candidate collection was unavailable; keeping the memory cycle"),
+        }
+        match super::companion_memory_duplicates::consolidate_duplicates(self.engine, self.repository, self.conversations, self.inference, &dispatch.run, dispatch.attempt.id, &loop_result.duplicate_candidates, policy, handle, now).await {
+            Ok(groups) => loop_result.consolidation_groups = groups,
+            Err(CompanionMemoryInferenceError::Cancelled) => {
+                CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(dispatch.run.id, dispatch.attempt.id, &admission.batch, handle, CompanionMemoryTerminalFailure::Cancelled, now)?;
+                return Err(CompanionMemoryJobRunError::Inference(CompanionMemoryInferenceError::Cancelled));
+            }
+            Err(error) => tracing::warn!(run_id = %dispatch.run.id, %error, "duplicate consolidation was skipped; keeping the memory cycle"),
+        }
         self.progress(claim, 4, "memory-organizing-memories", now)?;
         self.finish_cycle(&dispatch, &admission.batch, policy, handle, now)?;
         let terminal = CompanionMemoryTerminalCoordinator::new(self.repository).settle_success(

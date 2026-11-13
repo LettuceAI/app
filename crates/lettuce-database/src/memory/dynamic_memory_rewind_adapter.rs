@@ -277,6 +277,7 @@ pub(crate) fn undo_events(
     always_apply: bool,
 ) -> Result<lettuce_memory::MemorySpaceSnapshot, DynamicMemorySuffixRewindError> {
     enum Undo {
+        Consolidation(Box<lettuce_memory::ConsolidationGroup>),
         Tool {
             before: Vec<lettuce_memory::MemoryItem>,
             outcome: lettuce_memory::MemoryToolOutcome,
@@ -289,6 +290,15 @@ pub(crate) fn undo_events(
     let mut perspective_removals = BTreeMap::<MemorySpaceId, Vec<MemoryId>>::new();
     for run_id in run_ids {
         let run = dynamic_memory_run_adapter::load_run_in(transaction, run_id).map_err(storage)?;
+        if let Some(phase) = super::duplicate_consolidation_adapter::load(transaction, run_id).map_err(storage)? {
+            for group in phase.groups {
+                if group.status == lettuce_memory::ConsolidationStatus::Applied
+                    && let Some(applied) = &group.applied
+                {
+                    events.push((applied.at.get(), i64::try_from(applied.revision.get()).map_err(storage)?, i64::MAX, Undo::Consolidation(Box::new(group))));
+                }
+            }
+        }
         let rows = transaction.prepare("SELECT result.outcome_json,result.settled_at,settlement.resulting_memory_revision,result.ordinal FROM dynamic_memory_background_tool_results result JOIN dynamic_memory_background_round_settlements settlement ON settlement.run_id=result.run_id AND settlement.attempt_id=result.attempt_id AND settlement.round_ordinal=result.round_ordinal WHERE result.run_id=?1 GROUP BY result.round_ordinal,result.ordinal ORDER BY result.round_ordinal,result.ordinal").and_then(|mut statement| statement.query_map([run_id.to_string()], |row| Ok((row.get::<_, String>(0)?,row.get::<_, i64>(1)?,row.get::<_, i64>(2)?,row.get::<_, i64>(3)?)))?.collect::<rusqlite::Result<Vec<_>>>()).map_err(storage)?;
         let history = super::memory_manual_adapter::history_in(
             transaction,
@@ -359,6 +369,7 @@ pub(crate) fn undo_events(
     let mut items = current.items.clone();
     for (_, revision, _, event) in events.into_iter().rev() {
         match event {
+            Undo::Consolidation(group) => lettuce_memory::undo_duplicate_consolidation(&mut items, &group, &retained),
             Undo::Tool { before, outcome } => {
                 if let lettuce_memory::MemoryToolOutcome::AudienceCorrected {
                     character_id,

@@ -1399,6 +1399,7 @@ fn duplicate_id(
 ) -> Option<(MemoryId, DuplicateKind)> {
     let normalized_candidate = normalize_text(candidate);
     items.iter().find_map(|item| {
+        if item.superseded_by.is_some() { return None; }
         let normalized_existing = normalize_text(&item.text);
         if !normalized_candidate.is_empty() && normalized_candidate == normalized_existing {
             return Some((item.id, DuplicateKind::NormalizedText));
@@ -1667,6 +1668,15 @@ pub enum MemoryToolError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn superseded_history_cannot_reject_a_new_create_as_a_duplicate() {
+        let id = lettuce_types::MemoryId::new();
+        let mut item = crate::MemoryItem::written(id, crate::MemoryShortId::derived(id), "Mara works nights.".into(), lettuce_types::TimestampMillis::new(1));
+        item.superseded_by = Some(lettuce_types::MemoryId::new());
+        item.superseded_at = Some(lettuce_types::TimestampMillis::new(2));
+        assert_eq!(super::duplicate_id("Mara works nights.", &[], &[], &[item]), None);
+    }
+
     use std::collections::HashSet;
 
     use lettuce_types::{

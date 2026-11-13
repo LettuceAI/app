@@ -264,6 +264,11 @@ const MIGRATION_39: Migration = Migration {
     sql: include_str!("../migrations/0039_lorebook_secondary_keywords.sql"),
 };
 
+const MIGRATION_40: Migration = Migration {
+    id: 40,
+    sql: include_str!("../migrations/0040_memory_duplicate_consolidation.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -304,6 +309,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_37,
     MIGRATION_38,
     MIGRATION_39,
+    MIGRATION_40,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -6245,6 +6251,7 @@ mod tests {
                 "dynamic_memory_background_tool_results",
                 "dynamic_memory_changed_items",
                 "dynamic_memory_cycle_reverts",
+                "dynamic_memory_duplicate_consolidations",
                 "dynamic_memory_inference_rounds",
                 "dynamic_memory_pending_approvals",
                 "dynamic_memory_pending_suffix_rewinds",

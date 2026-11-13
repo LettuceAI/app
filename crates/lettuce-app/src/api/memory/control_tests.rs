@@ -2,6 +2,7 @@ use crate::api::tests::{Reply, harness, launch};
 use crate::api::conversations::turns_tests::replied_chat;
 use crate::api::*;
 use lettuce_contracts::{self as dto, ApiErrorCode, ApiErrorDetails};
+include!("duplicate_consolidation_tests.rs");
 
 fn make_dynamic(harness: &crate::api::tests::Harness, enabled: bool) {
     use lettuce_characters::CharacterRepository;
@@ -1644,6 +1645,12 @@ async fn duplicate_activity_keeps_the_original_and_same_run_comparison_texts() {
     assert!(matches!(settlement.results[1].outcome, lettuce_memory::MemoryToolOutcome::Created { .. }));
     assert!(matches!(settlement.results[2].outcome, lettuce_memory::MemoryToolOutcome::DuplicateSkipped { .. }));
     let created_item = item(&harness, &chat, created).await;
+    let candidates = crate::companion::companion_memory_duplicates::cycle_duplicate_candidates(
+        harness.context.backend().database(), round.run_id, round.attempt_id,
+    ).expect("durable duplicate candidates");
+    assert_eq!(candidates[&original_item.id.parse().expect("original id")].existing_text.as_deref(), Some(original));
+    assert_eq!(candidates[&created_item.id.parse().expect("created id")].existing_text.as_deref(), Some(created));
+    assert_eq!(candidates[&created_item.id.parse().expect("created id")].proposed_texts, [created]);
     memory_update(
         &harness.context,
         dto::MemoryUpdateRequest {
