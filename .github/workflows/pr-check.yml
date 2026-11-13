@@ -161,7 +161,7 @@ jobs:
 
   macos:
     name: macOS Check
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
 
     steps:

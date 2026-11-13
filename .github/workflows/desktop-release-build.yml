@@ -1392,7 +1392,7 @@ jobs:
     name: macOS Build (CPU, ${{ matrix.arch_label }})
     needs: prepare_release
     if: ${{ inputs.build_llama_cpu_macos == true }}
-    runs-on: macos-14
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
@@ -1482,7 +1482,7 @@ jobs:
     name: macOS Build (Metal, ${{ matrix.arch_label }})
     needs: prepare_release
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_llama_metal_macos == true }}
-    runs-on: macos-14
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
