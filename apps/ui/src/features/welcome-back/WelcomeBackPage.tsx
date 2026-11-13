@@ -26,6 +26,21 @@ const pill = "min-w-56 rounded-full bg-white text-black hover:bg-white/90";
 
 const noModels: readonly RequiredModel[] = [];
 
+type ReachableStep = Exclude<Step, "upgrade">;
+
+let requestedStep: ReachableStep | null = null;
+let showStep: ((step: ReachableStep) => void) | null = null;
+
+/** Temporary developer hook: opens Welcome back at a given step, for checking the 3.0 welcome. */
+export function openWelcomeBackAt(step: ReachableStep): boolean {
+  if (showStep) {
+    showStep(step);
+    return true;
+  }
+  requestedStep = step;
+  return false;
+}
+
 export function WelcomeBackPage() {
   const { t, i18n } = useTranslation("welcome-back");
   const api = useRouteContext({ from: "__root__", select: (context) => context.api });
@@ -34,9 +49,22 @@ export function WelcomeBackPage() {
   const phone = useCompactLayout();
   const status = useQuery(appStatusQuery(api));
   const legacy = status.data?.legacy_state;
-  const [chosen, setStep] = useState<Exclude<Step, "upgrade">>("welcome");
+  const [chosen, setStep] = useState<ReachableStep>(() => {
+    const first = requestedStep ?? "welcome";
+    requestedStep = null;
+    return first;
+  });
+  useEffect(() => {
+    showStep = (next) => {
+      setHello(false);
+      setStep(next);
+    };
+    return () => {
+      showStep = null;
+    };
+  }, []);
   const step: Step = legacy?.type === "requires_legacy_upgrade" ? "upgrade" : chosen;
-  const [hello, setHello] = useState(true);
+  const [hello, setHello] = useState(chosen === "welcome");
   const [needed, setNeeded] = useState<readonly RequiredModel[]>(noModels);
   const [copied, setCopied] = useState(false);
   const [leaving, setLeaving] = useState(false);

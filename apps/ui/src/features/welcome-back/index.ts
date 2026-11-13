@@ -1,2 +1,2 @@
-export { WelcomeBackPage } from "./WelcomeBackPage";
+export { openWelcomeBackAt, WelcomeBackPage } from "./WelcomeBackPage";
 export { modelsNeededAfterMove, useModelInstalls } from "./data/models";
