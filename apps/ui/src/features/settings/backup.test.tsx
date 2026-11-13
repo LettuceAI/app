@@ -91,9 +91,9 @@ describe("backup settings", () => {
     expect(await screen.findAllByText("Backup created")).not.toHaveLength(0);
   });
 
-  it("exports nothing when the save dialog is cancelled", async () => {
+  it.each(["other", "android"] as const)("exports nothing when the save dialog is cancelled on %s", async (platform) => {
     const exportBackup = vi.fn();
-    await openPage({ filesPickSave: () => ok({ target: null }), backupExport: exportBackup });
+    await openPage({ filesPickSave: () => ok({ target: null }), backupExport: exportBackup }, {}, platform);
     fireEvent.click(await screen.findByRole("button", { name: /New backup/ }));
     await screen.findByRole("button", { name: "Create" });
     fireEvent.change(sheet().getByLabelText(/^Password/), { target: { value: "secret1" } });
@@ -104,19 +104,43 @@ describe("backup settings", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("lets Android write to Downloads without a save dialog", async () => {
-    const save = vi.fn();
+  it("lets Android choose the backup location and preserves the document URI", async () => {
+    const uri = "content://com.android.externalstorage.documents/document/primary%3ABackups%2Fnew.lettuce";
+    const save = vi.fn(() => ok({ target: { uri } }));
     const exportBackup = vi.fn(() => ok({ job_id: "j1" }));
     await openPage({ filesPickSave: save, backupExport: exportBackup }, { jobWatch: () => ok(job({ result: { type: "backup_exported", backup: entry(), warnings: [] } })) }, "android");
     fireEvent.click(await screen.findByRole("button", { name: /New backup/ }));
     await screen.findByRole("button", { name: "Create" });
-    expect(sheet().getByText("Saved to Downloads/LettuceAI.")).toBeTruthy();
+    expect(sheet().getByText("You choose where to save it next.")).toBeTruthy();
+    expect(sheet().queryByText("Saved to Downloads/LettuceAI.")).toBeNull();
     fireEvent.change(sheet().getByLabelText(/^Password/), { target: { value: "secret1" } });
     fireEvent.change(sheet().getByLabelText(/^Confirm password/), { target: { value: "secret1" } });
     fireEvent.click(sheet().getByRole("button", { name: "Create" }));
     await waitFor(() => expect(exportBackup).toHaveBeenCalledTimes(1));
-    expect(save).not.toHaveBeenCalled();
-    expect((exportBackup.mock.calls[0] as unknown as [object])[0]).toMatchObject({ target: null });
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ kind: "backup", suggested_name: expect.stringMatching(/\.lettuce$/) }));
+    expect((exportBackup.mock.calls[0] as unknown as [object])[0]).toMatchObject({ target: { uri } });
+  });
+
+  it("keeps one save picker open and lets Android retry after a picker error", async () => {
+    let rejectPicker!: (error: Error) => void;
+    const save = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectPicker = reject; }));
+    const exportBackup = vi.fn();
+    await openPage({ filesPickSave: save, backupExport: exportBackup }, {}, "android");
+    fireEvent.click(await screen.findByRole("button", { name: /New backup/ }));
+    await screen.findByRole("button", { name: "Create" });
+    fireEvent.change(sheet().getByLabelText(/^Password/), { target: { value: "secret1" } });
+    fireEvent.change(sheet().getByLabelText(/^Confirm password/), { target: { value: "secret1" } });
+    fireEvent.click(sheet().getByRole("button", { name: "Create" }));
+    fireEvent.submit(sheet().getByLabelText(/^Password/).closest("form")!);
+    expect(save).toHaveBeenCalledTimes(1);
+    await act(async () => rejectPicker(new Error("private diagnostic")));
+    expect(exportBackup).not.toHaveBeenCalled();
+    expect(sheet().queryByText("private diagnostic")).toBeNull();
+    expect((sheet().getByLabelText(/^Password/) as HTMLInputElement).value).toBe("secret1");
+    expect((sheet().getByRole("button", { name: "Create" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(sheet().getByRole("button", { name: "Create" }));
+    expect(save).toHaveBeenCalledTimes(2);
+    await act(async () => rejectPicker(new Error("retry diagnostic")));
   });
 
   it("keeps the sheet and says why when the export job fails", async () => {

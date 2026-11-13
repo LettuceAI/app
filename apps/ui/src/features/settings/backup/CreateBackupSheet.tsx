@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Alert, Button, Field, Progress, SecretInput, Sheet, Text, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
-import type { FileTarget, JobView } from "@/api/generated/bindings";
+import type { JobView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { watchJob } from "@/entities/job";
 import { minPasswordLength, useBackupFailureText } from "./backup-data";
@@ -13,7 +13,7 @@ function suggestedName(now: Date) {
   return `lettuce_backup_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.lettuce`;
 }
 
-export function CreateBackupSheet({ api, open, android, onClose }: { api: ApiClient; open: boolean; android: boolean; onClose: () => void }) {
+export function CreateBackupSheet({ api, open, onClose }: { api: ApiClient; open: boolean; onClose: () => void }) {
   const { t } = useTranslation("settings");
   const { t: common } = useTranslation();
   const failureText = useBackupFailureText();
@@ -43,23 +43,14 @@ export function CreateBackupSheet({ api, open, android, onClose }: { api: ApiCli
     if (running || !ready) return;
     setFailure(null);
     setJob(null);
-    let target: FileTarget | null = null;
-    if (!android) {
-      try {
-        const picked = await api.call("filesPickSave", { suggested_name: suggestedName(new Date()), kind: "backup" });
-        if (!picked.target) return;
-        target = picked.target;
-      } catch (error) {
-        setFailure(failureText.ofError(error));
-        return;
-      }
-    }
     const abort = new AbortController();
     controller.current = abort;
     setRunning(true);
     let jobId: string | null = null;
     try {
-      const accepted = await api.call("backupExport", { password, target, client_operation_id: crypto.randomUUID() });
+      const picked = await api.call("filesPickSave", { suggested_name: suggestedName(new Date()), kind: "backup" });
+      if (!picked.target || abort.signal.aborted) return;
+      const accepted = await api.call("backupExport", { password, target: picked.target, client_operation_id: crypto.randomUUID() });
       jobId = accepted.job_id;
       const settled = await watchJob(api, accepted.job_id, setJob, abort.signal);
       if (settled.state === "succeeded") await finish(settled);
@@ -104,7 +95,7 @@ export function CreateBackupSheet({ api, open, android, onClose }: { api: ApiCli
           <SecretInput value={confirmation} paste={false} disabled={running} onChange={setConfirmation} />
         </Field>
         <Text variant="hint">{t("backup.create.hint")}</Text>
-        <Text variant="hint">{t(android ? "backup.create.whereAndroid" : "backup.create.whereDesktop")}</Text>
+        <Text variant="hint">{t("backup.create.whereDesktop")}</Text>
         {running && <div role="status"><Progress label={t("backup.create.running")} {...(progress !== undefined ? { value: progress } : {})} /></div>}
         {failure && <Alert tone="danger" title={failure} />}
       </form>

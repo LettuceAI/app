@@ -23,6 +23,47 @@ pub const DEFAULT_BATCH_SIZE: u32 = 512;
 pub const STREAM_EMIT_INTERVAL: Duration = Duration::from_millis(32);
 pub const STREAM_EMIT_BYTES: usize = 256;
 
+/// Which forced-reasoning prefill opens the reply's thought block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReasoningPrefill {
+    /// Gemma's channel format: `<|think|>` system marker, `<|channel>thought`
+    /// reply prefill, closed by `<channel|>`.
+    Gemma,
+    /// The generic `<think>` … `</think>` format (DeepSeek-R1, Qwen/QwQ, GLM-4):
+    /// no system marker, the reply prefill alone opens the block.
+    Think,
+}
+
+impl ReasoningPrefill {
+    /// Marker prepended to the leading system message so the chat template
+    /// opens thinking; `None` when the format needs no system marker.
+    #[must_use]
+    pub const fn system_opener(self) -> Option<&'static str> {
+        match self {
+            Self::Gemma => Some("<|think|>\n"),
+            Self::Think => None,
+        }
+    }
+
+    /// The reply prefill that opens the thought block.
+    #[must_use]
+    pub const fn prefill(self) -> &'static str {
+        match self {
+            Self::Gemma => "<|channel>thought\n",
+            Self::Think => "<think>\n",
+        }
+    }
+
+    /// The marker that closes the thought block.
+    #[must_use]
+    pub const fn close(self) -> &'static str {
+        match self {
+            Self::Gemma => "<channel|>",
+            Self::Think => "</think>",
+        }
+    }
+}
+
 /// Everything one local generation needs. Settings carry the user's raw
 /// values; the `resolve_*` methods apply the filters.
 #[derive(Clone, Debug, Default)]
@@ -52,7 +93,7 @@ pub struct LlamaReasoningInput {
     pub parallel_tool_calls: bool,
     /// Forced reasoning: when set, the system prompt opens with the format's
     /// think marker and the reply starts inside its thought block.
-    pub reasoning_prefill: Option<crate::prompt::ReasoningPrefill>,
+    pub reasoning_prefill: Option<ReasoningPrefill>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

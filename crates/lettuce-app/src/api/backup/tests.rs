@@ -378,7 +378,7 @@ async fn export_reopen_recovers_only_a_published_file_matching_the_recorded_head
     }
 }
 
-fn file_test_context(root: &std::path::Path, location: crate::AppDatabaseLocation, harness: &crate::api::tests::Harness, backend: Arc<crate::AppBackend>, files: Arc<dyn crate::api::FileAccess>) -> crate::api::ApiContext {
+pub(super) fn file_test_context(root: &std::path::Path, location: crate::AppDatabaseLocation, harness: &crate::api::tests::Harness, backend: Arc<crate::AppBackend>, files: Arc<dyn crate::api::FileAccess>) -> crate::api::ApiContext {
     crate::api::ApiContext::new(crate::api::ApiContextParts {
         backend, secret_store: harness.context.secret_store().clone(), inference: harness.provider.clone(), image_provider: Arc::new(crate::api::tests::NoImages), models: Arc::new(crate::api::NoModels), speech: Arc::new(crate::api::NoSpeech), media: None, events: harness.events.clone(), clock: Arc::new(SystemClock), files, app_folder: Some(root.to_owned()), resource_dir: None, database_files: Some(crate::api::ApiDatabaseFiles { active: location.active_path().expect("active"), location }), asset_url_base: "test-asset://host".into(),
     })

@@ -43,6 +43,9 @@ pub async fn backup_export(context: &ApiContext, request: dto::BackupExportReque
         let date = chrono::DateTime::from_timestamp_millis(created_at.get()).ok_or_else(unavailable)?;
         let temporary_intent = context.files().backup_temporary_location(target.as_deref(), &format!("lettuce-backup-{}.partial", OperationId::new())).map_err(file_error)?;
         let target = target.map(|target| {
+            // Document-provider URIs are opaque; only filesystem targets share
+            // their canonical parent with the temporary file.
+            if target.contains("://") { return Ok(target); }
             let name = std::path::Path::new(&target).file_name().ok_or_else(|| file_error(crate::api::FileAccessError::Unsupported))?;
             std::path::Path::new(&temporary_intent).with_file_name(name).into_os_string().into_string().map_err(|_| file_error(crate::api::FileAccessError::Unsupported))
         }).transpose()?;
@@ -280,7 +283,7 @@ fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> 
         database.append_and_transition(JobMutation::FinishInterruptedBackupCleanup { id: job.id, at: context.now().max(job.updated_at) }).map_err(IntoApiError::into_api_error)?;
         return Ok(());
     }
-    let record = published(context, &detail);
+    let record = recover_document_publication(context, &detail).and_then(|()| published(context, &detail));
     if matches!(record, Ok(None)) { cleanup(context, &detail)?; }
     let claim = super::jobs::claim_started(database, job.id, context.now().max(job.updated_at))?;
     let record = match record {
@@ -303,6 +306,27 @@ fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> 
     } else {
         super::jobs::settle(database, &claim, context, Err("backup-retry-required"))?;
     }
+    Ok(())
+}
+
+fn recover_document_publication(context: &ApiContext, detail: &Detail) -> Result<(), ApiError> {
+    let Some(target) = detail.target.as_deref().filter(|target| target.starts_with("content://")) else { return Ok(()); };
+    if detail.size.is_none() || detail.publication_header.is_none() { return Ok(()); }
+    let temporary = detail.temporary_uri.as_deref().unwrap_or(&detail.temporary_intent);
+    match context.files().describe(temporary) {
+        Ok(description) if Some(description.size) == detail.size => {},
+        Ok(_) | Err(crate::api::FileAccessError::NotFound) => return Ok(()),
+        Err(failure) => return Err(file_error(failure)),
+    }
+    // SAF cannot atomically rename a private file into a document provider.
+    // Keep the complete encrypted staging file until the copy is durable, so
+    // an interrupted publication can be repeated without retaining a password.
+    let mut input = context.files().open(temporary).map_err(file_error)?;
+    let header = lettuce_transfer::read_backup_header_bytes(&mut input).map_err(|_| unavailable())?.1;
+    if Some(&header) != detail.publication_header.as_ref() { return Ok(()); }
+    drop(input);
+    let protection = FileExportProtection::new(context)?;
+    context.files().publish_backup(temporary, Some(target), &detail.final_name, &|uri, file| protection.protects(uri, file)).map_err(file_error)?;
     Ok(())
 }
 

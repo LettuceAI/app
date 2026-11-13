@@ -34,7 +34,6 @@ export function BackupPage() {
   const current = overlay?.kind === "item" ? entries.find((entry) => entry.id === overlay.id) ?? null : null;
   const item = useClosingValue(current);
   const create = useClosingValue(overlay?.kind === "create" ? true : null);
-  const android = status.data?.platform === "android";
 
   const { picking, pick } = usePickBackup(api, (picked) => setOverlay({ kind: "restore", ...picked }));
 
@@ -65,7 +64,7 @@ export function BackupPage() {
           )}
         </div>
       </Page>
-      <CreateBackupSheet key={create.session} api={api} open={overlay?.kind === "create"} android={android} onClose={() => setOverlay(null)} />
+      <CreateBackupSheet key={create.session} api={api} open={overlay?.kind === "create"} onClose={() => setOverlay(null)} />
       {item.shown && <BackupItemSheet key={item.shown.id} api={api} entry={item.shown} open={current !== null} onClose={() => setOverlay(null)} onRestore={(entry) => setOverlay({ kind: "restore", source: { uri: entry.uri }, header: entry.header })} />}
       {overlay?.kind === "restore" && <RestoreSheet api={api} source={overlay.source} header={overlay.header} onClose={() => setOverlay(null)} />}
     </>

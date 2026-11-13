@@ -157,7 +157,6 @@ fn backup_temporary_location_path(
         .map_err(|_| FileAccessError::Unsupported)
 }
 
-#[cfg(not(target_os = "android"))]
 fn create_backup_temporary_path(
     intent: &str,
     protected: ExportProtection<'_>,
@@ -173,7 +172,6 @@ fn create_backup_temporary_path(
     Ok((intent.to_owned(), Box::new(file)))
 }
 
-#[cfg(not(target_os = "android"))]
 fn sync_backup_path(uri: &str) -> Result<(), FileAccessError> {
     // Windows FlushFileBuffers requires a handle opened with write access.
     std::fs::OpenOptions::new()
@@ -184,6 +182,25 @@ fn sync_backup_path(uri: &str) -> Result<(), FileAccessError> {
             tracing::warn!(%failure, "backup temporary file could not be synchronized");
             access_error(&failure)
         })
+}
+
+#[cfg(any(target_os = "android", test))]
+fn publish_backup_document(
+    temporary: &str,
+    target: &str,
+    file: std::fs::File,
+    protected: ExportProtection<'_>,
+) -> Result<String, FileAccessError> {
+    let mut source = std::fs::File::open(path(temporary)?).map_err(|error| access_error(&error))?;
+    let sync = file.try_clone().map_err(|error| access_error(&error))?;
+    let mut output = prepare_export(target, file, Some(&source), protected)?;
+    std::io::copy(&mut source, &mut output).map_err(|error| access_error(&error))?;
+    output.flush().map_err(|error| access_error(&error))?;
+    sync.sync_all().map_err(|error| access_error(&error))?;
+    drop(output);
+    drop(source);
+    remove_path(temporary)?;
+    Ok(target.to_owned())
 }
 
 #[cfg(not(target_os = "android"))]
@@ -358,6 +375,17 @@ impl<R: Runtime> AndroidFileAccess<R> {
         self.0.android_fs()
     }
 
+    fn backup_staging_directory(&self) -> Result<std::path::PathBuf, FileAccessError> {
+        use tauri::Manager;
+        self.0.path().app_data_dir()
+            .map(|directory| directory.join("backup-staging"))
+            .map_err(|_| FileAccessError::Io)
+    }
+
+    fn is_staged_backup(&self, uri: &str) -> Result<bool, FileAccessError> {
+        Ok(Path::new(uri).parent() == Some(self.backup_staging_directory()?.as_path()))
+    }
+
     #[allow(deprecated)]
     fn backup_directory(&self) -> Result<std::path::PathBuf, FileAccessError> {
         Ok(self
@@ -439,8 +467,14 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
         target: Option<&str>,
         name: &str,
     ) -> Result<String, FileAccessError> {
-        if target.is_some() || Path::new(name).file_name() != Some(std::ffi::OsStr::new(name)) {
+        if Path::new(name).file_name() != Some(std::ffi::OsStr::new(name)) {
             return Err(FileAccessError::Unsupported);
+        }
+        if let Some(target) = target {
+            if !target.starts_with("content://") { return Err(FileAccessError::Unsupported); }
+            let directory = self.backup_staging_directory()?;
+            std::fs::create_dir_all(&directory).map_err(|error| access_error(&error))?;
+            return Ok(directory.join(name).to_string_lossy().into_owned());
         }
         Ok(self
             .backup_directory()?
@@ -452,8 +486,11 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
     fn create_backup_temporary(
         &self,
         intent: &str,
-        _protected: ExportProtection<'_>,
+        protected: ExportProtection<'_>,
     ) -> Result<(String, Box<dyn Write + Send>), FileAccessError> {
+        if self.is_staged_backup(intent)? {
+            return create_backup_temporary_path(intent, protected);
+        }
         use tauri_plugin_android_fs::PublicGeneralPurposeDir;
         let public = self.fs().public_storage();
         if !public.check_permission().map_err(platform_error)? {
@@ -494,9 +531,10 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
     }
 
     fn sync_backup(&self, uri: &str) -> Result<(), FileAccessError> {
+        if self.is_staged_backup(uri)? { return sync_backup_path(uri); }
         let uri = platform_uri(uri).ok_or(FileAccessError::Unsupported)?;
         self.fs()
-            .open_file_readable(&uri)
+            .open_file(&uri, tauri_plugin_android_fs::FileAccessMode::ReadWrite)
             .map_err(platform_error)?
             .sync_all()
             .map_err(|failure| access_error(&failure))
@@ -556,10 +594,16 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
         temporary: &str,
         target: Option<&str>,
         name: &str,
-        _protected: ExportProtection<'_>,
+        protected: ExportProtection<'_>,
     ) -> Result<String, FileAccessError> {
-        if target.is_some() {
-            return Err(FileAccessError::Unsupported);
+        if let Some(target) = target {
+            if !self.is_staged_backup(temporary)? || !target.starts_with("content://") {
+                return Err(FileAccessError::Unsupported);
+            }
+            if protected(target, None)? { return Err(FileAccessError::SourceIsTarget); }
+            let uri = platform_uri(target).ok_or(FileAccessError::Unsupported)?;
+            let file = self.fs().open_file(&uri, tauri_plugin_android_fs::FileAccessMode::ReadWrite).map_err(platform_error)?;
+            return publish_backup_document(temporary, target, file, protected);
         }
         let uri = platform_uri(temporary).ok_or(FileAccessError::Unsupported)?;
         let published = if self
@@ -580,6 +624,7 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
     }
 
     fn remove(&self, uri: &str) -> Result<(), FileAccessError> {
+        if self.is_staged_backup(uri)? { return remove_path(uri); }
         let uri = match platform_uri(uri) {
             Some(uri) => uri,
             None if Path::new(uri).file_name().is_some_and(|name| {
@@ -601,6 +646,7 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
     }
 
     fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
+        if self.is_staged_backup(uri)? { return describe_path(uri); }
         let uri = match platform_uri(uri) {
             Some(uri) => uri,
             None if Path::new(uri).file_name().is_some_and(|name| {
@@ -690,11 +736,15 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
             [mime_type] if !mime_type.contains('*') => Some(*mime_type),
             _ => None,
         };
-        self.fs()
-            .picker()
-            .save_file(None, suggested_name, mime_type, false)
-            .map(|uri| uri.map(|uri| uri.uri))
-            .map_err(platform_error)
+        let picker = self.fs().picker();
+        let picked = picker.save_file(None, suggested_name, mime_type, false).map_err(platform_error)?;
+        if let Some(uri) = &picked
+            && filter.extensions.contains(&"lettuce")
+        {
+            // Backups remain in the saved list and must be readable after restart.
+            picker.persist_uri_permission(uri).map_err(platform_error)?;
+        }
+        Ok(picked.map(|uri| uri.uri))
     }
 }
 
@@ -991,6 +1041,49 @@ fn remove_path(uri: &str) -> Result<(), FileAccessError> {
 #[cfg(test)]
 mod backup_publication_tests {
     use super::*;
+
+    #[test]
+    fn document_backup_copies_complete_bytes_and_keeps_the_document_uri() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-document-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("folder");
+        let temporary = root.join("lettuce-backup-test.partial");
+        let target = root.join("selected.lettuce");
+        std::fs::write(&temporary, b"complete encrypted backup").expect("staged backup");
+        std::fs::write(&target, b"a longer existing document that must be truncated").expect("document");
+        let file = std::fs::OpenOptions::new().read(true).write(true).open(&target).expect("provider file");
+        let uri = "content://documents/primary%3ABackups%2Fselected.lettuce";
+        assert_eq!(publish_backup_document(temporary.to_str().expect("path"), uri, file, &|_, _| Ok(false)).expect("publish"), uri);
+        assert_eq!(std::fs::read(&target).expect("published"), b"complete encrypted backup");
+        assert!(!temporary.exists());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn document_backup_does_not_truncate_a_protected_target() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-document-protected-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("folder");
+        let temporary = root.join("lettuce-backup-test.partial");
+        let target = root.join("database");
+        std::fs::write(&temporary, b"backup").expect("staged backup");
+        std::fs::write(&target, b"protected data").expect("target");
+        let file = std::fs::OpenOptions::new().read(true).write(true).open(&target).expect("provider file");
+        assert_eq!(publish_backup_document(temporary.to_str().expect("path"), "content://documents/database", file, &|_, _| Ok(true)), Err(FileAccessError::SourceIsTarget));
+        assert_eq!(std::fs::read(&target).expect("preserved"), b"protected data");
+        assert!(temporary.exists());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn document_backup_does_not_copy_onto_its_staging_file() {
+        let root = std::env::temp_dir().join(format!("lettuce-backup-document-alias-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).expect("folder");
+        let temporary = root.join("lettuce-backup-test.partial");
+        std::fs::write(&temporary, b"backup").expect("staged backup");
+        let file = std::fs::OpenOptions::new().read(true).write(true).open(&temporary).expect("alias");
+        assert_eq!(publish_backup_document(temporary.to_str().expect("path"), "content://documents/alias", file, &|_, _| Ok(false)), Err(FileAccessError::SourceIsTarget));
+        assert_eq!(std::fs::read(&temporary).expect("preserved"), b"backup");
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 
     #[test]
     fn missing_backup_classification_preserves_permission_and_volume_failures() {

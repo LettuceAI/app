@@ -13,6 +13,8 @@ use llama_cpp_2::openai::OpenAIChatTemplateParams;
 use llama_cpp_2::token::LlamaToken;
 use serde_json::Value;
 
+pub use crate::request::ReasoningPrefill;
+
 pub const TOKENIZER_ADD_BOS_METADATA_KEY: &str = "tokenizer.ggml.add_bos_token";
 
 const TOOL_TEMPLATE_MARKERS: &[&str] = &[
@@ -114,47 +116,6 @@ pub struct BuiltPrompt {
     pub native_tool_parse_supported: bool,
     pub additional_stop_sequences: Vec<String>,
     pub tool_template_diagnostics: Option<String>,
-}
-
-/// Which forced-reasoning prefill opens the reply's thought block.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReasoningPrefill {
-    /// Gemma's channel format: `<|think|>` system marker, `<|channel>thought`
-    /// reply prefill, closed by `<channel|>`.
-    Gemma,
-    /// The generic `<think>` … `</think>` format (DeepSeek-R1, Qwen/QwQ, GLM-4):
-    /// no system marker, the reply prefill alone opens the block.
-    Think,
-}
-
-impl ReasoningPrefill {
-    /// Marker prepended to the leading system message so the chat template
-    /// opens thinking; `None` when the format needs no system marker.
-    #[must_use]
-    pub const fn system_opener(self) -> Option<&'static str> {
-        match self {
-            Self::Gemma => Some("<|think|>\n"),
-            Self::Think => None,
-        }
-    }
-
-    /// The reply prefill that opens the thought block.
-    #[must_use]
-    pub const fn prefill(self) -> &'static str {
-        match self {
-            Self::Gemma => "<|channel>thought\n",
-            Self::Think => "<think>\n",
-        }
-    }
-
-    /// The marker that closes the thought block.
-    #[must_use]
-    pub const fn close(self) -> &'static str {
-        match self {
-            Self::Gemma => "<channel|>",
-            Self::Think => "</think>",
-        }
-    }
 }
 
 /// The messages with `opener` at the start of the first system message, which

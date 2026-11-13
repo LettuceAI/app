@@ -2,6 +2,8 @@ pub(super) mod export_jobs;
 pub(super) mod jobs;
 #[cfg(test)]
 pub(super) mod tests;
+#[cfg(test)]
+mod document_tests;
 
 use std::io::{Read, Seek, SeekFrom};
 
