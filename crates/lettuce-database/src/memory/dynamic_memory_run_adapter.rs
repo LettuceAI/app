@@ -728,18 +728,20 @@ fn copy_background_settlement_in(
             ],
         )
         .map_err(storage)?;
-    for (ordinal, result) in settlement.results.iter().enumerate() {
+    for result in &settlement.results {
+        // Tool-call ordinals span the attempt; restarting at zero per round causes collisions.
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_background_tool_results
                    (run_id,attempt_id,round_ordinal,call_id,ordinal,outcome_json,settled_at)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                  VALUES (?1,?2,?3,?4,
+                    (SELECT ordinal FROM dynamic_memory_admitted_tool_calls
+                     WHERE run_id=?1 AND attempt_id=?2 AND id=?4),?5,?6)",
                 params![
                     settlement.run_id.to_string(),
                     child_attempt_id.to_string(),
                     i64::from(settlement.round_ordinal),
                     result.execution_id.to_string(),
-                    i64::try_from(ordinal).map_err(storage)?,
                     encode_versioned(&result.outcome, JSON_VERSION).map_err(storage)?,
                     settlement.settled_at.get(),
                 ],
@@ -5735,6 +5737,76 @@ pub(crate) mod tests {
                 TimestampMillis::new(12),
             )
             .expect("parent settlement");
+        let mut parent_settlements = vec![parent_settlement];
+        for (ordinal, first_call, call_count, kind) in [
+            (1, 1, 2, DynamicMemoryRoundKind::Manager),
+            (2, 3, 1, DynamicMemoryRoundKind::Repair),
+        ] {
+            let calls = (0..call_count)
+                .map(|index| NewDynamicMemoryToolCall {
+                    id: ToolExecutionId::new(),
+                    definition_version: 1,
+                    call: lettuce_conversations::ProposedToolCall {
+                        provider_call_id: Some(format!("duplicate-{ordinal}-{index}")),
+                        name: "create_memory".into(),
+                        arguments: json!({
+                            "text": "The user prefers tea",
+                            "category": "preference",
+                            "source_message_id": messages[0].message_id.to_string()
+                        }),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    },
+                })
+                .collect::<Vec<_>>();
+            let results = calls
+                .iter()
+                .map(|call| MemoryToolResult {
+                    execution_id: call.id,
+                    outcome: MemoryToolOutcome::DuplicateSkipped {
+                        existing_id: memory_id,
+                        kind: lettuce_memory::DuplicateKind::NormalizedText,
+                    },
+                })
+                .collect();
+            database
+                .admit_dynamic_memory_inference_round(
+                    run_id,
+                    parent_id,
+                    ordinal,
+                    first_call,
+                    NewDynamicMemoryInferenceRound {
+                        ordinal,
+                        request_context: admitted_round.request_context.clone(),
+                        parts: Vec::new(),
+                        provider_replay: None,
+                        usage: None,
+                        finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                        kind,
+                        provider_request_id: None,
+                        calls,
+                        admitted_at: TimestampMillis::new(12),
+                    },
+                )
+                .expect("additional round");
+            parent_settlements.push(
+                database
+                    .commit_dynamic_memory_background_round(
+                        DynamicMemoryBackgroundRoundCommit {
+                            run_id,
+                            attempt_id: parent_id,
+                            round_ordinal: ordinal,
+                            space_id,
+                            expected_memory_revision: Revision::new(2),
+                            change: None,
+                            results,
+                        },
+                        TimestampMillis::new(12),
+                    )
+                    .expect("additional settlement"),
+            );
+        }
+        let memory_before_recovery = database.get(space_id).expect("memory");
         let child_id = DynamicMemoryAttemptId::new();
         let recovery = NewDynamicMemoryAttemptRecovery {
             run_id,
@@ -5755,13 +5827,28 @@ pub(crate) mod tests {
             recovered.child.status,
             DynamicMemoryAttemptStatus::Processing
         );
-        let child_settlement = database
-            .load_dynamic_memory_round_settlement(run_id, child_id, 0)
-            .expect("child settlement")
-            .expect("copied checkpoint");
-        let mut expected_child_settlement = parent_settlement;
-        expected_child_settlement.attempt_id = child_id;
-        assert_eq!(child_settlement, expected_child_settlement);
+        for mut expected in parent_settlements {
+            let child_settlement = database
+                .load_dynamic_memory_round_settlement(run_id, child_id, expected.round_ordinal)
+                .expect("child settlement")
+                .expect("copied checkpoint");
+            expected.attempt_id = child_id;
+            assert_eq!(child_settlement, expected);
+        }
+        let result_ordinals = database
+            .connection()
+            .expect("connection")
+            .prepare(
+                "SELECT ordinal FROM dynamic_memory_background_tool_results
+                 WHERE run_id=?1 AND attempt_id=?2 ORDER BY ordinal",
+            )
+            .expect("statement")
+            .query_map(params![run_id.to_string(), child_id.to_string()], |row| row.get::<_, i64>(0))
+            .expect("result ordinals")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("stored ordinals");
+        assert_eq!(result_ordinals, [0, 1, 2, 3]);
+        assert_eq!(database.get(space_id).expect("memory after recovery"), memory_before_recovery);
         assert_eq!(
             database
                 .get(space_id)
@@ -5779,7 +5866,7 @@ pub(crate) mod tests {
         let child_rounds = database
             .list_dynamic_memory_inference_rounds(run_id, child_id)
             .expect("child rounds");
-        assert_eq!(child_rounds.len(), 1);
+        assert_eq!(child_rounds.len(), 3);
         assert_eq!(child_rounds[0].calls[0].call, admitted_round.calls[0].call);
         let failed = database
             .transition_dynamic_memory_attempt(
