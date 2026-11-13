@@ -100,6 +100,7 @@ fn runtime_release(release: RuntimeRelease) -> dto::SdRuntimeRelease {
         name: release.name,
         published_at: release.published_at,
         prerelease: release.prerelease,
+        note: release.note,
         assets: release
             .assets
             .into_iter()

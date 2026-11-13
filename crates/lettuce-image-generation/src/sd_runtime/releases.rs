@@ -51,7 +51,42 @@ pub struct RuntimeRelease {
     pub name: String,
     pub published_at: Option<String>,
     pub prerelease: bool,
+    /// A short compatibility note shown after the version (e.g. "glibc 2.39"
+    /// for the pinned older build). `None` for the GitHub-fetched releases.
+    pub note: Option<String>,
     pub assets: Vec<RuntimeAsset>,
+}
+
+/// Engine builds we always offer, even once they age out of the GitHub release
+/// page we fetch. Kept last in the list so the newest builds stay on top. Linux
+/// x86_64 only: the pinned archive is an Ubuntu 24.04 Vulkan build (glibc 2.39)
+/// for hosts whose system libraries are older than the current builds need.
+#[must_use]
+pub fn pinned_runtime_releases(platform: RuntimePlatform) -> Vec<RuntimeRelease> {
+    if platform != RuntimePlatform::LinuxX64 {
+        return Vec::new();
+    }
+    let tag = "master-1043-3be2378";
+    let asset = "sd-master-3be2378-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip";
+    vec![RuntimeRelease {
+        tag: tag.to_owned(),
+        name: tag.to_owned(),
+        published_at: Some("2026-11-02T19:26:20Z".to_owned()),
+        prerelease: false,
+        note: Some("glibc 2.39".to_owned()),
+        assets: vec![RuntimeAsset {
+            name: asset.to_owned(),
+            backend: "vulkan".to_owned(),
+            bytes: 37_675_781,
+            sha256: Some(
+                "7608901016fb4a348bc5b75c46fc971085dadadf44e6f30daa97301844b1ce2e".to_owned(),
+            ),
+            download_url: format!(
+                "https://github.com/{GITHUB_REPOSITORY}/releases/download/{tag}/{asset}"
+            ),
+            dependencies: Vec::new(),
+        }],
+    }]
 }
 
 /// The platforms engine builds are offered for.
@@ -190,6 +225,7 @@ pub fn runtime_releases(
                 tag: release.tag_name,
                 published_at: release.published_at,
                 prerelease: release.prerelease,
+                note: None,
                 assets,
             })
         })
@@ -340,5 +376,33 @@ mod tests {
             select_runtime(&releases, "gone", "x").map_err(|error| error.to_string()),
             Err("stable-diffusion.cpp release is no longer available: gone".to_owned())
         );
+    }
+
+    #[test]
+    fn pinned_release_offers_the_ubuntu_2404_vulkan_build_on_linux_only() {
+        let linux = pinned_runtime_releases(RuntimePlatform::LinuxX64);
+        assert_eq!(linux.len(), 1);
+        let release = &linux[0];
+        assert_eq!(release.tag, "master-1043-3be2378");
+        assert_eq!(release.note.as_deref(), Some("glibc 2.39"));
+        assert!(!release.prerelease);
+        assert_eq!(release.assets.len(), 1);
+        let asset = &release.assets[0];
+        assert_eq!(asset.backend, "vulkan");
+        assert_eq!(
+            asset.name,
+            "sd-master-3be2378-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip"
+        );
+        assert_eq!(
+            asset.download_url,
+            "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip"
+        );
+        // The pinned archive stays installable: it resolves and its backend is
+        // recognised for the platform it is offered on.
+        assert_eq!(runtime_backend(&asset.name, RuntimePlatform::LinuxX64), Some("vulkan"));
+        assert!(select_runtime(&linux, &release.tag, &asset.name).is_ok());
+
+        assert!(pinned_runtime_releases(RuntimePlatform::WindowsX64).is_empty());
+        assert!(pinned_runtime_releases(RuntimePlatform::MacosArm64).is_empty());
     }
 }

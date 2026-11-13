@@ -66,7 +66,7 @@ async function mount(options: { settings?: Partial<SettingsImageGenerationSettin
     modelsList: () => ok({ models, default_model_id: null, revision: 1 }), providerAccountsList: () => ok(accounts),
     sdRuntimeInventory: () => ok({ installed: [runtimeBuild], active: runtimeRef }), sdModelsInstalled: () => ok({ models: [] }),
     sdDiskUsage: () => ok({ components_bytes: 1024, runtimes_bytes: 1024, loras_bytes: 0, total_bytes: 2048, has_engine: true, engine_release: runtimeRef.release, engine_backend: "Vulkan" }),
-    sdRuntimeReleases: () => ok({ releases: [{ tag: runtimeRef.release, name: "Build 100", published_at: null, prerelease: false, assets: [runtimeAsset] }] }),
+    sdRuntimeReleases: () => ok({ releases: [{ tag: runtimeRef.release, name: "Build 100", published_at: null, prerelease: false, note: null, assets: [runtimeAsset] }] }),
     sdUpscalersList: () => ok({ models: [], hires_upscaler_names: [], recommended_filename: "upscaler.pth", recommended_bytes: 1024, recommended_installed: false }),
     llamaDevices: () => ok({ devices: [] }), jobsList: () => ok({ items: [], next_cursor: null }),
     lorasList: () => ok({ loras: [] }),
@@ -346,7 +346,7 @@ describe("image settings", () => {
     const running = { ...testJob("running"), subject_detail: { type: "sd_runtime_install" as const, ...runtimeRef, backend: "Vulkan" }, progress: { ...testJob("running").progress, bytes_per_second: null } };
     const { history } = await mount({ platform: "other", calls: {
       sdRuntimeInventory: () => ok({ installed: [], active: null }),
-      sdRuntimeReleases: () => ok({ releases: [{ tag: runtimeRef.release, name: "Build 100", published_at: null, prerelease: false, assets: [runtimeAsset, { ...runtimeAsset, name: "cuda.zip", backend: "CUDA" }] }] }),
+      sdRuntimeReleases: () => ok({ releases: [{ tag: runtimeRef.release, name: "Build 100", published_at: null, prerelease: false, note: null, assets: [runtimeAsset, { ...runtimeAsset, name: "cuda.zip", backend: "CUDA" }] }] }),
       jobsList: () => ok({ items: [running], next_cursor: null }),
     }, streams: { jobWatch: () => ok(running) } });
     await clickRow("Engine");

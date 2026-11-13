@@ -8,8 +8,8 @@ use lettuce_image_generation::sd_runtime::layout::{
     DiffusionPaths, extract_runtime_archive, runtime_is_installed, write_runtime_manifest,
 };
 use lettuce_image_generation::sd_runtime::releases::{
-    GITHUB_REPOSITORY, GithubRelease, RuntimeAsset, RuntimeRelease, runtime_backend,
-    runtime_releases,
+    GITHUB_REPOSITORY, GithubRelease, RuntimeAsset, RuntimePlatform, RuntimeRelease,
+    pinned_runtime_releases, runtime_backend, runtime_releases,
 };
 use lettuce_image_generation::{
     DiffusionComponentRole, DiffusionProfile, DiffusionVariant, LOCAL_DIFFUSION_PROVIDER_KIND,
@@ -91,10 +91,15 @@ pub async fn fetch_runtime_releases(
     }
     let releases = serde_json::from_slice::<Vec<GithubRelease>>(&response.body)
         .map_err(|error| format!("Failed to parse stable-diffusion.cpp releases: {error}"))?;
-    Ok(runtime_releases(
-        releases,
-        lettuce_image_generation::sd_runtime::releases::RuntimePlatform::current(),
-    ))
+    let platform = RuntimePlatform::current();
+    let mut resolved = runtime_releases(releases, platform);
+    // Always offer the pinned builds last, replacing any fetched release with
+    // the same tag so the pin stays authoritative even once it ages out.
+    for pinned in pinned_runtime_releases(platform) {
+        resolved.retain(|release| release.tag != pinned.tag);
+        resolved.push(pinned);
+    }
+    Ok(resolved)
 }
 
 fn https_artifact(

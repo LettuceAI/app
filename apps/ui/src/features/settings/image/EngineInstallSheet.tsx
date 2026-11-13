@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, EmptyState, icon, ListGroup, ListRow, ListRowButton, Select, Sheet, Skeleton, Text } from "@lettuceai/crisp";
 import { appStatusQuery } from "@/api/app-status-query";
-import type { SdInstalledRuntime, SdRuntimeAsset } from "@/api/generated/bindings";
+import type { SdInstalledRuntime, SdRuntimeAsset, SdRuntimeRelease } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi } from "../data";
 import { localImageKeys, recommendedAsset, useByteSize, useImageAction, type ImageInstallDetail } from "./local-data";
@@ -46,6 +46,10 @@ export function EngineInstallSheet({ open, installed, activeInstalls, downloadsR
   const installing = activeInstalls.some((detail) => detail.type === "sd_runtime_install" && detail.release === release?.tag && detail.asset === asset?.name);
   const published = release?.published_at ? new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }).format(new Date(release.published_at)) : null;
   const versionNote = release ? [release === list[0] ? t("image.local.engine.newest") : null, release.prerelease ? t("image.local.engine.prereleaseTag") : null, published ? t("image.local.engine.published", { date: published }) : null].filter(Boolean).join(" · ") : "";
+  const releaseLabel = (item: SdRuntimeRelease) => {
+    const base = item.prerelease ? t("image.local.engine.prerelease", { version: item.tag }) : item.tag;
+    return item.note ? `${base} (${item.note})` : base;
+  };
 
   const install = () => {
     if (!release || !asset) return;
@@ -81,9 +85,9 @@ export function EngineInstallSheet({ open, installed, activeInstalls, downloadsR
           <>
             <ListGroup label={t("image.local.engine.version")}>
               <ListRow
-                title={release.tag}
+                title={releaseLabel(release)}
                 description={versionNote}
-                trailing={<Select aria-label={t("image.local.engine.version")} className="w-40 max-w-full" value={release.tag} options={list.map((item) => ({ value: item.tag, label: item.prerelease ? t("image.local.engine.prerelease", { version: item.tag }) : item.tag }))} onChange={(event) => { setRelease(event.target.value); setAsset(null); }} />}
+                trailing={<Select aria-label={t("image.local.engine.version")} className="w-40 max-w-full" value={release.tag} options={list.map((item) => ({ value: item.tag, label: releaseLabel(item) }))} onChange={(event) => { setRelease(event.target.value); setAsset(null); }} />}
               />
             </ListGroup>
             <ListGroup label={t("image.local.engine.build")}>

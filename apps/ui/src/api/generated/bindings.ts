@@ -8885,6 +8885,8 @@ export type SdRuntimeRelease = {
 	name: string,
 	published_at: string | null,
 	prerelease: boolean,
+	/**  A short compatibility note shown after the version, e.g. "glibc 2.39". */
+	note: string | null,
 	assets: SdRuntimeAsset[],
 };
 

@@ -45,6 +45,8 @@ pub struct SdRuntimeRelease {
     pub name: String,
     pub published_at: Option<String>,
     pub prerelease: bool,
+    /// A short compatibility note shown after the version, e.g. "glibc 2.39".
+    pub note: Option<String>,
     pub assets: Vec<SdRuntimeAsset>,
 }
 
