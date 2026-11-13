@@ -22,6 +22,14 @@ pub const KOKORO_MAX_PHONEME_TOKENS: usize = 510;
 const KOKORO_CROSSFADE_SAMPLES: usize = 240;
 const PUNCTUATION_TOKEN_IDS: &[i64] = &[1, 2, 3, 4, 5, 6];
 const WAV_HEADER_BYTES: usize = 44;
+const MAXIMUM_SAMPLES: usize = {
+    let samples = (lettuce_media::MAX_MEDIA_BLOB_BYTES - WAV_HEADER_BYTES as u64) / 2;
+    if samples > usize::MAX as u64 {
+        usize::MAX
+    } else {
+        samples as usize
+    }
+};
 
 /// Evidence that this process's ONNX Runtime environment is committed. A
 /// Kokoro session can only be built with it, because building one over an
@@ -277,12 +285,11 @@ fn split_kokoro_token_chunks(token_ids: &[i64]) -> Vec<&[i64]> {
 }
 
 fn append_with_crossfade(dst: &mut Vec<f32>, src: &[f32]) -> Result<(), KokoroRuntimeError> {
-    let maximum_samples = (lettuce_media::MAX_MEDIA_BLOB_BYTES as usize - WAV_HEADER_BYTES) / 2;
     let overlap = KOKORO_CROSSFADE_SAMPLES.min(dst.len()).min(src.len());
     let final_len = dst
         .len()
         .checked_add(src.len().saturating_sub(overlap))
-        .filter(|length| *length <= maximum_samples)
+        .filter(|length| *length <= MAXIMUM_SAMPLES)
         .ok_or(KokoroRuntimeError::LimitExceeded {
             reason: "merged audio exceeds the sample limit",
         })?;
@@ -359,8 +366,7 @@ fn validate_chunk(
 }
 
 fn validate_samples(samples: &[f32]) -> Result<(), KokoroRuntimeError> {
-    let maximum_samples = (lettuce_media::MAX_MEDIA_BLOB_BYTES as usize - WAV_HEADER_BYTES) / 2;
-    if samples.len() > maximum_samples || samples.iter().any(|sample| !sample.is_finite()) {
+    if samples.len() > MAXIMUM_SAMPLES || samples.iter().any(|sample| !sample.is_finite()) {
         return Err(KokoroRuntimeError::InvalidOutput {
             reason: "samples exceed the media size limit or are not finite",
         });
