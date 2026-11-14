@@ -32,10 +32,18 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 export const isHexColor = (value: unknown): value is string =>
   typeof value === "string" && HEX.test(value);
 
-/** `null` means `themeMode` was never set: the stored preset alone decides, as before modes existed. */
+/**
+ * Without a stored `themeMode`, untouched preferences (no preset, kind or colors) follow the
+ * system with the default presets. `null` means a preset was stored before modes existed: that
+ * stored preset alone decides.
+ */
 export function themeModeOf(value: Preferences): ThemeMode | null {
-  return value.themeMode === "system" || value.themeMode === "dark" || value.themeMode === "light"
-    ? value.themeMode
+  if (value.themeMode === "system" || value.themeMode === "dark" || value.themeMode === "light")
+    return value.themeMode;
+  return value.themePreset === undefined &&
+    value.theme === undefined &&
+    value.customColors === undefined
+    ? "system"
     : null;
 }
 

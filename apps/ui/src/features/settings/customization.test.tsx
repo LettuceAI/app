@@ -402,6 +402,7 @@ describe("customization settings", () => {
   });
 
   it("applies and saves the additional themes to the backend", async () => {
+    mockSystemScheme(true);
     const page = await mount({ tab: "theme", mobile: false });
     fireEvent.click(await screen.findByRole("button", { name: moreThemes }));
     fireEvent.click(await screen.findByRole("button", { name: "Forest" }));
@@ -427,6 +428,20 @@ describe("customization settings", () => {
     await waitFor(() => expect(surface()).toBe("#f6f6f5"));
     await system.set(true);
     await waitFor(() => expect(surface()).toBe("#2e3440"));
+  });
+
+  it("follows the system scheme with the default presets when the theme was never touched", async () => {
+    const system = mockSystemScheme(true);
+    const page = await mount({ tab: "theme" });
+    const option = await screen.findByRole("radio", { name: "System" });
+    expect(option.getAttribute("aria-checked")).toBe("true");
+    const midnight = appThemes.find((theme) => theme.id === "midnight")!.colors.surface;
+    await waitFor(() => expect(surface()).toBe(midnight));
+    await system.set(false);
+    await waitFor(() => expect(surface()).toBe("#f6f6f5"));
+    await system.set(true);
+    await waitFor(() => expect(surface()).toBe(midnight));
+    expect(page.update).not.toHaveBeenCalled();
   });
 
   it("applies the remembered preset when switching between Dark and Light", async () => {
@@ -674,6 +689,7 @@ describe("customization settings", () => {
   });
 
   it("imports a native-validated theme and its shape in one settings update", async () => {
+    mockSystemScheme(true);
     const read = vi.fn(() =>
       ok({
         format_version: 1,
