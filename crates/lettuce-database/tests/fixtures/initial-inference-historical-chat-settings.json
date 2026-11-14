@@ -1,0 +1,41 @@
+{
+  "parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "visible_max_output_tokens": null,
+    "context_length": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null,
+    "reasoning_mode": null,
+    "reasoning_effort": null,
+    "reasoning_budget_tokens": null,
+    "prompt_caching": null,
+    "total_completion_allowance": null,
+    "ollama": {
+      "num_keep": null,
+      "num_batch": null,
+      "num_gpu": null,
+      "num_thread": null,
+      "tfs_z": null,
+      "typical_p": null,
+      "min_p": null,
+      "mirostat": null,
+      "mirostat_tau": null,
+      "mirostat_eta": null,
+      "seed": null,
+      "stop": null
+    },
+    "openrouter": {
+      "pinned_provider": null
+    }
+  },
+  "llama_cpp": {
+    "settings": {
+      "force_gemma4_reasoning": true,
+      "sampler": {}
+    },
+    "disable_sampler_profile_defaults": false
+  }
+}

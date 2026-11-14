@@ -8346,6 +8346,17 @@ mod tests {
 
     #[test]
     fn initial_dispatch_sql_guards_keep_admission_and_settlement_immutable() {
+        assert_initial_dispatch_sql_guards(None);
+    }
+
+    #[test]
+    fn initial_dispatch_backup_normalizes_historical_request_settings() {
+        assert_initial_dispatch_sql_guards(Some(include_str!(
+            "../../tests/fixtures/initial-inference-historical-chat-settings.json"
+        )));
+    }
+
+    fn assert_initial_dispatch_sql_guards(stored_chat_settings: Option<&str>) {
         use lettuce_conversations::{
             InferenceRequest, InitialInferenceBinding, InitialInferenceRepository,
             InitialInferenceResult, OutputPolicy, PortError, ResolvedInferenceProfile,
@@ -8436,7 +8447,7 @@ mod tests {
             created_at: TimestampMillis::new(1),
             updated_at: TimestampMillis::new(1),
         };
-        let request = InferenceRequest {
+        let mut request = InferenceRequest {
             turn_id: sent.turn.id,
             attempt_id: sent.attempt.id,
             operation: sent.turn.operation,
@@ -8465,17 +8476,59 @@ mod tests {
             tools: None,
             prompt_cache_key: None,
         };
+        let mut stored_profile = serde_json::value::to_raw_value(&request.profile)
+            .expect("stored profile");
+        if let Some(settings) = stored_chat_settings {
+            type Fields = std::collections::BTreeMap<String, Box<serde_json::value::RawValue>>;
+            let mut profile: Fields =
+                serde_json::from_str(stored_profile.get()).expect("profile fields");
+            let mut chat: Fields =
+                serde_json::from_str(profile["chat_profile"].get()).expect("chat fields");
+            chat.extend(serde_json::from_str::<Fields>(settings).expect("historical settings"));
+            profile.insert(
+                "chat_profile".into(),
+                serde_json::value::to_raw_value(&chat).expect("historical chat profile"),
+            );
+            stored_profile =
+                serde_json::value::to_raw_value(&profile).expect("historical profile");
+            request.profile =
+                serde_json::from_str(stored_profile.get()).expect("normalized profile");
+        }
         let usage_event_id = UsageEventId::new();
-        let binding = InitialInferenceBinding::from_request(fixture.conversation_id, &request)
+        let mut binding = InitialInferenceBinding::from_request(fixture.conversation_id, &request)
             .expect("request binding");
-        let request_json = slice::encode(&request).expect("request JSON");
-        let insert = |job_id: JobId| {
-            fixture.database.connection().expect("connection").execute(
+        let mut stored_request: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+            serde_json::from_str(&serde_json::to_string(&request).expect("request JSON"))
+                .expect("stored request fields");
+        stored_request.insert("profile".into(), stored_profile.clone());
+        let request_json = slice::encode(&stored_request).expect("stored request JSON");
+        let encoded = serde_json::to_vec(&(
+            fixture.conversation_id,
+            request.turn_id,
+            request.attempt_id,
+            request.operation,
+            &stored_profile,
+            &request.context,
+            job.id,
+            &request.media_grants,
+            &request.tools,
+        ))
+        .expect("original fingerprint input");
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"lettuce-conversation-initial-request-v1\0");
+        hasher.update(&encoded);
+        binding.request_fingerprint = *hasher.finalize().as_bytes();
+        let insert = |connection: &rusqlite::Connection, job_id: JobId, fingerprint: &[u8; 32]| {
+            connection.execute(
             "INSERT INTO generation_initial_dispatches (conversation_id, turn_id, attempt_id, job_id, request_fingerprint, request_json, admitted_at, usage_event_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 30, ?7)",
-            params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), job_id.to_string(), &binding.request_fingerprint[..], &request_json, usage_event_id.to_string()],
+            params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string(), job_id.to_string(), &fingerprint[..], &request_json, usage_event_id.to_string()],
         )
         };
-        assert!(insert(job.id).is_err());
+        assert!(insert(
+            &fixture.database.connection().expect("connection"),
+            job.id,
+            &binding.request_fingerprint,
+        ).is_err());
         drive(
             &fixture,
             sent.turn.id,
@@ -8510,8 +8563,36 @@ mod tests {
             "initial-sql-running",
             25,
         );
-        assert!(insert(JobId::new()).is_err());
-        insert(job.id).expect("pending admission");
+        assert!(insert(
+            &fixture.database.connection().expect("connection"),
+            JobId::new(),
+            &binding.request_fingerprint,
+        ).is_err());
+        {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let mut incorrect_fingerprint = binding.request_fingerprint;
+            incorrect_fingerprint[0] ^= 1;
+            insert(&transaction, job.id, &incorrect_fingerprint).expect("inconsistent admission");
+            assert_eq!(
+                super::super::initial_inference_adapter::load_for_attempt_in(
+                    &transaction,
+                    fixture.conversation_id,
+                    sent.turn.id,
+                    sent.attempt.id,
+                    job.id,
+                ),
+                Err(ConversationRepositoryError::Conflict)
+            );
+            transaction.rollback().expect("discard inconsistent admission");
+        }
+        insert(
+            &fixture.database.connection().expect("connection"),
+            job.id,
+            &binding.request_fingerprint,
+        ).expect("pending admission");
+        lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(fixture.database.as_ref())
+            .expect("export pending historical dispatch");
         let pending = fixture
             .database
             .initial_inference(&binding)
@@ -8571,6 +8652,22 @@ mod tests {
             .settle_initial_inference(&binding, &result, TimestampMillis::new(31))
             .expect("checkpoint failure");
         assert_eq!(
+            settled.binding,
+            InitialInferenceBinding::from_request(fixture.conversation_id, &settled.request)
+                .expect("normalized binding")
+        );
+        assert_eq!(
+            fixture.database
+                .initial_inference_for_attempt(
+                    fixture.conversation_id,
+                    sent.turn.id,
+                    sent.attempt.id,
+                    job.id,
+                )
+                .expect("read normalized settlement"),
+            Some(settled.clone())
+        );
+        assert_eq!(
             fixture
                 .database
                 .settle_initial_inference(&binding, &result, TimestampMillis::new(99))
@@ -8606,6 +8703,8 @@ mod tests {
                 .expect("unchanged settled"),
             Some(settled)
         );
+        store_fixture_model_snapshots(&fixture.database);
+        crate::backup::restore_writer::tests::assert_backup_round_trip(&fixture.database);
     }
 
     #[test]

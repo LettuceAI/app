@@ -41,7 +41,7 @@ impl InitialInferenceBinding {
             .ok_or(ValidationError::InvalidReference {
                 field: "initial_inference.job",
             })?;
-        let encoded = serde_json::to_vec(&(
+        let request_fingerprint = request_fingerprint(&(
             conversation_id,
             request.turn_id,
             request.attempt_id,
@@ -51,21 +51,59 @@ impl InitialInferenceBinding {
             job_id,
             &request.media_grants,
             &request.tools,
-        ))
-        .map_err(|_| ValidationError::InvalidValue {
-            field: "initial_inference.request",
-        })?;
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"lettuce-conversation-initial-request-v1\0");
-        hasher.update(&encoded);
+        ))?;
         Ok(Self {
             conversation_id,
             turn_id: request.turn_id,
             attempt_id: request.attempt_id,
             job_id,
-            request_fingerprint: *hasher.finalize().as_bytes(),
+            request_fingerprint,
         })
     }
+
+    /// Reconstructs the original binding before defaults or compatibility
+    /// conversions change the serialized fields in a newer application version.
+    pub fn from_serialized_request(
+        conversation_id: ConversationId,
+        json: &str,
+    ) -> Result<Self, ValidationError> {
+        #[derive(Deserialize)]
+        struct StoredRequest<'a> {
+            #[serde(borrow)]
+            profile: &'a serde_json::value::RawValue,
+            context: &'a serde_json::value::RawValue,
+            media_grants: &'a serde_json::value::RawValue,
+            tools: &'a serde_json::value::RawValue,
+        }
+        let invalid = |_| ValidationError::InvalidValue {
+            field: "initial_inference.request",
+        };
+        let request: InferenceRequest = serde_json::from_str(json).map_err(invalid)?;
+        let mut binding = Self::from_request(conversation_id, &request)?;
+        let stored: StoredRequest<'_> = serde_json::from_str(json).map_err(invalid)?;
+        binding.request_fingerprint = request_fingerprint(&(
+            conversation_id,
+            request.turn_id,
+            request.attempt_id,
+            request.operation,
+            stored.profile,
+            stored.context,
+            binding.job_id,
+            stored.media_grants,
+            stored.tools,
+        ))?;
+        Ok(binding)
+    }
+}
+
+fn request_fingerprint(value: &impl Serialize) -> Result<[u8; 32], ValidationError> {
+    let encoded = serde_json::to_vec(value).map_err(|_| ValidationError::InvalidValue {
+        field: "initial_inference.request",
+    })?;
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"lettuce-conversation-initial-request-v1\0");
+    hasher.update(&encoded);
+    Ok(*hasher.finalize().as_bytes())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

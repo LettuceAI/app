@@ -137,14 +137,36 @@ fn load(
     else {
         return Ok(None);
     };
-    if job_id != binding.job_id.to_string() || fingerprint != binding.request_fingerprint {
+    if job_id != binding.job_id.to_string() {
         return Err(ConversationRepositoryError::Conflict);
     }
+    // Authenticate the immutable original JSON before returning a binding for
+    // the current request schema, which is also used by backup validation.
+    let stored_json: Box<serde_json::value::RawValue> = slice::decode(&request)?;
+    let stored_binding = InitialInferenceBinding::from_serialized_request(
+        binding.conversation_id,
+        stored_json.get(),
+    )
+    .map_err(ConversationRepositoryError::Invalid)?;
     let request: InferenceRequest = slice::decode(&request)?;
+    let current_binding = InitialInferenceBinding::from_request(binding.conversation_id, &request)
+        .map_err(ConversationRepositoryError::Invalid)?;
+    if fingerprint != stored_binding.request_fingerprint {
+        tracing::warn!(
+            conversation_id = %binding.conversation_id,
+            turn_id = %binding.turn_id,
+            attempt_id = %binding.attempt_id,
+            "initial inference fingerprint does not match the stored request",
+        );
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    if *binding != stored_binding && *binding != current_binding {
+        return Err(ConversationRepositoryError::Conflict);
+    }
     if request.stream_sink.is_some()
-        || InitialInferenceBinding::from_request(binding.conversation_id, &request)
-            .map_err(ConversationRepositoryError::Invalid)?
-            != *binding
+        || stored_binding.turn_id != binding.turn_id
+        || stored_binding.attempt_id != binding.attempt_id
+        || stored_binding.job_id != binding.job_id
     {
         return Err(ConversationRepositoryError::Storage {
             reason: "load: stored data failed a consistency check".to_owned(),
@@ -189,7 +211,7 @@ fn load(
         });
     }
     let record = InitialInferenceRecord {
-        binding: binding.clone(),
+        binding: current_binding,
         request,
         usage_event_id: usage_event_id.parse().map_err(|error| {
             ConversationRepositoryError::Storage {
