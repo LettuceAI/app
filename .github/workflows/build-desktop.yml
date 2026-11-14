@@ -20,11 +20,11 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 360
     env:
-      CARGO_TARGET_DIR: ${{ inputs.runner == 'windows-2022' && 'C:/t' || format('{0}/target', github.workspace) }}
+      CARGO_TARGET_DIR: ${{ inputs.runner == 'windows-2022' && 'D:/t' || format('{0}/target', github.workspace) }}
       CARGO_BUILD_JOBS: '2'
       CARGO_INCREMENTAL: '0'
       CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
-      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ inputs.features == 'cuda' && '3' || '2' }}
       CMAKE_POSITION_INDEPENDENT_CODE: 'ON'
       GGML_NATIVE: 'OFF'
       CMAKE_CUDA_ARCHITECTURES: '75-virtual;80-virtual;86-real;89-real;90-virtual;120a-real'
@@ -92,15 +92,6 @@ jobs:
           df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc
           df -h /
-      - name: Make room for Windows CUDA outputs
-        if: runner.os == 'Windows' && inputs.features == 'cuda'
-        shell: pwsh
-        run: |
-          Get-PSDrive -PSProvider FileSystem
-          foreach ($path in @('C:/Android','C:/Program Files (x86)/Android','C:/ghcup','C:/hostedtoolcache/windows/go')) {
-            if (Test-Path $path) { Remove-Item -LiteralPath $path -Recurse -Force }
-          }
-          Get-PSDrive -PSProvider FileSystem
       - name: Configure Windows LLVM
         if: runner.os == 'Windows'
         shell: pwsh
@@ -175,6 +166,19 @@ jobs:
           cuda: '13.1.0'
           method: network
           log-file-suffix: ${{ inputs.build_id }}
+      - uses: ggml-org/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+        if: inputs.features == 'cuda'
+        with:
+          key: ccache-${{ inputs.build_id }}
+          max-size: 3G
+          evict-old-files: job
+      - name: Compile native code through ccache
+        if: inputs.features == 'cuda'
+        shell: bash
+        run: |
+          for lang in C CXX CUDA; do
+            echo "CMAKE_${lang}_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+          done
       - uses: ./.github/actions/setup-build
         with:
           targets: ${{ inputs.target }}
