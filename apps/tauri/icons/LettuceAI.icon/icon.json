@@ -16,14 +16,14 @@
     {
       "layers": [
         {
-          "name": "Leaf",
-          "image-name": "leaf.svg",
+          "name": "Veins",
+          "image-name": "veins.svg",
           "glass": false,
           "fill-specializations": [
             {
               "appearance": "tinted",
               "value": {
-                "solid": "extended-gray:0.85000,1.00000"
+                "solid": "extended-gray:0.30000,1.00000"
               }
             }
           ],
@@ -33,14 +33,14 @@
           }
         },
         {
-          "name": "Veins",
-          "image-name": "veins.svg",
+          "name": "Leaf",
+          "image-name": "leaf.svg",
           "glass": false,
           "fill-specializations": [
             {
               "appearance": "tinted",
               "value": {
-                "solid": "extended-gray:0.30000,1.00000"
+                "solid": "extended-gray:0.85000,1.00000"
               }
             }
           ],
