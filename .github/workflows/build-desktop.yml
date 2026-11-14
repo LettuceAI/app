@@ -120,6 +120,13 @@ jobs:
             xcodebuild -downloadComponent MetalToolchain
             xcrun --sdk macosx metal --version
           fi
+          # The Tauri CLI starts actool with stdin closed, and ibtoold then fails with
+          # "Bad file descriptor" without writing Assets.car (tauri-apps/tauri#15315).
+          shim="$RUNNER_TEMP/actool-shim"
+          mkdir -p "$shim"
+          printf '#!/bin/sh\nexec /usr/bin/xcrun actool "$@" < /dev/null\n' > "$shim/actool"
+          chmod +x "$shim/actool"
+          echo "$shim" >> "$GITHUB_PATH"
       - name: Install the Windows Vulkan SDK
         if: runner.os == 'Windows' && inputs.features == 'vulkan'
         shell: pwsh
