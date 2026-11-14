@@ -42,13 +42,27 @@ use super::releases::{RuntimePlatform, runtime_backend};
 use crate::{
     ImageError, ImageFailureKind, ImageInput, ImageProviderError, ImageProviderPort,
     LOCAL_DIFFUSION_PROVIDER_KIND, ProviderImage, ProviderImageOutput, ProviderImageRequest,
-    diffusion_catalog,
+    diffusion_catalog, runtime_build_number,
 };
 
 pub const GENERATION_CANCELLED_MESSAGE: &str = "Local image generation was cancelled.";
 pub(super) const DESKTOP_ONLY_MESSAGE: &str = "Local stable-diffusion.cpp image generation is desktop-only.";
 const READINESS_ATTEMPTS: u32 = 300;
 const READINESS_INTERVAL: Duration = Duration::from_secs(1);
+/// stable-diffusion.cpp turned `--auto-fit` from a bare flag into an option
+/// that takes an `on`/`off` value in PR #2132, first shipped in build
+/// `master-962`. Older builds reject the value and newer builds reject the
+/// bare flag — passing the bare flag before `--split-mode` makes the new
+/// parser swallow `--split-mode` as the missing value and abort. We therefore
+/// pick the form from the runtime's build number; an unrecognised tag is
+/// treated as a recent build and gets the new `on` form.
+const AUTO_FIT_VALUE_MIN_BUILD: u32 = 962;
+/// The same PR #2132 (first in build `master-962`) also deprecated the bare
+/// `--diffusion-fa` flag in favour of `--flash-attn off,diffusion=on`, which
+/// enables flash attention for the diffusion model only. The old flag still
+/// works as an alias but prints a deprecation warning, so newer builds use the
+/// new form and an unrecognised tag is treated as a recent build.
+const FLASH_ATTN_VALUE_MIN_BUILD: u32 = 962;
 const POLL_ATTEMPTS: u32 = 1_200;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const DEVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -194,6 +208,25 @@ fn data_url(image: &ImageInput) -> String {
         image.mime_type,
         base64::engine::general_purpose::STANDARD.encode(&image.bytes)
     )
+}
+
+/// Whether this engine build expects `--auto-fit on` instead of the bare
+/// `--auto-fit` flag. See [`AUTO_FIT_VALUE_MIN_BUILD`].
+fn auto_fit_takes_value(runtime_release: &str) -> bool {
+    runtime_build_number(runtime_release).is_none_or(|build| build >= AUTO_FIT_VALUE_MIN_BUILD)
+}
+
+/// The flash-attention arguments that enable flash attention for the diffusion
+/// model, picking the bare `--diffusion-fa` flag or its replacement
+/// `--flash-attn off,diffusion=on` based on the build. See
+/// [`FLASH_ATTN_VALUE_MIN_BUILD`].
+fn diffusion_flash_attn_args(runtime_release: &str) -> &'static [&'static str] {
+    if runtime_build_number(runtime_release).is_none_or(|build| build >= FLASH_ATTN_VALUE_MIN_BUILD)
+    {
+        &["--flash-attn", "off,diffusion=on"]
+    } else {
+        &["--diffusion-fa"]
+    }
 }
 
 pub(super) fn split_endpoint(url: &str) -> Option<(&str, &str)> {
@@ -664,10 +697,12 @@ impl LocalDiffusionEngine {
             .arg("127.0.0.1")
             .arg("--listen-port")
             .arg(port.to_string())
-            .arg("--diffusion-fa")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        for arg in diffusion_flash_attn_args(&runtime.release) {
+            command.arg(arg);
+        }
         command.arg("--llm").arg(&text_encoder);
         command.arg("--vae").arg(&vae);
         if conservative {
@@ -680,6 +715,9 @@ impl LocalDiffusionEngine {
             }
         } else {
             command.arg("--auto-fit");
+            if auto_fit_takes_value(&runtime.release) {
+                command.arg("on");
+            }
         }
         command.arg("--split-mode").arg(&compute_policy.split_mode);
         if let Some(max_vram) = max_vram_spec(&compute_policy, &resolved.effective_devices) {
@@ -1284,6 +1322,37 @@ mod tests {
     use super::super::layout::{DiffusionPaths, write_runtime_manifest};
     use super::super::releases::RuntimeAsset;
     use super::*;
+
+    #[test]
+    fn auto_fit_takes_value_tracks_the_build_that_added_the_on_off_value() {
+        // PR #2132 shipped in master-962: that build and everything newer take
+        // the value, older builds keep the bare flag.
+        assert!(auto_fit_takes_value("master-962"));
+        assert!(auto_fit_takes_value("master-995"));
+        assert!(!auto_fit_takes_value("master-961"));
+        // An unrecognised tag is assumed to be a recent build.
+        assert!(auto_fit_takes_value("latest"));
+    }
+
+    #[test]
+    fn diffusion_flash_attn_args_track_the_build_that_deprecated_the_bare_flag() {
+        // PR #2132 (master-962) replaced `--diffusion-fa` with the per-module
+        // `--flash-attn off,diffusion=on` form.
+        assert_eq!(
+            diffusion_flash_attn_args("master-962"),
+            ["--flash-attn", "off,diffusion=on"]
+        );
+        assert_eq!(
+            diffusion_flash_attn_args("master-995"),
+            ["--flash-attn", "off,diffusion=on"]
+        );
+        assert_eq!(diffusion_flash_attn_args("master-961"), ["--diffusion-fa"]);
+        // An unrecognised tag is assumed to be a recent build.
+        assert_eq!(
+            diffusion_flash_attn_args("latest"),
+            ["--flash-attn", "off,diffusion=on"]
+        );
+    }
 
     #[derive(Default)]
     struct Host {
