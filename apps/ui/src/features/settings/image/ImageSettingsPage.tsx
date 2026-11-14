@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
-import { Check, Image, PenLine, Plus, UserRound } from "lucide-react";
+import { Check, Image, ImagePlus, PenLine, Plus, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRow, ListRowButton, Page, Skeleton, Switch } from "@lettuceai/crisp";
 import type { SettingsImageGenerationSettings } from "@/api/generated/bindings";
@@ -22,6 +22,7 @@ const sceneModes = ["auto", "ask_first", "manual"] as const;
 
 export function ImageSettingsPage() {
   const { t } = useTranslation("settings");
+  const { t: tPlayground } = useTranslation("playground");
   const api = useSettingsApi();
   const { back } = useSettingsLayout();
   const write = useSettingsWrite(api);
@@ -114,6 +115,7 @@ export function ImageSettingsPage() {
           </div>
         ) : (
           <div className="@container">
+            {!mobile && images.length > 0 && <ListGroup className="mb-7"><ListRowButton icon={<ImagePlus size={icon.lg} />} title={tPlayground("open")} description={tPlayground("openDescription")} onClick={() => { void navigate({ to: "/playground" }); }} /></ListGroup>}
             {images.length === 0 && <ListGroup className="mb-7"><ListRowButton icon={<Plus size={icon.lg} />} title={t("image.empty.title")} description={t("image.empty.body")} trailing={<span className="text-sm text-fg-3">{t("image.addModel")}</span>} onClick={addModel} /></ListGroup>}
             <div className="grid grid-cols-1 gap-7 @4xl:grid-cols-2 @4xl:items-start @4xl:gap-x-10">
               <div className="min-w-0 space-y-7">

@@ -14,6 +14,7 @@ import type { ApiClient } from "@/api/client";
 import { CreateCharacterPage, EditCharacterPage } from "@/features/characters";
 import { CreatePersonaPage, EditPersonaPage } from "@/features/personas";
 import { CreatorListPage, CreatorPage } from "@/features/creator";
+import { PlaygroundPage } from "@/features/playground";
 import {
   ChatBranchesPage,
   ChatHistoryPage,
@@ -198,6 +199,15 @@ const creatorRoute = createRoute({
     ...(creatorPanels.includes(String(search.panel) as CreatorPanel) ? { panel: search.panel as CreatorPanel } : {}),
     ...validateAvatarPanel(search),
   }),
+});
+const playgroundRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/playground",
+  component: PlaygroundPage,
+  beforeLoad: ({ context }) =>
+    context.queryClient.ensureQueryData(appStatusQuery(context.api)).then((status) => {
+      if (status.platform === "android" || status.platform === "ios") throw notFound();
+    }),
 });
 const newCharacterRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -538,6 +548,7 @@ const routeTree = rootRoute.addChildren([
   newCharacterRoute,
   creatorListRoute,
   creatorRoute,
+  playgroundRoute,
   editCharacterRoute,
   characterHistoryRoute,
   newPersonaRoute,
