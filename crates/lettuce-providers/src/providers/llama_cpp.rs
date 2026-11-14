@@ -678,7 +678,7 @@ fn outcome(
         .map(|call| {
             let (arguments, raw_arguments) = proposal_arguments(call.arguments, call.raw_arguments);
             let proposal = ProposedToolCall {
-                provider_call_id: Some(call.id),
+                provider_call_id: Some(format!("call_{}", uuid::Uuid::new_v4().simple())),
                 name: call.name,
                 arguments,
                 raw_arguments,
@@ -1062,6 +1062,11 @@ mod tests {
         let result = outcome(&inference, reply).unwrap();
         let proposals = &result.candidates[0].tool_calls;
         assert_eq!(proposals.len(), 5);
+        let ids = proposals
+            .iter()
+            .map(|proposal| proposal.provider_call_id.clone().unwrap())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(ids.len(), 5);
         assert_eq!(proposals[0].arguments, json!({"q": "cats", "n": 2}));
         assert_eq!(proposals[0].raw_arguments, None);
         for proposal in &proposals[1..4] {
