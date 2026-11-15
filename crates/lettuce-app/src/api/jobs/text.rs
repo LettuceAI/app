@@ -524,6 +524,7 @@ impl ClaimedText {
                     tracing::warn!(%error, "help me reply stream forwarder stopped");
                 }
                 if let Err(error) = &outcome {
+                    tracing::warn!(job_id = %self.claim.job_id, %error, "the help me reply job failed");
                     fail_owned_with_error(
                         context,
                         self.claim.clone(),
@@ -531,7 +532,6 @@ impl ClaimedText {
                     )
                     .await?;
                 }
-                outcome.map_err(internal)?;
             }
             TextFeatureDetail::ScenePrompt {
                 request_id,
@@ -569,6 +569,7 @@ impl ClaimedText {
                         )
                         .await;
                 if let Err(error) = &outcome {
+                    tracing::warn!(job_id = %self.claim.job_id, %error, "the scene prompt job failed");
                     fail_owned_with_error(
                         context,
                         self.claim.clone(),
@@ -576,7 +577,6 @@ impl ClaimedText {
                     )
                     .await?;
                 }
-                outcome.map_err(internal)?;
             }
             TextFeatureDetail::DesignReference {
                 request_id,
@@ -624,6 +624,7 @@ impl ClaimedText {
                     tracing::warn!(%error, "design reference stream forwarder stopped");
                 }
                 if let Err(error) = &outcome {
+                    tracing::warn!(job_id = %self.claim.job_id, %error, "the design reference job failed");
                     fail_owned_with_error(
                         context,
                         self.claim.clone(),
@@ -631,7 +632,6 @@ impl ClaimedText {
                     )
                     .await?;
                 }
-                outcome.map_err(internal)?;
             }
         }
         Ok(())
