@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ML Kit discovers component registrars through manifest metadata and reflection.
+# Retain their no-argument constructors in optimized release builds.
+-keep class * implements com.google.firebase.components.ComponentRegistrar {
+    public <init>();
+}
