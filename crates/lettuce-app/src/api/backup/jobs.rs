@@ -29,25 +29,25 @@ struct Detail {
 fn unavailable() -> ApiError { error(ApiErrorCode::Unavailable, dto::BackupFailureReason::Storage) }
 
 fn encode<T: Serialize>(value: &T) -> Result<serde_json::Value, ApiError> {
-    serde_json::to_value(value).map_err(|_| unavailable())
+    serde_json::to_value(value).map_err(super::failed())
 }
 
 fn spec(detail: &Detail) -> Result<JobSpec, ApiError> {
-    Ok(JobSpec::new(JobKind::BackupRestore, JobSubject::new(SubjectKind::Backup, "database-restore").map_err(|_| unavailable())?, OutcomeRef::Request(detail.request_id))
+    Ok(JobSpec::new(JobKind::BackupRestore, JobSubject::new(SubjectKind::Backup, "database-restore").map_err(super::failed())?, OutcomeRef::Request(detail.request_id))
         .with_resources(vec![ResourceClass::DiskWrite])
         .with_policies(RecoveryPolicy::Restart, CancellationPolicy::UntilIrreversibleStage))
 }
 
 async fn admit(context: &ApiContext, kind: RestoreKind, source: String, password: Zeroizing<String>, key: String, digest: String) -> Result<dto::JobAccepted, ApiError> {
-    let files = context.database_files().ok_or_else(unavailable)?;
-    let kept_file = files.active.file_name().and_then(|value| value.to_str()).ok_or_else(unavailable)?.to_owned();
+    let files = context.database_files().ok_or_else(super::missing())?;
+    let kept_file = files.active.file_name().and_then(|value| value.to_str()).ok_or_else(super::missing())?.to_owned();
     let detail = Detail { kind, source, request_id: RequestId::new(), operation_key: key, request_digest: digest, target: None, kept_file, warnings: Vec::new() };
     let invalid_password = kind != RestoreKind::LegacyDatabase && password.is_empty();
     let job = context.blocking(move |context| {
         let database = context.backend().database();
-        if let Some(previous) = database.job_operation(&detail.operation_key).map_err(|_| unavailable())? {
+        if let Some(previous) = database.job_operation(&detail.operation_key).map_err(super::failed())? {
             if previous.request_digest != detail.request_digest { return Err(error(ApiErrorCode::Conflict, dto::BackupFailureReason::Storage)); }
-            return database.get(previous.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable);
+            return database.get(previous.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(super::missing());
         }
         crate::api::speech::ensure_no_active_dictation(context)?;
         if detail.source.trim().is_empty() { return Err(crate::api::error::invalid_field("source", "file source is empty")); }
@@ -74,7 +74,7 @@ pub async fn legacy_backup_restore(context: &ApiContext, request: dto::BackupRes
 }
 
 pub async fn legacy_database_import(context: &ApiContext, request: dto::LegacyDatabaseImportRequest) -> Result<dto::JobAccepted, ApiError> {
-    let source = context.app_folder().ok_or_else(unavailable)?.display().to_string();
+    let source = context.app_folder().ok_or_else(super::missing())?.display().to_string();
     let key = crate::api::jobs::local::operation_key("legacy_database_import", &request.client_operation_id)?;
     let digest = crate::api::jobs::local::digest(&request)?;
     admit(context, RestoreKind::LegacyDatabase, source, Zeroizing::new(String::new()), key, digest).await
@@ -82,8 +82,8 @@ pub async fn legacy_database_import(context: &ApiContext, request: dto::LegacyDa
 
 pub(in crate::api) fn already_applied(context: &ApiContext, id: JobId) -> Result<bool, ApiError> {
     if crate::api::app::reset::database_for_job(context, id)?.is_some() { return Ok(true); }
-    let Some(record) = context.backend().database().job_detail(id).map_err(|_| unavailable())? else { return Ok(false); };
-    let detail: Detail = serde_json::from_value(record.detail).map_err(|_| unavailable())?;
+    let Some(record) = context.backend().database().job_detail(id).map_err(super::failed())? else { return Ok(false); };
+    let detail: Detail = serde_json::from_value(record.detail).map_err(super::failed())?;
     Ok(detail.target.as_ref().is_some_and(|target| context.database_files().is_some_and(|files| &files.active == target)))
 }
 
@@ -102,7 +102,7 @@ impl JobHandler for RestoreHandler {
         context.blocking(move |context| {
             let database = context.backend().database();
             let at = context.now();
-            let Some(claim) = database.claim(id, worker, at, Duration::from_millis(u64::try_from(i64::MAX.saturating_sub(at.get())).map_err(|_| unavailable())?), &ResourceAvailability::all()).map_err(IntoApiError::into_api_error)? else { return Ok(None); };
+            let Some(claim) = database.claim(id, worker, at, Duration::from_millis(u64::try_from(i64::MAX.saturating_sub(at.get())).map_err(super::failed())?), &ResourceAvailability::all()).map_err(IntoApiError::into_api_error)? else { return Ok(None); };
             let token = CancellationToken::new();
             if let Err(failure) = database.append_and_transition(JobMutation::Start { claim: claim.claim.clone(), at }) {
                 if database.get(id).map_err(IntoApiError::into_api_error)?.is_some_and(|job| job.state == JobState::CancellationRequested) {
@@ -112,8 +112,8 @@ impl JobHandler for RestoreHandler {
                 }
                 return Err(failure.into_api_error());
             }
-            let password = context.jobs().take_backup_password(id).ok_or_else(unavailable)?;
-            let detail: Detail = serde_json::from_value(database.job_detail(id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
+            let password = context.jobs().take_backup_password(id).ok_or_else(super::missing())?;
+            let detail: Detail = serde_json::from_value(database.job_detail(id).map_err(super::failed())?.ok_or_else(super::missing())?.detail).map_err(super::failed())?;
             Ok(Some(Box::new(Work { claim: claim.claim, cancellation: token, password, detail }) as Box<dyn ClaimedJob>))
         }).await
     }
@@ -135,7 +135,7 @@ impl Drop for WalAutocheckpointGuard<'_> {
 }
 
 pub(super) fn claim_started(database: &Database, id: JobId, at: lettuce_types::TimestampMillis) -> Result<ClaimRef, ApiError> {
-    let claim = database.claim(id, WorkerId::new(), at, Duration::from_secs(3600), &ResourceAvailability::all()).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable)?;
+    let claim = database.claim(id, WorkerId::new(), at, Duration::from_secs(3600), &ResourceAvailability::all()).map_err(IntoApiError::into_api_error)?.ok_or_else(super::missing())?;
     database.append_and_transition(JobMutation::Start { claim: claim.claim.clone(), at }).map_err(IntoApiError::into_api_error)?;
     Ok(claim.claim)
 }
@@ -158,7 +158,11 @@ pub(super) fn file_failure_label(failure: &ApiError) -> &'static str {
 }
 
 pub(super) fn settle(database: &Database, claim: &ClaimRef, context: &ApiContext, result: Result<dto::JobResultDto, &'static str>) -> Result<JobSnapshot, ApiError> {
-    let job = database.get(claim.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable)?;
+    match &result {
+        Ok(_) => tracing::info!(job_id = %claim.job_id, "backup job settled as succeeded"),
+        Err(label) => tracing::warn!(job_id = %claim.job_id, label, "backup job settled as failed"),
+    }
+    let job = database.get(claim.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(super::missing())?;
     let at = context.now().max(job.updated_at);
     match result {
         Ok(result) => database.settle_job_with_detail(JobMutation::Succeed { claim: claim.clone(), outcome: JobOutcome::Success { result_ref: OutcomeRef::Request(RequestId::new()) }, at }, Some(&encode(&result)?), None),
@@ -171,7 +175,7 @@ pub(super) fn settle(database: &Database, claim: &ClaimRef, context: &ApiContext
                 "backup-verification-failed" => JobErrorCode::IntegrityFailure,
                 _ => JobErrorCode::StorageFailure,
             };
-            database.settle_job_with_detail(JobMutation::Fail { claim: claim.clone(), error: JobError::new(code, false, label).map_err(|_| unavailable())?, at }, None, None)
+            database.settle_job_with_detail(JobMutation::Fail { claim: claim.clone(), error: JobError::new(code, false, label).map_err(super::failed())?, at }, None, None)
         }
     }.map_err(IntoApiError::into_api_error)
 }
@@ -221,7 +225,7 @@ impl Work {
             let result = match (&reloaded, outcome) {
                 (Ok(_), Ok(warnings)) => Ok(dto::JobResultDto::BackupRestored { kept_file: self.detail.kept_file.clone(), warnings }),
                 (Ok(_), Err(_)) => {
-                    let detail: Detail = serde_json::from_value(database.job_detail(self.claim.job_id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
+                    let detail: Detail = serde_json::from_value(database.job_detail(self.claim.job_id).map_err(super::failed())?.ok_or_else(super::missing())?.detail).map_err(super::failed())?;
                     Ok(dto::JobResultDto::BackupRestored { kept_file: self.detail.kept_file.clone(), warnings: detail.warnings })
                 }
                 _ => Err("backup-recovery-required"),
@@ -247,10 +251,10 @@ impl Work {
 
     fn cancel(&self, context: &ApiContext) -> Result<(), ApiError> {
         let database = context.backend().database();
-        let job = database.get(self.claim.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(unavailable)?;
+        let job = database.get(self.claim.job_id).map_err(IntoApiError::into_api_error)?.ok_or_else(super::missing())?;
         let at = context.now().max(job.updated_at);
         if job.state != JobState::CancellationRequested {
-            database.append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new("cancel", false).map_err(|_| unavailable())?, at }).map_err(IntoApiError::into_api_error)?;
+            database.append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new("cancel", false).map_err(super::failed())?, at }).map_err(IntoApiError::into_api_error)?;
             database.append_and_transition(JobMutation::RequestCancellation { id: job.id, reason: CancellationReason::Shutdown, at }).map_err(IntoApiError::into_api_error)?;
         }
         crate::models::artifact_install::finish_claimed_cancellation(database, &self.claim, at).map_err(IntoApiError::into_api_error)?;
@@ -261,7 +265,7 @@ impl Work {
         if self.cancellation.is_cancelled() { return Err(error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled)); }
         let job = context.backend().database().append_and_transition(JobMutation::Progress {
             claim: self.claim.clone(),
-            progress: ProgressSnapshot { units: Some(UnitsProgress::new(completed, Some(total)).map_err(|_| unavailable())?), ..ProgressSnapshot::default() },
+            progress: ProgressSnapshot { units: Some(UnitsProgress::new(completed, Some(total)).map_err(super::failed())?), ..ProgressSnapshot::default() },
             at: context.now(),
         }).map_err(IntoApiError::into_api_error)?;
         let view = crate::api::jobs::job_view(context, &job)?;
@@ -271,6 +275,7 @@ impl Work {
     }
 
     fn checkpoint(&self, context: &ApiContext, stage: &str, target: Option<(&Database, &Path, &[lettuce_transfer::LegacyBackupWarning])>, current: &Mutex<Option<Arc<Database>>>) -> Result<(), ApiError> {
+        tracing::info!(job_id = %self.claim.job_id, stage, switching = target.is_some(), "backup restore stage");
         if self.cancellation.is_cancelled() { return Err(error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled)); }
         if let Some((database, path, warnings)) = target {
             remove_workspace(context, self.claim.job_id)?;
@@ -278,21 +283,21 @@ impl Work {
             detail.target = Some(path.to_owned());
             detail.warnings = warnings.iter().cloned().map(|warning| match warning { lettuce_transfer::LegacyBackupWarning::UnknownEntry { name } => dto::BackupWarning::UnknownArchiveEntry { name } }).collect();
             database.admit_job_with_detail_and_id(spec(&detail)?, &detail.operation_key, &detail.request_digest, &encode(&detail)?, self.claim.job_id).map_err(IntoApiError::into_api_error)?;
-            let owned = Arc::new(Database::open(path).map_err(|_| unavailable())?);
+            let owned = Arc::new(Database::open(path).map_err(super::failed())?);
             context.track_reloaded_job(self.claim.job_id, owned.clone())?;
-            *current.lock().map_err(|_| unavailable())? = Some(owned);
+            *current.lock().map_err(super::failed())? = Some(owned);
             return Ok(());
         }
         let database = context.backend().database();
         let _wal_autocheckpoint = WalAutocheckpointGuard {
             database,
-            pages: database.defer_wal_autocheckpoint().map_err(|_| unavailable())?,
+            pages: database.defer_wal_autocheckpoint().map_err(super::failed())?,
         };
         if stage == "switch" {
             crate::api::app::reset::host(context)?;
             context.flush_app_usage_for_reset()?;
         }
-        let job = database.append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new(stage, stage == "switch").map_err(|_| unavailable())?, at: context.now() }).map_err(|failure| {
+        let job = database.append_and_transition(JobMutation::StageChanged { claim: self.claim.clone(), stage: StageSnapshot::new(stage, stage == "switch").map_err(super::failed())?, at: context.now() }).map_err(|failure| {
             if failure == lettuce_jobs::StoreError::IllegalTransition && database.get(self.claim.job_id).ok().flatten().is_some_and(|job| job.state == JobState::CancellationRequested) { error(ApiErrorCode::Cancelled, dto::BackupFailureReason::Cancelled) }
             else { failure.into_api_error() }
         })?;
@@ -309,6 +314,7 @@ impl Work {
 impl ClaimedJob for Work {
     fn cancellation(&self) -> CancellationToken { self.cancellation.clone() }
     async fn run(self: Box<Self>, context: ApiContext, _progress: Arc<dyn JobProgressSink>) -> Result<(), ApiError> {
+        tracing::info!(job_id = %self.claim.job_id, kind = ?self.detail.kind, "backup restore started");
         if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
         let Some(_lease) = context.maintenance().maintenance(&self.cancellation).await else { return self.cancel(&context); };
         if crate::api::speech::refuse_active_dictation(&context, &self.claim)? { return Ok(()); }
@@ -329,14 +335,14 @@ impl ClaimedJob for Work {
 
 impl Work {
     async fn execute(&self, context: &ApiContext) -> Result<Option<(Arc<Database>, RestoreOutcome)>, ApiError> {
-        let files = context.database_files().ok_or_else(unavailable)?;
-        if files.location.active_path().map_err(|_| unavailable())? != files.active { return Err(unavailable()); }
-        let root = context.app_folder().ok_or_else(unavailable)?;
+        let files = context.database_files().ok_or_else(super::missing())?;
+        if files.location.active_path().map_err(super::failed())? != files.active { return Err(unavailable()); }
+        let root = context.app_folder().ok_or_else(super::missing())?;
         let workspace = root.join("platform-v2/backup-restore-workspace");
         let media = root.join("platform-v2/media-blobs");
         let current = Mutex::new(None);
-        let restore_id: OperationId = self.claim.job_id.to_string().parse().map_err(|_| unavailable())?;
-        let authority = lettuce_platform::FilesystemAuthority::new(&lettuce_platform::DirectorySnapshot::new(root).map_err(|_| unavailable())?).map_err(|_| unavailable())?;
+        let restore_id: OperationId = self.claim.job_id.to_string().parse().map_err(super::failed())?;
+        let authority = lettuce_platform::FilesystemAuthority::new(&lettuce_platform::DirectorySnapshot::new(root).map_err(super::failed())?).map_err(super::failed())?;
         let outcome: Result<Vec<dto::BackupWarning>, &'static str> = match self.detail.kind {
             RestoreKind::Current => {
                 let source = context.files().open(&self.detail.source).map_err(file_error);
@@ -364,7 +370,7 @@ impl Work {
                     .map_err(|failure| { tracing::warn!(job_id = %self.claim.job_id, error = ?failure, "the legacy restore failed"); legacy_restore_failure_label(failure) })
             }
         };
-        let switched = files.location.active_path().map_err(|_| unavailable())? != files.active;
+        let switched = files.location.active_path().map_err(super::failed())? != files.active;
         if !switched {
             let cleaned = remove_workspace(context, self.claim.job_id).is_ok();
             context.finish_reloaded_job()?;
@@ -373,7 +379,7 @@ impl Work {
             settle(context.backend().database(), &self.claim, context, outcome.map(|warnings| dto::JobResultDto::BackupRestored { kept_file: self.detail.kept_file.clone(), warnings }))?;
             return Ok(None);
         }
-        let database = current.into_inner().map_err(|_| unavailable())?.ok_or_else(unavailable)?;
+        let database = current.into_inner().map_err(super::failed())?.ok_or_else(super::missing())?;
         Ok(Some((database, outcome)))
     }
 }
@@ -382,12 +388,12 @@ pub(in crate::api) fn result_view(context: &ApiContext, job: &JobSnapshot) -> Re
     if job.kind != JobKind::BackupRestore || job.state != JobState::Succeeded { return Ok(None); }
     let current = crate::api::app::reset::database_for_job(context, job.id)?;
     let database = current.as_deref().unwrap_or_else(|| context.backend().database());
-    let record = database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?;
-    record.result.map(|result| serde_json::from_value(result).map_err(|_| unavailable())).transpose()
+    let record = database.job_detail(job.id).map_err(super::failed())?.ok_or_else(super::missing())?;
+    record.result.map(|result| serde_json::from_value(result).map_err(super::failed())).transpose()
 }
 
 fn remove_workspace(context: &ApiContext, id: JobId) -> Result<(), ApiError> {
-    let root = context.app_folder().ok_or_else(unavailable)?.join("platform-v2/backup-restore-workspace").join(id.to_string());
+    let root = context.app_folder().ok_or_else(super::missing())?.join("platform-v2/backup-restore-workspace").join(id.to_string());
     match std::fs::remove_dir_all(root) {
         Ok(()) => Ok(()),
         Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -419,7 +425,7 @@ pub(in crate::api) fn recover_at_startup(context: &ApiContext) -> Result<(), Api
 fn recover_job(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> {
     if crate::api::app::reset::database_for_job(context, job.id)?.is_some() { return Ok(()); }
     let database = context.backend().database();
-    let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(|_| unavailable())?.ok_or_else(unavailable)?.detail).map_err(|_| unavailable())?;
+    let detail: Detail = serde_json::from_value(database.job_detail(job.id).map_err(super::failed())?.ok_or_else(super::missing())?.detail).map_err(super::failed())?;
     remove_workspace(context, job.id)?;
     if job.state == JobState::Interrupted {
         database.append_and_transition(JobMutation::FinishInterruptedBackupCleanup { id: job.id, at: context.now().max(job.updated_at) }).map_err(IntoApiError::into_api_error)?;

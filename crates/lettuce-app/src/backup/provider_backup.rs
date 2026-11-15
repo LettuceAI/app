@@ -132,13 +132,15 @@ where
                 .map(|blob| blob.content_hash.clone())
                 .collect();
             Ok::<_, ProviderBackupError>((graph, hashes))
-        })?;
-        let requirements = provider_backup_secret_requirements(&graph)?;
+        }).inspect_err(|error| tracing::warn!(?error, "backup export: reading the backup graph failed"))?;
+        tracing::info!("backup export: graph read");
+        let requirements = provider_backup_secret_requirements(&graph).inspect_err(|error| tracing::warn!(?error, "backup export: listing the required secrets failed"))?;
         let mut secret_set = ProviderBackupSecretSet::default();
         let mut missing_secrets = Vec::new();
         for (reference, purpose) in requirements {
-            let before = self.secrets.status(&reference, &purpose).await?;
+            let before = self.secrets.status(&reference, &purpose).await.inspect_err(|error| tracing::warn!(?error, ?purpose, "backup export: an account secret status could not be read"))?;
             if before.reference != reference || before.purpose != purpose {
+                tracing::warn!(?purpose, "backup export: the secret store answered for a different secret");
                 return Err(ProviderBackupError::SecretChanged);
             }
             if before.state == SecretState::Missing {
@@ -150,7 +152,7 @@ where
             }
             secret_set
                 .secrets
-                .push(self.read_present_secret(before).await?);
+                .push(self.read_present_secret(before).await.inspect_err(|error| tracing::warn!(?error, ?purpose, "backup export: an account secret could not be read"))?);
         }
         for purpose in [
             SecretPurpose::HuggingFaceAccessToken,
@@ -159,11 +161,11 @@ where
             let Some(reference) = purpose.app_secret_ref() else {
                 continue;
             };
-            let before = self.secrets.status(&reference, &purpose).await?;
+            let before = self.secrets.status(&reference, &purpose).await.inspect_err(|error| tracing::warn!(?error, ?purpose, "backup export: an app secret status could not be read"))?;
             if before.state != SecretState::Present || before.generation == 0 {
                 continue;
             }
-            secret_set.app.push(self.read_present_secret(before).await?);
+            secret_set.app.push(self.read_present_secret(before).await.inspect_err(|error| tracing::warn!(?error, ?purpose, "backup export: an app secret could not be read"))?);
         }
         if !missing_secrets.is_empty() {
             tracing::warn!(
@@ -171,7 +173,8 @@ where
                 "backup leaves out account secrets the store no longer holds"
             );
         }
-        let plan = plan_provider_backup_export(graph, secret_set)?;
+        let plan = plan_provider_backup_export(graph, secret_set).inspect_err(|error| tracing::warn!(?error, "backup export: the backup graph failed validation"))?;
+        tracing::info!(sections = plan.data_sections.len(), media = plan.media.len(), artifacts = plan.artifacts.len(), missing_secrets = missing_secrets.len(), "backup export: plan ready");
         if plan
             .media
             .len()
@@ -181,39 +184,42 @@ where
         {
             return Err(ProviderBackupGraphError::LimitExceeded { reason: "backup has more entries than the limit" }.into());
         }
-        let mut writer = BackupWriter::new(out, app_version, created_at, password)?;
+        let mut writer = BackupWriter::new(out, app_version, created_at, password).inspect_err(|error| tracing::warn!(?error, "backup export: the encrypted writer could not start"))?;
         for section in plan.data_sections {
             check()?;
-            writer.append_bytes(&section.name, &section.schema, &section.bytes)?;
+            writer.append_bytes(&section.name, &section.schema, &section.bytes).inspect_err(|error| tracing::warn!(?error, section = %section.name, "backup export: a data section could not be written"))?;
         }
+        tracing::info!("backup export: data sections written");
         for (content_hash, byte_size) in &plan.media {
             check()?;
-            let bytes = self.read_media(content_hash, *byte_size)?;
-            verify_backup_media(content_hash, *byte_size, &bytes)?;
+            let bytes = self.read_media(content_hash, *byte_size).inspect_err(|error| tracing::warn!(?error, %content_hash, byte_size, "backup export: a media file could not be read"))?;
+            verify_backup_media(content_hash, *byte_size, &bytes).inspect_err(|error| tracing::warn!(?error, %content_hash, byte_size, "backup export: a media file failed its check"))?;
             writer.append_bytes(
                 &backup_media_section_name(content_hash),
                 BACKUP_MEDIA_SECTION_SCHEMA,
                 &bytes,
-            )?;
+            ).inspect_err(|error| tracing::warn!(?error, %content_hash, "backup export: a media file could not be written"))?;
         }
+        tracing::info!("backup export: media written");
         for descriptor in &plan.artifacts {
             check()?;
             let mut sink = BackupArtifactSink::new(descriptor.clone());
             match descriptor {
                 TrustedArtifactDescriptor::Snapshot(reference) => self
                     .artifacts
-                    .export_snapshot(reference.artifact_id, &mut sink)?,
+                    .export_snapshot(reference.artifact_id, &mut sink).inspect_err(|error| tracing::warn!(?error, artifact = %reference.artifact_id, "backup export: a conversation snapshot could not be read"))?,
                 TrustedArtifactDescriptor::Replay(reference) => self
                     .artifacts
-                    .export_replay(reference.artifact_id, &mut sink)?,
+                    .export_replay(reference.artifact_id, &mut sink).inspect_err(|error| tracing::warn!(?error, artifact = %reference.artifact_id, "backup export: a conversation replay could not be read"))?,
             }
-            let artifact = sink.complete()?;
-            let (name, schema) = verify_backup_artifact(descriptor, &artifact.bytes)?;
-            writer.append_bytes(&name, &schema, &artifact.bytes)?;
+            let artifact = sink.complete().inspect_err(|error| tracing::warn!(?error, ?descriptor, "backup export: a conversation artifact was incomplete"))?;
+            let (name, schema) = verify_backup_artifact(descriptor, &artifact.bytes).inspect_err(|error| tracing::warn!(?error, ?descriptor, "backup export: a conversation artifact failed its check"))?;
+            writer.append_bytes(&name, &schema, &artifact.bytes).inspect_err(|error| tracing::warn!(?error, ?descriptor, "backup export: a conversation artifact could not be written"))?;
         }
+        tracing::info!("backup export: artifacts written");
         check()?;
         Ok(ProviderBackupExport {
-            output: writer.finish()?,
+            output: writer.finish().inspect_err(|error| tracing::warn!(?error, "backup export: the encrypted writer could not finish"))?,
             missing_secrets,
         })
     }

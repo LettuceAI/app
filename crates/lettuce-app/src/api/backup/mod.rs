@@ -5,6 +5,8 @@ pub(super) mod tests;
 #[cfg(test)]
 mod document_tests;
 #[cfg(test)]
+mod probe_tests;
+#[cfg(test)]
 mod reference_tests;
 
 use std::io::{Read, Seek, SeekFrom};
@@ -19,7 +21,29 @@ pub(super) fn error(code: ApiErrorCode, reason: dto::BackupFailureReason) -> Api
     error
 }
 
+/// Logs the underlying failure with its call site before it becomes the
+/// generic storage failure the user sees.
+#[track_caller]
+pub(super) fn failed<E: std::fmt::Debug>() -> impl FnOnce(E) -> ApiError {
+    let at = std::panic::Location::caller();
+    move |failure| {
+        tracing::warn!(%at, error = ?failure, "a backup step failed");
+        error(ApiErrorCode::Unavailable, dto::BackupFailureReason::Storage)
+    }
+}
+
+#[track_caller]
+pub(super) fn missing() -> impl FnOnce() -> ApiError {
+    let at = std::panic::Location::caller();
+    move || {
+        tracing::warn!(%at, "a backup step found no stored record");
+        error(ApiErrorCode::Unavailable, dto::BackupFailureReason::Storage)
+    }
+}
+
+#[track_caller]
 pub(super) fn file_error(failure: super::FileAccessError) -> ApiError {
+    tracing::warn!(at = %std::panic::Location::caller(), error = ?failure, "a backup file operation failed");
     let code = match failure {
         super::FileAccessError::NotFound => ApiErrorCode::NotFound,
         super::FileAccessError::Unsupported => ApiErrorCode::Unsupported,
@@ -44,6 +68,7 @@ struct Failure(ApiError);
 
 impl From<lettuce_database::ApiOperationError> for Failure {
     fn from(failure: lettuce_database::ApiOperationError) -> Self {
+        tracing::warn!(error = ?failure, "a backup index operation failed");
         Self(error(match failure {
             lettuce_database::ApiOperationError::Conflict => ApiErrorCode::Conflict,
             lettuce_database::ApiOperationError::InvalidData { .. } => ApiErrorCode::InvalidInput,
@@ -120,7 +145,7 @@ pub(super) fn inspect(files: &dyn super::FileAccess, uri: &str) -> Result<dto::B
             else { file_error(super::FileAccessError::Io) }
         })?;
         input.seek(SeekFrom::Start(0)).map_err(|_| file_error(super::FileAccessError::Io))?;
-        let header = match lettuce_transfer::detect_backup_format(&prefix).map_err(|_| malformed())? {
+        let header = match lettuce_transfer::detect_backup_format(&prefix).map_err(|failure| { tracing::warn!(error = ?failure, "the backup header is not a known format"); malformed() })? {
             lettuce_transfer::BackupFormatVersion::CurrentV2 => lettuce_transfer::read_backup_header(&mut input).map_err(|failure| if matches!(failure, lettuce_transfer::BackupEnvelopeError::Io { .. }) { file_error(super::FileAccessError::Io) } else { malformed() })?,
             lettuce_transfer::BackupFormatVersion::LegacyV1 => lettuce_transfer::read_legacy_backup_header(input).map_err(|failure| if matches!(failure, lettuce_transfer::LegacyBackupInventoryError::Io { .. }) { file_error(super::FileAccessError::Io) } else { malformed() })?,
         };

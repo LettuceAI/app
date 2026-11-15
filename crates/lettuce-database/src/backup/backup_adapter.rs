@@ -25,6 +25,7 @@ use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use crate::{Database, model_from_row, parse_id, provider_from_row};
 
 fn backup_error(error: rusqlite::Error) -> ProviderBackupSourceError {
+    tracing::warn!(%error, "backup graph read: a storage query failed");
     if error == rusqlite::Error::InvalidQuery {
         ProviderBackupSourceError::InvalidData { reason: "backup error: a value failed validation" }
     } else {
