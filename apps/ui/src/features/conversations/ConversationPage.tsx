@@ -52,6 +52,7 @@ import { ModelSheet } from "./components/settings/ModelSheet";
 import { EffectSheet } from "./companion/EffectSheet";
 import { GroupEffectSheet } from "./companion/GroupEffectSheet";
 import { AudienceSheet } from "./companion/AudienceSheet";
+import { PromptDetailsSheet } from "./components/MessagePromptDetails";
 import { SceneImageSheet } from "./scene-images/SceneImageSheet";
 import { Timeline } from "./components/Timeline";
 import {
@@ -210,6 +211,8 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const { shown: shownEffect } = useClosingValue(effectMessage);
   const [audienceMessage, setAudienceMessage] = useState<TimelineMessage | null>(null);
   const { shown: shownAudience } = useClosingValue(audienceMessage);
+  const [detailsMessage, setDetailsMessage] = useState<TimelineMessage | null>(null);
+  const { shown: shownDetails } = useClosingValue(detailsMessage);
   const [editing, setEditing] = useState<TimelineMessage | null>(null);
   const [regenerating, setRegenerating] = useState<{ message: TimelineMessage } | null>(null);
   const { shown: shownRegeneration, session: regenerationSession } = useClosingValue(regenerating);
@@ -944,6 +947,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               groupCompanion={groupCompanion}
               onCompanionEffect={() => { setMenuId(null); setEffectMessage(shownMenu); }}
               onAudience={() => { setMenuId(null); setAudienceMessage(shownMenu); }}
+              onPromptDetails={() => { setMenuId(null); setDetailsMessage(shownMenu); }}
               after={menuAfter}
               busy={meta.active || pendingTurn}
               canEdit={
@@ -1016,6 +1020,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           }}
         />}
 
+        {shownDetails && <PromptDetailsSheet key={shownDetails.id} api={api} conversationId={conversationId} messageId={shownDetails.id} open={detailsMessage !== null} onClose={() => setDetailsMessage(null)} />}
         {shownAudience && groupCompanion && view && <AudienceSheet key={shownAudience.id} api={api} conversationId={conversationId} message={shownAudience} participants={view.participants} open={audienceMessage !== null} onClose={() => setAudienceMessage(null)} />}
         {shownEffect && (groupCompanion && view
           ? <GroupEffectSheet key={shownEffect.id} api={api} conversationId={conversationId} message={shownEffect} participants={view.participants} open={effectMessage !== null} onClose={() => setEffectMessage(null)} />

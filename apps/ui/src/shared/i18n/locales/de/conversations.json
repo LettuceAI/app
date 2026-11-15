@@ -235,7 +235,6 @@
       "companionSuffix": "(Innenleben / geplante Notizen)",
       "historySuffix": "(letzte {{count}} Nachrichten)",
       "entriesSuffix": "({{count}} Einträge)",
-      "entries": "Lorebook-Einträge",
       "untitled": "Unbenannter Eintrag",
       "partsLabel": "Anteil des Prompts nach Quelle"
     },

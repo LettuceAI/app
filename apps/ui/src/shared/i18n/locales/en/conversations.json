@@ -235,7 +235,6 @@
       "companionSuffix": "(inner life / scheduled notes)",
       "historySuffix": "(last {{count}} messages)",
       "entriesSuffix": "({{count}} entries)",
-      "entries": "Lorebook entries",
       "untitled": "Untitled entry",
       "partsLabel": "Share of the prompt by source"
     },

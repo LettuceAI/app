@@ -233,7 +233,6 @@
       "memories": "メモリ",
       "history": "チャット履歴",
       "other": "その他",
-      "entries": "ロアブックエントリー",
       "untitled": "無題のエントリー",
       "partsLabel": "ソース別のプロンプト割合"
     },

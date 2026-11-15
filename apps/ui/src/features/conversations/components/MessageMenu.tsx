@@ -7,7 +7,7 @@ import type { ApiClient } from "@/api/client";
 import type { TimelineMessage } from "@/api/generated/bindings";
 import { mediaOf, statsOf } from "../data/messages";
 import { metricsQuery, usageQuery } from "../data/queries";
-import { MessagePromptDetails, SpeakerSelectionReason } from "./MessagePromptDetails";
+import { PromptDetailsRow, SpeakerSelectionReason } from "./MessagePromptDetails";
 import { MessageSources } from "./MessageSources";
 import { CompanionEffectRow } from "../companion/EffectSheet";
 import { GroupEffectRow } from "../companion/GroupEffectSheet";
@@ -18,6 +18,7 @@ export interface MessageMenuProps {
   groupCompanion?: boolean;
   onCompanionEffect?: () => void;
   onAudience?: () => void;
+  onPromptDetails?: () => void;
   api: ApiClient;
   conversationId: string;
   message: TimelineMessage;
@@ -97,7 +98,7 @@ export function MessageStats({ api, conversationId, message }: { api: ApiClient;
   );
 }
 
-export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, onBranchCharacter, onBranchGroup, groupBranch = false, onDelete, companion = false, groupCompanion = false, onCompanionEffect, onAudience, onSceneImage }: MessageMenuProps) {
+export function MessageMenu({ api, conversationId, message, after, busy, canEdit, canRegenerate, onCopy, onEdit, onRegenerate, onRegenerateOptions, onPin, onRewind, onBranch, onBranchCharacter, onBranchGroup, groupBranch = false, onDelete, companion = false, groupCompanion = false, onCompanionEffect, onAudience, onPromptDetails, onSceneImage }: MessageMenuProps) {
   const { t } = useTranslation("conversations");
   const scene = message.role === "scene";
   return (
@@ -143,7 +144,7 @@ export function MessageMenu({ api, conversationId, message, after, busy, canEdit
           />
         )}
       </ListGroup>
-      {message.role === "assistant" && <MessagePromptDetails api={api} conversationId={conversationId} messageId={message.id} />}
+      {message.role === "assistant" && onPromptDetails && <PromptDetailsRow onOpen={onPromptDetails} />}
       {(after > 0 || !scene) && (
         <ListGroup>
           {after > 0 && (

@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Info } from "lucide-react";
-import { Collapsible, icon, ListGroup, ListRow, PartitionBar, Skeleton, Tooltip, type Partition } from "@lettuceai/crisp";
+import { Info, ScrollText } from "lucide-react";
+import { icon, ListGroup, ListRow, ListRowButton, PartitionBar, Sheet, Skeleton, Tooltip, type Partition } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import type { PromptSectionKind } from "@/api/generated/bindings";
 import { promptSnapshotQuery, usageQuery } from "../data/queries";
@@ -94,15 +94,15 @@ function Details({ api, conversationId, messageId }: { api: ApiClient; conversat
   const number = new Intl.NumberFormat(i18n.language);
   if (snapshot.isPending) {
     return (
-      <div className="space-y-3 p-4" aria-hidden="true">
+      <div className="space-y-3" aria-hidden="true">
         <Skeleton height={10} width="100%" />
         <Skeleton height={32} width="100%" />
       </div>
     );
   }
-  if (snapshot.isError) return <p className="p-4 text-sm text-fg-3">{t("menu.details.unavailable")}</p>;
+  if (snapshot.isError) return <p className="text-sm text-fg-3">{t("menu.details.unavailable")}</p>;
   const { sections, parameters, model, messages, used_sources } = snapshot.data;
-  if (!sections) return <p className="p-4 text-sm text-fg-3">{t("menu.details.noBreakdown")}</p>;
+  if (!sections) return <p className="text-sm text-fg-3">{t("menu.details.noBreakdown")}</p>;
 
   // The sections carry our own o200k (tiktoken) count per piece — no provider
   // reports a per-section split. It gives the *shares*; the absolute numbers are
@@ -200,10 +200,8 @@ function Details({ api, conversationId, messageId }: { api: ApiClient; conversat
     </Tooltip>
   );
 
-  const entries = sections.filter((section) => section.kind === "lorebook");
-
   return (
-    <div className="space-y-5 p-4">
+    <div className="space-y-5">
       {overflow > 0 && (
         <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">
           {t("menu.details.overReserved")}
@@ -253,13 +251,6 @@ function Details({ api, conversationId, messageId }: { api: ApiClient; conversat
           <span className="tabular-nums text-fg-2">{number.format(promptTotal)}</span>
         </div>
       </div>
-      {entries.length > 0 && (
-        <ListGroup label={t("menu.details.entries")}>
-          {entries.map((entry, index) => (
-            <ListRow key={`${entry.label ?? ""}-${index}`} title={entry.label ?? t("menu.details.untitled")} trailing={t("menu.details.tokens", { count: entry.estimated_tokens })} />
-          ))}
-        </ListGroup>
-      )}
     </div>
   );
 }
@@ -277,12 +268,20 @@ export function SpeakerSelectionReason({ api, conversationId, messageId }: { api
   );
 }
 
-export function MessagePromptDetails({ api, conversationId, messageId }: { api: ApiClient; conversationId: string; messageId: string }) {
+export function PromptDetailsRow({ onOpen }: { onOpen: () => void }) {
   const { t } = useTranslation("conversations");
-  const [open, setOpen] = useState(false);
   return (
-    <Collapsible title={t("menu.details.title")} description={t("menu.details.hint")} open={open} onOpenChange={setOpen}>
-      {open && <Details api={api} conversationId={conversationId} messageId={messageId} />}
-    </Collapsible>
+    <ListGroup>
+      <ListRowButton icon={<ScrollText size={icon.lg} />} title={t("menu.details.title")} description={t("menu.details.hint")} onClick={onOpen} />
+    </ListGroup>
+  );
+}
+
+export function PromptDetailsSheet({ api, conversationId, messageId, open, onClose }: { api: ApiClient; conversationId: string; messageId: string; open: boolean; onClose: () => void }) {
+  const { t } = useTranslation("conversations");
+  return (
+    <Sheet open={open} onClose={onClose} placement="auto" size="sm" title={t("menu.details.title")} description={t("menu.details.hint")}>
+      <Details api={api} conversationId={conversationId} messageId={messageId} />
+    </Sheet>
   );
 }
