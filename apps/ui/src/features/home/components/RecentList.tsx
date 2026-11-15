@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Avatar, AvatarGroup, cn, EmptyState, icon, InlineMarkdown, relativeTime, SkeletonRow, useLongPress } from "@lettuceai/crisp";
+import { Avatar, AvatarGroup, cn, EmptyState, icon, InlineMarkdown, relativeTime, Skeleton, useLongPress } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import type { CharacterSummary, ConversationSummary } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
@@ -34,6 +34,25 @@ export function RecentRow({ chat, character, onOpen, onMenu, held }: { chat: Con
         {chat.last_message_preview && <span className="mt-0.5 line-clamp-2 wrap-anywhere text-sm leading-snug text-fg-3"><InlineMarkdown>{chat.last_message_preview}</InlineMarkdown></span>}
       </span>
     </button>
+  );
+}
+
+function RecentRowSkeleton() {
+  return (
+    <div className="flex w-full items-start gap-3 px-3 py-2.5">
+      <Skeleton shape="circle" width={40} height={40} className="mt-0.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 py-1">
+          <Skeleton width="38%" className="h-4" />
+          <Skeleton width="22%" />
+          <Skeleton width={44} className="ml-auto h-3" />
+        </div>
+        <div className="mt-1.5 space-y-2">
+          <Skeleton width="100%" />
+          <Skeleton width="72%" />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -71,8 +90,13 @@ export function RecentList({
 
   if (chats.isPending) {
     return (
-      <div className="space-y-1 px-3">
-        {Array.from({ length: 8 }, (_, index) => <SkeletonRow key={index} />)}
+      <div aria-busy="true" className="space-y-5">
+        {[2, 6].map((rows, group) => (
+          <div key={group}>
+            <div className="px-3 pt-1 pb-2"><Skeleton width={group === 0 ? 48 : 64} /></div>
+            {Array.from({ length: rows }, (_, index) => <RecentRowSkeleton key={index} />)}
+          </div>
+        ))}
       </div>
     );
   }
