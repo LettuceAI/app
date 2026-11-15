@@ -8,7 +8,14 @@ use lettuce_app::api::{
 };
 use tauri::{AppHandle, Runtime};
 
+#[track_caller]
 fn access_error(error: &std::io::Error) -> FileAccessError {
+    let at = std::panic::Location::caller();
+    if error.kind() == std::io::ErrorKind::NotFound {
+        tracing::debug!(%at, %error, "file not found");
+    } else {
+        tracing::warn!(%at, %error, kind = ?error.kind(), "file operation failed");
+    }
     match error.kind() {
         std::io::ErrorKind::NotFound => FileAccessError::NotFound,
         std::io::ErrorKind::PermissionDenied => FileAccessError::PermissionDenied,
@@ -78,12 +85,12 @@ fn create_path(uri: &str) -> Result<Box<dyn Write + Send>, FileAccessError> {
         .map_err(|error| access_error(&error))
 }
 
-fn prepare_export(
+fn refuse_protected_target(
     uri: &str,
-    target: std::fs::File,
+    target: &std::fs::File,
     source: Option<&std::fs::File>,
     protected: ExportProtection<'_>,
-) -> Result<Box<dyn Write + Send>, FileAccessError> {
+) -> Result<(), FileAccessError> {
     let target_handle =
         same_file::Handle::from_file(target.try_clone().map_err(|error| access_error(&error))?)
             .map_err(|error| access_error(&error))?;
@@ -95,9 +102,19 @@ fn prepare_export(
             return Err(FileAccessError::SourceIsTarget);
         }
     }
-    if protected(uri, Some(&target))? {
+    if protected(uri, Some(target))? {
         return Err(FileAccessError::SourceIsTarget);
     }
+    Ok(())
+}
+
+fn prepare_export(
+    uri: &str,
+    target: std::fs::File,
+    source: Option<&std::fs::File>,
+    protected: ExportProtection<'_>,
+) -> Result<Box<dyn Write + Send>, FileAccessError> {
+    refuse_protected_target(uri, &target, source, protected)?;
     if !fs4::fs_std::FileExt::try_lock_exclusive(&target).map_err(|error| access_error(&error))? {
         return Err(FileAccessError::Busy);
     }
@@ -184,20 +201,22 @@ fn sync_backup_path(uri: &str) -> Result<(), FileAccessError> {
         })
 }
 
+/// Copies a finished backup into a document opened for truncating writes.
+/// Document providers may hand back a write-only stream that cannot be
+/// locked, truncated or sought, so the copy only writes forward from the start.
 #[cfg(any(target_os = "android", test))]
 fn publish_backup_document(
     temporary: &str,
     target: &str,
-    file: std::fs::File,
+    mut file: std::fs::File,
     protected: ExportProtection<'_>,
 ) -> Result<String, FileAccessError> {
     let mut source = std::fs::File::open(path(temporary)?).map_err(|error| access_error(&error))?;
-    let sync = file.try_clone().map_err(|error| access_error(&error))?;
-    let mut output = prepare_export(target, file, Some(&source), protected)?;
-    std::io::copy(&mut source, &mut output).map_err(|error| access_error(&error))?;
-    output.flush().map_err(|error| access_error(&error))?;
-    sync.sync_all().map_err(|error| access_error(&error))?;
-    drop(output);
+    refuse_protected_target(target, &file, Some(&source), protected)?;
+    std::io::copy(&mut source, &mut file).map_err(|error| access_error(&error))?;
+    file.flush().map_err(|error| access_error(&error))?;
+    file.sync_all().map_err(|error| access_error(&error))?;
+    drop(file);
     drop(source);
     remove_path(temporary)?;
     Ok(target.to_owned())
@@ -450,7 +469,9 @@ impl<R: Runtime> AndroidFileAccess<R> {
 }
 
 #[cfg(target_os = "android")]
+#[track_caller]
 fn platform_error(error: tauri_plugin_android_fs::Error) -> FileAccessError {
+    tracing::warn!(at = %std::panic::Location::caller(), %error, "Android file operation failed");
     access_error(&std::io::Error::from(error))
 }
 
@@ -602,7 +623,7 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
             }
             if protected(target, None)? { return Err(FileAccessError::SourceIsTarget); }
             let uri = platform_uri(target).ok_or(FileAccessError::Unsupported)?;
-            let file = self.fs().open_file(&uri, tauri_plugin_android_fs::FileAccessMode::ReadWrite).map_err(platform_error)?;
+            let file = self.fs().open_file(&uri, tauri_plugin_android_fs::FileAccessMode::WriteTruncate).map_err(platform_error)?;
             return publish_backup_document(temporary, target, file, protected);
         }
         let uri = platform_uri(temporary).ok_or(FileAccessError::Unsupported)?;
@@ -702,9 +723,10 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
         }
         let target = self
             .fs()
-            .open_file(&uri, tauri_plugin_android_fs::FileAccessMode::ReadWrite)
+            .open_file(&uri, tauri_plugin_android_fs::FileAccessMode::WriteTruncate)
             .map_err(platform_error)?;
-        prepare_export(&uri.uri, target, source, protected)
+        refuse_protected_target(&uri.uri, &target, source, protected)?;
+        Ok(Box::new(target))
     }
 
     fn pick_open(
@@ -741,8 +763,12 @@ impl<R: Runtime> FileAccess for AndroidFileAccess<R> {
         if let Some(uri) = &picked
             && filter.extensions.contains(&"lettuce")
         {
-            // Backups remain in the saved list and must be readable after restart.
-            picker.persist_uri_permission(uri).map_err(platform_error)?;
+            // Backups remain in the saved list and must be readable after
+            // restart. A provider that refuses a lasting grant still takes the
+            // backup; its list entry turns unavailable once the grant lapses.
+            if let Err(error) = picker.persist_uri_permission(uri) {
+                tracing::warn!(%error, "the saved backup location could not keep its permission");
+            }
         }
         Ok(picked.map(|uri| uri.uri))
     }
