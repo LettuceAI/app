@@ -28,6 +28,7 @@ import { GenerationChart, SpeedVsPromptChart } from "./charts";
 import { metricDetailQuery, metricsListQuery, samplesOf, summaryOf, type MetricSummary } from "./data";
 
 const LIST_PAGE_SIZE = 10;
+const areaChart = "area";
 
 const detailKeys = {
   decodeSpeed: "detail.decodeSpeed",
@@ -268,7 +269,7 @@ function Overview({ metrics, scope, onScope, onOpen }: { metrics: readonly Metri
       )}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Panel title={t("charts.speedOverTime")} description={t("charts.speedOverTimeSub")}>
-          <Chart data={overTime} x="at" kind="area" height={224} series={[{ key: "tps", label: t("charts.speedAxis") }]} format={format.decimal} />
+          <Chart data={overTime} x="at" kind={areaChart} height={224} series={[{ key: "tps", label: t("charts.speedAxis") }]} format={format.decimal} />
         </Panel>
         <Panel title={t("charts.speedVsPrompt")} description={t("charts.speedVsPromptSub")}>
           <SpeedVsPromptChart points={speedVsPrompt} />
@@ -337,7 +338,7 @@ export function PerformancePage() {
     });
     if (confirmed) clear.mutate();
   };
-  const items = metrics.data ?? [];
+  const items = useMemo(() => metrics.data ?? [], [metrics.data]);
   const models = useMemo(() => {
     const counts = new Map<string, number>();
     for (const metric of items) counts.set(modelKey(metric), (counts.get(modelKey(metric)) ?? 0) + 1);

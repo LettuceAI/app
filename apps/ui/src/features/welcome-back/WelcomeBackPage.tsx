@@ -15,8 +15,9 @@ import { finishedStages, migrationStages, stageCompletion, useLegacyMigration } 
 import { DownloadCard } from "@/entities/download";
 import { modelsNeededAfterMove, useModelInstalls } from "./data/models";
 import { IntroFlow, type IntroPage } from "./intro/IntroFlow";
+import { listenForStepRequests, takeRequestedStep, type ReachableStep } from "./step-request";
 
-type Step = "welcome" | "migrate" | "models" | "done" | "upgrade" | "intro";
+type Step = ReachableStep | "upgrade";
 
 const releasesUrl = "https://github.com/LettuceAI/app/releases";
 const helloMs = 2200;
@@ -26,20 +27,6 @@ const pill = "min-w-56 rounded-full bg-white text-black hover:bg-white/90";
 
 const noModels: readonly RequiredModel[] = [];
 
-type ReachableStep = Exclude<Step, "upgrade">;
-
-let requestedStep: ReachableStep | null = null;
-let showStep: ((step: ReachableStep) => void) | null = null;
-
-/** Temporary developer hook: opens Welcome back at a given step, for checking the 3.0 welcome. */
-export function openWelcomeBackAt(step: ReachableStep): boolean {
-  if (showStep) {
-    showStep(step);
-    return true;
-  }
-  requestedStep = step;
-  return false;
-}
 
 export function WelcomeBackPage() {
   const { t, i18n } = useTranslation("welcome-back");
@@ -49,22 +36,13 @@ export function WelcomeBackPage() {
   const phone = useCompactLayout();
   const status = useQuery(appStatusQuery(api));
   const legacy = status.data?.legacy_state;
-  const [chosen, setStep] = useState<ReachableStep>(() => {
-    const first = requestedStep ?? "welcome";
-    requestedStep = null;
-    return first;
-  });
-  useEffect(() => {
-    showStep = (next) => {
-      setHello(false);
-      setStep(next);
-    };
-    return () => {
-      showStep = null;
-    };
-  }, []);
+  const [chosen, setStep] = useState<ReachableStep>(() => takeRequestedStep() ?? "welcome");
   const step: Step = legacy?.type === "requires_legacy_upgrade" ? "upgrade" : chosen;
   const [hello, setHello] = useState(chosen === "welcome");
+  useEffect(() => listenForStepRequests((next) => {
+    setHello(false);
+    setStep(next);
+  }), []);
   const [needed, setNeeded] = useState<readonly RequiredModel[]>(noModels);
   const [copied, setCopied] = useState(false);
   const [leaving, setLeaving] = useState(false);

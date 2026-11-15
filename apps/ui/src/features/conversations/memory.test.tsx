@@ -477,7 +477,7 @@ describe("memory activity and pinned tabs", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Messages 61 to 80/ }));
     expect(await screen.findByText("Mira keeps every letter her brother sent.")).toBeTruthy();
     expect(screen.getByText("Longer than 280 characters")).toBeTruthy();
-    expect(screen.getByText('\"Fears flying.\" is a duplicate of \"Afraid of flying.\".')).toBeTruthy();
+    expect(screen.getByText('"Fears flying." is a duplicate of "Afraid of flying.".')).toBeTruthy();
     expect(screen.getByText("(95% similar, limit 93%)")).toBeTruthy();
     expect(screen.queryByText("m1")).toBeNull();
     expect(screen.getByText("A missing comparison.")).toBeTruthy();
