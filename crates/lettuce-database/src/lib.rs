@@ -269,6 +269,11 @@ const MIGRATION_40: Migration = Migration {
     sql: include_str!("../migrations/0040_memory_duplicate_consolidation.sql"),
 };
 
+const MIGRATION_41: Migration = Migration {
+    id: 41,
+    sql: include_str!("../migrations/0041_clear_deleted_character_voices.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -310,6 +315,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_38,
     MIGRATION_39,
     MIGRATION_40,
+    MIGRATION_41,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

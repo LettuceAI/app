@@ -3778,6 +3778,35 @@ pub(crate) fn clear_prompt_references_in(
     Ok(changed)
 }
 
+/// Clears `voice_id` from every character that speaks with it and moves each
+/// changed character's revision. Returns the characters that changed.
+pub(crate) fn clear_voice_profile_references_in(
+    tx: &Transaction<'_>,
+    voice_id: lettuce_types::VoiceProfileId,
+    now: TimestampMillis,
+) -> Result<BTreeSet<CharacterId>, rusqlite::Error> {
+    let mut changed = BTreeSet::new();
+    let rows = tx
+        .prepare("SELECT id,defaults_json FROM characters WHERE voice_profile_id=?1 ORDER BY id")?
+        .query_map([voice_id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (id, payload) in rows {
+        let mut defaults: CharacterDefaults = decode(&payload, DEFAULTS_VERSION)?;
+        if defaults.voice == Some(lettuce_characters::VoicePreference::VoiceProfile(voice_id)) {
+            defaults.voice = None;
+        }
+        tx.execute(
+            "UPDATE characters SET defaults_json=?2,voice_profile_id=NULL WHERE id=?1",
+            params![id, encode(&defaults, DEFAULTS_VERSION).map_err(|_| invalid())?],
+        )?;
+        changed.insert(parse_id(id)?);
+    }
+    bump_characters_in(tx, &changed, now)?;
+    Ok(changed)
+}
+
 /// Removes `lorebook_id` from every starter's explicit lorebook selection and
 /// moves each changed character's revision. Returns the characters that
 /// changed.

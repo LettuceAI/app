@@ -4,6 +4,8 @@ pub(super) mod jobs;
 pub(super) mod tests;
 #[cfg(test)]
 mod document_tests;
+#[cfg(test)]
+mod reference_tests;
 
 use std::io::{Read, Seek, SeekFrom};
 

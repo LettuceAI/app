@@ -178,7 +178,8 @@ pub trait TtsConfigurationRepository: Send + Sync {
         id: VoiceProfileId,
     ) -> Result<Option<UserVoice>, TtsConfigurationRepositoryError>;
     fn list_user_voices(&self) -> Result<Vec<UserVoice>, TtsConfigurationRepositoryError>;
-    fn delete_user_voice(&self, id: VoiceProfileId) -> Result<(), TtsConfigurationRepositoryError>;
+    /// Deletes the voice and clears it from every character that speaks with it.
+    fn delete_user_voice(&self, id: VoiceProfileId, now: TimestampMillis) -> Result<(), TtsConfigurationRepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

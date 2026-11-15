@@ -455,15 +455,20 @@ impl TtsConfigurationRepository for Database {
             .map_err(corrupt)
     }
 
-    fn delete_user_voice(&self, id: VoiceProfileId) -> Result<(), TtsConfigurationRepositoryError> {
-        let changed = self
-            .connection()
-            .map_err(storage)?
+    fn delete_user_voice(&self, id: VoiceProfileId, now: TimestampMillis) -> Result<(), TtsConfigurationRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        crate::catalog::character_adapter::clear_voice_profile_references_in(&transaction, id, now)
+            .map_err(storage)?;
+        let changed = transaction
             .execute("DELETE FROM user_voices WHERE id=?1", [id.to_string()])
             .map_err(storage)?;
         if changed == 0 {
             return Err(TtsConfigurationRepositoryError::NotFound);
         }
+        transaction.commit().map_err(storage)?;
         Ok(())
     }
 }

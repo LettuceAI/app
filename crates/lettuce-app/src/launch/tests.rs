@@ -15316,7 +15316,7 @@ fn audio_providers_voices_and_asr_learning_sync_row_by_row() {
         );
     }
 
-    TtsConfigurationRepository::delete_user_voice(&b, voice.id).expect("delete on b");
+    TtsConfigurationRepository::delete_user_voice(&b, voice.id, TimestampMillis::new(2)).expect("delete on b");
     sync_prompts(&b, &a, 400);
     assert_eq!(
         TtsConfigurationRepository::get_user_voice(&a, voice.id).expect("a voice"),

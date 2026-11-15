@@ -566,7 +566,7 @@ pub async fn user_voice_delete(
             context
                 .backend()
                 .tts_configuration(context.secret_store().as_ref())
-                .delete_user_voice(id)
+                .delete_user_voice(id, context.now())
                 .map_err(IntoApiError::into_api_error)
         })
         .await
