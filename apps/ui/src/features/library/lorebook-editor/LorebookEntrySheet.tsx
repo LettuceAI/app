@@ -250,7 +250,6 @@ export function LorebookEntrySheet({
       <div className="space-y-5">
         <Field label={t("titleField")} hint={t("titleHint")}>
           <Input
-            data-autofocus
             value={draft.title}
             disabled={busy}
             onChange={(event) => update({ title: event.target.value })}

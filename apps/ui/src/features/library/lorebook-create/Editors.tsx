@@ -171,7 +171,7 @@ export function PlanEditor({
       <div className="space-y-5">
         <CreationError error={error} busy={busy} retry={retry} />
         <Field label={t("entryTitle")} required>
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} data-autofocus />
+          <Input value={title} onChange={(event) => setTitle(event.target.value)} />
         </Field>
         <Field label={t("kind")}>
           <SelectMenu
@@ -251,7 +251,7 @@ export function DraftEditor({
       <div className="space-y-5">
         <CreationError error={error} busy={busy} retry={retry} />
         <Field label={t("entryTitle")} required>
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} data-autofocus />
+          <Input value={title} onChange={(event) => setTitle(event.target.value)} />
         </Field>
         <Field
           label={t("content")}
