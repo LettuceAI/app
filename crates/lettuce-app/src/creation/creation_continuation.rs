@@ -976,7 +976,8 @@ fn plan_round(
     let calls = candidate
         .tool_calls
         .iter()
-        .map(|call| {
+        .enumerate()
+        .map(|(position, call)| {
             let name = lettuce_creation::canonical_tool_name(&call.name);
             let definition_version = attempt
                 .tool_request
@@ -986,10 +987,22 @@ fn plan_round(
                 .map_or(lettuce_creation::CREATION_TOOL_VERSION, |definition| {
                     definition.version
                 });
+            let mut call = call.clone();
+            // Local providers often omit tool-call ids or reuse a constant one, and the
+            // creation adapter deduplicates provider call ids across the whole attempt,
+            // so namespace the id with the round ordinal and position to keep it unique.
+            // Faithful-replay calls already carry a unique provider id, so leave those
+            // untouched.
+            if call.provider_replay.is_none() {
+                call.provider_call_id = Some(match call.provider_call_id.take() {
+                    Some(id) => format!("r{ordinal}c{position}-{id}"),
+                    None => format!("r{ordinal}c{position}"),
+                });
+            }
             Ok::<_, CreationContinuationError>(NewCreationToolCall {
                 id: lettuce_types::ToolExecutionId::new(),
                 definition_version,
-                call: call.clone(),
+                call,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

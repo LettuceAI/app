@@ -428,9 +428,10 @@ fn extract_openai_calls(node: &Value, out: &mut Vec<LocalToolCall>) {
         let id = raw_call
             .get("id")
             .and_then(Value::as_str)
-            .unwrap_or("tool_call");
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| format!("tool_call_{}", out.len() + 1));
         out.push(LocalToolCall {
-            id: id.to_string(),
+            id,
             name: name.to_string(),
             arguments,
             raw_arguments,
@@ -467,7 +468,7 @@ mod tests {
         assert_eq!(calls[0].id, "c1");
         assert_eq!(calls[0].arguments, json!({"q": "x"}));
         assert_eq!(calls[0].raw_arguments.as_deref(), Some("{\"q\":\"x\"}"));
-        assert_eq!(calls[1].id, "tool_call");
+        assert_eq!(calls[1].id, "tool_call_2");
         assert_eq!(calls[1].raw_arguments, None);
         assert!(parse_tool_calls(&json!({"role": "assistant", "content": "hi"})).is_empty());
     }
