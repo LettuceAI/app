@@ -244,7 +244,12 @@ impl MemoryBackup {
                 || space.snapshot.items.iter().any(|item| {
                     memory_owners.insert(item.id, space.snapshot.id).is_some()
                         || item.source_message_id.is_some_and(|id| {
-                            messages.get(&id).is_none_or(|(conversation_id, role)| {
+                            // A shared pool outlives its source conversations,
+                            // just like an unbound pool below. Keep historical
+                            // provenance when its source message was purged;
+                            // existing messages must still match their binding
+                            // and role. Private spaces require a live source.
+                            messages.get(&id).map_or(!pool, |(conversation_id, role)| {
                                 !bound.contains(conversation_id)
                                     || item
                                         .source_role

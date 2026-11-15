@@ -15796,6 +15796,102 @@ mod tests {
     }
 
     #[test]
+    fn backup_keeps_shared_memory_provenance_after_its_source_conversation_is_purged() {
+        use lettuce_characters::{Character, CharacterRepository};
+        use lettuce_memory::{MemoryItem, MemoryShortId, MemorySpaceSnapshot};
+        use lettuce_types::{MemoryId, MemorySpaceId};
+
+        let character_id = CharacterId::new();
+        let source = direct_fixture_for(std::rc::Rc::new(Database::open_in_memory().expect("database")), character_id);
+        CharacterRepository::create(
+            source.database.as_ref(),
+            lettuce_characters::CreateCharacterPlan {
+                character: Character::new(
+                    character_id,
+                    lettuce_characters::CharacterProfile {
+                        name: "Ada".into(),
+                        nickname: None,
+                        description: None,
+                        definition: None,
+                        design_description: None,
+                        scenario: None,
+                    },
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    None,
+                    Default::default(),
+                    TimestampMillis::new(10),
+                ).expect("character"),
+                scenes: Vec::new(),
+                variants: Vec::new(),
+                starters: Vec::new(),
+            },
+        ).expect("store character");
+        let destination = direct_fixture_for(source.database.clone(), character_id);
+        let message_id = source.database.append_user_message(
+            &send_command(&source, "pool-source", "da", text("Remember this")),
+            TimestampMillis::new(20),
+        ).expect("source message").value.id;
+        let memory_id = MemoryId::new();
+        let mut item = MemoryItem::written(
+            memory_id,
+            MemoryShortId::derived(memory_id),
+            "A memory that outlives its conversation".into(),
+            TimestampMillis::new(20),
+        );
+        item.origin = lettuce_memory::MemoryOrigin::Model;
+        item.source_message_id = Some(message_id);
+        item.source_role = Some(MessageRole::User);
+        item.observed_at = Some(TimestampMillis::new(20));
+        item.observed_time_precision = Some("turn".into());
+        let snapshot = MemorySpaceSnapshot {
+            id: MemorySpaceId::new(),
+            revision: Revision::INITIAL,
+            items: vec![item],
+        };
+        {
+            let mut connection = source.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            crate::memory::memory_adapter::insert_pool_space_in(
+                &transaction, source.conversation_id, source.branch_id, character_id, &snapshot,
+            ).expect("pool");
+            crate::memory::memory_adapter::join_companion_pool_in(
+                &transaction, destination.conversation_id, destination.branch_id, character_id,
+            ).expect("join pool");
+            transaction.commit().expect("commit pool");
+        }
+        let before = crate::backup::restore_writer::tests::assert_backup_round_trip(source.database.as_ref());
+        let pool = before.memory.spaces.iter().find(|space| space.snapshot.id == snapshot.id).expect("pool");
+        assert_eq!(pool.snapshot, snapshot);
+        let mut wrong_role = before.clone();
+        wrong_role.memory.spaces.iter_mut().find(|space| space.snapshot.id == snapshot.id).expect("pool").snapshot.items[0].source_role = Some(MessageRole::Assistant);
+        assert!(lettuce_transfer::canonicalize_and_validate(&mut wrong_role).is_err());
+        let mut wrong_owner = before.clone();
+        let pool = wrong_owner.memory.spaces.iter_mut().find(|space| space.snapshot.id == snapshot.id).expect("pool");
+        pool.conversation_id = destination.conversation_id;
+        pool.shared_conversation_ids.clear();
+        assert!(lettuce_transfer::canonicalize_and_validate(&mut wrong_owner).is_err());
+        let mut missing_private_source = before.clone();
+        missing_private_source.memory.pools.clear();
+        let private = missing_private_source.memory.spaces.iter_mut().find(|space| space.snapshot.id == snapshot.id).expect("space");
+        private.conversation_id = destination.conversation_id;
+        private.branch_id = Some(destination.branch_id);
+        private.shared_conversation_ids.clear();
+        private.snapshot.items[0].source_message_id = Some(MessageId::new());
+        assert!(lettuce_transfer::canonicalize_and_validate(&mut missing_private_source).is_err());
+
+        source.database.purge_conversation(source.conversation_id, TimestampMillis::new(30)).expect("purge source");
+        let (after, restored) = crate::backup::restore_writer::tests::backup_round_trip(source.database.as_ref(), |_| {});
+        let pool = after.memory.spaces.iter().find(|space| space.snapshot.id == snapshot.id).expect("surviving pool");
+        assert_eq!(pool.conversation_id, destination.conversation_id);
+        assert_eq!(pool.snapshot, snapshot, "keep the memory, source id, role and observation time");
+        restored.purge_conversation(destination.conversation_id, TimestampMillis::new(40)).expect("purge last conversation");
+        let unbound = crate::backup::restore_writer::tests::assert_backup_round_trip(&restored);
+        assert_eq!(unbound.memory.unbound_pools, vec![snapshot]);
+    }
+
+    #[test]
     fn conversation_lineage_survives_removing_the_source_and_round_trips() {
         let source = direct_fixture();
         let destination = direct_fixture_on(source.database.clone());
