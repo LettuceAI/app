@@ -250,6 +250,13 @@ fn map_owners(
                 .iter()
                 .any(|state| state.character_id.to_string() == row.session_id),
         };
+        if !owner_exists && kind == LegacyBackupMemoryOwnerKind::CompanionShared {
+            notices.push(notice(
+                LegacyBackupConversionNoticeKind::Lossy,
+                &format!("{path}.session_id"),
+            ));
+            continue;
+        }
         if !owner_exists {
             return Err(orphan(format!("{path}.session_id")));
         }

@@ -222,11 +222,28 @@ fn map_states(
         if !owners.insert(character_id) {
             return Err(malformed(format!("{path}.character_id")));
         }
+        // Legacy kept a character's shared memory after the character was
+        // deleted or left companion mode, and also wrote it for a roleplay
+        // character's companion-mode sessions. Only companions own it here.
         if !all_character_ids.contains(&character_id) {
-            return Err(orphan(format!("{path}.character_id")));
+            skip_reference(
+                &format!("{path}.character_id"),
+                crate::LegacyImportSkipKind::CharacterReference,
+                crate::LegacyImportSkipReason::MissingCharacter,
+                skipped,
+                notices,
+            );
+            continue;
         }
         if !companion_ids.contains(&character_id) {
-            return Err(malformed(format!("{path}.character_id")));
+            skip_reference(
+                &format!("{path}.character_id"),
+                crate::LegacyImportSkipKind::CharacterReference,
+                crate::LegacyImportSkipReason::IncompatibleReference,
+                skipped,
+                notices,
+            );
+            continue;
         }
         validate_string_array(&row.memories, &format!("{path}.memories"))?;
         validate_json_array(&row.memory_embeddings, &format!("{path}.memory_embeddings"))?;
@@ -1018,16 +1035,6 @@ mod tests {
             Err(LegacyBackupCompanionSharedMemoryError::Malformed { ref field })
                 if field == "[1].character_id"
         ));
-        assert!(matches!(
-            plan_legacy_backup_companion_shared_memory(source(
-                Some(json!([row.clone()])),
-                &character_id,
-                &session_id,
-                false,
-            )),
-            Err(LegacyBackupCompanionSharedMemoryError::Malformed { ref field })
-                if field == "[0].character_id"
-        ));
         let mut invalid = row;
         invalid["relationship_states"] = json!("{\"__default__\":{\"trust\":2}}");
         assert!(matches!(
@@ -1040,6 +1047,40 @@ mod tests {
             Err(LegacyBackupCompanionSharedMemoryError::Malformed { ref field })
                 if field == "[0].relationship_states.__default__"
         ));
+    }
+
+    #[test]
+    fn shared_memory_of_a_roleplay_or_deleted_character_is_skipped() {
+        let character_id = id(24);
+        let session_id = id(25);
+        let roleplay = plan_legacy_backup_companion_shared_memory(source(
+            Some(json!([shared_state(&character_id, &session_id)])),
+            &character_id,
+            &session_id,
+            false,
+        ))
+        .expect("a roleplay character's leftover shared memory");
+        let deleted = plan_legacy_backup_companion_shared_memory(source(
+            Some(json!([shared_state(&id(26), &session_id)])),
+            &character_id,
+            &session_id,
+            true,
+        ))
+        .expect("a deleted character's leftover shared memory");
+        for (plan, reason) in [
+            (roleplay, crate::LegacyImportSkipReason::IncompatibleReference),
+            (deleted, crate::LegacyImportSkipReason::MissingCharacter),
+        ] {
+            assert!(plan.states.is_empty());
+            assert!(plan.skipped.iter().any(|skip| {
+                skip.kind == crate::LegacyImportSkipKind::CharacterReference
+                    && skip.reason == reason
+                    && skip.source_key == "companion_shared_memory:[0].character_id"
+            }));
+            assert!(plan.notices.iter().any(|notice| {
+                notice.kind == LegacyBackupConversionNoticeKind::Lossy && notice.field == "[0].character_id"
+            }));
+        }
     }
 
     #[test]
