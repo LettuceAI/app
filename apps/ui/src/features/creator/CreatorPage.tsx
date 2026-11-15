@@ -177,7 +177,7 @@ function CreatorWorkspace() {
               <History size={icon.lg} />
             </IconButton>
             {!applied && (
-              <Button size="sm" variant="primary" aria-label={t("review")} disabled={locked || stale} onClick={() => void review()}>
+              <Button size="sm" variant="tonal" aria-label={t("review")} disabled={locked || stale} onClick={() => void review()}>
                 {t(phone ? "reviewShort" : "review")}
               </Button>
             )}

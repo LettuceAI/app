@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { ArrowLeft } from "lucide-react";
-import { ActionBar, Alert, Badge, Button, icon, IconButton, ListGroup, ListRowButton, Sheet } from "@lettuceai/crisp";
+import { Alert, Badge, Button, icon, IconButton, ListGroup, ListRowButton, Sheet } from "@lettuceai/crisp";
 import type { CreatorDraft, CreatorProposalView, CreatorView } from "@/api/generated/bindings";
 import { DraftDiff } from "./DraftDiff";
 
@@ -27,16 +27,15 @@ export function ReviewSheet({ open, phone, work, baseline, complete, canSave, bu
       title={t("review")}
       description={t(existing ? "reviewEdit" : "reviewNew")}
       footer={
-        <ActionBar
-          primary={<Button disabled={!canSave} loading={busy} onClick={() => onApply(false)}>{t(existing ? "saveChanges" : "create")}</Button>}
-          secondary={chat ? <Button variant="secondary" disabled={!canSave || busy} onClick={() => onApply(true)}>{t("createAndChat")}</Button> : undefined}
-        />
+        <div className="flex gap-2">
+          {chat && <Button variant="secondary" className="flex-1" disabled={!canSave || busy} onClick={() => onApply(true)}>{t("createAndChat")}</Button>}
+          <Button variant="primary" className="flex-1" disabled={!canSave} loading={busy} onClick={() => onApply(false)}>{t(existing ? "saveChanges" : "create")}</Button>
+        </div>
       }
     >
-      <div className="space-y-5">
-        {!complete && <Alert tone="warning" title={t("incomplete")} />}
-        <DraftDiff before={baseline} after={work.proposal.draft} kind={work.summary.kind} />
-      </div>
+      {complete
+        ? <DraftDiff before={baseline} after={work.proposal.draft} kind={work.summary.kind} />
+        : <Alert tone="warning" title={t("incomplete")} />}
     </Sheet>
   );
 }
