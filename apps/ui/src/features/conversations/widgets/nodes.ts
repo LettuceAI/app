@@ -102,17 +102,16 @@ export interface WidgetPlace {
   group: boolean;
 }
 
-/** The side a widget goes to when a panel does not decide it: the identity widgets sit left, the rest right. */
-export function defaultSide(node: WidgetNode): "left" | "right" {
-  return node.type === "character_info" || node.type === "persona_info" || node.type === "session_info" || node.type === "author_note" ? "left" : "right";
-}
-
-/** Writes the list a single folded panel shows back to the two sides: widgets keep the side they had, new ones take their default. */
-export function splitFolded(current: WidgetSlots, shown: WidgetNode[]): WidgetSlots {
-  const left = new Set(current.left.map((node) => node.id));
-  const right = new Set(current.right.map((node) => node.id));
-  const toLeft = (node: WidgetNode) => left.has(node.id) || (!right.has(node.id) && defaultSide(node) === "left");
-  return { left: shown.filter(toLeft), right: shown.filter((node) => !toLeft(node)) };
+/** Inverse of `fold`: splits a folded panel's list back by position so a drop always sticks. */
+export function splitFolded(current: WidgetSlots, shown: WidgetNode[], visibleSide: "left" | "right"): WidgetSlots {
+  const hidden = new Set(current[visibleSide === "left" ? "right" : "left"].map((node) => node.id));
+  let cut = 0;
+  shown.forEach((node, index) => {
+    if (!hidden.has(node.id)) cut = index + 1;
+  });
+  const front = shown.slice(0, cut);
+  const back = shown.slice(cut);
+  return visibleSide === "left" ? { left: front, right: back } : { left: back, right: front };
 }
 
 /** The "Actions" preset of the type picker: a box of the three buttons people reach for most. */

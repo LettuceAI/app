@@ -96,13 +96,27 @@ describe("widget nodes", () => {
     expect(preset.type === "box" && preset.children.map((child) => child.type === "button" && child.action)).toEqual(["regenerate", "continue", "new_session"]);
   });
 
-  it("puts a widget added while one panel shows into its default slot and keeps the rest where they were", () => {
+  it("keeps a drop in a single folded panel where it lands, splitting the two sides by position", () => {
     const current: WidgetSlots = { left: [info("i")], right: [dice("d")] };
+    // One panel open: both sides fold into it, the visible side first.
     expect(fold(current, { showLeft: true, showRight: false })).toEqual({ left: [info("i"), dice("d")], right: [] });
     expect(fold(current, { showLeft: false, showRight: true })).toEqual({ left: [], right: [dice("d"), info("i")] });
-    const next = splitFolded(current, [info("i"), dice("d"), note("n"), authorNote("a")]);
-    expect(next.left.map((node) => node.id)).toEqual(["i", "a"]);
-    expect(next.right.map((node) => node.id)).toEqual(["d", "n"]);
+
+    // Left panel visible: dragging the hidden (right) widget above the visible one pulls it onto the left, so the drop sticks.
+    const dragged = splitFolded(current, [dice("d"), info("i")], "left");
+    expect(dragged.left.map((node) => node.id)).toEqual(["d", "i"]);
+    expect(dragged.right).toEqual([]);
+    expect(fold(dragged, { showLeft: true, showRight: false }).left.map((node) => node.id)).toEqual(["d", "i"]);
+
+    // A widget not dragged across the seam keeps its side; a newly added one joins the visible side.
+    const settled = splitFolded(current, [info("i"), authorNote("a"), dice("d")], "left");
+    expect(settled.left.map((node) => node.id)).toEqual(["i", "a"]);
+    expect(settled.right.map((node) => node.id)).toEqual(["d"]);
+
+    // Right panel visible: by symmetry the visible (right) side keeps the front of the list.
+    const onRight = splitFolded(current, [dice("d"), info("i")], "right");
+    expect(onRight.right.map((node) => node.id)).toEqual(["d"]);
+    expect(onRight.left.map((node) => node.id)).toEqual(["i"]);
   });
 });
 

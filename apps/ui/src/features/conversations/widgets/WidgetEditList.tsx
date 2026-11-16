@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeftToLine, ArrowRightToLine, Pencil, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, EmptyState, icon, IconButton, ReorderableList } from "@lettuceai/crisp";
@@ -19,6 +20,35 @@ export interface WidgetEditListProps {
 /** One panel's widgets in edit mode: each can be reordered by its handle, edited, deleted and, between sides, moved. Boxes edit their children in place. */
 export function WidgetEditList({ nodes, onChange, onEdit, onAdd, move, nested }: WidgetEditListProps) {
   const { t } = useTranslation("conversations");
+  // During a drag, feed the list its own order and hold the parent's re-bucketing write until release, else it fights framer-motion and widgets overlap.
+  const [dragOrder, setDragOrder] = useState<WidgetNode[] | null>(null);
+  const dragRef = useRef<WidgetNode[] | null>(null);
+  const pointerDown = useRef(false);
+  const commit = useCallback(
+    (next: WidgetNode[]) => {
+      dragRef.current = null;
+      setDragOrder(null);
+      onChange(next);
+    },
+    [onChange],
+  );
+  const reorder = (next: WidgetNode[]) => {
+    dragRef.current = next;
+    setDragOrder(next);
+    if (!pointerDown.current) commit(next); // keyboard reorder (Alt+arrows) has no pointer to wait on
+  };
+  useEffect(() => {
+    const release = () => {
+      pointerDown.current = false;
+      if (dragRef.current) commit(dragRef.current);
+    };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+    };
+  }, [commit]);
   const add = (
     <Button variant="ghost" size="sm" block leading={<Plus size={icon.sm} />} className="border border-dashed border-line-2" onClick={() => onAdd((node) => onChange([...nodes, node]))}>
       {t("widgets.list.addWidget")}
@@ -34,10 +64,10 @@ export function WidgetEditList({ nodes, onChange, onEdit, onAdd, move, nested }:
     );
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" onPointerDownCapture={() => { pointerDown.current = true; }}>
       <ReorderableList
-        items={nodes}
-        onReorder={onChange}
+        items={dragOrder ?? nodes}
+        onReorder={reorder}
         keyOf={(node) => node.id}
         aria-label={t("widgets.list.editWidgets")}
         itemClassName="rounded-xl"

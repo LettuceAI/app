@@ -47,12 +47,12 @@ export function WidgetArea({ layout, slots, failure, where, save, children }: Wi
     setSaving(false);
     if (saved) setDraft(null);
   };
-  /** Rewrites one panel's widgets; with a single panel showing, that panel holds both sides and the result is split back. */
+  /** Rewrites one panel's widgets; with a single panel showing, that one panel holds both sides and the result is split back by position, so the drop lands where shown. */
   const edit = (side: Side, change: (nodes: WidgetNode[]) => WidgetNode[]) =>
     setDraft((current) => {
       if (!current) return current;
       const next = change(fold(current, layout)[side]);
-      return bothSides ? { ...current, [side]: next } : splitFolded(current, next);
+      return bothSides ? { ...current, [side]: next } : splitFolded(current, next, side);
     });
   const pick = (type: WidgetType | "actions") => {
     adding?.add(type === "actions" ? createActionsPreset(t("widgets.presets.actions.label")) : createWidgetNode(type, label));
