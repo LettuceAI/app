@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Bot, Download, Flame, Pin, Snowflake, Trash2, User } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, cn, confirm, DatePicker, Field, icon, ListGroup, ListRow, relativeTime, Segmented, Select, Sheet, Switch, Textarea } from "@lettuceai/crisp";
+import { Button, cn, confirm, Field, icon, ListGroup, ListRow, relativeTime, Segmented, Select, Sheet, Switch, Textarea } from "@lettuceai/crisp";
+import { DateTime24 } from "@/shared/ui/DateTime24";
 import type { MemoryCategory, MemoryItemView, MemoryOrigin, MemoryTemperature } from "@/api/generated/bindings";
 import { dateOf, sameInstant } from "../data/memory";
 import { useWindowLabel } from "./window-label";
@@ -151,7 +152,7 @@ export function MemorySheet({ open, item, categories, busy, onClose, onSave, onD
         </Field>
         {!companionName && <Field label={t("memory.sheet.when")} hint={t("memory.sheet.whenHint")}>
           <div className="flex items-center gap-2">
-            <DatePicker className="min-w-0 flex-1" withTime disabled={busy} value={observedAt} placeholder={t("memory.sheet.whenPlaceholder")} locale={i18n.language} onChange={setObservedAt} />
+            <DateTime24 className="min-w-0 flex-1" disabled={busy} value={observedAt} placeholder={t("memory.sheet.whenPlaceholder")} locale={i18n.language} onChange={setObservedAt} />
             {observedAt && (
               <Button variant="ghost" disabled={busy} onClick={() => setObservedAt(null)}>
                 {t("memory.sheet.whenClear")}

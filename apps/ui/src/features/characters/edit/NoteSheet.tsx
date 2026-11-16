@@ -2,7 +2,8 @@ import { useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, confirm, DatePicker, Field, icon, Input, ListGroup, ListRow, Select, Sheet, Switch, Textarea, toast } from "@lettuceai/crisp";
+import { Button, confirm, Field, icon, Input, ListGroup, ListRow, Select, Sheet, Switch, Textarea, toast } from "@lettuceai/crisp";
+import { DateTime24 } from "@/shared/ui/DateTime24";
 import { isApiFailure, type ApiClient } from "@/api/client";
 import type { CharacterNoteRecurrence, CharacterNoteView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
@@ -68,12 +69,12 @@ export function NoteSheetShell({ open, isNew, draft, onChange, busy, saving, onS
           <Select value={draft.recurrence} disabled={busy} options={recurrences.map((value) => ({ value, label: t(`notes.recurrence.${value}`) }))} onChange={(event) => onChange({ recurrence: event.target.value as CharacterNoteRecurrence })} />
         </Field>
         <Field label={t(draft.recurrence === "none" ? "notes.showOn" : "notes.startsOn")}>
-          <DatePicker withTime value={draft.availableAt} disabled={busy} onChange={(availableAt) => onChange({ availableAt })} />
+          <DateTime24 value={draft.availableAt} disabled={busy} onChange={(availableAt) => onChange({ availableAt })} />
         </Field>
         <Field label={t(recurring ? "notes.stopsAfter" : "notes.hideOn")} hint={problem === "end" ? t("notes.endBeforeStart") : undefined}>
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
-              <DatePicker withTime value={draft.expiresAt} placeholder={t("notes.noEnd")} disabled={busy} onChange={(date) => onChange({ expiresAt: draft.expiresAt === null && recurring && pickedDayOnly(date) ? endOfDay(date) : date })} />
+              <DateTime24 value={draft.expiresAt} placeholder={t("notes.noEnd")} disabled={busy} onChange={(date) => onChange({ expiresAt: draft.expiresAt === null && recurring && pickedDayOnly(date) ? endOfDay(date) : date })} />
             </div>
             {draft.expiresAt && <Button variant="ghost" size="sm" disabled={busy} onClick={() => onChange({ expiresAt: null })}>{t("notes.clearEnd")}</Button>}
           </div>

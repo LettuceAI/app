@@ -1,4 +1,5 @@
 {
+  "dateTime": { "hour": "Hour", "minute": "Minute", "separator": ":", "format24": "(24h-Format)" },
   "onnxModelsUnloaded": "Released idle models to free memory: {{models}}. They will load again when needed.",
   "app": {
     "name": "LettuceAI"

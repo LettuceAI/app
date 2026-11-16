@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { datePickerStrings } from "./date-picker-strings";
-import { Button, CrispStringsProvider, DatePicker, Field, ListGroup, ListRow, Segmented, Sheet } from "@lettuceai/crisp";
+import { Button, CrispStringsProvider, Field, ListGroup, ListRow, Segmented, Sheet } from "@lettuceai/crisp";
+import { DateTime24 } from "@/shared/ui/DateTime24";
 import type { TimeMode, TimeView } from "@/api/generated/bindings";
 import type { PanelCtx } from "./context";
 import { useOverlayBack } from "@/shared/hooks/useOverlayBack";
@@ -25,7 +26,7 @@ export function TimeSheet({ ctx, value }: { ctx: PanelCtx; value: TimeView }) {
   }>
     <div className="space-y-5 pb-2">
       <ListGroup><ListRow title={t("settings.time.mode")} trailing={<fieldset disabled={ctx.busy}><Segmented size="sm" value={mode} aria-label={t("settings.time.mode")} onChange={setMode} options={(["live", "frozen", "ticking"] as const).map((value) => ({ value, label: t(`settings.time.${value}`) }))} /></fieldset>} /></ListGroup>
-      {mode !== "live" && <Field label={t("settings.time.anchor")}><DatePicker withTime value={anchor} onChange={setAnchor} locale={i18n.language} disabled={ctx.busy} placeholder={t("settings.time.chooseAnchor")} /></Field>}
+      {mode !== "live" && <Field label={t("settings.time.anchor")}><DateTime24 value={anchor} onChange={setAnchor} locale={i18n.language} disabled={ctx.busy} placeholder={t("settings.time.chooseAnchor")} /></Field>}
     </div>
   </Sheet></CrispStringsProvider>;
 }
