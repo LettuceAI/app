@@ -281,7 +281,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
   const closeSceneImage = useCallback(() => {
     if (sceneImageClosing.current || !router.state.location.search.sceneImage) return;
     sceneImageClosing.current = true;
-    if (router.state.location.state.sceneImagePushed) router.history.back();
+    if (router.state.location.state.sceneImagePushed) router.history.back({ ignoreBlocker: true });
     else void navigate({ to: "/chat/$conversationId", params: { conversationId }, search: {}, replace: true, resetScroll: false });
   }, [router, navigate, conversationId]);
   const seenSceneImage = useRef<string | null>(null);
