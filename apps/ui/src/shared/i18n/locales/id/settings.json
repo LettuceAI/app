@@ -2347,5 +2347,37 @@
       "delete": "Hapus campuran",
       "deleteConfirm": "Hapus campuran ini? Karakter yang memakainya tidak akan punya suara."
     }
+  },
+  "runtime": {
+    "saved": "Default runtime disimpan",
+    "storage": "Penyimpanan",
+    "storageHint": "Tempat model yang diunduh disimpan di komputer ini.",
+    "folderDefault": "Default",
+    "folderCustom": "Kustom",
+    "folderChange": "Ubah",
+    "folderReset": "Gunakan folder default",
+    "moveTitle": "Pindahkan model yang ada?",
+    "moveCount_other": "Ada {{count}} model di folder saat ini.",
+    "moveConfirm": "Pindahkan ke folder baru",
+    "moveConfirmHint": "Disarankan. Model Anda tetap berjalan dari folder baru.",
+    "moveKeep": "Biarkan di tempatnya",
+    "moveKeepHint": "Hanya unduhan baru yang memakai folder baru.",
+    "huggingFace": "Hugging Face",
+    "civitai": "CivitAI",
+    "tokenMissing": "Belum ada token tersimpan",
+    "tokenSaved": "Token disimpan",
+    "llama": "Default llama.cpp",
+    "llamaHint": "Dipakai oleh setiap model lokal yang tidak menetapkan nilainya sendiri.",
+    "kvHint": "Otomatis berperilaku seperti F16.",
+    "multiGpuHint": "Bagi setiap model ke GPU yang Anda pilih.",
+    "multiGpuNeedsTwo": "Perlu dua GPU khusus atau lebih. GPU terintegrasi tidak pernah dipakai.",
+    "pickTwo": "Pilih setidaknya dua GPU untuk membagi model.",
+    "manualPerModel": "Jumlah layer manual per GPU diatur di editor tiap model.",
+    "reconfigureTitle": "Konfigurasi ulang model lokal?",
+    "reconfigureMulti": "Beberapa GPU kini aktif. Ini mengatur ulang jumlah layer GPU tersimpan dan pilihan satu GPU di tiap model lokal agar bisa dibagi ke GPU yang dipilih.",
+    "reconfigureSingle": "Beberapa GPU kini nonaktif. Ini mengarahkan tiap model lokal ke {{gpu}} dan mengatur ulang jumlah layer tersimpan agar sesuai dengan kartu itu.",
+    "reconfigureConfirm_other": "Konfigurasi ulang {{count}} model",
+    "reconfigureSkip": "Pertahankan pengaturan model saat ini",
+    "reconfigured_other": "{{count}} model lokal kini mengikuti pengaturan GPU baru."
   }
 }

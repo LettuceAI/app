@@ -559,11 +559,20 @@ describe("local model tools", () => {
   it("saves runtime defaults with the settings revision", async () => {
     const settings = {
       global: { llama_default_context_length: 4096, llama_default_kv_cache_type: "q8_0" },
+      sampler_defaults: {
+        chat_parameters: { temperature: 0.7 },
+        llama_cpp: { threads: 6, batch_size: null, sampler: { min_p: 0.1, repeat_penalty: null } },
+        stable_diffusion: {},
+      },
       revision: 17,
     } as unknown as SettingsView;
     const save = vi.fn<NonNullable<MockCallHandlers["settingsUpdate"]>>(() => ({
       status: "ok",
-      data: settings,
+      data: { ...settings, revision: 18 },
+    }));
+    const saveDefaults = vi.fn<NonNullable<MockCallHandlers["settingsSamplerDefaultsUpdate"]>>(() => ({
+      status: "ok",
+      data: { ...settings, revision: 19 },
     }));
     await mount("models", {
       appStatus: () => ({
@@ -572,14 +581,40 @@ describe("local model tools", () => {
       }),
       settingsGet: () => ({ status: "ok", data: settings }),
       settingsUpdate: save,
+      settingsSamplerDefaultsUpdate: saveDefaults,
+      llamaDevices: () => ({ status: "ok", data: { devices: [] } }),
+      localModelsDirGet: () => ({ status: "ok", data: { path: "/models", default_path: "/models", is_custom: false, model_count: 0 } }),
+      jobsList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
+      hfAuthStatus: () => ({ status: "ok", data: { type: "missing" } }),
+      civitaiAuthStatus: () => ({ status: "ok", data: { saved: false, valid: false, error_kind: null } }),
     });
     await click("Runtime");
     fireEvent.change(await screen.findByLabelText("Context length"), { target: { value: "8192" } });
+    fireEvent.change(screen.getByLabelText("Batch size"), { target: { value: "1024" } });
     await click("Save");
-    await waitFor(() => expect(save).toHaveBeenCalled());
+    await waitFor(() => expect(saveDefaults).toHaveBeenCalled());
     expect(save.mock.calls[0]?.[0]).toEqual({
       expected_revision: 17,
       patch: { section: "local_runtime", context_length: 8192, kv_cache_type: "q8_0" },
+    });
+    expect(saveDefaults.mock.calls[0]?.[0]).toEqual({
+      expected_revision: 18,
+      value: {
+        chat_parameters: { temperature: 0.7 },
+        llama_cpp: {
+          threads: 6,
+          batch_size: 1024,
+          ubatch_size: null,
+          multi_gpu_enabled: null,
+          gpu_device_ids: null,
+          gpu_distribution_mode: null,
+          priority_vram_limit_bytes: null,
+          kv_placement: null,
+          main_gpu: null,
+          sampler: { min_p: 0.1, repeat_penalty: null, n_pen_range: null },
+        },
+        stable_diffusion: {},
+      },
     });
   });
 
@@ -612,10 +647,8 @@ describe("local model tools", () => {
       lorasImport: add,
     });
     await click("LoRAs");
-    const sheet = (await screen.findAllByRole("dialog")).at(-1) as HTMLElement;
-    const importLora = await within(sheet).findByRole("button", { name: "Import" });
-    await waitFor(() => expect(importLora.hasAttribute("disabled")).toBe(false));
-    fireEvent.click(importLora);
+    expect(await screen.findByRole("heading", { name: "LoRA library" })).toBeTruthy();
+    await click("Import file");
     expect(await screen.findByText("style.safetensors")).toBeTruthy();
     expect(add.mock.calls[0]?.[0]).toEqual({ source: { uri: "content://chosen-adapter" } });
   });

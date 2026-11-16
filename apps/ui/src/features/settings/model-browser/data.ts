@@ -27,6 +27,7 @@ export function fitSettingsKey(
 
 export const pageSize = 30;
 export const browserKey = ["hf-browser"] as const;
+export const hfAuthKey = [...browserKey, "auth"] as const;
 export const bundleProfilesQuery = (api: ApiClient) =>
   queryOptions({
     queryKey: [...queryKeys.localImages.all, "bundle-profiles"],

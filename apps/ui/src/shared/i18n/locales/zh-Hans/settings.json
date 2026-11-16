@@ -2347,5 +2347,37 @@
       "delete": "删除混合",
       "deleteConfirm": "删除此混合？使用它的角色将没有语音。"
     }
+  },
+  "runtime": {
+    "saved": "已保存运行时默认值",
+    "storage": "存储",
+    "storageHint": "下载的模型在这台电脑上的存放位置。",
+    "folderDefault": "默认",
+    "folderCustom": "自定义",
+    "folderChange": "更改",
+    "folderReset": "使用默认文件夹",
+    "moveTitle": "要移动现有模型吗？",
+    "moveCount_other": "当前文件夹中有 {{count}} 个模型。",
+    "moveConfirm": "移动到新文件夹",
+    "moveConfirmHint": "推荐。模型会继续从新文件夹运行。",
+    "moveKeep": "保留在原处",
+    "moveKeepHint": "只有新的下载会使用新文件夹。",
+    "huggingFace": "Hugging Face",
+    "civitai": "CivitAI",
+    "tokenMissing": "未保存令牌",
+    "tokenSaved": "令牌已保存",
+    "llama": "llama.cpp 默认值",
+    "llamaHint": "所有未设置自身值的本地模型都会使用这些值。",
+    "kvHint": "自动的表现与 F16 相同。",
+    "multiGpuHint": "将每个模型分配到你选择的 GPU 上。",
+    "multiGpuNeedsTwo": "需要两块或更多独立 GPU。集成 GPU 永远不会被使用。",
+    "pickTwo": "至少选择两块 GPU 来分配模型。",
+    "manualPerModel": "每块 GPU 的手动层数在各模型的编辑器中设置。",
+    "reconfigureTitle": "要重新配置本地模型吗？",
+    "reconfigureMulti": "多 GPU 已开启。这会重置每个本地模型已保存的 GPU 层数和单 GPU 选择，使其能分布到所选 GPU 上。",
+    "reconfigureSingle": "多 GPU 已关闭。这会让每个本地模型使用 {{gpu}}，并重置已保存的层数，使其按该显卡调整。",
+    "reconfigureConfirm_other": "重新配置 {{count}} 个模型",
+    "reconfigureSkip": "保留当前模型设置",
+    "reconfigured_other": "{{count}} 个本地模型现在使用新的 GPU 配置。"
   }
 }

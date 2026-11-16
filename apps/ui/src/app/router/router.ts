@@ -38,6 +38,7 @@ import {
   isSettingsSection,
   ModelEditorPage,
   ModelBrowserPage,
+  RuntimeDefaultsPage,
   type BrowserSearch,
   SettingsIndexPage,
   SettingsSectionPage,
@@ -521,6 +522,11 @@ const syncConflictsRoute = createRoute({
   path: "/settings/sync/conflicts",
   component: SyncConflictsPage,
 });
+const runtimeDefaultsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/models/runtime-defaults",
+  component: RuntimeDefaultsPage,
+});
 const newModelRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/models/new",
@@ -556,6 +562,7 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   settingsSectionRoute,
   modelBrowserRoute,
+  runtimeDefaultsRoute,
   syncConflictsRoute,
   newModelRoute,
   editModelRoute,
@@ -609,6 +616,7 @@ declare module "@tanstack/history" {
     avatarPanelPushed?: boolean;
     avatarCropPushed?: boolean;
     localImagesPushed?: boolean;
+    runtimePushed?: boolean;
     engineInstallPushed?: boolean;
     loraDetailPushed?: boolean;
     libraryKind?: "character" | "persona" | "lorebook";

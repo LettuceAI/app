@@ -2368,5 +2368,37 @@
       "delete": "Xóa hỗn hợp",
       "deleteConfirm": "Xóa hỗn hợp này? Các nhân vật đang dùng nó sẽ không còn giọng."
     }
+  },
+  "runtime": {
+    "saved": "Đã lưu mặc định runtime",
+    "storage": "Lưu trữ",
+    "storageHint": "Nơi lưu các mô hình đã tải trên máy tính này.",
+    "folderDefault": "Mặc định",
+    "folderCustom": "Tùy chỉnh",
+    "folderChange": "Thay đổi",
+    "folderReset": "Dùng thư mục mặc định",
+    "moveTitle": "Di chuyển các mô hình hiện có?",
+    "moveCount_other": "Thư mục hiện tại có {{count}} mô hình.",
+    "moveConfirm": "Di chuyển sang thư mục mới",
+    "moveConfirmHint": "Khuyên dùng. Các mô hình vẫn chạy được từ thư mục mới.",
+    "moveKeep": "Để nguyên chỗ cũ",
+    "moveKeepHint": "Chỉ các lượt tải mới dùng thư mục mới.",
+    "huggingFace": "Hugging Face",
+    "civitai": "CivitAI",
+    "tokenMissing": "Chưa lưu token",
+    "tokenSaved": "Đã lưu token",
+    "llama": "Mặc định llama.cpp",
+    "llamaHint": "Dùng cho mọi mô hình cục bộ không tự đặt giá trị riêng.",
+    "kvHint": "Tự động hoạt động như F16.",
+    "multiGpuHint": "Chia mỗi mô hình lên các GPU bạn chọn.",
+    "multiGpuNeedsTwo": "Cần hai GPU rời trở lên. GPU tích hợp không bao giờ được dùng.",
+    "pickTwo": "Chọn ít nhất hai GPU để chia mô hình.",
+    "manualPerModel": "Số lớp thủ công cho từng GPU được đặt trong trình chỉnh sửa của mỗi mô hình.",
+    "reconfigureTitle": "Cấu hình lại các mô hình cục bộ?",
+    "reconfigureMulti": "Đã bật nhiều GPU. Thao tác này đặt lại số lớp GPU đã lưu và lựa chọn một GPU của mỗi mô hình cục bộ để mô hình có thể trải ra các GPU đã chọn.",
+    "reconfigureSingle": "Đã tắt nhiều GPU. Thao tác này hướng mỗi mô hình cục bộ sang {{gpu}} và đặt lại số lớp đã lưu để phù hợp với card đó.",
+    "reconfigureConfirm_other": "Cấu hình lại {{count}} mô hình",
+    "reconfigureSkip": "Giữ cài đặt mô hình hiện tại",
+    "reconfigured_other": "{{count}} mô hình cục bộ giờ theo thiết lập GPU mới."
   }
 }

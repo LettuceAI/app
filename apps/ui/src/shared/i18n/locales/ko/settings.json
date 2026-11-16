@@ -2368,5 +2368,37 @@
       "delete": "혼합 삭제",
       "deleteConfirm": "이 혼합을 삭제할까요? 이 혼합을 쓰는 캐릭터는 음성이 없어집니다."
     }
+  },
+  "runtime": {
+    "saved": "런타임 기본값을 저장했습니다",
+    "storage": "저장소",
+    "storageHint": "다운로드한 모델을 이 컴퓨터의 어디에 둘지 정합니다.",
+    "folderDefault": "기본",
+    "folderCustom": "사용자 지정",
+    "folderChange": "변경",
+    "folderReset": "기본 폴더 사용",
+    "moveTitle": "기존 모델을 옮길까요?",
+    "moveCount_other": "현재 폴더에 모델 {{count}}개가 있습니다.",
+    "moveConfirm": "새 폴더로 옮기기",
+    "moveConfirmHint": "권장. 모델이 새 폴더에서 계속 작동합니다.",
+    "moveKeep": "그대로 두기",
+    "moveKeepHint": "새 다운로드만 새 폴더를 사용합니다.",
+    "huggingFace": "Hugging Face",
+    "civitai": "CivitAI",
+    "tokenMissing": "저장된 토큰 없음",
+    "tokenSaved": "토큰을 저장했습니다",
+    "llama": "llama.cpp 기본값",
+    "llamaHint": "자체 값을 정하지 않은 모든 로컬 모델에 적용됩니다.",
+    "kvHint": "자동은 F16처럼 동작합니다.",
+    "multiGpuHint": "선택한 GPU에 각 모델을 나눠 올립니다.",
+    "multiGpuNeedsTwo": "전용 GPU가 두 개 이상 필요합니다. 내장 GPU는 사용하지 않습니다.",
+    "pickTwo": "모델을 나누려면 GPU를 두 개 이상 선택하세요.",
+    "manualPerModel": "GPU별 수동 레이어 수는 각 모델의 편집기에서 설정합니다.",
+    "reconfigureTitle": "로컬 모델을 다시 구성할까요?",
+    "reconfigureMulti": "이제 여러 GPU가 켜졌습니다. 각 로컬 모델의 저장된 GPU 레이어 수와 단일 GPU 선택을 초기화해 선택한 GPU에 나눠질 수 있게 합니다.",
+    "reconfigureSingle": "이제 여러 GPU가 꺼졌습니다. 각 로컬 모델이 {{gpu}}을(를) 사용하도록 하고 저장된 레이어 수를 초기화해 그 카드에 맞춥니다.",
+    "reconfigureConfirm_other": "모델 {{count}}개 다시 구성",
+    "reconfigureSkip": "현재 모델 설정 유지",
+    "reconfigured_other": "로컬 모델 {{count}}개가 이제 새 GPU 구성을 따릅니다."
   }
 }

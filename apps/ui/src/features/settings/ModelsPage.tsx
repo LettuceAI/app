@@ -42,10 +42,8 @@ import { appStatusQuery } from "@/api/app-status-query";
 import { isApiFailure, type ApiClient } from "@/api/client";
 import { queryKeys } from "@/api/query-keys";
 import { ModelMark, providerLogo, vendorOf } from "@/entities/provider";
-import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useProviderData, useSettingsAction, useSettingsApi, useSettingsLayout } from "./data";
-import { ModelTools } from "./ModelTools";
 import {
   deleteModelWithUsage,
   exportModel,
@@ -109,8 +107,17 @@ export function ModelsPage() {
     if (value) setSelectedMenu(value);
   };
   const [importing, setImporting] = useState(false);
-  const [tool, setTool] = useState<"runtime" | "loras" | null>(null);
-  const closingTool = useClosingValue(tool);
+  const openTool = (id: (typeof modelTools)[number]["id"]) =>
+    void (id === "browse"
+      ? navigate({ to: "/settings/model-browser", search: {} })
+      : id === "runtime"
+        ? navigate({ to: "/settings/models/runtime-defaults", state: (previous) => ({ ...previous, runtimePushed: true }) })
+        : navigate({
+            to: "/settings/$section",
+            params: { section: "imageGeneration" },
+            search: { localImageView: "loras" },
+            state: (previous) => ({ ...previous, localImagesPushed: true }),
+          }));
   const provider = (model: ModelView) =>
     accounts.data?.find((p) => p.id === model.provider_account_id);
   const query = search.trim().toLocaleLowerCase();
@@ -322,14 +329,7 @@ export function ModelsPage() {
                   key={tool.id}
                   label={t(`models.${tool.id}`)}
                   variant="ghost"
-                  onClick={() =>
-                    tool.id === "browse"
-                      ? void navigate({
-                          to: "/settings/model-browser",
-                          search: {},
-                        })
-                      : setTool(tool.id)
-                  }
+                  onClick={() => openTool(tool.id)}
                 >
                   {tool.icon}
                 </IconButton>
@@ -340,14 +340,7 @@ export function ModelsPage() {
                   size="sm"
                   leading={tool.icon}
                   title={t(`models.${tool.id}Hint`)}
-                  onClick={() =>
-                    tool.id === "browse"
-                      ? void navigate({
-                          to: "/settings/model-browser",
-                          search: {},
-                        })
-                      : setTool(tool.id)
-                  }
+                  onClick={() => openTool(tool.id)}
                 >
                   {t(`models.${tool.id}Short`)}
                 </Button>
@@ -628,14 +621,6 @@ export function ModelsPage() {
           </ListGroup>
         )}
       </Sheet>
-      {closingTool.shown && (
-        <ModelTools
-          key={closingTool.session}
-          open={tool !== null}
-          tool={closingTool.shown}
-          onClose={() => setTool(null)}
-        />
-      )}
     </>
   );
 }

@@ -2347,5 +2347,37 @@
       "delete": "ブレンドを削除",
       "deleteConfirm": "このブレンドを削除しますか？使っているキャラクターは音声がなくなります。"
     }
+  },
+  "runtime": {
+    "saved": "ランタイムの既定値を保存しました",
+    "storage": "保存場所",
+    "storageHint": "ダウンロードしたモデルをこのコンピューターのどこに置くか。",
+    "folderDefault": "既定",
+    "folderCustom": "カスタム",
+    "folderChange": "変更",
+    "folderReset": "既定のフォルダーを使う",
+    "moveTitle": "既存のモデルを移動しますか？",
+    "moveCount_other": "現在のフォルダーに{{count}}件のモデルがあります。",
+    "moveConfirm": "新しいフォルダーへ移動",
+    "moveConfirmHint": "推奨。モデルは新しいフォルダーからそのまま使えます。",
+    "moveKeep": "そのままにする",
+    "moveKeepHint": "新しいフォルダーは今後のダウンロードだけが使います。",
+    "huggingFace": "Hugging Face",
+    "civitai": "CivitAI",
+    "tokenMissing": "トークンは保存されていません",
+    "tokenSaved": "トークンを保存しました",
+    "llama": "llama.cppの既定値",
+    "llamaHint": "独自の値を設定していないすべてのローカルモデルで使われます。",
+    "kvHint": "自動はF16と同じように動作します。",
+    "multiGpuHint": "選んだGPUに各モデルを分割します。",
+    "multiGpuNeedsTwo": "専用GPUが2基以上必要です。内蔵GPUは使われません。",
+    "pickTwo": "モデルを分割するにはGPUを2基以上選んでください。",
+    "manualPerModel": "GPUごとの手動レイヤー数は各モデルのエディターで設定します。",
+    "reconfigureTitle": "ローカルモデルを再設定しますか？",
+    "reconfigureMulti": "複数GPUがオンになりました。各ローカルモデルの保存済みGPUレイヤー数と単一GPUの選択をリセットし、選んだGPUに分散できるようにします。",
+    "reconfigureSingle": "複数GPUがオフになりました。各ローカルモデルを{{gpu}}に向け、保存済みレイヤー数をリセットしてそのカードに合わせます。",
+    "reconfigureConfirm_other": "{{count}}件のモデルを再設定",
+    "reconfigureSkip": "現在のモデル設定を保持",
+    "reconfigured_other": "{{count}}件のローカルモデルが新しいGPU構成に従うようになりました。"
   }
 }
