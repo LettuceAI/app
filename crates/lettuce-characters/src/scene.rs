@@ -244,11 +244,7 @@ fn validate_document_inline_links(
     linked_inline_ids: &HashSet<SceneAssetLinkId>,
     field: &'static str,
 ) -> Result<(), ValidationError> {
-    let inline_link_ids = document.inline_link_ids();
-    let unique_inline_link_ids: HashSet<_> = inline_link_ids.iter().copied().collect();
-    if unique_inline_link_ids.len() != inline_link_ids.len() {
-        return Err(ValidationError::Duplicate { field });
-    }
+    let unique_inline_link_ids: HashSet<_> = document.inline_link_ids().into_iter().collect();
     if !unique_inline_link_ids.is_subset(linked_inline_ids) {
         return Err(ValidationError::InvalidReference { field });
     }
@@ -319,6 +315,13 @@ mod tests {
             slot: SceneAssetSlot::Inline,
             ordinal: 0,
         });
+        assert!(scene.validate().is_ok());
+        scene.content = SceneDocumentV1::new(vec![
+            ScenePart::InlineAsset { link_id },
+            ScenePart::Text { text: "Later.".into() },
+            ScenePart::InlineAsset { link_id },
+        ])
+        .expect("repeated inline image should validate");
         assert!(scene.validate().is_ok());
     }
 

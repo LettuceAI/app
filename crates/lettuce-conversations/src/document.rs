@@ -595,9 +595,7 @@ fn collect_inline_links(
     let mut referenced = HashSet::new();
     for part in parts {
         if let ScenePartV1::InlineAsset { link_id } = part {
-            if !referenced.insert(*link_id) {
-                return Err(ValidationError::Duplicate { field });
-            }
+            referenced.insert(*link_id);
             if !linked.contains(link_id) {
                 return Err(ValidationError::InvalidReference { field });
             }
@@ -2036,6 +2034,22 @@ mod tests {
 
         let mut body = lorebook_body();
         body.entries[0].keywords = vec!["beacon".into(); 16_385];
+        assert_eq!(body.validate(), Ok(()));
+    }
+
+    #[test]
+    fn scene_body_shows_one_inline_image_in_several_places() {
+        let mut body = scene_body();
+        let repeated = body
+            .content
+            .iter()
+            .find_map(|part| match part {
+                ScenePartV1::InlineAsset { link_id } => Some(*link_id),
+                ScenePartV1::Text { .. } => None,
+            })
+            .expect("inline image");
+        body.content.push(ScenePartV1::Text { text: "Later.".into() });
+        body.content.push(ScenePartV1::InlineAsset { link_id: repeated });
         assert_eq!(body.validate(), Ok(()));
     }
 
