@@ -28,7 +28,7 @@ export function MessageBody({ text, query }: { text: string; query: string }) {
   const closeImage = useCallback(() => setImage(null), []);
   return (
     <>
-      <Prose html size="inherit" quotes query={query} onImageClick={setImage} className="select-text">{text}</Prose>
+      <Prose html size="inherit" quotes codeVariant="chat" query={query} onImageClick={setImage} className="select-text">{text}</Prose>
       {image && <EmbeddedImageViewer image={image} onClose={closeImage} />}
     </>
   );

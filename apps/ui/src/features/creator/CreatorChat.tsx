@@ -49,7 +49,7 @@ function TurnAttachments({ api, turn }: { api: ApiClient; turn: CreatorTurnView 
 
 /** A message body the way the chat column renders one. */
 function Body({ text }: { text: string }) {
-  return <Prose html size="inherit" quotes className="select-text">{text}</Prose>;
+  return <Prose html size="inherit" quotes codeVariant="chat" className="select-text">{text}</Prose>;
 }
 
 /** The text the creator has written in the rounds saved so far, as the stream delivered it. */
