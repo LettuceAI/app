@@ -2199,7 +2199,7 @@ fn uec3_model_every_portable_setting_survives_native_conversion() {
         "offloadKqv":true,"batchSize":256,"ubatchSize":128,"kvType":null,"kvTypeK":"q8_0","kvTypeV":"f16","flashAttention":"enabled",
         "swaFull":true,"chatTemplateOverride":"Authored template","chatTemplatePreset":"chatml","rawCompletionFallback":false,"strictMode":true,
         "mtpEnabled":true,"mtpPlacement":"cpu","mtpDraftTokens":4,"dflashEnabled":true,"dflashDraftTokens":4,"dflashMinProbability":0.5,
-        "streamingEnabled":true,"forceGemma4Reasoning":true,"sampler":sampler});
+        "streamingEnabled":true,"reasoningPrefill":"gemma","sampler":sampler});
     let cpp = json!({"profileId":"flux-2","variantId":"q4","maxReferenceImages":4,"supportsLora":true,"supportsTextToImage":true,"supportsImageEdit":true,"recommendedForScenes":true,"requiresReferenceImage":false});
     value["stableDiffusion"] = json!({"steps":27,"cfgScale":7.0,"sampler":"euler","scheduler":"normal","seed":42,"negativePrompt":"Authored negative",
         "denoisingStrength":0.7,"imageCfgScale":1.5,"distilledGuidance":3.5,"eta":0.1,"flowShift":1.2,"size":"512x512","vaeTilingEnabled":true,
@@ -2252,8 +2252,88 @@ fn uec3_model_every_portable_setting_survives_native_conversion() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
+#[tokio::test]
+async fn uec3_local_model_import_keeps_files_that_exist_and_drops_the_rest() {
+    use lettuce_models::{ModelCatalog, ModelProfileRepository, ProviderAccountRepository};
+    let (root, harness) = setup();
+    let database = harness.context.backend().database();
+    let seeded = ModelCatalog::model_profiles(database)
+        .expect("models")
+        .into_iter()
+        .next()
+        .expect("seeded");
+    let account = ProviderAccountRepository::get(database, seeded.provider_account_id)
+        .expect("account")
+        .expect("exists");
+    let present = root.join("present.gguf");
+    std::fs::write(&present, b"gguf").expect("present");
+    let projector = root.join("projector.gguf");
+    std::fs::write(&projector, b"gguf").expect("projector");
+    let missing = root.join("missing.gguf");
+
+    let document = |external: &std::path::Path| {
+        let mut wire = lettuce_transfer::uec3::ModelProfile::from_stored(&seeded, &account);
+        wire.provider = lettuce_transfer::uec3::ModelProvider {
+            kind: "llamacpp".into(),
+            label: "llama.cpp (Local)".into(),
+        };
+        wire.kind = lettuce_models::ModelKind::Chat;
+        wire.external_id = external.display().to_string();
+        wire.llama_cpp.mmproj_path = Some(projector.display().to_string());
+        wire.llama_cpp.mtp_model_path = Some(missing.display().to_string());
+        json!({
+            "schema": {"name":"UEC","version":"3.0"},"kind":"model_profile",
+            "meta":{"exportedAt":3,"app":"LettuceAI 3.x","createdAt":1,"updatedAt":2,"authors":[],"license":null,"sources":[]},
+            "entity":wire,"dependencies":[],"state":null,"assets":{}
+        })
+    };
+
+    // The main file and projector are on disk, so they are kept; the missing
+    // MTP draft model is dropped.
+    let present_source = source(&root, "present.uec", &document(&present));
+    let digest = preview(&harness.context, present_source.clone()).await.digest;
+    let dto::ImportCommitResult::Imported { id, .. } = crate::api::import_commit(
+        &harness.context,
+        commit_request(present_source, digest, json!({}), "present"),
+    )
+    .await
+    .expect("import") else {
+        panic!("imported")
+    };
+    let kept = ModelProfileRepository::get(database, id.parse().expect("id"))
+        .expect("model")
+        .expect("exists");
+    assert_eq!(kept.external_model_id, present.display().to_string());
+    assert_eq!(
+        kept.config.llama_cpp.mmproj_path,
+        Some(projector.display().to_string())
+    );
+    assert_eq!(kept.config.llama_cpp.mtp_model_path, None);
+
+    // The main file is gone, so the model falls back to "pick it in the editor".
+    let missing_source = source(&root, "missing.uec", &document(&missing));
+    let digest = preview(&harness.context, missing_source.clone()).await.digest;
+    let dto::ImportCommitResult::Imported { id, .. } = crate::api::import_commit(
+        &harness.context,
+        commit_request(missing_source, digest, json!({}), "missing"),
+    )
+    .await
+    .expect("import") else {
+        panic!("imported")
+    };
+    let unpicked = ModelProfileRepository::get(database, id.parse().expect("id"))
+        .expect("model")
+        .expect("exists");
+    assert_eq!(
+        unpicked.external_model_id,
+        lettuce_models::UNPICKED_LOCAL_MODEL_FILE
+    );
+    assert_eq!(unpicked.config.llama_cpp.mtp_model_path, None);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
 #[test]
-fn uec3_local_model_files_and_installed_runtime_never_leave_the_device() {
+fn uec3_local_model_file_paths_travel_through_the_wire_but_not_the_runtime_install() {
     use lettuce_models::{ModelCatalog, ProviderAccountRepository};
     let (root, harness) = setup();
     let database = harness.context.backend().database();
@@ -2265,20 +2345,20 @@ fn uec3_local_model_files_and_installed_runtime_never_leave_the_device() {
     let mut account = ProviderAccountRepository::get(database, original.provider_account_id)
         .expect("account")
         .expect("exists");
-    original.external_model_id = "/private/model.gguf".into();
-    original.config.llama_cpp.mmproj_path = Some("/private/projector.gguf".into());
-    original.config.llama_cpp.mtp_model_path = Some("/private/mtp.gguf".into());
-    original.config.llama_cpp.dflash_model_path = Some("/private/dflash.gguf".into());
-    original.config.stable_diffusion.cpp.text_encoder_path = Some("/private/encoder.gguf".into());
-    original.config.stable_diffusion.cpp.vae_path = Some("/private/vae.gguf".into());
-    original.config.stable_diffusion.cpp.vision_encoder_path = Some("/private/vision.gguf".into());
+    original.external_model_id = "/models/model.gguf".into();
+    original.config.llama_cpp.mmproj_path = Some("/models/projector.gguf".into());
+    original.config.llama_cpp.mtp_model_path = Some("/models/mtp.gguf".into());
+    original.config.llama_cpp.dflash_model_path = Some("/models/dflash.gguf".into());
+    original.config.stable_diffusion.cpp.text_encoder_path = Some("/models/encoder.gguf".into());
+    original.config.stable_diffusion.cpp.vae_path = Some("/models/vae.gguf".into());
+    original.config.stable_diffusion.cpp.vision_encoder_path = Some("/models/vision.gguf".into());
     original.config.stable_diffusion.cpp.runtime_release = Some("installed-release".into());
     original.config.stable_diffusion.cpp.runtime_asset = Some("installed-asset".into());
     original.config.stable_diffusion.cpp.runtime_backend = Some("installed-backend".into());
     original.config.stable_diffusion.cpp.profile_id = Some("flux-2".into());
     original.config.stable_diffusion.cpp.variant_id = Some("q4".into());
     original.config.stable_diffusion.base_loras = Some(vec![lettuce_models::StableDiffusionLora {
-        path: "/private/style.safetensors".into(),
+        path: "/models/style.safetensors".into(),
         multiplier: 0.7,
         is_high_noise: false,
         keywords: vec![],
@@ -2289,19 +2369,42 @@ fn uec3_local_model_files_and_installed_runtime_never_leave_the_device() {
     ] {
         account.protocol = protocol;
         let wire = lettuce_transfer::uec3::ModelProfile::from_stored(&original, &account);
-        assert_eq!(wire.external_id, lettuce_models::UNPICKED_LOCAL_MODEL_FILE);
+        assert_eq!(wire.external_id, "/models/model.gguf");
         let json = serde_json::to_string(&wire).expect("wire");
-        assert!(!json.contains("/private/") && !json.contains("installed-"));
+        // The model files travel so a re-import on the same device can reuse
+        // them, but the device's runtime install never leaves.
+        assert!(json.contains("/models/model.gguf") && json.contains("/models/style.safetensors"));
+        assert!(!json.contains("installed-"));
         let imported = wire
             .into_stored(account.id, lettuce_types::TimestampMillis::new(5))
             .expect("import");
+        assert_eq!(imported.external_model_id, "/models/model.gguf");
+        assert_eq!(
+            imported.config.llama_cpp.mmproj_path.as_deref(),
+            Some("/models/projector.gguf")
+        );
+        assert_eq!(
+            imported.config.llama_cpp.mtp_model_path.as_deref(),
+            Some("/models/mtp.gguf")
+        );
+        assert_eq!(
+            imported.config.stable_diffusion.cpp.vae_path.as_deref(),
+            Some("/models/vae.gguf")
+        );
+        assert_eq!(
+            imported
+                .config
+                .stable_diffusion
+                .base_loras
+                .as_deref()
+                .and_then(|loras| loras.first())
+                .map(|lora| lora.path.as_str()),
+            Some("/models/style.safetensors")
+        );
+        assert_eq!(imported.config.stable_diffusion.cpp.runtime_release, None);
         assert_eq!(
             imported.config.stable_diffusion.cpp.profile_id,
             original.config.stable_diffusion.cpp.profile_id
-        );
-        assert_eq!(
-            imported.config.stable_diffusion.cpp.variant_id,
-            original.config.stable_diffusion.cpp.variant_id
         );
     }
     std::fs::remove_dir_all(root).expect("cleanup");

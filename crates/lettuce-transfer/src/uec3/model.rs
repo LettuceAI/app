@@ -41,7 +41,11 @@ pub struct PortableLlamaCppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_prefill: Option<ForcedReasoningPrefill>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub force_gemma4_reasoning: Option<bool>,
+    pub mmproj_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtp_model_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dflash_model_path: Option<String>,
     #[serde(with = "WireLlamaSamplerSettings")]
     pub sampler: LlamaSamplerSettings,
 }
@@ -86,7 +90,9 @@ impl From<&LlamaCppSettings> for PortableLlamaCppSettings {
             dflash_min_probability: value.dflash_min_probability,
             streaming_enabled: value.streaming_enabled,
             reasoning_prefill: value.reasoning_prefill,
-            force_gemma4_reasoning: None,
+            mmproj_path: value.mmproj_path.clone(),
+            mtp_model_path: value.mtp_model_path.clone(),
+            dflash_model_path: value.dflash_model_path.clone(),
             sampler: value.sampler.clone(),
         }
     }
@@ -130,13 +136,11 @@ impl From<PortableLlamaCppSettings> for LlamaCppSettings {
             dflash_draft_tokens: value.dflash_draft_tokens,
             dflash_min_probability: value.dflash_min_probability,
             streaming_enabled: value.streaming_enabled,
-            reasoning_prefill: value.reasoning_prefill.or_else(|| {
-                (value.force_gemma4_reasoning == Some(true)).then_some(ForcedReasoningPrefill::Gemma)
-            }),
+            reasoning_prefill: value.reasoning_prefill,
             sampler: value.sampler,
-            mmproj_path: None,
-            mtp_model_path: None,
-            dflash_model_path: None,
+            mmproj_path: value.mmproj_path,
+            mtp_model_path: value.mtp_model_path,
+            dflash_model_path: value.dflash_model_path,
         }
     }
 }
@@ -152,6 +156,12 @@ pub struct PortableStableDiffusionCppBinding {
     pub supports_image_edit: Option<bool>,
     pub recommended_for_scenes: Option<bool>,
     pub requires_reference_image: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_encoder_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vae_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision_encoder_path: Option<String>,
 }
 
 impl From<&StableDiffusionCppBinding> for PortableStableDiffusionCppBinding {
@@ -165,6 +175,9 @@ impl From<&StableDiffusionCppBinding> for PortableStableDiffusionCppBinding {
             supports_image_edit: value.supports_image_edit,
             recommended_for_scenes: value.recommended_for_scenes,
             requires_reference_image: value.requires_reference_image,
+            text_encoder_path: value.text_encoder_path.clone(),
+            vae_path: value.vae_path.clone(),
+            vision_encoder_path: value.vision_encoder_path.clone(),
         }
     }
 }
@@ -180,12 +193,45 @@ impl From<PortableStableDiffusionCppBinding> for StableDiffusionCppBinding {
             requires_reference_image: value.requires_reference_image,
             profile_id: value.profile_id,
             variant_id: value.variant_id,
-            text_encoder_path: None,
-            vae_path: None,
-            vision_encoder_path: None,
+            text_encoder_path: value.text_encoder_path,
+            vae_path: value.vae_path,
+            vision_encoder_path: value.vision_encoder_path,
             runtime_release: None,
             runtime_asset: None,
             runtime_backend: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortableStableDiffusionLora {
+    pub path: String,
+    pub multiplier: f64,
+    #[serde(default)]
+    pub is_high_noise: bool,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+}
+
+impl From<&StableDiffusionLora> for PortableStableDiffusionLora {
+    fn from(value: &StableDiffusionLora) -> Self {
+        Self {
+            path: value.path.clone(),
+            multiplier: value.multiplier,
+            is_high_noise: value.is_high_noise,
+            keywords: value.keywords.clone(),
+        }
+    }
+}
+
+impl From<PortableStableDiffusionLora> for StableDiffusionLora {
+    fn from(value: PortableStableDiffusionLora) -> Self {
+        Self {
+            path: value.path,
+            multiplier: value.multiplier,
+            is_high_noise: value.is_high_noise,
+            keywords: value.keywords,
         }
     }
 }
@@ -227,6 +273,8 @@ pub struct PortableStableDiffusionSettings {
     pub offload_mode: Option<StableDiffusionOffloadMode>,
     pub extra_prompt: Option<String>,
     pub prompt_writer_instructions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_loras: Option<Vec<PortableStableDiffusionLora>>,
     pub cpp: PortableStableDiffusionCppBinding,
 }
 
@@ -267,6 +315,10 @@ impl From<&StableDiffusionSettings> for PortableStableDiffusionSettings {
             offload_mode: value.offload_mode,
             extra_prompt: value.extra_prompt.clone(),
             prompt_writer_instructions: value.prompt_writer_instructions.clone(),
+            base_loras: value
+                .base_loras
+                .as_ref()
+                .map(|loras| loras.iter().map(Into::into).collect()),
             cpp: (&value.cpp).into(),
         }
     }
@@ -310,7 +362,9 @@ impl From<PortableStableDiffusionSettings> for StableDiffusionSettings {
             extra_prompt: value.extra_prompt,
             prompt_writer_instructions: value.prompt_writer_instructions,
             cpp: value.cpp.into(),
-            base_loras: None,
+            base_loras: value
+                .base_loras
+                .map(|loras| loras.into_iter().map(Into::into).collect()),
         }
     }
 }
@@ -353,14 +407,7 @@ impl ModelProfile {
                 kind: account.provider_kind.clone(),
                 label: account.label.clone(),
             },
-            external_id: if matches!(
-                account.protocol,
-                ProviderProtocol::LlamaCpp | ProviderProtocol::StableDiffusion
-            ) {
-                UNPICKED_LOCAL_MODEL_FILE.to_owned()
-            } else {
-                profile.external_model_id.clone()
-            },
+            external_id: profile.external_model_id.clone(),
             parameters: ModelParameters {
                 chat: profile.config.chat_parameters.clone(),
                 features: profile.config.feature_parameters.clone(),

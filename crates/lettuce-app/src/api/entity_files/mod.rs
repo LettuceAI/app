@@ -148,23 +148,64 @@ fn uec3_document(
 fn prepare_uec3_model(
     context: &ApiContext,
     model: &lettuce_transfer::uec3::ModelProfile,
+    persist: bool,
 ) -> Result<lettuce_models::ModelProfile, ApiError> {
     let account = context
         .backend()
         .model_files()
-        .account(&model.provider.kind, &model.provider.label)
+        .account_for_import(
+            &model.provider.kind,
+            &model.provider.label,
+            context.now(),
+            persist,
+        )
         .map_err(IntoApiError::into_api_error)?;
-    let mut model = model.clone();
-    if matches!(
+    let local = matches!(
         account.protocol,
         lettuce_models::ProviderProtocol::LlamaCpp
             | lettuce_models::ProviderProtocol::StableDiffusion
-    ) {
-        model.external_id = lettuce_models::UNPICKED_LOCAL_MODEL_FILE.into();
-    }
-    model
+    );
+    let mut profile = model
+        .clone()
         .into_stored(account.id, context.now())
-        .map_err(uec3_error)
+        .map_err(uec3_error)?;
+    if local {
+        drop_missing_local_files(&mut profile);
+    }
+    Ok(profile)
+}
+
+/// Keeps a local model's file paths only when the files are actually on this
+/// device; a missing main model falls back to "pick it in the editor", and a
+/// missing side file (projector, VAE, LoRA …) is dropped.
+fn drop_missing_local_files(profile: &mut lettuce_models::ModelProfile) {
+    if !is_existing_file(&profile.external_model_id) {
+        profile.external_model_id = lettuce_models::UNPICKED_LOCAL_MODEL_FILE.into();
+    }
+    let llama = &mut profile.config.llama_cpp;
+    clear_missing_file(&mut llama.mmproj_path);
+    clear_missing_file(&mut llama.mtp_model_path);
+    clear_missing_file(&mut llama.dflash_model_path);
+    let cpp = &mut profile.config.stable_diffusion.cpp;
+    clear_missing_file(&mut cpp.text_encoder_path);
+    clear_missing_file(&mut cpp.vae_path);
+    clear_missing_file(&mut cpp.vision_encoder_path);
+    if let Some(loras) = &mut profile.config.stable_diffusion.base_loras {
+        loras.retain(|lora| is_existing_file(&lora.path));
+        if loras.is_empty() {
+            profile.config.stable_diffusion.base_loras = None;
+        }
+    }
+}
+
+fn clear_missing_file(path: &mut Option<String>) {
+    if path.as_deref().is_some_and(|path| !is_existing_file(path)) {
+        *path = None;
+    }
+}
+
+fn is_existing_file(path: &str) -> bool {
+    !path.is_empty() && std::path::Path::new(path).is_file()
 }
 
 fn prepare_uec3_prompt(
@@ -872,7 +913,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             let lettuce_transfer::uec3::Entity::ModelProfile(model) = &card.document.entity else {
                 return Err(format_error("expected model profile entity"));
             };
-            let profile = prepare_uec3_model(context, model)?;
+            let profile = prepare_uec3_model(context, model, false)?;
             let scopes = |modalities: &lettuce_models::ModalityCapabilities| {
                 [
                     ("text", modalities.text),
@@ -1458,7 +1499,7 @@ pub async fn import_commit(
                     else {
                         return Err(format_error("expected model profile entity"));
                     };
-                    WritePlan::Model(Box::new(prepare_uec3_model(context, model)?))
+                    WritePlan::Model(Box::new(prepare_uec3_model(context, model, true)?))
                 }
                 (dto::FileKind::ModelFile, _) => {
                     let imported = context
