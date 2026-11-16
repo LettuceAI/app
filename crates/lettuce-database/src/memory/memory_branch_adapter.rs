@@ -493,7 +493,9 @@ fn seed_new_perspective_spaces_in(
         }
         memory_adapter::replace_summary_in(transaction, space_id, summary.as_ref())
             .map_err(storage)?;
-        if let Some(summary) = &summary {
+        if let Some(summary) = &summary
+            && branch_has_parent(transaction, target_conversation_id, target_branch_id)?
+        {
             store_materialised_summary_in(
                 transaction,
                 target_conversation_id,
@@ -691,7 +693,9 @@ pub(crate) fn seed_new_conversation_space_in(
     }
     memory_adapter::replace_summary_in(transaction, space_id, summary.as_ref()).map_err(storage)?;
     if let Some(summary) = &summary {
-        store_materialised_summary_in(transaction, conversation_id, branch_id, space_id, summary)?;
+        if branch_has_parent(transaction, conversation_id, branch_id)? {
+            store_materialised_summary_in(transaction, conversation_id, branch_id, space_id, summary)?;
+        }
         transaction.execute(
             "INSERT INTO memory_synced_cursors (conversation_id,branch_id,window_end) VALUES (?1,?2,?3) ON CONFLICT (conversation_id,branch_id) DO UPDATE SET window_end = excluded.window_end",
             params![conversation_id.to_string(), branch_id.to_string(), i64::try_from(summary.window_end).map_err(storage)?],

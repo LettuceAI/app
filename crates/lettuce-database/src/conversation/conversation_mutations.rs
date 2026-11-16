@@ -15867,11 +15867,12 @@ mod tests {
         let mut wrong_role = before.clone();
         wrong_role.memory.spaces.iter_mut().find(|space| space.snapshot.id == snapshot.id).expect("pool").snapshot.items[0].source_role = Some(MessageRole::Assistant);
         assert!(lettuce_transfer::canonicalize_and_validate(&mut wrong_role).is_err());
-        let mut wrong_owner = before.clone();
-        let pool = wrong_owner.memory.spaces.iter_mut().find(|space| space.snapshot.id == snapshot.id).expect("pool");
+        let mut unbound_source = before.clone();
+        let pool = unbound_source.memory.spaces.iter_mut().find(|space| space.snapshot.id == snapshot.id).expect("pool");
         pool.conversation_id = destination.conversation_id;
         pool.shared_conversation_ids.clear();
-        assert!(lettuce_transfer::canonicalize_and_validate(&mut wrong_owner).is_err());
+        lettuce_transfer::canonicalize_and_validate(&mut unbound_source)
+            .expect("group write-back sources a pool memory in a conversation the pool is not bound to");
         let mut missing_private_source = before.clone();
         missing_private_source.memory.pools.clear();
         let private = missing_private_source.memory.spaces.iter_mut().find(|space| space.snapshot.id == snapshot.id).expect("space");
@@ -19059,6 +19060,598 @@ mod tests {
             store_fixture_model_snapshots(&fixture.database);
             crate::backup::restore_writer::tests::assert_backup_round_trip(fixture.database.as_ref());
         }
+    }
+
+    fn remember_in(
+        database: &Database,
+        space: &lettuce_memory::MemorySpaceSnapshot,
+        message_id: MessageId,
+        role: MessageRole,
+        text: &str,
+    ) {
+        use lettuce_memory::{MemoryItem, MemoryShortId};
+        let id = lettuce_types::MemoryId::new();
+        let mut item = MemoryItem::written(
+            id,
+            MemoryShortId::derived(id),
+            text.into(),
+            TimestampMillis::new(20),
+        );
+        item.origin = lettuce_memory::MemoryOrigin::Model;
+        item.source_message_id = Some(message_id);
+        item.source_role = Some(role);
+        item.observed_at = Some(TimestampMillis::new(20));
+        item.observed_time_precision = Some("turn".into());
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        crate::memory::memory_adapter::insert_item_at(
+            &transaction,
+            space.id,
+            i64::try_from(space.items.len()).expect("ordinal"),
+            &item,
+        )
+        .expect("memory item");
+        transaction
+            .execute(
+                "UPDATE memory_spaces SET revision = revision + 1 WHERE id = ?1",
+                [space.id.to_string()],
+            )
+            .expect("space revision");
+        transaction.commit().expect("commit");
+    }
+
+    fn remember(
+        fixture: &Fixture,
+        branch_id: ConversationBranchId,
+        message_id: MessageId,
+        text: &str,
+    ) {
+        use lettuce_memory::MemoryRepository;
+        let space = fixture
+            .database
+            .get_for_branch(fixture.conversation_id, branch_id)
+            .expect("memory")
+            .expect("space");
+        let role = memory_source(fixture, message_id).role;
+        remember_in(&fixture.database, &space, message_id, role, text);
+    }
+
+    fn delete_message_on(fixture: &mut Fixture, message_id: MessageId, key: &str, now: i64) -> DeleteMessageOutcome {
+        let outcome = fixture
+            .database
+            .delete_message(
+                &TombstoneMessage {
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    expected_revision: fixture.revision,
+                    operation: token(key, "ab"),
+                    descendants: DescendantPolicy::Preserve,
+                },
+                TimestampMillis::new(now),
+            )
+            .expect("delete message")
+            .value;
+        fixture.revision = conversation_revision(fixture);
+        outcome
+    }
+
+    fn delete_branch_on(fixture: &mut Fixture, branch_id: ConversationBranchId, key: &str, now: i64) {
+        fixture
+            .database
+            .delete_branch(
+                &lettuce_conversations::DeleteBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id,
+                    expected_revision: fixture.revision,
+                    operation: token(key, "ab"),
+                },
+                TimestampMillis::new(now),
+            )
+            .expect("delete branch");
+        fixture.revision = conversation_revision(fixture);
+    }
+
+    fn store_character(database: &Database, character_id: CharacterId) {
+        use lettuce_characters::{Character, CharacterRepository};
+        CharacterRepository::create(
+            database,
+            lettuce_characters::CreateCharacterPlan {
+                character: Character::new(
+                    character_id,
+                    lettuce_characters::CharacterProfile {
+                        name: "Ada".into(),
+                        nickname: None,
+                        description: None,
+                        definition: None,
+                        design_description: None,
+                        scenario: None,
+                    },
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    None,
+                    Default::default(),
+                    TimestampMillis::new(10),
+                )
+                .expect("character"),
+                scenes: Vec::new(),
+                variants: Vec::new(),
+                starters: Vec::new(),
+            },
+        )
+        .expect("store character");
+    }
+
+    fn summarize(
+        database: &Database,
+        space_id: lettuce_types::MemorySpaceId,
+        branch_id: ConversationBranchId,
+        sources: &[MessageId],
+        text: &str,
+    ) {
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        crate::memory::memory_adapter::replace_summary_in(
+            &transaction,
+            space_id,
+            Some(&lettuce_memory::MemorySummary {
+                origin: lettuce_memory::MemoryOrigin::Model,
+                space_id,
+                branch_id,
+                text: text.into(),
+                token_count: Some(3),
+                window_start: 0,
+                window_end: u64::try_from(sources.len()).expect("window"),
+                source_message_ids: sources.to_vec(),
+                updated_at: TimestampMillis::new(50),
+            }),
+        )
+        .expect("summary");
+        transaction.commit().expect("commit");
+    }
+
+    fn manual_add(fixture: &Fixture, space_id: lettuce_types::MemorySpaceId, text: &str) {
+        use lettuce_memory::{MemoryItem, MemoryManualEdit, MemoryManualMutation, MemoryRepository, MemoryShortId};
+        let space = MemoryRepository::get(fixture.database.as_ref(), space_id)
+            .expect("memory")
+            .expect("space");
+        let id = lettuce_types::MemoryId::new();
+        let item = MemoryItem::written(id, MemoryShortId::derived(id), text.into(), TimestampMillis::new(60));
+        let edit = MemoryManualEdit {
+            id: lettuce_types::OperationId::new(),
+            conversation_id: fixture.conversation_id,
+            branch_id: fixture.branch_id,
+            conversation_revision: conversation_revision(fixture),
+            expected_revision: space.revision,
+            space_id,
+            context_revisions: Vec::new(),
+            mutation: MemoryManualMutation::Add { item },
+            at: TimestampMillis::new(60),
+        };
+        fixture
+            .database
+            .commit_api_operation(
+                "memory_add",
+                &format!("manual-{text}"),
+                "ab",
+                edit.at,
+                |scope| {
+                    scope
+                        .apply_memory_manual_edit(&edit, None)
+                        .map(|_| ())
+                        .map_err(|_| crate::ApiOperationError::Storage { reason: "manual edit" })
+                },
+            )
+            .expect("manual edit");
+    }
+
+    fn own_space(fixture: &Fixture, branch_id: ConversationBranchId) -> lettuce_types::MemorySpaceId {
+        use lettuce_memory::MemoryRepository;
+        fixture
+            .database
+            .get_for_branch(fixture.conversation_id, branch_id)
+            .expect("memory")
+            .expect("space")
+            .id
+    }
+
+    fn with_space(fixture: &Fixture) {
+        let mut connection = fixture.database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        crate::memory::memory_adapter::create_conversation_space_in(
+            &transaction,
+            fixture.conversation_id,
+            fixture.branch_id,
+        )
+        .expect("memory space");
+        transaction.commit().expect("commit");
+    }
+
+    fn duplicate_with_messages(fixture: &Fixture, key: &str, now: i64) -> ConversationId {
+        let command = lettuce_conversations::DuplicateConversation {
+            source_conversation_id: fixture.conversation_id,
+            conversation_id: ConversationId::new(),
+            title: None,
+            with_messages: true,
+            operation: token(key, "ab"),
+        };
+        fixture
+            .database
+            .commit_api_operation("duplicate", key, "ab", TimestampMillis::new(now), |scope| {
+                scope
+                    .duplicate_conversation(&command, TimestampMillis::new(now))
+                    .map(|value| value.value.conversation.id)
+                    .map_err(|_| crate::ApiOperationError::Storage { reason: "duplicate" })
+            })
+            .expect("duplicate")
+    }
+
+    #[test]
+    fn backup_round_trips_group_perspective_memory_through_forks_deletes_and_copies() {
+        let mut fixture = group_fixture();
+        let character_id = CharacterId::new();
+        store_character(&fixture.database, character_id);
+        let messages = user_messages(&mut fixture, "perspective", 4, 20);
+        with_space(&fixture);
+        let root = fixture.branch_id;
+        let perspective = {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let space = crate::memory::memory_adapter::create_perspective_space_in(
+                &transaction,
+                fixture.conversation_id,
+                root,
+                character_id,
+            )
+            .expect("perspective space");
+            transaction.commit().expect("commit");
+            space
+        };
+        let snapshot = |space| {
+            lettuce_memory::MemoryRepository::get(fixture.database.as_ref(), space)
+                .expect("memory")
+                .expect("space")
+        };
+        remember_in(&fixture.database, &snapshot(perspective), messages[0], MessageRole::User, "Ada saw the letter");
+        remember(&fixture, root, messages[1], "The group met at noon");
+        summarize(&fixture.database, own_space(&fixture, root), root, &messages[..2], "Group summary");
+        round_trip_twice(&fixture.database);
+
+        let child = fork_at(&mut fixture, root, messages[2], "perspective-fork", 300);
+        fixture.branch_id = child;
+        let child_pair = user_messages(&mut fixture, "perspective-child", 2, 310);
+        remember(&fixture, child, child_pair[0], "Child-branch fact");
+        round_trip_twice(&fixture.database);
+
+        let copy = duplicate_with_messages(&fixture, "perspective-duplicate", 320);
+        let copied_inherited = scalar::<i64>(
+            fixture.database.as_ref(),
+            "SELECT count(*) FROM memory_inherited_summaries WHERE conversation_id = ?1",
+            &copy.to_string(),
+        );
+        assert_eq!(copied_inherited, 0, "a copy's root branch inherits nothing");
+        round_trip_twice(&fixture.database);
+
+        let DeleteMessageOutcome::Branched(around) =
+            delete_message_on(&mut fixture, messages[1], "perspective-delete-shared", 330)
+        else {
+            panic!("the root branch still shows the message");
+        };
+        fixture.branch_id = around.branch.id;
+        round_trip_twice(&fixture.database);
+
+        select(&mut fixture, root, "perspective-select-root", 340);
+        fixture.branch_id = root;
+        delete_branch_on(&mut fixture, child, "perspective-delete-child", 341);
+        round_trip_twice(&fixture.database);
+
+        fixture
+            .database
+            .purge_conversation(fixture.conversation_id, TimestampMillis::new(350))
+            .expect("purge source");
+        round_trip_twice(&fixture.database);
+    }
+
+    #[test]
+    fn backup_round_trips_manual_memory_edits_after_their_branch_or_anchor_goes_away() {
+        let mut fixture = direct_fixture();
+        let messages = user_messages(&mut fixture, "manual", 4, 20);
+        with_space(&fixture);
+        let root = fixture.branch_id;
+        manual_add(&fixture, own_space(&fixture, root), "Root note");
+        let child = fork_at(&mut fixture, root, messages[1], "manual-fork", 300);
+        fixture.branch_id = child;
+        user_messages(&mut fixture, "manual-child", 2, 310);
+        manual_add(&fixture, own_space(&fixture, child), "Child note");
+        round_trip_twice(&fixture.database);
+
+        select(&mut fixture, root, "manual-select-root", 320);
+        fixture.branch_id = root;
+        delete_branch_on(&mut fixture, child, "manual-delete-child", 321);
+        round_trip_twice(&fixture.database);
+
+        manual_add(&fixture, own_space(&fixture, root), "Note on the head");
+        assert!(matches!(
+            delete_message_on(&mut fixture, messages[3], "manual-delete-head", 330),
+            DeleteMessageOutcome::Tombstoned(_)
+        ));
+        round_trip_twice(&fixture.database);
+
+        fixture
+            .database
+            .tombstone_message(
+                &TombstoneMessage {
+                    conversation_id: fixture.conversation_id,
+                    message_id: messages[1],
+                    expected_revision: fixture.revision,
+                    operation: token("manual-rewind", "ab"),
+                    descendants: DescendantPolicy::Tombstone,
+                },
+                TimestampMillis::new(340),
+            )
+            .expect("rewind");
+        fixture.revision = conversation_revision(&fixture);
+        round_trip_twice(&fixture.database);
+    }
+
+    #[test]
+    fn backup_round_trips_memory_sourced_from_regenerated_and_edited_replies() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "regenerated");
+        with_space(&fixture);
+        let root = fixture.branch_id;
+        remember(&fixture, root, messages[1], "First reply fact");
+        remember(&fixture, root, messages[3], "Last reply fact");
+        summarize(&fixture.database, own_space(&fixture, root), root, &messages, "Two exchanges");
+        let regenerated = fixture
+            .database
+            .begin_regenerate(&regenerate_command(&fixture, messages[3], "regenerated-again"), TimestampMillis::new(400))
+            .expect("regenerate");
+        settle_succeeded(&fixture, &regenerated.value.turn, 401);
+        fixture.revision = conversation_revision(&fixture);
+        store_fixture_model_snapshots(&fixture.database);
+        round_trip_twice(&fixture.database);
+
+        let child = fork_at(&mut fixture, root, messages[1], "regenerated-fork", 500);
+        fixture.branch_id = child;
+        remember(&fixture, child, messages[1], "Fact kept on the fork");
+        let copy = duplicate_with_messages(&fixture, "regenerated-duplicate", 510);
+        assert_ne!(copy, fixture.conversation_id);
+        round_trip_twice(&fixture.database);
+    }
+
+    #[test]
+    fn backup_round_trips_a_companion_pool_across_forks_and_its_owner_purge() {
+        use lettuce_memory::MemoryRepository;
+        let character_id = CharacterId::new();
+        let database = std::rc::Rc::new(Database::open_in_memory().expect("database"));
+        store_character(&database, character_id);
+        let mut first = direct_fixture_for(database.clone(), character_id);
+        let second = direct_fixture_for(database.clone(), character_id);
+        let first_messages = user_messages(&mut first, "pool-first", 4, 20);
+        let join = |fixture: &Fixture| {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let pool = crate::memory::memory_adapter::join_companion_pool_in(
+                &transaction,
+                fixture.conversation_id,
+                fixture.branch_id,
+                character_id,
+            )
+            .expect("pool");
+            transaction.commit().expect("commit");
+            pool
+        };
+        let pool = join(&first);
+        assert_eq!(join(&second), pool);
+        let pool_snapshot = || MemoryRepository::get(database.as_ref(), pool).expect("memory").expect("pool");
+        remember_in(&database, &pool_snapshot(), first_messages[0], MessageRole::User, "First chat fact");
+        summarize(&database, pool, first.branch_id, &first_messages[..2], "Pool summary");
+        round_trip_twice(&database);
+
+        let root = first.branch_id;
+        let fork = fork_at(&mut first, root, first_messages[1], "pool-fork", 300);
+        first.branch_id = fork;
+        let fork_messages = user_messages(&mut first, "pool-fork", 2, 310);
+        remember_in(&database, &pool_snapshot(), fork_messages[0], MessageRole::User, "Fork fact");
+        round_trip_twice(&database);
+
+        select(&mut first, root, "pool-select-root", 320);
+        first.branch_id = root;
+        delete_branch_on(&mut first, fork, "pool-delete-fork", 321);
+        round_trip_twice(&database);
+
+        database
+            .purge_conversation(first.conversation_id, TimestampMillis::new(330))
+            .expect("purge summary owner");
+        round_trip_twice(&database);
+    }
+
+    fn round_trip_twice(database: &Database) {
+        let (_, restored) =
+            crate::backup::restore_writer::tests::backup_round_trip(database, |_| {});
+        crate::backup::restore_writer::tests::assert_backup_round_trip(&restored);
+    }
+
+    #[test]
+    fn backup_round_trips_branch_memory_through_deletes_forks_and_restores() {
+        let mut scenario = inherited_scenario();
+        let (root, parent, child) = (scenario.root, scenario.parent, scenario.child);
+        remember(&scenario.fixture, root, scenario.root_last, "Root fact");
+        remember(&scenario.fixture, parent, scenario.parent_user, "Parent fact");
+        remember(&scenario.fixture, child, scenario.parent_assistant, "Fact from the parent branch");
+        remember(&scenario.fixture, child, scenario.child_user, "Child fact");
+        round_trip_twice(&scenario.fixture.database);
+
+        let fixture = &mut scenario.fixture;
+        select(fixture, child, "history-select-child", 400);
+        assert!(matches!(
+            delete_message_on(fixture, scenario.child_user, "history-delete-own", 401),
+            DeleteMessageOutcome::Tombstoned(_)
+        ));
+        round_trip_twice(&fixture.database);
+
+        let DeleteMessageOutcome::Branched(around) =
+            delete_message_on(fixture, scenario.parent_assistant, "history-delete-shared", 402)
+        else {
+            panic!("the parent branch still shows the message");
+        };
+        remember(fixture, around.branch.id, scenario.parent_user, "Fact on the branch around a delete");
+        round_trip_twice(&fixture.database);
+
+        select(fixture, root, "history-select-root", 403);
+        delete_branch_on(fixture, parent, "history-delete-parent", 404);
+        round_trip_twice(&fixture.database);
+
+        let orphan = fork_at(fixture, child, scenario.parent_assistant, "history-orphan", 405);
+        remember(fixture, orphan, scenario.parent_user, "Fact under a deleted parent");
+        delete_branch_on(fixture, child, "history-delete-child", 406);
+        round_trip_twice(&fixture.database);
+    }
+
+    #[test]
+    fn backup_round_trips_a_copy_of_a_forked_conversation_after_its_source_is_purged() {
+        let mut scenario = inherited_scenario();
+        let child = scenario.child;
+        remember(&scenario.fixture, child, scenario.parent_assistant, "Fact from the parent branch");
+        remember(&scenario.fixture, child, scenario.child_user, "Child fact");
+        select(&mut scenario.fixture, child, "copy-select-child", 400);
+        let source = &scenario.fixture;
+        let command = lettuce_conversations::DuplicateConversation {
+            source_conversation_id: source.conversation_id,
+            conversation_id: ConversationId::new(),
+            title: None,
+            with_messages: true,
+            operation: token("history-duplicate", "ab"),
+        };
+        source
+            .database
+            .commit_api_operation("duplicate", "duplicate", "ab", TimestampMillis::new(410), |scope| {
+                scope
+                    .duplicate_conversation(&command, TimestampMillis::new(410))
+                    .map(|_| ())
+                    .map_err(|_| crate::ApiOperationError::Storage { reason: "duplicate" })
+            })
+            .expect("duplicate");
+        round_trip_twice(&source.database);
+        source
+            .database
+            .purge_conversation(source.conversation_id, TimestampMillis::new(420))
+            .expect("purge source");
+        round_trip_twice(&source.database);
+    }
+
+    #[test]
+    fn migration_42_drops_inherited_summaries_left_on_root_branches() {
+        use lettuce_memory::MemoryRepository;
+        let mut scenario = inherited_scenario();
+        delete_inherited_parent(&mut scenario);
+        let (conversation_id, root, child) =
+            (scenario.fixture.conversation_id, scenario.root, scenario.child);
+        let database = scenario.fixture.database.clone();
+        let root_space = database
+            .get_for_branch(conversation_id, root)
+            .expect("memory")
+            .expect("root space")
+            .id;
+        let child_space = database
+            .get_for_branch(conversation_id, child)
+            .expect("memory")
+            .expect("child space")
+            .id;
+        {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let inherited = crate::memory::memory_branch_adapter::load_materialised_summary_in(
+                &transaction,
+                child_space,
+                child,
+            )
+            .expect("load")
+            .expect("child inherited summary");
+            crate::memory::memory_branch_adapter::store_materialised_summary_in(
+                &transaction,
+                conversation_id,
+                root,
+                root_space,
+                &lettuce_memory::MemorySummary {
+                    space_id: root_space,
+                    branch_id: root,
+                    ..inherited
+                },
+            )
+            .expect("stray root summary");
+            transaction.commit().expect("commit");
+        }
+        let mut graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
+            database.as_ref(),
+        )
+        .expect("graph");
+        assert!(lettuce_transfer::canonicalize_and_validate(&mut graph).is_err());
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch(include_str!(
+                "../../migrations/0042_drop_root_branch_inherited_summaries.sql"
+            ))
+            .expect("migration 42");
+        let count = |branch: ConversationBranchId| {
+            scalar::<i64>(
+                database.as_ref(),
+                "SELECT count(*) FROM memory_inherited_summaries WHERE branch_id = ?1",
+                &branch.to_string(),
+            )
+        };
+        assert_eq!(count(root), 0);
+        assert_eq!(count(child), 1);
+        assert_eq!(
+            scalar::<i64>(
+                database.as_ref(),
+                "SELECT count(*) FROM memory_inherited_summary_source_messages WHERE space_id = ?1",
+                &root_space.to_string(),
+            ),
+            0
+        );
+        round_trip_twice(&database);
+    }
+
+    #[test]
+    fn backup_round_trips_pool_memory_written_back_from_a_group_chat() {
+        use lettuce_memory::MemoryRepository;
+        let character_id = CharacterId::new();
+        let companion = direct_fixture_for(
+            std::rc::Rc::new(Database::open_in_memory().expect("database")),
+            character_id,
+        );
+        store_character(&companion.database, character_id);
+        let group = group_fixture_on(companion.database.clone());
+        let group_message = group
+            .database
+            .append_user_message(&send_command(&group, "write-back", "ab", text("We agreed on tea")), TimestampMillis::new(20))
+            .expect("group message")
+            .value
+            .id;
+        let pool_id = {
+            let mut connection = companion.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let pool = crate::memory::memory_adapter::join_companion_pool_in(
+                &transaction,
+                companion.conversation_id,
+                companion.branch_id,
+                character_id,
+            )
+            .expect("pool");
+            transaction.commit().expect("commit");
+            pool
+        };
+        let pool = MemoryRepository::get(companion.database.as_ref(), pool_id).expect("memory").expect("pool");
+        remember_in(&companion.database, &pool, group_message, MessageRole::User, "The group agreed on tea");
+        round_trip_twice(&companion.database);
+        companion
+            .database
+            .purge_conversation(group.conversation_id, TimestampMillis::new(30))
+            .expect("purge group chat");
+        round_trip_twice(&companion.database);
     }
 
     fn sync_all(from: &Database, to: &Database, at: i64) {
