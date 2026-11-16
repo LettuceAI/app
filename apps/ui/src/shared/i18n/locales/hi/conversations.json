@@ -998,6 +998,12 @@
         "same_text": "(वही टेक्स्ट)",
         "same_meaning": "(वही अर्थ)",
         "same_words": "(वही शब्द)"
+      },
+      "restore": {
+        "addAnyway": "फिर भी जोड़ें",
+        "addBack": "वापस जोड़ें",
+        "added": "मेमोरी जोड़ी गई",
+        "addedBack": "मेमोरी वापस जोड़ी गई"
       }
     },
     "pinnedTab": {

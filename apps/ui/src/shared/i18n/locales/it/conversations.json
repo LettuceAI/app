@@ -1019,6 +1019,12 @@
         "same_text": "(stesso testo)",
         "same_meaning": "(stesso significato)",
         "same_words": "(stesse parole)"
+      },
+      "restore": {
+        "addAnyway": "Aggiungi comunque",
+        "addBack": "Aggiungilo di nuovo",
+        "added": "Ricordo aggiunto",
+        "addedBack": "Ricordo aggiunto di nuovo"
       }
     },
     "pinnedTab": {

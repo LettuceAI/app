@@ -999,6 +999,12 @@
         "same_text": "(gleicher Text)",
         "same_meaning": "(gleiche Bedeutung)",
         "same_words": "(gleiche Wörter)"
+      },
+      "restore": {
+        "addAnyway": "Trotzdem hinzufügen",
+        "addBack": "Wieder hinzufügen",
+        "added": "Erinnerung hinzugefügt",
+        "addedBack": "Erinnerung wieder hinzugefügt"
       }
     },
     "pinnedTab": {

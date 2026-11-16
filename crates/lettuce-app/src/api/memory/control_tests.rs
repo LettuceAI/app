@@ -1692,6 +1692,67 @@ async fn duplicate_activity_keeps_the_original_and_same_run_comparison_texts() {
 }
 
 #[tokio::test]
+async fn activity_keeps_what_a_skipped_or_deleted_memory_needs_to_come_back() {
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "restore-facts").await;
+    let original = "Mara hates the sea.";
+    memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: chat.clone(),
+            text: original.into(),
+            category: Some(dto::MemoryCategory::Preference),
+            observed_at: Some(1_700_000_000_000),
+            expected_revision: status_of(&harness, &chat).await.revision,
+            client_operation_id: "restore-facts-add".into(),
+            perspective_character_id: None,
+        },
+    )
+    .await
+    .expect("add original");
+    let stored = item(&harness, &chat, original).await;
+    memory_set_temperature(
+        &harness.context,
+        dto::MemoryTemperatureRequest {
+            conversation_id: chat.clone(),
+            memory_id: stored.id.clone(),
+            temperature: dto::MemoryTemperature::Cold,
+            expected_revision: status_of(&harness, &chat).await.revision,
+            client_operation_id: "restore-facts-cold".into(),
+            perspective_character_id: None,
+        },
+    )
+    .await
+    .expect("cool original");
+    let round = open_round(
+        &harness,
+        &chat,
+        vec![
+            ("create_memory", serde_json::json!({"text": original, "category": "boundary"})),
+            ("delete_memory", serde_json::json!({"text": stored.short_id, "confidence": 1.0})),
+        ],
+    )
+    .await;
+    let settlement = settle(&harness, &round);
+    assert!(matches!(settlement.results[0].outcome, lettuce_memory::MemoryToolOutcome::DuplicateSkipped { .. }));
+    assert!(matches!(settlement.results[1].outcome, lettuce_memory::MemoryToolOutcome::Deleted { .. }));
+    let page = memory_cycles(
+        &harness.context,
+        dto::MemoryCyclesRequest { conversation_id: chat, cursor: None, limit: None },
+    )
+    .await
+    .expect("activity");
+    let cycle = page.items.iter().find(|cycle| cycle.run_id == round.run_id.to_string()).expect("cycle");
+    assert_eq!(cycle.actions[0].proposed_text.as_deref(), Some(original));
+    assert_eq!(cycle.actions[0].category, Some(dto::MemoryCategory::Boundary));
+    assert_eq!(cycle.actions[0].observed_at, None);
+    assert_eq!(cycle.actions[1].kind, dto::MemoryCycleActionKind::Deleted);
+    assert_eq!(cycle.actions[1].text.as_deref(), Some(original));
+    assert_eq!(cycle.actions[1].category, Some(dto::MemoryCategory::Preference));
+    assert_eq!(cycle.actions[1].observed_at, Some(1_700_000_000_000));
+}
+
+#[tokio::test]
 async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
     let harness = harness(Reply::Text("reply"));
     let (chat, _) = replied_chat(&harness, "stale").await;

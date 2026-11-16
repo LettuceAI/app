@@ -14,6 +14,8 @@ pub struct MemoryActivityCycle {
     pub results: Vec<MemoryToolResult>,
     /// The memory text each result's call proposed, in result order; `None` for calls without one.
     pub proposed_texts: Vec<Option<String>>,
+    /// The category each result's call proposed, in result order; `None` when it named none or an unknown one.
+    pub proposed_categories: Vec<Option<crate::MemoryCategory>>,
     pub checkpoint: Option<MemorySummary>,
     pub reverted: bool,
 }

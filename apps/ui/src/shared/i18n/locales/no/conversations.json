@@ -998,6 +998,12 @@
         "same_text": "(samme tekst)",
         "same_meaning": "(samme betydning)",
         "same_words": "(samme ord)"
+      },
+      "restore": {
+        "addAnyway": "Legg til likevel",
+        "addBack": "Legg det til igjen",
+        "added": "Minnet er lagt til",
+        "addedBack": "Minnet er lagt til igjen"
       }
     },
     "pinnedTab": {

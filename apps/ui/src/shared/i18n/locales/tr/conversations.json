@@ -998,6 +998,12 @@
         "same_text": "(aynı metin)",
         "same_meaning": "(aynı anlam)",
         "same_words": "(aynı kelimeler)"
+      },
+      "restore": {
+        "addAnyway": "Yine de ekle",
+        "addBack": "Geri ekle",
+        "added": "Anı eklendi",
+        "addedBack": "Anı geri eklendi"
       }
     },
     "pinnedTab": {

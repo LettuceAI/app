@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { History, Undo2 } from "lucide-react";
+import { History, Plus, RotateCcw, Undo2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Accordion, AccordionItem, Badge, Button, cn, confirm, EmptyState, icon, LoadingState, Text } from "@lettuceai/crisp";
-import type { MemoryCycleView } from "@/api/generated/bindings";
+import type { MemoryCycleView, MemoryItemView } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
+import { restorePlan, type RestorePlan } from "./cycle-restore";
 
 export interface ActivityTabProps {
   companion?: boolean;
@@ -16,11 +17,14 @@ export interface ActivityTabProps {
   onRetry: () => void;
   onLoadMore: () => void;
   onRevert: (cycle: MemoryCycleView) => Promise<boolean>;
+  items?: readonly MemoryItemView[] | undefined;
+  onRestore?: (key: string, plan: RestorePlan) => Promise<boolean>;
 }
 
-export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRetry, onLoadMore, onRevert, companion = false, companionGroup = false }: ActivityTabProps) {
+export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRetry, onLoadMore, onRevert, items, onRestore, companion = false, companionGroup = false }: ActivityTabProps) {
   const { t, i18n } = useTranslation("conversations");
   const [reverting, setReverting] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState<string | null>(null);
   const when = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" });
   const windowText = (cycle: Pick<MemoryCycleView, "window_start" | "window_end">) => t("memory.window", { from: cycle.window_start, to: cycle.window_end });
 
@@ -42,6 +46,16 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
     setReverting(cycle.run_id);
     await onRevert(cycle);
     setReverting(null);
+  };
+
+  const restore = async (key: string, plan: RestorePlan) => {
+    if (!onRestore) return;
+    setRestoring(key);
+    try {
+      await onRestore(key, plan);
+    } finally {
+      setRestoring(null);
+    }
   };
 
   const blockedText = (cycle: MemoryCycleView) => {
@@ -82,7 +96,10 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
                 {!failed && !live && cycle.summary && <Text variant="secondary">{cycle.summary}</Text>}
                 {cycle.actions.length > 0 && (
                   <ul className="space-y-1.5">
-                    {cycle.actions.map((action, index) => (
+                    {cycle.actions.map((action, index) => {
+                      const key = `restore:${cycle.run_id}:${index}`;
+                      const plan = onRestore && items && !live ? restorePlan(action, items) : null;
+                      return (
                       <li key={index} className="flex gap-2 text-sm">
                         <span className={cn("w-24 shrink-0 text-fg-3", action.kind === "created" && "text-accent")}>{t(`memory.activity.actions.${action.kind}`)}</span>
                         <span className="min-w-0 space-y-0.5">
@@ -105,9 +122,24 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
                                 : ` ${t(`memory.activity.duplicate.${action.duplicate.kind}`)}`}
                             </span>
                           )}
+                          {plan && (
+                            <span className="block pt-1">
+                              <Button
+                                size="sm"
+                                variant="tonal"
+                                loading={restoring === key}
+                                disabled={restoring !== null}
+                                leading={plan.label === "addBack" ? <RotateCcw size={icon.sm} /> : <Plus size={icon.sm} />}
+                                onClick={() => void restore(key, plan)}
+                              >
+                                {t(`memory.activity.restore.${plan.label}`)}
+                              </Button>
+                            </span>
+                          )}
                         </span>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
                 {!cycle.reverted && cycle.revertable && (

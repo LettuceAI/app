@@ -438,9 +438,9 @@ describe("memory status card", () => {
 
 describe("memory activity and pinned tabs", () => {
   const cycles = [
-    cycle("r3", { window_start: 41, window_end: 60, label: "41-60", summary: "The trip took shape.", actions: [{ kind: "created", memory_id: "m1", text: "Afraid of flying.", proposed_text: null, skip_reason: null, duplicate: null }], revertable: true }),
+    cycle("r3", { window_start: 41, window_end: 60, label: "41-60", summary: "The trip took shape.", actions: [{ kind: "created", memory_id: "m1", text: "Afraid of flying.", proposed_text: null, category: null, observed_at: null, skip_reason: null, duplicate: null }], revertable: true }),
     cycle("r2", { window_start: 21, window_end: 40, label: "21-40", status: "failed", failure: "timed_out" }),
-    cycle("r1", { window_start: 1, window_end: 20, label: "1-20", revertable: false, blocked_by: "r3", actions: [{ kind: "soft_deleted", memory_id: null, text: "The safehouse.", proposed_text: null, skip_reason: null, duplicate: null }] }),
+    cycle("r1", { window_start: 1, window_end: 20, label: "1-20", revertable: false, blocked_by: "r3", actions: [{ kind: "soft_deleted", memory_id: null, text: "The safehouse.", proposed_text: null, category: null, observed_at: null, skip_reason: null, duplicate: null }] }),
   ];
 
   it("pages the cycles, explains a blocked undo and undoes after confirmation", async () => {
@@ -468,9 +468,9 @@ describe("memory activity and pinned tabs", () => {
 
   it("says why a proposed memory was skipped or already known", async () => {
     const reasons = [cycle("r4", { window_start: 61, window_end: 80, label: "61-80", actions: [
-      { kind: "skipped", memory_id: null, text: null, proposed_text: "Mira keeps every letter her brother sent.", skip_reason: "text_too_long", duplicate: null },
-      { kind: "duplicate_skipped", memory_id: "m1", text: null, proposed_text: "Fears flying.", skip_reason: null, duplicate: { kind: "same_meaning", existing_text: "Afraid of flying.", similarity_basis_points: 9512, threshold_basis_points: 9300 } },
-      { kind: "duplicate_skipped", memory_id: "gone", text: null, proposed_text: "A missing comparison.", skip_reason: null, duplicate: { kind: "same_text", existing_text: null, similarity_basis_points: null, threshold_basis_points: null } },
+      { kind: "skipped", memory_id: null, text: null, proposed_text: "Mira keeps every letter her brother sent.", category: null, observed_at: null, skip_reason: "text_too_long", duplicate: null },
+      { kind: "duplicate_skipped", memory_id: "m1", text: null, proposed_text: "Fears flying.", category: null, observed_at: null, skip_reason: null, duplicate: { kind: "same_meaning", existing_text: "Afraid of flying.", similarity_basis_points: 9512, threshold_basis_points: 9300 } },
+      { kind: "duplicate_skipped", memory_id: "gone", text: null, proposed_text: "A missing comparison.", category: null, observed_at: null, skip_reason: null, duplicate: { kind: "same_text", existing_text: null, similarity_basis_points: null, threshold_basis_points: null } },
     ] })];
     await open({ world: { cycles: reasons } });
     fireEvent.click(await screen.findByRole("tab", { name: /^Activity/ }));
@@ -482,6 +482,32 @@ describe("memory activity and pinned tabs", () => {
     expect(screen.queryByText("m1")).toBeNull();
     expect(screen.getByText("A missing comparison.")).toBeTruthy();
     expect(screen.getByText("Matches a memory that is gone now (same text)")).toBeTruthy();
+  });
+
+  it("adds a skipped memory anyway and brings removed ones back once", async () => {
+    const restorable = [cycle("r5", { window_start: 81, window_end: 100, label: "81-100", actions: [
+      { kind: "deleted", memory_id: "d1", text: "Mira hates the sea.", proposed_text: null, category: "preference", observed_at: 1_700_000_000_000, skip_reason: null, duplicate: null },
+      { kind: "soft_deleted", memory_id: "c1", text: "The old lighthouse.", proposed_text: null, category: null, observed_at: null, skip_reason: null, duplicate: null },
+      { kind: "duplicate_skipped", memory_id: "m1", text: null, proposed_text: "Fears flying.", category: "character_trait", observed_at: null, skip_reason: null, duplicate: { kind: "same_meaning", existing_text: "Afraid of flying.", similarity_basis_points: 9512, threshold_basis_points: 9300 } },
+      { kind: "skipped", memory_id: null, text: null, proposed_text: "Afraid of flying.", category: null, observed_at: null, skip_reason: "meta_text", duplicate: null },
+      { kind: "skipped", memory_id: null, text: null, proposed_text: "Far too long.", category: null, observed_at: null, skip_reason: "text_too_long", duplicate: null },
+    ] })];
+    const items = [item("m1", "Afraid of flying."), item("c1", "The old lighthouse.", { temperature: "cold" })];
+    const { called } = await open({ world: { cycles: restorable, items } });
+    fireEvent.click(await screen.findByRole("tab", { name: /^Activity/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Messages 81 to 100/ }));
+    await screen.findByText("Mira hates the sea.");
+    expect(screen.getAllByRole("button", { name: "Add it back" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Add anyway" })).toHaveLength(1);
+    fireEvent.click(screen.getAllByRole("button", { name: "Add it back" })[0]!);
+    await waitFor(() => expect(called("memoryAdd")).toHaveLength(1));
+    expect(called("memoryAdd")[0]?.request).toMatchObject({ text: "Mira hates the sea.", category: "preference", observed_at: 1_700_000_000_000, expected_revision: 5 });
+    fireEvent.click(screen.getAllByRole("button", { name: "Add it back" })[1]!);
+    await waitFor(() => expect(called("memorySetTemperature")).toHaveLength(1));
+    expect(called("memorySetTemperature")[0]?.request).toMatchObject({ memory_id: "c1", temperature: "hot" });
+    fireEvent.click(screen.getByRole("button", { name: "Add anyway" }));
+    await waitFor(() => expect(called("memoryAdd")).toHaveLength(2));
+    expect(called("memoryAdd")[1]?.request).toMatchObject({ text: "Fears flying.", category: "character_trait", observed_at: null });
   });
 
   const pinnedMessage = message("p1", "assistant", "Karsk was a choice.", { pinned: true });
@@ -804,7 +830,7 @@ describe("group companion member memory", () => {
   });
 
   it("says what undoing a companion-mode group update keeps", async () => {
-    const world = { cycles: [cycle("r3", { window_start: 41, window_end: 60, label: "41-60", actions: [{ kind: "created", memory_id: "m1", text: "Ada and Bea made up.", proposed_text: null, skip_reason: null, duplicate: null }], revertable: true })] };
+    const world = { cycles: [cycle("r3", { window_start: 41, window_end: 60, label: "41-60", actions: [{ kind: "created", memory_id: "m1", text: "Ada and Bea made up.", proposed_text: null, category: null, observed_at: null, skip_reason: null, duplicate: null }], revertable: true })] };
     await open({ world, calls: groupCalls(true, { revision: 7, items: [] }, []) });
     fireEvent.click(await screen.findByRole("tab", { name: /^Activity/ }));
     fireEvent.click(await screen.findByRole("button", { name: /Messages 41 to 60/ }));

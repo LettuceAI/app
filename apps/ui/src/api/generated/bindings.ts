@@ -6654,6 +6654,10 @@ export type MemoryCycleAction = {
 	text: string | null,
 	/**  The memory the call proposed, for a create that was skipped or already known. */
 	proposed_text: string | null,
+	/**  The category of the memory the call proposed, or of the memory it deleted. */
+	category: MemoryCategory | null,
+	/**  When a deleted memory was observed, for adding it back as it was. */
+	observed_at: number | null,
 	skip_reason: MemorySkipReason | null,
 	duplicate: MemoryDuplicateMatch | null,
 };

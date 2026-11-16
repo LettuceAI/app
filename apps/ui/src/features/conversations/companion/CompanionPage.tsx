@@ -17,6 +17,7 @@ import { saveMemoryDraft } from "../memory/save-memory";
 import { StatusCard } from "../memory/StatusCard";
 import { SummaryCard, SummarySheet } from "../memory/SummaryParts";
 import { useMemoryWrite } from "../memory/use-memory-write";
+import { restoreCycleAction, type RestorePlan } from "../memory/cycle-restore";
 import { BondTiles, Drivers, EmotionGroup, SectionHead } from "./presentation";
 import { companionSoulQuery, companionStateQuery, emotionStatusQuery } from "./queries";
 import { RelationshipTab } from "./RelationshipTab";
@@ -119,6 +120,11 @@ function CompanionScreen({ conversationId }: { conversationId: string }) {
     if (ok) toast.success(t("memory.activity.undone"));
     return ok;
   };
+  const restore = async (key: string, plan: RestorePlan) => {
+    const ok = await restoreCycleAction(api, conversationId, write, key, plan);
+    if (ok) toast.success(t(plan.label === "addBack" ? "memory.activity.restore.addedBack" : "memory.activity.restore.added"));
+    return ok;
+  };
   const openSummary = () => {
     setSummarySession((value) => value + 1);
     setSummaryOpen(true);
@@ -144,7 +150,7 @@ function CompanionScreen({ conversationId }: { conversationId: string }) {
   else if (settings.isError && settings.data === undefined) body = <FailureState error={settings.error} onRetry={() => void settings.refetch()} />;
   else if ((tab === "memories" || tab === "activity") && !memoryOn) body = <EmptyState icon={<Brain size={icon.xl} />} title={t("memory.off.title")} description={t("memory.off.description")} action={<Button onClick={() => void navigate({ to: "/chat/$conversationId", params: { conversationId }, search: { panel: "settings" }, state: { panelPushed: true } })}>{t("memory.off.action")}</Button>} />;
   else if (tab === "soul") body = soul.isPending ? <LoadingState /> : soul.isError && soul.data === undefined ? <FailureState error={soul.error} onRetry={() => void soul.refetch()} /> : soul.data ? <SoulTab api={api} conversationId={conversationId} soul={soul.data} onSources={setSources} /> : null;
-  else if (tab === "activity") body = <div className="space-y-4">{phone && dynamic && memory.data && <StatusCard api={api} conversationId={conversationId} status={memory.data.status} />}<ActivityTab companion cycles={cycleItems} hasMore={cycles.hasNextPage} loadingMore={cycles.isFetchingNextPage} loading={dynamic && cycles.isPending} error={dynamic ? cycles.error : null} onRetry={() => void (cycles.isFetchNextPageError ? cycles.fetchNextPage() : cycles.refetch())} onLoadMore={() => void cycles.fetchNextPage()} onRevert={revert} /></div>;
+  else if (tab === "activity") body = <div className="space-y-4">{phone && dynamic && memory.data && <StatusCard api={api} conversationId={conversationId} status={memory.data.status} />}<ActivityTab companion cycles={cycleItems} hasMore={cycles.hasNextPage} loadingMore={cycles.isFetchingNextPage} loading={dynamic && cycles.isPending} error={dynamic ? cycles.error : null} onRetry={() => void (cycles.isFetchNextPageError ? cycles.fetchNextPage() : cycles.refetch())} onLoadMore={() => void cycles.fetchNextPage()} onRevert={revert} items={memory.data?.items} onRestore={restore} /></div>;
   else if (tab === "memories" && memoryOn && memory.isPending) body = <LoadingState />;
   else if (tab === "memories" && memoryOn && memory.isError && memory.data === undefined) body = <FailureState error={memory.error} onRetry={() => void memory.refetch()} />;
   else if (tab === "memories") body = memory.data ? <MemoriesTab companion items={memory.data.items} dynamic={dynamic} onOpen={edit} onAdd={() => setTarget({ kind: "add" })} /> : null;

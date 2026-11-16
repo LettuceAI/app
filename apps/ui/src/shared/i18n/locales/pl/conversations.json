@@ -1040,6 +1040,12 @@
         "same_text": "(ten sam tekst)",
         "same_meaning": "(to samo znaczenie)",
         "same_words": "(te same słowa)"
+      },
+      "restore": {
+        "addAnyway": "Dodaj mimo to",
+        "addBack": "Dodaj z powrotem",
+        "added": "Dodano wspomnienie",
+        "addedBack": "Przywrócono wspomnienie"
       }
     },
     "pinnedTab": {

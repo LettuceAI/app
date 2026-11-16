@@ -977,6 +977,12 @@
         "same_text": "(cùng văn bản)",
         "same_meaning": "(cùng ý nghĩa)",
         "same_words": "(cùng từ ngữ)"
+      },
+      "restore": {
+        "addAnyway": "Vẫn thêm",
+        "addBack": "Thêm lại",
+        "added": "Đã thêm ký ức",
+        "addedBack": "Đã thêm lại ký ức"
       }
     },
     "pinnedTab": {

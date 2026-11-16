@@ -998,6 +998,12 @@
         "same_text": "(azonos szöveg)",
         "same_meaning": "(azonos jelentés)",
         "same_words": "(azonos szavak)"
+      },
+      "restore": {
+        "addAnyway": "Hozzáadás mégis",
+        "addBack": "Visszaadás",
+        "added": "Memória hozzáadva",
+        "addedBack": "Memória visszaadva"
       }
     },
     "pinnedTab": {

@@ -977,6 +977,12 @@
         "same_text": "(同じテキスト)",
         "same_meaning": "(同じ意味)",
         "same_words": "(同じ単語)"
+      },
+      "restore": {
+        "addAnyway": "それでも追加",
+        "addBack": "元に戻す",
+        "added": "メモリを追加しました",
+        "addedBack": "メモリを戻しました"
       }
     },
     "pinnedTab": {

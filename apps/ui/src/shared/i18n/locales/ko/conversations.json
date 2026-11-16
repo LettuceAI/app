@@ -977,6 +977,12 @@
         "same_text": "(같은 텍스트)",
         "same_meaning": "(같은 의미)",
         "same_words": "(같은 단어)"
+      },
+      "restore": {
+        "addAnyway": "그래도 추가",
+        "addBack": "다시 추가",
+        "added": "기억을 추가했어요",
+        "addedBack": "기억을 다시 추가했어요"
       }
     },
     "pinnedTab": {

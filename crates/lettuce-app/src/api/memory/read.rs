@@ -21,7 +21,7 @@ fn origin(value: MemoryOrigin) -> dto::MemoryOrigin {
     }
 }
 
-fn category(value: lettuce_memory::MemoryCategory) -> dto::MemoryCategory {
+pub(super) fn category(value: lettuce_memory::MemoryCategory) -> dto::MemoryCategory {
     use dto::MemoryCategory as D;
     use lettuce_memory::MemoryCategory as M;
     match value {

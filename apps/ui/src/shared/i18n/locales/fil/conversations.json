@@ -998,6 +998,12 @@
         "same_text": "(parehong teksto)",
         "same_meaning": "(parehong kahulugan)",
         "same_words": "(parehong mga salita)"
+      },
+      "restore": {
+        "addAnyway": "Idagdag pa rin",
+        "addBack": "Ibalik",
+        "added": "Naidagdag ang memory",
+        "addedBack": "Naibalik ang memory"
       }
     },
     "pinnedTab": {

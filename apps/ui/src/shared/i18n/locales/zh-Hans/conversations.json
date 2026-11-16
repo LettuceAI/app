@@ -977,6 +977,12 @@
         "same_text": "(文本相同)",
         "same_meaning": "(含义相同)",
         "same_words": "(用词相同)"
+      },
+      "restore": {
+        "addAnyway": "仍然添加",
+        "addBack": "重新添加",
+        "added": "记忆已添加",
+        "addedBack": "记忆已重新添加"
       }
     },
     "pinnedTab": {

@@ -1019,6 +1019,12 @@
         "same_text": "(même texte)",
         "same_meaning": "(même sens)",
         "same_words": "(mêmes mots)"
+      },
+      "restore": {
+        "addAnyway": "Ajouter quand même",
+        "addBack": "Le rajouter",
+        "added": "Souvenir ajouté",
+        "addedBack": "Souvenir rajouté"
       }
     },
     "pinnedTab": {

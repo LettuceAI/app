@@ -977,6 +977,12 @@
         "same_text": "(teks sama)",
         "same_meaning": "(makna sama)",
         "same_words": "(kata-kata sama)"
+      },
+      "restore": {
+        "addAnyway": "Tetap tambahkan",
+        "addBack": "Tambahkan kembali",
+        "added": "Memori ditambahkan",
+        "addedBack": "Memori ditambahkan kembali"
       }
     },
     "pinnedTab": {

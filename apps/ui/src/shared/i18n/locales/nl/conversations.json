@@ -998,6 +998,12 @@
         "same_text": "(zelfde tekst)",
         "same_meaning": "(zelfde betekenis)",
         "same_words": "(zelfde woorden)"
+      },
+      "restore": {
+        "addAnyway": "Toch toevoegen",
+        "addBack": "Weer toevoegen",
+        "added": "Herinnering toegevoegd",
+        "addedBack": "Herinnering weer toegevoegd"
       }
     },
     "pinnedTab": {

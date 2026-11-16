@@ -270,6 +270,11 @@ pub struct MemoryCycleAction {
     pub text: Option<String>,
     /// The memory the call proposed, for a create that was skipped or already known.
     pub proposed_text: Option<String>,
+    /// The category of the memory the call proposed, or of the memory it deleted.
+    pub category: Option<MemoryCategory>,
+    /// When a deleted memory was observed, for adding it back as it was.
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub observed_at: Option<i64>,
     pub skip_reason: Option<MemorySkipReason>,
     pub duplicate: Option<MemoryDuplicateMatch>,
 }

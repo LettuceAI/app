@@ -1040,6 +1040,12 @@
         "same_text": "(stejný text)",
         "same_meaning": "(stejný význam)",
         "same_words": "(stejná slova)"
+      },
+      "restore": {
+        "addAnyway": "Přesto přidat",
+        "addBack": "Vrátit zpět do pamětí",
+        "added": "Paměť přidána",
+        "addedBack": "Paměť vrácena"
       }
     },
     "pinnedTab": {

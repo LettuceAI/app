@@ -20,6 +20,7 @@ import { PinnedTab } from "./PinnedTab";
 import { StatusCard } from "./StatusCard";
 import { SummaryCard, SummarySheet } from "./SummaryParts";
 import { useMemoryWrite } from "./use-memory-write";
+import { restoreCycleAction, type RestorePlan } from "./cycle-restore";
 import { saveMemoryDraft } from "./save-memory";
 
 type Tab = "memories" | "activity" | "pinned";
@@ -132,6 +133,12 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
     return ok;
   };
 
+  const restore = async (key: string, plan: RestorePlan) => {
+    const ok = await restoreCycleAction(api, conversationId, write, key, plan);
+    if (ok) toast.success(t(plan.label === "addBack" ? "memory.activity.restore.addedBack" : "memory.activity.restore.added"));
+    return ok;
+  };
+
   const unpin = async (message: TimelineMessage) => {
     setUnpinning(message.id);
     try {
@@ -222,6 +229,8 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
           onRetry={() => void (cycles.isFetchNextPageError ? cycles.fetchNextPage() : cycles.refetch())}
           onLoadMore={() => void cycles.fetchNextPage()}
           onRevert={revert}
+          items={data.items}
+          onRestore={restore}
           companionGroup={companionGroup}
         />
       ) : pinned.isError ? (

@@ -359,13 +359,16 @@ fn skip_reason(reason: lettuce_memory::MemoryToolSkipReason) -> dto::MemorySkipR
 /// One activity row: what the call did, and for a skipped or already known create what it proposed and why.
 fn action(
     outcome: &MemoryToolOutcome,
-    proposed_text: Option<&String>,
+    proposed: (Option<&String>, Option<lettuce_memory::MemoryCategory>),
     memory_texts: &HashMap<MemoryId, String>,
+    starting: &HashMap<MemoryId, &lettuce_memory::MemoryItem>,
 ) -> dto::MemoryCycleAction {
+    let (proposed_text, proposed_category) = proposed;
     let mut row = outcome_action(outcome);
     match outcome {
         MemoryToolOutcome::DuplicateSkipped { existing_id, kind } => {
             row.proposed_text = proposed_text.cloned();
+            row.category = proposed_category.map(super::read::category);
             let (kind, similarity, threshold) = match kind {
                 lettuce_memory::DuplicateKind::NormalizedText => {
                     (dto::MemoryDuplicateKind::SameText, None, None)
@@ -388,7 +391,14 @@ fn action(
         }
         MemoryToolOutcome::Skipped { reason } => {
             row.proposed_text = proposed_text.cloned();
+            row.category = proposed_category.map(super::read::category);
             row.skip_reason = Some(skip_reason(*reason));
+        }
+        MemoryToolOutcome::Deleted { id, .. } => {
+            if let Some(item) = starting.get(id) {
+                row.category = item.category.map(super::read::category);
+                row.observed_at = item.observed_at.map(|at| at.get());
+            }
         }
         _ => {}
     }
@@ -396,6 +406,13 @@ fn action(
 }
 
 fn cycle_actions(cycle: &lettuce_memory::MemoryActivityCycle) -> Vec<dto::MemoryCycleAction> {
+    let starting = cycle
+        .run
+        .starting_memory
+        .items
+        .iter()
+        .map(|item| (item.id, item))
+        .collect::<HashMap<_, _>>();
     let mut memory_texts = cycle
         .run
         .starting_memory
@@ -411,7 +428,14 @@ fn cycle_actions(cycle: &lettuce_memory::MemoryActivityCycle) -> Vec<dto::Memory
                 .proposed_texts
                 .iter()
                 .map(Option::as_ref)
-                .chain(std::iter::repeat(None)),
+                .chain(std::iter::repeat(None))
+                .zip(
+                    cycle
+                        .proposed_categories
+                        .iter()
+                        .copied()
+                        .chain(std::iter::repeat(None)),
+                ),
         )
         .filter(|(result, _)| {
             !matches!(
@@ -431,7 +455,7 @@ fn cycle_actions(cycle: &lettuce_memory::MemoryActivityCycle) -> Vec<dto::Memory
                     memory_texts.insert(*id, memory.text.clone());
                 }
             }
-            action(&result.outcome, proposed, &memory_texts)
+            action(&result.outcome, proposed, &memory_texts, &starting)
         })
         .collect()
 }
@@ -478,6 +502,8 @@ fn outcome_action(outcome: &MemoryToolOutcome) -> dto::MemoryCycleAction {
         memory_id,
         text,
         proposed_text: None,
+        category: None,
+        observed_at: None,
         skip_reason: None,
         duplicate: None,
     }
