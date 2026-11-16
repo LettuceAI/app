@@ -1169,7 +1169,6 @@
       "sampler": "Sampler",
       "mirostat": "Mirostat",
       "hardware": "Hardware",
-      "repetition": "Opakování",
       "dry": "DRY",
       "xtc": "XTC",
       "adaptive": "Adaptivní P",

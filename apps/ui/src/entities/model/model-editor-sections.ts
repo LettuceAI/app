@@ -37,8 +37,7 @@ export function editorSections(kind: EditorKind, openRouter: boolean): EditorSec
     section("generation", [
       { fields: common },
       group("sampler", ["llamaSamplerProfile", "samplerOrder", "llamaTopNSigma", "llamaMinP", "llamaTypicalP", "llamaSeed"]),
-      group("penalties", penalties),
-      group("repetition", ["llamaRepeatPenalty", "llamaNPenRange"]),
+      group("penalties", [...penalties, "llamaRepeatPenalty", "llamaNPenRange"]),
       group("dry", ["llamaDryMultiplier", "llamaDryBase", "llamaDryAllowedLength", "llamaDryPenaltyLastN", "llamaDrySequenceBreakers"]),
       group("xtc", ["llamaXtcProbability", "llamaXtcThreshold"]),
       group("adaptive", ["llamaAdaptiveTarget", "llamaAdaptiveDecay"]),

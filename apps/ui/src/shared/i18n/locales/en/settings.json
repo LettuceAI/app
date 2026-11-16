@@ -1156,7 +1156,6 @@
       "sampler": "Sampler",
       "mirostat": "Mirostat",
       "hardware": "Hardware",
-      "repetition": "Repetition",
       "dry": "DRY",
       "xtc": "XTC",
       "adaptive": "Adaptive P",

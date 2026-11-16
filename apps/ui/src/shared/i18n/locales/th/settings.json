@@ -1148,7 +1148,6 @@
       "sampler": "Sampler",
       "mirostat": "Mirostat",
       "hardware": "ฮาร์ดแวร์",
-      "repetition": "การซ้ำ",
       "dry": "DRY",
       "xtc": "XTC",
       "adaptive": "Adaptive P",

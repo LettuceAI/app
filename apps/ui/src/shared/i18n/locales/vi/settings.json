@@ -1148,7 +1148,6 @@
       "sampler": "Bộ lấy mẫu",
       "mirostat": "Mirostat",
       "hardware": "Phần cứng",
-      "repetition": "Lặp",
       "dry": "DRY",
       "xtc": "XTC",
       "adaptive": "Adaptive P",

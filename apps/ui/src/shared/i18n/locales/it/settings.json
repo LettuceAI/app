@@ -1162,7 +1162,6 @@
       "sampler": "Campionatore",
       "mirostat": "Mirostat",
       "hardware": "Hardware",
-      "repetition": "Ripetizione",
       "dry": "DRY",
       "xtc": "XTC",
       "adaptive": "Adaptive P",

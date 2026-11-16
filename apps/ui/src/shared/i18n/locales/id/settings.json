@@ -1148,7 +1148,6 @@
       "sampler": "Sampler",
       "mirostat": "Mirostat",
       "hardware": "Perangkat keras",
-      "repetition": "Pengulangan",
       "dry": "DRY",
       "xtc": "XTC",
       "adaptive": "Adaptive P",

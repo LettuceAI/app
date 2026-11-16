@@ -1156,7 +1156,6 @@
       "sampler": "Örnekleyici",
       "mirostat": "Mirostat",
       "hardware": "Donanım",
-      "repetition": "Tekrar",
       "dry": "DRY",
       "xtc": "XTC",
       "adaptive": "Uyarlanabilir P",

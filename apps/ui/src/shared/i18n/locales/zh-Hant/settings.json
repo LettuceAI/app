@@ -1148,7 +1148,6 @@
       "sampler": "取樣器",
       "mirostat": "Mirostat",
       "hardware": "硬體",
-      "repetition": "重複",
       "dry": "DRY",
       "xtc": "XTC",
       "adaptive": "自適應 P",
