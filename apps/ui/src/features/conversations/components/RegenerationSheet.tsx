@@ -85,7 +85,7 @@ export function RegenerationSheet({ api, conversationId, open, group, speakers, 
             onClick={() => setPicker("model")}
           />
           {group && <ListRowButton
-            icon={<Avatar name={chosenSpeaker?.name ?? originalName} src={speakerId ? chosenSpeaker?.avatar ?? null : originalAvatar} size="sm" />}
+            icon={<Avatar className="h-full w-full rounded-lg border-0" name={chosenSpeaker?.name ?? originalName} src={speakerId ? chosenSpeaker?.avatar ?? null : originalAvatar} size="sm" />}
             title={t("regeneration.character")}
             description={speakerId ? chosenSpeaker?.name ?? t("regeneration.characterUnavailable") : t("regeneration.sameCharacter", { name: originalName })}
             disabled={waiting || !settings.data}

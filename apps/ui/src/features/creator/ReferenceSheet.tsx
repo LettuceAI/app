@@ -73,7 +73,7 @@ export function ReferenceSheet({ api, kind, value, onChange, onClose }: {
             {items.map((row) => (
               <ListRowButton
                 key={row.id}
-                icon={<Avatar src={row.avatar} name={row.name || "?"} size="sm" />}
+                icon={<Avatar className="h-full w-full rounded-lg border-0" src={row.avatar} name={row.name || "?"} size="sm" />}
                 title={row.name}
                 description={row.detail ? <span className="line-clamp-2">{row.detail}</span> : undefined}
                 aria-pressed={picked(row.id)}

@@ -288,7 +288,7 @@ function ImageForm({ node, set, design }: FormProps<Node<"image">>) {
       />
       {kind === "logical_asset" && (
         <ListRow
-          icon={url ? <Avatar src={url} name={node.title ?? t("widgets.image.alt")} size="sm" /> : <ImagePlus size={icon.lg} />}
+          icon={url ? <Avatar className="h-full w-full rounded-lg border-0" src={url} name={node.title ?? t("widgets.image.alt")} size="sm" /> : <ImagePlus size={icon.lg} />}
           title={node.source.kind === "logical_asset" ? t("widgets.config.image.imageSelected") : t("widgets.config.image.noImageSelected")}
           trailing={
             <Button variant="secondary" size="sm" loading={picking} onClick={() => void pick()}>

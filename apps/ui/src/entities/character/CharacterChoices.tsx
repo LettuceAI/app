@@ -21,7 +21,7 @@ export function CharacterChoices({ choices, selected, locked = [], disabled = fa
       selected={selected.includes(character.id)}
       indicator="checkbox"
       disabled={disabled || locked.includes(character.id)}
-      icon={<Avatar src={character.avatar?.url ?? null} name={character.name} size="md" />}
+      icon={<Avatar className="h-full w-full rounded-xl border-0" src={character.avatar?.url ?? null} name={character.name} size="md" />}
       title={<span className="block truncate">{character.name}</span>}
       description={character.description ? <span className="line-clamp-1">{plainText(character.description)}</span> : undefined}
       className="p-3"

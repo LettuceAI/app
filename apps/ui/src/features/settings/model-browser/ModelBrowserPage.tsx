@@ -528,6 +528,7 @@ export function RepoCards({
                 chevron={false}
                 icon={
                   <Avatar
+                    className="h-full w-full rounded-lg border-0"
                     name={model.author}
                     src={
                       avatars.data?.avatars.find((avatar) => avatar.author === model.author)?.url ??
@@ -663,7 +664,7 @@ function TextSearch({
       {author && (
         <ListGroup>
           <ListRow
-            icon={<Avatar name={author} src={authorProfile?.avatar_url ?? null} />}
+            icon={<Avatar className="h-full w-full rounded-lg border-0" name={author} src={authorProfile?.avatar_url ?? null} />}
             title={
               <span className="flex items-center gap-2">
                 {authorProfile?.fullname ?? author}

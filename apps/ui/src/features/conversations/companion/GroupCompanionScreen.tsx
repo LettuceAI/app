@@ -122,7 +122,7 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
 
   const stanceRow = (other: GroupCompanionMemberView, from: GroupCompanionMemberView, to: GroupCompanionMemberView) => {
     const value = stanceOf(from, to);
-    const face = <Avatar src={avatarOf(other.character_id)} name={other.display_name} size="sm" />;
+    const face = <Avatar className="h-full w-full rounded-lg border-0" src={avatarOf(other.character_id)} name={other.display_name} size="sm" />;
     return value === null
       ? <ListRow key={other.character_id} icon={face} title={other.display_name} description={band(null)} />
       : <ListRowButton key={other.character_id} icon={face} title={other.display_name} description={band(value)} onClick={() => setStance({ from, to, value })} />;
@@ -170,7 +170,7 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
   const picker = showPicker ? <ListGroup label={t("companion.group.members")} role="radiogroup">{pickerOptions.map((option) => {
     const selected = option.value === pickerValue;
     const entry = members.find((item) => item.character_id === option.value);
-    return <ListRowButton key={option.value} role="radio" aria-checked={selected} icon={option.value === SHARED ? <Brain size={icon.lg} /> : <Avatar src={avatarOf(option.value)} name={option.label} size="sm" />} title={option.label} description={entry && !entry.following ? t("companion.group.away") : undefined} chevron={false} trailing={selected ? <Check size={icon.md} /> : undefined} onClick={() => pick(option.value)} />;
+    return <ListRowButton key={option.value} role="radio" aria-checked={selected} icon={option.value === SHARED ? <Brain size={icon.lg} /> : <Avatar className="h-full w-full rounded-lg border-0" src={avatarOf(option.value)} name={option.label} size="sm" />} title={option.label} description={entry && !entry.following ? t("companion.group.away") : undefined} chevron={false} trailing={selected ? <Check size={icon.md} /> : undefined} onClick={() => pick(option.value)} />;
   })}</ListGroup> : null;
   const counts: Record<GroupCompanionTab, number | undefined> = {
     relationship: undefined,

@@ -54,7 +54,7 @@ export function SpeakerSheet({ open, purpose = "speak", speakers, selectedId, or
         {shown.map((speaker) => (
           <ListRowButton
             key={speaker.id}
-            icon={<Avatar src={speaker.avatar} name={speaker.name} size="sm" />}
+            icon={<Avatar className="h-full w-full rounded-lg border-0" src={speaker.avatar} name={speaker.name} size="sm" />}
             title={speaker.name}
             {...(speaker.muted && purpose !== "branch" ? { description: t("speaker.muted") } : {})}
             trailing={selectedId === speaker.id ? <Check size={icon.md} /> : undefined}

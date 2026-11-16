@@ -106,7 +106,7 @@ export function BranchSheet({ open, services, view, target, onClose, onCreated }
         <ListGroup>
           {shown.map((character) => {
             const on = selected.includes(character.id);
-            const avatar = <Avatar src={character.avatar?.url ?? null} name={character.name} size="sm" />;
+            const avatar = <Avatar className="h-full w-full rounded-lg border-0" src={character.avatar?.url ?? null} name={character.name} size="sm" />;
             const description = character.description ? <span className="line-clamp-1">{plainText(character.description)}</span> : undefined;
             return group
               ? <ListRow key={character.id} icon={avatar} title={character.name} description={description}

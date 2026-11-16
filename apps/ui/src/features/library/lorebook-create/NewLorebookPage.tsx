@@ -441,6 +441,7 @@ export function NewLorebookPage() {
                       icon={
                         data ? (
                           <Avatar
+                            className="h-full w-full rounded-lg border-0"
                             src={avatar?.preview_url ?? avatar?.url ?? null}
                             name={name ?? ""}
                             size="sm"

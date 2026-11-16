@@ -41,7 +41,7 @@ export function ExtrasStep({ api, form, update, libraryOnly = false, saved }: St
       </div>
       {!libraryOnly && <ListGroup label={t("extras.models")} className="self-start">{form.draft.members.map((member) => {
         const character = cast.data?.find((item) => item.id === member.character_id);
-        return <ListRowButton key={member.character_id} icon={<Avatar src={character?.avatar?.url ?? null} name={character?.name ?? ""} size="sm" />} title={<span className="block truncate">{character?.name}</span>} description={member.model_profile_override === null ? t("extras.characterModel") : models.isPending ? <Skeleton className="mt-1 h-3.5 w-32" /> : models.data?.models.find((model) => model.id === member.model_profile_override)?.display_name ?? t("unavailable")} onClick={() => choose(`model:${member.character_id}`)} />;
+        return <ListRowButton key={member.character_id} icon={<Avatar className="h-full w-full rounded-lg border-0" src={character?.avatar?.url ?? null} name={character?.name ?? ""} size="sm" />} title={<span className="block truncate">{character?.name}</span>} description={member.model_profile_override === null ? t("extras.characterModel") : models.isPending ? <Skeleton className="mt-1 h-3.5 w-32" /> : models.data?.models.find((model) => model.id === member.model_profile_override)?.display_name ?? t("unavailable")} onClick={() => choose(`model:${member.character_id}`)} />;
       })}</ListGroup>}
     </div>
     <PersonaSheet

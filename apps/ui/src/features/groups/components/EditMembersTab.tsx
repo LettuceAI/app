@@ -97,7 +97,7 @@ export function EditMembersTab({ api, form, update, cast, phone }: StepProps & {
       <div className="space-y-3 pb-1">
         {(candidates.length > 8 || search) && <SearchField value={search} onChange={setSearch} placeholder={t("members.search")} aria-label={t("members.search")} size="sm" />}
         {candidates.length === 0 ? <EmptyState size="sm" icon={<Users size={icon.xl} />} title={t("edit.everyoneHere")} description={t("edit.everyoneHereBody")} /> : visible.length === 0 ? <EmptyState size="sm" title={t("noMatch", { query: search.trim() })} action={<Button variant="secondary" onClick={() => setSearch("")}>{t("clear")}</Button>} /> :
-          <ListGroup>{visible.map((item) => <ListRow key={item.id} icon={<Avatar src={item.avatar?.url ?? null} name={item.name} size="sm" />} title={<span className="block truncate">{item.name}</span>} description={<span className="line-clamp-1">{item.description}</span>} trailing={<Checkbox checked={picked.includes(item.id)} aria-label={item.name} onChange={(on) => setPicked((current) => on ? [...current, item.id] : current.filter((id) => id !== item.id))} />} />)}</ListGroup>}
+          <ListGroup>{visible.map((item) => <ListRow key={item.id} icon={<Avatar className="h-full w-full rounded-lg border-0" src={item.avatar?.url ?? null} name={item.name} size="sm" />} title={<span className="block truncate">{item.name}</span>} description={<span className="line-clamp-1">{item.description}</span>} trailing={<Checkbox checked={picked.includes(item.id)} aria-label={item.name} onChange={(on) => setPicked((current) => on ? [...current, item.id] : current.filter((id) => id !== item.id))} />} />)}</ListGroup>}
       </div>
     </Sheet>
   </div>;

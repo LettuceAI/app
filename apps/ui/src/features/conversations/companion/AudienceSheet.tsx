@@ -58,7 +58,7 @@ export function AudienceSheet({ api, conversationId, message, participants, open
     {audience.isPending ? <Skeleton className="h-20 w-full" /> : audience.isError ? <FailureState error={audience.error} onRetry={() => void audience.refetch()} /> : <div className="space-y-3 pb-2">
       <ListGroup>
         {audience.data.map((member) => {
-          const face = <Avatar src={participants.find((participant) => participant.character_id === member.character_id)?.avatar?.url ?? null} name={member.display_name} size="sm" />;
+          const face = <Avatar className="h-full w-full rounded-lg border-0" src={participants.find((participant) => participant.character_id === member.character_id)?.avatar?.url ?? null} name={member.display_name} size="sm" />;
           if (member.character_id === author) return <ListRow key={member.character_id} icon={face} title={member.display_name} description={t("companion.audience.speaker")} />;
           const badge = <Badge tone={member.heard ? "accent" : "neutral"}>{t(member.heard ? "companion.audience.heardBadge" : "companion.audience.missedBadge")}</Badge>;
           const actions: { heard: boolean; scope: GroupAudienceScope; label: string }[] = member.heard

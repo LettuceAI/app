@@ -47,7 +47,7 @@ export function AddMemberSheet({ api, open, taken, busy, onClose, onPick }: AddM
             {shown.map((character) => (
               <ListRowButton
                 key={character.id}
-                icon={<Avatar src={character.avatar?.url ?? null} name={character.name} size="sm" />}
+                icon={<Avatar className="h-full w-full rounded-lg border-0" src={character.avatar?.url ?? null} name={character.name} size="sm" />}
                 title={character.name}
                 {...(character.description ? { description: <span className="line-clamp-2">{character.description}</span> } : {})}
                 chevron={false}

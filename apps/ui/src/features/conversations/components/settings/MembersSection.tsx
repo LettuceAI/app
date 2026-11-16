@@ -82,7 +82,7 @@ export function MembersSection({ ctx }: { ctx: PanelCtx }) {
         return (
           <ListRow
             key={member.participant_id}
-            icon={<Avatar src={avatar} name={member.name} size="sm" />}
+            icon={<Avatar className="h-full w-full rounded-lg border-0" src={avatar} name={member.name} size="sm" />}
             title={member.name}
             description={
               <span className="block space-y-1.5">
@@ -133,7 +133,7 @@ export function MembersSection({ ctx }: { ctx: PanelCtx }) {
       {selection?.participants.filter((member) => member.enabled).map((member) => {
         const id = member.model.id ?? models.data?.default_model_id;
         const modelName = models.isPending ? t("settings.loading") : models.isError ? t("settings.loadFailed") : models.data?.models.find((model) => model.id === id)?.display_name ?? t("settings.model.none");
-        return <SettingRow key={member.participant_id} icon={<Avatar src={view.participants.find((entry) => entry.id === member.participant_id)?.avatar?.url ?? null} name={member.name} size="sm" />} title={member.name} value={modelName} source={member.model.source} disabled={ctx.busy} onOpen={() => { setModelMember(member.participant_id); ctx.openSheet("member_model"); }} onReset={() => void setModel(member.participant_id, null)} />;
+        return <SettingRow key={member.participant_id} icon={<Avatar className="h-full w-full rounded-lg border-0" src={view.participants.find((entry) => entry.id === member.participant_id)?.avatar?.url ?? null} name={member.name} size="sm" />} title={member.name} value={modelName} source={member.model.source} disabled={ctx.busy} onOpen={() => { setModelMember(member.participant_id); ctx.openSheet("member_model"); }} onReset={() => void setModel(member.participant_id, null)} />;
       })}
       {selection?.models_source === "conversation" && <ListRowButton title={t("members.followModels")} description={t("members.followModelsHint")} chevron={false} disabled={ctx.busy} onClick={() => void ctx.save({ reset_member_models: true })} />}
     </ListGroup>

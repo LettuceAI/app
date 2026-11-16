@@ -100,6 +100,7 @@ export function SourcePicker({
               key={row.id}
               icon={
                 <Avatar
+                  className="h-full w-full rounded-lg border-0"
                   src={row.avatar?.preview_url ?? row.avatar?.url ?? null}
                   name={row.name}
                   size="sm"

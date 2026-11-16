@@ -45,7 +45,7 @@ export function PersonaPicker({ personas, status, error, onRetry, selectedId, qu
     <ListGroup>
       {defaultChoice && <PersonaRow leading={<UserRound size={icon.lg} />} title={defaultChoice.title} detail={defaultChoice.description} selected={defaultChoice.selected} onClick={defaultChoice.onSelect} />}
       <PersonaRow leading={<UserX size={icon.lg} />} title={t("persona.none")} selected={selectedId === null && !defaultChoice?.selected} onClick={() => onSelect(null)} />
-      {shown.map((persona) => <PersonaRow key={persona.id} leading={<Avatar src={persona.avatar?.url ?? null} name={persona.title} size="md" />} title={persona.title} detail={[persona.nickname, persona.description.trim()].filter(Boolean).join(" · ")} badge={persona.id === personas?.defaultId ? <Badge tone="info">{t("persona.default")}</Badge> : undefined} selected={persona.id === selectedId} onClick={() => onSelect(persona.id)} />)}
+      {shown.map((persona) => <PersonaRow key={persona.id} leading={<Avatar className="h-full w-full rounded-lg border-0" src={persona.avatar?.url ?? null} name={persona.title} size="md" />} title={persona.title} detail={[persona.nickname, persona.description.trim()].filter(Boolean).join(" · ")} badge={persona.id === personas?.defaultId ? <Badge tone="info">{t("persona.default")}</Badge> : undefined} selected={persona.id === selectedId} onClick={() => onSelect(persona.id)} />)}
     </ListGroup>
     {items.length === 0 ? <Alert tone="warning" title={t("persona.emptyTitle")} description={t("persona.emptyBody")} /> : needle && shown.length === 0 && <EmptyState size="sm" title={t("persona.noMatch")} />}
   </div>;
