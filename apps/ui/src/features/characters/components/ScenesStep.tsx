@@ -1,8 +1,11 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
-import { Plus, Star, Trash2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ImagePlus, Plus, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Alert, Button, CardButton, Chip, confirm, EmptyState, Field, icon, IconButton, Textarea } from "@lettuceai/crisp";
-import { hasSceneContent, sceneText, withAddedScene, withDefaultScene, withEditedScene, withoutScene, wordCount, type SceneDraft } from "../data/form";
+import { pickImage } from "@/entities/image-input";
+import { SceneImages, sceneEditorText, sceneImageToken } from "@/entities/scene";
+import { FailureState } from "@/shared/ui/FailureState";
+import { hasSceneContent, sceneText, withAddedScene, withDefaultScene, withEditedScene, withoutScene, sceneImageLink, withSceneImage, wordCount, type SceneDraft } from "../data/form";
 import type { StepProps } from "./step-props";
 
 interface ScenesStepProps extends StepProps {
@@ -13,11 +16,15 @@ interface ScenesStepProps extends StepProps {
   mode?: "create" | "edit";
 }
 
-function SceneEditor({ form, update, scene, phone, onRemove, warning }: StepProps & { scene: SceneDraft; phone: boolean; onRemove: () => void; warning?: ReactNode }) {
+function SceneEditor({ api, form, update, scene, phone, onRemove, warning }: StepProps & { scene: SceneDraft; phone: boolean; onRemove: () => void; warning?: ReactNode }) {
   const { t, i18n } = useTranslation("characters");
   const editor = useRef<HTMLTextAreaElement>(null);
   const caret = useRef<number | null>(null);
-  const text = sceneText(scene);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const text = sceneEditorText(scene);
   const direction = scene.direction ?? "";
   const isDefault = scene.id === form.draft.defaults.default_scene_id;
   const number = new Intl.NumberFormat(i18n.language);
@@ -41,6 +48,35 @@ function SceneEditor({ form, update, scene, phone, onRemove, warning }: StepProp
     change(text.slice(0, start) + placeholder + text.slice(end));
   };
 
+  const upload = async () => {
+    if (uploading) return;
+    setUploading(true);
+    setError(null);
+    const start = editor.current?.selectionStart ?? text.length;
+    const end = editor.current?.selectionEnd ?? start;
+    try {
+      const asset = await pickImage(api, "reference_image");
+      if (!asset || !mounted.current) return;
+      const existing = sceneImageLink(scene, asset.asset_id);
+      if (existing) {
+        insert(sceneImageToken(existing));
+        return;
+      }
+      const linkId = crypto.randomUUID();
+      const token = sceneImageToken(linkId);
+      caret.current = start + token.length;
+      update((current) => {
+        const latest = current.draft.scenes.find((entry) => entry.id === scene.id);
+        if (!latest || sceneEditorText(latest) !== text) return current;
+        return withSceneImage(current, scene.id, { text, direction: latest.direction ?? "" }, asset, { start, end, linkId, token });
+      });
+    } catch (failure) {
+      setError(failure);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return <div className="min-w-0 space-y-5">
     <div className="flex min-h-11 items-center gap-2">
       {!phone && <h2 className="min-w-0 flex-1 truncate text-lg font-semibold text-fg">{t("scenes.number", { number: scene.ordinal + 1 })}</h2>}
@@ -49,12 +85,15 @@ function SceneEditor({ form, update, scene, phone, onRemove, warning }: StepProp
     </div>
     <div className="space-y-3">
       <Field label={t("scenes.text")}>
-        <Textarea ref={editor} value={text} rows={10} autoGrow maxRows={24} placeholder={t("scenes.textPlaceholder", { interpolation: { skipOnVariables: true }, char: "{{char}}" })} onChange={(event) => change(event.target.value)} />
+        <Textarea ref={editor} value={text} disabled={uploading} rows={10} autoGrow maxRows={24} placeholder={t("scenes.textPlaceholder", { interpolation: { skipOnVariables: true }, char: "{{char}}" })} onChange={(event) => change(event.target.value)} />
       </Field>
       <div className="flex flex-wrap items-center gap-2">
         {["{{char}}", "{{user}}"].map((placeholder) => <Chip key={placeholder} onMouseDown={(event) => event.preventDefault()} onClick={() => insert(placeholder)}><span className="font-mono text-xs">{placeholder}</span></Chip>)}
-        <span className="ml-auto text-sm tabular-nums text-fg-3">{t("details.words", { count: wordCount(text), formattedCount: number.format(wordCount(text)) })}</span>
+        <Button size="sm" variant="tonal" leading={<ImagePlus size={icon.md} />} loading={uploading} onMouseDown={(event) => event.preventDefault()} onClick={() => void upload()}>{t("scenes.addImage")}</Button>
+        <span className="ml-auto text-sm tabular-nums text-fg-3">{t("details.words", { count: wordCount(sceneText(scene)), formattedCount: number.format(wordCount(sceneText(scene))) })}</span>
       </div>
+      <SceneImages scene={scene} assets={form.sceneAssets ?? []} disabled={uploading} label={(number) => t("scenes.image", { number })} removeLabel={(number) => t("scenes.removeImage", { number })} onInsert={(linkId) => insert(sceneImageToken(linkId))} onRemove={(linkId) => change(text.split(sceneImageToken(linkId)).join(""))} />
+      {error !== null && <FailureState error={error} onRetry={() => void upload()} />}
     </div>
     {warning}
     <Field label={t("scenes.directionLabel")} hint={t("scenes.directionHint")}>

@@ -126,7 +126,10 @@
     "emptyWarning_other": "{{count}} cảnh trống",
     "emptyWarningBody": "Cảnh trống sẽ bị bỏ qua khi tạo nhân vật này. Thêm tin nhắn mở đầu để giữ lại.",
     "emptyBodyEdit": "Thêm cảnh để cuộc trò chuyện có cách bắt đầu.",
-    "emptyWarningBodyEdit": "Cảnh trống sẽ bị bỏ qua khi lưu. Thêm tin nhắn mở đầu để giữ lại."
+    "emptyWarningBodyEdit": "Cảnh trống sẽ bị bỏ qua khi lưu. Thêm tin nhắn mở đầu để giữ lại.",
+    "addImage": "Thêm ảnh",
+    "image": "Ảnh cảnh {{number}}",
+    "removeImage": "Xóa ảnh cảnh {{number}}"
   },
   "extras": {
     "title": "Thông tin thêm",

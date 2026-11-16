@@ -126,7 +126,10 @@
     "emptyWarning_other": "빈 장면 {{count}}개",
     "emptyWarningBody": "이 캐릭터를 만들 때 빈 장면은 건너뛰어요. 유지하려면 첫 메시지를 추가하세요.",
     "emptyBodyEdit": "채팅이 시작될 수 있도록 장면을 추가하세요.",
-    "emptyWarningBodyEdit": "저장할 때 빈 장면은 건너뛰어요. 유지하려면 첫 메시지를 추가하세요."
+    "emptyWarningBodyEdit": "저장할 때 빈 장면은 건너뛰어요. 유지하려면 첫 메시지를 추가하세요.",
+    "addImage": "이미지 추가",
+    "image": "장면 이미지 {{number}}",
+    "removeImage": "장면 이미지 {{number}} 제거"
   },
   "extras": {
     "title": "추가",

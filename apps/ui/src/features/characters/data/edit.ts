@@ -20,7 +20,7 @@ export function formFromView(view: CharacterView_Serialize, lorebooks: string[])
     else images[link.slot] = asset;
   }
   const sourceId = view.draft.presentation.banner_source_asset_id;
-  return { draft: view.draft, images, references, lorebookIds: lorebooks, bannerSource: sourceId ? assets.get(sourceId) ?? null : null };
+  return { draft: view.draft, images, references, lorebookIds: lorebooks, bannerSource: sourceId ? assets.get(sourceId) ?? null : null, sceneAssets: view.assets };
 }
 
 function characterPart(form: CharacterForm): string {

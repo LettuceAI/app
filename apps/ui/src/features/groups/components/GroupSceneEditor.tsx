@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ImagePlus, Trash2 } from "lucide-react";
-import { Button, Field, icon, IconButton, ListGroup, ListRow, ListRowButton, MediaTile, Textarea } from "@lettuceai/crisp";
+import { ImagePlus } from "lucide-react";
+import { Button, Field, icon, ListGroup, ListRowButton, Textarea } from "@lettuceai/crisp";
 import { FailureState } from "@/shared/ui/FailureState";
 import { pickImage } from "@/entities/image-input";
-import { editedScene, sceneEditorText, sceneImageToken } from "../data/scene-editor";
+import { editedScene, SceneImages, sceneEditorText, sceneImageToken } from "@/entities/scene";
 import type { StepProps } from "./MembersStep";
 import type { AssetRef } from "@/api/generated/bindings";
 
@@ -47,13 +47,14 @@ export function GroupSceneEditor({ api, form, update, autoFocus, assets, names }
       const asset = await pickImage(api, "reference_image");
       if (!asset) return;
       if (!mounted.current) return;
-      const link = { id: crypto.randomUUID(), asset_id: asset.asset_id, slot: "inline" as const, ordinal: scene?.assets.length ?? 0 };
+      const existing = scene?.assets.find((entry) => entry.slot === "inline" && entry.asset_id === asset.asset_id);
+      const link = existing ?? { id: crypto.randomUUID(), asset_id: asset.asset_id, slot: "inline" as const, ordinal: scene?.assets.length ?? 0 };
       const token = sceneImageToken(link.id);
       caret.current = start + token.length;
       update((current) => {
         const starting = current.draft.starting_scene;
         if (!starting || starting.scene.id !== scene?.id || sceneEditorText(starting.scene) !== text) return current;
-        const next = { ...starting.scene, assets: [...starting.scene.assets, link] };
+        const next = existing ? starting.scene : { ...starting.scene, assets: [...starting.scene.assets, link] };
         return { ...current, sceneAssets: [...(current.sceneAssets ?? []), asset], draft: { ...current.draft, starting_scene: { ...starting, scene: editedScene(next, text.slice(0, start) + token + text.slice(end), starting.variants) } } };
       });
     } catch (error) { setError(error); }
@@ -75,10 +76,7 @@ export function GroupSceneEditor({ api, form, update, autoFocus, assets, names }
       {matches.length > 0 && <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-xl border border-line bg-surface-el shadow-raised" onMouseDown={(event) => event.preventDefault()}><ListGroup label={t("sceneEditor.characters")}>{matches.map((name, at) => <ListRowButton key={name} title={name} description={`{{@"${name}"}}`} aria-pressed={at === index} chevron={false} onClick={() => complete(name)} />)}</ListGroup></div>}
     </div>
     <Button size="sm" variant="tonal" leading={<ImagePlus size={icon.md} />} loading={uploading} onClick={() => void upload()}>{t("sceneEditor.addImage")}</Button>
-    <ListGroup>{scene?.assets.filter((link) => link.slot === "inline" && scene.content.parts.some((part) => part.kind === "inline_asset" && part.link_id === link.id)).map((link, ordinal) => {
-      const asset = [...assets, ...(form.sceneAssets ?? [])].find((asset) => asset.asset_id === link.asset_id);
-      return <ListRow key={link.id} title={t("sceneEditor.image", { number: ordinal + 1 })} icon={asset ? <span className="block w-16 shrink-0"><MediaTile src={asset.url} alt={t("sceneEditor.image", { number: ordinal + 1 })} onClick={() => { const start = text.indexOf(sceneImageToken(link.id)); editor.current?.focus(); editor.current?.setSelectionRange(start, start + sceneImageToken(link.id).length); }} /></span> : <ImagePlus size={icon.lg} />} trailing={<IconButton label={t("sceneEditor.removeImage", { number: ordinal + 1 })} size="sm" disabled={uploading} onClick={() => change(text.split(sceneImageToken(link.id)).join(""))}><Trash2 size={icon.md} /></IconButton>} />;
-    })}</ListGroup>
+    {scene && <SceneImages scene={scene} assets={[...assets, ...(form.sceneAssets ?? [])]} disabled={uploading} label={(number) => t("sceneEditor.image", { number })} removeLabel={(number) => t("sceneEditor.removeImage", { number })} onInsert={(linkId) => { const token = sceneImageToken(linkId); const start = editor.current?.selectionStart ?? text.length; const end = editor.current?.selectionEnd ?? start; caret.current = start + token.length; change(text.slice(0, start) + token + text.slice(end)); }} onRemove={(linkId) => change(text.split(sceneImageToken(linkId)).join(""))} />}
     {error !== null && <FailureState error={error} onRetry={() => void upload()} />}
   </div>;
 }

@@ -129,7 +129,10 @@
     "emptyWarning_other": "{{count}} boş sahne",
     "emptyWarningBody": "Bu karakteri oluşturduğunuzda boş sahneler atlanır. Korumak için bir açılış mesajı ekleyin.",
     "emptyBodyEdit": "Sohbetlerin başlayabilmesi için bir sahne ekleyin.",
-    "emptyWarningBodyEdit": "Kaydettiğinizde boş sahneler atlanır. Korumak için bir açılış mesajı ekleyin."
+    "emptyWarningBodyEdit": "Kaydettiğinizde boş sahneler atlanır. Korumak için bir açılış mesajı ekleyin.",
+    "addImage": "Görsel ekle",
+    "image": "Sahne görseli {{number}}",
+    "removeImage": "Sahne görselini kaldır {{number}}"
   },
   "extras": {
     "title": "Ekstralar",

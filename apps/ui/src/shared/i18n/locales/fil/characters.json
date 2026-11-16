@@ -129,7 +129,10 @@
     "emptyWarning_other": "{{count}} walang laman na eksena",
     "emptyWarningBody": "Lalaktawan ang mga walang laman na eksena kapag ginawa mo ang karakter na ito. Maglagay ng panimulang mensahe para mapanatili ang mga ito.",
     "emptyBodyEdit": "Magdagdag ng eksena para magkaroon ng simula ang mga chat.",
-    "emptyWarningBodyEdit": "Lalaktawan ang mga walang laman na eksena kapag nag-save ka. Maglagay ng panimulang mensahe para mapanatili ang mga ito."
+    "emptyWarningBodyEdit": "Lalaktawan ang mga walang laman na eksena kapag nag-save ka. Maglagay ng panimulang mensahe para mapanatili ang mga ito.",
+    "addImage": "Magdagdag ng larawan",
+    "image": "Larawan ng eksena {{number}}",
+    "removeImage": "Alisin ang larawan ng eksena {{number}}"
   },
   "extras": {
     "title": "Extras",

@@ -126,7 +126,10 @@
     "emptyWarning_other": "{{count}} adegan kosong",
     "emptyWarningBody": "Adegan kosong akan dilewati saat Anda membuat karakter ini. Tambahkan pesan pembuka untuk mempertahankannya.",
     "emptyBodyEdit": "Tambahkan adegan agar obrolan punya cara untuk dimulai.",
-    "emptyWarningBodyEdit": "Adegan kosong akan dilewati saat Anda menyimpan. Tambahkan pesan pembuka untuk mempertahankannya."
+    "emptyWarningBodyEdit": "Adegan kosong akan dilewati saat Anda menyimpan. Tambahkan pesan pembuka untuk mempertahankannya.",
+    "addImage": "Tambah gambar",
+    "image": "Gambar adegan {{number}}",
+    "removeImage": "Hapus gambar adegan {{number}}"
   },
   "extras": {
     "title": "Tambahan",

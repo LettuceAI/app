@@ -132,7 +132,10 @@
     "emptyWarning_other": "{{count}} scènes vides",
     "emptyWarningBody": "Les scènes vides seront ignorées lors de la création de ce personnage. Ajoutez un message d'ouverture pour les conserver.",
     "emptyBodyEdit": "Ajoutez une scène pour donner aux discussions un moyen de commencer.",
-    "emptyWarningBodyEdit": "Les scènes vides seront ignorées lors de l'enregistrement. Ajoutez un message d'ouverture pour les conserver."
+    "emptyWarningBodyEdit": "Les scènes vides seront ignorées lors de l'enregistrement. Ajoutez un message d'ouverture pour les conserver.",
+    "addImage": "Ajouter une image",
+    "image": "Image de scène {{number}}",
+    "removeImage": "Retirer l'image de scène {{number}}"
   },
   "extras": {
     "title": "Extras",

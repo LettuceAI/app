@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { sceneFromText } from "./form";
-import { editedScene, sceneEditorText, sceneImageToken } from "./scene-editor";
+import { editedScene, sceneEditorText, sceneImageToken } from "@/entities/scene";
 
 describe("group starting scene content", () => {
   it("preserves inline image order, direction and background while editing text", () => {

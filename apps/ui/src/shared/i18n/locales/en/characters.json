@@ -129,7 +129,10 @@
     "emptyWarning_other": "{{count}} empty scenes",
     "emptyWarningBody": "Empty scenes will be skipped when you create this character. Add an opening message to keep them.",
     "emptyBodyEdit": "Add a scene to give chats a way to begin.",
-    "emptyWarningBodyEdit": "Empty scenes will be skipped when you save. Add an opening message to keep them."
+    "emptyWarningBodyEdit": "Empty scenes will be skipped when you save. Add an opening message to keep them.",
+    "addImage": "Add image",
+    "image": "Scene image {{number}}",
+    "removeImage": "Remove scene image {{number}}"
   },
   "extras": {
     "title": "Extras",

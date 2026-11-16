@@ -129,7 +129,10 @@
     "emptyWarning_other": "{{count}} tomme scener",
     "emptyWarningBody": "Tomme scener hoppes over når du oppretter denne karakteren. Legg til en åpningsmelding for å beholde dem.",
     "emptyBodyEdit": "Legg til en scene for å gi samtalene en måte å begynne på.",
-    "emptyWarningBodyEdit": "Tomme scener hoppes over når du lagrer. Legg til en åpningsmelding for å beholde dem."
+    "emptyWarningBodyEdit": "Tomme scener hoppes over når du lagrer. Legg til en åpningsmelding for å beholde dem.",
+    "addImage": "Legg til bilde",
+    "image": "Scenebilde {{number}}",
+    "removeImage": "Fjern scenebilde {{number}}"
   },
   "extras": {
     "title": "Ekstra",

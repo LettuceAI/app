@@ -129,7 +129,10 @@
     "emptyWarning_other": "{{count}} leere Szenen",
     "emptyWarningBody": "Leere Szenen werden beim Erstellen dieses Charakters übersprungen. Füge eine Einstiegsnachricht hinzu, um sie zu behalten.",
     "emptyBodyEdit": "Füge eine Szene hinzu, damit Chats beginnen können.",
-    "emptyWarningBodyEdit": "Leere Szenen werden beim Speichern übersprungen. Füge eine Einstiegsnachricht hinzu, um sie zu behalten."
+    "emptyWarningBodyEdit": "Leere Szenen werden beim Speichern übersprungen. Füge eine Einstiegsnachricht hinzu, um sie zu behalten.",
+    "addImage": "Bild hinzufügen",
+    "image": "Szenenbild {{number}}",
+    "removeImage": "Szenenbild {{number}} entfernen"
   },
   "extras": {
     "title": "Extras",

@@ -129,7 +129,10 @@
     "emptyWarning_other": "{{count}} lege scènes",
     "emptyWarningBody": "Lege scènes worden overgeslagen wanneer je dit karakter maakt. Voeg een openingsbericht toe om ze te behouden.",
     "emptyBodyEdit": "Voeg een scène toe zodat chats kunnen beginnen.",
-    "emptyWarningBodyEdit": "Lege scènes worden overgeslagen wanneer je opslaat. Voeg een openingsbericht toe om ze te behouden."
+    "emptyWarningBodyEdit": "Lege scènes worden overgeslagen wanneer je opslaat. Voeg een openingsbericht toe om ze te behouden.",
+    "addImage": "Afbeelding toevoegen",
+    "image": "Scèneafbeelding {{number}}",
+    "removeImage": "Scèneafbeelding {{number}} verwijderen"
   },
   "extras": {
     "title": "Extra's",

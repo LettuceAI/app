@@ -132,7 +132,10 @@
     "emptyWarning_other": "{{count}} cenas vazias",
     "emptyWarningBody": "Cenas vazias serão ignoradas quando você criar este personagem. Adicione uma mensagem de abertura para mantê-las.",
     "emptyBodyEdit": "Adicione uma cena para dar às conversas uma forma de começar.",
-    "emptyWarningBodyEdit": "Cenas vazias serão ignoradas quando você salvar. Adicione uma mensagem de abertura para mantê-las."
+    "emptyWarningBodyEdit": "Cenas vazias serão ignoradas quando você salvar. Adicione uma mensagem de abertura para mantê-las.",
+    "addImage": "Adicionar imagem",
+    "image": "Imagem da cena {{number}}",
+    "removeImage": "Remover imagem da cena {{number}}"
   },
   "extras": {
     "title": "Extras",

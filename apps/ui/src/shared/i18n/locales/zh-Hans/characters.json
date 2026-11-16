@@ -126,7 +126,10 @@
     "emptyWarning_other": "{{count}} 个空场景",
     "emptyWarningBody": "创建这个角色时，空场景会被跳过。添加开场消息即可保留它们。",
     "emptyBodyEdit": "添加场景，让聊天有开场方式。",
-    "emptyWarningBodyEdit": "保存时，空场景会被跳过。添加开场消息即可保留它们。"
+    "emptyWarningBodyEdit": "保存时，空场景会被跳过。添加开场消息即可保留它们。",
+    "addImage": "添加图片",
+    "image": "场景图片 {{number}}",
+    "removeImage": "移除场景图片 {{number}}"
   },
   "extras": {
     "title": "更多",

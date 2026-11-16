@@ -126,7 +126,10 @@
     "emptyWarning_other": "空のシーンが{{count}}件",
     "emptyWarningBody": "空のシーンはこのキャラクターの作成時にスキップされます。残すにはオープニングメッセージを追加してください。",
     "emptyBodyEdit": "チャットの始まりを作るシーンを追加してください。",
-    "emptyWarningBodyEdit": "空のシーンは保存時にスキップされます。残すにはオープニングメッセージを追加してください。"
+    "emptyWarningBodyEdit": "空のシーンは保存時にスキップされます。残すにはオープニングメッセージを追加してください。",
+    "addImage": "画像を追加",
+    "image": "シーン画像{{number}}",
+    "removeImage": "シーン画像{{number}}を削除"
   },
   "extras": {
     "title": "その他",

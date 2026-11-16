@@ -132,7 +132,10 @@
     "emptyWarning_other": "{{count}} escenas vacías",
     "emptyWarningBody": "Las escenas vacías se omitirán cuando crees este personaje. Añade un mensaje inicial para conservarlas.",
     "emptyBodyEdit": "Añade una escena para dar a los chats una forma de empezar.",
-    "emptyWarningBodyEdit": "Las escenas vacías se omitirán al guardar. Añade un mensaje inicial para conservarlas."
+    "emptyWarningBodyEdit": "Las escenas vacías se omitirán al guardar. Añade un mensaje inicial para conservarlas.",
+    "addImage": "Añadir imagen",
+    "image": "Imagen de escena {{number}}",
+    "removeImage": "Quitar imagen de escena {{number}}"
   },
   "extras": {
     "title": "Extras",

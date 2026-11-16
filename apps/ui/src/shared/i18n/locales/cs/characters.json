@@ -135,7 +135,10 @@
     "emptyWarning_other": "{{count}} prázdných scén",
     "emptyWarningBody": "Při vytváření této postavy se prázdné scény přeskočí. Přidej úvodní zprávu, ať zůstanou.",
     "emptyBodyEdit": "Přidej scénu, ať mají chaty jak začít.",
-    "emptyWarningBodyEdit": "Při uložení se prázdné scény přeskočí. Přidej úvodní zprávu, ať zůstanou."
+    "emptyWarningBodyEdit": "Při uložení se prázdné scény přeskočí. Přidej úvodní zprávu, ať zůstanou.",
+    "addImage": "Přidat obrázek",
+    "image": "Obrázek scény {{number}}",
+    "removeImage": "Odebrat obrázek scény {{number}}"
   },
   "extras": {
     "title": "Doplňky",

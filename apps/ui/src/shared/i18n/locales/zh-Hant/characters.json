@@ -126,7 +126,10 @@
     "emptyWarning_other": "{{count}} 個空白場景",
     "emptyWarningBody": "建立此角色時會略過空白場景。請新增開場訊息以保留它們。",
     "emptyBodyEdit": "新增場景，讓對話有個開始。",
-    "emptyWarningBodyEdit": "儲存時會略過空白場景。請新增開場訊息以保留它們。"
+    "emptyWarningBodyEdit": "儲存時會略過空白場景。請新增開場訊息以保留它們。",
+    "addImage": "新增圖片",
+    "image": "場景圖片 {{number}}",
+    "removeImage": "移除場景圖片 {{number}}"
   },
   "extras": {
     "title": "其他",

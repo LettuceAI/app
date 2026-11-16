@@ -9,7 +9,8 @@ import { createTestI18n } from "@/shared/testing/i18n";
 import { confirmAvatarCrop, mockAvatarCrop, mockAvatarCropImages } from "@/shared/testing/avatar-crop";
 import defaultDraft from "./fixtures/default-draft.json";
 import companionDraft from "./fixtures/default-companion-draft.json";
-import { newForm, withAddedScene, withoutScene, draftToSave, isTouched, withDefaultScene, type CharacterDraft } from "./data/form";
+import { newForm, withAddedScene, withEditedScene, withoutScene, withSceneImage, draftToSave, isTouched, withDefaultScene, type CharacterDraft } from "./data/form";
+import { sceneEditorText, sceneImageToken } from "@/entities/scene";
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 
@@ -623,6 +624,23 @@ describe("character form", () => {
     form = withoutScene(form, "s1");
     expect(form.draft.scenes.map((scene) => [scene.id, scene.ordinal])).toEqual([["s2", 0]]);
     expect(form.draft.defaults.default_scene_id).toBe("s2");
+  });
+
+  it("keeps a scene's inline images through text edits and drops one whose token is removed", () => {
+    let form = withAddedScene(newForm(start), { text: "Before after", direction: "" }, "s1");
+    const asset = { asset_id: "a1", url: "asset://a1" };
+    const token = sceneImageToken("link1");
+    form = withSceneImage(form, "s1", { text: "Before after", direction: "" }, asset, { start: 7, end: 7, linkId: "link1", token });
+    const scene = () => form.draft.scenes[0]!;
+    expect(sceneEditorText(scene())).toBe(`Before ${token}after`);
+    expect(scene().assets).toEqual([{ id: "link1", asset_id: "a1", slot: "inline", ordinal: 0 }]);
+    expect(form.sceneAssets).toEqual([asset]);
+    form = withEditedScene(form, "s1", { text: `Earlier ${token}after`, direction: "Quietly" });
+    expect(scene().content.parts).toEqual([{ kind: "text", text: "Earlier " }, { kind: "inline_asset", link_id: "link1" }, { kind: "text", text: "after" }]);
+    expect(scene().direction).toBe("Quietly");
+    expect(draftToSave(form).scenes[0]!.assets).toHaveLength(1);
+    form = withEditedScene(form, "s1", { text: "Earlier after", direction: "Quietly" });
+    expect(scene().assets).toEqual([]);
   });
 
   it("stores blank optional texts as null and trims the name", () => {

@@ -129,7 +129,10 @@
     "emptyWarning_other": "{{count}} üres jelenet",
     "emptyWarningBody": "Az üres jelenetek kimaradnak a karakter létrehozásakor. Adj hozzá nyitóüzenetet, hogy megmaradjanak.",
     "emptyBodyEdit": "Adj hozzá egy jelenetet, hogy a beszélgetéseknek legyen mivel kezdődniük.",
-    "emptyWarningBodyEdit": "Az üres jelenetek kimaradnak mentéskor. Adj hozzá nyitóüzenetet, hogy megmaradjanak."
+    "emptyWarningBodyEdit": "Az üres jelenetek kimaradnak mentéskor. Adj hozzá nyitóüzenetet, hogy megmaradjanak.",
+    "addImage": "Kép hozzáadása",
+    "image": "{{number}}. jelenetkép",
+    "removeImage": "{{number}}. jelenetkép eltávolítása"
   },
   "extras": {
     "title": "Extrák",

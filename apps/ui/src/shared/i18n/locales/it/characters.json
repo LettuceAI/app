@@ -132,7 +132,10 @@
     "emptyWarning_other": "{{count}} scene vuote",
     "emptyWarningBody": "Le scene vuote verranno saltate quando crei questo personaggio. Aggiungi un messaggio iniziale per tenerle.",
     "emptyBodyEdit": "Aggiungi una scena per dare un inizio alle chat.",
-    "emptyWarningBodyEdit": "Le scene vuote verranno saltate al salvataggio. Aggiungi un messaggio iniziale per tenerle."
+    "emptyWarningBodyEdit": "Le scene vuote verranno saltate al salvataggio. Aggiungi un messaggio iniziale per tenerle.",
+    "addImage": "Aggiungi immagine",
+    "image": "Immagine della scena {{number}}",
+    "removeImage": "Rimuovi immagine della scena {{number}}"
   },
   "extras": {
     "title": "Extra",

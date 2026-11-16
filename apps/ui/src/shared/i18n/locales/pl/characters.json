@@ -135,7 +135,10 @@
     "emptyWarning_other": "{{count}} pustej sceny",
     "emptyWarningBody": "Puste sceny zostaną pominięte podczas tworzenia tej postaci. Dodaj wiadomość początkową, aby je zachować.",
     "emptyBodyEdit": "Dodaj scenę, aby dać czatom sposób na rozpoczęcie.",
-    "emptyWarningBodyEdit": "Puste sceny zostaną pominięte podczas zapisywania. Dodaj wiadomość początkową, aby je zachować."
+    "emptyWarningBodyEdit": "Puste sceny zostaną pominięte podczas zapisywania. Dodaj wiadomość początkową, aby je zachować.",
+    "addImage": "Dodaj obraz",
+    "image": "Obraz sceny {{number}}",
+    "removeImage": "Usuń obraz sceny {{number}}"
   },
   "extras": {
     "title": "Dodatki",

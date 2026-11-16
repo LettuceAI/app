@@ -1,4 +1,5 @@
 import type { AssetRef, CharacterDraft_Serialize, LibraryCharacterMediaSlot, LibraryCrop, LibrarySceneDraft_Serialize } from "@/api/generated/bindings";
+import { editedScene } from "@/entities/scene";
 
 export type CharacterDraft = CharacterDraft_Serialize;
 export type SceneDraft = LibrarySceneDraft_Serialize;
@@ -14,6 +15,7 @@ export interface CharacterForm {
   references: AssetRef[];
   lorebookIds: string[];
   bannerSource?: AssetRef | null;
+  sceneAssets?: AssetRef[];
 }
 
 export function newForm(draft: CharacterDraft): CharacterForm {
@@ -81,11 +83,26 @@ export function withAddedScene(form: CharacterForm, input: SceneInput, id: strin
   return { ...form, draft: { ...draft, scenes: [...draft.scenes, scene], defaults } };
 }
 
+/** Replaces a scene's text, where `{{image::id}}` tokens keep or drop its inline images, and its direction. */
 export function withEditedScene(form: CharacterForm, id: string, input: SceneInput): CharacterForm {
-  const scenes = form.draft.scenes.map((scene) =>
-    scene.id === id ? { ...scene, content: { format_version: 1, parts: [{ kind: "text" as const, text: input.text }] }, direction: textOrNull(input.direction) } : scene,
-  );
+  const scenes = form.draft.scenes.map((scene) => {
+    if (scene.id !== id) return scene;
+    const variants = form.draft.variants.filter((variant) => variant.scene_id === id);
+    return { ...editedScene(scene, input.text, variants), selected_variant_id: scene.selected_variant_id, direction: textOrNull(input.direction) };
+  });
   return { ...form, draft: { ...form.draft, scenes } };
+}
+
+/** Adds `asset` as an inline image of the scene, its token replacing `text` between `start` and `end`. */
+export function withSceneImage(form: CharacterForm, id: string, input: SceneInput, asset: AssetRef, range: { start: number; end: number; linkId: string; token: string }): CharacterForm {
+  const scenes = form.draft.scenes.map((scene) => scene.id === id ? { ...scene, assets: [...scene.assets, { id: range.linkId, asset_id: asset.asset_id, slot: "inline" as const, ordinal: scene.assets.length }] } : scene);
+  const added = { ...form, sceneAssets: [...(form.sceneAssets ?? []), asset], draft: { ...form.draft, scenes } };
+  return withEditedScene(added, id, { ...input, text: input.text.slice(0, range.start) + range.token + input.text.slice(range.end) });
+}
+
+/** The scene's inline link already showing `assetId`, so a second pick of one file reuses it. */
+export function sceneImageLink(scene: SceneDraft, assetId: string): string | null {
+  return scene.assets.find((link) => link.slot === "inline" && link.asset_id === assetId)?.id ?? null;
 }
 
 /** Removes a scene and closes the gap in the order; the default moves to the first scene left. */
