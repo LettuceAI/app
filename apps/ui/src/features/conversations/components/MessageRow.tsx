@@ -68,6 +68,31 @@ export function Attached({ media }: { media: readonly MediaItem[] }) {
   );
 }
 
+/** A scene's text and inline images in the order the scene places them. */
+function SceneBody({ message, query }: { message: TimelineMessage; query: string }) {
+  const segments: ({ kind: "text"; text: string } | { kind: "media"; media: MediaItem[] })[] = [];
+  for (const part of message.parts) {
+    const last = segments[segments.length - 1];
+    if (part.type === "text") {
+      if (last?.kind === "text") last.text += part.text;
+      else segments.push({ kind: "text", text: part.text });
+    } else if (part.type === "media") {
+      const item: MediaItem = { id: part.asset.asset_id, url: part.asset.url, kind: part.kind };
+      if (last?.kind === "media") {
+        if (!last.media.some((entry) => entry.id === item.id)) last.media.push(item);
+      }
+      else segments.push({ kind: "media", media: [item] });
+    }
+  }
+  return (
+    <div className="space-y-2">
+      {segments.map((segment, index) =>
+        segment.kind === "text" ? <MessageBody key={index} text={segment.text} query={query} /> : <Attached key={index} media={segment.media} />,
+      )}
+    </div>
+  );
+}
+
 export interface MessageRowProps {
   message: TimelineMessage;
   group: Group;
@@ -103,6 +128,7 @@ function Row({
   const appearance = useMessageAppearance();
   const author = authorOf(participants, message);
   const media = mediaOf(message);
+  const inlineScene = message.role === "scene" && media.length > 0;
   const picturesBelow = message.role === "assistant" ? media.filter((item) => item.kind === "image" || item.kind === null) : [];
   const attachments = message.role === "assistant" ? media.filter((item) => item.kind !== "image" && item.kind !== null) : media;
   const index = message.candidate_index;
@@ -136,12 +162,12 @@ function Row({
               },
             }
           : {})}
-        {...(attachments.length > 0 ? { attachments: <Attached media={attachments} /> } : {})}
+        {...(!inlineScene && attachments.length > 0 ? { attachments: <Attached media={attachments} /> } : {})}
         onMenu={() => onMenu(message)}
         held={held}
         className={cn("mt-0! transition-opacity", dimmed && "opacity-25")}
       >
-        <MessageBody text={textOf(message)} query={query} />
+        {inlineScene ? <SceneBody message={message} query={query} /> : <MessageBody text={textOf(message)} query={query} />}
         {picturesBelow.length > 0 && <div className="mt-2"><Attached media={picturesBelow} /></div>}
         {message.scene_image && <SceneImageStatus conversationId={conversationId} message={message} onReview={onSceneImage} />}
       </Message>

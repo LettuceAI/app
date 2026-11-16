@@ -8,8 +8,8 @@ use lettuce_context::{
     PromptRepositoryError,
 };
 use lettuce_conversations::{
-    GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, SnapshotSelection,
-    SnapshotSource,
+    GroupSpeakerSelectionSnapshot, MediaAssetRole, MemoryModeSnapshot, MessagePart,
+    SnapshotSelection, SnapshotSource,
 };
 use lettuce_types::{
     CharacterId, ConversationStarterId, GroupId, LorebookId, ModelProfileId, PersonaId,
@@ -509,6 +509,80 @@ fn scene_text(scene: &Scene, variants: &[SceneVariant], with_direction: bool) ->
         .map(str::trim)
         .find(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+/// The scene message a direct chat opens with: the scene text with its inline
+/// images in place, chosen with the precedence of `resolve_scene_text`.
+pub(crate) fn resolve_scene_parts(scene: &Scene, variants: &[SceneVariant]) -> Option<Vec<MessagePart>> {
+    scene_message_parts(scene, variants, true)
+}
+
+/// The scene message a group chat opens with; the direction is never spoken.
+pub(crate) fn resolve_group_scene_parts(
+    scene: &Scene,
+    variants: &[SceneVariant],
+) -> Option<Vec<MessagePart>> {
+    scene_message_parts(scene, variants, false)
+}
+
+fn scene_message_parts(
+    scene: &Scene,
+    variants: &[SceneVariant],
+    with_direction: bool,
+) -> Option<Vec<MessagePart>> {
+    let variant = scene.selected_variant_id.and_then(|id| {
+        variants
+            .iter()
+            .find(|variant| variant.id == id && variant.scene_id == scene.id)
+    });
+    let direction = with_direction
+        .then_some(scene.direction.as_deref())
+        .flatten()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(|text| vec![MessagePart::Text { text: text.to_owned() }]);
+    variant
+        .map(|variant| document_parts(scene, &variant.content.parts))
+        .into_iter()
+        .chain([document_parts(scene, &scene.content.parts)])
+        .find(|parts| !parts.is_empty())
+        .or(direction)
+}
+
+fn document_parts(scene: &Scene, parts: &[ScenePart]) -> Vec<MessagePart> {
+    let mut out: Vec<MessagePart> = Vec::new();
+    for part in parts {
+        match part {
+            ScenePart::Text { text } => match out.last_mut() {
+                Some(MessagePart::Text { text: last }) => last.push_str(text),
+                _ => out.push(MessagePart::Text { text: text.clone() }),
+            },
+            ScenePart::InlineAsset { link_id } => {
+                if let Some(link) = scene.assets.iter().find(|link| link.id == *link_id) {
+                    out.push(MessagePart::MediaAsset {
+                        asset_id: link.asset_id,
+                        role: MediaAssetRole::Inline,
+                    });
+                }
+            }
+        }
+    }
+    let last = out.len().saturating_sub(1);
+    out.into_iter()
+        .enumerate()
+        .filter_map(|(index, part)| match part {
+            MessagePart::Text { text } => {
+                let text = match (index == 0, index == last) {
+                    (true, true) => text.trim(),
+                    (true, false) => text.trim_start(),
+                    (false, true) => text.trim_end(),
+                    (false, false) => text.as_str(),
+                };
+                (!text.trim().is_empty()).then(|| MessagePart::Text { text: text.to_owned() })
+            }
+            other => Some(other),
+        })
+        .collect()
 }
 
 pub(crate) fn scene_title(text: Option<&str>, ordinal: u32) -> String {

@@ -703,14 +703,14 @@ pub async fn message_scene_select(
                     "the message is not the chat's scene message",
                 ));
             }
-            let (settings, text) = conversation::prepare_scene_selection(
+            let (settings, parts) = conversation::prepare_scene_selection(
                 database,
                 &conversation,
                 scene_id,
                 operation.clone(),
             )
             .map_err(edit_error)?;
-            let text = text.ok_or_else(|| invalid_field("scene_id", "the scene has no text"))?;
+            let parts = parts.ok_or_else(|| invalid_field("scene_id", "the scene has no text"))?;
             let selection = PreparedSceneSelection::new(
                 EditMessage {
                     conversation_id,
@@ -718,7 +718,7 @@ pub async fn message_scene_select(
                     expected_revision,
                     operation,
                     draft: MessageEditDraft {
-                        parts: vec![MessagePart::Text { text }],
+                        parts,
                         visibility: item.message.visibility,
                         pinned: item.message.pinned,
                         scene_edited: false,

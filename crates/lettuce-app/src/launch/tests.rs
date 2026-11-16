@@ -6935,6 +6935,38 @@ fn scene_text_prefers_variant_then_base_then_direction() {
 }
 
 #[test]
+fn scene_message_keeps_inline_images_where_the_scene_places_them() {
+    use lettuce_characters::{SceneAssetLink, SceneAssetSlot};
+    use lettuce_conversations::{MediaAssetRole, MessagePart};
+    let character_id = CharacterId::new();
+    let mut scene = text_scene(character_id, 0, "unused");
+    let link_id = lettuce_types::SceneAssetLinkId::new();
+    let asset_id = lettuce_types::AssetId::new();
+    scene.assets = vec![SceneAssetLink { id: link_id, asset_id, slot: SceneAssetSlot::Inline, ordinal: 0 }];
+    scene.content = SceneDocumentV1::new(vec![
+        ScenePart::InlineAsset { link_id },
+        ScenePart::Text { text: " The ER is loud. ".into() },
+        ScenePart::InlineAsset { link_id },
+    ])
+    .expect("scene document");
+    let image = MessagePart::MediaAsset { asset_id, role: MediaAssetRole::Inline };
+    assert_eq!(
+        policy::resolve_scene_parts(&scene, &[]),
+        Some(vec![image.clone(), MessagePart::Text { text: " The ER is loud. ".into() }, image.clone()])
+    );
+    assert_eq!(policy::resolve_group_scene_parts(&scene, &[]), policy::resolve_scene_parts(&scene, &[]));
+
+    scene.content = SceneDocumentV1::new(vec![ScenePart::InlineAsset { link_id }]).expect("scene document");
+    scene.direction = Some("Slow.".into());
+    assert_eq!(policy::resolve_scene_parts(&scene, &[]), Some(vec![image]));
+
+    let mut blank = text_scene(character_id, 0, "  ");
+    blank.direction = Some(" Slow. ".into());
+    assert_eq!(policy::resolve_scene_parts(&blank, &[]), Some(vec![MessagePart::Text { text: "Slow.".into() }]));
+    assert_eq!(policy::resolve_group_scene_parts(&blank, &[]), None);
+}
+
+#[test]
 fn a_blank_scene_is_selected_without_a_timeline_entry() {
     let database = database();
     let scene = text_scene(CharacterId::new(), 0, "   ");

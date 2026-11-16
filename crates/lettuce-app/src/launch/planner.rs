@@ -256,6 +256,9 @@ where
         let scene_text = scene
             .value()
             .and_then(|value| policy::resolve_scene_text(value, &character.variants));
+        let scene_parts = scene
+            .value()
+            .and_then(|value| policy::resolve_scene_parts(value, &character.variants));
         let persona = self.resolve_persona(request.persona)?;
         let companion_persona_id = persona.value().map(|value| value.id);
         let global_settings =
@@ -459,7 +462,7 @@ where
         };
 
         let mut entries = Vec::new();
-        if let (Some(draft), Some(text)) = (scene_draft.as_ref(), scene_text.clone()) {
+        if let (Some(draft), Some(parts)) = (scene_draft.as_ref(), scene_parts) {
             entries.push(InitialMessageDraft {
                 message_id: identities.scene_message(),
                 revision_id: identities.scene_revision(),
@@ -468,7 +471,7 @@ where
                 },
                 role: MessageRole::Scene,
                 author_participant_id: None,
-                parts: vec![MessagePart::Text { text }],
+                parts,
             });
         }
         if let (Some(value), Some(draft)) = (starter.value(), starter_draft.as_ref()) {
@@ -986,6 +989,9 @@ where
         let scene_text = scene
             .value()
             .and_then(|value| policy::resolve_group_scene_text(value, variants));
+        let scene_parts = scene
+            .value()
+            .and_then(|value| policy::resolve_group_scene_parts(value, variants));
         let prompt = self.resolve_group_prompt(group.group.companion_mode)?;
         let member_prompts = self.resolve_member_prompts(&characters)?;
 
@@ -1284,7 +1290,7 @@ where
             speaker_selection_model_choice.map(|id| collect_model(id, &model_snapshots));
 
         let mut entries = Vec::new();
-        if let (Some(draft), Some(text)) = (scene_draft.as_ref(), scene_text.clone()) {
+        if let (Some(draft), Some(parts)) = (scene_draft.as_ref(), scene_parts) {
             entries.push(InitialMessageDraft {
                 message_id: identities.scene_message(),
                 revision_id: identities.scene_revision(),
@@ -1293,7 +1299,7 @@ where
                 },
                 role: MessageRole::Scene,
                 author_participant_id: None,
-                parts: vec![MessagePart::Text { text }],
+                parts,
             });
         }
         let initial_timeline = InitialTimelineDraft {

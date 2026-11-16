@@ -3,7 +3,7 @@ use lettuce_characters::{
 };
 use lettuce_context::{LorebookRepository, PromptLookupResult, PromptPurpose, PromptRepository};
 use lettuce_conversations::{
-    Conversation, ConversationBackground, ConversationKind, ConversationReader,
+    Conversation, ConversationBackground, ConversationKind, ConversationReader, MessagePart,
     ConversationTimeOverride, CurrentConversationSettingsPatch,
     GroupSpeakerSelectionSnapshot, LorebookLaunchSnapshot, MemoryModeSnapshot,
     MemorySettingsSnapshot, OperationToken, PatchValue, PersonaLaunchSnapshot,
@@ -123,20 +123,20 @@ pub fn apply_settings_change(
 
 /// The settings update that selects one of the conversation's scenes, under
 /// `operation` against the settings revision the conversation has now, and
-/// the text its scene message shows for it. A scene that is not the
+/// the parts its scene message shows for it. A scene that is not the
 /// conversation's is `InvalidInput` naming `scene_id`.
 pub fn prepare_scene_selection(
     database: &Database,
     conversation: &Conversation,
     scene_id: SceneId,
     operation: OperationToken,
-) -> Result<(PreparedConversationSettingsUpdate, Option<String>), ConversationEditError> {
+) -> Result<(PreparedConversationSettingsUpdate, Option<Vec<MessagePart>>), ConversationEditError> {
     let mut builder = Builder {
         database,
         conversation,
         drafts: Vec::new(),
     };
-    let (scene, text) = builder.scene(scene_id)?;
+    let (scene, parts) = builder.scene(scene_id)?;
     let prepared = PreparedConversationSettingsUpdate::new(
         UpdateConversationSettings {
             conversation_id: conversation.id,
@@ -152,7 +152,7 @@ pub fn prepare_scene_selection(
     .map_err(|error| ConversationEditError::Snapshot {
         reason: error.to_string(),
     })?;
-    Ok((prepared, text))
+    Ok((prepared, parts))
 }
 
 struct Builder<'a> {
@@ -484,7 +484,7 @@ impl Builder<'_> {
     fn scene(
         &mut self,
         id: SceneId,
-    ) -> Result<(SceneLaunchSnapshot, Option<String>), ConversationEditError> {
+    ) -> Result<(SceneLaunchSnapshot, Option<Vec<MessagePart>>), ConversationEditError> {
         let (scene, variants) = match &self.conversation.kind {
             ConversationKind::Direct(details) => {
                 let character =
@@ -511,9 +511,15 @@ impl Builder<'_> {
         if scene.status != LifecycleStatus::Active {
             return Err(invalid("scene_id"));
         }
-        let text = match &self.conversation.kind {
-            ConversationKind::Direct(_) => policy::resolve_scene_text(&scene, &variants),
-            ConversationKind::Group(_) => policy::resolve_group_scene_text(&scene, &variants),
+        let (text, parts) = match &self.conversation.kind {
+            ConversationKind::Direct(_) => (
+                policy::resolve_scene_text(&scene, &variants),
+                policy::resolve_scene_parts(&scene, &variants),
+            ),
+            ConversationKind::Group(_) => (
+                policy::resolve_group_scene_text(&scene, &variants),
+                policy::resolve_group_scene_parts(&scene, &variants),
+            ),
         };
         let draft = self.build(
             format!("settings:scene:{}:{}", scene.id, scene.revision.get()),
@@ -527,7 +533,7 @@ impl Builder<'_> {
                 source_revision: scene.revision,
                 title: policy::scene_title(text.as_deref(), scene.ordinal),
             },
-            text,
+            parts,
         ))
     }
 
