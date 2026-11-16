@@ -658,7 +658,20 @@
     },
     "browseShort": "모델 가져오기",
     "runtimeShort": "런타임",
-    "lorasShort": "LoRA"
+    "lorasShort": "LoRA",
+    "import": {
+      "action": "모델 가져오기",
+      "hint": "내보낸 모델 파일에서 모델 추가",
+      "doneOne": "{{name}}을(를) 가져왔습니다",
+      "done_other": "모델 {{count}}개를 가져왔습니다",
+      "partial_other": "모델 {{total}}개 중 {{count}}개를 가져왔습니다",
+      "failed_other": "모델을 가져올 수 없습니다",
+      "noProvider": "먼저 제공자를 추가한 다음 다시 가져오세요",
+      "notModel": "모델 파일이 아닙니다",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_other": "로컬 모델 {{count}}개는 편집기에서 모델 파일을 선택해야 합니다.",
+      "notes_other": "파일 {{count}}개에서 일부 설정이 변환되거나 제외되었습니다."
+    }
   },
   "tools": {
     "context": "컨텍스트 길이",

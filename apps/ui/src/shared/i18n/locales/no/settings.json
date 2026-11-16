@@ -665,7 +665,25 @@
     },
     "browseShort": "Hent modeller",
     "runtimeShort": "Kjøretid",
-    "lorasShort": "LoRA-er"
+    "lorasShort": "LoRA-er",
+    "import": {
+      "action": "Importer modeller",
+      "hint": "Legg til modeller fra eksporterte modellfiler",
+      "doneOne": "Importerte {{name}}",
+      "done_one": "Importerte {{count}} modell",
+      "done_other": "Importerte {{count}} modeller",
+      "partial_one": "Importerte {{count}} av {{total}} modeller",
+      "partial_other": "Importerte {{count}} av {{total}} modeller",
+      "failed_one": "Modellen kunne ikke importeres",
+      "failed_other": "Ingen av de {{count}} filene kunne importeres",
+      "noProvider": "Legg til leverandøren først, og importer deretter på nytt",
+      "notModel": "Ikke en modellfil",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Én lokal modell trenger at du velger modellfilen i redigeringsvinduet.",
+      "needsFile_other": "{{count}} lokale modeller trenger at du velger modellfilen i redigeringsvinduet.",
+      "notes_one": "Én fil hadde innstillinger som ble konvertert eller utelatt.",
+      "notes_other": "{{count}} filer hadde innstillinger som ble konvertert eller utelatt."
+    }
   },
   "tools": {
     "context": "Kontekstlengde",

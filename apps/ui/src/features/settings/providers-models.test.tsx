@@ -612,9 +612,81 @@ describe("local model tools", () => {
       lorasImport: add,
     });
     await click("LoRAs");
-    await click("Import");
+    const sheet = (await screen.findAllByRole("dialog")).at(-1) as HTMLElement;
+    const importLora = await within(sheet).findByRole("button", { name: "Import" });
+    await waitFor(() => expect(importLora.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(importLora);
     expect(await screen.findByText("style.safetensors")).toBeTruthy();
     expect(add.mock.calls[0]?.[0]).toEqual({ source: { uri: "content://chosen-adapter" } });
+  });
+
+  it("imports several model files at once and reports the ones it skipped", async () => {
+    const modelPreview = (name: string) => ({
+      kind: "model_file",
+      name,
+      digest: `digest-${name}`,
+      content: {
+        kind: "model",
+        model_kind: "chat",
+        model_file_required: false,
+        name: `vendor/${name}`,
+        provider_id: "openrouter",
+        provider_label: "My OpenRouter",
+        display_name: name,
+        input_scopes: ["text"],
+        output_scopes: ["text"],
+        settings: {},
+      },
+      uec3: null,
+      images: [],
+      warnings: [],
+    });
+    let imported = false;
+    const commit = vi.fn<NonNullable<MockCallHandlers["importCommit"]>>(() => {
+      imported = true;
+      return { status: "ok", data: { kind: "imported", file_kind: "model_file", id: "imported", warnings: [] } };
+    });
+    await mount("models", {
+      modelsList: () => ({
+        status: "ok",
+        data: {
+          models: imported ? [model, { ...model, id: "imported", display_name: "Fresh model" }] : [model],
+          default_model_id: null,
+          revision: 21,
+        },
+      }),
+      filesPickOpen: (request) => {
+        expect(request).toEqual({ kinds: ["json"], multiple: true });
+        return {
+          status: "ok",
+          data: {
+            sources: [
+              { uri: "/exports/Fresh%20model.uec" },
+              { uri: "/exports/orphan.uec" },
+              { uri: "/exports/aria.json" },
+            ],
+          },
+        };
+      },
+      importPreview: ({ source }) =>
+        source.uri.endsWith("orphan.uec")
+          ? {
+              status: "error",
+              error: { code: "not_found", message: "no provider account", details: { type: "invalid_field", field: "provider_id" } },
+            }
+          : source.uri.endsWith("aria.json")
+            ? { status: "ok", data: { ...modelPreview("Aria"), kind: "character_card", content: { kind: "persona" } } as never }
+            : { status: "ok", data: modelPreview("Fresh model") as never },
+      importCommit: commit,
+    });
+    await screen.findByText("Your models");
+    await click(/^Import( models)?$/);
+    expect(await screen.findByText("Imported 1 of 3 models")).toBeTruthy();
+    expect(screen.getByText("orphan.uec: Add its provider first, then import it again")).toBeTruthy();
+    expect(screen.getByText("aria.json: Not a model file")).toBeTruthy();
+    expect(commit).toHaveBeenCalledOnce();
+    expect(commit.mock.calls[0]?.[0]).toMatchObject({ source: { uri: "/exports/Fresh%20model.uec" }, digest: "digest-Fresh model", options: {} });
+    expect(await screen.findByText("Fresh model")).toBeTruthy();
   });
 
   it("downloads the selected GGUF at its listed revision and requests model registration", async () => {

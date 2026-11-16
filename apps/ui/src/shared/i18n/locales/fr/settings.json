@@ -672,7 +672,30 @@
     },
     "browseShort": "Obtenir des modèles",
     "runtimeShort": "Exécution",
-    "lorasShort": "LoRAs"
+    "lorasShort": "LoRAs",
+    "import": {
+      "action": "Importer des modèles",
+      "hint": "Ajouter des modèles depuis des fichiers de modèle exportés",
+      "doneOne": "{{name}} importé",
+      "done_one": "{{count}} modèle importé",
+      "done_many": "{{count}} modèles importés",
+      "done_other": "{{count}} modèles importés",
+      "partial_one": "{{count}} modèle importé sur {{total}}",
+      "partial_many": "{{count}} modèles importés sur {{total}}",
+      "partial_other": "{{count}} modèles importés sur {{total}}",
+      "failed_one": "Le modèle n'a pas pu être importé",
+      "failed_many": "Aucun des {{count}} fichiers n'a pu être importé",
+      "failed_other": "Aucun des {{count}} fichiers n'a pu être importé",
+      "noProvider": "Ajoutez d'abord son fournisseur, puis importez-le à nouveau",
+      "notModel": "Ce n'est pas un fichier de modèle",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Un modèle local attend que son fichier soit choisi dans l'éditeur.",
+      "needsFile_many": "{{count}} modèles locaux attendent que leur fichier soit choisi dans l'éditeur.",
+      "needsFile_other": "{{count}} modèles locaux attendent que leur fichier soit choisi dans l'éditeur.",
+      "notes_one": "Un fichier contenait des réglages convertis ou ignorés.",
+      "notes_many": "{{count}} fichiers contenaient des réglages convertis ou ignorés.",
+      "notes_other": "{{count}} fichiers contenaient des réglages convertis ou ignorés."
+    }
   },
   "tools": {
     "context": "Longueur du contexte",

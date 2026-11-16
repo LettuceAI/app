@@ -665,7 +665,25 @@
     },
     "browseShort": "Kumuha ng modelo",
     "runtimeShort": "Runtime",
-    "lorasShort": "LoRA"
+    "lorasShort": "LoRA",
+    "import": {
+      "action": "Mag-import ng mga model",
+      "hint": "Magdagdag ng mga model mula sa mga na-export na model file",
+      "doneOne": "Na-import ang {{name}}",
+      "done_one": "Na-import ang {{count}} model",
+      "done_other": "Na-import ang {{count}} na model",
+      "partial_one": "Na-import ang {{count}} sa {{total}} na model",
+      "partial_other": "Na-import ang {{count}} sa {{total}} na model",
+      "failed_one": "Hindi ma-import ang model",
+      "failed_other": "Wala sa {{count}} na file ang na-import",
+      "noProvider": "Idagdag muna ang provider nito, saka i-import ulit",
+      "notModel": "Hindi ito model file",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Kailangang piliin sa editor ang model file ng isang local model.",
+      "needsFile_other": "Kailangang piliin sa editor ang model file ng {{count}} na local model.",
+      "notes_one": "May mga setting sa isang file na na-convert o hindi isinama.",
+      "notes_other": "May mga setting sa {{count}} na file na na-convert o hindi isinama."
+    }
   },
   "tools": {
     "context": "Context length",

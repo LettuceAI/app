@@ -658,7 +658,20 @@
     },
     "browseShort": "รับโมเดล",
     "runtimeShort": "รันไทม์",
-    "lorasShort": "LoRA"
+    "lorasShort": "LoRA",
+    "import": {
+      "action": "นำเข้าโมเดล",
+      "hint": "เพิ่มโมเดลจากไฟล์โมเดลที่ส่งออกไว้",
+      "doneOne": "นำเข้า {{name}} แล้ว",
+      "done_other": "นำเข้าโมเดล {{count}} รายการแล้ว",
+      "partial_other": "นำเข้าโมเดล {{count}} จาก {{total}} รายการแล้ว",
+      "failed_other": "นำเข้าโมเดลไม่ได้",
+      "noProvider": "เพิ่มผู้ให้บริการของโมเดลนี้ก่อน แล้วนำเข้าอีกครั้ง",
+      "notModel": "ไม่ใช่ไฟล์โมเดล",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_other": "โมเดลในเครื่อง {{count}} รายการต้องเลือกไฟล์โมเดลในตัวแก้ไข",
+      "notes_other": "ไฟล์ {{count}} ไฟล์มีการตั้งค่าที่ถูกแปลงหรือข้ามไป"
+    }
   },
   "tools": {
     "context": "ความยาวบริบท",

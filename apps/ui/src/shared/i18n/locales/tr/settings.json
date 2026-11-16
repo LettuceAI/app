@@ -666,7 +666,25 @@
     },
     "browseShort": "Model edin",
     "runtimeShort": "Çalışma zamanı",
-    "lorasShort": "LoRA'lar"
+    "lorasShort": "LoRA'lar",
+    "import": {
+      "action": "Modelleri içe aktar",
+      "hint": "Dışa aktarılmış model dosyalarından model ekle",
+      "doneOne": "{{name}} içe aktarıldı",
+      "done_one": "{{count}} model içe aktarıldı",
+      "done_other": "{{count}} model içe aktarıldı",
+      "partial_one": "{{total}} modelden {{count}} tanesi içe aktarıldı",
+      "partial_other": "{{total}} modelden {{count}} tanesi içe aktarıldı",
+      "failed_one": "Model içe aktarılamadı",
+      "failed_other": "{{count}} dosyanın hiçbiri içe aktarılamadı",
+      "noProvider": "Önce sağlayıcısını ekle, sonra tekrar içe aktar",
+      "notModel": "Model dosyası değil",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Bir yerel modelin dosyası düzenleyicide seçilmeli.",
+      "needsFile_other": "{{count}} yerel modelin dosyası düzenleyicide seçilmeli.",
+      "notes_one": "Bir dosyadaki bazı ayarlar dönüştürüldü ya da atlandı.",
+      "notes_other": "{{count}} dosyadaki bazı ayarlar dönüştürüldü ya da atlandı."
+    }
   },
   "tools": {
     "context": "Bağlam uzunluğu",

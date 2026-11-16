@@ -658,7 +658,20 @@
     },
     "browseShort": "取得模型",
     "runtimeShort": "執行階段",
-    "lorasShort": "LoRA"
+    "lorasShort": "LoRA",
+    "import": {
+      "action": "匯入模型",
+      "hint": "從匯出的模型檔案新增模型",
+      "doneOne": "已匯入 {{name}}",
+      "done_other": "已匯入 {{count}} 個模型",
+      "partial_other": "已匯入 {{count}}/{{total}} 個模型",
+      "failed_other": "無法匯入模型",
+      "noProvider": "請先新增它的供應商，然後重新匯入",
+      "notModel": "不是模型檔案",
+      "fileFailure": "{{name}}：{{reason}}",
+      "needsFile_other": "{{count}} 個本機模型需要在編輯器中選擇模型檔案。",
+      "notes_other": "{{count}} 個檔案中有設定被轉換或省略。"
+    }
   },
   "tools": {
     "context": "上下文長度",

@@ -658,7 +658,20 @@
     },
     "browseShort": "Tải mô hình",
     "runtimeShort": "Thời gian chạy",
-    "lorasShort": "LoRA"
+    "lorasShort": "LoRA",
+    "import": {
+      "action": "Nhập mô hình",
+      "hint": "Thêm mô hình từ các tệp mô hình đã xuất",
+      "doneOne": "Đã nhập {{name}}",
+      "done_other": "Đã nhập {{count}} mô hình",
+      "partial_other": "Đã nhập {{count}}/{{total}} mô hình",
+      "failed_other": "Không thể nhập mô hình",
+      "noProvider": "Hãy thêm nhà cung cấp của nó trước rồi nhập lại",
+      "notModel": "Không phải tệp mô hình",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_other": "{{count}} mô hình cục bộ cần chọn tệp mô hình trong trình chỉnh sửa.",
+      "notes_other": "{{count}} tệp có cài đặt đã được chuyển đổi hoặc bỏ qua."
+    }
   },
   "tools": {
     "context": "Độ dài ngữ cảnh",

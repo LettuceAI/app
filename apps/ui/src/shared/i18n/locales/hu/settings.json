@@ -665,7 +665,25 @@
     },
     "browseShort": "Modellek beszerzése",
     "runtimeShort": "Futtatás",
-    "lorasShort": "LoRÁk"
+    "lorasShort": "LoRÁk",
+    "import": {
+      "action": "Modellek importálása",
+      "hint": "Modellek hozzáadása exportált modellfájlokból",
+      "doneOne": "{{name}} importálva",
+      "done_one": "{{count}} modell importálva",
+      "done_other": "{{count}} modell importálva",
+      "partial_one": "{{total}} modellből {{count}} importálva",
+      "partial_other": "{{total}} modellből {{count}} importálva",
+      "failed_one": "A modellt nem sikerült importálni",
+      "failed_other": "A(z) {{count}} fájl egyikét sem sikerült importálni",
+      "noProvider": "Előbb add hozzá a szolgáltatóját, majd importáld újra",
+      "notModel": "Nem modellfájl",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Egy helyi modellnél ki kell választani a modellfájlt a szerkesztőben.",
+      "needsFile_other": "{{count}} helyi modellnél ki kell választani a modellfájlt a szerkesztőben.",
+      "notes_one": "Egy fájlban voltak átalakított vagy kihagyott beállítások.",
+      "notes_other": "{{count}} fájlban voltak átalakított vagy kihagyott beállítások."
+    }
   },
   "tools": {
     "context": "Kontexthossz",

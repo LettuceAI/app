@@ -672,7 +672,30 @@
     },
     "browseShort": "Obtener modelos",
     "runtimeShort": "Entorno",
-    "lorasShort": "LoRAs"
+    "lorasShort": "LoRAs",
+    "import": {
+      "action": "Importar modelos",
+      "hint": "Añade modelos desde archivos de modelo exportados",
+      "doneOne": "Se importó {{name}}",
+      "done_one": "Se importó {{count}} modelo",
+      "done_many": "Se importaron {{count}} modelos",
+      "done_other": "Se importaron {{count}} modelos",
+      "partial_one": "Se importó {{count}} de {{total}} modelos",
+      "partial_many": "Se importaron {{count}} de {{total}} modelos",
+      "partial_other": "Se importaron {{count}} de {{total}} modelos",
+      "failed_one": "No se pudo importar el modelo",
+      "failed_many": "No se pudo importar ninguno de los {{count}} archivos",
+      "failed_other": "No se pudo importar ninguno de los {{count}} archivos",
+      "noProvider": "Añade primero su proveedor y vuelve a importarlo",
+      "notModel": "No es un archivo de modelo",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Un modelo local necesita que elijas su archivo en el editor.",
+      "needsFile_many": "{{count}} modelos locales necesitan que elijas su archivo en el editor.",
+      "needsFile_other": "{{count}} modelos locales necesitan que elijas su archivo en el editor.",
+      "notes_one": "Un archivo tenía ajustes que se convirtieron u omitieron.",
+      "notes_many": "{{count}} archivos tenían ajustes que se convirtieron u omitieron.",
+      "notes_other": "{{count}} archivos tenían ajustes que se convirtieron u omitieron."
+    }
   },
   "tools": {
     "context": "Longitud de contexto",

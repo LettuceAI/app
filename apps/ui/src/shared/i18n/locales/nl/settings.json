@@ -665,7 +665,25 @@
     },
     "browseShort": "Modellen ophalen",
     "runtimeShort": "Runtime",
-    "lorasShort": "LoRA's"
+    "lorasShort": "LoRA's",
+    "import": {
+      "action": "Modellen importeren",
+      "hint": "Modellen toevoegen uit geëxporteerde modelbestanden",
+      "doneOne": "{{name}} geïmporteerd",
+      "done_one": "{{count}} model geïmporteerd",
+      "done_other": "{{count}} modellen geïmporteerd",
+      "partial_one": "{{count}} van {{total}} modellen geïmporteerd",
+      "partial_other": "{{count}} van {{total}} modellen geïmporteerd",
+      "failed_one": "Het model kon niet worden geïmporteerd",
+      "failed_other": "Geen van de {{count}} bestanden kon worden geïmporteerd",
+      "noProvider": "Voeg eerst de provider toe en importeer daarna opnieuw",
+      "notModel": "Geen modelbestand",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Voor één lokaal model moet je het modelbestand kiezen in de editor.",
+      "needsFile_other": "Voor {{count}} lokale modellen moet je het modelbestand kiezen in de editor.",
+      "notes_one": "Eén bestand had instellingen die zijn omgezet of weggelaten.",
+      "notes_other": "{{count}} bestanden hadden instellingen die zijn omgezet of weggelaten."
+    }
   },
   "tools": {
     "context": "Contextlengte",

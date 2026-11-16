@@ -672,7 +672,30 @@
     },
     "browseShort": "Ottieni modelli",
     "runtimeShort": "Esecuzione",
-    "lorasShort": "LoRA"
+    "lorasShort": "LoRA",
+    "import": {
+      "action": "Importa modelli",
+      "hint": "Aggiungi modelli da file di modello esportati",
+      "doneOne": "{{name}} importato",
+      "done_one": "{{count}} modello importato",
+      "done_many": "{{count}} modelli importati",
+      "done_other": "{{count}} modelli importati",
+      "partial_one": "{{count}} modello importato su {{total}}",
+      "partial_many": "{{count}} modelli importati su {{total}}",
+      "partial_other": "{{count}} modelli importati su {{total}}",
+      "failed_one": "Impossibile importare il modello",
+      "failed_many": "Nessuno dei {{count}} file è stato importato",
+      "failed_other": "Nessuno dei {{count}} file è stato importato",
+      "noProvider": "Aggiungi prima il suo provider, poi importalo di nuovo",
+      "notModel": "Non è un file di modello",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Per un modello locale devi scegliere il file nell'editor.",
+      "needsFile_many": "Per {{count}} modelli locali devi scegliere il file nell'editor.",
+      "needsFile_other": "Per {{count}} modelli locali devi scegliere il file nell'editor.",
+      "notes_one": "Un file aveva impostazioni convertite o tralasciate.",
+      "notes_many": "{{count}} file avevano impostazioni convertite o tralasciate.",
+      "notes_other": "{{count}} file avevano impostazioni convertite o tralasciate."
+    }
   },
   "tools": {
     "context": "Lunghezza del contesto",

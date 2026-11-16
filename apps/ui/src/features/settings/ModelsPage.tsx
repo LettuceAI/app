@@ -17,6 +17,7 @@ import {
   Search,
   Star,
   Trash2,
+  Upload,
 } from "lucide-react";
 import {
   Badge,
@@ -34,17 +35,24 @@ import {
   Page,
   Sheet,
   Text,
+  toast,
 } from "@lettuceai/crisp";
 import type { ModelView, ProviderAccountView } from "@/api/generated/bindings";
 import { appStatusQuery } from "@/api/app-status-query";
-import type { ApiClient } from "@/api/client";
+import { isApiFailure, type ApiClient } from "@/api/client";
 import { queryKeys } from "@/api/query-keys";
 import { ModelMark, providerLogo, vendorOf } from "@/entities/provider";
 import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useProviderData, useSettingsAction, useSettingsApi, useSettingsLayout } from "./data";
 import { ModelTools } from "./ModelTools";
-import { deleteModelWithUsage, exportModel } from "./model-actions";
+import {
+  deleteModelWithUsage,
+  exportModel,
+  importModels,
+  type ModelImportFailure,
+  type ModelImportOutcome,
+} from "./model-actions";
 
 const modelListViews = ["all", "provider", "providerColumns"] as const;
 type ModelListView = (typeof modelListViews)[number];
@@ -71,7 +79,9 @@ function isLocalProvider(account: ProviderAccountView | undefined): boolean {
 
 export function ModelsPage() {
   const { t } = useTranslation("settings");
+  const { t: common } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const api = useSettingsApi();
   const { phone, back } = useSettingsLayout();
   const { accounts } = useProviderData();
@@ -98,6 +108,7 @@ export function ModelsPage() {
     setMenuOpen(value !== null);
     if (value) setSelectedMenu(value);
   };
+  const [importing, setImporting] = useState(false);
   const [tool, setTool] = useState<"runtime" | "loras" | null>(null);
   const closingTool = useClosingValue(tool);
   const provider = (model: ModelView) =>
@@ -191,6 +202,79 @@ export function ModelsPage() {
       setMenu(null);
     });
   const confirmDelete = (model: ModelView) => run(() => deleteModelWithUsage(api, model, t));
+  const failureText = (reason: ModelImportFailure) =>
+    reason.kind === "no_provider"
+      ? t("models.import.noProvider")
+      : reason.kind === "not_model"
+        ? t("models.import.notModel")
+        : common(`errors.code.${reason.code}`);
+  const reportImport = ({ imported, failed }: ModelImportOutcome) => {
+    const needsFile = imported.filter((model) => model.needsFile).length;
+    const notes = imported.filter((model) => model.notes > 0).length;
+    const only = imported.length === 1 ? imported[0] : undefined;
+    const open = only && {
+      label: t("manage.edit"),
+      onClick: () =>
+        void navigate({ to: "/settings/models/$modelId", params: { modelId: only.id } }),
+    };
+    if (imported.length === 0) {
+      const [first] = failed;
+      toast.error(
+        t("models.import.failed", { count: failed.length }),
+        failed.length === 1 && first
+          ? t("models.import.fileFailure", { name: first.name, reason: failureText(first.reason) })
+          : failed.map((file) => file.name).join(", "),
+      );
+      return;
+    }
+    const title = only
+      ? t("models.import.doneOne", { name: only.name })
+      : t("models.import.done", { count: imported.length });
+    if (failed.length > 0) {
+      toast.warning(
+        t("models.import.partial", { count: imported.length, total: imported.length + failed.length }),
+        failed.map((file, index) => (
+          <span key={index} className="block">
+            {t("models.import.fileFailure", { name: file.name, reason: failureText(file.reason) })}
+          </span>
+        )),
+        open ? { action: open } : undefined,
+      );
+      return;
+    }
+    if (needsFile > 0 || notes > 0) {
+      toast.warning(
+        title,
+        [
+          needsFile > 0 ? t("models.import.needsFile", { count: needsFile }) : null,
+          notes > 0 ? t("models.import.notes", { count: notes }) : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        open ? { action: open } : undefined,
+      );
+      return;
+    }
+    toast.success(title, undefined, open ? { action: open } : undefined);
+  };
+  const importFiles = async () => {
+    if (importing) return;
+    setImporting(true);
+    try {
+      const outcome = await importModels(api);
+      if (!outcome) return;
+      if (outcome.imported.length > 0)
+        await queryClient.invalidateQueries({ queryKey: queryKeys.models.all });
+      reportImport(outcome);
+    } catch (error) {
+      toast.error(
+        t("models.import.failed", { count: 1 }),
+        common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`),
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
   const viewIcon =
     group === "providerColumns" ? (
       <Columns2 size={icon.lg} />
@@ -299,6 +383,27 @@ export function ModelsPage() {
                 </MenuItem>
               </MenuContent>
             </Menu>
+            {phone ? (
+              <IconButton
+                label={t("models.import.action")}
+                variant="ghost"
+                disabled={importing}
+                onClick={() => void importFiles()}
+              >
+                <Upload size={icon.sm} />
+              </IconButton>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                leading={<Upload size={icon.sm} />}
+                title={t("models.import.hint")}
+                loading={importing}
+                onClick={() => void importFiles()}
+              >
+                {t("manage.import")}
+              </Button>
+            )}
             {!phone && (
               <Button
                 variant="tonal"

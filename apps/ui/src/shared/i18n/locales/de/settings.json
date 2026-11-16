@@ -665,7 +665,25 @@
     },
     "browseShort": "Modelle holen",
     "runtimeShort": "Laufzeit",
-    "lorasShort": "LoRAs"
+    "lorasShort": "LoRAs",
+    "import": {
+      "action": "Modelle importieren",
+      "hint": "Modelle aus exportierten Modelldateien hinzufügen",
+      "doneOne": "{{name}} importiert",
+      "done_one": "{{count}} Modell importiert",
+      "done_other": "{{count}} Modelle importiert",
+      "partial_one": "{{count}} von {{total}} Modellen importiert",
+      "partial_other": "{{count}} von {{total}} Modellen importiert",
+      "failed_one": "Das Modell konnte nicht importiert werden",
+      "failed_other": "Keine der {{count}} Dateien konnte importiert werden",
+      "noProvider": "Füge zuerst den Anbieter hinzu und importiere dann erneut",
+      "notModel": "Keine Modelldatei",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "Bei einem lokalen Modell muss die Modelldatei im Editor gewählt werden.",
+      "needsFile_other": "Bei {{count}} lokalen Modellen muss die Modelldatei im Editor gewählt werden.",
+      "notes_one": "In einer Datei wurden Einstellungen umgewandelt oder ausgelassen.",
+      "notes_other": "In {{count}} Dateien wurden Einstellungen umgewandelt oder ausgelassen."
+    }
   },
   "tools": {
     "context": "Kontextlänge",

@@ -666,7 +666,25 @@
     },
     "browseShort": "Get models",
     "runtimeShort": "Runtime",
-    "lorasShort": "LoRAs"
+    "lorasShort": "LoRAs",
+    "import": {
+      "action": "Import models",
+      "hint": "Add models from exported model files",
+      "doneOne": "Imported {{name}}",
+      "done_one": "Imported {{count}} model",
+      "done_other": "Imported {{count}} models",
+      "partial_one": "Imported {{count}} of {{total}} models",
+      "partial_other": "Imported {{count}} of {{total}} models",
+      "failed_one": "The model could not be imported",
+      "failed_other": "None of the {{count}} files could be imported",
+      "noProvider": "Add its provider first, then import it again",
+      "notModel": "Not a model file",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_one": "One local model needs its model file chosen in the editor.",
+      "needsFile_other": "{{count}} local models need their model file chosen in the editor.",
+      "notes_one": "One file had settings that were converted or left out.",
+      "notes_other": "{{count}} files had settings that were converted or left out."
+    }
   },
   "tools": {
     "context": "Context length",

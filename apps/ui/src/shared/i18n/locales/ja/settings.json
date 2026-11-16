@@ -658,7 +658,20 @@
     },
     "browseShort": "モデルを取得",
     "runtimeShort": "ランタイム",
-    "lorasShort": "LoRA"
+    "lorasShort": "LoRA",
+    "import": {
+      "action": "モデルをインポート",
+      "hint": "エクスポートしたモデルファイルからモデルを追加",
+      "doneOne": "{{name}}をインポートしました",
+      "done_other": "{{count}}件のモデルをインポートしました",
+      "partial_other": "{{total}}件中{{count}}件のモデルをインポートしました",
+      "failed_other": "モデルをインポートできませんでした",
+      "noProvider": "先にプロバイダーを追加してから、もう一度インポートしてください",
+      "notModel": "モデルファイルではありません",
+      "fileFailure": "{{name}}：{{reason}}",
+      "needsFile_other": "{{count}}件のローカルモデルはエディターでモデルファイルを選ぶ必要があります。",
+      "notes_other": "{{count}}件のファイルで設定が変換または省略されました。"
+    }
   },
   "tools": {
     "context": "コンテキスト長",

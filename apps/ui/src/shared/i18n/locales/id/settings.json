@@ -658,7 +658,20 @@
     },
     "browseShort": "Dapatkan model",
     "runtimeShort": "Runtime",
-    "lorasShort": "LoRA"
+    "lorasShort": "LoRA",
+    "import": {
+      "action": "Impor model",
+      "hint": "Tambahkan model dari file model yang diekspor",
+      "doneOne": "{{name}} diimpor",
+      "done_other": "{{count}} model diimpor",
+      "partial_other": "{{count}} dari {{total}} model diimpor",
+      "failed_other": "Model tidak dapat diimpor",
+      "noProvider": "Tambahkan penyedianya dulu, lalu impor lagi",
+      "notModel": "Bukan file model",
+      "fileFailure": "{{name}}: {{reason}}",
+      "needsFile_other": "{{count}} model lokal perlu dipilihkan file modelnya di editor.",
+      "notes_other": "{{count}} file memiliki pengaturan yang dikonversi atau dilewati."
+    }
   },
   "tools": {
     "context": "Panjang konteks",
