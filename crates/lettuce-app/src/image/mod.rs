@@ -18,6 +18,8 @@ pub(crate) mod scene_image;
 pub(crate) mod scene_loras;
 pub(crate) mod scene_prompt_writer;
 
+pub const LOCAL_DIFFUSION_PROVIDER_LABEL: &str = "stable-diffusion.cpp";
+
 pub use avatar_gradient::{AvatarGradient, AvatarGradientError, AvatarGradients, GradientColor};
 pub use avatar_prompt::{AvatarPromptError, AvatarPromptRequest, avatar_image_prompt};
 pub use design_reference_writer::{

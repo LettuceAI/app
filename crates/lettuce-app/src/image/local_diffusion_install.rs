@@ -26,9 +26,7 @@ use lettuce_network::{JsonAuth, JsonClient, JsonQueryParameter, JsonStaticHeader
 use lettuce_settings::SecretOwnerId;
 use lettuce_types::{ModelProfileId, ProviderAccountId, Revision, TimestampMillis};
 
-use crate::{ArtifactInstallPlan, ArtifactSource, PlannedArtifact};
-
-pub const LOCAL_DIFFUSION_PROVIDER_LABEL: &str = "stable-diffusion.cpp";
+use crate::{ArtifactInstallPlan, ArtifactSource, LOCAL_DIFFUSION_PROVIDER_LABEL, PlannedArtifact};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LocalDiffusionInstallError {
