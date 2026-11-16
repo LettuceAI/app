@@ -181,7 +181,9 @@
     "titleSystem": "系統訊息",
     "audio": "音訊片段",
     "video": "影片檔案",
-    "document": "文件"
+    "document": "文件",
+    "showMorePrompt": "顯示完整提示詞",
+    "showLessPrompt": "收合"
   },
   "menu": {
     "selection": {

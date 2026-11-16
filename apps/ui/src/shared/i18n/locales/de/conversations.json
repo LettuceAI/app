@@ -182,7 +182,9 @@
     "titleSystem": "Systemnachricht",
     "audio": "Audioclip",
     "video": "Videodatei",
-    "document": "Dokument"
+    "document": "Dokument",
+    "showMorePrompt": "Ganzen Prompt zeigen",
+    "showLessPrompt": "Weniger zeigen"
   },
   "menu": {
     "selection": {

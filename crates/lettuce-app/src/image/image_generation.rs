@@ -863,6 +863,7 @@ mod tests {
             id: RequestId::new(),
             model_profile_id: fixture.profile.id,
             prompt: "a lighthouse".into(),
+            shown_prompt: None,
             settings: StableDiffusionSettings {
                 steps: Some(8),
                 ..StableDiffusionSettings::default()

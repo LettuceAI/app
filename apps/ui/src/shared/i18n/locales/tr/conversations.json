@@ -182,7 +182,9 @@
     "titleSystem": "Sistem mesajı",
     "audio": "Ses klibi",
     "video": "Video dosyası",
-    "document": "Belge"
+    "document": "Belge",
+    "showMorePrompt": "Promptun tamamını göster",
+    "showLessPrompt": "Daha az göster"
   },
   "menu": {
     "selection": {

@@ -184,7 +184,9 @@
     "titleSystem": "Системное сообщение",
     "audio": "Аудиофрагмент",
     "video": "Видеофайл",
-    "document": "Документ"
+    "document": "Документ",
+    "showMorePrompt": "Показать весь промпт",
+    "showLessPrompt": "Свернуть"
   },
   "menu": {
     "selection": {

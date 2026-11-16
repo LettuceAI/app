@@ -182,7 +182,9 @@
     "titleSystem": "Μήνυμα συστήματος",
     "audio": "Ηχητικό απόσπασμα",
     "video": "Αρχείο βίντεο",
-    "document": "Έγγραφο"
+    "document": "Έγγραφο",
+    "showMorePrompt": "Εμφάνιση όλου του prompt",
+    "showLessPrompt": "Εμφάνιση λιγότερων"
   },
   "menu": {
     "selection": {

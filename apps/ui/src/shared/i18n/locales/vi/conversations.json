@@ -181,7 +181,9 @@
     "titleSystem": "Tin nhắn hệ thống",
     "audio": "Đoạn âm thanh",
     "video": "Tệp video",
-    "document": "Tài liệu"
+    "document": "Tài liệu",
+    "showMorePrompt": "Hiện toàn bộ prompt",
+    "showLessPrompt": "Thu gọn"
   },
   "menu": {
     "selection": {

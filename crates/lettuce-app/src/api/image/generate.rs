@@ -46,7 +46,7 @@ pub async fn image_asset_prompt(
             Err(error) => return Err(internal(error)),
         };
         match record.state {
-            ImageGenerationState::Succeeded { result } if result.images.iter().any(|image| image.asset_id == asset_id) => Ok(Some(record.request.prompt)),
+            ImageGenerationState::Succeeded { result } if result.images.iter().any(|image| image.asset_id == asset_id) => Ok(Some(record.request.shown_prompt.unwrap_or(record.request.prompt))),
             _ => Ok(None),
         }
     }).await
@@ -155,6 +155,7 @@ pub async fn image_generate(
         id,
         model_profile_id,
         prompt: request.prompt,
+        shown_prompt: None,
         settings: sampling,
         input_images,
         mask_image,

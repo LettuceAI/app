@@ -533,6 +533,7 @@ where
     Ok(ImageGenerationRequest {
         id: request.request_id,
         model_profile_id: model.profile.id,
+        shown_prompt: (prompt != scene_prompt).then(|| scene_prompt.to_owned()),
         prompt,
         settings: Default::default(),
         input_images,

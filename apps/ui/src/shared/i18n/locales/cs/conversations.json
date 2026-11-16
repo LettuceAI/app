@@ -184,7 +184,9 @@
     "titleSystem": "Systémová zpráva",
     "audio": "Zvukový klip",
     "video": "Video soubor",
-    "document": "Dokument"
+    "document": "Dokument",
+    "showMorePrompt": "Zobrazit celý prompt",
+    "showLessPrompt": "Zobrazit méně"
   },
   "menu": {
     "selection": {

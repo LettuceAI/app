@@ -181,7 +181,9 @@
     "titleSystem": "시스템 메시지",
     "audio": "오디오 클립",
     "video": "동영상 파일",
-    "document": "문서"
+    "document": "문서",
+    "showMorePrompt": "프롬프트 전체 보기",
+    "showLessPrompt": "간단히 보기"
   },
   "menu": {
     "selection": {

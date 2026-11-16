@@ -348,6 +348,7 @@ mod tests {
             id: RequestId::new(),
             model_profile_id: ModelProfileId::new(),
             prompt: "a lighthouse".to_owned(),
+            shown_prompt: None,
             settings: StableDiffusionSettings::default(),
             input_images: Vec::new(),
             mask_image: None,

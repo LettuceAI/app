@@ -181,7 +181,9 @@
     "titleSystem": "ข้อความระบบ",
     "audio": "คลิปเสียง",
     "video": "ไฟล์วิดีโอ",
-    "document": "เอกสาร"
+    "document": "เอกสาร",
+    "showMorePrompt": "แสดงพรอมต์ทั้งหมด",
+    "showLessPrompt": "แสดงน้อยลง"
   },
   "menu": {
     "selection": {

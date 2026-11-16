@@ -182,7 +182,9 @@
     "titleSystem": "Systeembericht",
     "audio": "Audioclip",
     "video": "Videobestand",
-    "document": "Document"
+    "document": "Document",
+    "showMorePrompt": "Hele prompt tonen",
+    "showLessPrompt": "Minder tonen"
   },
   "menu": {
     "selection": {

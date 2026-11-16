@@ -636,7 +636,8 @@ async fn manual_images(mode: SceneGenerationMode, automatic: bool) {
         let saved_prompt = crate::api::image_asset_prompt(context, dto::ImageAssetPromptRequest {
             asset_id: result.images[0].asset_id.to_string(),
         }).await.expect("image prompt");
-        assert_eq!(saved_prompt, Some(record.request.prompt));
+        assert_eq!(saved_prompt.as_deref(), Some(prompt.trim()), "the viewer shows the scene prompt, not the full image prompt");
+        assert_ne!(record.request.prompt, prompt.trim());
     }
     assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 2);
     let prompts = scene.images.prompts.lock().expect("prompts").clone();

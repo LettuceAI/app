@@ -929,6 +929,7 @@ mod tests {
                     id: RequestId::new(),
                     model_profile_id: model.id,
                     prompt: "a small green frog on a lily pad".to_owned(),
+                    shown_prompt: None,
                     settings: lettuce_models::StableDiffusionSettings {
                         seed: Some(3),
                         ..Default::default()

@@ -183,7 +183,9 @@
     "titleSystem": "Message système",
     "audio": "Clip audio",
     "video": "Fichier vidéo",
-    "document": "Document"
+    "document": "Document",
+    "showMorePrompt": "Afficher tout le prompt",
+    "showLessPrompt": "Afficher moins"
   },
   "menu": {
     "selection": {

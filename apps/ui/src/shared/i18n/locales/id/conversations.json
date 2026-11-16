@@ -181,7 +181,9 @@
     "titleSystem": "Pesan sistem",
     "audio": "Klip audio",
     "video": "File video",
-    "document": "Dokumen"
+    "document": "Dokumen",
+    "showMorePrompt": "Tampilkan seluruh prompt",
+    "showLessPrompt": "Tampilkan lebih sedikit"
   },
   "menu": {
     "selection": {

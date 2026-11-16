@@ -46,6 +46,10 @@ pub struct ImageGenerationRequest {
     pub id: RequestId,
     pub model_profile_id: ModelProfileId,
     pub prompt: String,
+    /// What the person asked for when `prompt` wraps it in more text, shown
+    /// with the image instead of the full prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown_prompt: Option<String>,
     #[serde(default)]
     pub settings: StableDiffusionSettings,
     #[serde(default)]
@@ -254,6 +258,7 @@ mod tests {
             id: RequestId::new(),
             model_profile_id: ModelProfileId::new(),
             prompt: "a lighthouse".to_owned(),
+            shown_prompt: None,
             settings: StableDiffusionSettings::default(),
             input_images: Vec::new(),
             mask_image: None,

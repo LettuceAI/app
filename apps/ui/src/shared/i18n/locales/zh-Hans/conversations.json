@@ -181,7 +181,9 @@
     "titleSystem": "系统消息",
     "audio": "音频片段",
     "video": "视频文件",
-    "document": "文档"
+    "document": "文档",
+    "showMorePrompt": "显示完整提示词",
+    "showLessPrompt": "收起"
   },
   "menu": {
     "selection": {

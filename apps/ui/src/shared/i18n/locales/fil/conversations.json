@@ -182,7 +182,9 @@
     "titleSystem": "System message",
     "audio": "Audio clip",
     "video": "Video file",
-    "document": "Dokumento"
+    "document": "Dokumento",
+    "showMorePrompt": "Ipakita ang buong prompt",
+    "showLessPrompt": "Ipakita nang kaunti"
   },
   "menu": {
     "selection": {

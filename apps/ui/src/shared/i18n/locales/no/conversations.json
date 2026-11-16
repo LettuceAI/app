@@ -182,7 +182,9 @@
     "titleSystem": "Systemmelding",
     "audio": "Lydklipp",
     "video": "Videofil",
-    "document": "Dokument"
+    "document": "Dokument",
+    "showMorePrompt": "Vis hele prompten",
+    "showLessPrompt": "Vis mindre"
   },
   "menu": {
     "selection": {

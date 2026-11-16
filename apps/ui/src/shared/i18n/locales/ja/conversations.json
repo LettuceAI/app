@@ -181,7 +181,9 @@
     "titleSystem": "システムメッセージ",
     "audio": "音声クリップ",
     "video": "動画ファイル",
-    "document": "ドキュメント"
+    "document": "ドキュメント",
+    "showMorePrompt": "プロンプト全体を表示",
+    "showLessPrompt": "表示を減らす"
   },
   "menu": {
     "selection": {

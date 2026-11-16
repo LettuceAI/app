@@ -184,7 +184,9 @@
     "titleSystem": "Wiadomość systemowa",
     "audio": "Klip audio",
     "video": "Plik wideo",
-    "document": "Dokument"
+    "document": "Dokument",
+    "showMorePrompt": "Pokaż cały prompt",
+    "showLessPrompt": "Pokaż mniej"
   },
   "menu": {
     "selection": {

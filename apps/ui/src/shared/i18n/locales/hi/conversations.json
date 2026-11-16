@@ -182,7 +182,9 @@
     "titleSystem": "सिस्टम संदेश",
     "audio": "ऑडियो क्लिप",
     "video": "वीडियो फ़ाइल",
-    "document": "दस्तावेज़"
+    "document": "दस्तावेज़",
+    "showMorePrompt": "पूरा प्रॉम्प्ट दिखाएं",
+    "showLessPrompt": "कम दिखाएं"
   },
   "menu": {
     "selection": {

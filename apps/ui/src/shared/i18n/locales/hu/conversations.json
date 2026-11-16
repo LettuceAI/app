@@ -182,7 +182,9 @@
     "titleSystem": "Rendszerüzenet",
     "audio": "Hangklip",
     "video": "Videófájl",
-    "document": "Dokumentum"
+    "document": "Dokumentum",
+    "showMorePrompt": "Teljes prompt mutatása",
+    "showLessPrompt": "Kevesebb mutatása"
   },
   "menu": {
     "selection": {
