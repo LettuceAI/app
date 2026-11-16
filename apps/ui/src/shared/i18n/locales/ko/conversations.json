@@ -283,7 +283,8 @@
     "title": "메시지 편집",
     "assistantHint": "이야기가 기억할 {{name}}의 말",
     "field": "메시지 텍스트",
-    "save": "저장"
+    "save": "저장",
+    "removeMedia": "{{name}} 삭제"
   },
   "confirm": {
     "cancel": "취소",

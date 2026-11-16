@@ -285,7 +285,8 @@
     "title": "Rediger melding",
     "assistantHint": "{{name}}s ord, slik historien vil huske dem",
     "field": "Meldingstekst",
-    "save": "Lagre"
+    "save": "Lagre",
+    "removeMedia": "Fjern {{name}}"
   },
   "confirm": {
     "cancel": "Avbryt",

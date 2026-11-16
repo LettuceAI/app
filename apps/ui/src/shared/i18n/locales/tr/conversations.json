@@ -285,7 +285,8 @@
     "title": "Mesajı düzenle",
     "assistantHint": "{{name}} kişisinin sözleri, hikâyenin hatırlayacağı şekilde",
     "field": "Mesaj metni",
-    "save": "Kaydet"
+    "save": "Kaydet",
+    "removeMedia": "Kaldır: {{name}}"
   },
   "confirm": {
     "cancel": "İptal",

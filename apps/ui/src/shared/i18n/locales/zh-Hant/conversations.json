@@ -283,7 +283,8 @@
     "title": "編輯訊息",
     "assistantHint": "{{name}} 的話語，也就是故事會記住的內容",
     "field": "訊息文字",
-    "save": "儲存"
+    "save": "儲存",
+    "removeMedia": "移除{{name}}"
   },
   "confirm": {
     "cancel": "取消",

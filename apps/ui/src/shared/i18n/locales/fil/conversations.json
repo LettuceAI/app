@@ -285,7 +285,8 @@
     "title": "I-edit ang mensahe",
     "assistantHint": "Mga salita ni {{name}}, gaya ng matatandaan ng kuwento",
     "field": "Text ng mensahe",
-    "save": "I-save"
+    "save": "I-save",
+    "removeMedia": "Alisin ang {{name}}"
   },
   "confirm": {
     "cancel": "Kanselahin",

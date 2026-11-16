@@ -283,7 +283,8 @@
     "title": "Sửa tin nhắn",
     "assistantHint": "Lời của {{name}}, như câu chuyện sẽ ghi nhớ",
     "field": "Văn bản tin nhắn",
-    "save": "Lưu"
+    "save": "Lưu",
+    "removeMedia": "Xóa {{name}}"
   },
   "confirm": {
     "cancel": "Hủy",

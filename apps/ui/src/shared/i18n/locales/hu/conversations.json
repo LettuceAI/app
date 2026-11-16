@@ -285,7 +285,8 @@
     "title": "Üzenet szerkesztése",
     "assistantHint": "{{name}} szavai, ahogy a történet emlékezni fog rájuk",
     "field": "Üzenetszöveg",
-    "save": "Mentés"
+    "save": "Mentés",
+    "removeMedia": "{{name}} eltávolítása"
   },
   "confirm": {
     "cancel": "Mégse",

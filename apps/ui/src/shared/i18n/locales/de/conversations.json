@@ -285,7 +285,8 @@
     "title": "Nachricht bearbeiten",
     "assistantHint": "Die Worte von {{name}}, wie die Geschichte sie behalten wird",
     "field": "Nachrichtentext",
-    "save": "Speichern"
+    "save": "Speichern",
+    "removeMedia": "{{name}} entfernen"
   },
   "confirm": {
     "cancel": "Abbrechen",

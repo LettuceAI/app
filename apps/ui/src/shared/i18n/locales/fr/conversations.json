@@ -287,7 +287,8 @@
     "title": "Modifier le message",
     "assistantHint": "Les mots de {{name}}, tels que l'histoire s'en souviendra",
     "field": "Texte du message",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "removeMedia": "Retirer {{name}}"
   },
   "confirm": {
     "cancel": "Annuler",

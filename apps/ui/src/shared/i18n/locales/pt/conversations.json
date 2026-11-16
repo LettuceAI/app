@@ -287,7 +287,8 @@
     "title": "Editar mensagem",
     "assistantHint": "As palavras de {{name}}, como a história vai lembrá-las",
     "field": "Texto da mensagem",
-    "save": "Salvar"
+    "save": "Salvar",
+    "removeMedia": "Remover {{name}}"
   },
   "confirm": {
     "cancel": "Cancelar",

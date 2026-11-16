@@ -1097,9 +1097,9 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
           characterName={name}
           busy={busy}
           onClose={() => setEditing(null)}
-          onSave={(message, text) => {
+          onSave={(message, text, keepMedia) => {
             void run(async () => {
-              await editMessage(services, message, text);
+              await editMessage(services, message, text, keepMedia);
               setEditing(null);
               toast.success(t("toast.edited"));
             });

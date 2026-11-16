@@ -63,7 +63,7 @@ export async function addSystemMessage(services: ConversationServices, text: str
   ]);
 }
 
-export async function editMessage(services: ConversationServices, message: TimelineMessage, text: string): Promise<void> {
+export async function editMessage(services: ConversationServices, message: TimelineMessage, text: string, keepMedia: string[] = mediaIds(message)): Promise<void> {
   trimIfStuck(services);
   const { api, queryClient, conversationId } = services;
   await api.call("messageEdit", {
@@ -71,7 +71,7 @@ export async function editMessage(services: ConversationServices, message: Timel
     message_id: message.id,
     expected_revision: currentRevision(queryClient, conversationId),
     text,
-    keep_media: mediaIds(message),
+    keep_media: keepMedia,
     client_operation_id: crypto.randomUUID(),
   });
 }

@@ -283,7 +283,8 @@
     "title": "メッセージを編集",
     "assistantHint": "{{name}}の言葉、物語が記憶する形で",
     "field": "メッセージ本文",
-    "save": "保存"
+    "save": "保存",
+    "removeMedia": "{{name}}を削除"
   },
   "confirm": {
     "cancel": "キャンセル",

@@ -283,7 +283,8 @@
     "title": "Edit pesan",
     "assistantHint": "Kata-kata {{name}}, sebagaimana cerita akan mengingatnya",
     "field": "Teks pesan",
-    "save": "Simpan"
+    "save": "Simpan",
+    "removeMedia": "Hapus {{name}}"
   },
   "confirm": {
     "cancel": "Batal",

@@ -285,7 +285,8 @@
     "title": "Bericht bewerken",
     "assistantHint": "De woorden van {{name}}, zoals het verhaal ze zal onthouden",
     "field": "Berichttekst",
-    "save": "Opslaan"
+    "save": "Opslaan",
+    "removeMedia": "{{name}} verwijderen"
   },
   "confirm": {
     "cancel": "Annuleren",

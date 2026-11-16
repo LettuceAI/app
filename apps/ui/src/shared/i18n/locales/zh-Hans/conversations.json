@@ -283,7 +283,8 @@
     "title": "编辑消息",
     "assistantHint": "{{name}} 的话，故事会这样记住",
     "field": "消息文本",
-    "save": "保存"
+    "save": "保存",
+    "removeMedia": "移除{{name}}"
   },
   "confirm": {
     "cancel": "取消",

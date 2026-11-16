@@ -289,7 +289,8 @@
     "title": "Upravit zprávu",
     "assistantHint": "Slova {{name}}, jak si je příběh bude pamatovat",
     "field": "Text zprávy",
-    "save": "Uložit"
+    "save": "Uložit",
+    "removeMedia": "Odebrat {{name}}"
   },
   "confirm": {
     "cancel": "Zrušit",

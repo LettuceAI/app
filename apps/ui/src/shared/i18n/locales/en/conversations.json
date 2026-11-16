@@ -285,7 +285,8 @@
     "title": "Edit message",
     "assistantHint": "{{name}}'s words, as the story will remember them",
     "field": "Message text",
-    "save": "Save"
+    "save": "Save",
+    "removeMedia": "Remove {{name}}"
   },
   "confirm": {
     "cancel": "Cancel",

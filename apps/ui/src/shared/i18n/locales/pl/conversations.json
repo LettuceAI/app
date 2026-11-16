@@ -289,7 +289,8 @@
     "title": "Edytuj wiadomość",
     "assistantHint": "Słowa {{name}}, tak jak historia je zapamięta",
     "field": "Tekst wiadomości",
-    "save": "Zapisz"
+    "save": "Zapisz",
+    "removeMedia": "Usuń {{name}}"
   },
   "confirm": {
     "cancel": "Anuluj",

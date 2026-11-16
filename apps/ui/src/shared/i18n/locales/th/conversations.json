@@ -283,7 +283,8 @@
     "title": "แก้ไขข้อความ",
     "assistantHint": "คำพูดของ {{name}} ตามที่เรื่องราวจะจดจำ",
     "field": "ข้อความ",
-    "save": "บันทึก"
+    "save": "บันทึก",
+    "removeMedia": "ลบ {{name}}"
   },
   "confirm": {
     "cancel": "ยกเลิก",
