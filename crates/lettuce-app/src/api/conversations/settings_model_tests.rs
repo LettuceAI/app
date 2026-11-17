@@ -92,15 +92,25 @@ async fn a_chat_sets_and_clears_its_own_model_settings_under_the_settings_revisi
     .await
     .expect("another field keeps the layer");
     assert_eq!(kept.model_settings, Some(layer(Some(0.31))));
-    let cleared = update(
-        &harness,
-        &conversation_id,
-        kept.settings_revision,
-        set_layer(layer(None)),
+    let cleared = conversation_settings_update(
+        &harness.context,
+        serde_json::from_value(serde_json::json!({
+            "conversation_id": conversation_id,
+            "expected_settings_revision": kept.settings_revision,
+            "patch": {
+                "model_settings": {
+                    "chat_parameters": { "ollama": {}, "openrouter": {} },
+                    "llama_cpp": { "sampler": {} },
+                    "stable_diffusion": { "cpp": {} }
+                }
+            }
+        }))
+        .expect("decode the chat editor's reset request"),
     )
     .await
     .expect("clear");
     assert_eq!(cleared.model_settings, Some(layer(None)));
+    assert_eq!(cleared.author_note, kept.author_note);
     let mut not_finite = layer(None);
     not_finite.chat_parameters.temperature = Some(f64::NAN);
     let invalid = update(

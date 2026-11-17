@@ -616,7 +616,7 @@ describe("chat settings panel", () => {
   });
 
   it("counts the chat's own sampler values and clears them with reset all", async () => {
-    const update = vi.fn((_args: unknown) => ({ status: "ok" as const, data: settings }));
+    const update = vi.fn((args: ConversationSettingsUpdateRequest_Deserialize) => ({ status: "ok" as const, data: { ...settings, model_settings: args.patch.model_settings ?? null } }));
     const own = { chat_parameters: { temperature: 0.5 }, llama_cpp: {}, stable_diffusion: {} } as never;
     await open({
       path: "/chat/c1?panel=settings",
@@ -633,7 +633,13 @@ describe("chat settings panel", () => {
     fireEvent.click(await within(screen.getByRole("dialog")).findByRole("button", { name: "Reset all" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(update).toHaveBeenCalled());
-    expect(update.mock.calls[0]?.[0]).toMatchObject({ patch: { model_settings: { chat_parameters: {} } } });
+    expect(update.mock.calls[0]?.[0].patch.model_settings).toEqual({
+      chat_parameters: { ollama: {}, openrouter: {} },
+      llama_cpp: { sampler: {} },
+      stable_diffusion: { cpp: {} },
+    });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save" })).toBeNull());
+    expect((screen.getByRole("button", { name: "Reset all" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("uses the shared model editor rows and keeps draft actions outside the scroller", async () => {

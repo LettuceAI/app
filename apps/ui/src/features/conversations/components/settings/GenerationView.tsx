@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, icon, ListGroup, LoadingState } from "@lettuceai/crisp";
-import type { ProviderAccountView, SettingsModelSettingsLayer } from "@/api/generated/bindings";
+import type { ProviderAccountView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
 import { ModelMark } from "@/entities/model/PickerModelMark";
 import { ModelEditorField } from "@/entities/model/ModelEditorField";
@@ -29,7 +29,11 @@ function kindOf(account: ProviderAccountView | undefined): EditorKind {
 
 const noop = () => undefined;
 
-const emptyLayer = { chat_parameters: {}, llama_cpp: {}, stable_diffusion: {} } as unknown as SettingsModelSettingsLayer;
+const emptyLayer = {
+  chat_parameters: { ollama: {}, openrouter: {} },
+  llama_cpp: { sampler: {} },
+  stable_diffusion: { cpp: {} },
+};
 
 export function GenerationView({ ctx }: { ctx: PanelCtx }) {
   const { t } = useTranslation("conversations");
@@ -62,7 +66,7 @@ export function GenerationView({ ctx }: { ctx: PanelCtx }) {
     return support[editorFields[id].key as string] !== "unsupported";
   };
   const sections = editorSections(kind, false).filter((section) => sectionsFor[kind].includes(section.id));
-  const empty = parseModelConfig({ ...(modelConfig ?? {}), chat_parameters: {}, llama_cpp: {}, stable_diffusion: {}, feature_parameters: {} });
+  const empty = parseModelConfig({ ...(modelConfig ?? {}), ...emptyLayer, feature_parameters: {} });
   const field = (id: FieldId) => <ModelEditorField
     key={id}
     kind={kind}
