@@ -25,13 +25,19 @@ export function LibraryCreateSheet({
     mutationFn: () => importEntry(api),
     onSuccess: (result) => {
       if (!result) return;
+      onClose();
+      void refreshLibrary(queryClient);
       if (result.kind === "imported") {
         if (result.warnings.length)
           toast.warning(t("toast.warnings", { count: result.warnings.length }));
         else toast.success(t("toast.imported"));
+        if (result.file_kind === "character_card")
+          void navigate({ to: "/characters/$characterId/edit", params: { characterId: result.id } });
+        else if (result.file_kind === "persona_file")
+          void navigate({ to: "/personas/$personaId/edit", params: { personaId: result.id } });
+        else if (result.file_kind === "lorebook")
+          void navigate({ to: "/library/lorebooks/$lorebookId", params: { lorebookId: result.id } });
       }
-      onClose();
-      void refreshLibrary(queryClient);
     },
   });
   const create = (kind: EntryKind) => {

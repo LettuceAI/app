@@ -131,10 +131,11 @@ function CreateFlow({ start }: { start: CharacterDraft }) {
     if (touched && !await confirm({ title: t("create.discardTitle"), message: t("create.discardBody"), confirmLabel: t("create.discard"), cancelLabel: t("create.keepEditing"), destructive: true })) return;
     setSaving(true);
     try {
-      if (await importCharacterCard({ api, queryClient })) {
+      const characterId = await importCharacterCard({ api, queryClient });
+      if (characterId) {
         finished.current = true;
         toast.success(common("create.imported"));
-        await navigate({ to: "/", replace: true });
+        await navigate({ to: "/characters/$characterId/edit", params: { characterId }, replace: true });
       }
     } catch (error) {
       toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`));

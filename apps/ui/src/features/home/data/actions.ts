@@ -73,17 +73,17 @@ export async function deleteChat(services: HomeServices, chat: ConversationSumma
   await refresh(services);
 }
 
-/** Asks for a character card file and imports it; resolves false when the picker was cancelled. */
-export async function importCharacterCard(services: HomeServices): Promise<boolean> {
+/** Asks for a character card file and imports it; resolves the imported character's id, or null when the picker was cancelled. */
+export async function importCharacterCard(services: HomeServices): Promise<string | null> {
   const { api, queryClient } = services;
   const picked = await api.call("filesPickOpen", { kinds: ["character_card"], multiple: false });
   const source = picked.sources[0];
-  if (!source) return false;
+  if (!source) return null;
   const preview = await api.call("importPreview", { source });
-  await api.call("importCommit", { source, digest: preview.digest, options: {}, client_operation_id: crypto.randomUUID() });
+  const result = await api.call("importCommit", { source, digest: preview.digest, options: {}, client_operation_id: crypto.randomUUID() });
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.home.characters() }),
     queryClient.invalidateQueries({ queryKey: queryKeys.characters.all }),
   ]);
-  return true;
+  return result.kind === "imported" ? result.id : null;
 }
