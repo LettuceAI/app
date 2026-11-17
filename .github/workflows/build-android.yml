@@ -87,23 +87,20 @@ jobs:
           ].join('\n') + '\n', {mode: 0o600});
           JS
           keytool -list -keystore "$RUNNER_TEMP/lettuce-release.jks" -alias "$ANDROID_KEY_ALIAS" -storepass:env ANDROID_KEY_PASSWORD > /dev/null
-      - name: Build universal APK and app bundle
-        run: bun run tauri android build --ci --config "$GITHUB_WORKSPACE/.release-config.json" --apk --aab --target aarch64 armv7 i686 x86_64 -- --locked
+      - name: Build universal APK
+        run: bun run tauri android build --ci --config "$GITHUB_WORKSPACE/.release-config.json" --apk --target aarch64 armv7 i686 x86_64 -- --locked
       - name: Verify signing, application ID, and version
         run: |
           set -euo pipefail
           mapfile -t apks < <(find apps/tauri/gen/android/app/build/outputs/apk -type f -name '*.apk')
-          mapfile -t bundles < <(find apps/tauri/gen/android/app/build/outputs/bundle -type f -name '*.aab')
-          ((${#apks[@]} == 1 && ${#bundles[@]} == 1))
+          ((${#apks[@]} == 1))
           tools="$ANDROID_HOME/build-tools/37.0.0"
           "$tools/apksigner" verify --verbose "${apks[0]}"
-          jarsigner -J-Duser.language=en -J-Duser.country=US -verify "${bundles[0]}" | grep -F 'jar verified.'
           badging="$("$tools/aapt" dump badging "${apks[0]}")"
           grep -F "name='$LETTUCE_ANDROID_APPLICATION_ID'" <<< "$badging"
           grep -F "versionName='$APP_VERSION'" <<< "$badging"
           mkdir dist-artifacts
           cp "${apks[0]}" "dist-artifacts/LettuceAI_${APP_VERSION}_android-universal.apk"
-          cp "${bundles[0]}" "dist-artifacts/LettuceAI_${APP_VERSION}_android.aab"
           printf '%s\n%s\n%s\n' "$SOURCE_SHA" "$APP_VERSION" android > dist-artifacts/BUILD_INFO
           (cd dist-artifacts && sha256sum -- * > SHA256SUMS.txt)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
