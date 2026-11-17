@@ -1261,7 +1261,13 @@ async fn late_failures_roll_back_media_templates_documents_and_model_defaults() 
             harness.context.now(),
         )
         .expect("profile");
-    for case in 0..4 {
+    let local = harness.context.backend().model_files().prepare(
+        lettuce_transfer::parse_model_import(&json!({
+            "name": "/models/model.gguf", "providerId": crate::LOCAL_LLAMA_PROVIDER_KIND,
+        }).to_string()).expect("local model"),
+        harness.context.now(),
+    ).expect("local plan");
+    for case in 0..5 {
         let result: Result<String,ApiOperationError> = database.commit_api_operation("import_commit",&format!("late-{case}"),"digest",harness.context.now(),|scope| {
             match case {
                 0 => {scope.install_library_upload(lettuce_media::IngestedMedia{blob:upload.blob.clone(),asset:upload.asset.clone()}).expect("catalog");scope.import_persona_file(&persona).expect("persona");},
@@ -1273,8 +1279,11 @@ async fn late_failures_roll_back_media_templates_documents_and_model_defaults() 
                     scope.create_lorebook(metadata,entries,harness.context.now()).expect("book write");
                     scope.create_prompt(lettuce_context::PromptMetadataDraft{name:"Rules".into(),purpose:lettuce_context::PromptPurpose::DirectChat,condense:false,behavior_version:lettuce_context::PromptBehaviorVersion::LegacyV1},vec![],harness.context.now()).expect("prompt");
                 },
-                _ => {
+                3 => {
                     scope.save_model_profile(model.profile.clone(),None,true).expect("model and default");
+                },
+                _ => {
+                    scope.import_model_profile(local.profile.clone(),local.account.clone()).expect("account, model and default");
                 },
             }
             Err(ApiOperationError::Storage { reason: "simulated failure" })
@@ -2281,6 +2290,13 @@ async fn uec3_local_model_import_keeps_files_that_exist_and_drops_the_rest() {
         wire.external_id = external.display().to_string();
         wire.llama_cpp.mmproj_path = Some(projector.display().to_string());
         wire.llama_cpp.mtp_model_path = Some(missing.display().to_string());
+        wire.llama_cpp.dflash_model_path = Some(missing.display().to_string());
+        wire.stable_diffusion.cpp.text_encoder_path = Some(missing.display().to_string());
+        wire.stable_diffusion.cpp.vae_path = Some(missing.display().to_string());
+        wire.stable_diffusion.cpp.vision_encoder_path = Some(missing.display().to_string());
+        wire.stable_diffusion.base_loras = Some(vec![lettuce_transfer::uec3::PortableStableDiffusionLora {
+            path: missing.display().to_string(), multiplier: 0.7, is_high_noise: false, keywords: vec![],
+        }]);
         json!({
             "schema": {"name":"UEC","version":"3.0"},"kind":"model_profile",
             "meta":{"exportedAt":3,"app":"LettuceAI 3.x","createdAt":1,"updatedAt":2,"authors":[],"license":null,"sources":[]},
@@ -2291,15 +2307,29 @@ async fn uec3_local_model_import_keeps_files_that_exist_and_drops_the_rest() {
     // The main file and projector are on disk, so they are kept; the missing
     // MTP draft model is dropped.
     let present_source = source(&root, "present.uec", &document(&present));
-    let digest = preview(&harness.context, present_source.clone()).await.digest;
-    let dto::ImportCommitResult::Imported { id, .. } = crate::api::import_commit(
+    let before = ModelCatalog::provider_accounts(database).expect("accounts").len();
+    let shown = preview(&harness.context, present_source.clone()).await;
+    assert_eq!(ModelCatalog::provider_accounts(database).expect("accounts").len(), before);
+    assert!(matches!(shown.content, dto::ImportPreviewContent::Model { model_file_required: false, .. }));
+    let skipped = [
+        "llamaCpp.mtpModelPath", "llamaCpp.dflashModelPath", "stableDiffusion.cpp.textEncoderPath",
+        "stableDiffusion.cpp.vaePath", "stableDiffusion.cpp.visionEncoderPath", "stableDiffusion.baseLoras[0].path",
+    ];
+    for field in skipped {
+        assert!(shown.warnings.iter().any(|warning| warning.code == dto::FileWarningCode::FieldSkipped && warning.field == field), "missing warning for {field}");
+    }
+    let request = commit_request(present_source, shown.digest, json!({}), "present");
+    let result = crate::api::import_commit(
         &harness.context,
-        commit_request(present_source, digest, json!({}), "present"),
+        request.clone(),
     )
     .await
-    .expect("import") else {
+    .expect("import");
+    assert_eq!(crate::api::import_commit(&harness.context, request).await.expect("replay"), result);
+    let dto::ImportCommitResult::Imported { id, warnings, .. } = result else {
         panic!("imported")
     };
+    assert_eq!(warnings, shown.warnings);
     let kept = ModelProfileRepository::get(database, id.parse().expect("id"))
         .expect("model")
         .expect("exists");
@@ -2309,13 +2339,18 @@ async fn uec3_local_model_import_keeps_files_that_exist_and_drops_the_rest() {
         Some(projector.display().to_string())
     );
     assert_eq!(kept.config.llama_cpp.mtp_model_path, None);
+    assert_eq!(kept.config.llama_cpp.dflash_model_path, None);
+    assert_eq!(kept.config.stable_diffusion.cpp.vae_path, None);
+    assert_eq!(kept.config.stable_diffusion.base_loras, None);
 
     // The main file is gone, so the model falls back to "pick it in the editor".
     let missing_source = source(&root, "missing.uec", &document(&missing));
-    let digest = preview(&harness.context, missing_source.clone()).await.digest;
+    let shown = preview(&harness.context, missing_source.clone()).await;
+    assert!(matches!(shown.content, dto::ImportPreviewContent::Model { model_file_required: true, .. }));
+    assert!(shown.warnings.iter().any(|warning| warning.code == dto::FileWarningCode::FieldConverted && warning.field == "externalId"));
     let dto::ImportCommitResult::Imported { id, .. } = crate::api::import_commit(
         &harness.context,
-        commit_request(missing_source, digest, json!({}), "missing"),
+        commit_request(missing_source, shown.digest, json!({}), "missing"),
     )
     .await
     .expect("import") else {

@@ -41,6 +41,8 @@ pub struct PortableLlamaCppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_prefill: Option<ForcedReasoningPrefill>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force_gemma4_reasoning: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mmproj_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mtp_model_path: Option<String>,
@@ -90,6 +92,7 @@ impl From<&LlamaCppSettings> for PortableLlamaCppSettings {
             dflash_min_probability: value.dflash_min_probability,
             streaming_enabled: value.streaming_enabled,
             reasoning_prefill: value.reasoning_prefill,
+            force_gemma4_reasoning: None,
             mmproj_path: value.mmproj_path.clone(),
             mtp_model_path: value.mtp_model_path.clone(),
             dflash_model_path: value.dflash_model_path.clone(),
@@ -136,7 +139,9 @@ impl From<PortableLlamaCppSettings> for LlamaCppSettings {
             dflash_draft_tokens: value.dflash_draft_tokens,
             dflash_min_probability: value.dflash_min_probability,
             streaming_enabled: value.streaming_enabled,
-            reasoning_prefill: value.reasoning_prefill,
+            reasoning_prefill: value.reasoning_prefill.or_else(|| {
+                (value.force_gemma4_reasoning == Some(true)).then_some(ForcedReasoningPrefill::Gemma)
+            }),
             sampler: value.sampler,
             mmproj_path: value.mmproj_path,
             mtp_model_path: value.mtp_model_path,

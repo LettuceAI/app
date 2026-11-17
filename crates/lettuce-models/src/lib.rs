@@ -4,6 +4,7 @@
 
 mod capabilities;
 mod llama_resolution;
+mod local_provider;
 mod local_runtime;
 mod model_paths;
 mod parameters;
@@ -11,6 +12,7 @@ mod resolution;
 
 pub use capabilities::*;
 pub use llama_resolution::*;
+pub use local_provider::*;
 pub use local_runtime::*;
 pub use model_paths::*;
 pub use parameters::*;
@@ -791,6 +793,16 @@ pub trait ModelProfileRepository: Send + Sync {
     fn get(&self, id: ModelProfileId) -> Result<Option<ModelProfile>, ModelRepositoryError>;
     /// Deletes a profile and clears the global default in the same transaction.
     fn delete_and_clear_default(&self, id: ModelProfileId) -> Result<(), ModelRepositoryError>;
+}
+
+/// Imports a model and its managed local account atomically, selecting the
+/// model as default when none is set. Existing accounts are left unchanged.
+pub trait ModelImportRepository: Send + Sync {
+    fn import_model_profile(
+        &self,
+        profile: ModelProfile,
+        account: ProviderAccount,
+    ) -> Result<ModelProfile, ModelRepositoryError>;
 }
 
 #[cfg(test)]

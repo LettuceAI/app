@@ -5,7 +5,7 @@ use lettuce_models::{
 use lettuce_types::{ModelProfileId, ProviderAccountId, Revision};
 
 /// The provider kind of the embedded stable-diffusion.cpp runtime.
-pub const LOCAL_DIFFUSION_PROVIDER_KIND: &str = "sdcpp";
+pub use lettuce_models::LOCAL_DIFFUSION_PROVIDER_KIND;
 
 /// A model that can generate images, with its account, checked when a
 /// generation runs.

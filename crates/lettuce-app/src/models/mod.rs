@@ -5,6 +5,7 @@ pub(crate) mod gguf_library;
 pub(crate) mod hf_canonical_preview;
 pub(crate) mod hf_image_bundles;
 pub(crate) mod hugging_face_browser;
+pub(crate) mod local_provider_accounts;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) mod local_llama;
 pub(crate) mod model_runnability;
@@ -16,6 +17,10 @@ pub use gguf_downloads::*;
 pub use gguf_library::*;
 pub use hf_image_bundles::*;
 pub use hugging_face_browser::*;
+pub use lettuce_models::{
+    LOCAL_DIFFUSION_PROVIDER_KIND, LOCAL_DIFFUSION_PROVIDER_LABEL,
+    LOCAL_LLAMA_PROVIDER_KIND, LOCAL_LLAMA_PROVIDER_LABEL,
+};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use local_llama::*;
 pub use model_runnability::*;

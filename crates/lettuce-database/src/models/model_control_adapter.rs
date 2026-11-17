@@ -1,10 +1,39 @@
-use lettuce_models::{ModelProfile, ModelRepositoryError};
+use lettuce_models::{
+    ModelImportRepository, ModelProfile, ModelRepositoryError, ProviderAccount, ProviderProtocol,
+};
 use lettuce_types::{ModelProfileId, ProviderAccountId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::{ApiOperationTransaction, Database};
 
 impl ApiOperationTransaction<'_, '_> {
+    pub fn import_model_profile(
+        &self,
+        mut profile: ModelProfile,
+        account: ProviderAccount,
+    ) -> Result<ModelProfile, ModelRepositoryError> {
+        if profile.provider_account_id != account.id {
+            return Err(ModelRepositoryError::AccountMissing);
+        }
+        if crate::sync_load_provider_account(self.transaction, &account.id.to_string())?.is_none() {
+            if !matches!(account.protocol, ProviderProtocol::LlamaCpp | ProviderProtocol::StableDiffusion) {
+                return Err(ModelRepositoryError::AccountMissing);
+            }
+            // Another import may have created the managed account since this
+            // import was prepared. Resolve it again under the write lock.
+            let existing = self.transaction.query_row(
+                "SELECT id FROM provider_accounts WHERE provider_kind = ?1 COLLATE NOCASE AND protocol = ?2 AND label = ?3 ORDER BY created_at, id LIMIT 1",
+                params![account.provider_kind, crate::provider_protocol_name(account.protocol), account.label],
+                |row| row.get::<_, String>(0),
+            ).optional().map_err(crate::model_error)?;
+            profile.provider_account_id = match existing {
+                Some(id) => crate::parse_id(id).map_err(crate::model_error)?,
+                None => self.save_provider_account(account, None)?.id,
+            };
+        }
+        self.save_model_profile(profile, None, true)
+    }
+
     pub fn model_profile(
         &self,
         id: ModelProfileId,
@@ -102,6 +131,29 @@ impl ApiOperationTransaction<'_, '_> {
 }
 
 pub type ModelCatalogSnapshot = (Vec<ModelProfile>, Option<ModelProfileId>, Revision);
+
+impl ModelImportRepository for Database {
+    fn import_model_profile(
+        &self,
+        profile: ModelProfile,
+        account: ProviderAccount,
+    ) -> Result<ModelProfile, ModelRepositoryError> {
+        let mut connection = self.connection().map_err(|error| ModelRepositoryError::Storage {
+            reason: error.to_string(),
+        })?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(crate::model_error)?;
+        let result = ApiOperationTransaction {
+            command: "model_file_import",
+            usage_delete_allowed: &self.usage_delete_allowed,
+            changes: &self.changes,
+            transaction: &transaction,
+        }.import_model_profile(profile, account)?;
+        transaction.commit().map_err(crate::model_error)?;
+        Ok(result)
+    }
+}
 
 impl Database {
     pub fn model_catalog_snapshot(&self) -> Result<ModelCatalogSnapshot, ModelRepositoryError> {

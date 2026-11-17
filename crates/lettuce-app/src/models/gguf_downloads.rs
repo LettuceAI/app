@@ -6,20 +6,18 @@ use std::path::{Path, PathBuf};
 
 use lettuce_model_hub::{HfBrowseError, HfResource, ModelOffload, PinnedArtifact};
 use lettuce_models::{
-    ModelLookup, ModelProfile, ModelProfileRepository, ProviderAccount, ProviderAccountRepository,
-    ProviderConfig, ProviderProtocol,
+    ModelImportRepository, ModelLookup, ModelProfile, ProviderAccount, ProviderAccountRepository,
+    ProviderProtocol,
 };
-use lettuce_settings::{DeviceSettings, SecretOwnerId, SecretStore};
-use lettuce_types::{ProviderAccountId, Revision, TimestampMillis};
+use lettuce_settings::{DeviceSettings, SecretStore};
+use lettuce_types::TimestampMillis;
 use serde_json::{Map, Value, json};
 
 use crate::{
     ArtifactInstallPlan, ArtifactSource, HuggingFaceBrowser, ModelFileCoordinator, ModelFileError,
     PlannedArtifact,
+    LOCAL_LLAMA_PROVIDER_KIND, LOCAL_LLAMA_PROVIDER_LABEL,
 };
-
-pub const LOCAL_LLAMA_PROVIDER_KIND: &str = "llamacpp";
-pub const LOCAL_LLAMA_PROVIDER_LABEL: &str = "llama.cpp (Local)";
 
 /// Where GGUF downloads go: the device's chosen folder, else
 /// `<app folder>/models/gguf`.
@@ -301,46 +299,9 @@ pub fn local_llama_account<R>(
 where
     R: ModelLookup + ProviderAccountRepository + ?Sized,
 {
-    Ok(
-        match repository
-            .account_by_kind_and_label(LOCAL_LLAMA_PROVIDER_KIND, LOCAL_LLAMA_PROVIDER_LABEL)?
-        {
-            Some(account) if account.enabled => account,
-            Some(account) => {
-                let revision = account.revision;
-                ProviderAccountRepository::upsert(
-                    repository,
-                    ProviderAccount {
-                        enabled: true,
-                        updated_at: now,
-                        ..account
-                    },
-                    Some(revision),
-                )?
-            }
-            None => ProviderAccountRepository::upsert(
-                repository,
-                ProviderAccount {
-                    id: ProviderAccountId::new(),
-                    secret_owner_id: SecretOwnerId::new(),
-                    provider_kind: LOCAL_LLAMA_PROVIDER_KIND.to_owned(),
-                    protocol: ProviderProtocol::LlamaCpp,
-                    label: LOCAL_LLAMA_PROVIDER_LABEL.to_owned(),
-                    endpoint: None,
-                    enabled: true,
-                    streaming_enabled: true,
-                    allow_invalid_tls: false,
-                    api_key_ref: None,
-                    secret_headers: Vec::new(),
-                    config: ProviderConfig::Standard,
-                    revision: Revision::INITIAL,
-                    created_at: now,
-                    updated_at: now,
-                },
-                None,
-            )?,
-        },
-    )
+    crate::models::local_provider_accounts::LocalModelProvider::LlamaCpp
+        .ensure_account(repository, now)
+        .map_err(Into::into)
 }
 
 /// A llama.cpp model already using `model_path`, the oldest first.
@@ -375,9 +336,8 @@ pub fn register_downloaded_gguf<R>(
 ) -> Result<ModelProfile, ModelFileError>
 where
     R: lettuce_models::ModelCatalog
-        + lettuce_settings::GlobalSettingsStore
         + ModelLookup
-        + ModelProfileRepository
+        + ModelImportRepository
         + ProviderAccountRepository
         + ?Sized,
 {

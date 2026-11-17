@@ -148,8 +148,8 @@ fn uec3_document(
 fn prepare_uec3_model(
     context: &ApiContext,
     model: &lettuce_transfer::uec3::ModelProfile,
-    persist: bool,
-) -> Result<lettuce_models::ModelProfile, ApiError> {
+    warnings: &mut Vec<dto::FileWarning>,
+) -> Result<(lettuce_models::ModelProfile, lettuce_models::ProviderAccount), ApiError> {
     let account = context
         .backend()
         .model_files()
@@ -157,7 +157,6 @@ fn prepare_uec3_model(
             &model.provider.kind,
             &model.provider.label,
             context.now(),
-            persist,
         )
         .map_err(IntoApiError::into_api_error)?;
     let local = matches!(
@@ -170,27 +169,49 @@ fn prepare_uec3_model(
         .into_stored(account.id, context.now())
         .map_err(uec3_error)?;
     if local {
-        drop_missing_local_files(&mut profile);
+        drop_missing_local_files(&mut profile, warnings);
     }
-    Ok(profile)
+    Ok((profile, account))
 }
 
 /// Keeps a local model's file paths only when the files are actually on this
 /// device; a missing main model falls back to "pick it in the editor", and a
 /// missing side file (projector, VAE, LoRA …) is dropped.
-fn drop_missing_local_files(profile: &mut lettuce_models::ModelProfile) {
+fn drop_missing_local_files(
+    profile: &mut lettuce_models::ModelProfile,
+    warnings: &mut Vec<dto::FileWarning>,
+) {
     if !is_existing_file(&profile.external_model_id) {
+        if profile.external_model_id != lettuce_models::UNPICKED_LOCAL_MODEL_FILE {
+            warnings.push(warning(dto::FileWarningCode::FieldConverted, "externalId"));
+        }
         profile.external_model_id = lettuce_models::UNPICKED_LOCAL_MODEL_FILE.into();
     }
     let llama = &mut profile.config.llama_cpp;
-    clear_missing_file(&mut llama.mmproj_path);
-    clear_missing_file(&mut llama.mtp_model_path);
-    clear_missing_file(&mut llama.dflash_model_path);
+    for (path, field) in [
+        (&mut llama.mmproj_path, "llamaCpp.mmprojPath"),
+        (&mut llama.mtp_model_path, "llamaCpp.mtpModelPath"),
+        (&mut llama.dflash_model_path, "llamaCpp.dflashModelPath"),
+    ] {
+        clear_missing_file(path, field, warnings);
+    }
     let cpp = &mut profile.config.stable_diffusion.cpp;
-    clear_missing_file(&mut cpp.text_encoder_path);
-    clear_missing_file(&mut cpp.vae_path);
-    clear_missing_file(&mut cpp.vision_encoder_path);
+    for (path, field) in [
+        (&mut cpp.text_encoder_path, "stableDiffusion.cpp.textEncoderPath"),
+        (&mut cpp.vae_path, "stableDiffusion.cpp.vaePath"),
+        (&mut cpp.vision_encoder_path, "stableDiffusion.cpp.visionEncoderPath"),
+    ] {
+        clear_missing_file(path, field, warnings);
+    }
     if let Some(loras) = &mut profile.config.stable_diffusion.base_loras {
+        for (index, lora) in loras.iter().enumerate() {
+            if !is_existing_file(&lora.path) {
+                warnings.push(warning(
+                    dto::FileWarningCode::FieldSkipped,
+                    format!("stableDiffusion.baseLoras[{index}].path"),
+                ));
+            }
+        }
         loras.retain(|lora| is_existing_file(&lora.path));
         if loras.is_empty() {
             profile.config.stable_diffusion.base_loras = None;
@@ -198,9 +219,10 @@ fn drop_missing_local_files(profile: &mut lettuce_models::ModelProfile) {
     }
 }
 
-fn clear_missing_file(path: &mut Option<String>) {
+fn clear_missing_file(path: &mut Option<String>, field: &str, warnings: &mut Vec<dto::FileWarning>) {
     if path.as_deref().is_some_and(|path| !is_existing_file(path)) {
         *path = None;
+        warnings.push(warning(dto::FileWarningCode::FieldSkipped, field));
     }
 }
 
@@ -913,7 +935,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
             let lettuce_transfer::uec3::Entity::ModelProfile(model) = &card.document.entity else {
                 return Err(format_error("expected model profile entity"));
             };
-            let profile = prepare_uec3_model(context, model, false)?;
+            let (profile, _) = prepare_uec3_model(context, model, &mut warnings)?;
             let scopes = |modalities: &lettuce_models::ModalityCapabilities| {
                 [
                     ("text", modalities.text),
@@ -1219,7 +1241,7 @@ pub async fn import_commit(
                     lettuce_types::Revision,
                     lettuce_characters::ConversationStarter,
                 ),
-                Model(Box<lettuce_models::ModelProfile>),
+                Model(Box<lettuce_models::ModelProfile>, Box<lettuce_models::ProviderAccount>),
             }
             let mut uploads = Vec::new();
             let mut pins = Vec::new();
@@ -1499,7 +1521,8 @@ pub async fn import_commit(
                     else {
                         return Err(format_error("expected model profile entity"));
                     };
-                    WritePlan::Model(Box::new(prepare_uec3_model(context, model, true)?))
+                    let (profile, account) = prepare_uec3_model(context, model, &mut warnings)?;
+                    WritePlan::Model(Box::new(profile), Box::new(account))
                 }
                 (dto::FileKind::ModelFile, _) => {
                     let imported = context
@@ -1523,7 +1546,7 @@ pub async fn import_commit(
                             .into_iter()
                             .map(|field| warning(dto::FileWarningCode::FieldSkipped, field)),
                     );
-                    WritePlan::Model(Box::new(imported.profile))
+                    WritePlan::Model(Box::new(imported.profile), Box::new(imported.account))
                 }
                 _ => {
                     return Err(api_error(
@@ -1622,8 +1645,8 @@ pub async fn import_commit(
                                 .map_err(|e| Failure(e.into_api_error()))?
                                 .id
                                 .to_string(),
-                            WritePlan::Model(profile) => scope
-                                .save_model_profile(*profile, None, true)
+                            WritePlan::Model(profile, account) => scope
+                                .import_model_profile(*profile, *account)
                                 .map_err(|e| Failure(super::models::profiles::model_error(e)))?
                                 .id
                                 .to_string(),

@@ -107,6 +107,25 @@ fn asset_decode_is_sequential_without_a_count_cap() {
 }
 
 #[test]
+fn legacy_model_reasoning_flags_import_without_changing_new_exports() {
+    use lettuce_models::{ForcedReasoningPrefill, LlamaCppSettings};
+    for (legacy, expected) in [(true, Some(ForcedReasoningPrefill::Gemma)), (false, None)] {
+        let wire: uec3::PortableLlamaCppSettings = serde_json::from_value(json!({
+            "forceGemma4Reasoning": legacy,
+        })).expect("old settings");
+        let native = LlamaCppSettings::from(wire);
+        assert_eq!(native.reasoning_prefill, expected);
+        let exported = serde_json::to_value(uec3::PortableLlamaCppSettings::from(&native)).expect("export");
+        assert!(exported.get("forceGemma4Reasoning").is_none());
+        assert_eq!(exported.get("reasoningPrefill"), expected.map(|_| json!("gemma")).as_ref());
+    }
+    let wire: uec3::PortableLlamaCppSettings = serde_json::from_value(json!({
+        "forceGemma4Reasoning": true, "reasoningPrefill": "think",
+    })).expect("mixed settings");
+    assert_eq!(LlamaCppSettings::from(wire).reasoning_prefill, Some(ForcedReasoningPrefill::Think));
+}
+
+#[test]
 fn model_profile_round_trips_typed_parameters_and_portable_runtime_settings() {
     let mut source = lorebook();
     source["kind"] = json!("model_profile");

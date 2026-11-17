@@ -12,7 +12,7 @@ use lettuce_image_generation::sd_runtime::releases::{
     pinned_runtime_releases, runtime_backend, runtime_releases,
 };
 use lettuce_image_generation::{
-    DiffusionComponentRole, DiffusionProfile, DiffusionVariant, LOCAL_DIFFUSION_PROVIDER_KIND,
+    DiffusionComponentRole, DiffusionProfile, DiffusionVariant,
     diffusion_catalog,
 };
 use lettuce_model_hub::PinnedArtifact;
@@ -20,13 +20,12 @@ use lettuce_models::{
     CapabilityEvidence, CapabilityEvidenceSource, CapabilityStatus, ModalityCapabilities,
     ModelCapabilities, ModelKind, ModelLookup, ModelProfile, ModelProfileConfig,
     ModelProfileRepository, ModelRepositoryError, ProviderAccount, ProviderAccountRepository,
-    ProviderConfig, ProviderProtocol, StableDiffusionCppBinding,
+    StableDiffusionCppBinding,
 };
 use lettuce_network::{JsonAuth, JsonClient, JsonQueryParameter, JsonStaticHeader, RequestPolicy};
-use lettuce_settings::SecretOwnerId;
-use lettuce_types::{ModelProfileId, ProviderAccountId, Revision, TimestampMillis};
+use lettuce_types::{ModelProfileId, Revision, TimestampMillis};
 
-use crate::{ArtifactInstallPlan, ArtifactSource, LOCAL_DIFFUSION_PROVIDER_LABEL, PlannedArtifact};
+use crate::{ArtifactInstallPlan, ArtifactSource, PlannedArtifact};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LocalDiffusionInstallError {
@@ -337,47 +336,9 @@ fn local_diffusion_account<R>(
 where
     R: ModelLookup + ProviderAccountRepository + ?Sized,
 {
-    Ok(
-        match repository.account_by_kind_and_label(
-            LOCAL_DIFFUSION_PROVIDER_KIND,
-            LOCAL_DIFFUSION_PROVIDER_LABEL,
-        )? {
-            Some(account) if account.enabled => account,
-            Some(account) => {
-                let revision = account.revision;
-                ProviderAccountRepository::upsert(
-                    repository,
-                    ProviderAccount {
-                        enabled: true,
-                        updated_at: now,
-                        ..account
-                    },
-                    Some(revision),
-                )?
-            }
-            None => ProviderAccountRepository::upsert(
-                repository,
-                ProviderAccount {
-                    id: ProviderAccountId::new(),
-                    secret_owner_id: SecretOwnerId::new(),
-                    provider_kind: LOCAL_DIFFUSION_PROVIDER_KIND.to_owned(),
-                    protocol: ProviderProtocol::StableDiffusion,
-                    label: LOCAL_DIFFUSION_PROVIDER_LABEL.to_owned(),
-                    endpoint: None,
-                    enabled: true,
-                    streaming_enabled: true,
-                    allow_invalid_tls: false,
-                    api_key_ref: None,
-                    secret_headers: Vec::new(),
-                    config: ProviderConfig::Standard,
-                    revision: Revision::INITIAL,
-                    created_at: now,
-                    updated_at: now,
-                },
-                None,
-            )?,
-        },
-    )
+    crate::models::local_provider_accounts::LocalModelProvider::StableDiffusion
+        .ensure_account(repository, now)
+        .map_err(Into::into)
 }
 
 /// Registers an installed catalog variant as a model on the managed
