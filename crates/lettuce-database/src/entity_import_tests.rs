@@ -29,6 +29,7 @@ fn character_bundles_and_persona_default_roll_back_on_a_late_receipt_failure() {
             status: LifecycleStatus::Active,
             title: "Writer".into(),
             description: "Authored".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,

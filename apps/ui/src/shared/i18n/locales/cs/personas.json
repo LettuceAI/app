@@ -63,6 +63,8 @@
     "chooseFile": "Vybrat soubor"
   },
   "about": {
+    "intro": "Úvod",
+    "introHint": "Zobrazuje se pouze v aplikaci.",
     "description": "Popis",
     "descriptionPlaceholder": "Jak se na tebe mají postavy obracet, tvůj původ, preference a styl",
     "descriptionHint": "Použij {{user}} pro tuhle personu a {{char}} pro postavu.",

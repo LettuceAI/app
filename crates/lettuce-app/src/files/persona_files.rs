@@ -68,6 +68,7 @@ where
             status: LifecycleStatus::Active,
             title: data.title.clone(),
             description: data.description.clone(),
+            intro: data.intro.clone(),
             nickname: data.nickname.clone(),
             design_description: None,
             avatar_crop: data

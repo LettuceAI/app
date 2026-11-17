@@ -22,7 +22,7 @@ function detail(
   const { content } = preview;
   if (content.kind === "lorebook") return entries(content.entries.length);
   if (content.kind === "character") return content.content.description?.trim() || fallback;
-  if (content.kind === "persona") return content.content.description.trim() || fallback;
+  if (content.kind === "persona") return content.content.intro?.trim() || content.content.description.trim() || fallback;
   return fallback;
 }
 

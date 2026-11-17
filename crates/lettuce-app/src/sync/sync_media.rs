@@ -473,6 +473,7 @@ mod tests {
                 status: lettuce_characters::LifecycleStatus::Active,
                 title: "Synced persona".into(),
                 description: "Carries two shared image references".into(),
+                intro: None,
                 nickname: None,
                 design_description: None,
                 avatar_crop: None,

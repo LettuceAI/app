@@ -63,6 +63,8 @@
     "chooseFile": "Wybierz plik"
   },
   "about": {
+    "intro": "Wstęp",
+    "introHint": "Wyświetlane tylko w aplikacji.",
     "description": "Opis",
     "descriptionPlaceholder": "Jak postacie powinny się do ciebie zwracać, twoje tło, preferencje i styl",
     "descriptionHint": "Użyj {{user}} dla tej persony i {{char}} dla postaci.",

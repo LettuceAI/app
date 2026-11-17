@@ -40,6 +40,29 @@ fn recorded_migrations(connection: &Connection) -> Vec<(u32, String, i64)> {
 }
 
 #[test]
+fn migration_43_adds_optional_intro_to_existing_personas() {
+    let mut connection = Connection::open_in_memory().expect("database");
+    configure(&connection, false).expect("configure");
+    apply_migrations(&mut connection, &MIGRATIONS[..42]).expect("previous schema");
+    let id = lettuce_types::PersonaId::new().to_string();
+    connection.execute(
+        "INSERT INTO personas (id,status,title,normalized_title,description,revision,created_at,updated_at) VALUES (?1,'active','Writer','writer','Persona description',1,1,1)",
+        [&id],
+    ).expect("old persona");
+    let history = recorded_migrations(&connection);
+
+    apply_migrations(&mut connection, MIGRATIONS).expect("upgrade");
+    assert_eq!(&recorded_migrations(&connection)[..history.len()], history.as_slice());
+    let (description, intro): (String, Option<String>) = connection.query_row(
+        "SELECT description,intro FROM personas WHERE id=?1",
+        [&id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).expect("migrated persona");
+    assert_eq!(description, "Persona description");
+    assert_eq!(intro, None);
+}
+
+#[test]
 fn migration_26_preserves_existing_content_and_database_guards() {
     let mut connection = Connection::open_in_memory().expect("database");
     configure(&connection, false).expect("configure");

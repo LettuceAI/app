@@ -59,6 +59,8 @@
     "chooseFile": "Datei wählen"
   },
   "about": {
+    "intro": "Intro",
+    "introHint": "Wird nur in der App angezeigt.",
     "description": "Beschreibung",
     "descriptionPlaceholder": "Wie Charaktere dich ansprechen sollen, dein Hintergrund, deine Vorlieben und dein Stil",
     "descriptionHint": "Verwende {{user}} für diese Persona und {{char}} für den Charakter.",

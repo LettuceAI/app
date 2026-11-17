@@ -42,8 +42,9 @@ export function canLeave(step: PersonaStep, form: PersonaForm): boolean {
 const optional = (value: string | null) => (value?.trim() ? value.trim() : null);
 
 export function draftToSave(form: PersonaForm): PersonaDraft {
-  const { draft } = form;
-  return { ...draft, title: draft.title.trim(), description: draft.description.trim(), nickname: optional(draft.nickname), design_description: optional(draft.design_description) };
+  const { intro, ...draft } = form.draft;
+  const trimmedIntro = intro?.trim();
+  return { ...draft, ...(trimmedIntro ? { intro: trimmedIntro } : {}), title: draft.title.trim(), description: draft.description.trim(), nickname: optional(draft.nickname), design_description: optional(draft.design_description) };
 }
 
 /** Whether anything was entered, so leaving would lose work. */

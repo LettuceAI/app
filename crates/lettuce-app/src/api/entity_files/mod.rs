@@ -716,6 +716,7 @@ fn preview(context: &ApiContext, file: ImportFile) -> Result<dto::ImportPreview,
                 content: dto::ImportPersonaContent {
                     title: import.persona.title,
                     description: import.persona.description,
+                    intro: import.persona.intro,
                     nickname: import.persona.nickname,
                     is_default: None,
                     avatar_crop: convert(&import.persona.avatar_crop)?,
@@ -2184,6 +2185,7 @@ fn prepare_uec3_persona(
         status: lettuce_characters::LifecycleStatus::Active,
         title: persona.name.clone(),
         description: persona.description.clone(),
+        intro: persona.intro.clone(),
         nickname: persona.nickname.clone(),
         design_description: persona.design.description.clone(),
         avatar_crop: persona.media.avatar_crop.map(Into::into),
@@ -2399,6 +2401,7 @@ pub(super) fn export_uec3_persona(
             name: persona.title.clone(),
             nickname: persona.nickname.clone(),
             description: persona.description.clone(),
+            intro: persona.intro.clone(),
             design: uec3::Design {
                 description: persona.design_description.clone(),
                 references,

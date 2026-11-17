@@ -252,6 +252,7 @@ mod tests {
             status: lettuce_characters::LifecycleStatus::Active,
             title: "Writer".into(),
             description: "Writes careful prose".into(),
+            intro: None,
             nickname: Some("W".into()),
             design_description: None,
             avatar_crop: None,

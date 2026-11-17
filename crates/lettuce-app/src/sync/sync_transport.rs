@@ -2030,6 +2030,7 @@ mod tests {
                 status: LifecycleStatus::Active,
                 title: "Loopback persona".into(),
                 description: "Carries shared media".into(),
+                intro: None,
                 nickname: None,
                 design_description: None,
                 avatar_crop: None,

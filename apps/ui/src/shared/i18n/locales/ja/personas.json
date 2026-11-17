@@ -57,6 +57,8 @@
     "chooseFile": "ファイルを選択"
   },
   "about": {
+    "intro": "紹介文",
+    "introHint": "アプリ内でのみ表示されます。",
     "description": "説明",
     "descriptionPlaceholder": "キャラクターがあなたをどう呼ぶべきか、あなたの背景、好み、スタイル",
     "descriptionHint": "このペルソナには{{user}}、キャラクターには{{char}}を使います。",

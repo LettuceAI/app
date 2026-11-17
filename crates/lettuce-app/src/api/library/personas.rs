@@ -19,6 +19,7 @@ pub(in crate::api) fn view(context: &ApiContext, persona: Persona) -> dto::Perso
         draft: dto::PersonaDraft {
             title: persona.title,
             description: persona.description,
+            intro: persona.intro,
             nickname: persona.nickname,
             design_description: persona.design_description,
             avatar_crop: persona.avatar_crop.map(|crop| dto::LibraryCrop {
@@ -95,6 +96,7 @@ pub async fn persona_save(
     let draft = PersonaDraftUpdate {
         title: request.draft.title,
         description: request.draft.description,
+        intro: request.draft.intro,
         nickname: request.draft.nickname,
         design_description: request.draft.design_description,
         avatar_crop: request
@@ -203,6 +205,7 @@ pub async fn personas_list(
                         id: persona.id.to_string(),
                         title: persona.title,
                         description: persona.description,
+                        intro: persona.intro,
                         nickname: persona.nickname,
                         avatar: persona
                             .media

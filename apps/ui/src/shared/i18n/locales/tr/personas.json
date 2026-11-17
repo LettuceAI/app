@@ -59,6 +59,8 @@
     "chooseFile": "Dosya seç"
   },
   "about": {
+    "intro": "Tanıtım",
+    "introHint": "Yalnızca uygulama arayüzünde görünür.",
     "description": "Açıklama",
     "descriptionPlaceholder": "Karakterlerin size nasıl hitap etmesi gerektiği, geçmişiniz, tercihleriniz ve tarzınız",
     "descriptionHint": "Bu persona için {{user}}, karakter için {{char}} kullanın.",

@@ -6320,6 +6320,7 @@ mod tests {
                 PersonaDraftUpdate {
                     title: "Editor".into(),
                     description: "A careful editor".into(),
+                    intro: None,
                     nickname: None,
                     design_description: None,
                     avatar_crop: None,
@@ -6587,6 +6588,7 @@ mod tests {
         let draft = |title: &str| PersonaDraftUpdate {
             title: title.into(),
             description: "Edited".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,
@@ -6688,6 +6690,7 @@ mod tests {
             PersonaDraftUpdate {
                 title: "Peer edit".into(),
                 description: "Newer".into(),
+                intro: None,
                 nickname: None,
                 design_description: None,
                 avatar_crop: None,
@@ -6860,6 +6863,7 @@ mod tests {
         let draft = |title: &str| PersonaDraftUpdate {
             title: title.into(),
             description: "Edited".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,
@@ -7040,6 +7044,7 @@ mod tests {
             PersonaDraftUpdate {
                 title: "Editor".into(),
                 description: "Edits careful prose".into(),
+                intro: None,
                 nickname: Some("E".into()),
                 design_description: None,
                 avatar_crop: None,

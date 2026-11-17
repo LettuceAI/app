@@ -2612,7 +2612,7 @@ async fn uec3_persona_import_preserves_disabled_bundled_book_and_authored_fields
     let (root, harness) = setup();
     let value = json!({"schema":{"name":"UEC","version":"3.0"},"kind":"persona",
         "meta":{"exportedAt":3,"app":"LettuceAI 3.x","createdAt":1,"updatedAt":2,"authors":[],"license":null,"sources":[]},
-        "entity":{"name":"Writer","nickname":"W","description":"Authored","design":{"description":"Coat","references":[]},
+        "entity":{"name":"Writer","nickname":"W","description":"Authored","intro":"A public introduction","design":{"description":"Coat","references":[]},
         "media":{"avatar":null,"avatarCrop":{"x":0.2f32,"y":0.3f32,"scale":1.2f32}},
         "behavior":{"image":null,"lorebooks":[{"book":"dep:l1","enabled":false}]}},
         "dependencies":[{"key":"l1","kind":"lorebook","entity":{"name":"Harbour","icon":null,"detection":"latest_user_message","behaviorVersion":"deterministic_v2","entries":[]}}],
@@ -2631,6 +2631,10 @@ async fn uec3_persona_import_preserves_disabled_bundled_book_and_authored_fields
         .expect("inspect")
         .kind
     );
+    let dto::ImportPreviewContent::Persona { content } = &p.content else {
+        panic!("persona preview")
+    };
+    assert_eq!(content.intro.as_deref(), Some("A public introduction"));
     let request = commit_request(source, p.digest, json!({}), "persona3");
     let result = crate::api::import_commit(&harness.context, request.clone())
         .await
@@ -2651,6 +2655,7 @@ async fn uec3_persona_import_preserves_disabled_bundled_book_and_authored_fields
         .expect("persona");
     assert_eq!(persona.design_description.as_deref(), Some("Coat"));
     assert_eq!(persona.nickname.as_deref(), Some("W"));
+    assert_eq!(persona.intro.as_deref(), Some("A public introduction"));
     assert_eq!(persona.avatar_crop.expect("crop").scale, 1.2);
     let bindings = database.list_persona_bindings(id).expect("bindings");
     assert_eq!(bindings.len(), 1);
@@ -4042,6 +4047,7 @@ async fn uec3_artifact_only_lora_exports_a_named_warning_without_failing() {
             status: LifecycleStatus::Active,
             title: "Artifact recommendation".into(),
             description: "Authored".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,
@@ -4076,6 +4082,7 @@ async fn uec3_artifact_only_lora_exports_a_named_warning_without_failing() {
         PersonaDraftUpdate {
             title: persona.title,
             description: persona.description,
+            intro: None,
             nickname: persona.nickname,
             design_description: persona.design_description,
             avatar_crop: persona.avatar_crop,
@@ -4568,6 +4575,7 @@ async fn uec3_export_encodes_assets_without_buffering_the_file() {
             status: LifecycleStatus::Active,
             title: "Large avatar".into(),
             description: "Authored".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,

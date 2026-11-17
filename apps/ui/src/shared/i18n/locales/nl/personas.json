@@ -59,6 +59,8 @@
     "chooseFile": "Bestand kiezen"
   },
   "about": {
+    "intro": "Intro",
+    "introHint": "Alleen in de app weergegeven.",
     "description": "Beschrijving",
     "descriptionPlaceholder": "Hoe karakters je moeten aanspreken, je achtergrond, voorkeuren en stijl",
     "descriptionHint": "Gebruik {{user}} voor deze persona en {{char}} voor het karakter.",

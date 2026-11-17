@@ -46,6 +46,8 @@ pub struct Persona {
     pub name: String,
     pub nickname: Option<String>,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
     pub design: Design,
     pub media: PersonaMedia,
     pub behavior: PersonaBehavior,

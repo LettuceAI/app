@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SyncConflictView, SyncCounts, SyncStatus } from "@/api/generated/bindings";
+import type { SyncConflictView_Serialize, SyncCounts, SyncStatus } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -23,7 +23,7 @@ const sharing: SyncStatus = { type: "sharing", addresses: ["192.168.1.20", "10.0
 const counts: SyncCounts = { sent_changes: 4, received_changes: 12, received_assets: 0, received_blobs: 0, received_bytes: 0, unavailable_assets: 0, received_secrets: 0, skipped_secrets: 0 };
 const noConflicts = { conflicts: [], legacy_conflicts: [], forks: [] };
 
-const conflict: SyncConflictView = {
+const conflict: SyncConflictView_Serialize = {
   conflict_id: "k1",
   entity_kind: "persona_default",
   entity_id: "default",

@@ -65,6 +65,7 @@ export function EntryMenu({
     },
   });
   const busy = mutation.isPending;
+  const intro = detail.data?.kind === "persona" ? detail.data.view.draft.intro?.trim() : null;
   const ready = Boolean(detail.data) && !detail.isError;
   return (
     <Sheet
@@ -115,6 +116,7 @@ export function EntryMenu({
         <p className="text-base text-fg-2">{t(`delete.${entry.kind}`)}</p>
       ) : (
         <div className="space-y-4 pb-1">
+          {intro && <p className="whitespace-pre-wrap break-words text-sm text-fg-2">{intro}</p>}
           <ListGroup>
             {(entry.kind === "character" || entry.kind === "persona") && <CreatorStartRow api={api} kind={entry.kind} targetId={entry.id} onStarted={onClose} />}
             {entry.kind === "character" && (

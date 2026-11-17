@@ -7,6 +7,7 @@ fn draft() -> dto::PersonaDraft {
     dto::PersonaDraft {
         title: "Writer".into(),
         description: "A writer".into(),
+        intro: None,
         nickname: Some("W".into()),
         design_description: None,
         avatar_crop: None,
@@ -66,11 +67,26 @@ async fn persona_save_creates_edits_replays_and_rejects_stale_or_changed_request
         client_operation_id: "update-persona".into(),
     };
     update.draft.description = "Edited".into();
+    update.draft.intro = Some("Harbour scribe".into());
     let edited = persona_save(&harness.context, update.clone())
         .await
         .expect("edit");
     assert_eq!(edited.revision, 2);
     assert_eq!(edited.draft.description, "Edited");
+    assert_eq!(edited.draft.intro.as_deref(), Some("Harbour scribe"));
+    let listed = personas_list(
+        &harness.context,
+        dto::PersonasListRequest {
+            query: Some("harbour".into()),
+            search_description: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("search by intro");
+    assert_eq!(listed.items.len(), 1);
+    assert_eq!(listed.items[0].id, edited.id);
+    assert_eq!(listed.items[0].intro.as_deref(), Some("Harbour scribe"));
     assert_eq!(
         edited.draft.image_recommendation,
         created.draft.image_recommendation
@@ -83,6 +99,20 @@ async fn persona_save_creates_edits_replays_and_rejects_stale_or_changed_request
             .code,
         ApiErrorCode::Conflict
     );
+    let mut draft = edited.draft;
+    draft.intro = None;
+    let cleared = persona_save(
+        &harness.context,
+        dto::PersonaSaveRequest {
+            persona_id: Some(edited.id),
+            draft,
+            expected_revision: Some(edited.revision),
+            client_operation_id: "clear-persona-intro".into(),
+        },
+    )
+    .await
+    .expect("clear intro");
+    assert_eq!(cleared.draft.intro, None);
 }
 
 #[tokio::test]

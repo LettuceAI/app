@@ -61,6 +61,8 @@
     "chooseFile": "Choisir un fichier"
   },
   "about": {
+    "intro": "Intro",
+    "introHint": "Affiché uniquement dans l'application.",
     "description": "Description",
     "descriptionPlaceholder": "Comment les personnages doivent s'adresser à vous, votre parcours, vos préférences et votre style",
     "descriptionHint": "Utilisez {{user}} pour ce persona et {{char}} pour le personnage.",

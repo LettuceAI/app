@@ -59,6 +59,8 @@
     "chooseFile": "Velg fil"
   },
   "about": {
+    "intro": "Intro",
+    "introHint": "Vises bare i appen.",
     "description": "Beskrivelse",
     "descriptionPlaceholder": "Hvordan karakterene bør henvende seg til deg, bakgrunnen din, preferanser og stil",
     "descriptionHint": "Bruk {{user}} for denne personaen og {{char}} for karakteren.",

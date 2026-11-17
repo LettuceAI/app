@@ -15,6 +15,7 @@ import { formFromView, isDirty, rebase } from "./data/edit";
 import { draftToSave, type PersonaForm } from "./data/form";
 import { personaEditQuery } from "./data/queries";
 import { IdentityFields } from "./components/IdentityFields";
+import { PersonaIntro } from "./components/PersonaIntro";
 import { PersonaLook } from "./components/Look";
 import { PersonaLorebooks } from "./components/Lorebooks";
 import { PersonaActions } from "./components/PersonaActions";
@@ -214,6 +215,7 @@ function EditFlow({ personaId, view, lorebooks, defaultSlot }: { personaId: stri
             <IdentityFields api={api} form={draft} update={update} />
           </div>
           <div className="min-w-0 space-y-6">
+            <PersonaIntro form={draft} update={update} />
             <ListGroup>
               <ListRow title={t("identity.default")} description={t("identity.defaultBody")} trailing={<Switch checked={isDefault} disabled={togglingDefault} aria-label={t("identity.default")} onChange={(on) => void toggleDefault(on)} />} />
             </ListGroup>

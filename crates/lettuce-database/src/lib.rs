@@ -279,6 +279,11 @@ const MIGRATION_42: Migration = Migration {
     sql: include_str!("../migrations/0042_drop_root_branch_inherited_summaries.sql"),
 };
 
+const MIGRATION_43: Migration = Migration {
+    id: 43,
+    sql: include_str!("../migrations/0043_persona_intro.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -322,6 +327,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_40,
     MIGRATION_41,
     MIGRATION_42,
+    MIGRATION_43,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

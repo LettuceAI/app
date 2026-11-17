@@ -16,6 +16,7 @@ async fn persona_defaults_replay_compare_the_singleton_and_preserve_persona_revi
             draft: dto::PersonaDraft {
                 title: "Writer".into(),
                 description: "Description".into(),
+                intro: None,
                 nickname: None,
                 design_description: None,
                 avatar_crop: None,

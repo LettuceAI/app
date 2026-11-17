@@ -57,6 +57,8 @@
     "chooseFile": "Chọn tệp"
   },
   "about": {
+    "intro": "Giới thiệu",
+    "introHint": "Chỉ hiển thị trong ứng dụng.",
     "description": "Mô tả",
     "descriptionPlaceholder": "Cách nhân vật nên xưng hô với bạn, lai lịch, sở thích và phong cách",
     "descriptionHint": "Dùng {{user}} cho persona này và {{char}} cho nhân vật.",

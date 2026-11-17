@@ -57,6 +57,8 @@
     "chooseFile": "Pilih file"
   },
   "about": {
+    "intro": "Perkenalan",
+    "introHint": "Hanya ditampilkan di aplikasi.",
     "description": "Deskripsi",
     "descriptionPlaceholder": "Bagaimana karakter harus menyapa Anda, latar belakang, preferensi, dan gaya Anda",
     "descriptionHint": "Gunakan {{user}} untuk persona ini dan {{char}} untuk karakter.",

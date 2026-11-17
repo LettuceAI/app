@@ -59,6 +59,8 @@
     "chooseFile": "फ़ाइल चुनें"
   },
   "about": {
+    "intro": "परिचय",
+    "introHint": "केवल ऐप में दिखता है।",
     "description": "विवरण",
     "descriptionPlaceholder": "कैरेक्टर आपको कैसे संबोधित करें, आपकी पृष्ठभूमि, पसंद और शैली",
     "descriptionHint": "इस पर्सोना के लिए {{user}} और कैरेक्टर के लिए {{char}} उपयोग करें।",

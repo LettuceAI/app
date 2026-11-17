@@ -3288,6 +3288,7 @@ fn apply_existing_persona_in(
     let draft = PersonaDraftUpdate {
         title,
         description,
+        intro: current.intro,
         nickname: current.nickname,
         design_description: current.design_description,
         avatar_crop: current.avatar_crop,
@@ -4428,6 +4429,7 @@ mod tests {
             PersonaDraftUpdate {
                 title: stale.title.clone(),
                 description: stale.description.clone(),
+                intro: None,
                 nickname: stale.nickname.clone(),
                 design_description: stale.design_description.clone(),
                 avatar_crop: stale.avatar_crop,

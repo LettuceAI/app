@@ -5061,6 +5061,7 @@ async fn identity_placeholders_resolve_everywhere_legacy_resolved_them() {
         lettuce_characters::PersonaDraftUpdate {
             title: "Mira".into(),
             description: persona.description.clone(),
+            intro: Some("DISPLAY-ONLY-PERSONA-INTRO".into()),
             nickname: persona.nickname.clone(),
             design_description: persona.design_description.clone(),
             avatar_crop: persona.avatar_crop,
@@ -5071,6 +5072,7 @@ async fn identity_placeholders_resolve_everywhere_legacy_resolved_them() {
     .expect("rename persona");
     let (_, text) = assembled_prompt_with_text(&database, request()).await;
     assert!(text.contains("You=Mira"));
+    assert!(!text.contains("DISPLAY-ONLY-PERSONA-INTRO"));
     assert!(text.contains("Hello Ada, I am Mira."));
 }
 

@@ -59,6 +59,8 @@
     "chooseFile": "Choose file"
   },
   "about": {
+    "intro": "Intro",
+    "introHint": "Shown in the app only.",
     "description": "Description",
     "descriptionPlaceholder": "How characters should address you, your background, preferences and style",
     "descriptionHint": "Use {{user}} for this persona and {{char}} for the character.",

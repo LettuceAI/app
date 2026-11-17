@@ -7,7 +7,7 @@ import type {
   CharacterView_Serialize,
   LorebookSummary_Serialize,
   MediaLibraryItem,
-  PersonaPage,
+  PersonaPage_Serialize,
   PersonaView_Serialize,
 } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
@@ -41,7 +41,7 @@ const character: CharacterSummary = {
   created_at: 1,
   updated_at: 1,
 };
-const personas: PersonaPage = {
+const personas: PersonaPage_Serialize = {
   items: [
     { id: "p1", title: "Hunter", description: "A quiet observer", nickname: null, avatar: null },
   ],
@@ -248,11 +248,11 @@ describe("library operations", () => {
   });
 
   it("creates a persona through the wizard and returns to its filter", async () => {
-    const save = vi.fn<NonNullable<MockCallHandlers["personaSave"]>>((request) =>
+    const save = vi.fn<NonNullable<MockCallHandlers["personaSave"]>>(({ draft: { intro, ...draft } }) =>
       ok({
         id: "new",
         archived: false,
-        draft: { ...request.draft },
+        draft: { ...draft, ...(intro == null ? {} : { intro }) },
         assets: [],
         revision: 1,
         created_at: 1,

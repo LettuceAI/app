@@ -503,6 +503,7 @@ impl LegacyImportRepository for Database {
                 status: LifecycleStatus::Active,
                 title: candidate.title.clone(),
                 description: candidate.description.clone(),
+                intro: None,
                 nickname: candidate.nickname.clone(),
                 design_description: candidate.design_description.clone(),
                 avatar_crop: candidate

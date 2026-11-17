@@ -57,6 +57,8 @@
     "chooseFile": "파일 선택"
   },
   "about": {
+    "intro": "소개",
+    "introHint": "앱에서만 표시됩니다.",
     "description": "설명",
     "descriptionPlaceholder": "캐릭터가 나를 어떻게 대해야 하는지, 배경, 선호도, 말투",
     "descriptionHint": "이 페르소나는 {{user}}, 캐릭터는 {{char}} 표시로 작성하세요.",

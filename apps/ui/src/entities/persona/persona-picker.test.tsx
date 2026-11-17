@@ -55,3 +55,17 @@ it("selects an explicit persona and clears the search when reopened", async () =
   expect((await screen.findByRole("searchbox")) as HTMLInputElement).toHaveProperty("value", "");
   expect(screen.getByText("Mechanic").closest("button")!).toBeTruthy();
 });
+
+it("shows the intro in place of the description and matches it in search", async () => {
+  const items = [
+    { id: "1", title: "Sailor", intro: "Harbour guide", description: "AI description", nickname: null, avatar: null },
+    ...["Scholar", "Mechanic", "Traveler"].map((title): PersonaSummary => ({ id: title, title, description: "Existing persona", nickname: null, avatar: null })),
+  ];
+  await mount({ personas: { items, defaultId: null } });
+  expect(screen.getByText("Harbour guide")).toBeTruthy();
+  expect(screen.queryByText("AI description")).toBeNull();
+  expect(screen.getAllByText("Existing persona")).toHaveLength(3);
+  fireEvent.change(await screen.findByRole("searchbox"), { target: { value: "harbour" } });
+  expect(screen.getByText("Sailor")).toBeTruthy();
+  expect(screen.queryByText("Scholar")).toBeNull();
+});

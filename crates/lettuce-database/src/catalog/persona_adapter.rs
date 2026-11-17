@@ -209,6 +209,7 @@ fn apply_persona_draft(
 ) -> Result<Persona, RepositoryError> {
     persona.title.clone_from(&draft.title);
     persona.description.clone_from(&draft.description);
+    persona.intro.clone_from(&draft.intro);
     persona.nickname.clone_from(&draft.nickname);
     persona
         .design_description
@@ -385,6 +386,7 @@ fn parse_persona_row(row: &Row<'_>, id: PersonaId) -> rusqlite::Result<Persona> 
         status: status_from_name(&row.get::<_, String>(1)?)?,
         title,
         description: row.get(6)?,
+        intro: row.get(13)?,
         nickname,
         design_description: row.get(7)?,
         avatar_crop,
@@ -401,7 +403,7 @@ fn parse_persona_row(row: &Row<'_>, id: PersonaId) -> rusqlite::Result<Persona> 
 fn persona_row(connection: &Connection, id: PersonaId) -> Result<Option<Persona>, rusqlite::Error> {
     connection
         .query_row(
-            "SELECT id,status,title,normalized_title,nickname,normalized_nickname,description,design_description,avatar_crop_json,image_recommendation_json,revision,created_at,updated_at FROM personas WHERE id=?1",
+            "SELECT id,status,title,normalized_title,nickname,normalized_nickname,description,design_description,avatar_crop_json,image_recommendation_json,revision,created_at,updated_at,intro FROM personas WHERE id=?1",
             [id.to_string()],
             |row| parse_persona_row(row, id),
         )
@@ -563,7 +565,7 @@ pub(crate) fn insert_persona(
         .map(|value| encode(value, RECOMMENDATION_VERSION))
         .transpose()?;
     tx.execute(
-        "INSERT INTO personas(id,status,title,normalized_title,nickname,normalized_nickname,description,design_description,avatar_crop_json,image_recommendation_json,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+        "INSERT INTO personas(id,status,title,normalized_title,nickname,normalized_nickname,description,design_description,avatar_crop_json,image_recommendation_json,revision,created_at,updated_at,intro) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
         params![
             persona.id.to_string(),
             status_name(persona.status),
@@ -577,7 +579,8 @@ pub(crate) fn insert_persona(
             recommendation,
             sql_u64(persona.revision.get())?,
             persona.created_at.get(),
-            persona.updated_at.get()
+            persona.updated_at.get(),
+            persona.intro
         ],
     )
     .map_err(db_error)?;
@@ -613,7 +616,7 @@ pub(crate) fn apply_synced_persona(
         "UPDATE personas SET status=?2,title=?3,normalized_title=?4,nickname=?5,
          normalized_nickname=?6,description=?7,design_description=?8,
          avatar_crop_json=?9,image_recommendation_json=?10,revision=?11,
-         created_at=?12,updated_at=?13 WHERE id=?1",
+         created_at=?12,updated_at=?13,intro=?14 WHERE id=?1",
         params![
             persona.id.to_string(),
             status_name(persona.status),
@@ -627,7 +630,8 @@ pub(crate) fn apply_synced_persona(
             recommendation,
             sql_u64(persona.revision.get())?,
             persona.created_at.get(),
-            persona.updated_at.get()
+            persona.updated_at.get(),
+            persona.intro
         ],
     )
     .map_err(db_error)?;
@@ -690,7 +694,7 @@ pub(crate) fn revise_persona(
         .transpose()?;
     let changed = tx
         .execute(
-            "UPDATE personas SET title=?2,normalized_title=?3,nickname=?4,normalized_nickname=?5,description=?6,design_description=?7,avatar_crop_json=?8,image_recommendation_json=?9,revision=?10,updated_at=?11 WHERE id=?1 AND revision=?12",
+            "UPDATE personas SET title=?2,normalized_title=?3,nickname=?4,normalized_nickname=?5,description=?6,design_description=?7,avatar_crop_json=?8,image_recommendation_json=?9,revision=?10,updated_at=?11,intro=?13 WHERE id=?1 AND revision=?12",
             params![
                 id.to_string(),
                 draft.title,
@@ -703,7 +707,8 @@ pub(crate) fn revise_persona(
                 recommendation,
                 sql_u64(next.get())?,
                 now.get(),
-                sql_u64(expected_revision.get())?
+                sql_u64(expected_revision.get())?,
+                draft.intro
             ],
         )
         .map_err(db_error)?;
@@ -1126,7 +1131,7 @@ impl PersonaRepository for Database {
             LibrarySort::Name => ("normalized_title", ">", "ASC"),
         };
         let sql = format!(
-            "SELECT id FROM personas WHERE (?1 OR status='active') AND (normalized_title LIKE ?2 ESCAPE '\\' OR (?7 AND persona_search_key(description) LIKE ?2 ESCAPE '\\') OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
+            "SELECT id FROM personas WHERE (?1 OR status='active') AND (normalized_title LIKE ?2 ESCAPE '\\' OR (?7 AND (persona_search_key(description) LIKE ?2 ESCAPE '\\' OR persona_search_key(COALESCE(intro, '')) LIKE ?2 ESCAPE '\\')) OR (?6 AND normalized_nickname LIKE ?2 ESCAPE '\\')) AND (?3 IS NULL OR {column} {comparison} ?3 OR ({column} = ?3 AND id > ?4)) ORDER BY {column} {direction},id ASC LIMIT ?5"
         );
         let mut connection = self.connection().map_err(|error| RepositoryError::Storage {
             reason: error.to_string(),
@@ -2003,6 +2008,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
             PersonaDraftUpdate {
                 title: current.title,
                 description: current.description,
+                intro: current.intro,
                 nickname: current.nickname,
                 design_description: current.design_description,
                 avatar_crop: current.avatar_crop,
@@ -2053,6 +2059,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
                     status: LifecycleStatus::Active,
                     title: draft.title,
                     description: draft.description,
+                    intro: draft.intro,
                     nickname: draft.nickname,
                     design_description: draft.design_description,
                     avatar_crop: draft.avatar_crop,
@@ -2397,6 +2404,7 @@ mod tests {
         let draft = PersonaDraftUpdate {
             title: "Editor".into(),
             description: "A careful editor".into(),
+            intro: None,
             nickname: Some("Ed".into()),
             design_description: Some("Blue ink".into()),
             avatar_crop: None,
@@ -2477,6 +2485,7 @@ mod tests {
             PersonaDraftUpdate {
                 title: "First".into(),
                 description: "First revision".into(),
+                intro: None,
                 nickname: None,
                 design_description: None,
                 avatar_crop: None,
@@ -2493,6 +2502,7 @@ mod tests {
                 PersonaDraftUpdate {
                     title: "Second".into(),
                     description: "Changed retry".into(),
+                    intro: None,
                     nickname: None,
                     design_description: None,
                     avatar_crop: None,
@@ -3131,6 +3141,7 @@ mod tests {
         let draft = PersonaDraftUpdate {
             title: "Revised".into(),
             description: "A revised description".into(),
+            intro: None,
             nickname: Some("Rev".into()),
             design_description: Some("New design".into()),
             avatar_crop: Some(Crop::new(0.4, 0.5, 1.5).expect("crop")),
@@ -3185,6 +3196,7 @@ mod tests {
                 PersonaDraftUpdate {
                     title: "Nope".into(),
                     description: "Nope".into(),
+                    intro: None,
                     nickname: None,
                     design_description: None,
                     avatar_crop: None,
@@ -4253,7 +4265,7 @@ mod tests {
         let mut persona = Persona::new(PersonaId::new(), "Persona".into(), "Description".into(), TimestampMillis::new(1)).expect("persona");
         persona.media.links.push(PersonaMediaLink { asset_id: asset, slot: PersonaMediaSlot::Avatar, ordinal: 0 });
         let persona = PersonaRepository::create(&database, persona).expect("create");
-        database.commit_api_operation::<Persona, crate::ApiOperationError>("persona_save", "unchanged", "digest", TimestampMillis::new(10), |scope| scope.save_persona(Some(persona.id), Some(Revision::INITIAL), PersonaDraftUpdate { title: persona.title.clone(), description: persona.description.clone(), nickname: None, design_description: None, avatar_crop: None, image_recommendation: None }, persona.media.clone(), TimestampMillis::new(10)).map_err(|error| { tracing::warn!(%error, "persona save keeps unchanged avatar out of gc failed"); crate::ApiOperationError::Storage {
+        database.commit_api_operation::<Persona, crate::ApiOperationError>("persona_save", "unchanged", "digest", TimestampMillis::new(10), |scope| scope.save_persona(Some(persona.id), Some(Revision::INITIAL), PersonaDraftUpdate { title: persona.title.clone(), description: persona.description.clone(), intro: None, nickname: None, design_description: None, avatar_crop: None, image_recommendation: None }, persona.media.clone(), TimestampMillis::new(10)).map_err(|error| { tracing::warn!(%error, "persona save keeps unchanged avatar out of gc failed"); crate::ApiOperationError::Storage {
             reason: "injected failure",
         } })).expect("save");
         let queued: i64 = database.connection().expect("lock").query_row("SELECT count(*) FROM media_gc_candidates", [], |row| row.get(0)).expect("queue");
@@ -4293,6 +4305,7 @@ mod tests {
                             PersonaDraftUpdate {
                                 title: "After".into(),
                                 description: "Changed".into(),
+                                intro: None,
                                 nickname: Some("Alias".into()),
                                 design_description: None,
                                 avatar_crop: None,
@@ -4383,6 +4396,7 @@ mod tests {
                                 PersonaDraftUpdate {
                                     title: "After".into(),
                                     description: "Changed".into(),
+                                    intro: None,
                                     nickname: None,
                                     design_description: None,
                                     avatar_crop: None,
@@ -4455,6 +4469,7 @@ mod tests {
                             PersonaDraftUpdate {
                                 title: "After".into(),
                                 description: "Changed".into(),
+                                intro: None,
                                 nickname: None,
                                 design_description: None,
                                 avatar_crop: None,
@@ -4506,6 +4521,7 @@ mod tests {
                                         PersonaDraftUpdate {
                                             title: name.into(),
                                             description: "Changed".into(),
+                                            intro: None,
                                             nickname: None,
                                             design_description: None,
                                             avatar_crop: None,

@@ -57,6 +57,8 @@
     "chooseFile": "เลือกไฟล์"
   },
   "about": {
+    "intro": "บทนำ",
+    "introHint": "แสดงเฉพาะในแอปเท่านั้น",
     "description": "คำอธิบาย",
     "descriptionPlaceholder": "ตัวละครควรเรียกคุณอย่างไร ภูมิหลัง ความชอบ และสไตล์ของคุณ",
     "descriptionHint": "ใช้ {{user}} แทนเพอร์โซนานี้ และ {{char}} แทนตัวละคร",

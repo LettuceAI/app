@@ -59,6 +59,8 @@
     "chooseFile": "Fájl választása"
   },
   "about": {
+    "intro": "Bevezető",
+    "introHint": "Csak az alkalmazásban jelenik meg.",
     "description": "Leírás",
     "descriptionPlaceholder": "Hogyan szólítsanak a karakterek, a háttered, preferenciáid és stílusod",
     "descriptionHint": "Használd a {{user}} elemet ehhez a personához, és a {{char}} elemet a karakterhez.",

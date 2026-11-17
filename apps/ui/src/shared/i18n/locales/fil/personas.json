@@ -59,6 +59,8 @@
     "chooseFile": "Pumili ng file"
   },
   "about": {
+    "intro": "Intro",
+    "introHint": "Ipinapakita lamang sa app.",
     "description": "Deskripsyon",
     "descriptionPlaceholder": "Paano ka dapat tawagin ng mga karakter, background mo, mga hilig at istilo",
     "descriptionHint": "Gamitin ang {{user}} para sa persona na ito at {{char}} para sa karakter.",

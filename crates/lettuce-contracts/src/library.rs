@@ -265,6 +265,8 @@ pub struct PersonaMediaLink {
 pub struct PersonaDraft {
     pub title: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
     #[serde(deserialize_with = "Option::deserialize")]
     #[cfg_attr(feature = "specta", specta(type = Option<String>))]
     pub nickname: Option<String>,
@@ -365,7 +367,7 @@ pub struct PersonasListRequest {
     pub sort: Option<LibrarySort>,
     #[serde(default)]
     pub search_nickname: bool,
-    /// Also matches the persona's description, as the picker does; the
+    /// Also matches the persona's description and intro, as the picker does; the
     /// library matches titles only.
     #[serde(default)]
     pub search_description: bool,
@@ -378,6 +380,8 @@ pub struct PersonaSummary {
     pub id: String,
     pub title: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
     pub nickname: Option<String>,
     pub avatar: Option<crate::AssetRef>,
 }

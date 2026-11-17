@@ -173,6 +173,7 @@ async fn group_editor_captures_the_default_and_round_trips_its_starting_scene() 
             draft: dto::PersonaDraft {
                 title: "Narrator".into(),
                 description: "Narrator description".into(),
+                intro: None,
                 nickname: None,
                 design_description: None,
                 avatar_crop: None,
@@ -394,6 +395,7 @@ async fn admitted_library_saves_finish_atomically_during_shutdown() {
                     draft: dto::PersonaDraft {
                         title: "Admitted persona".into(),
                         description: "Description".into(),
+                        intro: None,
                         nickname: None,
                         design_description: None,
                         avatar_crop: None,

@@ -230,6 +230,8 @@ pub struct ImportStarterMessage {
 pub struct ImportPersonaContent {
     pub title: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
     pub nickname: Option<String>,
     pub is_default: Option<bool>,
     pub avatar_crop: Option<ImportCrop>,

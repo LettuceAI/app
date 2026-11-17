@@ -12,7 +12,8 @@ vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockRe
 const defaultRecord = { persona_id: null, revision: 7, created_at: 1, updated_at: 1 };
 
 function saved(request: PersonaSaveRequest_Deserialize): PersonaView_Serialize {
-  return { id: "p-new", archived: false, draft: request.draft, assets: [], revision: 1, created_at: 1, updated_at: 1 };
+  const { intro, ...draft } = request.draft;
+  return { id: "p-new", archived: false, draft: { ...draft, ...(intro == null ? {} : { intro }) }, assets: [], revision: 1, created_at: 1, updated_at: 1 };
 }
 
 async function renderCreate(calls: MockCallHandlers = {}, browser = false, entries = ["/", "/personas/new"]) {
@@ -88,6 +89,7 @@ describe("persona creation", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Nickname" }), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("switch", { name: "Use as default" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Description" }), { target: { value: "A scribe " } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Intro" }), { target: { value: "  Keeps the harbour logs  " } });
     fireEvent.click(primary());
     fireEvent.change(await screen.findByRole("textbox", { name: "Design note" }), { target: { value: "Grey coat" } });
     fireEvent.click(screen.getByRole("button", { name: "Add image" }));
@@ -102,6 +104,7 @@ describe("persona creation", () => {
     expect(save.mock.calls[0]![0].draft).toEqual(expect.objectContaining({
       title: "Wren",
       description: "A scribe",
+      intro: "Keeps the harbour logs",
       nickname: null,
       design_description: "Grey coat",
       media: [{ asset_id: "ref", slot: "design_reference", ordinal: 0 }],

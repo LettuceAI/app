@@ -96,7 +96,7 @@ export function entriesQuery(api: ApiClient, filter: EntryFilter, query: string)
               kind: "persona",
               id: item.id,
               name: item.title,
-              description: item.description,
+              description: item.intro?.trim() || item.description,
               image: item.avatar?.preview_url ?? item.avatar?.url ?? null,
               isDefault: personas?.default_persona.persona_id === item.id,
             }),

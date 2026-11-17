@@ -79,6 +79,8 @@ impl PersonaMedia {
 pub struct PersonaDraftUpdate {
     pub title: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
     pub nickname: Option<String>,
     pub design_description: Option<String>,
     pub avatar_crop: Option<Crop>,
@@ -90,6 +92,7 @@ impl PersonaDraftUpdate {
         validate_authored_fields(
             &self.title,
             &self.description,
+            self.intro.as_deref(),
             self.nickname.as_ref(),
             self.design_description.as_ref(),
             self.avatar_crop,
@@ -101,6 +104,7 @@ impl PersonaDraftUpdate {
 fn validate_authored_fields(
     title: &str,
     description: &str,
+    intro: Option<&str>,
     nickname: Option<&String>,
     design_description: Option<&String>,
     avatar_crop: Option<Crop>,
@@ -108,6 +112,9 @@ fn validate_authored_fields(
 ) -> Result<(), ValidationError> {
     validate_name("persona.title", title)?;
     validate_text("persona.description", description)?;
+    if let Some(intro) = intro {
+        validate_text("persona.intro", intro)?;
+    }
     if let Some(nickname) = nickname {
         validate_text("persona.nickname", nickname)?;
     }
@@ -130,6 +137,8 @@ pub struct Persona {
     pub status: LifecycleStatus,
     pub title: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
     pub nickname: Option<String>,
     pub design_description: Option<String>,
     pub avatar_crop: Option<Crop>,
@@ -209,6 +218,7 @@ impl Persona {
             status: LifecycleStatus::Active,
             title,
             description,
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,
@@ -232,6 +242,7 @@ impl Persona {
         validate_authored_fields(
             &self.title,
             &self.description,
+            self.intro.as_deref(),
             self.nickname.as_ref(),
             self.design_description.as_ref(),
             self.avatar_crop,
@@ -263,6 +274,7 @@ mod tests {
             status: LifecycleStatus::Active,
             title: "Writer".into(),
             description: " ".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,
@@ -322,6 +334,7 @@ mod tests {
             status: LifecycleStatus::Active,
             title: "Writer".into(),
             description: "A writer".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,
@@ -346,6 +359,7 @@ mod tests {
         let draft = PersonaDraftUpdate {
             title: "Writer".into(),
             description: "A writer".into(),
+            intro: None,
             nickname: Some("W".into()),
             design_description: Some("Ink-stained".into()),
             avatar_crop: None,
@@ -380,6 +394,7 @@ mod tests {
         let draft = PersonaDraftUpdate {
             title: " ".into(),
             description: "A writer".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,
@@ -394,6 +409,7 @@ mod tests {
         let draft = PersonaDraftUpdate {
             title: "Writer".into(),
             description: " ".into(),
+            intro: None,
             nickname: None,
             design_description: None,
             avatar_crop: None,

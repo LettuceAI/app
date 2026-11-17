@@ -4370,6 +4370,7 @@ export type ImportPersonaContent = ImportPersonaContent_Serialize | ImportPerson
 export type ImportPersonaContent_Deserialize = {
 	title: string,
 	description: string,
+	intro?: string | null,
 	nickname: string | null,
 	isDefault: boolean | null,
 	avatarCrop: ImportCrop | null,
@@ -4379,6 +4380,7 @@ export type ImportPersonaContent_Deserialize = {
 export type ImportPersonaContent_Serialize = {
 	title: string,
 	description: string,
+	intro?: string,
 	nickname: string | null,
 	isDefault: boolean | null,
 	avatarCrop: ImportCrop | null,
@@ -7565,6 +7567,7 @@ export type PersonaDraft = PersonaDraft_Serialize | PersonaDraft_Deserialize;
 export type PersonaDraft_Deserialize = {
 	title: string,
 	description: string,
+	intro?: string | null,
 	nickname: string | null,
 	design_description: string | null,
 	avatar_crop: LibraryCrop | null,
@@ -7575,6 +7578,7 @@ export type PersonaDraft_Deserialize = {
 export type PersonaDraft_Serialize = {
 	title: string,
 	description: string,
+	intro?: string,
 	nickname: string | null,
 	design_description: string | null,
 	avatar_crop: LibraryCrop | null,
@@ -7674,6 +7678,7 @@ export type PersonaSummary_Deserialize = {
 	id: string,
 	title: string,
 	description: string,
+	intro?: string | null,
 	nickname: string | null,
 	avatar: AssetRef_Deserialize | null,
 };
@@ -7682,6 +7687,7 @@ export type PersonaSummary_Serialize = {
 	id: string,
 	title: string,
 	description: string,
+	intro?: string,
 	nickname: string | null,
 	avatar: AssetRef_Serialize | null,
 };
@@ -7717,7 +7723,7 @@ export type PersonasListRequest_Deserialize = {
 	sort: LibrarySort | null,
 	search_nickname?: boolean,
 	/**
-	 *  Also matches the persona's description, as the picker does; the
+	 *  Also matches the persona's description and intro, as the picker does; the
 	 *  library matches titles only.
 	 */
 	search_description?: boolean,
@@ -7730,7 +7736,7 @@ export type PersonasListRequest_Serialize = {
 	sort: LibrarySort | null,
 	search_nickname: boolean,
 	/**
-	 *  Also matches the persona's description, as the picker does; the
+	 *  Also matches the persona's description and intro, as the picker does; the
 	 *  library matches titles only.
 	 */
 	search_description: boolean,

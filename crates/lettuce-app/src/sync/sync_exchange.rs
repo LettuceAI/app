@@ -481,6 +481,7 @@ pub(crate) mod tests {
             PersonaDraftUpdate {
                 title: "Left title".into(),
                 description: created.description.clone(),
+                intro: None,
                 nickname: None,
                 design_description: None,
                 avatar_crop: None,
@@ -496,6 +497,7 @@ pub(crate) mod tests {
             PersonaDraftUpdate {
                 title: "Right title".into(),
                 description: created.description,
+                intro: None,
                 nickname: None,
                 design_description: None,
                 avatar_crop: None,

@@ -36,7 +36,7 @@ export function PersonaPicker({ personas, status, error, onRetry, selectedId, qu
   const items = personas?.items ?? [];
   const needle = query.trim().toLocaleLowerCase();
   const shown = items
-    .filter((persona) => !needle || [persona.title, persona.nickname, persona.description].some((text) => text?.toLocaleLowerCase().includes(needle)))
+    .filter((persona) => !needle || [persona.title, persona.nickname, persona.intro, persona.description].some((text) => text?.toLocaleLowerCase().includes(needle)))
     .sort((a, b) => Number(b.id === personas?.defaultId) - Number(a.id === personas?.defaultId) || a.title.localeCompare(b.title));
   if (status === "pending") return <LoadingState />;
   if (status === "error") return error ? <FailureState error={error} onRetry={onRetry} /> : <Alert tone="danger" title={t("persona.loadFailed")} action={<Button variant="secondary" size="sm" onClick={onRetry}>{t("persona.retry")}</Button>} />;
@@ -45,7 +45,7 @@ export function PersonaPicker({ personas, status, error, onRetry, selectedId, qu
     <ListGroup>
       {defaultChoice && <PersonaRow leading={<UserRound size={icon.lg} />} title={defaultChoice.title} detail={defaultChoice.description} selected={defaultChoice.selected} onClick={defaultChoice.onSelect} />}
       <PersonaRow leading={<UserX size={icon.lg} />} title={t("persona.none")} selected={selectedId === null && !defaultChoice?.selected} onClick={() => onSelect(null)} />
-      {shown.map((persona) => <PersonaRow key={persona.id} leading={<Avatar className="h-full w-full rounded-lg border-0" src={persona.avatar?.url ?? null} name={persona.title} size="md" />} title={persona.title} detail={[persona.nickname, persona.description.trim()].filter(Boolean).join(" · ")} badge={persona.id === personas?.defaultId ? <Badge tone="info">{t("persona.default")}</Badge> : undefined} selected={persona.id === selectedId} onClick={() => onSelect(persona.id)} />)}
+      {shown.map((persona) => <PersonaRow key={persona.id} leading={<Avatar className="h-full w-full rounded-lg border-0" src={persona.avatar?.url ?? null} name={persona.title} size="md" />} title={persona.title} detail={[persona.nickname, persona.intro?.trim() || persona.description.trim()].filter(Boolean).join(" · ")} badge={persona.id === personas?.defaultId ? <Badge tone="info">{t("persona.default")}</Badge> : undefined} selected={persona.id === selectedId} onClick={() => onSelect(persona.id)} />)}
     </ListGroup>
     {items.length === 0 ? <Alert tone="warning" title={t("persona.emptyTitle")} description={t("persona.emptyBody")} /> : needle && shown.length === 0 && <EmptyState size="sm" title={t("persona.noMatch")} />}
   </div>;

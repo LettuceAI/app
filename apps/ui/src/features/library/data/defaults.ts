@@ -1,6 +1,6 @@
 import type {
   CharacterDraft_Deserialize,
-  PersonaDraft_Deserialize,
+  PersonaDraft_Serialize,
 } from "@/api/generated/bindings";
 
 export function newCharacterDraft(name: string, description: string): CharacterDraft_Deserialize {
@@ -109,7 +109,7 @@ export function newCharacterDraft(name: string, description: string): CharacterD
   };
 }
 
-export function newPersonaDraft(title: string, description: string): PersonaDraft_Deserialize {
+export function newPersonaDraft(title: string, description: string): PersonaDraft_Serialize {
   return {
     title,
     description,

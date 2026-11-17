@@ -322,6 +322,8 @@ pub struct PersonaPackage {
 pub struct PersonaPackageData {
     pub title: String,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro: Option<String>,
     pub nickname: Option<String>,
     pub is_default: Option<bool>,
     pub avatar_crop: Option<PackageCrop>,
@@ -768,6 +770,7 @@ fn parse_uec_persona(value: &Value, now: i64) -> Result<PersonaPackage, EntityPa
             title: string(payload, "title")
                 .ok_or(EntityPackageError::InvalidPayload("missing title"))?,
             description: string(payload, "description").unwrap_or_default(),
+            intro: string(original, "intro"),
             nickname: string(original, "nickname"),
             is_default: payload.get("isDefault").and_then(Value::as_bool),
             avatar_crop: parse_crop(app.and_then(|value| value.get("avatarCrop"))),

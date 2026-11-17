@@ -57,6 +57,8 @@
     "chooseFile": "选择文件"
   },
   "about": {
+    "intro": "简介",
+    "introHint": "仅在应用内显示。",
     "description": "描述",
     "descriptionPlaceholder": "角色该如何称呼你、你的背景、偏好和风格",
     "descriptionHint": "使用 {{user}} 代表人设，使用 {{char}} 代表角色。",
