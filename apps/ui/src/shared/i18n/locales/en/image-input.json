@@ -1,4 +1,6 @@
 {
+  "chooseFromLibrary": "Choose from library",
+  "chooseBannerFromLibrary": "Choose banner from library",
   "generate": "Generate avatar",
   "title": "Generate avatar",
   "bannerCrop": {

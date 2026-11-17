@@ -18,7 +18,7 @@ export function AvatarPicker({ name, image, busy, onChoose, onRemove, actions }:
   </div>;
 }
 
-export function ImageField({ title, hint, image, busy, onChoose, onRemove, onReposition }: { title: string; hint: string; image: AssetRef | undefined; busy: boolean; onChoose: () => void; onRemove: () => void; onReposition?: () => void }) {
+export function ImageField({ title, hint, image, busy, onChoose, onRemove, onReposition, actions }: { title: string; hint: string; image: AssetRef | undefined; busy: boolean; onChoose: () => void; onRemove: () => void; onReposition?: () => void; actions?: ReactNode }) {
   const { t } = useTranslation("characters");
   return <Field label={title} hint={hint}>
     {image ? <div className="relative overflow-hidden rounded-xl ring-1 ring-inset ring-line-2">
@@ -29,6 +29,7 @@ export function ImageField({ title, hint, image, busy, onChoose, onRemove, onRep
         <IconButton label={t("identity.remove")} size="sm" variant="overlay" disabled={busy} onClick={onRemove}><Trash2 size={icon.sm} /></IconButton>
       </div>
     </div> : <Button variant="secondary" block disabled={busy} className="h-36 whitespace-normal border-dashed bg-surface-1 @2xl:h-52" leading={<ImageIcon size={icon.xl} />} onClick={onChoose}>{t("identity.chooseImage")}</Button>}
+    {actions}
   </Field>;
 }
 

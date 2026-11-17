@@ -586,17 +586,29 @@ describe("character creation", () => {
 });
 
 describe("character avatar generation", () => {
-  it("uses a wide banner crop and retains its source and position on the creation draft", async () => {
+  it.each(["file", "library"])("uses a wide banner crop for a %s image and retains the source on the creation draft", async (source) => {
     mockAvatarCropImages();
     const crop = vi.fn(mockAvatarCrop);
     await renderCreate({
       filesPickOpen: () => ok({ sources: [{ uri: "banner.png" }] }),
       assetsIngest: () => ok({ asset_id: "banner-source", url: "asset://banner-source" }),
+      mediaLibraryList: () => ok({ items: [{
+        asset: { asset_id: "banner-source", url: "asset://banner-source", preview_url: null },
+        role: "image", asset_kind: "generated_image", retention: "library", source_label: "Forest banner",
+        expires_at: null, mime_type: "image/png", byte_size: 512, width: 800, height: 600,
+        duration_ms: null, created_at: 1, updated_at: 1, references: [],
+      }], next_cursor: null }),
       assetsCropAvatar: crop,
     });
     fireEvent.click(await screen.findByRole("radio", { name: "Banner" }));
     const field = screen.getByText("Banner image").parentElement!;
-    fireEvent.click(within(field).getByRole("button", { name: "Choose an image" }));
+    if (source === "library") {
+      fireEvent.click(within(field).getByRole("button", { name: "Choose banner from library" }));
+      const dialog = await screen.findByRole("dialog", { name: "Choose banner from library" });
+      fireEvent.click(await within(dialog).findByRole("button", { name: "Forest banner" }));
+    } else {
+      fireEvent.click(within(field).getByRole("button", { name: "Choose an image" }));
+    }
     await confirmAvatarCrop("Position banner");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(crop).toHaveBeenCalledExactlyOnceWith({ asset_id: "banner-source", x: 0, y: 100, size: 800, height: 400 });

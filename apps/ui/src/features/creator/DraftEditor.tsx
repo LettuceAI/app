@@ -5,7 +5,7 @@ import { Camera } from "lucide-react";
 import { Avatar, Button, confirm, Field, icon, IconButton, Input, MediaTile, Textarea, toast } from "@lettuceai/crisp";
 import { isApiFailure, type ApiClient } from "@/api/client";
 import type { AssetRef, CreatorDraft, CreatorImageView, CreatorKind } from "@/api/generated/bindings";
-import { AvatarGeneration, pickImage, staysOnPage, useAvatarCrop } from "@/entities/image-input";
+import { AvatarGeneration, AvatarLibraryButton, pickImage, staysOnPage, useAvatarCrop, useAvatarLibrary } from "@/entities/image-input";
 import { EditSaveBar } from "@/shared/ui/EditSaveBar";
 import { DraftScenes } from "./DraftScenes";
 
@@ -31,11 +31,12 @@ function useAvatarChoice(api: ApiClient, disabled: boolean, onChange: (avatar: A
 }
 
 /** The avatar beside the name, as the character and persona editors show it. */
-function DraftAvatar({ api, draft, busy, onPick, onChange }: {
+function DraftAvatar({ api, draft, busy, onPick, onPickFromLibrary, onChange }: {
   api: ApiClient;
   draft: CreatorDraft;
   busy: boolean;
   onPick: () => void;
+  onPickFromLibrary: () => void;
   onChange: (avatar: AssetRef | null) => void;
 }) {
   const { t } = useTranslation("creator");
@@ -45,6 +46,7 @@ function DraftAvatar({ api, draft, busy, onPick, onChange }: {
         <Avatar src={draft.avatar?.url ?? null} name={draft.name.trim() || "?"} size="xl" className="h-28 w-28 text-3xl" />
         <span className="absolute -right-1 -bottom-1 flex h-9 w-9 items-center justify-center rounded-full border border-line-2 bg-surface-2 text-fg shadow-raised"><Camera size={icon.md} /></span>
       </IconButton>
+      <AvatarLibraryButton disabled={busy} onClick={onPickFromLibrary} />
       <AvatarGeneration
         api={api}
         disabled={busy}
@@ -101,6 +103,7 @@ export function DraftEditor({ api, images, initial, kind, disabled, phone, save,
   const [draft, setDraft] = useState(initial);
   const setAvatar = (avatar: AssetRef | null) => setDraft((value) => ({ ...value, avatar }));
   const avatar = useAvatarChoice(api, disabled, setAvatar);
+  const library = useAvatarLibrary(api, (asset) => void avatar.choose(async () => asset));
   const [saving, setSaving] = useState(false);
   const [sceneId, setSceneId] = useState<string | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
@@ -137,8 +140,9 @@ export function DraftEditor({ api, images, initial, kind, disabled, phone, save,
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 @xl:px-6">
         <div className="space-y-5">
           {avatar.editor}
+          {library.sheet}
           <div className="flex flex-col items-center gap-5 @xl:flex-row @xl:items-start">
-            <DraftAvatar api={api} draft={draft} busy={avatar.busy} onPick={() => void avatar.choose(() => pickImage(api, "avatar"))} onChange={setAvatar} />
+            <DraftAvatar api={api} draft={draft} busy={avatar.busy} onPick={() => void avatar.choose(() => pickImage(api, "avatar"))} onPickFromLibrary={() => library.show()} onChange={setAvatar} />
             <div className="w-full min-w-0 @xl:flex-1">
               <Field label={t("name")}>
                 <Input value={draft.name} disabled={disabled} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />

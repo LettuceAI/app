@@ -35,8 +35,7 @@ export interface EntryPage {
   next: Cursors | null;
   defaultPersona: PersonaDefaultView | undefined;
 }
-export const libraryPageSize = 24;
-export const libraryImagePageSize = 32;
+const libraryPageSize = 24;
 
 export function entriesQuery(api: ApiClient, filter: EntryFilter, query: string) {
   return infiniteQueryOptions({
@@ -117,22 +116,6 @@ export function entriesQuery(api: ApiClient, filter: EntryFilter, query: string)
       };
     },
     getNextPageParam: (last) => last.next ?? undefined,
-  });
-}
-export function mediaQuery(api: ApiClient, kind: "image" | "audio", query: string) {
-  const limit = kind === "image" ? libraryImagePageSize : libraryPageSize;
-  return infiniteQueryOptions({
-    queryKey: [...queryKeys.media.library(), "metadata", kind, query, limit] as const,
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) =>
-      api.call("mediaLibraryList", {
-        cursor: pageParam,
-        limit,
-        kind,
-        query: query || null,
-        include_references: false,
-      }),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
 }
 export function entryQuery(api: ApiClient, entry: Entry) {

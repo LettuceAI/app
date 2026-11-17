@@ -36,7 +36,7 @@ export function AvatarGeneration({ api, disabled = false, readContext, onUse }: 
     void navigate({ to: "/settings/$section", params: { section: "imageGeneration" }, search: { imagePicker: "avatar" } });
   };
   return <>
-    <Button ref={trigger} size="sm" variant="ghost" disabled={disabled} leading={<Sparkles size={icon.sm} />} onClick={panel.show}>{t("generate")}</Button>
+    <Button ref={trigger} size="sm" variant="ghost" disabled={disabled} leading={<Sparkles size={icon.sm} />} onClick={() => panel.show()}>{t("generate")}</Button>
     <AvatarGenerationSheet api={api} open={panel.open} onClose={panel.hide} readContext={readContext} onUse={async (asset) => {
       const cropped = await crop.choose(asset);
       if (!cropped) return false;

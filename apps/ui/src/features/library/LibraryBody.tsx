@@ -8,7 +8,8 @@ import {
   MediaTileSkeleton,
   Skeleton,
 } from "@lettuceai/crisp";
-import { libraryImagePageSize, type EntryKind, type Filter } from "./data/queries";
+import { libraryImagePageSize } from "@/api/media-library-query";
+import type { EntryKind, Filter } from "./data/queries";
 
 export const entryGrid =
   "relative grid grid-cols-2 gap-3 @xl:grid-cols-3 @3xl:grid-cols-4 @5xl:grid-cols-5 @6xl:grid-cols-6";

@@ -29,11 +29,11 @@ import {
 import { FailureState } from "@/shared/ui/FailureState";
 import { MobileSettingsButton } from "@/shared/ui/MobileSettingsButton";
 import type { MediaLibraryItem } from "@/api/generated/bindings";
+import { mediaQuery } from "@/api/media-library-query";
 import { mediaName } from "./data/actions";
 import {
   countsQuery,
   entriesQuery,
-  mediaQuery,
   type Entry,
   type Filter,
   type LibrarySearch,

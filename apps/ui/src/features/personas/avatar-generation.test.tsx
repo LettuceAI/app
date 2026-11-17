@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AssetRef, AvatarGenerateRequest, AvatarGenerationOptions, JobView } from "@/api/generated/bindings";
+import type { AssetRef, AvatarGenerateRequest, AvatarGenerationOptions, JobView, MediaLibraryItem } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
 import { createAppRuntime } from "@/app/bootstrap/runtime";
@@ -51,6 +51,42 @@ const open = async () => {
 afterEach(() => cleanup());
 
 describe("avatar generation panel", () => {
+  it("browses library images, keeps the draft on back, and crops the selected asset", async () => {
+    const image: MediaLibraryItem = {
+      asset: asset("library-image"), role: "image", asset_kind: "generated_image", retention: "library",
+      source_label: "Forest portrait", expires_at: null, mime_type: "image/png", byte_size: 512,
+      width: 800, height: 600, duration_ms: null, created_at: 1, updated_at: 1, references: [],
+    };
+    const list = vi.fn<NonNullable<MockCallHandlers["mediaLibraryList"]>>(({ query, cursor }) =>
+      ok(cursor ? { items: [image], next_cursor: null } : { items: [], next_cursor: query === "forest" ? "second" : null }));
+    const crop = vi.fn(mockAvatarCrop);
+    const pickFile = vi.fn();
+    const runtime = await renderCreate({ mediaLibraryList: list, assetsCropAvatar: crop, filesPickOpen: pickFile });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: "Juniper" } });
+    const openLibrary = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Choose from library" }));
+      return screen.findByRole("dialog", { name: "Choose from library" });
+    };
+
+    await openLibrary();
+    await act(async () => { runtime.router.history.back(); });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByDisplayValue("Juniper")).toBeTruthy();
+    expect(crop).not.toHaveBeenCalled();
+
+    const dialog = await openLibrary();
+    fireEvent.change(within(dialog).getByRole("searchbox"), { target: { value: "forest" } });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Load more" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Forest portrait" }));
+    await confirmAvatarCrop();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ kind: "image", cursor: "second", query: "forest" }));
+    expect(crop).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ asset_id: "library-image" }));
+    expect(document.querySelector('img[src="asset://library-image-cropped"]')).not.toBeNull();
+    expect(screen.getByDisplayValue("Juniper")).toBeTruthy();
+    expect(pickFile).not.toHaveBeenCalled();
+  });
+
   it("positions and zooms an uploaded avatar before applying the cropped asset", async () => {
     const crop = vi.fn(mockAvatarCrop);
     const save = vi.fn();

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { ListGroup } from "@lettuceai/crisp";
 import { DesignReferences } from "@/shared/ui/DesignReferences";
+import { AvatarLibraryButton } from "@/entities/image-input";
 import { CardStyleRows } from "../components/CardStyleRows";
 import { draftSetters } from "../components/draft-setters";
 import { CardPreview, ImageField } from "../components/ImageFields";
@@ -10,12 +11,13 @@ import { withImage, withReferences } from "../data/form";
 
 export function LookTab({ api, form, update }: StepProps) {
   const { t } = useTranslation("characters");
-  const { picking, choose, repositionBanner, cropEditor } = useImagePicker(api, update, form);
+  const { picking, choose, chooseFromLibrary, libraryPicker, repositionBanner, cropEditor } = useImagePicker(api, update, form);
   const { setProfile } = draftSetters(update);
   const { images } = form;
-  const image = (slot: "banner" | "background", title: string, hint: string) => <ImageField {...(slot === "banner" ? { onReposition: () => void repositionBanner() } : {})} title={title} hint={hint} image={images[slot]} busy={picking} onChoose={() => void choose(slot)} onRemove={() => update((current) => withImage(current, slot, null))} />;
+  const image = (slot: "banner" | "background", title: string, hint: string) => <ImageField {...(slot === "banner" ? { onReposition: () => void repositionBanner(), actions: <AvatarLibraryButton banner disabled={picking} onClick={() => chooseFromLibrary("banner")} /> } : {})} title={title} hint={hint} image={images[slot]} busy={picking} onChoose={() => void choose(slot)} onRemove={() => update((current) => withImage(current, slot, null))} />;
   return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
     {cropEditor}
+    {libraryPicker}
     <div className="min-w-0 space-y-6">
       <CardPreview api={api} form={form} />
       <ListGroup>

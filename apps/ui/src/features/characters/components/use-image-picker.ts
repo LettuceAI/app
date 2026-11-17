@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 import { toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import { isApiFailure } from "@/api/client";
-import type { LibraryCharacterMediaSlot } from "@/api/generated/bindings";
-import { pickImage, useAvatarCrop, type ImageInputRole } from "@/entities/image-input";
+import type { AssetRef, LibraryCharacterMediaSlot } from "@/api/generated/bindings";
+import { pickImage, useAvatarCrop, useAvatarLibrary, type ImageInputRole } from "@/entities/image-input";
 import { withBanner, withImage, type CharacterForm } from "../data/form";
 import type { FormProps } from "./step-props";
 
@@ -14,11 +14,11 @@ export function useImagePicker(api: ApiClient, update: FormProps["update"], form
   const { t: common } = useTranslation("common");
   const [picking, setPicking] = useState(false);
   const crop = useAvatarCrop(api);
-  const choose = async (slot: LibraryCharacterMediaSlot) => {
+  const choose = async (slot: LibraryCharacterMediaSlot, libraryAsset?: AssetRef) => {
     if (picking) return;
     setPicking(true);
     try {
-      const picked = await pickImage(api, roles[slot]);
+      const picked = libraryAsset ?? await pickImage(api, roles[slot]);
       if (picked && slot === "banner") {
         const selection = await crop.chooseBanner(picked);
         if (selection) update((current) => withBanner(current, selection));
@@ -39,5 +39,10 @@ export function useImagePicker(api: ApiClient, update: FormProps["update"], form
       if (selection) update((current) => withBanner(current, selection));
     } finally { setPicking(false); }
   };
-  return { picking, choose, repositionBanner, cropEditor: crop.editor };
+  const library = useAvatarLibrary(api, (asset, target) => void choose(target === "banner" ? "banner" : "avatar_original", asset));
+  return {
+    picking, choose, repositionBanner,
+    chooseFromLibrary: library.show,
+    cropEditor: crop.editor, libraryPicker: library.sheet,
+  };
 }

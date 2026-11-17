@@ -16,7 +16,7 @@ import { createAppRuntime } from "@/app/bootstrap/runtime";
 import { createTestI18n } from "@/shared/testing/i18n";
 import { newCharacterDraft, newPersonaDraft } from "./data/defaults";
 import { exportEntry, importEntry } from "./data/actions";
-import { mediaQuery } from "./data/queries";
+import { mediaQuery } from "@/api/media-library-query";
 
 vi.mock("@/api/window-controls", () => ({
   createWindowController: vi.fn().mockResolvedValue(null),

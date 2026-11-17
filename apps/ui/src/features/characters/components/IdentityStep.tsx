@@ -1,6 +1,7 @@
 import { FileUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, icon, ListGroup, ListRow } from "@lettuceai/crisp";
+import { AvatarLibraryButton } from "@/entities/image-input";
 import { withImage } from "../data/form";
 import { CardStyleRows } from "./CardStyleRows";
 import { CharacterMode } from "./CharacterMode";
@@ -12,16 +13,17 @@ import type { StepProps } from "./step-props";
 
 export function IdentityStep({ api, form, update, onImport, importing, onModeLoadingChange }: StepProps & { onImport: () => void; importing: boolean; onModeLoadingChange: (loading: boolean) => void }) {
   const { t } = useTranslation("characters");
-  const { picking, choose, repositionBanner, cropEditor } = useImagePicker(api, update, form);
+  const { picking, choose, chooseFromLibrary, libraryPicker, repositionBanner, cropEditor } = useImagePicker(api, update, form);
   const { draft, images } = form;
   const busy = picking || importing;
-  const image = (slot: "banner" | "background", title: string, hint: string) => <ImageField {...(slot === "banner" ? { onReposition: () => void repositionBanner() } : {})} title={title} hint={hint} image={images[slot]} busy={busy} onChoose={() => void choose(slot)} onRemove={() => update((current) => withImage(current, slot, null))} />;
+  const image = (slot: "banner" | "background", title: string, hint: string) => <ImageField {...(slot === "banner" ? { onReposition: () => void repositionBanner(), actions: <AvatarLibraryButton banner disabled={busy} onClick={() => chooseFromLibrary("banner")} /> } : {})} title={title} hint={hint} image={images[slot]} busy={busy} onChoose={() => void choose(slot)} onRemove={() => update((current) => withImage(current, slot, null))} />;
 
   return <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2 @4xl:gap-x-10">
     {cropEditor}
+    {libraryPicker}
     <div className="space-y-6">
       <div className="flex flex-col items-center gap-5 @xl:flex-row @xl:items-start">
-        <AvatarPicker name={draft.profile.name.trim()} image={images.avatar_original} busy={busy} onChoose={() => void choose("avatar_original")} onRemove={() => update((current) => withImage(current, "avatar_original", null))} actions={<AvatarGenerate api={api} form={form} update={update} disabled={busy} />} />
+        <AvatarPicker name={draft.profile.name.trim()} image={images.avatar_original} busy={busy} onChoose={() => void choose("avatar_original")} onRemove={() => update((current) => withImage(current, "avatar_original", null))} actions={<><AvatarLibraryButton disabled={busy} onClick={() => chooseFromLibrary()} /><AvatarGenerate api={api} form={form} update={update} disabled={busy} /></>} />
         <div className="w-full min-w-0 space-y-4 @xl:flex-1">
           <NameField form={form} update={update} focus />
           <CharacterMode api={api} form={form} update={update} onLoadingChange={onModeLoadingChange} />

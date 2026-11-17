@@ -184,9 +184,11 @@ const lorebookProjectRoute = createRoute({
     ...(typeof search.entry === "string" ? { entry: search.entry } : {}),
   }),
 });
-const validateAvatarPanel = (search: Record<string, unknown>): { avatarPanel?: true; avatarCrop?: true } => ({
+type AvatarSearch = { avatarPanel?: true; avatarCrop?: true; avatarLibrary?: true | "banner" };
+const validateAvatarPanel = (search: Record<string, unknown>): AvatarSearch => ({
   ...(search.avatarPanel === true || search.avatarPanel === "true" ? { avatarPanel: true as const } : {}),
   ...(search.avatarCrop === true || search.avatarCrop === "true" ? { avatarCrop: true as const } : {}),
+  ...(search.avatarLibrary === "banner" ? { avatarLibrary: "banner" as const } : search.avatarLibrary === true || search.avatarLibrary === "true" ? { avatarLibrary: true as const } : {}),
 });
 const creatorPanels = ["history", "review", "model", "attach", "character", "persona"] as const;
 type CreatorPanel = (typeof creatorPanels)[number];
@@ -195,7 +197,7 @@ const creatorRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/creator/$workflowId",
   component: CreatorPage,
-  validateSearch: (search: Record<string, unknown>): { tab?: "chat" | "draft"; panel?: CreatorPanel; avatarPanel?: true; avatarCrop?: true } => ({
+  validateSearch: (search: Record<string, unknown>): { tab?: "chat" | "draft"; panel?: CreatorPanel } & AvatarSearch => ({
     ...(search.tab === "chat" || search.tab === "draft" ? { tab: search.tab } : {}),
     ...(creatorPanels.includes(String(search.panel) as CreatorPanel) ? { panel: search.panel as CreatorPanel } : {}),
     ...validateAvatarPanel(search),
@@ -220,7 +222,7 @@ const editCharacterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/characters/$characterId/edit",
   component: EditCharacterPage,
-  validateSearch: (search: Record<string, unknown>): { tab?: "soul" | "appearance"; preview?: true; avatarPanel?: true; avatarCrop?: true } => ({ ...(search.tab === "soul" || search.tab === "appearance" ? { tab: search.tab } : {}), ...(search.preview === true || search.preview === "true" ? { preview: true as const } : {}), ...validateAvatarPanel(search) }),
+  validateSearch: (search: Record<string, unknown>): { tab?: "soul" | "appearance"; preview?: true } & AvatarSearch => ({ ...(search.tab === "soul" || search.tab === "appearance" ? { tab: search.tab } : {}), ...(search.preview === true || search.preview === "true" ? { preview: true as const } : {}), ...validateAvatarPanel(search) }),
 });
 const characterHistoryRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -615,6 +617,7 @@ declare module "@tanstack/history" {
     imagePickerPushed?: boolean;
     avatarPanelPushed?: boolean;
     avatarCropPushed?: boolean;
+    avatarLibraryPushed?: boolean;
     localImagesPushed?: boolean;
     runtimePushed?: boolean;
     engineInstallPushed?: boolean;
