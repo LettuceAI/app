@@ -29,6 +29,7 @@ import { ModelChoiceSheet } from "@/entities/model";
 import { promptsQuery } from "@/entities/prompt";
 import { useChatModels } from "@/features/conversations";
 import { FailureState } from "@/shared/ui/FailureState";
+import { SettingsControlRow } from "@/shared/ui/SettingsControlRow";
 import { useSettingsApi, useSettingsLayout } from "../data";
 import { CommitNumber } from "./CommitNumber";
 import { capacities, defaultCapacity } from "./presets";
@@ -80,6 +81,7 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
   const { t: common } = useTranslation("common");
   const { t: characters } = useTranslation("characters");
   const api = useSettingsApi();
+  const { phone } = useSettingsLayout();
   const queryClient = useQueryClient();
   const write = useSettingsWrite(api);
   const chat = useChatModels(api);
@@ -338,7 +340,7 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
                 <ListRow
                   icon={<Layers size={icon.lg} />}
                   title={
-                    <span className="flex items-center gap-2">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       {t("memory.embedding.name")}{" "}
                       {installed ? (
                         <Badge tone="accent">{t("memory.embedding.installed")}</Badge>
@@ -388,12 +390,14 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
                   />
                 )}
                 {installed && (
-                  <ListRow
+                  <SettingsControlRow
+                    phone={phone}
                     title={t("memory.embedding.capacity")}
                     description={t("memory.embedding.capacityBody")}
-                    trailing={
+                    control={
                       <Segmented<string>
                         size="sm"
+                        block={phone}
                         aria-label={t("memory.embedding.capacity")}
                         value={String(tokens)}
                         onChange={(next) =>
