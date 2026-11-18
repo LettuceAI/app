@@ -125,6 +125,10 @@ impl<
             .conversations
             .get(run.conversation_id)
             .map_err(CompanionMemoryInferenceError::Conversation)?;
+        let persona_name =
+            crate::companion::companion_memory_inference::transcript_persona_name(
+                &aggregate.conversation,
+            );
         let memory = self
             .repository
             .get(run.space_id)
@@ -167,6 +171,7 @@ impl<
             &runtime_text,
             previous.as_ref().map(|summary| summary.text.as_str()),
             &sources,
+            persona_name.as_deref(),
             aggregate.conversation.kind.is_group(),
             aggregate.conversation.participants.len(),
             handle,
@@ -350,6 +355,31 @@ fn summary_tool_request(description: String, parameter: String) -> ToolRequest {
     }
 }
 
+/// The speaker name for a summarizer transcript line: the active persona for
+/// the user's own messages (so the summary names them instead of "the user"),
+/// otherwise the structural user label or the character side.
+fn summary_speaker_name<'a>(
+    role: MessageRole,
+    persona_name: Option<&'a str>,
+    user_label: &'a str,
+    character_label: &'a str,
+) -> &'a str {
+    match role {
+        MessageRole::User => persona_name.unwrap_or(user_label),
+        _ => character_label,
+    }
+}
+
+/// The content line for a direct-chat summarizer message: the user's own
+/// messages are prefixed with the active persona name so the summary names them
+/// instead of "the user". Other roles pass through unchanged.
+fn summary_direct_content(role: MessageRole, persona_name: Option<&str>, body: &str) -> String {
+    match (role, persona_name) {
+        (MessageRole::User, Some(name)) => format!("{name}: {body}"),
+        _ => body.to_owned(),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_summary_request(
     run: &lettuce_memory::DynamicMemoryRun,
@@ -358,6 +388,7 @@ fn build_summary_request(
     text: &crate::generation::runtime_text::RuntimeText,
     previous_summary: Option<&str>,
     sources: &[crate::companion::companion_memory_inference::MaterializedSource],
+    persona_name: Option<&str>,
     is_group: bool,
     participant_count: usize,
     handle: &JobHandle,
@@ -470,24 +501,27 @@ fn build_summary_request(
                 vec![
                     (
                         PromptVariable::SpeakerName,
-                        if source.role == MessageRole::User {
-                            user_label.clone()
-                        } else {
-                            character_label.clone()
-                        },
+                        summary_speaker_name(
+                            source.role,
+                            persona_name,
+                            &user_label,
+                            &character_label,
+                        )
+                        .to_owned(),
                     ),
                     (PromptVariable::MessageText, source.text.clone()),
                 ],
             )?
         } else if run.time_awareness_enabled {
             let timestamp = format_message_timestamp(source.effective_time);
-            if source.text.is_empty() {
+            let body = if source.text.is_empty() {
                 timestamp
             } else {
                 format!("{timestamp} {}", source.text)
-            }
+            };
+            summary_direct_content(source.role, persona_name, &body)
         } else {
-            source.text.clone()
+            summary_direct_content(source.role, persona_name, &source.text)
         };
         messages.push(ProviderNeutralMessage {
             role: source.role,
@@ -777,7 +811,49 @@ mod tests {
     };
     use serde_json::json;
 
-    use super::{summary_from_outcome, validate_summary_text};
+    use super::{
+        summary_direct_content, summary_from_outcome, summary_speaker_name, validate_summary_text,
+    };
+
+    #[test]
+    fn summary_speaker_name_uses_persona_for_the_user_side() {
+        use lettuce_conversations::MessageRole;
+        // The user's own messages are labeled with the active persona so the
+        // summary says "Mia and Jake" instead of "Mia and the user".
+        assert_eq!(
+            summary_speaker_name(MessageRole::User, Some("Jake"), "User", "Character"),
+            "Jake"
+        );
+        // No persona falls back to the structural label.
+        assert_eq!(
+            summary_speaker_name(MessageRole::User, None, "User", "Character"),
+            "User"
+        );
+        // The character side is never renamed by the persona.
+        assert_eq!(
+            summary_speaker_name(MessageRole::Assistant, Some("Jake"), "User", "Character"),
+            "Character"
+        );
+    }
+
+    #[test]
+    fn summary_direct_content_prefixes_the_user_persona() {
+        use lettuce_conversations::MessageRole;
+        // Direct chats have no speaker label, so the persona name is prefixed
+        // onto the user's own line; everything else passes through unchanged.
+        assert_eq!(
+            summary_direct_content(MessageRole::User, Some("Jake"), "Hello"),
+            "Jake: Hello"
+        );
+        assert_eq!(
+            summary_direct_content(MessageRole::User, None, "Hello"),
+            "Hello"
+        );
+        assert_eq!(
+            summary_direct_content(MessageRole::Assistant, Some("Jake"), "Hi"),
+            "Hi"
+        );
+    }
 
     #[test]
     fn fallback_usage_preserves_known_details_without_inventing_missing_counts() {
