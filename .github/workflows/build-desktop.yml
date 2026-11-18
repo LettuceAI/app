@@ -126,7 +126,6 @@ jobs:
       - name: Configure macOS Xcode and Metal compiler
         if: runner.os == 'macOS'
         env:
-          # Icon Composer needs Xcode 26; macOS 15 runners default to Xcode 16.
           DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
         run: |
           echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
@@ -136,6 +135,12 @@ jobs:
             xcodebuild -downloadComponent MetalToolchain
             xcrun --sdk macosx metal --version
           fi
+          # Keep stdin open for actool so ibtoold can write Assets.car (tauri-apps/tauri#15315).
+          shim="$RUNNER_TEMP/actool-shim"
+          mkdir -p "$shim"
+          printf '#!/bin/sh\nexec /usr/bin/xcrun actool "$@" < /dev/null\n' > "$shim/actool"
+          chmod +x "$shim/actool"
+          echo "$shim" >> "$GITHUB_PATH"
       - name: Install the Windows Vulkan SDK
         if: runner.os == 'Windows' && inputs.features == 'vulkan'
         shell: pwsh
@@ -355,11 +360,12 @@ jobs:
           (cd dist-artifacts && sha256sum -- * > SHA256SUMS.txt)
       - name: Remove the macOS signing keychain and runner trust
         if: always() && runner.os == 'macOS'
+        timeout-minutes: 2
         shell: bash
         run: |
           cleanup_status=0
           if [[ -n "${LETTUCE_SIGNING_CERTIFICATE_PATH:-}" ]]; then
-            sudo security remove-trusted-cert -d "$LETTUCE_SIGNING_CERTIFICATE_PATH" || cleanup_status=$?
+            sudo -n security remove-trusted-cert -d "$LETTUCE_SIGNING_CERTIFICATE_PATH" || cleanup_status=$?
           fi
           if [[ -n "${LETTUCE_SIGNING_KEYCHAIN:-}" && -f "$LETTUCE_SIGNING_KEYCHAIN" ]]; then
             security delete-keychain "$LETTUCE_SIGNING_KEYCHAIN" || cleanup_status=$?
