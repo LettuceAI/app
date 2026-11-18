@@ -1444,6 +1444,8 @@
       "loopsBody": "Visszaküldi az eszközeredményeket, amíg a modell nem hívja a done-t. Gyengébb modelleknek segít, több tokenbe kerül.",
       "loopCap": "Rekurzív ciklus kemény korlátja",
       "loopCapBody": "Itt megáll akkor is, ha a modell soha nem hívja a done-t",
+      "modelPinning": "A modell kitűzhet emlékeket",
+      "modelPinningBody": "Kikapcsolva csak te tűzhetsz ki vagy vehetsz le emlékeket. A memóriafrissítések továbbra is hozzáadják és eltávolítják őket.",
       "deleteConfidence": "Törlési bizonyosság alapértelmezése",
       "deleteConfidenceBody": "Akkor használjuk, ha a modell nem ad meg semmit. Az alacsonyabb archivál a törlés helyett.",
       "deleteRatio": "Max. kemény törlési arány",

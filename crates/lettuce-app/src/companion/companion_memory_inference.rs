@@ -1727,6 +1727,7 @@ mod tests {
             delete_confidence_default: Score::HARD_DELETE_THRESHOLD,
             max_hard_delete_ratio_per_cycle: Score::FULL,
             decay_rate: Score::ZERO,
+            model_pinning_enabled: true,
         };
         let sources = [
             MaterializedSource {

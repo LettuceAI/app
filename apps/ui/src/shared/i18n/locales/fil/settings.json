@@ -1444,6 +1444,8 @@
       "loopsBody": "Ipinapadala pabalik ang tool result hanggang tawagin ng modelo ang done. Tumutulong sa mas mahihinang modelo, mas maraming token ang ginagamit.",
       "loopCap": "Recursive loop hard cap",
       "loopCapBody": "Humihinto dito kahit hindi kailanman tawagin ng modelo ang done",
+      "modelPinning": "Hayaang mag-pin ng alaala ang model",
+      "modelPinningBody": "Kapag naka-off, ikaw lang ang magpi-pin o mag-a-unpin ng mga alaala. Patuloy pa ring nagdadagdag at nag-aalis ng mga ito ang memory updates.",
       "deleteConfidence": "Delete confidence default",
       "deleteConfidenceBody": "Ginagamit kapag walang ibinigay ang modelo. Ang mas mababa ay nag-a-archive sa halip na magtanggal.",
       "deleteRatio": "Max hard delete ratio",

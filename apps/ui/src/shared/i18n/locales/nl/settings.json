@@ -1444,6 +1444,8 @@
       "loopsBody": "Stuurt toolresultaten terug tot het model done aanroept. Helpt zwakkere modellen, kost meer tokens.",
       "loopCap": "Harde limiet voor recursieve lus",
       "loopCapBody": "Stopt hier, zelfs als het model nooit done aanroept",
+      "modelPinning": "Model mag herinneringen vastzetten",
+      "modelPinningBody": "Uit betekent dat alleen jij herinneringen vastzet of losmaakt. Geheugenupdates voegen ze nog steeds toe en verwijderen ze.",
       "deleteConfidence": "Standaard verwijderzekerheid",
       "deleteConfidenceBody": "Gebruikt wanneer het model er geen geeft. Lager archiveert in plaats van verwijdert.",
       "deleteRatio": "Max hard-verwijderratio",

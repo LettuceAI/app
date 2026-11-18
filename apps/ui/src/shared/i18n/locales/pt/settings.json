@@ -1456,6 +1456,8 @@
       "loopsBody": "Envia os resultados de ferramentas de volta até o modelo chamar done. Ajuda modelos mais fracos, gasta mais tokens.",
       "loopCap": "Limite rígido do laço recursivo",
       "loopCapBody": "Para aqui mesmo se o modelo nunca chamar done",
+      "modelPinning": "Permitir que o modelo fixe memórias",
+      "modelPinningBody": "Desativado, só tu fixas ou desafixas memórias. As atualizações de memória continuam a adicioná-las e removê-las.",
       "deleteConfidence": "Confiança padrão de exclusão",
       "deleteConfidenceBody": "Usado quando o modelo não informa nenhuma. Menor arquiva em vez de excluir.",
       "deleteRatio": "Proporção máxima de exclusão definitiva",

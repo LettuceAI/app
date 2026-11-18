@@ -103,6 +103,11 @@ export function ScopedSettings({ value, onChange }: { value: Value; onChange: Ch
             {value.recursive_memory_loops && (
               <ListRow title={t("memory.advanced.loopCap")} description={t("memory.advanced.loopCapBody")} trailing={<CommitNumber value={value.recursive_memory_loop_hard_cap} min={1} max={100} onCommit={(next) => set({ recursive_memory_loop_hard_cap: next })} />} />
             )}
+            <ListRow
+              title={t("memory.advanced.modelPinning")}
+              description={t("memory.advanced.modelPinningBody")}
+              trailing={<Switch checked={value.model_pinning_enabled} onChange={(next) => void set({ model_pinning_enabled: next })} aria-label={t("memory.advanced.modelPinning")} />}
+            />
             {ratio(t("memory.advanced.deleteConfidence"), t("memory.advanced.deleteConfidenceBody"), "delete_confidence_basis_points")}
             {ratio(t("memory.advanced.deleteRatio"), t("memory.advanced.deleteRatioBody"), "max_hard_delete_ratio_basis_points")}
             <ListRow

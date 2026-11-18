@@ -1468,6 +1468,8 @@
       "loopsBody": "Posílá výsledky nástrojů zpět, dokud model nezavolá done. Pomáhá slabším modelům, spotřebovává víc tokenů.",
       "loopCap": "Tvrdý limit rekurzivní smyčky",
       "loopCapBody": "Zastaví se tady, i když model nikdy nezavolá done",
+      "modelPinning": "Povolit modelu připínat vzpomínky",
+      "modelPinningBody": "Když je vypnuto, vzpomínky připínáš a odepínáš jen ty. Aktualizace paměti je dál přidávají a odebírají.",
       "deleteConfidence": "Výchozí jistota mazání",
       "deleteConfidenceBody": "Použije se, když ji model neuvede. Nižší hodnota archivuje místo mazání.",
       "deleteRatio": "Maximální podíl tvrdého mazání",

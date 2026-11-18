@@ -1468,6 +1468,8 @@
       "loopsBody": "Odsyła wyniki narzędzi, aż model zgłosi koniec. Pomaga słabszym modelom, zużywa więcej tokenów.",
       "loopCap": "Twardy limit pętli rekurencyjnych",
       "loopCapBody": "Zatrzymuje się tutaj, nawet jeśli model nigdy nie zgłosi końca",
+      "modelPinning": "Pozwól modelowi przypinać wspomnienia",
+      "modelPinningBody": "Po wyłączeniu tylko ty przypinasz i odpinasz wspomnienia. Aktualizacje pamięci nadal je dodają i usuwają.",
       "deleteConfidence": "Domyślna pewność usunięcia",
       "deleteConfidenceBody": "Używana, gdy model jej nie poda. Niższa archiwizuje zamiast usuwać.",
       "deleteRatio": "Maks. udział trwałego usuwania",

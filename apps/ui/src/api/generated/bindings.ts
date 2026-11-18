@@ -9083,6 +9083,7 @@ export type SettingsDynamicMemorySettings = {
 	recursive_memory_loops: boolean,
 	recursive_memory_loop_hard_cap: number,
 	structured_fallback_format: SettingsMemoryStructuredFallbackFormat,
+	model_pinning_enabled: boolean,
 };
 
 export type SettingsEmbeddingSettings = {

@@ -224,6 +224,7 @@ pub struct SettingsDynamicMemorySettings {
     pub recursive_memory_loops: bool,
     pub recursive_memory_loop_hard_cap: u32,
     pub structured_fallback_format: SettingsMemoryStructuredFallbackFormat,
+    pub model_pinning_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -68,6 +68,7 @@ pub use tool::{
     MemoryToolSkipReason, SOCIAL_EVENT_KINDS, SemanticDuplicateEvidence, SoftDeleteReason,
     dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape, list_memories,
     skip_user_edited_calls, undo_memory_tool_outcomes, undo_memory_tool_outcomes_preserving,
+    withhold_model_pinning, without_model_pinning,
 };
 
 pub use read::{MemoryActivityCycle, MemoryReadRepository, MemoryReadScope, cycle_revert_blocker};

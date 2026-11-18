@@ -1445,6 +1445,8 @@
       "loopsBody": "Model done çağırana kadar araç sonuçlarını geri gönderir. Daha zayıf modellere yardımcı olur, daha fazla token harcar.",
       "loopCap": "Özyinelemeli döngü üst sınırı",
       "loopCapBody": "Model asla done çağırmasa bile burada durur",
+      "modelPinning": "Modelin anıları sabitlemesine izin ver",
+      "modelPinningBody": "Kapalıyken anıları yalnızca sen sabitler veya sabitlemeyi kaldırırsın. Hafıza güncellemeleri yine anı ekleyip siler.",
       "deleteConfidence": "Varsayılan silme güveni",
       "deleteConfidenceBody": "Model hiçbir değer vermediğinde kullanılır. Düşük değer silmek yerine arşivler.",
       "deleteRatio": "Maksimum kalıcı silme oranı",

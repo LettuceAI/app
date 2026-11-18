@@ -28,7 +28,7 @@ mod duplicate_consolidation_flow_tests {
         }
     }
     fn provider(text: &str) -> Provider { Provider { text: text.into(), calls: AtomicUsize::new(0), requests: Mutex::new(Vec::new()) } }
-    fn policy() -> MemoryPolicy { MemoryPolicy { max_entries: 30, hot_token_budget: 1000, cold_threshold: Score::ZERO, delete_confidence_default: Score::FULL, max_hard_delete_ratio_per_cycle: Score::ZERO, decay_rate: Score::ZERO } }
+    fn policy() -> MemoryPolicy { MemoryPolicy { max_entries: 30, hot_token_budget: 1000, cold_threshold: Score::ZERO, delete_confidence_default: Score::FULL, max_hard_delete_ratio_per_cycle: Score::ZERO, decay_rate: Score::ZERO, model_pinning_enabled: true } }
 
     async fn fixture() -> (crate::api::tests::Harness, OpenRound, MemoryItem, MemoryDuplicateCandidates) {
         let h = harness(Reply::Text("Mara works night shifts at the hospital."));

@@ -1456,6 +1456,8 @@
       "loopsBody": "Rimanda indietro i risultati degli strumenti finché il modello chiama done. Aiuta i modelli più deboli, consuma più token.",
       "loopCap": "Limite massimo dei cicli ricorsivi",
       "loopCapBody": "Si ferma qui anche se il modello non chiama mai done",
+      "modelPinning": "Lascia che il modello fissi i ricordi",
+      "modelPinningBody": "Se disattivato, solo tu fissi o sblocchi i ricordi. Gli aggiornamenti della memoria continuano ad aggiungerli e rimuoverli.",
       "deleteConfidence": "Affidabilità predefinita per l'eliminazione",
       "deleteConfidenceBody": "Usata quando il modello non ne fornisce una. Più bassa archivia invece di eliminare.",
       "deleteRatio": "Rapporto massimo di eliminazioni definitive",

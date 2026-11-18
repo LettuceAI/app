@@ -1432,6 +1432,8 @@
       "loopsBody": "把工具结果发回模型，直到模型调用 done。对较弱模型有帮助，但会消耗更多 token。",
       "loopCap": "递归循环硬上限",
       "loopCapBody": "即使模型从未调用 done，也会在此停止",
+      "modelPinning": "允许模型置顶记忆",
+      "modelPinningBody": "关闭后，只有你可以置顶或取消置顶记忆。记忆更新仍会添加和删除记忆。",
       "deleteConfidence": "默认删除置信度",
       "deleteConfidenceBody": "模型未给出时使用。较低值会改为归档而不是删除。",
       "deleteRatio": "最大硬删除比例",

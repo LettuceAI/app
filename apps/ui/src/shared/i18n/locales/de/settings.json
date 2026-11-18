@@ -1444,6 +1444,8 @@
       "loopsBody": "Sendet Tool-Ergebnisse zurück, bis das Modell done aufruft. Hilft schwächeren Modellen, kostet mehr Token.",
       "loopCap": "Harte Obergrenze für rekursive Schleifen",
       "loopCapBody": "Stoppt hier, selbst wenn das Modell nie done aufruft",
+      "modelPinning": "Modell darf Erinnerungen anheften",
+      "modelPinningBody": "Aus heißt: Nur du heftest Erinnerungen an oder löst sie. Gedächtnis-Updates fügen sie weiter hinzu und entfernen sie.",
       "deleteConfidence": "Standard-Löschsicherheit",
       "deleteConfidenceBody": "Ein niedrigerer Wert archiviert statt zu löschen, wenn das Modell keinen angibt.",
       "deleteRatio": "Max. Anteil harter Löschungen",

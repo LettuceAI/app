@@ -1432,6 +1432,8 @@
       "loopsBody": "將工具結果傳回，直到模型呼叫 done。有助於較弱的模型，但會消耗更多 token。",
       "loopCap": "遞迴迴圈硬上限",
       "loopCapBody": "即使模型從未呼叫 done 也會在此停止",
+      "modelPinning": "允許模型釘選記憶",
+      "modelPinningBody": "關閉後，只有你可以釘選或取消釘選記憶。記憶更新仍會新增和刪除記憶。",
       "deleteConfidence": "刪除信心預設值",
       "deleteConfidenceBody": "模型未提供時使用。較低值會改為封存而不刪除。",
       "deleteRatio": "最大永久刪除比例",

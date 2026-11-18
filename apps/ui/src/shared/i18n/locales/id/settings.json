@@ -1432,6 +1432,8 @@
       "loopsBody": "Mengirim hasil alat kembali hingga model memanggil selesai. Membantu model lemah, memakai lebih banyak token.",
       "loopCap": "Batas keras pengulangan rekursif",
       "loopCapBody": "Berhenti di sini bahkan jika model tidak pernah memanggil selesai",
+      "modelPinning": "Izinkan model menyematkan memori",
+      "modelPinningBody": "Saat mati, hanya kamu yang menyematkan atau melepas sematan memori. Pembaruan memori tetap menambah dan menghapusnya.",
       "deleteConfidence": "Default kepercayaan penghapusan",
       "deleteConfidenceBody": "Digunakan saat model tidak memberi nilai. Lebih rendah mengarsipkan alih-alih menghapus.",
       "deleteRatio": "Rasio penghapusan permanen maksimal",

@@ -847,6 +847,7 @@ where
             delete_confidence_default: score(dynamic.delete_confidence_basis_points)?,
             max_hard_delete_ratio_per_cycle: score(dynamic.max_hard_delete_ratio_basis_points)?,
             decay_rate: score(dynamic.decay_rate_basis_points)?,
+            model_pinning_enabled: dynamic.model_pinning_enabled,
         };
         policy.validate().map_err(|error| {
             tracing::warn!(%error, "dynamic memory policy failed validation");

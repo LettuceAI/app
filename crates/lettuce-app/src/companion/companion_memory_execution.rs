@@ -185,6 +185,9 @@ impl<
             .manual_edited_items_since(run.space_id, run.starting_memory.revision)?;
         let mut calls = calls;
         lettuce_memory::skip_user_edited_calls(&mut calls, &snapshot.items, &edited);
+        if !policy.model_pinning_enabled {
+            lettuce_memory::withhold_model_pinning(&mut calls);
+        }
         let mut hard_deletes_used = 0;
         for earlier in rounds
             .iter()
@@ -708,6 +711,7 @@ mod tests {
                     delete_confidence_default: Score::FULL,
                     max_hard_delete_ratio_per_cycle: Score::FULL,
                     decay_rate: Score::ZERO,
+                    model_pinning_enabled: true,
                 },
                 &prepare_background_calls(
                     &round,

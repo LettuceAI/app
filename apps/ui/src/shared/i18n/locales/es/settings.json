@@ -1456,6 +1456,8 @@
       "loopsBody": "Devuelve los resultados de herramientas hasta que el modelo llama a done. Ayuda a los modelos más débiles y consume más tokens.",
       "loopCap": "Límite máximo de bucles recursivos",
       "loopCapBody": "Se detiene aquí aunque el modelo nunca llame a done",
+      "modelPinning": "Permitir que el modelo fije recuerdos",
+      "modelPinningBody": "Desactivado, solo tú fijas o desfijas recuerdos. Las actualizaciones de memoria siguen añadiéndolos y quitándolos.",
       "deleteConfidence": "Confianza de eliminación predeterminada",
       "deleteConfidenceBody": "Se usa cuando el modelo no da ninguna. Un valor más bajo archiva en vez de eliminar.",
       "deleteRatio": "Ratio máximo de eliminación definitiva",

@@ -1409,6 +1409,7 @@ async fn open_round_with_decay(
             delete_confidence_default: lettuce_memory::Score::from_basis_points(5_000).expect("score"),
             max_hard_delete_ratio_per_cycle: lettuce_memory::Score::FULL,
             decay_rate: lettuce_memory::Score::FULL,
+            model_pinning_enabled: true,
         }).expect("real cycle-start decay").change
     } else { None };
     let memory = match &cycle_start_change {
@@ -1590,6 +1591,7 @@ fn settle(
                 max_hard_delete_ratio_per_cycle: lettuce_memory::Score::from_basis_points(10_000)
                     .expect("score"),
                 decay_rate: lettuce_memory::Score::from_basis_points(800).expect("score"),
+                model_pinning_enabled: true,
             },
             &seeds,
             Some(lettuce_memory::Score::from_basis_points(9_000).expect("score")),

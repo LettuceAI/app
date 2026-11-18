@@ -260,7 +260,7 @@ mod tests {
             ] }] }), replacement_ids: Vec::new(), applied: None, reason: None,
         };
         let snapshot = MemorySpaceSnapshot { id: MemorySpaceId::new(), revision: Revision::INITIAL, items: vec![base] };
-        let policy = MemoryPolicy { max_entries: 10, hot_token_budget: 1000, cold_threshold: Score::ZERO, delete_confidence_default: Score::FULL, max_hard_delete_ratio_per_cycle: Score::ZERO, decay_rate: Score::ZERO };
+        let policy = MemoryPolicy { max_entries: 10, hot_token_budget: 1000, cold_threshold: Score::ZERO, delete_confidence_default: Score::FULL, max_hard_delete_ratio_per_cycle: Score::ZERO, decay_rate: Score::ZERO, model_pinning_enabled: true };
         (group, vec![source], snapshot, policy)
     }
 

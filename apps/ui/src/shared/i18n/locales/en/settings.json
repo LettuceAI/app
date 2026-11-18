@@ -1445,6 +1445,8 @@
       "loopsBody": "Sends tool results back until the model calls done. Helps weaker models, costs more tokens.",
       "loopCap": "Recursive loop hard cap",
       "loopCapBody": "Stops here even if the model never calls done",
+      "modelPinning": "Let the model pin memories",
+      "modelPinningBody": "Off, only you pin or unpin memories. Memory updates still add and remove them.",
       "deleteConfidence": "Delete confidence default",
       "deleteConfidenceBody": "Used when the model gives none. Lower archives instead of deleting.",
       "deleteRatio": "Max hard delete ratio",

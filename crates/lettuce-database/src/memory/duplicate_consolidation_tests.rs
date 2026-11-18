@@ -4,7 +4,7 @@ mod duplicate_consolidation_tests {
     use crate::memory::{memory_adapter, dynamic_memory_run_adapter::load_run_in};
 
     fn policy() -> MemoryPolicy {
-        MemoryPolicy { max_entries: 20, hot_token_budget: 1000, cold_threshold: Score::ZERO, delete_confidence_default: Score::FULL, max_hard_delete_ratio_per_cycle: Score::ZERO, decay_rate: Score::ZERO }
+        MemoryPolicy { max_entries: 20, hot_token_budget: 1000, cold_threshold: Score::ZERO, delete_confidence_default: Score::FULL, max_hard_delete_ratio_per_cycle: Score::ZERO, decay_rate: Score::ZERO, model_pinning_enabled: true }
     }
 
     fn setup(database: &Database) -> (DynamicMemoryAttempt, ConsolidationGroup, MemorySpaceId) {

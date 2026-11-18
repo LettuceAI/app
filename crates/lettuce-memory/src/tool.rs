@@ -471,6 +471,52 @@ pub fn skip_user_edited_calls(
     }
 }
 
+const MODEL_PIN_TOOLS: [&str; 2] = ["pin_memory", "unpin_memory"];
+
+/// The contract without the pin and unpin tools and without the `important`
+/// flag on creates, for runs whose model may not pin.
+#[must_use]
+pub fn without_model_pinning(request: &ToolRequest) -> ToolRequest {
+    let mut request = request.clone();
+    request
+        .definitions
+        .retain(|definition| !MODEL_PIN_TOOLS.contains(&definition.name.as_str()));
+    for definition in &mut request.definitions {
+        if let Some(properties) = definition
+            .parameters
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+        {
+            properties.remove("important");
+        }
+        if let Some(required) = definition
+            .parameters
+            .get_mut("required")
+            .and_then(Value::as_array_mut)
+        {
+            required.retain(|name| name.as_str() != Some("important"));
+        }
+    }
+    request
+}
+
+/// Withholds every pin the model asked for: a pin or unpin settles as an
+/// unsupported tool, and a create is stored unpinned.
+pub fn withhold_model_pinning(calls: &mut [MemoryToolCall]) {
+    for call in calls {
+        match &mut call.arguments {
+            MemoryToolArguments::PinMemory { .. } | MemoryToolArguments::UnpinMemory { .. } => {
+                call.arguments = MemoryToolArguments::Unusable {
+                    reason: MemoryToolSkipReason::UnsupportedTool,
+                };
+            }
+            MemoryToolArguments::CreateMemory { important, .. }
+            | MemoryToolArguments::CreatePerspectiveMemory { important, .. } => *important = false,
+            _ => {}
+        }
+    }
+}
+
 impl MemoryToolArguments {
     /// Like `parse`, but an unusable call becomes `Unusable` with its reason.
     #[must_use]
@@ -1688,7 +1734,8 @@ mod tests {
         CategoryArgument, CreateMemoryPreparation, DuplicateKind, DynamicMemoryToolOptions,
         MemoryCycleBudget, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
         MemoryToolOutcome, MemoryToolReducer, MemoryToolSkipReason, SoftDeleteReason,
-        dynamic_memory_tool_request_for_run, undo_memory_tool_outcomes,
+        dynamic_memory_tool_request_for_run, undo_memory_tool_outcomes, withhold_model_pinning,
+        without_model_pinning,
     };
     use crate::{
         MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot,
@@ -1730,6 +1777,7 @@ mod tests {
             delete_confidence_default: score(5_000),
             max_hard_delete_ratio_per_cycle: score(5_000),
             decay_rate: score(800),
+            model_pinning_enabled: true,
         }
     }
 
@@ -3198,6 +3246,51 @@ mod tests {
                 .iter()
                 .any(|item| item.text == "old" && item.is_cold)
         );
+    }
+
+    #[test]
+    fn disabled_model_pinning_drops_the_pin_tools_and_withholds_pins() {
+        let request = without_model_pinning(&tool_request(false, false, false));
+        let names = request
+            .definitions
+            .iter()
+            .map(|definition| definition.name.as_str())
+            .collect::<Vec<_>>();
+        assert!(!names.contains(&"pin_memory") && !names.contains(&"unpin_memory"));
+        assert!(names.contains(&"create_memory") && names.contains(&"done"));
+        assert!(request.definitions.iter().all(|definition| {
+            definition.parameters["properties"].get("important").is_none()
+        }));
+
+        let target = reference(MemoryId::new());
+        let mut calls = vec![
+            call(MemoryToolArguments::PinMemory {
+                target: target.clone(),
+            }),
+            call(MemoryToolArguments::UnpinMemory { target }),
+            call(MemoryToolArguments::CreateMemory {
+                text: "Mira made a promise.".to_owned(),
+                category: CategoryArgument::Tagged {
+                    category: MemoryCategory::Relationship,
+                },
+                important: true,
+                source_message_id: None,
+                supersedes: Vec::new(),
+            }),
+        ];
+        withhold_model_pinning(&mut calls);
+        for call in &calls[..2] {
+            assert_eq!(
+                call.arguments,
+                MemoryToolArguments::Unusable {
+                    reason: MemoryToolSkipReason::UnsupportedTool,
+                }
+            );
+        }
+        assert!(matches!(
+            calls[2].arguments,
+            MemoryToolArguments::CreateMemory { important: false, .. }
+        ));
     }
 
     #[test]

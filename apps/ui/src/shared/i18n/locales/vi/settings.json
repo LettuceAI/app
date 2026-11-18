@@ -1432,6 +1432,8 @@
       "loopsBody": "Gửi kết quả công cụ trở lại cho đến khi mô hình gọi done. Giúp mô hình yếu hơn nhưng tốn thêm token.",
       "loopCap": "Giới hạn cứng vòng lặp đệ quy",
       "loopCapBody": "Dừng ở đây kể cả khi mô hình không bao giờ gọi done",
+      "modelPinning": "Cho phép mô hình ghim ký ức",
+      "modelPinningBody": "Khi tắt, chỉ bạn mới ghim hoặc bỏ ghim ký ức. Các lần cập nhật bộ nhớ vẫn thêm và xóa ký ức.",
       "deleteConfidence": "Độ tin cậy xóa mặc định",
       "deleteConfidenceBody": "Dùng khi mô hình không đưa ra. Thấp hơn sẽ lưu trữ thay vì xóa.",
       "deleteRatio": "Tỷ lệ xóa cứng tối đa",

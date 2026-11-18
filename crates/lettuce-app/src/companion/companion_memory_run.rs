@@ -237,6 +237,11 @@ impl<
                         }),
                     },
                 )?;
+                let tool_request = if policy.model_pinning_enabled {
+                    tool_request
+                } else {
+                    lettuce_memory::without_model_pinning(&tool_request)
+                };
                 let attempt_id = stable_attempt_id(run_id, 0, handle.id());
                 let start = lettuce_memory::MemoryToolReducer
                     .start_cycle(&snapshot, policy)
@@ -1018,6 +1023,7 @@ pub(crate) mod tests {
             max_hard_delete_ratio_per_cycle: lettuce_memory::Score::from_basis_points(5_000)
                 .expect("score"),
             decay_rate: lettuce_memory::Score::from_basis_points(800).expect("score"),
+            model_pinning_enabled: true,
         }
     }
 

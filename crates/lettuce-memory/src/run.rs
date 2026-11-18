@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     DynamicMemoryToolOptions, dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape,
+    without_model_pinning,
 };
 
 /// The largest recursive memory loop hard cap; the user's cap applies below it.
@@ -191,12 +192,11 @@ impl DynamicMemoryRun {
                 group_companion: Some(companion_labels),
             }]
         };
+        let shape = dynamic_memory_tool_shape(&self.tool_request);
         if !options.into_iter().any(|options| {
-            dynamic_memory_tool_shape(&self.tool_request)
-                == dynamic_memory_tool_shape(&dynamic_memory_tool_request_for_run(
-                    options,
-                    &|key| key.to_owned(),
-                ))
+            let contract = dynamic_memory_tool_request_for_run(options, &|key| key.to_owned());
+            shape == dynamic_memory_tool_shape(&contract)
+                || shape == dynamic_memory_tool_shape(&without_model_pinning(&contract))
         }) {
             return Err(DynamicMemoryRunError::InvalidRun {
                 reason: "tool request does not match the dynamic-memory tool contract",

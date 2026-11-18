@@ -499,6 +499,9 @@ pub struct DynamicMemorySettings {
     pub recursive_memory_loops: bool,
     pub recursive_memory_loop_hard_cap: u32,
     pub structured_fallback_format: MemoryStructuredFallbackFormat,
+    /// Whether memory cycles may pin, unpin or create pinned memories. Pins the
+    /// user sets by hand are unaffected.
+    pub model_pinning_enabled: bool,
 }
 
 impl Default for DynamicMemorySettings {
@@ -522,6 +525,7 @@ impl Default for DynamicMemorySettings {
             recursive_memory_loops: false,
             recursive_memory_loop_hard_cap: 20,
             structured_fallback_format: MemoryStructuredFallbackFormat::Xml,
+            model_pinning_enabled: true,
         }
     }
 }

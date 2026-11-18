@@ -2665,6 +2665,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
         max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
         decay_rate: Score::from_basis_points(800).expect("score"),
+        model_pinning_enabled: true,
     };
     let dispatch = crate::CompanionPostTurnMemoryRunCoordinator::new(&database, &database)
         .admit_or_recover(
@@ -12391,6 +12392,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
         delete_confidence_default: Score::from_basis_points(5_000).expect("score"),
         max_hard_delete_ratio_per_cycle: Score::from_basis_points(5_000).expect("score"),
         decay_rate: Score::from_basis_points(800).expect("score"),
+        model_pinning_enabled: true,
     };
     let memory_id = MemoryId::new();
     let coordinator =

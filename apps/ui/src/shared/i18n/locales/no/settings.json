@@ -1444,6 +1444,8 @@
       "loopsBody": "Sender verktøyresultater tilbake til modellen kaller done. Hjelper svakere modeller, koster flere tokens.",
       "loopCap": "Hard grense for rekursiv løkke",
       "loopCapBody": "Stopper her selv om modellen aldri kaller done",
+      "modelPinning": "La modellen feste minner",
+      "modelPinningBody": "Av betyr at bare du fester eller løsner minner. Minneoppdateringer legger fortsatt til og fjerner dem.",
       "deleteConfidence": "Standard slettetrygghet",
       "deleteConfidenceBody": "Brukes når modellen ikke oppgir noen. Lavere arkiverer i stedet for å slette.",
       "deleteRatio": "Maks andel hard sletting",

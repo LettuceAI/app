@@ -406,6 +406,13 @@ pub struct MemoryPolicy {
     pub delete_confidence_default: Score,
     pub max_hard_delete_ratio_per_cycle: Score,
     pub decay_rate: Score,
+    /// Whether a cycle may pin, unpin or create pinned memories.
+    #[serde(default = "model_pinning_default")]
+    pub model_pinning_enabled: bool,
+}
+
+const fn model_pinning_default() -> bool {
+    true
 }
 
 impl MemoryPolicy {

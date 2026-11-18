@@ -1456,6 +1456,8 @@
       "loopsBody": "Renvoie les résultats des outils jusqu'à ce que le modèle signale la fin. Aide les modèles plus faibles, consomme plus de tokens.",
       "loopCap": "Plafond strict des boucles récursives",
       "loopCapBody": "S'arrête ici même si le modèle ne signale jamais la fin",
+      "modelPinning": "Laisser le modèle épingler des souvenirs",
+      "modelPinningBody": "Désactivé, toi seul épingles ou désépingles les souvenirs. Les mises à jour de la mémoire continuent de les ajouter et de les retirer.",
       "deleteConfidence": "Seuil de confiance de suppression par défaut",
       "deleteConfidenceBody": "Utilisé lorsque le modèle n'en fournit aucun. Plus bas archive au lieu de supprimer.",
       "deleteRatio": "Ratio max. de suppression définitive",

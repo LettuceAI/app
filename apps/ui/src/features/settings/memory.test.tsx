@@ -31,6 +31,7 @@ const memory: SettingsDynamicMemorySettings = {
   duplicate_check_enabled: true,
   duplicate_threshold_basis_points: 7800,
   structured_fallback_format: "xml",
+  model_pinning_enabled: true,
 };
 
 function viewOf(patch: Partial<SettingsView["global"]> = {}, revision = 7): SettingsView {
@@ -322,6 +323,16 @@ describe("memory settings page", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Recursive memory loops" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(3));
     expect(await screen.findByText("Recursive loop hard cap")).toBeTruthy();
+  });
+
+  it("lets the model pin memories until the switch is turned off", async () => {
+    const { store } = await mount(viewOf());
+    fireEvent.click(screen.getByRole("button", { name: /Context enrichment and memory manager/ }));
+    const toggle = screen.getByRole("switch", { name: "Let the model pin memories" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
+    expect(lastPatch(store)).toMatchObject({ section: "dynamic_memory", value: { model_pinning_enabled: false } });
   });
 
   it("keeps the page and shows the typed error when the revision is stale", async () => {
