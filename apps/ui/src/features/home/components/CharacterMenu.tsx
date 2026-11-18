@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Download, EyeOff, History, Pencil, FileCode, Package, RectangleHorizontal, Trash2 } from "lucide-react";
+import { Download, EyeOff, History, Pencil, FileCode, Package, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Avatar, confirm, icon, ListGroup, ListRowButton, relativeTime, Sheet, toast } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import { isApiFailure } from "@/api/client";
 import type { CharacterExportFormat } from "@/api/generated/bindings";
-import { deleteCharacter, exportCharacter, hideCharacter, toggleCardStyle } from "../data/actions";
+import { deleteCharacter, exportCharacter, hideCharacter } from "../data/actions";
 import type { HomeCharacter } from "../data/home-characters";
 
 const formats: readonly { format: CharacterExportFormat; icon: React.ReactNode }[] = [
@@ -78,14 +78,6 @@ export function CharacterMenu({ api, home, onClose }: { api: ApiClient; home: Ho
                   onClose();
                   void navigate({ to: "/characters/$characterId/edit", params: { characterId: character.id } });
                 }}
-              />
-              <ListRowButton
-                icon={<RectangleHorizontal size={icon.lg} />}
-                title={t("menu.cardStyle")}
-                description={character.card_style === "banner" ? t("menu.cardBanner") : t("menu.cardRow")}
-                chevron={false}
-                disabled={busy}
-                onClick={() => void run(() => toggleCardStyle(services, character))}
               />
               <ListRowButton
                 icon={<Download size={icon.lg} />}

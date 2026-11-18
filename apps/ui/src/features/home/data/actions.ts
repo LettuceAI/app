@@ -17,21 +17,6 @@ async function refresh({ queryClient }: HomeServices): Promise<void> {
   ]);
 }
 
-/** Switches the card between the row and the banner shape. */
-export async function toggleCardStyle(services: HomeServices, character: CharacterSummary): Promise<void> {
-  const { api } = services;
-  const view = await api.call("characterGet", { character_id: character.id });
-  const draft = view.draft;
-  const card_style = draft.presentation.card_style === "banner" ? "circle" : "banner";
-  await api.call("characterSave", {
-    character_id: character.id,
-    draft: { ...draft, presentation: { ...draft.presentation, card_style } },
-    expected_revision: view.revision,
-    client_operation_id: crypto.randomUUID(),
-  });
-  await refresh(services);
-}
-
 const exportExtension: Record<CharacterExportFormat, string> = { uec: "uec", v3: "json", v2: "json" };
 
 /** The file name the save dialog suggests: the character's name in lowercase letters, digits, `_` and `-`, and the date. */
