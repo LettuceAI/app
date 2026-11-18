@@ -510,7 +510,9 @@ fn map_episodes(
             previous_conversation_source_id: row.previous_session_id,
             started_at,
             ended_at,
-            updated_at,
+            // Legacy's episode backfill copied the session's update time
+            // and used the next session's start as the episode's end.
+            updated_at: ended_at.map_or(updated_at, |end| updated_at.max(end)),
         });
     }
     let by_session = episodes

@@ -210,6 +210,7 @@ fn legacy_restore_failure_label(failure: crate::LegacyRestoreError) -> &'static 
         Failure::Plan(Plan::Database(DatabaseFailure::Unavailable)) => "backup-file-unavailable",
         Failure::Compatibility(_) | Failure::Plan(Plan::Compatibility(_)) => "backup-invalid-envelope",
         Failure::Location(crate::AppDatabaseLocationError::Busy) => "backup-file-busy",
+        Failure::Stage { stage: "verify", .. } => "backup-verification-failed",
         Failure::TargetDirectory | Failure::Location(_) | Failure::Workspace(_) | Failure::Database(_) | Failure::Open(_) | Failure::MediaStore(_) | Failure::Stage { .. } => "backup-file-unavailable",
         Failure::Cancelled => "backup-cancelled",
         Failure::Api(failure) if failure.code == ApiErrorCode::Cancelled => "backup-cancelled",
@@ -464,6 +465,15 @@ mod fix_tests {
     fn fix11a_legacy_compatibility_format_errors_keep_their_reason() {
         assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::InvalidMeta { reason: "simulated failure".to_owned() })), "backup-invalid-envelope");
         assert_eq!(legacy_restore_failure_label(crate::LegacyRestoreError::Plan(crate::LegacyDatabaseImportPlanError::Compatibility(lettuce_transfer::LegacyBackupCompatibilityError::InvalidMeta { reason: "simulated failure".to_owned() }))), "backup-invalid-envelope");
+    }
+
+    #[test]
+    fn legacy_verification_failure_keeps_its_reason() {
+        let error = crate::LegacyRestoreError::Stage {
+            stage: "verify",
+            detail: "invalid companion episode".to_owned(),
+        };
+        assert_eq!(legacy_restore_failure_label(error), "backup-verification-failed");
     }
 
     struct Fixture {

@@ -779,8 +779,8 @@ mod tests {
         let mut greeting = legacy_message(&first_message, "user", None, "Hello Mira");
         greeting["effective_at"] = serde_json::json!(-315_619_200_000_i64);
         greeting["attachments"] = reply["attachments"].clone();
-        let compatibility =
-            lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+        let compatibility = {
+            let mut inventory = LegacyBackupInventory {
                 warnings: Vec::new(),
                 version: 1,
                 created_at: 1,
@@ -885,8 +885,32 @@ mod tests {
                         ],
                     ),
                 ],
-            })
-            .expect("compatibility plan");
+            };
+            if mode == "companion" {
+                inventory.documents.push(document(
+                    lettuce_transfer::LegacyBackupDocumentKind::CompanionSharedMemory,
+                    serde_json::json!([{
+                        "character_id": character,
+                        "memories": "[]",
+                        "memory_summary_token_count": 0,
+                        "memory_tool_events": "[]",
+                        "soul_growth": "[]",
+                        "relationship_states": "{}",
+                        "episodes": [{
+                            "session_id": session,
+                            "persona_key": persona,
+                            "started_at": 1,
+                            "ended_at": 20,
+                            "updated_at": 10
+                        }],
+                        "created_at": 1,
+                        "updated_at": 20
+                    }]),
+                ));
+            }
+            lettuce_transfer::plan_legacy_backup_compatibility(inventory)
+                .expect("compatibility plan")
+        };
         let plan = compatibility.legacy_import_plan();
         assert_eq!(plan.media.media.len(), 5);
         let receipt = coordinator
@@ -917,6 +941,12 @@ mod tests {
             graph.companion_state.sessions.len(),
             usize::from(mode == "companion")
         );
+        if mode == "companion" {
+            let episode = &graph.companion_state.episodes[0];
+            assert_eq!(episode.started_at, TimestampMillis::new(1));
+            assert_eq!(episode.ended_at, Some(TimestampMillis::new(20)));
+            assert_eq!(episode.updated_at, TimestampMillis::new(20));
+        }
         assert_eq!(graph.authored.media_assets.len(), 5);
         let playground = &graph.playground_history;
         assert_eq!(playground.entries.len(), 1);
