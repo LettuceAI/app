@@ -199,6 +199,33 @@ describe("android back", () => {
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
   });
 
+  it("animates mobile detail paths in both directions and skips tabs and search changes", async () => {
+    const startViewTransition = vi.fn(({ update }: { update: () => Promise<void> }) => ({
+      updateCallbackDone: update(),
+    }));
+    vi.stubGlobal("CSS", { supports: () => true });
+    Object.defineProperty(document, "startViewTransition", { configurable: true, value: startViewTransition });
+    try {
+      const { router } = await renderShell(android, ui_state, "/library");
+      await act(async () => { await router.navigate({ to: "/groups" }); });
+      expect(startViewTransition).not.toHaveBeenCalled();
+
+      await act(async () => { await router.navigate({ to: "/settings" }); });
+      expect(startViewTransition).toHaveBeenLastCalledWith(expect.objectContaining({ types: ["page-forward"] }));
+      await act(async () => { await router.navigate({ to: "/settings", search: { settingsPanel: "whatsNew" }, replace: true }); });
+      expect(startViewTransition).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await router.navigate({ to: "/settings", search: {}, replace: true }); });
+      await press(true);
+      await waitFor(() => expect(router.state.resolvedLocation?.pathname).toBe("/groups"));
+      expect(startViewTransition).toHaveBeenLastCalledWith(expect.objectContaining({ types: ["page-back"] }));
+      expect(startViewTransition).toHaveBeenCalledTimes(2);
+    } finally {
+      Reflect.deleteProperty(document, "startViewTransition");
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("opens home from a detail page with no history and exits from a main screen", async () => {
     const runtime = await renderShell(android, ui_state, "/settings");
     await press(false);

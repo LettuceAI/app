@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { CircleCheck, CircleX, Globe, PanelLeft, Send, Sparkles, Vibrate } from "lucide-react";
+import { ArrowLeftRight, CircleCheck, CircleX, Globe, PanelLeft, Send, Sparkles, Vibrate } from "lucide-react";
 import {
   Button,
   Field,
@@ -190,6 +190,24 @@ export function GeneralTab({ phone }: { phone: boolean }) {
           {t("soundsHint")}
         </Text>
       </section>
+      {mobile && (
+        <ListGroup label={t("motion")}>
+          <ListRow
+            icon={<ArrowLeftRight size={icon.lg} />}
+            title={t("pageTransitions")}
+            description={t("pageTransitionsBody")}
+            trailing={
+              <Switch
+                checked={preferences.value.pageTransitions !== false}
+                onChange={(value) =>
+                  void preferences.update(() => [{ key: "pageTransitions", value }])
+                }
+                aria-label={t("pageTransitions")}
+              />
+            }
+          />
+        </ListGroup>
+      )}
       {mobile && (
         <ListGroup label={t("vibration")}>
           <ListRow

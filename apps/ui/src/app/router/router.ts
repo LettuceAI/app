@@ -9,7 +9,7 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import { appStatusQuery } from "@/api/app-status-query";
 import { queryKeys } from "@/api/query-keys";
-import type { AppStatus } from "@/api/generated/bindings";
+import type { AppStatus, SettingsView } from "@/api/generated/bindings";
 import type { ApiClient } from "@/api/client";
 import { CreateCharacterPage, EditCharacterPage } from "@/features/characters";
 import { CreatePersonaPage, EditPersonaPage } from "@/features/personas";
@@ -21,6 +21,7 @@ import {
   ChatMemoryPage,
   ChatCompanionPage,
   ConversationPage,
+  timelineQuery,
 } from "@/features/conversations";
 import {
   LibraryPage,
@@ -50,6 +51,7 @@ import { RouteNotFound } from "../error-boundaries/RouteNotFound";
 import { AppShell } from "../shell/AppShell";
 import { DiscoverPage } from "@/features/discover";
 import { PendingScreen } from "../shell/PendingScreen";
+import { isPrimaryPage } from "../shell/navigation";
 import {
   legacyMigrationOffered,
   onboardingCompleted,
@@ -458,6 +460,16 @@ const settingsSectionRoute = createRoute({
 const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chat/$conversationId",
+  loader: {
+    staleReloadMode: "blocking",
+    handler: async ({ context, params }) => {
+      const { api, queryClient } = context;
+      const platform = queryClient.getQueryData<AppStatus>(queryKeys.app.status())?.platform;
+      if (platform === "android" || platform === "ios") {
+        await queryClient.ensureInfiniteQueryData(timelineQuery(api, params.conversationId)).catch(() => undefined);
+      }
+    },
+  },
   validateSearch: (search: Record<string, unknown>): { panel?: "settings"; message?: string; sceneImage?: string } => ({
     ...(search.panel === "settings" ? { panel: "settings" as const } : {}),
     ...(typeof search.sceneImage === "string" && search.sceneImage !== "" ? { sceneImage: search.sceneImage } : {}),
@@ -579,7 +591,16 @@ export interface AppRouterOptions {
   history?: RouterHistory;
 }
 
+function returnsToParentPage(from: string, to: string): boolean {
+  if (to === "/") return from !== welcomePath && from !== welcomeBackPath;
+  return from.startsWith(`${to}/`)
+    || (to === "/library" && (from.startsWith("/characters/") || from.startsWith("/personas/")))
+    || (to === "/settings/models" && from === "/settings/model-browser");
+}
+
 export function createAppRouter(context: RouterContext, options: AppRouterOptions = {}) {
+  const supportsPageTransitions =
+    typeof window !== "undefined" && window.CSS?.supports?.("selector(:active-view-transition-type(page-forward))");
   return createRouter({
     routeTree,
     context,
@@ -588,6 +609,21 @@ export function createAppRouter(context: RouterContext, options: AppRouterOption
     defaultPendingComponent: PendingScreen,
     defaultPendingMs: 150,
     defaultPendingMinMs: 0,
+    defaultViewTransition: supportsPageTransitions ? {
+      types: ({ fromLocation, toLocation, pathChanged }) => {
+        const platform = context.queryClient.getQueryData<AppStatus>(queryKeys.app.status())?.platform;
+        if (!fromLocation || !pathChanged || (platform !== "android" && platform !== "ios")
+          || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+        const preferences = context.queryClient.getQueryData<SettingsView>(queryKeys.settings.detail())?.global?.ui_preferences;
+        if (preferences?.pageTransitions === false) return false;
+
+        if (isPrimaryPage(fromLocation.pathname) && isPrimaryPage(toLocation.pathname)) return false;
+
+        const back = toLocation.state.__TSR_index < fromLocation.state.__TSR_index
+          || returnsToParentPage(fromLocation.pathname, toLocation.pathname);
+        return [back ? "page-back" : "page-forward"];
+      },
+    } : false,
     ...(options.history ? { history: options.history } : {}),
   });
 }

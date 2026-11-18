@@ -29,3 +29,70 @@ pre {
   --color-brand: #88c057;
   --color-primary-disabled: #2d523b;
 }
+
+html:active-view-transition-type(page-forward),
+html:active-view-transition-type(page-back) {
+  view-transition-name: none;
+}
+
+html:active-view-transition-type(page-forward) [data-mobile-route-page],
+html:active-view-transition-type(page-back) [data-mobile-route-page] {
+  view-transition-name: mobile-page;
+}
+
+::view-transition-group(mobile-page) {
+  animation-duration: 300ms;
+  overflow: clip;
+}
+
+html:active-view-transition-type(page-back)::view-transition-group(mobile-page) {
+  animation-duration: 250ms;
+}
+
+::view-transition-old(mobile-page),
+::view-transition-new(mobile-page) {
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  mix-blend-mode: normal;
+}
+
+html:active-view-transition-type(page-forward)::view-transition-new(mobile-page),
+html:active-view-transition-type(page-back)::view-transition-old(mobile-page) {
+  z-index: 1;
+  box-shadow: -8px 0 24px rgb(0 0 0 / 22%);
+}
+
+html:active-view-transition-type(page-forward)::view-transition-old(mobile-page) {
+  animation-name: page-recede;
+}
+
+html:active-view-transition-type(page-forward)::view-transition-new(mobile-page) {
+  animation-name: page-enter;
+}
+
+html:active-view-transition-type(page-back)::view-transition-old(mobile-page) {
+  animation-name: page-exit;
+}
+
+html:active-view-transition-type(page-back)::view-transition-new(mobile-page) {
+  animation-name: page-return;
+}
+
+@keyframes page-enter {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes page-exit {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes page-recede {
+  from { transform: translateX(0); filter: brightness(1); }
+  to { transform: translateX(-16%); filter: brightness(0.88); }
+}
+
+@keyframes page-return {
+  from { transform: translateX(-16%); filter: brightness(0.88); }
+  to { transform: translateX(0); filter: brightness(1); }
+}

@@ -1080,6 +1080,8 @@ pub enum UiPreferenceChange {
     ThemeDensity { value: Option<SettingsUiThemeDensity> },
     #[serde(rename = "beetrootRain")]
     BeetrootRain { value: Option<bool> },
+    #[serde(rename = "pageTransitions")]
+    PageTransitions { value: Option<bool> },
     #[serde(rename = "theme")]
     Theme { value: Option<SettingsUiTheme> },
     #[serde(rename = "settingsCardOpacity")]

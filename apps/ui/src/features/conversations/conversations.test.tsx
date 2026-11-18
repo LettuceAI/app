@@ -188,6 +188,32 @@ afterEach(() => {
   localStorage.removeItem("lettuce.chat.systemSendConfirmationDisabled");
 });
 
+it("waits for the first timeline page before resolving mobile chat navigation", async () => {
+  let releaseFirstPage!: () => void;
+  const firstPage = new Promise<void>((resolve) => { releaseFirstPage = resolve; });
+  const conversationOpen = vi.fn(async () => {
+    await firstPage;
+    return { status: "ok" as const, data: view([message("a1", "assistant", "Sit down.")]) };
+  });
+  const { router } = await open({ platform: "android", path: "/", calls: { conversationOpen } });
+
+  let navigation: Promise<void> | undefined;
+  await act(async () => {
+    navigation = router.navigate({ to: "/chat/$conversationId", params: { conversationId: "c1" } });
+    await waitFor(() => expect(conversationOpen).toHaveBeenCalledOnce());
+  });
+  expect(router.state.resolvedLocation?.pathname).toBe("/");
+
+  await act(async () => {
+    releaseFirstPage();
+    await navigation;
+  });
+
+  expect(router.state.resolvedLocation?.pathname).toBe("/chat/c1");
+  expect(await screen.findByText("Sit down.")).toBeTruthy();
+  expect(conversationOpen).toHaveBeenCalledOnce();
+});
+
 it("appends a visible system message from the composer without starting any generation", async () => {
   const messages = [message("a1", "assistant", "Sit down.")];
   const system = vi.fn<NonNullable<MockCallHandlers["conversationAddSystemMessage"]>>((request) => {

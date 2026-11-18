@@ -381,6 +381,15 @@ describe("customization settings", () => {
     await mount({ mobile: false });
     await screen.findByRole("switch", { name: "Message sent" });
     expect(screen.queryByRole("switch", { name: "Vibrate while replying" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Page transitions" })).toBeNull();
+  });
+
+  it("keeps page transitions on until they are switched off", async () => {
+    const page = await mount();
+    const toggle = await screen.findByRole("switch", { name: "Page transitions" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(page.current().pageTransitions).toBe(false));
   });
 
   it("keeps the final slider value without sending every queued drag position", async () => {

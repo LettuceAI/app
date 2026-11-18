@@ -8,6 +8,10 @@ export const destinations = {
 
 export type Destination = keyof typeof destinations;
 
+export function isPrimaryPage(pathname: string): boolean {
+  return Object.entries(destinations).some(([id, path]) => id !== "settings" && path === pathname);
+}
+
 /** The destination a path belongs to: its own page or any page under it. */
 export function destinationOf(pathname: string): Destination {
   return (

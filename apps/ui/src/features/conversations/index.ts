@@ -5,7 +5,7 @@ export { CompanionPage as ChatCompanionPage } from "./companion/CompanionPage";
 export { ChatHistoryPage } from "./history/ChatHistoryPage";
 export { useChatNavigation } from "./use-chat-navigation";
 export { startDirectChat } from "./data/actions";
-export { modelsQuery } from "./data/queries";
+export { modelsQuery, timelineQuery } from "./data/queries";
 export { useChatModels, type ChatModel } from "./data/use-models";
 export { ParticipantsBar } from "./components/ParticipantsBar";
 export { useMissingSouls, useMissingSoulWarning } from "./companion/missing-soul";

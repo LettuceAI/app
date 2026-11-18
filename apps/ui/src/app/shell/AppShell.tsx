@@ -9,7 +9,7 @@ import {
   type NavDestination,
 } from "@lettuceai/crisp";
 import { useQuery } from "@tanstack/react-query";
-import { Outlet, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { Outlet, rootRouteId, useLocation, useMatches, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Compass, House, Library, MessageSquare, PanelLeft, Settings, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -23,7 +23,7 @@ import { LibraryCreateSheet } from "@/features/library";
 import { OpenedFiles, RestoredModelsSheet } from "@/features/opened-files";
 import { DownloadsMenu, DownloadsProvider } from "@/entities/download";
 import { useSidebarExpanded } from "./sidebarState";
-import { destinations, destinationOf, type Destination } from "./navigation";
+import { destinations, destinationOf, isPrimaryPage, type Destination } from "./navigation";
 import { useAndroidBack } from "./useAndroidBack";
 import { useWindowController } from "./useWindowController";
 
@@ -42,7 +42,14 @@ export function AppShell() {
   const { t } = useTranslation();
   const api = useRouteContext({ from: "__root__", select: (context) => context.api });
   const { data: status } = useQuery(appStatusQuery(api));
-  const pathname = useLocation({ select: (location) => location.pathname });
+  const requestedPathname = useLocation({ select: (location) => location.pathname });
+  const renderedPathname = useMatches({
+    select: (matches) => {
+      const leaf = matches.at(-1);
+      return leaf && leaf.routeId !== rootRouteId ? leaf.pathname : null;
+    },
+  });
+  const pathname = renderedPathname ?? requestedPathname;
   const navigate = useNavigate();
   const compact = useCompactLayout();
   const platform = status?.platform ?? "other";
@@ -53,9 +60,7 @@ export function AppShell() {
   const welcome = pathname === "/welcome" || pathname === "/welcome-back";
   const tabs = compact || mobile;
   const { enabled: sidebarOnDetailPages } = useSidebarOnDetailPages(api);
-  const mainScreen = Object.entries(destinations).some(
-    ([id, path]) => id !== "settings" && pathname === path,
-  );
+  const mainScreen = isPrimaryPage(pathname);
   const navigationHidden = !mainScreen && (tabs || !sidebarOnDetailPages);
   useAndroidBack(platform, welcome || mainScreen);
   const [sidebarOpen, setSidebarOpen] = useSidebarExpanded(api);
@@ -133,6 +138,7 @@ export function AppShell() {
         }}
       >
         <div
+          data-mobile-route-page={mobile || undefined}
           className={cn(
             "relative flex h-full min-h-0 flex-col overflow-clip bg-surface text-fg",
             desktop && !expanded && "rounded-2xl ring-1 ring-inset ring-line",
