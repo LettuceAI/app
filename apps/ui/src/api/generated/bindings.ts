@@ -397,7 +397,7 @@ export const commands = {
 	dictationStop: (request: DictationStopRequest_Deserialize) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("dictation_stop", { request })),
 	dictationCancel: (request: DictationCancelRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("dictation_cancel", { request })),
 	certificatesList: () => typedError<CertificatesView, ApiError_Serialize>(__TAURI_INVOKE("certificates_list")),
-	providerAccountSave: (request: ProviderAccountSaveRequest) => typedError<ProviderAccountView, ApiError_Serialize>(__TAURI_INVOKE("provider_account_save", { request })),
+	providerAccountSave: (request: ProviderAccountSaveRequest_Deserialize) => typedError<ProviderAccountView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("provider_account_save", { request })),
 	providerAccountDelete: (request: ProviderAccountDeleteRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("provider_account_delete", { request })),
 	providerModels: (request: ProviderModelsRequest) => typedError<RemoteModelContract_Serialize[], ApiError_Serialize>(__TAURI_INVOKE("provider_models", { request })),
 	providerModelVerify: (request: ProviderModelVerifyRequest) => typedError<ProviderModelVerified, ApiError_Serialize>(__TAURI_INVOKE("provider_model_verify", { request })),
@@ -419,7 +419,7 @@ export const commands = {
 	modelDefaultSet: (request: ModelDefaultSetRequest) => typedError<ModelDefaultView, ApiError_Serialize>(__TAURI_INVOKE("model_default_set", { request })),
 	providerNanogptUsage: (request: ProviderNanoGptUsageRequest) => typedError<NanoGptUsageView, ApiError_Serialize>(__TAURI_INVOKE("provider_nanogpt_usage", { request })),
 	providerCatalog: () => typedError<ProviderCatalogContract, ApiError_Serialize>(__TAURI_INVOKE("provider_catalog")),
-	providerAccountsList: () => typedError<ProviderAccountView[], ApiError_Serialize>(__TAURI_INVOKE("provider_accounts_list")),
+	providerAccountsList: () => typedError<ProviderAccountView_Serialize[], ApiError_Serialize>(__TAURI_INVOKE("provider_accounts_list")),
 	providerVerify: (request: ProviderVerifyRequest) => typedError<ProviderVerified, ApiError_Serialize>(__TAURI_INVOKE("provider_verify", { request })),
 	providerOpenrouterEndpoints: (request: ProviderOpenRouterEndpointsRequest) => typedError<ProviderOpenRouterEndpoint[], ApiError_Serialize>(__TAURI_INVOKE("provider_openrouter_endpoints", { request })),
 	ollamaModelsList: (request: OllamaModelsRequest) => typedError<OllamaModelList, ApiError_Serialize>(__TAURI_INVOKE("ollama_models_list", { request })),
@@ -8280,15 +8280,29 @@ export type ProviderAccountInput = {
 	config: { [key in string]: unknown },
 };
 
-export type ProviderAccountSaveRequest = {
+export type ProviderAccountSaveRequest = ProviderAccountSaveRequest_Serialize | ProviderAccountSaveRequest_Deserialize;
+
+export type ProviderAccountSaveRequest_Deserialize = {
 	account: ProviderAccountInput,
 	api_key: string | null,
 	clear_api_key: boolean,
+	sprout_credential?: SproutCredentialEdit | null,
 	expected_revision: number | null,
 	client_operation_id: string,
 };
 
-export type ProviderAccountView = {
+export type ProviderAccountSaveRequest_Serialize = {
+	account: ProviderAccountInput,
+	api_key: string | null,
+	clear_api_key: boolean,
+	sprout_credential?: SproutCredentialEdit,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type ProviderAccountView = ProviderAccountView_Serialize | ProviderAccountView_Deserialize;
+
+export type ProviderAccountView_Deserialize = {
 	id: string,
 	provider_kind: string,
 	protocol: ProviderProtocolContract,
@@ -8298,6 +8312,24 @@ export type ProviderAccountView = {
 	streaming_enabled: boolean,
 	allow_invalid_tls: boolean,
 	api_key_set: boolean,
+	sprout_api_key_set?: boolean,
+	config: { [key in string]: unknown },
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type ProviderAccountView_Serialize = {
+	id: string,
+	provider_kind: string,
+	protocol: ProviderProtocolContract,
+	label: string,
+	base_url: string | null,
+	enabled: boolean,
+	streaming_enabled: boolean,
+	allow_invalid_tls: boolean,
+	api_key_set: boolean,
+	sprout_api_key_set?: boolean,
 	config: { [key in string]: unknown },
 	revision: number,
 	created_at: number,
@@ -9713,6 +9745,8 @@ export type SpeechRuntimeKind = "espeak" | "onnx_runtime";
 
 /**  The final failure before the bounded speech retry budget was exhausted. */
 export type SpeechTransientFailure = { type: "unavailable" } | { type: "network_unavailable" } | { type: "provider_unavailable"; status: number };
+
+export type SproutCredentialEdit = { type: "set"; api_key: string } | { type: "clear" };
 
 export type StorageOptimizeRequest = {
 	client_operation_id: string,

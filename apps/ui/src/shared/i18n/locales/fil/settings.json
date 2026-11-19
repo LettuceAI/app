@@ -588,6 +588,14 @@
     "key": "API key",
     "keepKey": "Iwanang walang laman para mapanatili ang naka-save na key.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Gamitin ang Sprout para suriin kung aling mga modelo ang kasya",
+      "description": "Tingnan kung aling mga modelo ang kasya sa GPU at memory ng Ollama server.",
+      "url": "Sprout URL",
+      "key": "Sprout API Key (opsyonal)",
+      "keyPlaceholder": "Bearer token mula sa Sprout console",
+      "clearKey": "Alisin ang naka-save na Sprout key"
+    },
     "url": "Base URL",
     "urlHint": "Iwanang walang laman para sa sarili ng provider",
     "stream": "Ipakita ang mga tugon nang live",

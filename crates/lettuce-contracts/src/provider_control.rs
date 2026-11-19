@@ -46,6 +46,8 @@ pub struct ProviderAccountView {
     pub streaming_enabled: bool,
     pub allow_invalid_tls: bool,
     pub api_key_set: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sprout_api_key_set: bool,
     #[cfg_attr(feature = "specta", specta(type = std::collections::HashMap<String, specta_typescript::Unknown>))]
     pub config: serde_json::Value,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
@@ -120,10 +122,27 @@ pub struct ProviderAccountSaveRequest {
     pub account: ProviderAccountInput,
     pub api_key: Option<String>,
     pub clear_api_key: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sprout_credential: Option<SproutCredentialEdit>,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub expected_revision: Option<u64>,
     pub client_operation_id: String,
 }
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SproutCredentialEdit {
+    Set { api_key: String },
+    Clear,
+}
+
+impl std::fmt::Debug for SproutCredentialEdit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SproutCredentialEdit([REDACTED])")
+    }
+}
+
 impl std::fmt::Debug for ProviderAccountSaveRequest {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("ProviderAccountSaveRequest([REDACTED])")

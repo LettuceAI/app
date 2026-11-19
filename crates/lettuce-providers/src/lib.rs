@@ -2708,12 +2708,12 @@ mod integration_tests {
             "ollama",
             ProviderProtocol::Ollama,
             ProviderConfig::Standard,
-            "/api/chat",
+            "/proxy/ollama/api/",
             true,
             ollama_reply,
         )
         .await;
-        assert_eq!(captured.request_line, "POST /api/chat HTTP/1.1");
+        assert_eq!(captured.request_line, "POST /proxy/ollama/api/chat HTTP/1.1");
         assert!(
             captured
                 .headers
@@ -3038,8 +3038,8 @@ mod integration_tests {
                 "ollama",
                 ProviderProtocol::Ollama,
                 ProviderConfig::Standard,
-                "/v1",
-                "GET /api/tags HTTP/1.1",
+                "/proxy/ollama/api",
+                "GET /proxy/ollama/api/tags HTTP/1.1",
                 r#"{"models":[{"name":"a/b","details":{"parameter_size":"7B"}}]}"#,
             ),
             (
@@ -3097,6 +3097,12 @@ mod integration_tests {
                 assert_eq!(
                     models[0].input_modalities.as_deref(),
                     Some(&["text".to_owned(), "image".to_owned()][..])
+                );
+            }
+            if kind == "ollama" {
+                assert!(
+                    raw.to_ascii_lowercase()
+                        .contains("authorization: bearer key-canary\r\n")
                 );
             }
         }
@@ -3207,6 +3213,16 @@ mod integration_tests {
             bool,
         );
         let cases: Vec<VerifyCase<'_>> = vec![
+            (
+                "ollama",
+                ProviderProtocol::Ollama,
+                "/proxy/ollama/api",
+                "GET /proxy/ollama/api/tags HTTP/1.1",
+                "authorization: bearer key-canary",
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}",
+                200,
+                true,
+            ),
             (
                 "openrouter",
                 ProviderProtocol::OpenAiCompatible,
@@ -3334,6 +3350,28 @@ mod integration_tests {
             "{raw}"
         );
         assert!(raw.ends_with("null"), "{raw}");
+    }
+
+    #[tokio::test]
+    async fn ollama_verifies_local_connection_without_a_key() {
+        let (endpoint, request_receiver) = test_server(http_json(r#"{"models":[]}"#)).await;
+        let providers = RemoteProviders::new(
+            Arc::new(RecordingSecretStore::default()),
+            Arc::new(JsonClient::new().expect("client")),
+        );
+        let account = account(
+            "ollama",
+            ProviderProtocol::Ollama,
+            Some(format!("{endpoint}/api/tags")),
+            ProviderConfig::Standard,
+            None,
+            lettuce_settings::SecretOwnerId::new(),
+        );
+        let verification = providers.verify_api_key(&account).await.expect("verify");
+        assert!(verification.valid);
+        let raw = String::from_utf8(request_receiver.await.expect("request")).expect("HTTP");
+        assert!(raw.starts_with("GET /api/tags HTTP/1.1"));
+        assert!(!raw.to_ascii_lowercase().contains("authorization:"));
     }
 
     #[tokio::test]

@@ -82,6 +82,7 @@ async fn nano_account(h: &crate::api::tests::Harness, endpoint: String) -> Strin
             },
             api_key: Some("nano-secret-canary".into()),
             clear_api_key: false,
+            sprout_credential: None,
             expected_revision: None,
             client_operation_id: "nano-account".into(),
         },

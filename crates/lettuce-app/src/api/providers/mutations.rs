@@ -144,6 +144,44 @@ async fn cleanup_secrets_inner(context: &ApiContext, staged: bool) -> Result<(),
     Ok(())
 }
 
+async fn stage_credential(
+    context: &ApiContext,
+    record: SecretRecord,
+    value: SecretValue,
+) -> Result<(), ApiError> {
+    let staged = record.clone();
+    context
+        .blocking(move |context| {
+            context
+                .backend()
+                .database()
+                .stage_provider_secret(&staged)
+                .map_err(model_error)
+        })
+        .await?;
+    context
+        .secret_store()
+        .put(record, value, None)
+        .await
+        .map(|_| ())
+        .map_err(|_| api_error(ApiErrorCode::Unavailable, "provider credential cannot be stored"))
+}
+
+async fn check_replayed_credential(
+    context: &ApiContext,
+    record: SecretRecord,
+    key: &str,
+) -> Result<(), ApiError> {
+    match context.secret_store().load(&record.reference, &record.purpose).await {
+        Ok(stored) if !stored.with(|stored| stored == key) => Err(api_error(
+            ApiErrorCode::Conflict,
+            "operation id was already used with another credential",
+        )),
+        Ok(_) | Err(lettuce_settings::SecretStoreError::Missing) => Ok(()),
+        Err(_) => Err(api_error(ApiErrorCode::Unavailable, "replay credential cannot be read")),
+    }
+}
+
 pub async fn provider_account_save(
     context: &ApiContext,
     request: dto::ProviderAccountSaveRequest,
@@ -155,9 +193,22 @@ pub async fn provider_account_save(
             "application is shutting down",
         ));
     }
+    let key = request.api_key.as_deref().map(str::trim).filter(|key| !key.is_empty());
+    let sprout_key = match &request.sprout_credential {
+        Some(dto::SproutCredentialEdit::Set { api_key }) if api_key.trim().is_empty() => {
+            return Err(invalid_field("sprout_credential.api_key", "Sprout API key is empty"));
+        }
+        Some(dto::SproutCredentialEdit::Set { api_key }) => Some(api_key.trim()),
+        _ => None,
+    };
     let mut keyless = serde_json::to_value(&request).map_err(|_| api_error(ApiErrorCode::Internal, "provider request cannot be encoded"))?;
-    keyless["api_key"] = serde_json::json!(request.api_key.as_ref().is_some_and(|key| !key.trim().is_empty()));
-    let digest = digest(&keyless, &request.client_operation_id)?;
+    keyless["api_key"] = serde_json::json!(key.is_some());
+    if sprout_key.is_some() {
+        keyless["sprout_credential"]["api_key"] = serde_json::json!(true);
+    }
+    let operation = &request.client_operation_id;
+    let digest = digest(&keyless, operation)?;
+    let reference = |kind| SecretRef::from_uuid(identity(kind, operation, &digest));
     if let Some(view) = replay::<dto::ProviderAccountView>(
         context,
         "provider_account_save",
@@ -166,16 +217,17 @@ pub async fn provider_account_save(
     )
     .await?
     {
-        if let Some(key) = request.api_key.as_ref().filter(|key| !key.trim().is_empty()) {
+        if key.is_some() || sprout_key.is_some() {
             match super::account(context, view.id.clone()).await {
                 Ok(account) => {
-                    let reference = SecretRef::from_uuid(identity("key", &request.client_operation_id, &digest));
-                    match context.secret_store().load(&reference, &SecretPurpose::ProviderApiKey { owner: account.secret_owner_id }).await {
-                        Ok(stored) if !stored.with(|stored| stored == key.trim()) => {
-                            return Err(api_error(ApiErrorCode::Conflict, "operation id was already used with another credential"));
-                        }
-                        Ok(_) | Err(lettuce_settings::SecretStoreError::Missing) => {}
-                        Err(_) => return Err(api_error(ApiErrorCode::Unavailable, "replay credential cannot be read")),
+                    let owner = account.secret_owner_id;
+                    if let Some(key) = key {
+                        let record = SecretRecord::new(reference("key"), SecretPurpose::ProviderApiKey { owner });
+                        check_replayed_credential(context, record, key).await?;
+                    }
+                    if let Some(key) = sprout_key {
+                        let record = SecretRecord::new(reference("sprout-key"), SecretPurpose::SproutApiKey { owner });
+                        check_replayed_credential(context, record, key).await?;
                     }
                 }
                 Err(error) if error.code == ApiErrorCode::NotFound => {}
@@ -190,6 +242,8 @@ pub async fn provider_account_save(
     }
     let descriptor = lettuce_providers::provider_descriptor(&request.account.provider_kind)
         .ok_or_else(|| invalid_field("account.provider_kind", "unknown provider kind"))?;
+    let keep_sprout_config = request.account.config.as_object()
+        .is_some_and(|config| !config.contains_key("sprout"));
     let config = super::provider_config(&request.account.provider_kind, request.account.config)
         .map_err(|_| invalid_field("account.config", "invalid provider configuration"))?;
     if let ProviderConfig::ComfyUi(workflows) = &config {
@@ -226,7 +280,6 @@ pub async fn provider_account_save(
                 "secret references cannot be supplied",
             ));
         }
-    let key = request.api_key.filter(|key| !key.trim().is_empty());
     if key.is_some() && request.clear_api_key {
         return Err(invalid_field(
             "api_key",
@@ -237,9 +290,8 @@ pub async fn provider_account_save(
         || SecretOwnerId::from_uuid(identity("owner", &request.client_operation_id, &digest)),
         |account| account.secret_owner_id,
     );
-    let reference = key
-        .as_ref()
-        .map(|_| SecretRef::from_uuid(identity("key", &request.client_operation_id, &digest)));
+    let provider_reference = key.map(|_| reference("key"));
+    let sprout_reference = sprout_key.map(|_| reference("sprout-key"));
     let mut account = ProviderAccount {
         id: old.as_ref().map_or_else(
             || {
@@ -262,7 +314,7 @@ pub async fn provider_account_save(
         api_key_ref: if request.clear_api_key {
             None
         } else {
-            reference.or_else(|| old.as_ref().and_then(|account| account.api_key_ref))
+            provider_reference.or_else(|| old.as_ref().and_then(|account| account.api_key_ref))
         },
         secret_headers: old
             .as_ref()
@@ -272,40 +324,37 @@ pub async fn provider_account_save(
         created_at: context.now(),
         updated_at: context.now(),
     };
-    if let (ProviderConfig::Ollama(config), Some(old)) = (&mut account.config, &old)
-        && let (Some(sprout), ProviderConfig::Ollama(previous)) = (&mut config.sprout, &old.config)
-        {
-            sprout.api_key_ref = previous
-                .sprout
-                .as_ref()
-                .and_then(|sprout| sprout.api_key_ref);
-        }
+    let previous_sprout = old.as_ref().and_then(|account| match &account.config {
+        ProviderConfig::Ollama(config) => config.sprout.as_ref(),
+        _ => None,
+    });
+    if let ProviderConfig::Ollama(config) = &mut account.config
+        && keep_sprout_config
+    {
+        config.sprout = previous_sprout.cloned();
+    }
+    if let ProviderConfig::Ollama(config) = &mut account.config
+        && let Some(sprout) = &mut config.sprout
+    {
+        sprout.api_key_ref = match &request.sprout_credential {
+            Some(dto::SproutCredentialEdit::Set { .. }) => sprout_reference,
+            Some(dto::SproutCredentialEdit::Clear) => None,
+            None => previous_sprout.and_then(|sprout| sprout.api_key_ref),
+        };
+    } else if request.sprout_credential.is_some() {
+        return Err(invalid_field("sprout_credential", "Sprout settings are required"));
+    }
     lettuce_models::validate_provider_connection(&account)
         .map_err(|_| invalid_field("account", "invalid provider connection"))?;
-    if let (Some(reference), Some(key)) = (reference, key) {
-        let value = SecretValue::new(key.trim())
-            .map_err(|_| invalid_field("api_key", "invalid API key"))?;
-        let record = SecretRecord::new(reference, SecretPurpose::ProviderApiKey { owner });
-        let staged = record.clone();
-        context
-            .blocking(move |context| {
-                context
-                    .backend()
-                    .database()
-                    .stage_provider_secret(&staged)
-                    .map_err(model_error)
-            })
-            .await?;
-        context
-            .secret_store()
-            .put(record, value, None)
-            .await
-            .map_err(|_| {
-                api_error(
-                    ApiErrorCode::Unavailable,
-                    "provider credential cannot be stored",
-                )
-            })?;
+    let key = key.map(SecretValue::new).transpose()
+        .map_err(|_| invalid_field("api_key", "invalid API key"))?;
+    let sprout_key = sprout_key.map(SecretValue::new).transpose()
+        .map_err(|_| invalid_field("sprout_credential.api_key", "invalid Sprout API key"))?;
+    if let (Some(reference), Some(key)) = (provider_reference, key) {
+        stage_credential(context, SecretRecord::new(reference, SecretPurpose::ProviderApiKey { owner }), key).await?;
+    }
+    if let (Some(reference), Some(key)) = (sprout_reference, sprout_key) {
+        stage_credential(context, SecretRecord::new(reference, SecretPurpose::SproutApiKey { owner }), key).await?;
     }
     if context.shutdown_token().is_cancelled() {
         return Err(api_error(
@@ -313,7 +362,7 @@ pub async fn provider_account_save(
             "application is shutting down",
         ));
     }
-    let key_set = super::api_key_set(context, &account).await?;
+    let credentials = super::credential_status(context, &account).await?;
     let key = request.client_operation_id;
     let view = context
         .blocking(move |context| {
@@ -329,7 +378,7 @@ pub async fn provider_account_save(
                         let account = scope
                             .save_provider_account(account, expected)
                             .map_err(|error| Failure(model_error(error)))?;
-                        super::account_view(account, key_set).map_err(Failure)
+                        super::account_view(account, credentials).map_err(Failure)
                     },
                 )
                 .map_err(|failure: Failure| failure.0)

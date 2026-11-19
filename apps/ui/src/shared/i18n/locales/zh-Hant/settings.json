@@ -584,6 +584,14 @@
     "key": "API 金鑰",
     "keepKey": "留空以保留已儲存的金鑰。",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "使用 Sprout 檢查可執行性",
+      "description": "檢查哪些模型適合 Ollama 伺服器的 GPU 和記憶體。",
+      "url": "Sprout URL",
+      "key": "Sprout API 金鑰（選填）",
+      "keyPlaceholder": "來自 Sprout 主控台的 Bearer 權杖",
+      "clearKey": "移除已儲存的 Sprout 金鑰"
+    },
     "url": "基礎 URL",
     "urlHint": "留空以使用供應商自己的",
     "stream": "即時顯示回覆",

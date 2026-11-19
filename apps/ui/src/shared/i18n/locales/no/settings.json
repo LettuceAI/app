@@ -588,6 +588,14 @@
     "key": "API-nøkkel",
     "keepKey": "La det stå tomt for å beholde den lagrede nøkkelen.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Bruk Sprout til å sjekke hvilke modeller som kan kjøres",
+      "description": "Sjekk hvilke modeller som passer til GPU-en og minnet på Ollama-serveren.",
+      "url": "Sprout URL",
+      "key": "Sprout API-nøkkel (valgfritt)",
+      "keyPlaceholder": "Bearer-token fra Sprout-konsollen",
+      "clearKey": "Fjern den lagrede Sprout-nøkkelen"
+    },
     "url": "Basis-URL",
     "urlHint": "La det stå tomt for leverandørens egen",
     "stream": "Svar i sanntid",

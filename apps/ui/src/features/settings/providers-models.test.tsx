@@ -131,6 +131,103 @@ afterEach(() => {
 });
 
 describe("provider settings", () => {
+  it("accepts an optional Ollama key and shows that it is saved when reopened", async () => {
+    const ollama = { ...account, provider_kind: "ollama", protocol: "ollama" as const, label: "My Ollama", api_key_set: true, config: { kind: "ollama", sprout: null } };
+    let accounts: ProviderAccountView[] = [];
+    const save = vi.fn<NonNullable<MockCallHandlers["providerAccountSave"]>>(() => {
+      accounts = [ollama];
+      return { status: "ok", data: ollama };
+    });
+    const verify = vi.fn<NonNullable<MockCallHandlers["providerVerify"]>>(() => ({ status: "ok", data: { valid: true, status: 200 } }));
+    await mount("providers", {
+      providerCatalog: () => ({ status: "ok", data: { providers: [{ ...descriptor, kind: "ollama", display_name: "Ollama", protocol: "ollama", api_key: "optional", default_endpoint: "http://localhost:11434", verifies_key: false }] } }),
+      providerAccountsList: () => ({ status: "ok", data: accounts }),
+      providerAccountSave: save,
+      providerVerify: verify,
+    });
+    await click("Add");
+    expect(screen.getByRole("button", { name: "Add provider" }).hasAttribute("disabled")).toBe(false);
+    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "https://ollama.com/api" } });
+    fireEvent.change(screen.getByLabelText("API key (optional)"), { target: { value: " ollama-key " } });
+    await click("Verify connection");
+    await waitFor(() => expect(verify).toHaveBeenCalledWith({
+      type: "draft",
+      draft: { provider_kind: "ollama", base_url: "https://ollama.com/api", api_key: "ollama-key", config: { kind: "ollama", sprout: null } },
+    }));
+    await click("Add provider");
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ api_key: "ollama-key", clear_api_key: false }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New provider" })).toBeNull());
+
+    await click(/My Ollama/);
+    const keyInput = screen.getByLabelText<HTMLInputElement>("API key (optional)");
+    expect(keyInput.value).toBe("");
+    expect(keyInput.placeholder).toBe("••••••••");
+    expect(screen.getByText("Leave empty to keep the saved key.")).toBeTruthy();
+    await click("Verify connection");
+    await waitFor(() => expect(verify).toHaveBeenCalledWith({ type: "saved", account_id: ollama.id }));
+    await click("Save");
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ api_key: null, clear_api_key: false }));
+  });
+
+  it("configures Sprout separately from the Ollama server and can remove its saved key", async () => {
+    const ollama: ProviderAccountView = {
+      ...account,
+      id: "ollama",
+      provider_kind: "ollama",
+      protocol: "ollama",
+      label: "My Ollama",
+      config: { kind: "ollama", sprout: null },
+      sprout_api_key_set: false,
+    };
+    let current = ollama;
+    const save = vi.fn<NonNullable<MockCallHandlers["providerAccountSave"]>>((request) => {
+      current = {
+        ...current,
+        config: request.account.config,
+        sprout_api_key_set: request.sprout_credential?.type === "set",
+        revision: current.revision + 1,
+      };
+      return { status: "ok", data: current };
+    });
+    await mount("providers", {
+      providerCatalog: () => ({ status: "ok", data: { providers: [{ ...descriptor, kind: "ollama", display_name: "Ollama", protocol: "ollama", api_key: "optional", verifies_key: false }] } }),
+      providerAccountsList: () => ({ status: "ok", data: [current] }),
+      providerAccountSave: save,
+    });
+    const toggle = "Use Sprout for Runnability";
+    const keyLabel = "Sprout API key (optional)";
+    await click(/My Ollama/);
+    expect(screen.queryByLabelText("Sprout URL")).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: toggle }));
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Sprout URL"), { target: { value: "http://sprout.local:8477" } });
+    fireEvent.change(screen.getByLabelText(keyLabel), { target: { value: " sprout-key " } });
+    await click("Save");
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0]?.[0]).toMatchObject({
+      api_key: null,
+      sprout_credential: { type: "set", api_key: "sprout-key" },
+      account: { config: { kind: "ollama", sprout: { enabled: true, url: "http://sprout.local:8477" } } },
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit provider" })).toBeNull());
+
+    await click(/My Ollama/);
+    expect(screen.getByLabelText<HTMLInputElement>("Sprout URL").value).toBe("http://sprout.local:8477");
+    const key = screen.getByLabelText<HTMLInputElement>(keyLabel);
+    expect(key.value).toBe("");
+    expect(key.placeholder).toBe("••••••••");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Remove the saved Sprout key" }));
+    await click("Save");
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save.mock.calls[1]?.[0]).toMatchObject({
+      api_key: null,
+      clear_api_key: false,
+      sprout_credential: { type: "clear" },
+    });
+  });
+
   it.each(["comfyui", "automatic1111"])("adds %s without a required key and preserves its workflows on edit", async (kind) => {
     const imageDescriptor: ProviderDescriptorContract = { ...descriptor, kind, display_name: kind === "comfyui" ? "ComfyUI (Self-hosted)" : "Automatic1111 (Self-hosted)", protocol: "stable_diffusion", api_key: "optional", default_endpoint: kind === "comfyui" ? "http://127.0.0.1:8188" : "http://127.0.0.1:7860", streaming: false, tools: false };
     const workflow = '{"3":{"class_type":"KSampler","inputs":{"seed":%SEED%,"batch_size":%BATCH_SIZE%,"text":"%PROMPT%"}}}';

@@ -584,6 +584,14 @@
     "key": "Kunci API",
     "keepKey": "Biarkan kosong untuk mempertahankan kunci tersimpan.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Gunakan Sprout untuk memeriksa apakah model bisa dijalankan",
+      "description": "Periksa model mana yang cocok dengan GPU dan memori server Ollama.",
+      "url": "URL Sprout",
+      "key": "Kunci API Sprout (opsional)",
+      "keyPlaceholder": "Token Bearer dari konsol Sprout",
+      "clearKey": "Hapus kunci Sprout yang tersimpan"
+    },
     "url": "URL dasar",
     "urlHint": "Biarkan kosong untuk milik penyedia",
     "stream": "Tampilkan respons secara langsung",

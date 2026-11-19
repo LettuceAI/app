@@ -250,6 +250,7 @@ async fn saved_openrouter_account_lists_models_with_its_key() {
             },
             api_key: Some("sk-or-canary".into()),
             clear_api_key: false,
+            sprout_credential: None,
             expected_revision: None,
             client_operation_id: "onboarding-save".into(),
         },

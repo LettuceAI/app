@@ -588,6 +588,14 @@
     "key": "API कुंजी",
     "keepKey": "सेव कुंजी रखने के लिए खाली छोड़ें।",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "मॉडल चलाने की क्षमता जाँचने के लिए Sprout का उपयोग करें",
+      "description": "जाँचें कि कौन से मॉडल Ollama सर्वर के GPU और मेमोरी में फिट होते हैं।",
+      "url": "Sprout URL",
+      "key": "Sprout API कुंजी (वैकल्पिक)",
+      "keyPlaceholder": "Sprout कंसोल से Bearer टोकन",
+      "clearKey": "सेव की गई Sprout कुंजी हटाएँ"
+    },
     "url": "बेस URL",
     "urlHint": "प्रदाता के अपने के लिए खाली छोड़ें",
     "stream": "जवाब लाइव दिखाएँ",

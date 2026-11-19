@@ -584,6 +584,14 @@
     "key": "API key",
     "keepKey": "เว้นว่างเพื่อเก็บคีย์ที่บันทึกไว้",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "ใช้ Sprout เพื่อตรวจสอบว่าโมเดลใดรันได้",
+      "description": "ตรวจสอบว่า GPU และหน่วยความจำของเซิร์ฟเวอร์ Ollama รองรับโมเดลใดบ้าง",
+      "url": "Sprout URL",
+      "key": "คีย์ API ของ Sprout (ไม่บังคับ)",
+      "keyPlaceholder": "โทเค็น Bearer จากคอนโซล Sprout",
+      "clearKey": "ลบคีย์ Sprout ที่บันทึกไว้"
+    },
     "url": "Base URL",
     "urlHint": "เว้นว่างเพื่อใช้ของผู้ให้บริการเอง",
     "stream": "แสดงการตอบกลับแบบเรียลไทม์",

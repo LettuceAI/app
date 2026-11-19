@@ -596,6 +596,14 @@
     "key": "Klucz API",
     "keepKey": "Pozostaw puste, aby zachować zapisany klucz.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Użyj Sprout do sprawdzenia możliwości uruchomienia",
+      "description": "Sprawdź, które modele mieszczą się w GPU i pamięci serwera Ollama.",
+      "url": "URL Sprout",
+      "key": "Klucz API Sprout (opcjonalnie)",
+      "keyPlaceholder": "Token Bearer z konsoli Sprout",
+      "clearKey": "Usuń zapisany klucz Sprout"
+    },
     "url": "Bazowy URL",
     "urlHint": "Pozostaw puste dla własnego adresu dostawcy",
     "stream": "Pokazuj odpowiedzi na żywo",

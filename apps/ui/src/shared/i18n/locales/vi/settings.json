@@ -584,6 +584,14 @@
     "key": "API key",
     "keepKey": "Để trống để giữ khóa đã lưu.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Dùng Sprout để kiểm tra khả năng chạy",
+      "description": "Kiểm tra những mô hình nào phù hợp với GPU và bộ nhớ của máy chủ Ollama.",
+      "url": "URL Sprout",
+      "key": "Khóa API Sprout (tùy chọn)",
+      "keyPlaceholder": "Bearer token từ bảng điều khiển Sprout",
+      "clearKey": "Xóa khóa Sprout đã lưu"
+    },
     "url": "URL gốc",
     "urlHint": "Để trống để dùng URL của nhà cung cấp",
     "stream": "Hiện phản hồi trực tiếp",

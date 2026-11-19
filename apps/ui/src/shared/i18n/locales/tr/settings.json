@@ -588,6 +588,14 @@
     "key": "API anahtarı",
     "keepKey": "Kayıtlı anahtarı tutmak için boş bırakın.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Model uyumluluğunu kontrol etmek için Sprout kullan",
+      "description": "Hangi modellerin Ollama sunucusunun GPU ve bellek kapasitesine uygun olduğunu kontrol edin.",
+      "url": "Sprout adresi",
+      "key": "Sprout API anahtarı (isteğe bağlı)",
+      "keyPlaceholder": "Sprout konsolundaki Bearer belirteci",
+      "clearKey": "Kayıtlı Sprout anahtarını kaldır"
+    },
     "url": "Temel URL",
     "urlHint": "Sağlayıcının kendi adresi için boş bırakın",
     "stream": "Yanıtları canlı göster",

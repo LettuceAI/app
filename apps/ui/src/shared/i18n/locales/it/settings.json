@@ -592,6 +592,14 @@
     "key": "Chiave API",
     "keepKey": "Lascia vuoto per conservare la chiave salvata.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Usa Sprout per verificare quali modelli puoi eseguire",
+      "description": "Controlla quali modelli rientrano nella GPU e nella memoria del server Ollama.",
+      "url": "URL di Sprout",
+      "key": "Chiave API Sprout (opzionale)",
+      "keyPlaceholder": "Token Bearer dalla console Sprout",
+      "clearKey": "Rimuovi la chiave Sprout salvata"
+    },
     "url": "URL di base",
     "urlHint": "Lascia vuoto per quello del provider",
     "stream": "Mostra le risposte in tempo reale",

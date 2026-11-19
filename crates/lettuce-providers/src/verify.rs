@@ -136,7 +136,7 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
             error: None,
         });
     }
-    if credentials.api_key_ref.is_none() {
+    if credentials.api_key_ref.is_none() && !matches!(auth_plan, AuthPlan::OptionalBearer) {
         return Ok(KeyVerification {
             valid: false,
             status: None,
@@ -169,15 +169,19 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
         );
     }
     let policy = probe_policy(&credentials);
+    let endpoint = match descriptor.protocol {
+        ProviderProtocol::Ollama => crate::providers::ollama::api_base(endpoint),
+        _ => Cow::Borrowed(endpoint),
+    };
     let (response, post) = match probe {
         Probe::Get { path } => (
             network
-                .get_json(endpoint, &path, headers, auth, secret_headers, policy)
+                .get_json(&endpoint, &path, headers, auth, secret_headers, policy)
                 .await?,
             false,
         ),
         Probe::PostNull { path } => {
-            let (target, path) = crate::common::request_target(Cow::Borrowed(endpoint), path);
+            let (target, path) = crate::common::request_target(endpoint, path);
             (
                 network
                     .post_json(

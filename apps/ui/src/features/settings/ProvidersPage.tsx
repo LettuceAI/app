@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Cpu, EthernetPort, Plus, Volume2 } from "lucide-react";
-import { Button, confirm, Field, Input, ListGroup, ListRow, ListRowButton, LoadingState, Page, Sheet, Switch, Tab, TabList, Tabs, Text, Textarea, icon } from "@lettuceai/crisp";
+import { Cpu, EthernetPort, ExternalLink, Plus, Volume2 } from "lucide-react";
+import { Button, Checkbox, confirm, Field, Input, ListGroup, ListRow, ListRowButton, LoadingState, Page, Sheet, Switch, Tab, TabList, Tabs, Text, Textarea, icon } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
 import type { AudioProviderConfiguration, AudioProviderView, ProviderAccountView, ProviderDescriptorContract } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
@@ -14,9 +14,11 @@ import { CustomProviderFields } from "./CustomProviderFields";
 import { comfyWorkflowError, imageProviderDraft } from "./image-provider";
 import { customProviderDraft, customProviderConfig, parseImageExtraBody } from "./custom-provider";
 import { useProviderData, useSettingsAction, useSettingsApi, useSettingsLayout } from "./data";
+import { ExternalButton } from "./model-browser/ModelBrowserPage";
 
 const audioKinds = ["elevenlabs", "gemini", "fish_tts", "fish_speech", "open_ai_compatible", "kokoro"] as const;
 const appManagedKinds: ReadonlySet<string> = new Set(["llamacpp", "sdcpp"]);
+const exampleSproutUrl = "http://192.168.1.10:8477";
 type Editor = { audio: boolean; account?: ProviderAccountView; voice?: AudioProviderView };
 
 export function ProvidersPage() {
@@ -190,9 +192,32 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
   const [custom, setCustom] = useState(() => customProviderDraft(kind, account?.config));
   const [allowInvalidTls, setAllowInvalidTls] = useState(account?.allow_invalid_tls ?? false);
   const [workflows, setWorkflows] = useState(() => imageProviderDraft(account?.config));
+  const savedSprout = account?.config.sprout;
+  const [sprout, setSprout] = useState(() => {
+    const config = savedSprout && typeof savedSprout === "object" ? savedSprout : {};
+    return {
+      enabled: "enabled" in config && config.enabled === true,
+      url: "url" in config && typeof config.url === "string" ? config.url : "",
+      key: "",
+      clearKey: false,
+    };
+  });
+  const isOllama = !audio && kind === "ollama";
+  const sproutUrl = sprout.url.trim();
+  const sproutKey = sprout.key.trim();
+  const hasSproutKey = account?.sprout_api_key_set === true;
+  const sproutCredential = sprout.clearKey
+    ? { type: "clear" as const }
+    : sproutKey ? { type: "set" as const, api_key: sproutKey } : undefined;
+  const sproutConfig = savedSprout || sprout.enabled || sproutUrl || sproutCredential
+    ? { enabled: sprout.enabled, url: sproutUrl }
+    : null;
   const isComfy = !audio && kind === "comfyui";
   const isImage = !audio && catalog.find((entry) => entry.kind === kind)?.protocol === "stable_diffusion";
-  const config = isCustom ? customProviderConfig(custom) : isComfy ? { kind: "comfyui", txt2img_workflow: workflows.txt2img.trim() || null, img2img_workflow: workflows.img2img.trim() || null } : account?.config ?? {};
+  const config = isCustom ? customProviderConfig(custom)
+    : isComfy ? { kind: "comfyui", txt2img_workflow: workflows.txt2img.trim() || null, img2img_workflow: workflows.img2img.trim() || null }
+    : isOllama ? { kind: "ollama", sprout: sproutConfig }
+    : account?.config ?? {};
   const workflowError = isComfy ? comfyWorkflowError(workflows.txt2img, true) ?? comfyWorkflowError(workflows.img2img, false) : null;
   const [label, setLabel] = useState(account?.label ?? voice?.label ?? "");
   const [key, setKey] = useState("");
@@ -203,7 +228,8 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
   const [location, setLocation] = useState(voice?.configuration.type === "gemini" ? voice.configuration.location : "us-central1");
   const descriptor = catalog.find((p) => p.kind === kind);
   const options = audio ? audioKinds.map((value) => ({ value, label: t(`providers.audioKinds.${value}`) })) : catalog.map((p) => ({ value: p.kind, label: p.display_name }));
-  const needsKey = audio ? !["kokoro", "fish_speech"].includes(kind) && !voice?.has_api_key : (isCustom ? custom.auth !== "none" : descriptor?.api_key === "required") && !account?.api_key_set;
+  const hasSavedKey = Boolean(account?.api_key_set || voice?.has_api_key);
+  const needsKey = (audio ? !["kokoro", "fish_speech"].includes(kind) : isCustom ? custom.auth !== "none" : descriptor?.api_key === "required") && !hasSavedKey;
   const name = label.trim() || options.find((p) => p.value === kind)?.label || kind;
   const configuration = (): AudioProviderConfiguration => {
     switch (kind) {
@@ -227,6 +253,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
     } else await api.call("providerAccountSave", {
       account: { id: account?.id ?? null, provider_kind: kind, label: name, base_url: host.trim() || null, enabled: account?.enabled ?? true, streaming_enabled: isImage ? false : isCustom ? custom.supportsStreaming : streaming, allow_invalid_tls: allowInvalidTls, config },
       api_key: isCustom && custom.auth === "none" ? null : key.trim() || null, clear_api_key: false, expected_revision: account?.revision ?? null, client_operation_id: crypto.randomUUID(),
+      ...(isOllama && sproutCredential ? { sprout_credential: sproutCredential } : {}),
     });
     onClose();
   });
@@ -285,6 +312,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
     };
   });
   const showKey = (audio ? kind !== "kokoro" : descriptor?.api_key !== "not_used") && (!isCustom || custom.auth !== "none");
+  const optionalKey = isImage || (!audio && !isCustom && descriptor?.api_key === "optional");
   const showUrl = !audio || kind === "fish_speech" || kind === "open_ai_compatible";
   return (
     <Sheet
@@ -298,7 +326,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
           <Button
             variant="primary"
             loading={action.isPending}
-            disabled={!kind || (needsKey && !key.trim()) || customIncomplete || Boolean(workflowError)}
+            disabled={!kind || (needsKey && !key.trim()) || customIncomplete || Boolean(workflowError) || (isOllama && sprout.enabled && !sproutUrl)}
             onClick={save}
           >
             {t(account || voice ? "manage.save" : "providers.add")}
@@ -329,13 +357,13 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
           <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={options.find((p) => p.value === kind)?.label} />
         </Field>
         {showKey && (
-          <Field label={t(isImage ? "providers.optionalKey" : "providers.key")} hint={account?.api_key_set || voice?.has_api_key ? t("providers.keepKey") : undefined}>
+          <Field label={t(optionalKey ? "providers.optionalKey" : "providers.key")} hint={hasSavedKey ? t("providers.keepKey") : undefined}>
             <Input
               type="password"
               autoComplete="new-password"
               value={key}
               onChange={(e) => { setKey(e.target.value); setVerified(null); }}
-              placeholder={t(kind === "automatic1111" ? "providers.webUiCredentials" : "providers.keyPlaceholder")}
+              placeholder={hasSavedKey ? "••••••••" : t(kind === "automatic1111" ? "providers.webUiCredentials" : "providers.keyPlaceholder")}
             />
           </Field>
         )}
@@ -348,6 +376,40 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
               placeholder={descriptor?.default_endpoint ?? "https://"}
             />
           </Field>
+        )}
+        {isOllama && (
+          <>
+            <ListGroup>
+              <ListRow
+                title={t("providers.sprout.enabled")}
+                description={t("providers.sprout.description")}
+                trailing={<Switch checked={sprout.enabled} aria-label={t("providers.sprout.enabled")} onChange={(enabled) => setSprout((current) => ({ ...current, enabled }))} />}
+              />
+            </ListGroup>
+            <ExternalButton size="sm" icon={<ExternalLink size={icon.sm} />} url="https://github.com/LettuceAI/Sprout">
+              {t("hf.getSprout")}
+            </ExternalButton>
+            {sprout.enabled && (
+              <>
+                <Field label={t("providers.sprout.url")}>
+                  <Input type="url" value={sprout.url} onChange={(e) => setSprout((current) => ({ ...current, url: e.target.value }))} placeholder={exampleSproutUrl} />
+                </Field>
+                <Field label={t("providers.sprout.key")} hint={hasSproutKey && !sprout.clearKey ? t("providers.keepKey") : undefined}>
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    disabled={sprout.clearKey}
+                    value={sprout.key}
+                    onChange={(e) => setSprout((current) => ({ ...current, key: e.target.value }))}
+                    placeholder={hasSproutKey && !sprout.clearKey ? "••••••••" : t("providers.sprout.keyPlaceholder")}
+                  />
+                </Field>
+                {hasSproutKey && (
+                  <Checkbox label={t("providers.sprout.clearKey")} checked={sprout.clearKey} onChange={(clearKey) => setSprout((current) => ({ ...current, clearKey, key: "" }))} />
+                )}
+              </>
+            )}
+          </>
         )}
         {audio && kind === "gemini" && (
           <>
@@ -391,7 +453,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
           {(account || voice) && (
             <Button variant="ghost" disabled={action.isPending} onClick={() => void askDelete()}>{t("manage.delete")}</Button>
           )}
-          {(audio || descriptor?.verifies_key) && (
+          {(audio || isOllama || descriptor?.verifies_key) && (
             <Button variant="ghost" disabled={action.isPending || (changedEndpoint && !key.trim())} onClick={verify}>
               {t(verified ? "providers.verified" : "providers.verify")}
             </Button>

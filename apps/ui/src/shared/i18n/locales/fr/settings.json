@@ -592,6 +592,14 @@
     "key": "Clé API",
     "keepKey": "Laissez vide pour conserver la clé enregistrée.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Vérifier la compatibilité des modèles avec Sprout",
+      "description": "Vérifiez quels modèles conviennent au GPU et à la mémoire du serveur Ollama.",
+      "url": "URL de Sprout",
+      "key": "Clé API Sprout (facultatif)",
+      "keyPlaceholder": "Jeton Bearer depuis la console Sprout",
+      "clearKey": "Supprimer la clé Sprout enregistrée"
+    },
     "url": "URL de base",
     "urlHint": "Laissez vide pour celle du fournisseur",
     "stream": "Afficher les réponses en direct",

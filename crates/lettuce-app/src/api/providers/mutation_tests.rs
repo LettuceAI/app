@@ -22,6 +22,7 @@ fn save(
         },
         api_key: key.map(str::to_owned),
         clear_api_key: clear,
+        sprout_credential: None,
         expected_revision: revision,
         client_operation_id: operation.into(),
     }
@@ -123,6 +124,79 @@ async fn account_save_replays_conflicts_and_preserves_or_clears_the_key() {
     .await
     .expect("clear");
     assert!(!clear.api_key_set);
+}
+
+#[tokio::test]
+async fn ollama_sprout_credential_is_saved_separately_and_survives_disabling() {
+    use lettuce_models::ProviderConfig;
+    use lettuce_settings::{SecretPurpose, SecretState};
+
+    let harness = harness(Reply::Text("Hello."));
+    let context = &harness.context;
+    let mut request = save(None, Some("ollama-canary"), false, None, "create-sprout");
+    request.account.provider_kind = "ollama".into();
+    request.account.config = serde_json::json!({
+        "kind": "ollama",
+        "sprout": {"enabled": true, "url": "http://localhost:8477"}
+    });
+    request.sprout_credential = Some(dto::SproutCredentialEdit::Set {
+        api_key: " sprout-canary ".into(),
+    });
+    let saved = crate::api::provider_account_save(context, request.clone()).await.expect("save");
+    assert!(saved.api_key_set);
+    assert!(saved.sprout_api_key_set);
+    assert_eq!(saved.config, request.account.config);
+    assert!(!serde_json::to_string(&saved).expect("view").contains("canary"));
+    assert_eq!(
+        crate::api::provider_account_save(context, request.clone()).await.expect("replay"),
+        saved
+    );
+
+    let stored = super::account(context, saved.id.clone()).await.expect("account");
+    let ProviderConfig::Ollama(config) = stored.config else { panic!("Ollama config") };
+    let reference = config.sprout.expect("settings").api_key_ref.expect("Sprout reference");
+    assert_ne!(Some(reference), stored.api_key_ref);
+    let purpose = SecretPurpose::SproutApiKey { owner: stored.secret_owner_id };
+    assert!(context.secret_store().load(&reference, &purpose).await.expect("Sprout key")
+        .with(|key| key == "sprout-canary"));
+
+    request.sprout_credential = Some(dto::SproutCredentialEdit::Set {
+        api_key: "different-canary".into(),
+    });
+    assert_eq!(
+        crate::api::provider_account_save(context, request.clone()).await.expect_err("conflict").code,
+        ApiErrorCode::Conflict
+    );
+    request.account.id = Some(saved.id.clone());
+    request.account.config = serde_json::json!({});
+    request.expected_revision = Some(saved.revision);
+    request.client_operation_id = "edit-ollama".into();
+    request.api_key = None;
+    request.sprout_credential = None;
+    let edited = crate::api::provider_account_save(context, request.clone()).await.expect("edit");
+    assert_eq!(edited.config, saved.config);
+    assert!(edited.sprout_api_key_set);
+
+    request.account.config = saved.config.clone();
+    request.account.config["sprout"]["enabled"] = serde_json::json!(false);
+    request.expected_revision = Some(edited.revision);
+    request.client_operation_id = "disable-sprout".into();
+    let disabled = crate::api::provider_account_save(context, request.clone()).await.expect("disable");
+    assert!(disabled.sprout_api_key_set);
+    let listed = crate::api::provider_accounts_list(context).await.expect("list").into_iter()
+        .find(|account| account.id == saved.id).expect("saved account");
+    assert_eq!(listed, disabled);
+
+    request.expected_revision = Some(disabled.revision);
+    request.client_operation_id = "clear-sprout".into();
+    request.sprout_credential = Some(dto::SproutCredentialEdit::Clear);
+    let cleared = crate::api::provider_account_save(context, request).await.expect("clear");
+    assert!(cleared.api_key_set);
+    assert!(!cleared.sprout_api_key_set);
+    assert_eq!(
+        context.secret_store().status(&reference, &purpose).await.expect("retired key").state,
+        SecretState::Missing
+    );
 }
 
 #[tokio::test]

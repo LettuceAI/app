@@ -31,13 +31,24 @@ pub(crate) fn api_base(endpoint: &str) -> Cow<'_, str> {
         return Cow::Borrowed(DEFAULT_ENDPOINT);
     }
     let trimmed = trimmed.trim_end_matches('/');
-    let stripped = trimmed
+    let Some(path) = trimmed
+        .split_once("://")
+        .and_then(|(_, authority_and_path)| {
+            authority_and_path
+                .find('/')
+                .map(|start| &authority_and_path[start..])
+        })
+    else {
+        return Cow::Borrowed(trimmed);
+    };
+    let stripped = path
         .strip_suffix("/api/chat")
-        .or_else(|| trimmed.strip_suffix("/api/tags"))
-        .or_else(|| trimmed.strip_suffix("/v1"))
-        .unwrap_or(trimmed)
+        .or_else(|| path.strip_suffix("/api/tags"))
+        .or_else(|| path.strip_suffix("/api"))
+        .or_else(|| path.strip_suffix("/v1"))
+        .unwrap_or(path)
         .trim_end_matches('/');
-    Cow::Borrowed(stripped)
+    Cow::Borrowed(&trimmed[..trimmed.len() - path.len() + stripped.len()])
 }
 
 pub(crate) async fn run<S: SecretStore + ?Sized>(
@@ -753,6 +764,18 @@ mod tests {
         ContextAttributions, ContextBudgetReport, ProviderNeutralMessage, ToolOutput,
         TranscriptToolCall, TranscriptToolResult,
     };
+
+    #[test]
+    fn api_base_only_strips_protocol_paths_after_the_host() {
+        assert_eq!(api_base("http://api/"), "http://api");
+        assert_eq!(api_base("http://v1/"), "http://v1");
+        assert_eq!(api_base("https://ollama.com/api/"), "https://ollama.com");
+        assert_eq!(api_base("https://ollama.com/v1"), "https://ollama.com");
+        assert_eq!(
+            api_base("https://example.com/ollama/api/tags"),
+            "https://example.com/ollama"
+        );
+    }
 
     fn message(role: &'static str, content: &str) -> WireMessage {
         WireMessage {

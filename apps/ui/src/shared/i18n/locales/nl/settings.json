@@ -588,6 +588,14 @@
     "key": "API-sleutel",
     "keepKey": "Laat leeg om de opgeslagen sleutel te behouden.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Met Sprout controleren welke modellen kunnen draaien",
+      "description": "Controleer welke modellen in de GPU en het geheugen van de Ollama-server passen.",
+      "url": "Sprout URL",
+      "key": "Sprout API-sleutel (optioneel)",
+      "keyPlaceholder": "Bearer-token uit de Sprout-console",
+      "clearKey": "De opgeslagen Sprout-sleutel verwijderen"
+    },
     "url": "Basis-URL",
     "urlHint": "Laat leeg voor die van de provider zelf",
     "stream": "Antwoorden live tonen",

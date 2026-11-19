@@ -584,6 +584,14 @@
     "key": "APIキー",
     "keepKey": "空欄にすると保存済みのキーを保持します。",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "実行可能性の確認に Sprout を使用",
+      "description": "Ollama サーバーの GPU とメモリに収まるモデルを確認します。",
+      "url": "Sprout URL",
+      "key": "Sprout API キー (任意)",
+      "keyPlaceholder": "Sprout コンソールの Bearer トークン",
+      "clearKey": "保存済みの Sprout キーを削除"
+    },
     "url": "ベースURL",
     "urlHint": "空欄にするとプロバイダー自身のURL",
     "stream": "レスポンスをストリーミング",

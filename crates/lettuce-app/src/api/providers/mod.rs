@@ -39,8 +39,8 @@ pub async fn provider_accounts_list(
         .await?;
     let mut views = Vec::with_capacity(accounts.len());
     for account in accounts {
-        let api_key_set = api_key_set(context, &account).await?;
-        views.push(account_view(account, api_key_set)?);
+        let keys = credential_status(context, &account).await?;
+        views.push(account_view(account, keys)?);
     }
     Ok(views)
 }
@@ -308,7 +308,7 @@ pub async fn provider_model_verify(
 
 pub(super) fn account_view(
     account: ProviderAccount,
-    api_key_set: bool,
+    keys: ProviderCredentialStatus,
 ) -> Result<dto::ProviderAccountView, ApiError> {
     let mut config = serde_json::to_value(&account.config)
         .map_err(|_| api_error(ApiErrorCode::Internal, "provider config cannot be read"))?;
@@ -322,7 +322,8 @@ pub(super) fn account_view(
         enabled: account.enabled,
         streaming_enabled: account.streaming_enabled,
         allow_invalid_tls: account.allow_invalid_tls,
-        api_key_set,
+        api_key_set: keys.api_key_set,
+        sprout_api_key_set: keys.sprout_api_key_set,
         config,
         revision: account.revision.get(),
         created_at: account.created_at.get(),
@@ -330,20 +331,42 @@ pub(super) fn account_view(
     })
 }
 
-pub(super) async fn api_key_set(
+pub(super) struct ProviderCredentialStatus {
+    api_key_set: bool,
+    sprout_api_key_set: bool,
+}
+
+pub(super) async fn credential_status(
     context: &ApiContext,
     account: &ProviderAccount,
+) -> Result<ProviderCredentialStatus, ApiError> {
+    let owner = account.secret_owner_id;
+    let api_key_set = credential_present(
+        context,
+        account.api_key_ref,
+        SecretPurpose::ProviderApiKey { owner },
+    ).await?;
+    let sprout_api_key_set = match &account.config {
+        ProviderConfig::Ollama(config) => credential_present(
+            context,
+            config.sprout.as_ref().and_then(|sprout| sprout.api_key_ref),
+            SecretPurpose::SproutApiKey { owner },
+        ).await?,
+        _ => false,
+    };
+    Ok(ProviderCredentialStatus { api_key_set, sprout_api_key_set })
+}
+
+async fn credential_present(
+    context: &ApiContext,
+    reference: Option<SecretRef>,
+    purpose: SecretPurpose,
 ) -> Result<bool, ApiError> {
-    Ok(match account.api_key_ref {
+    Ok(match reference {
         Some(reference) => {
             let status = context
                 .secret_store()
-                .status(
-                    &reference,
-                    &SecretPurpose::ProviderApiKey {
-                        owner: account.secret_owner_id,
-                    },
-                )
+                .status(&reference, &purpose)
                 .await
                 .map_err(|_| {
                     api_error(

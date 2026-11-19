@@ -588,6 +588,14 @@
     "key": "API-kulcs",
     "keepKey": "Hagyd üresen a mentett kulcs megtartásához.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Modellek futtathatóságának ellenőrzése a Sprouttal",
+      "description": "Ellenőrizze, mely modellek férnek el az Ollama-szerver GPU-ján és memóriájában.",
+      "url": "Sprout URL",
+      "key": "Sprout API-kulcs (nem kötelező)",
+      "keyPlaceholder": "Bearer-token a Sprout konzolból",
+      "clearKey": "A mentett Sprout-kulcs eltávolítása"
+    },
     "url": "Alap URL",
     "urlHint": "Hagyd üresen a szolgáltató sajátjához",
     "stream": "Válaszok folyamatos megjelenítése",

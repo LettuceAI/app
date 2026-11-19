@@ -596,6 +596,14 @@
     "key": "API klíč",
     "keepKey": "Nech prázdné, ať zůstane uložený klíč.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "Použít Sprout pro kontrolu spustitelnosti",
+      "description": "Zkontroluj, které modely se vejdou do GPU a paměti serveru Ollama.",
+      "url": "URL Sprout",
+      "key": "API klíč Sprout (volitelný)",
+      "keyPlaceholder": "Bearer token z konzole Sprout",
+      "clearKey": "Odstranit uložený klíč Sprout"
+    },
     "url": "Základní URL",
     "urlHint": "Nech prázdné pro vlastní URL poskytovatele",
     "stream": "Zobrazovat odpovědi průběžně",

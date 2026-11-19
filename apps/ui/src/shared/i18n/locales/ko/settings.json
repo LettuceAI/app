@@ -584,6 +584,14 @@
     "key": "API 키",
     "keepKey": "비워 두면 저장된 키를 유지해요.",
     "keyPlaceholder": "sk-…",
+    "sprout": {
+      "enabled": "실행 가능성 확인에 Sprout 사용",
+      "description": "Ollama 서버의 GPU와 메모리에 맞는 모델을 확인합니다.",
+      "url": "Sprout URL",
+      "key": "Sprout API 키 (선택 사항)",
+      "keyPlaceholder": "Sprout 콘솔의 Bearer 토큰",
+      "clearKey": "저장된 Sprout 키 삭제"
+    },
     "url": "기본 URL",
     "urlHint": "비워 두면 제공자 자체 주소를 사용해요",
     "stream": "응답 스트리밍",
