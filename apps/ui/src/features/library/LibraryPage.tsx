@@ -95,9 +95,8 @@ export function LibraryPage() {
   const routeKey = useRouterState({ select: (state) => state.resolvedLocation?.state.__TSR_key });
   const mainRef = useRef<HTMLElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const [filter, setFilter] = useState<Filter>(() => {
-    const kind = router.state.location.state.libraryKind;
-    return kind ? kindFilters[kind] : "all";
+  const filter = useLocation({
+    select: ({ state }) => state.libraryFilter ?? (state.libraryKind ? kindFilters[state.libraryKind] : "all"),
   });
   const [query, setQuery] = useState("");
   const [term, setTerm] = useState("");
@@ -184,7 +183,13 @@ export function LibraryPage() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetching, isFetchNextPageError, fetchNextPage, pages, filter, typing]);
   const changeFilter = (next: Filter) => {
-    setFilter(next);
+    void navigate({
+      to: "/library",
+      search: true,
+      state: (previous) => ({ ...previous, libraryFilter: next }),
+      replace: true,
+      resetScroll: false,
+    });
     mainRef.current?.scrollTo({ top: 0 });
   };
   const open = (next: LibrarySearch) => {
@@ -196,13 +201,19 @@ export function LibraryPage() {
       void navigate({
         to: "/library",
         search: next,
-        state: { libraryOverlayPushed: true },
+        state: { libraryOverlayPushed: true, libraryFilter: filter },
         resetScroll: false,
       });
   };
   const close = () => {
     if (pushed) router.history.back();
-    else void navigate({ to: "/library", search: {}, replace: true, resetScroll: false });
+    else void navigate({
+      to: "/library",
+      search: {},
+      state: { libraryFilter: filter },
+      replace: true,
+      resetScroll: false,
+    });
   };
   const listedEntry = entries.find(
     (entry) => !entry.draft && entry.kind === search.kind && entry.id === search.item,

@@ -22,8 +22,8 @@ vi.mock("@/api/window-controls", () => ({
   createWindowController: vi.fn().mockResolvedValue(null),
 }));
 beforeEach(() => {
-  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(600);
-  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
 });
 afterEach(() => {
   cleanup();
@@ -184,7 +184,7 @@ describe("library design port", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Hunter")).toBeTruthy();
   });
-  it("opens the character edit page from the entry menu", async () => {
+  it("returns to the Characters filter after editing a character", async () => {
     const view: CharacterView_Serialize = {
       id: "c1",
       archived: false,
@@ -204,13 +204,18 @@ describe("library design port", () => {
       characterGet: () => ok(view),
       characterLorebooksList: () => ok([]),
     });
+    const filter = screen.getByRole("radio", { name: /^Characters/ });
+    fireEvent.click(filter);
+    await waitFor(() => expect(filter.getAttribute("aria-checked")).toBe("true"));
     fireEvent.click(await screen.findByRole("button", { name: /Cassian/ }));
+    await waitFor(() => expect(runtime.router.state.resolvedLocation?.search.item).toBe("c1"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit character" }));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/c1/edit"));
     expect(await screen.findByDisplayValue("Cassian")).toBeTruthy();
     await act(async () => runtime.router.history.back());
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
     expect(runtime.router.state.location.search.item).toBeUndefined();
+    expect((await screen.findByRole("radio", { name: /^Characters/ })).getAttribute("aria-checked")).toBe("true");
   });
 });
 
@@ -323,7 +328,7 @@ describe("library operations", () => {
     await waitFor(() => expect(runtime.router.state.location.search.media).toBeUndefined());
   });
 
-  it("opens the lorebook editor page from the entry menu", async () => {
+  it("returns to the Lorebooks filter after editing a lorebook", async () => {
     const lorebook: LorebookSummary_Serialize = {
       id: "l1",
       name: "Atlas",
@@ -338,10 +343,17 @@ describe("library operations", () => {
       lorebooksList: () => ok({ items: [lorebook], next_cursor: null }),
       lorebookGet: () => ok({ lorebook, entries: [] }),
     });
+    const filter = screen.getByRole("radio", { name: /^Lorebooks/ });
+    fireEvent.click(filter);
+    await waitFor(() => expect(filter.getAttribute("aria-checked")).toBe("true"));
     fireEvent.click(await screen.findByRole("button", { name: /Atlas/ }));
+    await waitFor(() => expect(runtime.router.state.resolvedLocation?.search.item).toBe("l1"));
     fireEvent.click(await screen.findByRole("button", { name: /^Edit lorebook/ }));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library/lorebooks/l1"));
     expect(await screen.findByText("No entries yet")).toBeTruthy();
+    fireEvent.click(screen.getByTitle("Library"));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
+    expect((await screen.findByRole("radio", { name: /^Lorebooks/ })).getAttribute("aria-checked")).toBe("true");
   });
 
   it("asks for the lorebook export format and sends it from the entry menu", async () => {
@@ -383,7 +395,7 @@ describe("library operations", () => {
     expect(pick.mock.calls[1]![0]).toMatchObject({ suggested_name: "Atlas.json", kind: "json" });
   });
 
-  it("opens the persona editor page from the entry menu", async () => {
+  it.each(["All", "Personas"])("returns to the %s filter after editing a persona", async (filter) => {
     const view: PersonaView_Serialize = {
       id: "p1",
       archived: false,
@@ -397,10 +409,18 @@ describe("library operations", () => {
       personaGet: () => ok(view),
       personaLorebooksList: () => ok([]),
     });
+    const filterName = new RegExp(`^${filter}`);
+    const radio = screen.getByRole("radio", { name: filterName });
+    fireEvent.click(radio);
+    await waitFor(() => expect(radio.getAttribute("aria-checked")).toBe("true"));
     fireEvent.click(await screen.findByRole("button", { name: /Hunter/ }));
+    await waitFor(() => expect(runtime.router.state.resolvedLocation?.search.item).toBe("p1"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit persona" }));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/personas/p1/edit"));
     expect(((await screen.findByRole("textbox", { name: "Name" })) as HTMLInputElement).value).toBe("Hunter");
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
+    expect((await screen.findByRole("radio", { name: filterName })).getAttribute("aria-checked")).toBe("true");
   });
 });
 

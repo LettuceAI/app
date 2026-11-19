@@ -30,6 +30,7 @@ import {
   LorebookEditorPage,
   LorebookPreviewPage,
   validateLibrarySearch,
+  type LibraryFilter,
 } from "@/features/library";
 import { GroupsPage, CreateGroupPage, EditGroupPage } from "@/features/groups";
 import { HomePage } from "@/features/home";
@@ -650,6 +651,7 @@ declare module "@tanstack/history" {
     panelPushed?: boolean;
     sceneImagePushed?: boolean;
     libraryOverlayPushed?: boolean;
+    libraryFilter?: LibraryFilter;
     imagePickerPushed?: boolean;
     avatarPanelPushed?: boolean;
     avatarCropPushed?: boolean;
