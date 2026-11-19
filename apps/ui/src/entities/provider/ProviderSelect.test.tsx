@@ -14,7 +14,7 @@ const providers = [
   { id: "router", name: "OpenRouter", kind: "openrouter", group: "Cloud" },
   { id: "local", name: "llama.cpp", kind: "llamacpp", group: "Local" },
   { id: "disabled", name: "Unavailable", kind: "custom", group: "Custom", disabled: true },
-];
+] as const;
 
 async function mount(props: Partial<ProviderSelectProps> = {}) {
   const onChange = vi.fn();
@@ -31,7 +31,7 @@ async function mount(props: Partial<ProviderSelectProps> = {}) {
 afterEach(cleanup);
 
 describe("ProviderSelect", () => {
-  it("uses ModelSelect's desktop keyboard selection and skips disabled options", async () => {
+  it("uses desktop keyboard selection and skips disabled options", async () => {
     const change = await mount({ compact: false });
     const trigger = screen.getByRole("combobox", { name: "Provider" });
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
@@ -40,6 +40,31 @@ describe("ProviderSelect", () => {
     fireEvent.keyDown(trigger, { key: "Enter" });
     expect(change).toHaveBeenCalledWith("local");
     expect(trigger.textContent).toContain("llama.cpp");
+  });
+
+  it("keeps hover and keyboard navigation aligned with the visible groups", async () => {
+    const change = await mount({
+      compact: false,
+      providers: [
+        providers[0],
+        { id: "test", name: "Test", kind: "custom", group: "Local" },
+        { id: "router-test", name: "OpenRouter test", kind: "openrouter", group: "Cloud" },
+        providers[1],
+      ],
+    });
+    const trigger = screen.getByRole("combobox", { name: "Provider" });
+    fireEvent.click(trigger);
+    const list = within(await screen.findByRole("listbox"));
+    const test = list.getByRole("option", { name: "Test" });
+    const local = list.getByRole("option", { name: "llama.cpp" });
+    fireEvent.pointerEnter(test);
+    expect(test.getAttribute("data-active")).toBe("true");
+    expect(trigger.getAttribute("aria-activedescendant")).toBe(test.id);
+
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(local.getAttribute("data-active")).toBe("true");
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(change).toHaveBeenCalledWith("local");
   });
 
   it("opens a grouped mobile sheet, selects an account, and shows the selection when reopened", async () => {

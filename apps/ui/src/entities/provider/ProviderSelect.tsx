@@ -39,13 +39,22 @@ export function ProviderSelect({ providers, value, onChange, placeholder, footer
   const chosen = providers.find((provider) => provider.id === value);
   const prompt = placeholder ?? t("providerSelect.placeholder");
   const mark = (provider: ProviderOption) => <span aria-hidden="true"><ProviderMark kind={provider.kind} name={provider.name} /></span>;
+  const groups = new Map<string, ProviderOption[]>();
+  for (const provider of providers) {
+    const group = provider.group ?? "";
+    const members = groups.get(group);
+    if (members) members.push(provider);
+    else groups.set(group, [provider]);
+  }
 
   if (!compact) {
+    // Crisp 1.10.3 expects options in display order for hover and keyboard navigation.
+    const orderedProviders = [...groups.values()].flat();
     return <>
       {!field && <label htmlFor={controlId} className="sr-only">{label ?? t("providerSelect.title")}</label>}
       <SelectMenu
       id={controlId}
-      options={providers.map((provider) => ({
+      options={orderedProviders.map((provider) => ({
         value: provider.id,
         label: provider.name,
         icon: mark(provider),
@@ -62,7 +71,6 @@ export function ProviderSelect({ providers, value, onChange, placeholder, footer
     /></>;
   }
 
-  const groups = [...new Set(providers.map((provider) => provider.group ?? ""))];
   return <>
     <button
       type="button"
@@ -82,8 +90,8 @@ export function ProviderSelect({ providers, value, onChange, placeholder, footer
     </button>
     <Sheet open={open && !disabled} onClose={() => setOpen(false)} title={label ?? t("providerSelect.title")} detents={[0.6, 0.92]}>
       <div className="space-y-5">
-        {groups.map((group) => <ListGroup key={group} label={group || undefined}>
-          {providers.filter((provider) => (provider.group ?? "") === group).map((provider) => <ListRowButton
+        {[...groups].map(([group, members]) => <ListGroup key={group} label={group || undefined}>
+          {members.map((provider) => <ListRowButton
             key={provider.id}
             icon={mark(provider)}
             title={provider.name}
