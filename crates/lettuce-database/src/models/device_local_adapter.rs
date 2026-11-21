@@ -17,7 +17,8 @@ impl Database {
     /// time where both files have the day, as the legacy import does; and the
     /// discovered voices and
     /// llama.cpp runtime reports of audio providers and models that exist in
-    /// this database.
+    /// this database. On desktop a backup without stable-diffusion.cpp
+    /// also keeps the device's local image model registrations.
     ///
     /// A LoRA path both files have keeps the more recently updated row, the
     /// rule the legacy import uses; a previous metrics row is skipped when the new file has one with its id
@@ -125,6 +126,8 @@ impl Database {
                 "INSERT INTO main.discovered_tts_voices SELECT * FROM previous.discovered_tts_voices WHERE provider_id IN (SELECT id FROM main.audio_providers)",
                 [],
             )?;
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            carry_local_diffusion_registrations(&transaction)?;
             transaction.execute(
                 "INSERT INTO main.llama_runtime_reports SELECT report.* FROM previous.llama_runtime_reports report JOIN main.model_profiles model ON model.id = report.model_profile_id AND model.external_model_id = report.model_path",
                 [],
@@ -134,6 +137,34 @@ impl Database {
         connection.execute("DETACH DATABASE previous", [])?;
         copied.map_err(DatabaseError::from)
     }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn carry_local_diffusion_registrations(transaction: &rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
+    let kind = lettuce_models::LOCAL_DIFFUSION_PROVIDER_KIND;
+    let restored: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM main.provider_accounts WHERE provider_kind = ?1 AND protocol = 'stable_diffusion')",
+        [kind],
+        |row| row.get(0),
+    )?;
+    if restored {
+        return Ok(());
+    }
+
+    transaction.execute(
+        "INSERT INTO main.provider_accounts SELECT * FROM previous.provider_accounts
+         WHERE provider_kind = ?1 AND protocol = 'stable_diffusion'
+         ON CONFLICT DO NOTHING",
+        [kind],
+    )?;
+    transaction.execute(
+        "INSERT INTO main.model_profiles SELECT model.* FROM previous.model_profiles model
+         JOIN main.provider_accounts account ON account.id = model.provider_account_id
+         WHERE account.provider_kind = ?1 AND account.protocol = 'stable_diffusion'
+         ON CONFLICT DO NOTHING",
+        [kind],
+    )?;
+    Ok(())
 }
 
 fn read_only_uri(path: &str) -> String {

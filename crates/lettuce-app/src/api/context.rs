@@ -383,12 +383,26 @@ impl ApiContext {
             .map_err(|error| super::app::storage::file_error(error, None))?;
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let backend = {
+            use lettuce_models::{
+                LOCAL_DIFFUSION_PROVIDER_KIND, LOCAL_LLAMA_PROVIDER_KIND, ModelCatalog,
+                ProviderAccountRepository, ProviderProtocol,
+            };
             use lettuce_settings::DeviceSettingsStore;
-            let device = backend
-                .database()
+            use crate::models::local_provider_accounts::LocalModelProvider;
+            let database = backend.database();
+            let accounts = database
+                .provider_accounts()
+                .map_err(|error| storage_error("provider accounts", error))?;
+            if !accounts.iter().any(|account| {
+                account.provider_kind == LOCAL_LLAMA_PROVIDER_KIND && account.protocol == ProviderProtocol::LlamaCpp
+            }) {
+                ProviderAccountRepository::upsert(database, LocalModelProvider::LlamaCpp.new_account(clock.now()), None)
+                    .map_err(|error| storage_error("local llama.cpp provider", error))?;
+            }
+            let device = database
                 .load_device_settings()
                 .map_err(|error| storage_error("device settings", error))?;
-            backend
+            let backend = backend
                 .with_local_diffusion(crate::image::local_diffusion::diffusion_paths(
                     &device,
                     app_data_dir,
@@ -398,7 +412,19 @@ impl ApiContext {
                         ApiErrorCode::Unavailable,
                         format!("the image engine could not start: {error}"),
                     )
-                })?
+                })?;
+            if !accounts.iter().any(|account| {
+                account.provider_kind == LOCAL_DIFFUSION_PROVIDER_KIND
+                    && account.protocol == ProviderProtocol::StableDiffusion
+            }) && backend.local_diffusion().is_some_and(|engine| engine.effective_runtime().is_some()) {
+                ProviderAccountRepository::upsert(
+                    backend.database(),
+                    LocalModelProvider::StableDiffusion.new_account(clock.now()),
+                    None,
+                )
+                .map_err(|error| storage_error("local stable-diffusion.cpp provider", error))?;
+            }
+            backend
         };
         let backend = Arc::new(backend);
         let media = Arc::new(LocalMediaBlobStore::new(

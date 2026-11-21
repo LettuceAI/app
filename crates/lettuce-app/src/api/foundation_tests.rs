@@ -39,6 +39,92 @@ async fn open_desktop_creates_missing_app_data_directory() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[tokio::test]
+async fn desktop_restore_keeps_local_provider_access_from_a_backup_without_it() {
+    use lettuce_image_generation::sd_runtime::layout::{DiffusionPaths, server_executable_name};
+    use lettuce_models::{LOCAL_DIFFUSION_PROVIDER_KIND, LOCAL_LLAMA_PROVIDER_KIND, ProviderProtocol};
+
+    let root = temp_root("restore-desktop-llama");
+    let source_path = root.join("source.sqlite3");
+    let source = crate::AppBackend::open(&source_path, TimestampMillis::new(1)).expect("source backend");
+    crate::launch::tests::seed_model(source.database(), ProviderProtocol::Ollama, "ollama");
+    let secrets = lettuce_settings::InMemorySecretStore::new();
+    let media = lettuce_media::LocalSyncMediaStore::open(
+        root.join("source-blobs"),
+        lettuce_database::Database::open(&source_path).expect("source blobs"),
+        lettuce_database::Database::open(&source_path).expect("source assets"),
+    )
+    .expect("source media");
+    let archive = source
+        .provider_backup(&secrets, &media)
+        .export("1.0", TimestampMillis::new(2), "password")
+        .await
+        .expect("backup without local providers");
+    drop(media);
+    drop(source);
+
+    let app_data = root.canonicalize().expect("canonical temp directory").join("desktop");
+    let paths = DiffusionPaths::legacy_layout(&app_data, app_data.join("models/image"));
+    let release = "master-778-a";
+    let asset = "a.zip";
+    let runtime = paths.runtime_root(release, asset);
+    std::fs::create_dir_all(&runtime).expect("runtime folder");
+    std::fs::write(runtime.join(server_executable_name()), b"test server").expect("server");
+    let (profile, variant) = lettuce_image_generation::diffusion_catalog()
+        .find_variant("z-image-turbo", "q4-k")
+        .expect("catalog variant");
+    for component in profile.components(variant) {
+        let path = paths.component_path(component);
+        std::fs::create_dir_all(path.parent().expect("component parent")).expect("component folder");
+        std::fs::File::create(path)
+            .and_then(|file| file.set_len(component.bytes))
+            .expect("sparse component fixture");
+    }
+    let desktop = open_desktop_context(&app_data).expect("open desktop");
+    let desktop_accounts = super::provider_accounts_list(&desktop).await.expect("desktop providers");
+    let diffusion = desktop_accounts.iter().find(|account| account.provider_kind == LOCAL_DIFFUSION_PROVIDER_KIND)
+        .expect("installed stable-diffusion.cpp runtime has a provider");
+    let image = crate::register_catalog_model(
+        desktop.backend().database(), &paths, &profile.id, &variant.id, release, asset,
+        TimestampMillis::new(2),
+    )
+    .expect("register installed image model");
+    let location = desktop.database_files().expect("database files").location.clone();
+    drop(desktop);
+    crate::BackupRestoreCoordinator::new(
+        &location,
+        &root.join("restore-workspace"),
+        &app_data.join("platform-v2/media-blobs"),
+        &secrets,
+    )
+    .restore(OperationId::new(), std::io::Cursor::new(archive.output), "password", TimestampMillis::new(3))
+    .await
+    .expect("restore backup");
+
+    let restored = open_desktop_context(&app_data).expect("open restored database");
+    let accounts = super::provider_accounts_list(&restored).await.expect("restored providers");
+    let llama = accounts.iter().find(|account| account.provider_kind == LOCAL_LLAMA_PROVIDER_KIND)
+        .expect("llama.cpp is available on the destination desktop");
+    assert_eq!(llama.protocol, dto::ProviderProtocolContract::LlamaCpp);
+    assert!(llama.enabled);
+    assert!(accounts.iter().any(|account| account.provider_kind == "ollama"));
+    assert!(accounts.contains(diffusion));
+    let installed = restored.backend().installed_local_image_models().expect("installed models");
+    let installed = installed.iter().find(|model| model.variant_id == variant.id && model.profile_id == profile.id)
+        .expect("image model is still installed");
+    assert_eq!(installed.model_id, Some(image.id));
+    assert_eq!(installed.runtime_release.as_deref(), Some(release));
+    assert_eq!(installed.runtime_asset.as_deref(), Some(asset));
+    drop(restored);
+
+    let reopened = open_desktop_context(&app_data).expect("reopen restored database");
+    let accounts = super::provider_accounts_list(&reopened).await.expect("reopened providers");
+    assert_eq!(accounts.iter().filter(|account| account.provider_kind == LOCAL_LLAMA_PROVIDER_KIND).collect::<Vec<_>>(), vec![llama]);
+    drop(reopened);
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn open_desktop_reopens_database_and_media_through_symlinked_app_data() {
