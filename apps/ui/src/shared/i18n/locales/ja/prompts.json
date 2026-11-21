@@ -103,6 +103,7 @@
   "Fix the rules that can't both be true": "同時に成り立たないルールを修正",
   "For you. The model doesn't see it.": "あなた用。モデルには見えません。",
   "From message {{count}}, {{from}}": "{{count}}件目のメッセージから、{{from}}",
+  "Full screen": "全画面",
   "Give it a name": "名前を付けてください",
   "Give the prompt a name and some content first": "先にプロンプトに名前と内容を付けてください",
   "Group": "グループ",

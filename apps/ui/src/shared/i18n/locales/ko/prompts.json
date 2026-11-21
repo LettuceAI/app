@@ -103,6 +103,7 @@
   "Fix the rules that can't both be true": "동시에 성립할 수 없는 규칙 수정",
   "For you. The model doesn't see it.": "나만 보는 내용이에요. 모델은 보지 않아요.",
   "From message {{count}}, {{from}}": "메시지 {{count}}부터, {{from}}",
+  "Full screen": "전체 화면",
   "Give it a name": "이름을 붙이세요",
   "Give the prompt a name and some content first": "먼저 프롬프트에 이름과 내용을 넣으세요",
   "Group": "그룹",

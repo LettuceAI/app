@@ -103,6 +103,7 @@
   "Fix the rules that can't both be true": "Aynı anda doğru olamayan kuralları düzeltin",
   "For you. The model doesn't see it.": "Sizin için. Model bunu görmez.",
   "From message {{count}}, {{from}}": "{{count}}. mesajdan itibaren, {{from}}",
+  "Full screen": "Tam ekran",
   "Give it a name": "Bir ad verin",
   "Give the prompt a name and some content first": "Önce prompta bir ad ve biraz içerik verin",
   "Group": "Grup",

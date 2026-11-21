@@ -103,6 +103,7 @@
   "Fix the rules that can't both be true": "แก้กฎที่ไม่สามารถเป็นจริงพร้อมกันได้",
   "For you. The model doesn't see it.": "สำหรับคุณเท่านั้น โมเดลไม่เห็นสิ่งนี้",
   "From message {{count}}, {{from}}": "จากข้อความ {{count}} {{from}}",
+  "Full screen": "เต็มหน้าจอ",
   "Give it a name": "ตั้งชื่อให้มัน",
   "Give the prompt a name and some content first": "ตั้งชื่อพรอมต์และใส่เนื้อหาก่อน",
   "Group": "กลุ่ม",

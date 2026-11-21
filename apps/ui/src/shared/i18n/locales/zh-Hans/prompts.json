@@ -103,6 +103,7 @@
   "Fix the rules that can't both be true": "修正无法同时成立的规则",
   "For you. The model doesn't see it.": "给你看的。模型不会看到。",
   "From message {{count}}, {{from}}": "从第 {{count}} 条消息起，{{from}}",
+  "Full screen": "全屏",
   "Give it a name": "给它起个名字",
   "Give the prompt a name and some content first": "请先为提示词填写名称和内容",
   "Group": "群组",

@@ -1,22 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "@tanstack/react-router";
 import type { PromptPlaceholders } from "@/api/generated/bindings";
 import { usePromptText } from "./copy";
 import { blankEntry } from "./data";
 import { SettingsPick } from "@/shared/ui/SettingsPick";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Braces, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, Braces, Maximize2, Plus, Search, Trash2, X } from "lucide-react";
 import {
   Alert, Button, Chip, confirm, Collapsible, EmptyState, Field, IconButton, Input, ListGroup, ListRow, ListRowButton, NumberInput, SearchField, Segmented,
   Select, Sheet, Switch, TagInput, Text, Textarea,
 } from "@lettuceai/crisp";
-import { cn, icon, motion as m, useCompactLayout } from "@lettuceai/crisp";
+import { cn, icon, motion as m, useCompactLayout, useDismissLayer } from "@lettuceai/crisp";
 import { contradictions, defaultValue, describeRules, describeCondition, ruleDefinition as RULE } from "./rules";
 import { POSITION, SLOT_LABEL, RULES, type RuleDef } from "./presentation";
 import type { Entry, ImageSlot, Position, Role, Rule, Rules } from "./types";
 
 
-type View = "form" | "include" | "exclude";
+type View = "form" | "content" | "include" | "exclude";
+const fullHeight = [1] as const;
 
 export function PromptEntrySheet({
   entry, phone, registry, promptDirty, onClose, onDone, onDelete,
@@ -45,12 +46,23 @@ export function PromptEntrySheet({
     return true;
   }, enableBeforeUnload: entry !== null && (promptDirty || (entry === "new" ? !!draft.name || !!draft.content : JSON.stringify(draft) !== JSON.stringify(entry))) });
   const contentRef = useRef<HTMLTextAreaElement>(null);
-  const topRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const formScroll = useRef(0);
+  const expanded = view === "content";
+  useDismissLayer(entry !== null && expanded, () => setView("form"));
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    if (scroll) scroll.scrollTop = view === "form" ? formScroll.current : 0;
+    if (view === "form") formScroll.current = 0;
+  }, [entry, view]);
   useEffect(() => {
-    let el = topRef.current?.parentElement ?? null;
-    while (el && !/(auto|scroll)/.test(getComputedStyle(el).overflowY)) el = el.parentElement;
-    el?.scrollTo({ top: 0 });
-  }, [view]);
+    if (!expanded) return;
+    const back = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.isComposing) setView("form");
+    };
+    document.addEventListener("keydown", back);
+    return () => document.removeEventListener("keydown", back);
+  }, [expanded]);
   if (entry !== seed) {
     setSeed(entry);
     setDraft(existing ?? blankEntry());
@@ -87,10 +99,11 @@ export function PromptEntrySheet({
     return [...by.entries()];
   }, [rq, t]);
 
-  const picking = view !== "form";
+  const picking = view === "include" || view === "exclude";
   const words = draft.content.length;
+  const contentLabel = t(draft.imageSlot ? "Note with the picture" : "Content");
 
-  const form = (
+  const entryDetails = !expanded && (
     <div className="space-y-6">
       <ListGroup>
         <ListRow
@@ -129,10 +142,11 @@ export function PromptEntrySheet({
         </ListGroup>
       )}
 
-      <Field label={t(draft.imageSlot ? "Note with the picture" : "Content")} hint={t("Content character hint", { count: words })}>
-        <Textarea ref={contentRef} rows={phone ? 7 : 10} value={draft.content} onChange={(e) => set("content", e.target.value)} className="font-mono text-sm" placeholder={t("Let the story breathe. One beat per reply.")} />
-      </Field>
+    </div>
+  );
 
+  const entryRules = !expanded && (
+    <div className="space-y-6">
       {placeholders && (
         <Collapsible variant="plain" title={t("Placeholders")} description={t("{{count}} for this kind of prompt. Tap one to insert it.", { count: placeholders.allowed.length })}>
           <div className="space-y-2 pt-2">
@@ -211,6 +225,37 @@ export function PromptEntrySheet({
     </div>
   );
 
+  const form = (
+    <div className={expanded ? "h-full" : "space-y-6"}>
+      {entryDetails}
+      <div className={expanded ? "h-full" : "relative"}>
+        <Field
+          label={expanded ? undefined : phone ? <span className="flex min-h-11 items-center pe-12">{contentLabel}</span> : contentLabel}
+          hint={expanded ? undefined : t("Content character hint", { count: words })}
+          className={expanded ? "h-full" : ""}
+        >
+          <Textarea
+            ref={contentRef}
+            rows={phone ? 12 : 10}
+            aria-label={expanded ? contentLabel : undefined}
+            value={draft.content}
+            onChange={(e) => set("content", e.target.value)}
+            className={cn("font-mono text-sm", expanded && "block h-full")}
+            placeholder={t("Let the story breathe. One beat per reply.")}
+          />
+        </Field>
+        {phone && !expanded && (
+          <IconButton label={t("Full screen")} className="absolute end-0 top-0 min-h-11 min-w-11" onClick={() => {
+            formScroll.current = scrollRef.current?.scrollTop ?? 0;
+            setView("content");
+            contentRef.current?.focus({ preventScroll: true });
+          }}><Maximize2 size={icon.lg} /></IconButton>
+        )}
+      </div>
+      {entryRules}
+    </div>
+  );
+
   const ruleList = (
     <div className="space-y-5">
       <SearchField value={ruleQuery} onChange={setRuleQuery} placeholder={t("Search rules")} />
@@ -232,10 +277,13 @@ export function PromptEntrySheet({
       onClose={onClose}
       placement={phone ? "bottom" : "side"}
       size="lg"
-      title={t(picking ? (view === "exclude" ? "Add an exception" : "Add a rule") : existing ? "Edit entry" : "New entry")}
-      leftAction={picking ? <IconButton label={t("Back to the entry")} shape="round" onClick={() => setView("form")}><ArrowLeft size={icon.lg} /></IconButton> : undefined}
+      scrollRef={scrollRef}
+      {...(expanded ? { detents: fullHeight, className: "max-w-none rounded-none border-0" } : {})}
+      dismissible={!expanded}
+      title={expanded ? contentLabel : t(picking ? (view === "exclude" ? "Add an exception" : "Add a rule") : existing ? "Edit entry" : "New entry")}
+      leftAction={picking || expanded ? <IconButton label={t("Back to the entry")} shape="round" className={expanded ? "min-h-11 min-w-11" : undefined} onClick={() => setView("form")}><ArrowLeft size={icon.lg} /></IconButton> : undefined}
       footer={
-        picking ? undefined : (
+        picking || expanded ? undefined : (
           <div className="flex items-center gap-2">
             {existing && !draft.required && <IconButton label={t("Remove entry")} onClick={() => onDelete(existing)}><Trash2 size={icon.md} className="text-danger" /></IconButton>}
             <span className="flex-1" />
@@ -245,9 +293,8 @@ export function PromptEntrySheet({
         )
       }
     >
-      <div ref={topRef} />
       <AnimatePresence mode="wait" initial={false}>
-        <motion.div key={picking ? "rules" : "form"} initial={{ opacity: 0, x: picking ? 12 : -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} transition={m.quick}>
+        <motion.div key={picking ? "rules" : "form"} className={expanded ? "h-full" : undefined} initial={{ opacity: 0, x: picking ? 12 : -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} transition={m.quick}>
           {picking ? ruleList : form}
         </motion.div>
       </AnimatePresence>

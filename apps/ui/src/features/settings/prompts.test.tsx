@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createBrowserHistory, createMemoryHistory } from "@tanstack/react-router";
-import { toast } from "@lettuceai/crisp";
+import { dismissTopLayer, toast } from "@lettuceai/crisp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PromptBuiltinChange, PromptBuiltinUpdateApplyRequest, PromptCondition, PromptCreateRequest, PromptView } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers } from "@/api/mock-transport";
@@ -82,6 +82,39 @@ describe("system prompt management", () => {
     expect(request.expected_revision).toBe(7);
     expect(request.prompt.entries.map((entry) => entry.entry_id)).toEqual(["e2", "e1"]);
     expect(request.prompt.entries[1]).toMatchObject({ content: "Changed {{character}}", condition, conditional_min_messages: 8, interval_turns: 4 });
+  });
+  it("keeps the mobile entry draft and selection when returning from full screen", async () => {
+    const update = vi.fn(() => ok(document({ revision: 8 })));
+    const { history } = await openPage({
+      appStatus: () => ok({ ...mockAppStatus, platform: "android", ui_state: { onboarding: { completed: true } } }),
+      promptUpdate: update,
+    }, "/settings/prompts", true);
+    try {
+      fireEvent.click((await screen.findByText("Story")).closest("button")!);
+      fireEvent.click(await screen.findByRole("button", { name: /Direction/ }));
+      const content = sheet().getByLabelText<HTMLTextAreaElement>("Content");
+      expect(content.rows).toBe(12);
+      content.setSelectionRange(1, 4);
+      fireEvent.click(sheet().getByRole("button", { name: "Full screen" }));
+      expect(screen.getByRole("dialog", { name: "Content" })).toBeTruthy();
+      expect(sheet().getByLabelText("Content")).toBe(content);
+      expect([content.selectionStart, content.selectionEnd]).toEqual([1, 4]);
+
+      fireEvent.change(content, { target: { value: "Keep this unsaved edit" } });
+      content.setSelectionRange(5, 9, "backward");
+      await act(async () => { history.back(); });
+      expect(await screen.findByRole("dialog", { name: "Edit entry" })).toBeTruthy();
+      expect(content.value).toBe("Keep this unsaved edit");
+      expect([content.selectionStart, content.selectionEnd, content.selectionDirection]).toEqual([5, 9, "backward"]);
+
+      fireEvent.click(sheet().getByRole("button", { name: "Full screen" }));
+      act(() => { expect(dismissTopLayer()).toBe(true); });
+      expect(screen.getByRole("dialog", { name: "Edit entry" })).toBeTruthy();
+      expect(content.value).toBe("Keep this unsaved edit");
+      expect(update).not.toHaveBeenCalled();
+    } finally {
+      history.destroy();
+    }
   });
   it("copies a built-in into an unsaved draft and saves its source with fresh entries", async () => {
     const source = document({ origin: { type: "built_in", key: "chat", protected: true, required: true, edited: false } });
