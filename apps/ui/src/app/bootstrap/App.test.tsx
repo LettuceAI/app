@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { onlineManager } from "@tanstack/react-query";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createWindowController } from "@/api/window-controls";
@@ -8,6 +9,13 @@ import { App } from "./App";
 import { createAppRuntime } from "./runtime";
 
 const completedStatus = { ...mockAppStatus, ui_state: { onboarding: { completed: true } } };
+const androidApp: MockTransportOptions = {
+  calls: {
+    appStatus: () => ({ status: "ok", data: { ...completedStatus, platform: "android" } }),
+    charactersList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
+    conversationsLatestByCharacter: () => ({ status: "ok", data: { items: [], next_cursor: null } }),
+  },
+};
 
 vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockResolvedValue(null) }));
 
@@ -28,6 +36,7 @@ async function renderApp(options: MockTransportOptions = {}, language: "en" | "c
 
 afterEach(() => {
   cleanup();
+  onlineManager.setOnline(true);
 });
 
 describe("status placeholder", () => {
@@ -104,6 +113,22 @@ describe("status placeholder", () => {
     expect(await screen.findByText("Connecting to the app…")).toBeTruthy();
     await act(async () => resolve?.());
     expect((await screen.findAllByText(completedStatus.version)).length).toBeGreaterThan(0);
+  });
+
+  it("opens the Android shell while the WebView is offline", async () => {
+    onlineManager.setOnline(false);
+    await renderApp(androidApp);
+    expect(await screen.findByText("Android")).toBeTruthy();
+  });
+
+  it("loads Chats after the WebView goes offline", async () => {
+    const runtime = await renderApp(androidApp);
+    await screen.findByText("Android");
+    act(() => window.dispatchEvent(new Event("offline")));
+    expect(onlineManager.isOnline()).toBe(false);
+
+    await act(async () => { void runtime.router.navigate({ to: "/" }); });
+    expect(await screen.findByText("No characters yet")).toBeTruthy();
   });
 
   it("shows the typed error copy when app_status fails", async () => {

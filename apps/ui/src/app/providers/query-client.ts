@@ -9,12 +9,15 @@ export function createQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: {
+        // These calls go to the local backend over IPC, even when the WebView is offline.
+        networkMode: "always",
         staleTime: Infinity,
         retry: false,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
       },
       mutations: {
+        networkMode: "always",
         retry: false,
       },
     },
