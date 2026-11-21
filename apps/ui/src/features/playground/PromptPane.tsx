@@ -63,6 +63,7 @@ export function PromptPane({
       <div className="flex min-h-0 flex-1 flex-col gap-4">
         <Field label={t("prompt.label")} className="flex flex-1 flex-col">
           <Textarea
+            data-tour-id="playground-prompt"
             value={prompt}
             onChange={(event) => onPromptChange(event.target.value)}
             onKeyDown={submitShortcut}
@@ -117,6 +118,7 @@ export function PromptPane({
       </div>
       <InitImagePicker open={historyOpen} onClose={() => setHistoryOpen(false)} onPick={start} />
       <Button
+        data-tour-id="playground-generate"
         variant="primary"
         size="lg"
         block

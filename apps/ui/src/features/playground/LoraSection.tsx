@@ -43,7 +43,7 @@ export function LoraSection({ choice, draft, update }: {
 
   return (
     <>
-      <ListGroup label={t("loras.title")}>
+      <ListGroup data-tour-id="playground-loras" label={t("loras.title")}>
         {selected.length === 0 && <ListRow title={t("loras.empty")} />}
         {selected.map((lora) => {
           const file = files.find((candidate) => candidate.path === lora.path);

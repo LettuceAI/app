@@ -115,24 +115,24 @@ export function ImageSettingsPage() {
           </div>
         ) : (
           <div className="@container">
-            {!mobile && images.length > 0 && <ListGroup className="mb-7"><ListRowButton icon={<ImagePlus size={icon.lg} />} title={tPlayground("open")} description={tPlayground("openDescription")} onClick={() => { void navigate({ to: "/playground" }); }} /></ListGroup>}
+            {!mobile && images.length > 0 && <ListGroup className="mb-7"><ListRowButton data-tour-id="imagegen-playground" icon={<ImagePlus size={icon.lg} />} title={tPlayground("open")} description={tPlayground("openDescription")} onClick={() => { void navigate({ to: "/playground" }); }} /></ListGroup>}
             {images.length === 0 && <ListGroup className="mb-7"><ListRowButton icon={<Plus size={icon.lg} />} title={t("image.empty.title")} description={t("image.empty.body")} trailing={<span className="text-sm text-fg-3">{t("image.addModel")}</span>} onClick={addModel} /></ListGroup>}
             <div className="grid grid-cols-1 gap-7 @4xl:grid-cols-2 @4xl:items-start @4xl:gap-x-10">
               <div className="min-w-0 space-y-7">
-                <ListGroup label={t("image.avatar.group")}>
+                <ListGroup data-tour-id="imagegen-avatar" label={t("image.avatar.group")}>
                   <ListRow icon={<UserRound size={icon.lg} />} title={t("image.avatar.title")} description={t("image.avatar.body")} trailing={<Switch checked={value.avatar_enabled} onChange={(enabled) => { void change({ avatar_enabled: enabled }); }} disabled={busy} aria-label={t("image.avatar.title")} />} />
                   <ListRowButton icon={<Image size={icon.lg} />} title={t("image.avatar.model")} description={value.avatar_enabled ? describe("avatar") : t("image.avatar.disabled")} disabled={busy || !value.avatar_enabled || avatars.length === 0} onClick={() => open("avatar")} />
                   {promptRow("avatar_generation", !value.avatar_enabled)}
                   {promptRow("avatar_edit_request", !value.avatar_enabled)}
                 </ListGroup>
-                <ListGroup label={t("image.writer.group")}>
+                <ListGroup data-tour-id="imagegen-prompting" label={t("image.writer.group")}>
                   <ListRowButton icon={<PenLine size={icon.lg} />} title={t("image.writer.model")} description={describe("writer")} disabled={busy || writers.length === 0} onClick={() => open("writer")} />
                   {promptRow("scene_prompt_writer")}
                   {promptRow("design_reference_writer")}
                 </ListGroup>
               </div>
               <div className="min-w-0 space-y-7">
-                <ListGroup label={t("image.scene.group")}>
+                <ListGroup data-tour-id="imagegen-scene" label={t("image.scene.group")}>
                   <ListRow icon={<Image size={icon.lg} />} title={t("image.scene.title")} description={t("image.scene.body")} trailing={<Switch checked={value.scene_enabled} onChange={(enabled) => { void change({ scene_enabled: enabled }); }} disabled={busy} aria-label={t("image.scene.title")} />} />
                   <ListRowButton icon={<Image size={icon.lg} />} title={t("image.scene.model")} description={value.scene_enabled ? describe("scene") : t("image.scene.disabled")} disabled={busy || !value.scene_enabled || images.length === 0} onClick={() => open("scene")} />
                   {promptRow("scene_generation", !value.scene_enabled)}

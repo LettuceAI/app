@@ -47,13 +47,13 @@ export function LlamaRuntimeInfo({ path, config, defaults, onChange, gpu = false
     const count = cpuLayers ? maximum != null && gpuCount != null ? Math.max(0, maximum - gpuCount) : undefined : gpuCount;
     const setCount = (count: number) => write("gpu_layers", cpuLayers && maximum != null ? maximum - count : count);
     const label = t(cpuLayers ? "modelEditor.fields.llamaCpuLayers" : "modelEditor.fields.llamaGpuLayers");
-    return <fieldset disabled={disabled} className={disabled ? "min-w-0 opacity-50" : "min-w-0"}><EditorRow label={label} overridden={own.overridden} onReset={() => write("gpu_layers", undefined)} resetLabel={t("modelEditor.resetField", { field: label })}>
+    return <fieldset data-tour-id="model-runtime-gpu" disabled={disabled} className={disabled ? "min-w-0 opacity-50" : "min-w-0"}><EditorRow label={label} overridden={own.overridden} onReset={() => write("gpu_layers", undefined)} resetLabel={t("modelEditor.resetField", { field: label })}>
       {maximum != null && count != null ? <div className="flex items-center gap-3"><Slider aria-label={label} min={0} max={maximum} step={1} value={count} onChange={setCount} className="min-w-0 flex-1" /><SliderValue label={t("modelEditor.valueLabel", { field: label })} min={0} max={maximum} step={1} value={count} text={count === maximum ? t("modelEditor.allLayers") : String(count)} overridden={own.overridden} onCommit={setCount} /></div> : <Input aria-label={label} type="number" min={0} max={maximum ?? 512} value={cpuLayers || own.value === undefined ? "" : String(own.value)} placeholder={t("modelEditor.automatic")} onChange={(event) => event.target.value === "" ? write("gpu_layers", undefined) : setCount(Number(event.target.value))} />}
     </EditorRow></fieldset>;
   }
   if (splitOnly && result) return <ModelLayerPlacement info={result} devices={devices.data?.devices ?? []} singleDeviceId={config.llama_cpp.single_gpu_device_id ?? defaults?.llama_cpp.single_gpu_device_id} />;
   return <div aria-busy={info.isPending} className={contextEditor ? "overflow-hidden rounded-xl border border-line bg-surface-1" : "space-y-3"}>
-    {contextEditor && <div className="mb-3 border-b border-line"><EditorRow label={contextLabel} hint={limit ? t("modelEditor.contextLimit", { value: compactContext(limit) }) : info.isPending ? <Skeleton className="h-3 w-40" /> : undefined} overridden={contextOwn.overridden} onReset={() => setContext(undefined)} resetLabel={t("modelEditor.resetField", { field: contextLabel })}>
+    {contextEditor && <div className="mb-3 border-b border-line" data-tour-id={info.isPending ? undefined : "model-runtime-context"}><EditorRow label={contextLabel} hint={limit ? t("modelEditor.contextLimit", { value: compactContext(limit) }) : info.isPending ? <Skeleton className="h-3 w-40" /> : undefined} overridden={contextOwn.overridden} onReset={() => setContext(undefined)} resetLabel={t("modelEditor.resetField", { field: contextLabel })}>
       {limit && contextValue !== undefined ? <div className="flex items-center gap-3">
         <Slider aria-label={contextLabel} aria-valuetext={compactContext(contextValue)} value={sliderValue ?? contextValue} min={sliderMinimum} max={limit} step={sliderStep} onChange={setContext} className="min-w-0 flex-1" />
         <SliderValue label={t("modelEditor.valueLabel", { field: contextLabel })} value={contextValue} text={compactContext(contextValue)} overridden={contextOwn.overridden} min={1} max={limit} step={1} onCommit={setContext} />
@@ -61,7 +61,7 @@ export function LlamaRuntimeInfo({ path, config, defaults, onChange, gpu = false
     </EditorRow></div>}
     {info.isPending && !devicesOnly && <RuntimeMemorySkeleton contextEditor={contextEditor} splitOnly={splitOnly} />}
     {info.isError && <FailureState error={info.error} onRetry={() => void info.refetch()} size="sm" />}
-    {!devicesOnly && result && <div className={`space-y-3 rounded-xl bg-fill px-4 py-3 ${contextEditor ? "mx-4 mb-3" : ""}`}>
+    {!devicesOnly && result && <div data-tour-id={contextEditor ? "model-runtime-report" : undefined} className={`space-y-3 rounded-xl bg-fill px-4 py-3 ${contextEditor ? "mx-4 mb-3" : ""}`}>
       {!splitOnly && result.memory_fit?.map((fit, index) => <ModelMemoryFit key={index} fit={fit} cacheType={cacheType} />)}
       {!contextEditor && !splitOnly && !result.memory_fit?.length && <h3 className="text-sm font-medium">{t("modelEditor.memory")}</h3>}
       {!splitOnly && !result.memory_fit?.length && result.model_size_bytes !== null && <p className="text-xs text-fg-3">{t("modelEditor.modelBytes", { size: fileSize(result.model_size_bytes, i18n.language) })}</p>}

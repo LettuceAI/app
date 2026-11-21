@@ -47,7 +47,7 @@ export function EngineView({ open, onJob, onPolicy, activeInstalls, downloadsRea
     <div className="@container space-y-5">
       {action.isError && <FailureState error={action.error} size="sm" />}
       {inventory.isError && <FailureState error={inventory.error} onRetry={() => void inventory.refetch()} />}
-      {!inventory.data ? !inventory.isError && <EngineSkeleton label={t("image.local.engine.installed")} loadingLabel={t("image.local.engine.loadingInventory")} /> : <ListGroup label={t("image.local.engine.installed")}>
+      {!inventory.data ? !inventory.isError && <EngineSkeleton label={t("image.local.engine.installed")} loadingLabel={t("image.local.engine.loadingInventory")} /> : <ListGroup data-tour-id="sd-installed" label={t("image.local.engine.installed")}>
         {inventory.data.installed.length === 0 && <ListRow title={t("image.local.engine.missing")} description={t("image.local.engine.installBody")} />}
         {inventory.data.installed.map((build) => <EngineBuildRow key={`${build.release}/${build.asset}`} build={build} onOpen={() => setSelected(build)} />)}
       </ListGroup>}
@@ -55,10 +55,10 @@ export function EngineView({ open, onJob, onPolicy, activeInstalls, downloadsRea
         <ListRowButton icon={<Gauge size={icon.lg} />} title={t("image.local.policy.gpus")} description={policy.data ? t("image.local.policy.summary", { mode: t(policy.data.policy.multi_gpu_enabled ? "image.local.policy.multi" : policy.data.policy.single_gpu_device_id !== null ? "image.local.policy.single" : "image.local.policy.auto"), count: policy.data.devices.length, split: t(policy.data.policy.split_mode === "row" ? "image.local.policy.row" : "image.local.policy.layer"), backend: policy.data.backend }) : policy.isError ? t(imageFailureKind(policy.error) === "runtime_incompatible" ? "image.local.policy.incompatibleShort" : "image.local.readFailed") : t("image.loading")} onClick={() => onPolicy(inventory.data!.active!)} />
       </ListGroup>}
       <ListGroup>
-        <ListRowButton icon={<Download size={icon.lg} />} title={t("image.local.engine.install")} description={t("image.local.engine.chooseBuild")} onClick={openInstall} />
+        <ListRowButton data-tour-id="sd-install" icon={<Download size={icon.lg} />} title={t("image.local.engine.install")} description={t("image.local.engine.chooseBuild")} onClick={openInstall} />
       </ListGroup>
       <EngineInstallSheet open={open && installOpen} installed={inventory.data?.installed} activeInstalls={activeInstalls} downloadsReady={downloadsReady} onClose={closeInstall} onJob={onJob} />
-      {upscaler.isError ? <FailureState error={upscaler.error} onRetry={() => void upscaler.refetch()} /> : !upscaler.data ? <EngineSkeleton label={t("image.local.upscaler.title")} loadingLabel={t("image.local.engine.loadingUpscaler")} /> : <ListGroup label={t("image.local.upscaler.title")}>
+      {upscaler.isError ? <FailureState error={upscaler.error} onRetry={() => void upscaler.refetch()} /> : !upscaler.data ? <EngineSkeleton label={t("image.local.upscaler.title")} loadingLabel={t("image.local.engine.loadingUpscaler")} /> : <ListGroup data-tour-id="sd-upscaler" label={t("image.local.upscaler.title")}>
         <ListRow icon={<Maximize2 size={icon.lg} />} title={upscaler.data.recommended_filename} description={t("image.local.upscaler.body", { size: size(upscaler.data.recommended_bytes) })} trailing={<Button size="sm" variant={upscaler.data.recommended_installed ? "ghost" : "secondary"} loading={installingUpscaler} disabled={action.isPending || installingUpscaler || !downloadsReady} onClick={() => action.mutate(async () => {
           if (upscaler.data.recommended_installed) await api.call("sdUpscalersRemove", { filename: upscaler.data.recommended_filename });
           else { const accepted = await api.call("sdUpscalersInstall"); onJob(accepted.job_id, upscaler.data.recommended_filename, { type: "sd_upscaler_install", filename: upscaler.data.recommended_filename }); }

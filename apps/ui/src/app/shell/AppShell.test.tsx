@@ -57,7 +57,52 @@ afterEach(() => {
   cleanup();
 });
 
+async function withTourLayout(run: () => Promise<void>) {
+  const rects = vi.spyOn(Element.prototype, "getClientRects").mockReturnValue([new DOMRect(0, 0, 48, 48)] as unknown as DOMRectList);
+  const prototype = HTMLDialogElement.prototype;
+  const dialogMethods = Object.getOwnPropertyDescriptors(prototype);
+  if (!dialogMethods.showModal) Object.defineProperty(prototype, "showModal", { configurable: true, value(this: HTMLDialogElement) { this.open = true; } });
+  if (!dialogMethods.close) Object.defineProperty(prototype, "close", { configurable: true, value(this: HTMLDialogElement) { this.open = false; } });
+  try {
+    await run();
+  } finally {
+    cleanup();
+    rects.mockRestore();
+    if (!dialogMethods.showModal) Reflect.deleteProperty(prototype, "showModal");
+    if (!dialogMethods.close) Reflect.deleteProperty(prototype, "close");
+  }
+}
+
 describe("primary navigation", () => {
+  it("runs the mobile navigation tour and remembers when Android Back dismisses it", () => withTourLayout(async () => {
+    const store = { ...ui_state, tooltips: { anotherHint: true } };
+    const update = vi.fn((request: { patch: Record<string, unknown> }) => {
+      Object.assign(store, request.patch);
+      return { status: "ok" as const, data: { state: store } };
+    });
+    const runtime = await renderShell({ calls: {
+      appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "android", ui_state: store } }),
+      appUiStateUpdate: update,
+    } });
+
+    const tour = await screen.findByRole("dialog", { name: "This is where your chats live" });
+    expect(within(tour).getByText("Step 1 of 7")).toBeTruthy();
+    fireEvent.click(within(tour).getByRole("button", { name: "Next" }));
+    expect(within(tour).getByText("Hang out in group chats")).toBeTruthy();
+    act(() => backButton.press?.(false));
+    expect(runtime.router.state.location.pathname).toBe("/");
+    expect(backButton.exit).not.toHaveBeenCalled();
+    await waitFor(() => expect(update).toHaveBeenCalledExactlyOnceWith({ patch: { tooltips: { anotherHint: true, app_tour_v1: true } } }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }));
+
+  it("honors a navigation tour already seen in the legacy app", () => withTourLayout(async () => {
+    await renderShell({}, { ...ui_state, tooltips: { app_tour_v1: true } });
+    expect(await screen.findByRole("navigation", { name: "Main navigation" })).toBeTruthy();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }));
+
   it.each(["/", "/groups", "/discover", "/library"])("puts mobile settings last in the title row on %s", async (path) => {
     const runtime = await renderShell({ calls: {
       appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "android", ui_state } }),

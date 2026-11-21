@@ -235,7 +235,7 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
               />
             </ListGroup>
 
-            <ListGroup label={t("memory.dynamic.group")}>
+            <ListGroup data-tour-id="dynmem-enable" label={t("memory.dynamic.group")}>
               <ListRow
                 icon={<Brain size={icon.lg} />}
                 title={t("memory.dynamic.title")}
@@ -336,7 +336,7 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
                 />
               </ListGroup>
 
-              <ListGroup label={t("memory.embedding.group")}>
+              <ListGroup data-tour-id="dynmem-embedding" label={t("memory.embedding.group")}>
                 <ListRow
                   icon={<Layers size={icon.lg} />}
                   title={

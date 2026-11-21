@@ -193,10 +193,10 @@ export function PlaygroundPage() {
         actions={
           wide ? undefined : (
             <div className="flex items-center gap-1">
-              <IconButton label={t("promptTab")} variant="ghost" onClick={() => setSheet("prompt")}>
+              <IconButton data-tour-id="playground-prompt" label={t("promptTab")} variant="ghost" onClick={() => setSheet("prompt")}>
                 <TerminalSquare size={icon.lg} />
               </IconButton>
-              <IconButton label={t("settingsTab")} variant="ghost" onClick={() => setSheet("settings")}>
+              <IconButton data-tour-id="playground-model" label={t("settingsTab")} variant="ghost" onClick={() => setSheet("settings")}>
                 <SlidersHorizontal size={icon.lg} />
               </IconButton>
             </div>
@@ -221,11 +221,11 @@ export function PlaygroundPage() {
             panel={<div className="h-full overflow-y-auto p-4">{settingsPane}</div>}
             className="h-full min-h-0"
           >
-            <div className="@container h-full min-h-0">{feed}</div>
+            <div className="@container h-full min-h-0" data-tour-id="playground-feed">{feed}</div>
           </Resizable>
         </Resizable>
       ) : (
-        <div className="@container min-h-0 flex-1">{feed}</div>
+        <div className="@container min-h-0 flex-1" data-tour-id="playground-feed">{feed}</div>
       )}
       <Sheet open={!wide && sheet === "prompt"} onClose={() => setSheet(null)} size="md" title={t("promptTab")}>
         {promptPane}

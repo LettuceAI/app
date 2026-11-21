@@ -1,0 +1,233 @@
+{
+  "stepCounter": "Langkah {{current}} dari {{total}}",
+  "skipTour": "Lewati tur",
+  "next": "Berikutnya",
+  "gotIt": "Mengerti",
+  "appShell": {
+    "chats": {
+      "title": "Di sinilah obrolan Anda berada",
+      "body": "Semua percakapan satu-satu Anda dengan karakter ada di sini. Kembali kapan saja dan kami akan menyimpan posisi Anda."
+    },
+    "groups": {
+      "title": "Bergabung di obrolan grup",
+      "body": "Bawa beberapa karakter ke dalam satu ruangan dan saksikan mereka saling berbicara, atau ikut kapan pun Anda mau."
+    },
+    "discover": {
+      "title": "Temukan karakter baru",
+      "body": "Jelajahi apa yang dibagikan komunitas dan ambil karakter yang menarik perhatian Anda. Favorit baru hanya satu ketukan saja."
+    },
+    "library": {
+      "title": "Perpustakaan pribadi Anda",
+      "body": "Semua yang Anda buat atau simpan ada di sini: karakter, persona, prompt, semuanya. Anggap saja ini koleksi Anda."
+    },
+    "settings": {
+      "title": "Sesuaikan sesuka Anda",
+      "body": "Ganti penyedia, pilih model berbeda, atur tampilan aplikasi. Hampir semuanya bisa disesuaikan dari pengaturan."
+    },
+    "search": {
+      "title": "Temukan apa saja, cepat"
+    },
+    "create": {
+      "title": "Dan akhirnya, buat!",
+      "body": "Ketuk tombol plus kapan pun inspirasi datang. Buat karakter baru, persona, atau mulai sesuatu dari awal."
+    }
+  },
+  "speechRecognition": {
+    "activeModel": {
+      "title": "Pilih model Whisper"
+    },
+    "library": {
+      "title": "Atur apa yang didengar Whisper"
+    },
+    "micTest": {
+      "title": "Coba sebelum Anda menetapkan",
+      "body": "Rekam klip pendek dan jalankan melalui model aktif dengan kosakata dan koreksi yang diterapkan. Bagus untuk memeriksa perubahan."
+    },
+    "runtime": {
+      "title": "Alat runtime dan pustaka",
+      "body": "Aktifkan akselerasi GPU, jaga model tetap hangat di antara proses, dan impor atau ekspor seluruh pustaka Anda sebagai JSON."
+    }
+  },
+  "editModelLlama": {
+    "context": {
+      "title": "Pilih seberapa banyak konteks yang dipakai",
+      "body": "Konteks lebih besar berarti memori percakapan lebih panjang, tapi cepat menghabiskan VRAM. Otomatis menyesuaikan ukurannya dengan perangkat keras Anda, dan Anda selalu bisa mengaturnya sendiri."
+    },
+    "gpu": {
+      "title": "Di sinilah offload GPU berada",
+      "body": "Otomatis merencanakan layer dari VRAM kosong Anda. Dengan lebih dari satu GPU, Anda bisa membagi model ke beberapa kartu di sini, atau mengikuti default global dari pengaturan."
+    }
+  },
+  "runtimeDefaults": {
+    "storage": {
+      "title": "Model Anda tersimpan di sini",
+      "body": "Folder ini menyimpan semua berkas model yang diunduh. Anda bisa memindahkannya ke drive lain kapan pun ruang mulai habis."
+    },
+    "llama": {
+      "title": "Default untuk setiap model lokal",
+      "body": "Konteks, KV cache, dan perilaku GPU yang diatur di sini berlaku untuk semua model lokal. Setiap model bisa menggantinya dari editornya sendiri."
+    },
+    "multiGpu": {
+      "title": "Bagi model ke beberapa GPU",
+      "body": "Dengan dua kartu grafis atau lebih, nyalakan ini untuk menyebar layer ke semuanya. Model yang diatur ke Warisi akan mengikuti sakelar ini secara otomatis."
+    },
+    "civitai": {
+      "title": "Token CivitAI Anda tersimpan di sini",
+      "body": "Simpan token API untuk membuka unduhan terbatas dan akses awal di penjelajah LoRA. Anda bisa mengganti atau menghapusnya kapan saja."
+    }
+  },
+  "hfBrowser": {
+    "panel": {
+      "title": "Laporan kecocokan pribadimu",
+      "body": "Semua di sini disesuaikan dengan mesin ini: penilaian di atas menunjukkan apakah model akan berjalan dan seberapa lancar. Ubah pengaturan apa pun dan penilaiannya langsung diperbarui."
+    },
+    "quant": {
+      "title": "Pilih kuantisasi",
+      "body": "Kuantisasi lebih kecil memakai lebih sedikit memori tapi kehilangan sedikit kualitas. Skor di samping setiap berkas menunjukkan seberapa cocok berkas itu dengan perangkat keras Anda."
+    },
+    "context": {
+      "title": "Konteks juga memakan memori",
+      "body": "Berkas model bukan keseluruhan cerita: setiap token konteks juga butuh ruang. Slider ini menunjukkan seberapa jauh Anda bisa mendorongnya di mesin Anda."
+    },
+    "offload": {
+      "title": "Di mana model sebaiknya berjalan?",
+      "body": "Otomatis memilihkan untuk Anda. GPU paling cepat kalau muat, CPU jalur lambat tapi aman, dan Campuran mengambil jalan tengah. Anda bisa mengubahnya nanti di editor model."
+    },
+    "kvLocation": {
+      "title": "Tempat cache percakapan berada",
+      "body": "Menyimpan KV cache di VRAM paling cepat. Memindahkannya ke RAM membebaskan GPU Anda untuk lebih banyak layer saat ruang mulai sempit."
+    }
+  },
+  "groupChatDetail": {
+    "title": {
+      "title": "Pengaturan grup ada di balik nama",
+      "body": "Ketuk nama grup untuk mengelola peserta, memilih cara pembicara berikutnya ditentukan, dan membisukan karakter yang ingin Anda istirahatkan."
+    },
+    "participants": {
+      "title": "Semua yang ada di ruangan",
+      "body": "Inilah karakter di grup ini. Ketuk untuk menambah, menghapus, atau mengatur ulang siapa saja yang ikut dalam percakapan."
+    },
+    "memory": {
+      "title": "Grup mengingat bersama",
+      "body": "Memori grup dibagikan ke seluruh percakapan. Ketuk ikon otak untuk melihat, menyematkan, atau merapikan apa yang diketahui grup."
+    },
+    "composer": {
+      "title": "Katakan sesuatu",
+      "body": "Ketik pesan Anda di sini. Siapa yang menjawab berikutnya tergantung pemilihan pembicara yang Anda pilih di pengaturan grup."
+    }
+  },
+  "dynamicMemory": {
+    "enable": {
+      "title": "Nyalakan memori dinamis",
+      "body": "Saat aktif, aplikasi diam-diam mengambil fakta penting dari obrolan Anda dan mengingatnya nanti, sehingga karakter mengingat hal yang penting."
+    },
+    "mode": {
+      "title": "Pilih seberapa banyak kendali yang Anda mau",
+      "body": "Otomatis menjalankan pembaruan memori di latar belakang, Tanya Dulu meminta persetujuan Anda sebelum menyimpan, dan Manual menyerahkan semuanya kepada Anda."
+    },
+    "preset": {
+      "title": "Profil mengatur penyetelan",
+      "body": "Pilih profil untuk mengatur peluruhan, anggaran, dan ambang sekaligus. Anda bisa menyetel semuanya lebih rinci di pengaturan lanjutan."
+    },
+    "embedding": {
+      "title": "Ditenagai model lokal kecil",
+      "body": "Pengingatan bekerja lewat embedding yang dihitung di perangkat Anda. Bagian ini mengelola versi model embedding dan pengaturannya."
+    }
+  },
+  "imageGeneration": {
+    "playground": {
+      "title": "Bereksperimen di Playground",
+      "body": "Hasilkan gambar dengan bebas memakai prompt, pengaturan model, dan LoRA. Ini tempat terbaik untuk menguji model sebelum memasangnya ke obrolan."
+    },
+    "engine": {
+      "title": "Gambar lokal berjalan di engine ini"
+    },
+    "avatar": {
+      "title": "Avatar berasal dari model ini",
+      "body": "Membuat gambar profil dari pemilih avatar memakai model yang diatur di sini. Matikan sakelar untuk menyembunyikan pembuatan avatar di mana pun."
+    },
+    "scene": {
+      "title": "Adegan berasal dari yang ini",
+      "body": "Gambar adegan yang dibangun dari konteks percakapan memakai model ini. Tidak harus sama dengan model avatar Anda."
+    },
+    "prompting": {
+      "title": "Cara prompt adegan ditulis",
+      "body": "Penulis adegan mengubah percakapan menjadi prompt gambar. Pilih apakah adegan dibuat otomatis, bertanya dulu kepada Anda, atau menunggu permintaan manual."
+    }
+  },
+  "playground": {
+    "prompt": {
+      "title": "Jelaskan gambarnya"
+    },
+    "generate": {
+      "title": "Hasilkan saat siap",
+      "body": "Satu ketukan memulai pembuatan gambar. Menekan Ctrl+Enter dari kotak prompt juga bisa."
+    },
+    "feed": {
+      "title": "Hasil muncul di umpan",
+      "body": "Setiap hasil muncul di sini beserta pengaturannya. Pakai ulang seed, hasilkan ulang, perbesar resolusinya, atau kirim kembali sebuah gambar sebagai gambar awal."
+    },
+    "model": {
+      "title": "Pilih model dulu",
+      "body": "Pilih model gambar mana pun yang sudah Anda siapkan, lokal atau cloud. Pengaturan di bawah menyesuaikan dengan kemampuan model."
+    },
+    "loras": {
+      "title": "Tumpuk LoRA di atasnya",
+      "body": "LoRA menambahkan gaya dan karakter ke model lokal. Tambahkan satu atau lebih dan atur kekuatan masing-masing."
+    }
+  },
+  "loraLibrary": {
+    "tabs": {
+      "title": "Pustaka dan Jelajahi",
+      "body": "Pustaka menampilkan LoRA yang terpasang di perangkat ini. Jelajahi mencari di CivitAI saat Anda ingin lebih banyak."
+    },
+    "import": {
+      "title": "Bawa berkas Anda sendiri",
+      "body": "Sudah punya berkas LoRA di disk? Impor di sini dan berkas itu akan masuk ke pustaka Anda."
+    },
+    "installed": {
+      "title": "Kelola yang terpasang",
+      "body": "Setiap LoRA menyimpan kata kunci pemicunya di sini. Ambil dari CivitAI, sunting, atau hapus berkas yang tidak lagi Anda perlukan."
+    },
+    "browse": {
+      "title": "Temukan lebih banyak di CivitAI",
+      "body": "Beralih ke Jelajahi untuk mencari di CivitAI dan mengunduh LoRA langsung ke pustaka Anda."
+    }
+  },
+  "civitaiBrowse": {
+    "search": {
+      "title": "Cari di seluruh CivitAI",
+      "body": "Ketik untuk menemukan LoRA berdasarkan nama atau kata kunci. Hasil diperbarui saat Anda mencari."
+    },
+    "sort": {
+      "title": "Urutkan hasil",
+      "body": "Urutkan berdasarkan penilaian, unduhan, atau terbaru, dan pilih rentang waktu yang penting bagi Anda."
+    },
+    "filters": {
+      "title": "Cocokkan model dasar Anda",
+      "body": "LoRA hanya bekerja dengan keluarga model tempat ia dilatih. Saring berdasarkan model dasar agar unduhan benar-benar cocok dengan penyiapan Anda."
+    },
+    "token": {
+      "title": "Beberapa berkas butuh token",
+      "body": "Berkas terbatas dan akses awal hanya bisa diunduh dengan token API CivitAI. Tambahkan milik Anda di sini; membuatnya di civitai.com gratis."
+    },
+    "results": {
+      "title": "Unduh ke pustaka Anda",
+      "body": "Buka sebuah hasil untuk memilih versi dan berkas. Unduhan langsung masuk ke pustaka Anda, siap dipakai di Playground."
+    }
+  },
+  "sdEngine": {
+    "installed": {
+      "title": "Build engine tersimpan di sini",
+      "body": "Setiap build yang terpasang menampilkan versi dan backend-nya. Anda bisa menyimpan beberapa sekaligus dan mengganti yang aktif kapan saja."
+    },
+    "install": {
+      "title": "Pasang build untuk perangkat keras Anda",
+      "body": "Pilih versi dan varian. GPU Anda terdeteksi dan build kompatibel terbaik dipilih otomatis, jadi default biasanya sudah tepat."
+    },
+    "upscaler": {
+      "title": "Satu model kecil untuk memperbesar resolusi",
+      "body": "Model ESRGAN ini menggerakkan aksi perbesar resolusi dan tahap resolusi tinggi. Pasang sekali dan lupakan."
+    }
+  }
+}

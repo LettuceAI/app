@@ -240,7 +240,7 @@ function RuntimeDefaults({ settings }: { settings: SettingsView }) {
         }
         secondary={
           <>
-            <Section label={t("runtime.llama")} hint={t("runtime.llamaHint")}>
+            <Section tourTarget="runtime-defaults-llama" label={t("runtime.llama")} hint={t("runtime.llamaHint")}>
               <EditorRow label={t("tools.context")} hint={t("tools.defaultHint")}>
                 <Input
                   aria-label={t("tools.context")}
@@ -268,7 +268,7 @@ function RuntimeDefaults({ settings }: { settings: SettingsView }) {
               {field("llamaRepeatPenalty")}
               {field("llamaNPenRange")}
             </Section>
-            <ListGroup label={t("modelEditor.groups.multipleGpus")}>
+            <ListGroup data-tour-id="runtime-defaults-multigpu" label={t("modelEditor.groups.multipleGpus")}>
               <EditorRow
                 label={t("modelEditor.fields.llamaMultiGpuEnabled")}
                 hint={multiGpuAvailable ? t("runtime.multiGpuHint") : t("runtime.multiGpuNeedsTwo")}
@@ -402,7 +402,7 @@ function StorageSection() {
     });
   return (
     <>
-      <Section label={t("runtime.storage")} hint={t("runtime.storageHint")}>
+      <Section tourTarget="runtime-defaults-storage" label={t("runtime.storage")} hint={t("runtime.storageHint")}>
         {dir.isError ? (
           <FailureState error={dir.error} onRetry={() => void dir.refetch()} size="sm" />
         ) : (
@@ -499,7 +499,7 @@ function TokensSection() {
           onClick={() => setOpen("hf")}
         />
       </Section>
-      <Section label={t("runtime.civitai")} hint={t("image.local.lora.tokenBody")}>
+      <Section tourTarget="runtime-defaults-civitai" label={t("runtime.civitai")} hint={t("image.local.lora.tokenBody")}>
         <ListRowButton
           icon={<KeyRound size={icon.lg} />}
           tone="info"
@@ -515,9 +515,9 @@ function TokensSection() {
   );
 }
 
-function Section({ label, hint, children }: { label: string; hint: string; children: ReactNode }) {
+function Section({ label, hint, children, tourTarget }: { label: string; hint: string; children: ReactNode; tourTarget?: string }) {
   return (
-    <section className="space-y-2">
+    <section className="space-y-2" data-tour-id={tourTarget}>
       <div className="space-y-0.5 px-1">
         <Text variant="section">{label}</Text>
         <Text variant="hint">{hint}</Text>

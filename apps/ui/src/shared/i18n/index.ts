@@ -25,6 +25,7 @@ import personas from "./locales/en/personas.json";
 import playground from "./locales/en/playground.json";
 import settings from "./locales/en/settings.json";
 import sync from "./locales/en/sync.json";
+import tour from "./locales/en/tour.json";
 import welcomeBack from "./locales/en/welcome-back.json";
 
 export const defaultNamespace = "common";
@@ -56,6 +57,7 @@ const english = {
     playground,
     settings,
     sync,
+    tour,
     "welcome-back": welcomeBack,
   },
 } as const;

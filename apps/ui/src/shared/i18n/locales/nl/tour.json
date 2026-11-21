@@ -1,0 +1,233 @@
+{
+  "stepCounter": "Stap {{current}} van {{total}}",
+  "skipTour": "Rondleiding overslaan",
+  "next": "Volgende",
+  "gotIt": "Begrepen",
+  "appShell": {
+    "chats": {
+      "title": "Hier wonen je chats",
+      "body": "Al je een-op-een gesprekken met karakters hangen hier rond. Spring er op elk moment weer in en we bewaren je plek."
+    },
+    "groups": {
+      "title": "Hang rond in groepschats",
+      "body": "Breng meerdere karakters in dezelfde kamer en kijk hoe ze met elkaar praten, of spring er zelf in wanneer je wilt."
+    },
+    "discover": {
+      "title": "Ontdek nieuwe karakters",
+      "body": "Blader door wat de community heeft gedeeld en haal elk karakter op dat je aanspreekt. Nieuwe favorieten zijn een tik verwijderd."
+    },
+    "library": {
+      "title": "Je persoonlijke bibliotheek",
+      "body": "Alles wat je hebt gemaakt of opgeslagen woont hier: karakters, persona's, prompts, alles. Zie het als je verzameling."
+    },
+    "settings": {
+      "title": "Maak het van jou",
+      "body": "Wissel van providers, kies andere modellen, pas het uiterlijk van de app aan. Vrijwel alles is instelbaar vanuit de instellingen."
+    },
+    "search": {
+      "title": "Vind alles, snel"
+    },
+    "create": {
+      "title": "En tot slot, creeer!",
+      "body": "Tik op de plusknop wanneer de inspiratie toeslaat. Maak een nieuw karakter, persona, of begin iets vanaf nul."
+    }
+  },
+  "speechRecognition": {
+    "activeModel": {
+      "title": "Kies een Whisper-model"
+    },
+    "library": {
+      "title": "Vorm wat Whisper hoort"
+    },
+    "micTest": {
+      "title": "Probeer het voordat je definitief kiest",
+      "body": "Neem een kort fragment op en haal het door het actieve model met je vocabulaire en correcties toegepast. Ideaal om wijzigingen te controleren."
+    },
+    "runtime": {
+      "title": "Runtime- en bibliotheektools",
+      "body": "Schakel GPU-versnelling in of uit, houd het model 'warm' tussen runs door, en importeer of exporteer je volledige bibliotheek als JSON."
+    }
+  },
+  "editModelLlama": {
+    "context": {
+      "title": "Kies hoeveel context je gebruikt",
+      "body": "Meer context betekent een langer geheugen in het gesprek, maar het vreet VRAM. Auto bepaalt de grootte op basis van je hardware, en je kunt het altijd zelf bijstellen."
+    },
+    "gpu": {
+      "title": "Hier woont GPU-offload",
+      "body": "Auto plant lagen op basis van je vrije VRAM. Met meer dan één GPU kun je het model hier over kaarten verdelen, of de globale standaard uit de instellingen volgen."
+    }
+  },
+  "runtimeDefaults": {
+    "storage": {
+      "title": "Je modellen wonen hier",
+      "body": "Deze map bevat elk gedownload modelbestand. Je kunt hem naar een andere schijf verplaatsen wanneer je ruimte tekortkomt."
+    },
+    "llama": {
+      "title": "Standaarden voor elk lokaal model",
+      "body": "Context, KV cache en GPU-gedrag die je hier instelt gelden voor alle lokale modellen. Elk model kan ze overschrijven vanuit zijn eigen editor."
+    },
+    "multiGpu": {
+      "title": "Verdeel modellen over GPU's",
+      "body": "Met twee of meer videokaarten zet je dit aan om lagen over ze te verspreiden. Modellen die op Overnemen staan volgen deze schakelaar automatisch."
+    },
+    "civitai": {
+      "title": "Je CivitAI-token woont hier",
+      "body": "Sla een API-token op om beperkte en early-access downloads in de LoRA-browser te ontgrendelen. Je kunt hem altijd vervangen of verwijderen."
+    }
+  },
+  "hfBrowser": {
+    "panel": {
+      "title": "Jouw persoonlijke geschiktheidsrapport",
+      "body": "Alles hier is afgestemd op deze machine: het oordeel bovenaan zegt of het model draait en hoe soepel. Pas een instelling aan en het oordeel wordt direct bijgewerkt."
+    },
+    "quant": {
+      "title": "Kies een kwantisatie",
+      "body": "Kleinere quants gebruiken minder geheugen maar leveren wat kwaliteit in. De score naast elk bestand vertelt je hoe goed het bij je hardware past."
+    },
+    "context": {
+      "title": "Context kost ook geheugen",
+      "body": "Het modelbestand is niet het hele verhaal: elke token context heeft ook ruimte nodig. Deze schuif laat zien hoe ver je kunt gaan op jouw machine."
+    },
+    "offload": {
+      "title": "Waar moet het model draaien?",
+      "body": "Auto kiest voor je. GPU is het snelst als het past, CPU is de langzame-maar-veilige route, en Gemengd zit ertussenin. Je kunt dit later wijzigen in de modeleditor."
+    },
+    "kvLocation": {
+      "title": "Waar de gesprekscache woont",
+      "body": "De KV cache in VRAM houden is het snelst. Naar RAM verplaatsen geeft je GPU ruimte voor meer lagen als het krap wordt."
+    }
+  },
+  "groupChatDetail": {
+    "title": {
+      "title": "Groepsinstellingen zitten achter de naam",
+      "body": "Tik op de groepsnaam om deelnemers te beheren, te kiezen hoe de volgende spreker wordt gekozen, en karakters te dempen die je even wilt laten toekijken."
+    },
+    "participants": {
+      "title": "Iedereen in de kamer",
+      "body": "Dit zijn de karakters in deze groep. Tik om toe te voegen, te verwijderen of te herschikken wie meedoet aan het gesprek."
+    },
+    "memory": {
+      "title": "De groep onthoudt samen",
+      "body": "Groepsherinneringen worden gedeeld over het hele gesprek. Tik op het brein om te bekijken, vast te pinnen of op te ruimen wat de groep weet."
+    },
+    "composer": {
+      "title": "Zeg iets",
+      "body": "Typ hier je bericht. Wie er als volgende antwoordt hangt af van de sprekerselectie die je in de groepsinstellingen hebt gekozen."
+    }
+  },
+  "dynamicMemory": {
+    "enable": {
+      "title": "Zet dynamisch geheugen aan",
+      "body": "Indien ingeschakeld haalt de app stilletjes belangrijke feiten uit je chats en roept ze later op, zodat karakters onthouden wat ertoe doet."
+    },
+    "mode": {
+      "title": "Kies hoeveel controle je wilt",
+      "body": "Automatisch draait geheugenupdates op de achtergrond, Eerst vragen checkt bij je voordat er wordt opgeslagen, en Handmatig laat alles aan jou over."
+    },
+    "preset": {
+      "title": "Profielen regelen de afstelling",
+      "body": "Kies een profiel om verval, budgetten en drempels in één keer in te stellen. Onder geavanceerde instellingen kun je alles fijn afstellen."
+    },
+    "embedding": {
+      "title": "Aangedreven door een klein lokaal model",
+      "body": "Herinneringen ophalen werkt via embeddings die op je apparaat worden berekend. Deze sectie beheert de versie van het embeddingmodel en zijn instellingen."
+    }
+  },
+  "imageGeneration": {
+    "playground": {
+      "title": "Experimenteer in de Playground",
+      "body": "Genereer vrij afbeeldingen met prompts, modelinstellingen en LoRA's. Het is de beste plek om een model te testen voordat je het aan chats koppelt."
+    },
+    "engine": {
+      "title": "Lokale afbeeldingen draaien op deze engine"
+    },
+    "avatar": {
+      "title": "Avatars komen van dit model",
+      "body": "Een profielafbeelding genereren vanuit de avatarkiezer gebruikt het model dat je hier instelt. Zet de schakelaar uit om avatargeneratie overal te verbergen."
+    },
+    "scene": {
+      "title": "Scènes komen van deze",
+      "body": "Scèneafbeeldingen die uit de gesprekscontext worden opgebouwd gebruiken dit model. Het hoeft niet hetzelfde te zijn als je avatarmodel."
+    },
+    "prompting": {
+      "title": "Hoe scèneprompts worden geschreven",
+      "body": "De scèneschrijver zet het gesprek om in een afbeeldingsprompt. Kies of scènes automatisch worden gegenereerd, eerst aan jou vragen, of wachten op een handmatig verzoek."
+    }
+  },
+  "playground": {
+    "prompt": {
+      "title": "Beschrijf de afbeelding"
+    },
+    "generate": {
+      "title": "Genereer wanneer je klaar bent",
+      "body": "Eén tik start de generatie. Ctrl+Enter indrukken vanuit het promptvak werkt ook."
+    },
+    "feed": {
+      "title": "Resultaten belanden in de feed",
+      "body": "Elke generatie verschijnt hier met zijn instellingen. Hergebruik een seed, genereer opnieuw, doe een upscale of stuur een afbeelding terug als startpunt."
+    },
+    "model": {
+      "title": "Kies eerst het model",
+      "body": "Kies elk afbeeldingsmodel dat je hebt ingesteld, lokaal of in de cloud. De instellingen hieronder passen zich aan aan wat het model ondersteunt."
+    },
+    "loras": {
+      "title": "Stapel er LoRA's bovenop",
+      "body": "LoRA's voegen stijlen en karakters toe aan een lokaal model. Voeg er een of meer toe en stel de sterkte van elk afzonderlijk af."
+    }
+  },
+  "loraLibrary": {
+    "tabs": {
+      "title": "Bibliotheek en Verkennen",
+      "body": "Bibliotheek toont de LoRA's die op dit apparaat zijn geïnstalleerd. Verkennen doorzoekt CivitAI als je meer wilt."
+    },
+    "import": {
+      "title": "Breng je eigen bestanden mee",
+      "body": "Heb je al LoRA-bestanden op schijf? Importeer ze hier en ze sluiten aan bij je bibliotheek."
+    },
+    "installed": {
+      "title": "Beheer wat er geïnstalleerd is",
+      "body": "Elke LoRA bewaart hier zijn triggerwoorden. Haal ze op van CivitAI, bewerk ze, of verwijder bestanden die je niet meer nodig hebt."
+    },
+    "browse": {
+      "title": "Ontdek meer op CivitAI",
+      "body": "Schakel naar Verkennen om CivitAI te doorzoeken en LoRA's rechtstreeks naar je bibliotheek te downloaden."
+    }
+  },
+  "civitaiBrowse": {
+    "search": {
+      "title": "Doorzoek heel CivitAI",
+      "body": "Typ om LoRA's op naam of trefwoord te vinden. De resultaten worden bijgewerkt terwijl je zoekt."
+    },
+    "sort": {
+      "title": "Sorteer de resultaten",
+      "body": "Rangschik op beoordeling, downloads of nieuwste, en kies de periode die ertoe doet."
+    },
+    "filters": {
+      "title": "Match je basismodel",
+      "body": "Een LoRA werkt alleen met de modelfamilie waarvoor hij is getraind. Filter op basismodel zodat downloads echt bij je setup passen."
+    },
+    "token": {
+      "title": "Sommige bestanden vereisen een token",
+      "body": "Beperkte en early-access bestanden downloaden alleen met een CivitAI API-token. Voeg de jouwe hier toe; er een aanmaken op civitai.com is gratis."
+    },
+    "results": {
+      "title": "Download naar je bibliotheek",
+      "body": "Open een resultaat om een versie en bestand te kiezen. Downloads belanden rechtstreeks in je bibliotheek, klaar voor gebruik in de Playground."
+    }
+  },
+  "sdEngine": {
+    "installed": {
+      "title": "Engine-builds wonen hier",
+      "body": "Elke geïnstalleerde build toont zijn versie en backend. Je kunt er meerdere bewaren en altijd wisselen welke actief is."
+    },
+    "install": {
+      "title": "Installeer een build voor jouw hardware",
+      "body": "Kies een versie en variant. Je GPU wordt gedetecteerd en de beste compatibele build wordt voorgeselecteerd, dus de standaard zit meestal goed."
+    },
+    "upscaler": {
+      "title": "Eén klein model voor upscaling",
+      "body": "Dit ESRGAN-model drijft de Upscale-actie en de hogeresolutiestap aan. Installeer het één keer en vergeet het daarna."
+    }
+  }
+}

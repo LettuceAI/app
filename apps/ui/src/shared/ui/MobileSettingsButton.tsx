@@ -12,5 +12,5 @@ export function MobileSettingsButton() {
   const { data } = useQuery(appStatusQuery(api));
   const compact = useCompactLayout();
   if (!compact && data?.platform !== "android" && data?.platform !== "ios") return null;
-  return <IconButton label={t("navigation.settings")} onClick={() => void navigate({ to: "/settings" })}><Settings size={icon.lg} /></IconButton>;
+  return <IconButton data-tour-id="top-settings" label={t("navigation.settings")} onClick={() => void navigate({ to: "/settings" })}><Settings size={icon.lg} /></IconButton>;
 }

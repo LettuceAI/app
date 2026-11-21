@@ -110,7 +110,7 @@ export function ChatHeader({
   );
   const who = (
     <>
-      {faces ? <AvatarGroup people={faces} max={3} size="sm" /> : <Avatar src={avatar} name={name} size="sm" />}
+      {faces ? <span data-tour-id="group-chat-participants"><AvatarGroup people={faces} max={3} size="sm" /></span> : <Avatar src={avatar} name={name} size="sm" />}
       <span className="min-w-0 truncate text-base font-semibold text-fg">{name}</span>
     </>
   );
@@ -121,12 +121,12 @@ export function ChatHeader({
         <ArrowLeft size={icon.lg} />
       </IconButton>
       {phone ? (
-        <button type="button" onClick={onOptions} className={identity}>
+        <button type="button" data-tour-id={faces ? "group-chat-title" : undefined} onClick={onOptions} className={identity}>
           {who}
         </button>
       ) : (
         <div className="flex min-w-0 flex-1">
-          <button type="button" onClick={onOptions} className={identity}>
+          <button type="button" data-tour-id={faces ? "group-chat-title" : undefined} onClick={onOptions} className={identity}>
             {who}
           </button>
         </div>
@@ -136,6 +136,7 @@ export function ChatHeader({
           label={
             memory.label ?? (memory.busy ? t("header.memoriesBusy") : t("header.memories", { count: memory.count }))
           }
+          data-tour-id={faces ? "group-chat-memory" : undefined}
           onClick={onMemory}
           className="relative"
         >

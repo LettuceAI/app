@@ -76,13 +76,13 @@ export function ScopedSettings({ value, onChange }: { value: Value; onChange: Ch
   );
   return (
     <>
-      <section className="space-y-2">
+      <section className="space-y-2" data-tour-id="dynmem-mode">
         <Text variant="section">{t("memory.updates.title")}</Text>
         <Segmented<SettingsMemoryRunMode> block aria-label={t("memory.updates.title")} value={value.run_mode} onChange={(next) => void set({ run_mode: next })} options={runModes.map((mode) => ({ value: mode, label: t(`memory.updates.${mode}`) }))} />
         <Text variant="hint">{t(`memory.updates.${value.run_mode}Body`)}</Text>
       </section>
 
-      <section className="space-y-2">
+      <section className="space-y-2" data-tour-id="dynmem-preset">
         <Text variant="section">{t("memory.profile.title")}</Text>
         <Profile value={value} onChange={onChange} />
       </section>

@@ -1,0 +1,233 @@
+{
+  "stepCounter": "Hakbang {{current}} ng {{total}}",
+  "skipTour": "Laktawan ang tour",
+  "next": "Susunod",
+  "gotIt": "Naintindihan ko",
+  "appShell": {
+    "chats": {
+      "title": "Dito nakatira ang mga chat mo",
+      "body": "Lahat ng isa-sa-isang usapan mo sa mga karakter ay nandito. Bumalik anumang oras at itatago namin ang pwesto mo."
+    },
+    "groups": {
+      "title": "Makisali sa mga group chat",
+      "body": "Dalhin ang maraming karakter sa iisang kwarto at panoorin silang mag-usap, o sumali ka mismo kahit kailan mo gusto."
+    },
+    "discover": {
+      "title": "Humanap ng mga bagong karakter",
+      "body": "I-browse ang mga ibinahagi ng komunidad at kunin ang anumang karakter na makuha ang atensyon mo. Isang tap lang ang mga bagong paborito."
+    },
+    "library": {
+      "title": "Ang iyong personal na library",
+      "body": "Lahat ng ginawa o na-save mo ay nandito: mga karakter, persona, prompt, lahat-lahat. Isipin mo itong koleksyon mo."
+    },
+    "settings": {
+      "title": "Gawin itong sa iyo",
+      "body": "Palitan ang mga provider, pumili ng ibang modelo, i-tweak ang hitsura ng app. Halos lahat ay naaayos mula sa settings."
+    },
+    "search": {
+      "title": "Hanapin ang kahit ano, mabilis"
+    },
+    "create": {
+      "title": "At sa wakas, gumawa!",
+      "body": "I-tap ang plus button kapag may pumasok na inspirasyon. Gumawa ng bagong karakter, persona, o magsimula mula sa wala."
+    }
+  },
+  "speechRecognition": {
+    "activeModel": {
+      "title": "Pumili ng Whisper model"
+    },
+    "library": {
+      "title": "Hubugin ang naririnig ng Whisper"
+    },
+    "micTest": {
+      "title": "Subukan muna bago mag-commit",
+      "body": "Mag-record ng maikling clip at patakbuhin ito sa active model gamit ang iyong vocabulary at corrections na nailapat. Maganda para sa pag-check ng mga pagbabago."
+    },
+    "runtime": {
+      "title": "Mga tool sa runtime at library",
+      "body": "I-toggle ang GPU acceleration, panatilihing warm ang model sa pagitan ng mga run, at i-import o i-export ang iyong buong library bilang JSON."
+    }
+  },
+  "editModelLlama": {
+    "context": {
+      "title": "Piliin kung gaano kalaking konteksto ang gagamitin",
+      "body": "Mas malaking konteksto, mas mahabang memorya sa usapan, pero mabilis nitong nauubos ang VRAM. Awtomatikong sinusukat ito ng Auto mula sa hardware mo, at pwede mo pa ring i-adjust ito mismo."
+    },
+    "gpu": {
+      "title": "Dito nakatira ang GPU offload",
+      "body": "Pinaplano ng Auto ang mga layer mula sa libreng VRAM mo. Kung higit sa isa ang GPU mo, pwede mong hatiin dito ang modelo sa mga card, o sundin ang global default mula sa settings."
+    }
+  },
+  "runtimeDefaults": {
+    "storage": {
+      "title": "Dito nakatira ang mga modelo mo",
+      "body": "Ang folder na ito ang naglalaman ng bawat na-download na model file. Pwede mo itong ilipat sa ibang drive kapag nauubusan ka na ng espasyo."
+    },
+    "llama": {
+      "title": "Mga default para sa bawat lokal na modelo",
+      "body": "Ang konteksto, KV cache, at GPU behavior na nakaset dito ay para sa lahat ng lokal na modelo. Pwedeng i-override ng anumang modelo ang mga ito mula sa sarili nitong editor."
+    },
+    "multiGpu": {
+      "title": "Hatiin ang mga modelo sa mga GPU",
+      "body": "Kung dalawa o higit pa ang graphics card mo, buksan ito para ikalat ang mga layer sa kanila. Awtomatikong sumusunod sa switch na ito ang mga modelong nakaset sa Manahin."
+    },
+    "civitai": {
+      "title": "Dito nakatira ang CivitAI token mo",
+      "body": "Mag-save ng API token para ma-unlock ang pag-download ng mga restricted at early-access na file sa LoRA browser. Pwede mo itong palitan o alisin anumang oras."
+    }
+  },
+  "hfBrowser": {
+    "panel": {
+      "title": "Ang personal mong fit report",
+      "body": "Lahat dito ay naka-size sa machine na ito: sinasabi ng verdict sa itaas kung tatakbo ang model at kung gaano kaginhawa. Baguhin ang kahit anong setting at agad nag-a-update ang verdict."
+    },
+    "quant": {
+      "title": "Pumili ng quantization",
+      "body": "Mas maliit na quants, mas kaunting memory ang gamit pero may kaunting nawawalang kalidad. Sinasabi sa iyo ng score sa tabi ng bawat file kung gaano ito kabagay sa hardware mo."
+    },
+    "context": {
+      "title": "May bayad ding memory ang konteksto",
+      "body": "Hindi lang ang model file ang buong kwento: kailangan din ng espasyo ng bawat token ng konteksto. Ipinapakita ng slider na ito kung hanggang saan mo kaya sa makina mo."
+    },
+    "offload": {
+      "title": "Saan dapat tumakbo ang modelo?",
+      "body": "Ang Auto na ang pipili para sa iyo. GPU ang pinakamabilis kung kasya, CPU ang mabagal-pero-siguradong ruta, at ang Mixed ang hatian ng dalawa. Pwede mo itong palitan mamaya sa model editor."
+    },
+    "kvLocation": {
+      "title": "Saan nakatira ang cache ng usapan",
+      "body": "Pinakamabilis kapag nasa VRAM ang KV cache. Ang pagtulak nito sa RAM ay nagpapalaya sa GPU mo para sa mas maraming layer kapag masikip na."
+    }
+  },
+  "groupChatDetail": {
+    "title": {
+      "title": "Nasa likod ng pangalan ang mga setting ng grupo",
+      "body": "I-tap ang pangalan ng grupo para pamahalaan ang mga kalahok, piliin kung paano pipiliin ang susunod na magsasalita, at i-mute ang mga karakter na gusto mong magpahinga muna."
+    },
+    "participants": {
+      "title": "Lahat ng nasa kwarto",
+      "body": "Ito ang mga karakter sa grupong ito. I-tap para magdagdag, mag-alis, o baguhin ang pagkakasunod ng mga kasali sa usapan."
+    },
+    "memory": {
+      "title": "Sabay-sabay na nakakaalala ang grupo",
+      "body": "Ang mga memorya ng grupo ay hati ng buong usapan. I-tap ang utak para makita, i-pin, o linisin ang alam ng grupo."
+    },
+    "composer": {
+      "title": "Magsabi ng kahit ano",
+      "body": "I-type ang mensahe mo dito. Kung sino ang susunod na sasagot, depende sa speaker selection na pinili mo sa mga setting ng grupo."
+    }
+  },
+  "dynamicMemory": {
+    "enable": {
+      "title": "Buksan ang dynamic memory",
+      "body": "Kapag naka-enable, tahimik na kinukuha ng app ang mahahalagang detalye mula sa mga chat mo at inaalala ang mga ito mamaya, para tandaan ng mga karakter ang mahalaga."
+    },
+    "mode": {
+      "title": "Piliin kung gaano kalaking kontrol ang gusto mo",
+      "body": "Ang Awtomatiko ay nagpapatakbo ng mga update sa memory sa background, ang Magtanong Muna ay nagtatanong sa iyo bago mag-save, at ang Manwal ay ipinauubaya ang lahat sa iyo."
+    },
+    "preset": {
+      "title": "Ang mga profile na ang bahala sa tuning",
+      "body": "Pumili ng profile para maiset ang decay, mga budget, at mga threshold nang sabay-sabay. Pwede mong i-fine-tune ang lahat sa ilalim ng advanced settings."
+    },
+    "embedding": {
+      "title": "Pinapatakbo ng maliit na lokal na modelo",
+      "body": "Gumagana ang recall gamit ang mga embedding na kinakalkula sa device mo. Pinamamahalaan ng section na ito ang bersyon ng embedding model at ang mga setting nito."
+    }
+  },
+  "imageGeneration": {
+    "playground": {
+      "title": "Mag-eksperimento sa Playground",
+      "body": "Malayang gumawa ng mga imahe gamit ang mga prompt, model setting, at LoRA. Ito ang pinakamagandang lugar para subukan ang isang model bago ito ikabit sa mga chat."
+    },
+    "engine": {
+      "title": "Sa engine na ito tumatakbo ang mga lokal na imahe"
+    },
+    "avatar": {
+      "title": "Mula sa model na ito ang mga avatar",
+      "body": "Ang paggawa ng profile image mula sa avatar picker ay gumagamit ng model na nakaset dito. I-off ang toggle para itago ang avatar generation kahit saan."
+    },
+    "scene": {
+      "title": "Mula naman dito ang mga scene",
+      "body": "Ang mga scene image na binuo mula sa konteksto ng usapan ay gumagamit ng model na ito. Hindi kailangang pareho ito sa avatar model mo."
+    },
+    "prompting": {
+      "title": "Paano isinusulat ang mga scene prompt",
+      "body": "Ginagawang image prompt ng scene writer ang usapan. Piliin kung awtomatikong gagawa ng mga scene, magtatanong muna sa iyo, o maghihintay ng manwal na request."
+    }
+  },
+  "playground": {
+    "prompt": {
+      "title": "Ilarawan ang imahe"
+    },
+    "generate": {
+      "title": "Mag-generate kapag handa ka na",
+      "body": "Isang tap lang para simulan ang generation. Gumagana rin ang pagpindot ng Ctrl+Enter mula sa prompt box."
+    },
+    "feed": {
+      "title": "Sa feed dumadating ang mga resulta",
+      "body": "Lumalabas dito ang bawat generation kasama ang mga setting nito. Gamitin ulit ang seed, mag-regenerate, mag-upscale, o ibalik ang isang imahe bilang starting point."
+    },
+    "model": {
+      "title": "Piliin muna ang model",
+      "body": "Pumili ng kahit anong image model na na-set up mo, lokal man o cloud. Umaangkop ang mga setting sa ibaba sa kung ano ang suportado ng model."
+    },
+    "loras": {
+      "title": "Magpatong ng mga LoRA",
+      "body": "Nagdadagdag ang mga LoRA ng mga istilo at karakter sa isang lokal na model. Magdagdag ng isa o higit pa at i-tune ang lakas ng bawat isa."
+    }
+  },
+  "loraLibrary": {
+    "tabs": {
+      "title": "Library at Browse",
+      "body": "Ipinapakita ng Library ang mga LoRA na naka-install sa device na ito. Naghahanap ang Browse sa CivitAI kapag gusto mo pa ng iba."
+    },
+    "import": {
+      "title": "Dalhin ang sarili mong mga file",
+      "body": "May mga LoRA file ka na ba sa disk? I-import ang mga ito dito at sasali sila sa library mo."
+    },
+    "installed": {
+      "title": "Pamahalaan ang mga naka-install",
+      "body": "Iniingatan ng bawat LoRA ang mga trigger keyword nito dito. Kunin ang mga ito mula sa CivitAI, i-edit, o burahin ang mga file na hindi mo na kailangan."
+    },
+    "browse": {
+      "title": "Tumuklas pa sa CivitAI",
+      "body": "Lumipat sa Browse para maghanap sa CivitAI at mag-download ng mga LoRA diretso sa library mo."
+    }
+  },
+  "civitaiBrowse": {
+    "search": {
+      "title": "Hanapin ang buong CivitAI",
+      "body": "Mag-type para makahanap ng mga LoRA ayon sa pangalan o keyword. Nag-a-update ang mga resulta habang naghahanap ka."
+    },
+    "sort": {
+      "title": "Ayusin ang mga resulta",
+      "body": "Pagsunod-sunurin ayon sa rating, mga download, o pinakabago, at piliin ang time period na mahalaga sa iyo."
+    },
+    "filters": {
+      "title": "Itugma sa base model mo",
+      "body": "Gumagana lang ang isang LoRA sa model family na pinagsanayan nito. Mag-filter ayon sa base model para talagang bagay ang mga download sa setup mo."
+    },
+    "token": {
+      "title": "May mga file na nangangailangan ng token",
+      "body": "Ang mga restricted at early-access na file ay nada-download lang gamit ang CivitAI API token. Idagdag ang sa iyo dito, libre ang paggawa ng isa sa civitai.com."
+    },
+    "results": {
+      "title": "I-download diretso sa library mo",
+      "body": "Buksan ang isang resulta para pumili ng bersyon at file. Diretsong dumarating ang mga download sa library mo, handa nang gamitin sa Playground."
+    }
+  },
+  "sdEngine": {
+    "installed": {
+      "title": "Dito nakatira ang mga engine build",
+      "body": "Ipinapakita ng bawat naka-install na build ang bersyon at backend nito. Pwede kang magtabi ng ilan at magpalit ng aktibo anumang oras."
+    },
+    "install": {
+      "title": "Mag-install ng build para sa hardware mo",
+      "body": "Pumili ng bersyon at variant. Nade-detect ang GPU mo at paunang napipili ang pinakabagay na compatible na build, kaya kadalasang tama na ang default."
+    },
+    "upscaler": {
+      "title": "Isang maliit na model para sa upscaling",
+      "body": "Ang ESRGAN model na ito ang nagpapatakbo ng Upscale action at ng high-resolution pass. I-install ito nang isang beses at kalimutan na."
+    }
+  }
+}

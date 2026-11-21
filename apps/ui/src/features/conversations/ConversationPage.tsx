@@ -844,7 +844,7 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
             onEndSwap={() => setSwap(false)}
             onRetryMemory={retryMemory}
           />
-          <div>
+          <div data-tour-id={isGroup ? "group-chat-composer" : undefined}>
             <ChatComposer
               api={api}
               conversationId={conversationId}

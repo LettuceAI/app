@@ -1,0 +1,249 @@
+{
+  "stepCounter": "Step {{current}} of {{total}}",
+  "skipTour": "Skip tour",
+  "next": "Next",
+  "gotIt": "Got it",
+  "appShell": {
+    "chats": {
+      "title": "This is where your chats live",
+      "body": "All your one-on-one conversations with characters hang out here. Jump back in anytime and we'll keep your place."
+    },
+    "groups": {
+      "title": "Hang out in group chats",
+      "body": "Bring multiple characters into the same room and watch them talk to each other, or jump in yourself whenever you feel like it."
+    },
+    "discover": {
+      "title": "Find new characters to meet",
+      "body": "Browse what the community has shared and pull in any character that catches your eye. New favorites are one tap away."
+    },
+    "library": {
+      "title": "Your personal library",
+      "body": "Everything you've made or saved lives here: characters, personas, prompts, the works. Think of it as your stash."
+    },
+    "settings": {
+      "title": "Make it yours",
+      "body": "Swap providers, pick different models, tweak how the app looks. Pretty much everything is adjustable from settings."
+    },
+    "search": {
+      "title": "Find a chat or character",
+      "body": "Use search to filter the list you’re viewing."
+    },
+    "create": {
+      "title": "And finally, create!",
+      "body": "Tap the plus whenever inspiration strikes. Spin up a new character, persona, or start something from scratch."
+    }
+  },
+  "speechRecognition": {
+    "activeModel": {
+      "title": "Pick a Whisper model",
+      "body": "Open the model picker to download a model, then select it for dictation."
+    },
+    "library": {
+      "title": "Shape what Whisper hears",
+      "body": "Use Vocabulary for names and uncommon words. Corrections and Examples help it recognize recurring phrases."
+    },
+    "micTest": {
+      "title": "Try it before you commit",
+      "body": "Record a short clip and run it through the active model with your vocabulary and corrections applied. Great for sanity-checking changes."
+    },
+    "runtime": {
+      "title": "Runtime and library tools",
+      "body": "Toggle GPU acceleration, keep the model warm between runs, and import or export your full library as JSON."
+    }
+  },
+  "editModelLlama": {
+    "context": {
+      "title": "Pick how much context to use",
+      "body": "Bigger context means longer memory in the conversation, but it eats VRAM fast. Auto sizes it from your hardware, and you can always dial it in yourself."
+    },
+    "gpu": {
+      "title": "This is where GPU offload lives",
+      "body": "Auto plans layers from your free VRAM. With more than one GPU you can split the model across cards here, or follow the global default from settings."
+    },
+    "report": {
+      "title": "Check the memory estimate",
+      "body": "See how much RAM and VRAM this model and its context are expected to use. The estimate updates when you change the settings."
+    }
+  },
+  "runtimeDefaults": {
+    "storage": {
+      "title": "Your models live here",
+      "body": "This folder holds every downloaded model file. You can move it to another drive whenever you're running out of space."
+    },
+    "llama": {
+      "title": "Defaults for every local model",
+      "body": "Context, KV cache, and GPU behavior set here apply to all local models. Any model can override them from its own editor."
+    },
+    "multiGpu": {
+      "title": "Split models across GPUs",
+      "body": "With two or more graphics cards, turn this on to spread layers across them. Models set to Inherit follow this switch automatically."
+    },
+    "civitai": {
+      "title": "Your CivitAI token lives here",
+      "body": "Save an API token to unlock restricted and early-access downloads in the LoRA browser. You can replace or remove it anytime."
+    }
+  },
+  "hfBrowser": {
+    "panel": {
+      "title": "Your personal fit report",
+      "body": "Everything here is sized to this machine: the verdict up top says whether the model will run, and how comfortably. Change any setting and the verdict updates live."
+    },
+    "tabs": {
+      "title": "Model info and downloads",
+      "body": "Info shows the model card. Download lists files and shows how the selected file fits your device when a fit report is available."
+    },
+    "quant": {
+      "title": "Pick a quantization",
+      "body": "Smaller quants use less memory but lose a little quality. The score next to each file tells you how well it fits your hardware."
+    },
+    "context": {
+      "title": "Context costs memory too",
+      "body": "The model file isn't the whole story: every token of context needs room as well. This slider shows how far you can push it on your machine."
+    },
+    "offload": {
+      "title": "Where should the model run?",
+      "body": "Auto picks for you. GPU is fastest if it fits, CPU is the slow-but-safe route, and Mixed splits the difference. You can change this later in the model editor."
+    },
+    "kvLocation": {
+      "title": "Where the conversation cache lives",
+      "body": "Keeping the KV cache in VRAM is fastest. Pushing it to RAM frees your GPU for more layers when things get tight."
+    }
+  },
+  "groupChatDetail": {
+    "title": {
+      "title": "Group settings live behind the name",
+      "body": "Tap the group name to manage participants, choose how the next speaker is picked, and mute characters you want to sit out."
+    },
+    "participants": {
+      "title": "Everyone in the room",
+      "body": "These are the characters in this group. Tap to add, remove, or reorder who's part of the conversation."
+    },
+    "memory": {
+      "title": "The group remembers together",
+      "body": "Group memories are shared across the whole conversation. Tap the brain to see, pin, or clean up what the group knows."
+    },
+    "composer": {
+      "title": "Say something",
+      "body": "Type your message here. Who answers next depends on the speaker selection you picked in group settings."
+    }
+  },
+  "dynamicMemory": {
+    "enable": {
+      "title": "Turn on dynamic memory",
+      "body": "When enabled, the app quietly extracts important facts from your chats and recalls them later, so characters remember what matters."
+    },
+    "mode": {
+      "title": "Choose how much control you want",
+      "body": "Auto runs memory updates in the background, Ask First checks with you before saving, and Manual leaves it all to you."
+    },
+    "preset": {
+      "title": "Profiles set the tuning",
+      "body": "Pick a profile to set decay, budgets, and thresholds in one go. You can fine-tune everything under advanced settings."
+    },
+    "embedding": {
+      "title": "Powered by a small local model",
+      "body": "Recall works through embeddings computed on your device. This section manages the embedding model version and its settings."
+    }
+  },
+  "imageGeneration": {
+    "playground": {
+      "title": "Experiment in the Playground",
+      "body": "Generate images freely with prompts, model settings, and LoRAs. It's the best place to test a model before wiring it into chats."
+    },
+    "engine": {
+      "title": "Local images run on this engine",
+      "body": "Open the engine page to install or switch builds, or check which backend is active."
+    },
+    "avatar": {
+      "title": "Avatars come from this model",
+      "body": "Generating a profile image from the avatar picker uses the model set here. Turn the toggle off to hide avatar generation everywhere."
+    },
+    "scene": {
+      "title": "Scenes come from this one",
+      "body": "Scene images built from conversation context use this model. It doesn't have to match your avatar model."
+    },
+    "prompting": {
+      "title": "How scene prompts get written",
+      "body": "The scene writer turns the conversation into an image prompt. Pick whether scenes generate automatically, ask you first, or wait for a manual request."
+    }
+  },
+  "playground": {
+    "prompt": {
+      "title": "Describe the image",
+      "body": "Write what you want to see in the prompt editor. When the model supports it, you can also add a negative prompt or a starting image."
+    },
+    "generate": {
+      "title": "Generate when ready",
+      "body": "One tap starts the generation. Pressing Ctrl+Enter from the prompt box works too."
+    },
+    "feed": {
+      "title": "Results land in the feed",
+      "body": "Every generation appears here with its settings. Reuse a seed, regenerate, upscale, or send an image back as a starting point."
+    },
+    "model": {
+      "title": "Pick the model first",
+      "body": "Choose any image model you've set up, local or cloud. The settings below adapt to what the model supports."
+    },
+    "loras": {
+      "title": "Stack LoRAs on top",
+      "body": "LoRAs add styles and characters to a local model. Add one or more and tune each one's strength."
+    }
+  },
+  "loraLibrary": {
+    "tabs": {
+      "title": "Library and Browse",
+      "body": "Library shows the LoRAs installed on this device. Browse searches CivitAI when you want more."
+    },
+    "import": {
+      "title": "Bring your own files",
+      "body": "Already have LoRA files on disk? Import them here and they'll join your library."
+    },
+    "installed": {
+      "title": "Manage what's installed",
+      "body": "Each LoRA keeps its trigger keywords here. Fetch them from CivitAI, edit them, or delete files you no longer need."
+    },
+    "browse": {
+      "title": "Discover more on CivitAI",
+      "body": "Switch to Browse to search CivitAI and download LoRAs straight into your library."
+    }
+  },
+  "civitaiBrowse": {
+    "search": {
+      "title": "Search all of CivitAI",
+      "body": "Type to find LoRAs by name or keyword. Results update as you search."
+    },
+    "sort": {
+      "title": "Sort the results",
+      "body": "Order by rating, downloads, or newest, and pick the time period that matters."
+    },
+    "filters": {
+      "title": "Match your base model",
+      "body": "A LoRA only works with the model family it was trained for. Filter by base model so downloads actually fit your setup."
+    },
+    "token": {
+      "title": "Some files need a token",
+      "body": "Restricted and early-access files only download with a CivitAI API token. Add yours here; creating one on civitai.com is free."
+    },
+    "results": {
+      "title": "Download into your library",
+      "body": "Open a result to pick a version and file. Downloads land straight in your library, ready to use in the Playground."
+    }
+  },
+  "sdEngine": {
+    "installed": {
+      "title": "Engine builds live here",
+      "body": "Each installed build shows its version and backend. You can keep several around and switch the active one anytime."
+    },
+    "install": {
+      "title": "Install a build for your hardware",
+      "body": "Pick a version and variant. Your GPU is detected and the best compatible build gets preselected, so the default is usually right."
+    },
+    "upscaler": {
+      "title": "One small model for upscaling",
+      "body": "This ESRGAN model powers the Upscale action and the high-resolution pass. Install it once and forget about it."
+    }
+  },
+  "reset": "Reset guided tours",
+  "resetDescription": "Show tours again the next time you visit their screens.",
+  "resetDone": "Guided tours reset."
+}

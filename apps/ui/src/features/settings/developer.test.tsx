@@ -54,6 +54,17 @@ async function mount(path: string, developer: boolean, calls: MockCallHandlers =
 }
 
 describe("developer mode", () => {
+  it("resets completed tours while preserving other dismissed hints", async () => {
+    const state = { onboarding: { completed: true }, tooltips: { app_tour_v1: true, dynamic_memory_tour_v1: true, anotherHint: true } };
+    const update = vi.fn((request: { patch: Record<string, unknown> }) => ok({ state: { ...state, ...request.patch } }));
+    await mount("/settings/developer", true, {
+      appStatus: () => ok({ ...mockAppStatus, ui_state: state }),
+      appUiStateUpdate: update,
+    });
+    fireEvent.click(await row("Reset guided tours"));
+    await waitFor(() => expect(update).toHaveBeenCalledExactlyOnceWith({ patch: { tooltips: { anotherHint: true } } }));
+  });
+
   it("hides the Developer section while developer mode is off", async () => {
     await mount("/settings", false);
     await screen.findByText("Intelligence");

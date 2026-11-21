@@ -1,0 +1,233 @@
+{
+  "stepCounter": "Krok {{current}} z {{total}}",
+  "skipTour": "Pomiń przewodnik",
+  "next": "Dalej",
+  "gotIt": "Rozumiem",
+  "appShell": {
+    "chats": {
+      "title": "Tu mieszkają Twoje czaty",
+      "body": "Wszystkie Twoje rozmowy jeden na jeden z postaciami są tutaj. Wróć kiedy chcesz, a zachowamy Twoje miejsce."
+    },
+    "groups": {
+      "title": "Czaty grupowe",
+      "body": "Zbierz wiele postaci w jednym pokoju i obserwuj, jak rozmawiają, lub dołącz sam, kiedy masz ochotę."
+    },
+    "discover": {
+      "title": "Odkryj nowe postacie",
+      "body": "Przeglądaj to, czym podzieliła się społeczność, i dodaj dowolną postać, która Ci się spodoba. Nowi ulubieńcy na wyciągnięcie ręki."
+    },
+    "library": {
+      "title": "Twoja osobista biblioteka",
+      "body": "Wszystko, co stworzyłeś lub zapisałeś, jest tutaj: postacie, persony, prompty, wszystko. Pomyśl o tym jak o swojej kolekcji."
+    },
+    "settings": {
+      "title": "Dostosuj do siebie",
+      "body": "Zmieniaj dostawców, wybieraj modele, dostosowuj wygląd. Praktycznie wszystko można konfigurować w ustawieniach."
+    },
+    "search": {
+      "title": "Znajdź cokolwiek, szybko"
+    },
+    "create": {
+      "title": "I na koniec, twórz!",
+      "body": "Stuknij plus, gdy przyjdzie inspiracja. Stwórz nową postać, personę lub zacznij coś od zera."
+    }
+  },
+  "speechRecognition": {
+    "activeModel": {
+      "title": "Wybierz model Whisper"
+    },
+    "library": {
+      "title": "Kształtuj to, co słyszy Whisper"
+    },
+    "micTest": {
+      "title": "Wypróbuj przed zatwierdzeniem",
+      "body": "Nagraj krótki klip i przepuść go przez aktywny model z zastosowaniem Twojego słownictwa i korekt. Świetne do sprawdzania zmian."
+    },
+    "runtime": {
+      "title": "Narzędzia czasu wykonania i biblioteki",
+      "body": "Przełącz akcelerację GPU, utrzymuj model w gotowości między uruchomieniami i importuj lub eksportuj całą bibliotekę jako JSON."
+    }
+  },
+  "editModelLlama": {
+    "context": {
+      "title": "Wybierz, ile kontekstu użyć",
+      "body": "Większy kontekst to dłuższa pamięć rozmowy, ale szybko zjada VRAM. Auto dobiera rozmiar do Twojego sprzętu, a Ty zawsze możesz ustawić go samodzielnie."
+    },
+    "gpu": {
+      "title": "Tu mieszka odciążanie GPU",
+      "body": "Auto planuje warstwy na podstawie wolnego VRAM. Przy więcej niż jednym GPU możesz tu podzielić model między karty lub trzymać się globalnego domyślnego z ustawień."
+    }
+  },
+  "runtimeDefaults": {
+    "storage": {
+      "title": "Tu mieszkają Twoje modele",
+      "body": "Ten folder zawiera każdy pobrany plik modelu. Możesz go przenieść na inny dysk, gdy zabraknie Ci miejsca."
+    },
+    "llama": {
+      "title": "Domyślne dla każdego lokalnego modelu",
+      "body": "Kontekst, KV cache i zachowanie GPU ustawione tutaj dotyczą wszystkich lokalnych modeli. Każdy model może je nadpisać we własnym edytorze."
+    },
+    "multiGpu": {
+      "title": "Podziel modele między GPU",
+      "body": "Przy dwóch lub więcej kartach graficznych włącz to, aby rozłożyć warstwy między nie. Modele ustawione na Dziedzicz automatycznie podążają za tym przełącznikiem."
+    },
+    "civitai": {
+      "title": "Tu mieszka Twój token CivitAI",
+      "body": "Zapisz token API, aby odblokować pobieranie plików z ograniczeniami i wczesnym dostępem w przeglądarce LoRA. Możesz go w każdej chwili podmienić lub usunąć."
+    }
+  },
+  "hfBrowser": {
+    "panel": {
+      "title": "Twój osobisty raport dopasowania",
+      "body": "Wszystko tutaj jest dopasowane do tej maszyny: werdykt u góry mówi, czy model zadziała i jak płynnie. Zmień dowolne ustawienie, a werdykt zaktualizuje się na żywo."
+    },
+    "quant": {
+      "title": "Wybierz kwantyzację",
+      "body": "Mniejsze kwanty zużywają mniej pamięci, ale tracą odrobinę jakości. Wynik obok każdego pliku mówi, jak dobrze pasuje do Twojego sprzętu."
+    },
+    "context": {
+      "title": "Kontekst też kosztuje pamięć",
+      "body": "Plik modelu to nie wszystko: każdy token kontekstu też potrzebuje miejsca. Ten suwak pokazuje, jak daleko możesz się posunąć na swojej maszynie."
+    },
+    "offload": {
+      "title": "Gdzie ma działać model?",
+      "body": "Auto wybiera za Ciebie. GPU jest najszybsze, jeśli model się mieści, CPU to wolna, ale bezpieczna droga, a Mieszany jest pośrodku. Możesz to później zmienić w edytorze modelu."
+    },
+    "kvLocation": {
+      "title": "Gdzie mieszka pamięć podręczna rozmowy",
+      "body": "Trzymanie KV cache w VRAM jest najszybsze. Przeniesienie go do RAM zwalnia GPU na więcej warstw, gdy robi się ciasno."
+    }
+  },
+  "groupChatDetail": {
+    "title": {
+      "title": "Ustawienia grupy kryją się za nazwą",
+      "body": "Stuknij nazwę grupy, aby zarządzać uczestnikami, wybrać sposób wyboru następnego mówcy i wyciszyć postacie, które mają zrobić sobie przerwę."
+    },
+    "participants": {
+      "title": "Wszyscy w pokoju",
+      "body": "To są postacie w tej grupie. Stuknij, aby dodać, usunąć lub zmienić kolejność uczestników rozmowy."
+    },
+    "memory": {
+      "title": "Grupa pamięta razem",
+      "body": "Wspomnienia grupy są współdzielone w całej rozmowie. Stuknij mózg, aby zobaczyć, przypiąć lub uporządkować to, co grupa wie."
+    },
+    "composer": {
+      "title": "Powiedz coś",
+      "body": "Wpisz tutaj swoją wiadomość. Kto odpowie następny, zależy od wyboru mówcy ustawionego w ustawieniach grupy."
+    }
+  },
+  "dynamicMemory": {
+    "enable": {
+      "title": "Włącz pamięć dynamiczną",
+      "body": "Po włączeniu aplikacja po cichu wyciąga ważne fakty z Twoich czatów i przywołuje je później, dzięki czemu postacie pamiętają to, co ważne."
+    },
+    "mode": {
+      "title": "Wybierz, ile kontroli chcesz mieć",
+      "body": "Automatycznie wykonuje aktualizacje pamięci w tle, Pytaj najpierw pyta Cię przed zapisaniem, a Ręcznie zostawia wszystko Tobie."
+    },
+    "preset": {
+      "title": "Profile ustawiają strojenie",
+      "body": "Wybierz profil, aby ustawić zanikanie, budżety i progi za jednym razem. Wszystko możesz dopracować w ustawieniach zaawansowanych."
+    },
+    "embedding": {
+      "title": "Napędzane małym lokalnym modelem",
+      "body": "Przywoływanie działa dzięki embeddingom obliczanym na Twoim urządzeniu. Ta sekcja zarządza wersją modelu embeddingów i jego ustawieniami."
+    }
+  },
+  "imageGeneration": {
+    "playground": {
+      "title": "Eksperymentuj w Playground",
+      "body": "Generuj obrazy swobodnie, z promptami, ustawieniami modelu i LoRA. To najlepsze miejsce, aby przetestować model, zanim podłączysz go do czatów."
+    },
+    "engine": {
+      "title": "Lokalne obrazy działają na tym silniku"
+    },
+    "avatar": {
+      "title": "Awatary pochodzą z tego modelu",
+      "body": "Generowanie obrazu profilowego z wyboru awatara używa modelu ustawionego tutaj. Wyłącz przełącznik, aby wszędzie ukryć generowanie awatarów."
+    },
+    "scene": {
+      "title": "Sceny pochodzą z tego",
+      "body": "Obrazy scen budowane z kontekstu rozmowy używają tego modelu. Nie musi być taki sam jak Twój model awatarów."
+    },
+    "prompting": {
+      "title": "Jak powstają prompty scen",
+      "body": "Autor scen zamienia rozmowę w prompt obrazu. Wybierz, czy sceny generują się automatycznie, najpierw pytają, czy czekają na ręczne żądanie."
+    }
+  },
+  "playground": {
+    "prompt": {
+      "title": "Opisz obraz"
+    },
+    "generate": {
+      "title": "Generuj, gdy będziesz gotowy",
+      "body": "Jedno stuknięcie rozpoczyna generowanie. Działa też naciśnięcie Ctrl+Enter w polu promptu."
+    },
+    "feed": {
+      "title": "Wyniki trafiają do kanału",
+      "body": "Każda generacja pojawia się tutaj wraz ze swoimi ustawieniami. Użyj ponownie seeda, wygeneruj od nowa, zrób upscale lub odeślij obraz jako punkt wyjścia."
+    },
+    "model": {
+      "title": "Najpierw wybierz model",
+      "body": "Wybierz dowolny skonfigurowany model obrazów, lokalny lub chmurowy. Ustawienia poniżej dostosowują się do tego, co model obsługuje."
+    },
+    "loras": {
+      "title": "Nałóż na to LoRA",
+      "body": "LoRA dodają style i postacie do lokalnego modelu. Dodaj jeden lub więcej i dostrój siłę każdego z nich."
+    }
+  },
+  "loraLibrary": {
+    "tabs": {
+      "title": "Biblioteka i Przeglądaj",
+      "body": "Biblioteka pokazuje LoRA zainstalowane na tym urządzeniu. Przeglądaj przeszukuje CivitAI, gdy chcesz więcej."
+    },
+    "import": {
+      "title": "Przynieś własne pliki",
+      "body": "Masz już pliki LoRA na dysku? Zaimportuj je tutaj, a dołączą do Twojej biblioteki."
+    },
+    "installed": {
+      "title": "Zarządzaj tym, co zainstalowane",
+      "body": "Każdy LoRA trzyma tutaj swoje słowa kluczowe wyzwalające. Pobierz je z CivitAI, edytuj lub usuń pliki, których już nie potrzebujesz."
+    },
+    "browse": {
+      "title": "Odkryj więcej na CivitAI",
+      "body": "Przełącz na Przeglądaj, aby przeszukać CivitAI i pobierać LoRA prosto do swojej biblioteki."
+    }
+  },
+  "civitaiBrowse": {
+    "search": {
+      "title": "Przeszukaj całe CivitAI",
+      "body": "Pisz, aby znaleźć LoRA po nazwie lub słowie kluczowym. Wyniki aktualizują się w trakcie wyszukiwania."
+    },
+    "sort": {
+      "title": "Sortuj wyniki",
+      "body": "Uporządkuj według oceny, pobrań lub najnowszych i wybierz okres, który Cię interesuje."
+    },
+    "filters": {
+      "title": "Dopasuj do swojego modelu bazowego",
+      "body": "LoRA działa tylko z rodziną modeli, dla której został wytrenowany. Filtruj po modelu bazowym, aby pobrania naprawdę pasowały do Twojej konfiguracji."
+    },
+    "token": {
+      "title": "Niektóre pliki wymagają tokenu",
+      "body": "Pliki z ograniczeniami i wczesnym dostępem pobiorą się tylko z tokenem API CivitAI. Dodaj swój tutaj; utworzenie go na civitai.com jest darmowe."
+    },
+    "results": {
+      "title": "Pobieraj do swojej biblioteki",
+      "body": "Otwórz wynik, aby wybrać wersję i plik. Pobrania trafiają prosto do Twojej biblioteki, gotowe do użycia w Playground."
+    }
+  },
+  "sdEngine": {
+    "installed": {
+      "title": "Tu mieszkają buildy silnika",
+      "body": "Każdy zainstalowany build pokazuje swoją wersję i backend. Możesz trzymać ich kilka i w każdej chwili przełączać aktywny."
+    },
+    "install": {
+      "title": "Zainstaluj build dla swojego sprzętu",
+      "body": "Wybierz wersję i wariant. Twoje GPU jest wykrywane, a najlepszy zgodny build zostaje wstępnie wybrany, więc domyślny zwykle jest właściwy."
+    },
+    "upscaler": {
+      "title": "Jeden mały model do upscalingu",
+      "body": "Ten model ESRGAN napędza akcję Upscale i przebieg wysokiej rozdzielczości. Zainstaluj go raz i zapomnij o nim."
+    }
+  }
+}

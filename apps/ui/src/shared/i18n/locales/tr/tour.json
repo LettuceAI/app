@@ -1,0 +1,249 @@
+{
+  "stepCounter": "Adım {{current}} / {{total}}",
+  "skipTour": "Turu atla",
+  "next": "İleri",
+  "gotIt": "Anladım",
+  "appShell": {
+    "chats": {
+      "title": "Sohbetlerin burada",
+      "body": "Karakterlerle olan tüm bireysel konuşmaların burada. İstediğin zaman geri dön, yerini saklarız."
+    },
+    "groups": {
+      "title": "Grup sohbetleri",
+      "body": "Birden fazla karakteri aynı odada topla ve sohbet etmelerini izle ya da istediğin zaman katıl."
+    },
+    "discover": {
+      "title": "Yeni karakterler keşfet",
+      "body": "Topluluğun paylaştıklarını keşfet ve ilgini çeken herhangi bir karakteri ekle. Yeni favoriler bir dokunuş uzağında."
+    },
+    "library": {
+      "title": "Kişisel kütüphanen",
+      "body": "Oluşturduğun veya kaydettiğin her şey burada: karakterler, personalar, promptlar, her şey. Koleksiyonun gibi düşün."
+    },
+    "settings": {
+      "title": "Kişiselleştir",
+      "body": "Sağlayıcıları değiştir, farklı modeller seç, görünümü ayarla. Hemen hemen her şey ayarlardan yapılandırılabilir."
+    },
+    "search": {
+      "title": "Sohbet ya da karakter bul",
+      "body": "Aramayla açık olan listeyi filtreleyebilirsin."
+    },
+    "create": {
+      "title": "Ve son olarak, oluştur!",
+      "body": "İlham geldiğinde artı butonuna dokun. Yeni bir karakter, persona oluştur veya sıfırdan bir şey başlat."
+    }
+  },
+  "speechRecognition": {
+    "activeModel": {
+      "title": "Whisper modeli seç",
+      "body": "Bir model indirmek için model seçiciyi aç, ardından dikte için o modeli seç."
+    },
+    "library": {
+      "title": "Whisper’ın duyduklarını iyileştir",
+      "body": "Adları ve az kullanılan sözcükleri Sözlük’e ekle. Düzeltmeler ve Örnekler, tekrar eden ifadelerin tanınmasına yardımcı olur."
+    },
+    "micTest": {
+      "title": "Onaylamadan önce deneyin",
+      "body": "Kısa bir klip kaydedin ve sözlüğünüz ile düzeltmeleriniz uygulanmış halde aktif model üzerinden çalıştırın. Değişiklikleri kontrol etmek için idealdir."
+    },
+    "runtime": {
+      "title": "Çalışma zamanı ve kütüphane araçları",
+      "body": "GPU hızlandırmasını açıp kapatın, modelin çalıştırmalar arasında sıcak kalmasını sağlayın ve tüm kütüphanenizi JSON olarak içe veya dışa aktarın."
+    }
+  },
+  "editModelLlama": {
+    "context": {
+      "title": "Ne kadar bağlam kullanacağını seç",
+      "body": "Daha büyük bağlam, konuşmada daha uzun hafıza demek ama VRAM'i hızla tüketir. Otomatik, donanımına göre boyutlandırır; istersen kendin de ayarlayabilirsin."
+    },
+    "gpu": {
+      "title": "GPU'ya yük boşaltma burada",
+      "body": "Otomatik, boş VRAM'ine göre katmanları planlar. Birden fazla GPU'n varsa modeli buradan kartlara bölebilir ya da ayarlardaki genel varsayılanı takip edebilirsin."
+    },
+    "report": {
+      "title": "Bellek tahminine bak",
+      "body": "Modelin ve bağlamının tahmini RAM ve VRAM kullanımını gör. Ayarları değiştirdiğinde tahmin güncellenir."
+    }
+  },
+  "runtimeDefaults": {
+    "storage": {
+      "title": "Modellerin burada yaşıyor",
+      "body": "Bu klasör indirilen tüm model dosyalarını barındırır. Alan azaldığında klasörü istediğin zaman başka bir diske taşıyabilirsin."
+    },
+    "llama": {
+      "title": "Tüm yerel modeller için varsayılanlar",
+      "body": "Burada ayarlanan bağlam, KV cache ve GPU davranışı tüm yerel modellere uygulanır. Her model bunları kendi düzenleyicisinden geçersiz kılabilir."
+    },
+    "multiGpu": {
+      "title": "Modelleri GPU'lar arasında böl",
+      "body": "İki veya daha fazla ekran kartın varsa, katmanları aralarında dağıtmak için bunu aç. Devral olarak ayarlanan modeller bu anahtarı otomatik takip eder."
+    },
+    "civitai": {
+      "title": "CivitAI anahtarın burada yaşıyor",
+      "body": "LoRA tarayıcısında kısıtlı ve erken erişim indirmelerinin kilidini açmak için bir API anahtarı kaydet. İstediğin zaman değiştirebilir veya kaldırabilirsin."
+    }
+  },
+  "hfBrowser": {
+    "panel": {
+      "title": "Sana özel uyumluluk raporu",
+      "body": "Buradaki her şey bu makineye göre hesaplanır: üstteki sonuç modelin çalışıp çalışmayacağını ve ne kadar rahat çalışacağını söyler. Herhangi bir ayarı değiştir, sonuç anında güncellenir."
+    },
+    "tabs": {
+      "title": "Model bilgileri ve indirmeler",
+      "body": "Bilgi sekmesinde model kartını, İndir sekmesinde dosyaları ve varsa seçili dosyanın cihazına uygunluk raporunu görürsün."
+    },
+    "quant": {
+      "title": "Bir kuantizasyon seç",
+      "body": "Daha küçük kuantizasyonlar daha az bellek kullanır ama biraz kalite kaybeder. Her dosyanın yanındaki puan, donanımına ne kadar uyduğunu söyler."
+    },
+    "context": {
+      "title": "Bağlam da bellek harcar",
+      "body": "Model dosyası hikayenin tamamı değil: bağlamdaki her token da yer ister. Bu kaydırıcı, makinende ne kadar ileri gidebileceğini gösterir."
+    },
+    "offload": {
+      "title": "Model nerede çalışmalı?",
+      "body": "Otomatik senin yerine seçer. Sığıyorsa GPU en hızlısı, CPU yavaş ama güvenli yol, Karma ise ikisinin ortası. Bunu daha sonra model düzenleyicisinden değiştirebilirsin."
+    },
+    "kvLocation": {
+      "title": "Konuşma önbelleği nerede tutulur",
+      "body": "KV cache'i VRAM'de tutmak en hızlısı. RAM'e itmek, işler sıkıştığında GPU'nu daha fazla katman için serbest bırakır."
+    }
+  },
+  "groupChatDetail": {
+    "title": {
+      "title": "Grup ayarları ismin arkasında",
+      "body": "Katılımcıları yönetmek, sıradaki konuşmacının nasıl seçileceğini belirlemek ve dışarıda kalmasını istediğin karakterleri susturmak için grup adına dokun."
+    },
+    "participants": {
+      "title": "Odadaki herkes",
+      "body": "Bunlar bu gruptaki karakterler. Konuşmaya birini eklemek, çıkarmak veya sırayı değiştirmek için dokun."
+    },
+    "memory": {
+      "title": "Grup birlikte hatırlar",
+      "body": "Grup hafızaları tüm konuşma boyunca paylaşılır. Grubun ne bildiğini görmek, sabitlemek veya temizlemek için beyne dokun."
+    },
+    "composer": {
+      "title": "Bir şey söyle",
+      "body": "Mesajını buraya yaz. Sıradaki cevabı kimin vereceği, grup ayarlarında seçtiğin konuşmacı seçimine bağlı."
+    }
+  },
+  "dynamicMemory": {
+    "enable": {
+      "title": "Dinamik hafızayı aç",
+      "body": "Etkinleştirildiğinde uygulama, sohbetlerinden önemli bilgileri sessizce çıkarır ve daha sonra hatırlar; böylece karakterler önemli olanı unutmaz."
+    },
+    "mode": {
+      "title": "Ne kadar kontrol istediğini seç",
+      "body": "Otomatik hafıza güncellemelerini arka planda çalıştırır, Önce sor kaydetmeden önce sana danışır, Manuel ise her şeyi sana bırakır."
+    },
+    "preset": {
+      "title": "Profiller ince ayarı belirler",
+      "body": "Azalma, bütçe ve eşikleri tek seferde ayarlamak için bir profil seç. Gelişmiş ayarlardan her şeye ince ayar yapabilirsin."
+    },
+    "embedding": {
+      "title": "Küçük bir yerel modelle çalışır",
+      "body": "Hatırlama, cihazında hesaplanan embedding'ler üzerinden çalışır. Bu bölüm embedding modelinin sürümünü ve ayarlarını yönetir."
+    }
+  },
+  "imageGeneration": {
+    "playground": {
+      "title": "Playground'da deney yap",
+      "body": "Promptlar, model ayarları ve LoRA'larla özgürce görsel oluştur. Bir modeli sohbetlere bağlamadan önce denemek için en iyi yer burası."
+    },
+    "engine": {
+      "title": "Yerel görselleri bu motor üretir",
+      "body": "Motor sayfasından sürüm yükleyebilir, sürümler arasında geçiş yapabilir ve hangi arka ucun etkin olduğunu görebilirsin."
+    },
+    "avatar": {
+      "title": "Avatarlar bu modelden gelir",
+      "body": "Avatar seçicisinden profil görseli oluşturmak burada ayarlanan modeli kullanır. Avatar üretimini her yerden gizlemek için anahtarı kapat."
+    },
+    "scene": {
+      "title": "Sahneler ise bunu kullanır",
+      "body": "Konuşma bağlamından oluşturulan sahne görselleri bu modeli kullanır. Avatar modelinle aynı olmak zorunda değil."
+    },
+    "prompting": {
+      "title": "Sahne promptları nasıl yazılır",
+      "body": "Sahne yazarı konuşmayı bir görsel promptuna dönüştürür. Sahnelerin otomatik mi oluşturulacağını, önce sana mı sorulacağını yoksa manuel bir isteği mi bekleyeceğini seç."
+    }
+  },
+  "playground": {
+    "prompt": {
+      "title": "Görseli tarif et",
+      "body": "İstem düzenleyicisine görmek istediğini yaz. Model destekliyorsa negatif istem veya başlangıç görseli de ekleyebilirsin."
+    },
+    "generate": {
+      "title": "Hazır olunca oluştur",
+      "body": "Tek dokunuş üretimi başlatır. Prompt kutusundayken Ctrl+Enter'a basmak da işe yarar."
+    },
+    "feed": {
+      "title": "Sonuçlar akışa düşer",
+      "body": "Her üretim ayarlarıyla birlikte burada görünür. Bir seed'i yeniden kullan, tekrar oluştur, büyüt veya bir görseli başlangıç noktası olarak geri gönder."
+    },
+    "model": {
+      "title": "Önce modeli seç",
+      "body": "Kurduğun herhangi bir görsel modelini seç, yerel veya bulut. Aşağıdaki ayarlar modelin desteklediklerine uyum sağlar."
+    },
+    "loras": {
+      "title": "Üzerine LoRA'lar ekle",
+      "body": "LoRA'lar yerel bir modele stiller ve karakterler katar. Bir veya birkaç tane ekle ve her birinin gücünü ayarla."
+    }
+  },
+  "loraLibrary": {
+    "tabs": {
+      "title": "Kütüphane ve Göz At",
+      "body": "Kütüphane bu cihazda kurulu LoRA'ları gösterir. Daha fazlasını istediğinde Göz At CivitAI'de arama yapar."
+    },
+    "import": {
+      "title": "Kendi dosyalarını getir",
+      "body": "Diskte zaten LoRA dosyaların mı var? Buradan içe aktar, kütüphanene katılsınlar."
+    },
+    "installed": {
+      "title": "Kurulu olanları yönet",
+      "body": "Her LoRA, tetikleyici anahtar kelimelerini burada tutar. Onları CivitAI'den getir, düzenle veya artık ihtiyacın olmayan dosyaları sil."
+    },
+    "browse": {
+      "title": "CivitAI'de daha fazlasını keşfet",
+      "body": "CivitAI'de arama yapmak ve LoRA'ları doğrudan kütüphanene indirmek için Göz At'a geç."
+    }
+  },
+  "civitaiBrowse": {
+    "search": {
+      "title": "Tüm CivitAI'de ara",
+      "body": "LoRA'ları ada veya anahtar kelimeye göre bulmak için yaz. Sonuçlar sen aradıkça güncellenir."
+    },
+    "sort": {
+      "title": "Sonuçları sırala",
+      "body": "Puana, indirmeye veya en yeniye göre sırala ve önemsediğin zaman aralığını seç."
+    },
+    "filters": {
+      "title": "Temel modelinle eşleştir",
+      "body": "Bir LoRA yalnızca eğitildiği model ailesiyle çalışır. İndirdiklerin kurulumuna gerçekten uysun diye temel modele göre filtrele."
+    },
+    "token": {
+      "title": "Bazı dosyalar anahtar ister",
+      "body": "Kısıtlı ve erken erişim dosyaları yalnızca bir CivitAI API anahtarıyla iner. Anahtarını buraya ekle; civitai.com'da bir tane oluşturmak ücretsiz."
+    },
+    "results": {
+      "title": "Kütüphanene indir",
+      "body": "Bir sürüm ve dosya seçmek için bir sonucu aç. İndirmeler doğrudan kütüphanene düşer, Playground'da kullanıma hazır."
+    }
+  },
+  "sdEngine": {
+    "installed": {
+      "title": "Motor derlemeleri burada yaşıyor",
+      "body": "Kurulu her derleme, sürümünü ve arka ucunu gösterir. Birkaç tanesini elinde tutabilir ve etkin olanı istediğin zaman değiştirebilirsin."
+    },
+    "install": {
+      "title": "Donanımına uygun bir derleme kur",
+      "body": "Bir sürüm ve varyant seç. GPU'n algılanır ve en uyumlu derleme önceden seçilir, yani varsayılan genellikle doğrudur."
+    },
+    "upscaler": {
+      "title": "Büyütme için küçük bir model",
+      "body": "Bu ESRGAN modeli, Büyüt eylemini ve yüksek çözünürlük geçişini çalıştırır. Bir kez kur ve unut."
+    }
+  },
+  "reset": "Rehber turlarını sıfırla",
+  "resetDescription": "Turlar ilgili ekranları bir sonraki açışında yeniden gösterilir.",
+  "resetDone": "Rehber turları sıfırlandı."
+}

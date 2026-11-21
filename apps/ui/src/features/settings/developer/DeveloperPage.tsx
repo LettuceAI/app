@@ -4,17 +4,32 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ListGroup, ListRowButton, Page, Spinner, toast } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
+import { writeTourFlags } from "@/entities/guided-tour";
 import { useSettingsApi, useSettingsLayout } from "../data";
 import { runTemplate, templateIds, type TemplateId } from "./templates";
 
 export function DeveloperPage() {
   const { t } = useTranslation("settings");
   const { t: common } = useTranslation();
+  const { t: tour } = useTranslation("tour");
   const api = useSettingsApi();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { back } = useSettingsLayout();
   const [running, setRunning] = useState<TemplateId | null>(null);
+  const [resettingTours, setResettingTours] = useState(false);
+
+  const resetTours = async () => {
+    setResettingTours(true);
+    try {
+      await writeTourFlags(api, queryClient, "reset");
+      toast.success(tour("resetDone"));
+    } catch (error) {
+      toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`));
+    } finally {
+      setResettingTours(false);
+    }
+  };
 
   const run = async (id: TemplateId) => {
     if (running) return;
@@ -30,7 +45,10 @@ export function DeveloperPage() {
   };
 
   return (
-    <Page title={t("sections.developer.title")} {...back}>
+    <Page title={t("sections.developer.title")} {...back} contentClassName="space-y-6">
+      <ListGroup>
+        <ListRowButton title={tour("reset")} description={tour("resetDescription")} chevron={false} disabled={resettingTours} onClick={() => void resetTours()} />
+      </ListGroup>
       <ListGroup label={t("developer.group")}>
         {templateIds.map((id) => (
           <ListRowButton

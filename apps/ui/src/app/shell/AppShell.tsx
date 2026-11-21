@@ -21,6 +21,7 @@ import { ChatMenu, SidebarRecents, type ChatMenuTarget } from "@/features/home";
 import { BuiltInUpdateNotice, isSettingsSection, SidebarSettings, WhatsNewSheet } from "@/features/settings";
 import { LibraryCreateSheet } from "@/features/library";
 import { OpenedFiles, RestoredModelsSheet } from "@/features/opened-files";
+import { GuidedTours } from "@/entities/guided-tour";
 import { DownloadsMenu, DownloadsProvider } from "@/entities/download";
 import { useSidebarExpanded } from "./sidebarState";
 import { destinations, destinationOf, isPrimaryPage, type Destination } from "./navigation";
@@ -68,18 +69,18 @@ export function AppShell() {
   const chats = useChatNavigation();
   const [chatMenu, setChatMenu] = useState<ChatMenuTarget | null>(null);
   const first: NavDestination<Destination> = tabs
-    ? { id: "chats", label: t("navigation.chats"), icon: <MessageSquare size={icon.lg} /> }
-    : { id: "chats", label: t("navigation.home"), icon: <House size={icon.lg} /> };
+    ? { id: "chats", label: t("navigation.chats"), icon: <MessageSquare data-tour-id="nav-chats" size={icon.lg} /> }
+    : { id: "chats", label: t("navigation.home"), icon: <House data-tour-id="nav-chats" size={icon.lg} /> };
   const items: NavDestination<Destination>[] = [
     first,
-    { id: "groups", label: t("navigation.groups"), icon: <Users size={icon.lg} /> },
-    { id: "discover", label: t("navigation.discover"), icon: <Compass size={icon.lg} /> },
-    { id: "library", label: t("navigation.library"), icon: <Library size={icon.lg} /> },
+    { id: "groups", label: t("navigation.groups"), icon: <Users data-tour-id="nav-groups" size={icon.lg} /> },
+    { id: "discover", label: t("navigation.discover"), icon: <Compass data-tour-id="nav-discover" size={icon.lg} /> },
+    { id: "library", label: t("navigation.library"), icon: <Library data-tour-id="nav-library" size={icon.lg} /> },
   ];
   const settings: NavDestination<Destination> = {
     id: "settings",
     label: t("navigation.settings"),
-    icon: <Settings size={icon.lg} />,
+    icon: <Settings data-tour-id="top-settings" size={icon.lg} />,
   };
   const inSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const settingsMode = inSettings && !tabs && sidebarOnDetailPages;
@@ -217,6 +218,7 @@ export function AppShell() {
           <WhatsNewSheet />
           {!welcome && <BuiltInUpdateNotice api={api} />}
           <RestoredModelsSheet api={api} />
+          <GuidedTours key={pathname} api={api} pathname={pathname} mobile={mobile} status={status} />
           {controller &&
             desktop &&
             windowPlatform !== "macos" &&

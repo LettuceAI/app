@@ -101,7 +101,7 @@ export function SettingsPane({ choice, loading, failure, capabilities, draft, ba
 
   return (
     <div className="@container space-y-6">
-      <ListGroup label={t("settings.model")}>
+      <ListGroup data-tour-id="playground-model" label={t("settings.model")}>
         <ListRowButton
           icon={choice ? <ModelMark modelId={choice.model.external_model_id} providerKind={choice.account.provider_kind} name={choice.model.display_name} /> : undefined}
           title={choice?.model.display_name ?? t("settings.noModel")}

@@ -43,22 +43,22 @@ export function CivitaiView() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <SearchField className="min-w-0 flex-1 basis-56" value={input} onChange={setInput} aria-label={t("image.local.lora.search")} placeholder={t("image.local.lora.search")} />
-        <Menu><MenuTrigger><Button variant="secondary" leading={<ArrowDownUp size={icon.sm} />} trailing={<ChevronDown size={icon.sm} />}>{t(sort === "Highest Rated" ? "image.local.lora.highestRated" : sort === "Most Downloaded" ? "image.local.lora.mostDownloaded" : "image.local.lora.newest")}</Button></MenuTrigger><MenuContent align="end">
+        <SearchField data-tour-id="civitai-search" className="min-w-0 flex-1 basis-56" value={input} onChange={setInput} aria-label={t("image.local.lora.search")} placeholder={t("image.local.lora.search")} />
+        <Menu><MenuTrigger><Button data-tour-id="civitai-sort" variant="secondary" leading={<ArrowDownUp size={icon.sm} />} trailing={<ChevronDown size={icon.sm} />}>{t(sort === "Highest Rated" ? "image.local.lora.highestRated" : sort === "Most Downloaded" ? "image.local.lora.mostDownloaded" : "image.local.lora.newest")}</Button></MenuTrigger><MenuContent align="end">
           <MenuLabel>{t("image.local.lora.sort")}</MenuLabel>
           {([{ value: "Highest Rated", key: "image.local.lora.highestRated" }, { value: "Most Downloaded", key: "image.local.lora.mostDownloaded" }, { value: "Newest", key: "image.local.lora.newest" }] as const).map((item) => <MenuItem key={item.value} selected={sort === item.value} onSelect={() => setSort(item.value)}>{t(item.key)}</MenuItem>)}
           <MenuSeparator /><MenuLabel>{t("image.local.lora.period")}</MenuLabel>
           {(["AllTime", "Year", "Month", "Week", "Day"] as const).map((value) => <MenuItem key={value} selected={period === value} onSelect={() => setPeriod(value)}>{t(`image.local.lora.periods.${value}`)}</MenuItem>)}
         </MenuContent></Menu>
-        <IconButton label={t("image.local.lora.token")} variant="secondary" onClick={() => setTokenOpen(true)}><KeyRound size={icon.md} /></IconButton>
+        <IconButton data-tour-id="civitai-token" label={t("image.local.lora.token")} variant="secondary" onClick={() => setTokenOpen(true)}><KeyRound size={icon.md} /></IconButton>
       </div>
-      <FilterBar aria-label={t("image.local.lora.base")} options={[{ value: "", label: t("image.local.lora.allBases") }, ...bases.map((value) => ({ value, label: value }))]} value={base} onChange={setBase} />
+      <div data-tour-id="civitai-filters"><FilterBar aria-label={t("image.local.lora.base")} options={[{ value: "", label: t("image.local.lora.allBases") }, ...bases.map((value) => ({ value, label: value }))]} value={base} onChange={setBase} /></div>
       {pure !== undefined && !showNsfw && <Text variant="hint">{t("image.local.lora.pureNote")}</Text>}
       {auth.isError && <FailureState error={auth.error} onRetry={() => void auth.refetch()} size="sm" />}
       {civitaiTokenNeeded(auth.data) && <TokenAlert saved={auth.data?.saved ?? false} onOpen={() => setTokenOpen(true)} />}
       {results.isPending ? <div role="status" aria-busy="true" aria-label={t("image.local.lora.loadingResults")} className="@container"><div className="grid grid-cols-2 gap-3 @xl:grid-cols-3 @4xl:grid-cols-4">{Array.from({ length: skeletonCards }, (_, index) => <MediaCardSkeleton key={index} />)}</div></div>
         : found.length === 0 && !results.isError ? <EmptyState title={t("image.local.lora.noResults")} description={t("image.local.lora.noResultsBody")} />
-        : <div className="@container"><div className="grid grid-cols-2 gap-3 @xl:grid-cols-3 @4xl:grid-cols-4">{found.map((item) => <MediaCard key={item.id} title={item.name} image={item.preview_image && (item.preview_image.nsfw_level <= 1 || showNsfw) ? civitaiImage(item.preview_image.url, civitaiWidths.card) : null} description={[item.creator_username ? t("image.local.lora.by", { name: item.creator_username }) : null, t("image.local.lora.downloadCount", { count: item.download_count, value: compactNumber(item.download_count, i18n.language) })].filter(Boolean).join(" · ")} {...(item.base_models[0] ? { meta: item.base_models[0] } : {})} onClick={() => open(item)} />)}</div></div>}
+        : <div data-tour-id={found.length ? "civitai-results" : undefined} className="@container"><div className="grid grid-cols-2 gap-3 @xl:grid-cols-3 @4xl:grid-cols-4">{found.map((item) => <MediaCard key={item.id} title={item.name} image={item.preview_image && (item.preview_image.nsfw_level <= 1 || showNsfw) ? civitaiImage(item.preview_image.url, civitaiWidths.card) : null} description={[item.creator_username ? t("image.local.lora.by", { name: item.creator_username }) : null, t("image.local.lora.downloadCount", { count: item.download_count, value: compactNumber(item.download_count, i18n.language) })].filter(Boolean).join(" · ")} {...(item.base_models[0] ? { meta: item.base_models[0] } : {})} onClick={() => open(item)} />)}</div></div>}
       {results.isError && <FailureState error={results.error} onRetry={() => void (found.length ? results.fetchNextPage() : results.refetch())} />}
       {results.hasNextPage && !results.isError && <Button variant="ghost" disabled={results.isPlaceholderData} loading={results.isFetchingNextPage} onClick={() => void results.fetchNextPage()}>{t("tools.loadMore")}</Button>}
       <CivitaiTokenSheet open={tokenOpen} onClose={() => setTokenOpen(false)} />

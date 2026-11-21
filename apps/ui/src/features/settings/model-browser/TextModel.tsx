@@ -196,7 +196,7 @@ export function TextModel({
                   {t("hf.info")}
                 </Tab>
                 <Tab value="download" icon={<ArrowDownToLine size={icon.sm} />}>
-                  {t("hf.download")}
+                  <span data-tour-id="hf-rec-tabs">{t("hf.download")}</span>
                 </Tab>
               </TabList>
             </Tabs>
@@ -705,7 +705,7 @@ function DownloadPlan({
     </Button>
   );
   const summary = (
-    <div className="divide-y divide-line">
+    <div className="divide-y divide-line" data-tour-id={currentPlan && !waitingForPreview ? "hf-rec-panel" : undefined}>
       {verdict}
       {verdictBody}
       {phone ? (
@@ -748,7 +748,7 @@ function DownloadPlan({
     </span>
   );
   const filesList = (
-    <ListGroup label={filesLabel}>
+    <ListGroup data-tour-id="hf-rec-quant" label={filesLabel}>
       {files.length > 10 && (
         <div className="flex items-center gap-2 p-2">
           <div className="min-w-0 flex-1">
@@ -883,7 +883,7 @@ function DownloadPlan({
     </div>
   );
   const contextCard = supportsFit && (max > 0 || !account) && (
-    <ListGroup label={account ? t("hf.contextOnly") : t("hf.options")}>
+    <ListGroup data-tour-id="hf-rec-context" label={account ? t("hf.contextOnly") : t("hf.options")}>
       {max > 0 && (
         <ContextControl
           value={Math.min(effectiveContext, max)}
@@ -953,6 +953,7 @@ function DownloadPlan({
             value={offload}
             onChange={setOffload}
             aria-label={t("hf.offload")}
+            data-tour-id="hf-rec-offload"
             options={(["auto", "gpu", "mixed", "cpu"] as const).map((value) => ({
               value,
               label: t(`hf.offloadChoices.${value}`),
@@ -966,6 +967,7 @@ function DownloadPlan({
             value={placement}
             onChange={setPlacement}
             aria-label={t("hf.kvPlace")}
+            data-tour-id="hf-rec-kv-location"
             options={(["auto", "vram", "ram"] as const).map((value) => ({
               value,
               label: t(`hf.placementChoices.${value}`),
