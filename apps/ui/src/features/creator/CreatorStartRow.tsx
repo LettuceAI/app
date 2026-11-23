@@ -8,7 +8,7 @@ import { isApiFailure, type ApiClient } from "@/api/client";
 import type { CreatorKind } from "@/api/generated/bindings";
 
 /** Starts a creator session for a new item of `kind`, or for improving the item `targetId`, and opens it. */
-export function CreatorStartRow({ api, kind, targetId, onStarted }: { api: ApiClient; kind: CreatorKind; targetId?: string; onStarted?: () => void }) {
+export function CreatorStartRow({ api, kind, targetId, replace = false }: { api: ApiClient; kind: CreatorKind; targetId?: string; replace?: boolean }) {
   const { t } = useTranslation("creator");
   const { t: common } = useTranslation();
   const navigate = useNavigate();
@@ -17,8 +17,7 @@ export function CreatorStartRow({ api, kind, targetId, onStarted }: { api: ApiCl
     mutationFn: () => api.call("creatorStart", { kind, target_id: targetId ?? null, draft: null, client_operation_id: key.current }),
     onSuccess: (work) => {
       key.current = crypto.randomUUID();
-      onStarted?.();
-      void navigate({ to: "/creator/$workflowId", params: { workflowId: work.summary.id } });
+      void navigate({ to: "/creator/$workflowId", params: { workflowId: work.summary.id }, replace });
     },
     onError: (error) => toast.error(common(`errors.code.${isApiFailure(error) ? error.code : "internal"}`)),
   });

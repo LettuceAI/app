@@ -118,7 +118,9 @@ export function EntryMenu({
         <div className="space-y-4 pb-1">
           {intro && <p className="whitespace-pre-wrap break-words text-sm text-fg-2">{intro}</p>}
           <ListGroup>
-            {(entry.kind === "character" || entry.kind === "persona") && <CreatorStartRow api={api} kind={entry.kind} targetId={entry.id} onStarted={onClose} />}
+            {(entry.kind === "character" || entry.kind === "persona") && (
+              <CreatorStartRow api={api} kind={entry.kind} targetId={entry.id} replace />
+            )}
             {entry.kind === "character" && (
               <ListRowButton
                 icon={<MessageSquarePlus size={icon.lg} />}

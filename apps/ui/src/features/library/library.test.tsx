@@ -1,10 +1,11 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createMemoryHistory } from "@tanstack/react-router";
+import { createBrowserHistory, createMemoryHistory, type RouterHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApiClient } from "@/api/client";
 import type {
   CharacterSummary,
   CharacterView_Serialize,
+  CreatorView,
   LorebookSummary_Serialize,
   MediaLibraryItem,
   PersonaPage_Serialize,
@@ -65,7 +66,7 @@ const image: MediaLibraryItem = {
   references: [],
 };
 const ok = <T,>(data: T) => ({ status: "ok" as const, data });
-async function setup(calls: MockCallHandlers = {}, path = "/library") {
+async function setup(calls: MockCallHandlers = {}, initial: string | RouterHistory = "/library") {
   const transport = createMockTransport({
     calls: {
       appStatus: () => ok({ ...mockAppStatus, ui_state: { onboarding: { completed: true } } }),
@@ -106,7 +107,7 @@ async function setup(calls: MockCallHandlers = {}, path = "/library") {
   });
   const runtime = await createAppRuntime({
     transport,
-    history: createMemoryHistory({ initialEntries: [path] }),
+    history: typeof initial === "string" ? createMemoryHistory({ initialEntries: [initial] }) : initial,
     i18n: await createTestI18n("en"),
   });
   await act(async () => {
@@ -216,6 +217,53 @@ describe("library design port", () => {
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
     expect(runtime.router.state.location.search.item).toBeUndefined();
     expect((await screen.findByRole("radio", { name: /^Characters/ })).getAttribute("aria-checked")).toBe("true");
+  });
+  it("opens Edit with AI from the character context menu and returns to the Library filter", async () => {
+    const proposal: CreatorView["proposal"] = {
+      id: "first",
+      parent_id: null,
+      ordinal: 0,
+      source: "start",
+      draft: { name: character.name, definition: character.description ?? "", scenes: [], avatar: null },
+      created_at: 1,
+    };
+    const work: CreatorView = {
+      summary: { id: "work", kind: "character", name: character.name, target_id: character.id, applied_id: null, updated_at: 1 },
+      revision: 1, proposal, history: [proposal], turns: [], active_job_id: null, reviewed: false,
+      target_changed: false, model_profile_id: null, images: [],
+    };
+    const start = vi.fn<NonNullable<MockCallHandlers["creatorStart"]>>(() => ok(work));
+    const initialUrl = window.location.href;
+    const initialState: unknown = window.history.state;
+    window.history.replaceState(null, "", "/");
+    const history = createBrowserHistory();
+    try {
+      const { runtime } = await setup({
+        creatorStart: start,
+        creatorGet: () => ok(work),
+        settingsGet: () => ok({ global: { dynamic_memory: { enabled: false }, creation_helper: { model_profile_id: null } } } as never),
+      }, history);
+      await act(async () => runtime.router.navigate({ to: "/library" }));
+      const filter = screen.getByRole("radio", { name: /^Characters/ });
+      fireEvent.click(filter);
+      await waitFor(() => expect(filter.getAttribute("aria-checked")).toBe("true"));
+      fireEvent.contextMenu(await screen.findByRole("button", { name: /Cassian/ }));
+      await waitFor(() => expect(runtime.router.state.resolvedLocation?.search.item).toBe(character.id));
+      fireEvent.click(await screen.findByRole("button", { name: /Edit with AI/ }));
+      await waitFor(() => expect(start).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ kind: "character", target_id: character.id }),
+      ));
+      expect(await screen.findByDisplayValue(character.name)).toBeTruthy();
+      expect(runtime.router.state.location.pathname).toBe("/creator/work");
+      await act(async () => history.back());
+      await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
+      expect(runtime.router.state.location.search.item).toBeUndefined();
+      expect((await screen.findByRole("radio", { name: /^Characters/ })).getAttribute("aria-checked")).toBe("true");
+    } finally {
+      cleanup();
+      history.destroy();
+      window.history.replaceState(initialState, "", initialUrl);
+    }
   });
 });
 
