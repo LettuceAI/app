@@ -1125,7 +1125,7 @@ where
             ..Default::default()
         };
         crate::companion::companion_clock::fill_time_values(&mut prompt_values, reference_now);
-        let window = history_window(&global_settings, dynamic_memory, group);
+        let window = history_window(&global_settings);
         let assembler = ConversationContextAssembler::previewing(self.repository, document)
             .map_err(ConversationGenerationInputError::Context)?;
         assembler
@@ -1932,7 +1932,7 @@ where
             conversation_message_count: Some(conversation_message_count),
             ..Default::default()
         };
-        let context_window = history_window(&global_settings, dynamic_memory, group);
+        let context_window = history_window(&global_settings);
         let mut prompt_values = runtime.prompt_values;
         if scene_model_is_local
             && let ConversationKind::Direct(details) = &aggregate.conversation.kind
@@ -2690,18 +2690,8 @@ struct MemoryPromptShape {
 
 fn history_window(
     settings: &lettuce_settings::GlobalSettings,
-    dynamic_memory: bool,
-    group: bool,
 ) -> lettuce_conversations::ContextWindowPolicy {
-    let messages = match (dynamic_memory, group) {
-        (true, true) => {
-            settings
-                .effective_group_dynamic_memory()
-                .summary_message_interval
-        }
-        (true, false) => settings.dynamic_memory.summary_message_interval,
-        (false, _) => settings.manual_mode_context_window,
-    };
+    let messages = settings.manual_mode_context_window;
     lettuce_conversations::ContextWindowPolicy {
         recent_non_pinned_limit: usize::try_from(messages).unwrap_or(usize::MAX),
     }
@@ -4208,27 +4198,25 @@ mod tests {
     }
 
     #[test]
-    fn history_windows_follow_memory_mode_and_the_group_override() {
+    fn history_window_follows_the_general_context_window_setting() {
         let mut settings = lettuce_settings::GlobalSettings::default();
         settings.dynamic_memory.summary_message_interval = 20;
         settings.manual_mode_context_window = 50;
         let mut group = settings.dynamic_memory.clone();
         group.summary_message_interval = 8;
         settings.group_dynamic_memory = Some(group);
-        let limit = |settings: &lettuce_settings::GlobalSettings, dynamic, group| {
-            history_window(settings, dynamic, group).recent_non_pinned_limit
+        let limit = |settings: &lettuce_settings::GlobalSettings| {
+            history_window(settings).recent_non_pinned_limit
         };
-        assert_eq!(limit(&settings, true, false), 20);
-        assert_eq!(limit(&settings, true, true), 8);
-        assert_eq!(limit(&settings, false, true), 50);
-        settings.manual_mode_context_window = 1_000;
         assert_eq!(
-            limit(&settings, false, false),
-            1_000,
-            "legacy's context window slider went to 1000 and was used as-is"
+            limit(&settings),
+            50,
+            "the context window ignores the summary intervals of single and group dynamic memory"
         );
+        settings.manual_mode_context_window = 1_000;
+        assert_eq!(limit(&settings), 1_000);
         settings.manual_mode_context_window = 4_000;
-        assert_eq!(limit(&settings, false, false), 4_000);
+        assert_eq!(limit(&settings), 4_000);
     }
 
     #[test]

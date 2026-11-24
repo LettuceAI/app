@@ -334,11 +334,7 @@ async fn conversation_outgrows_its_context_window(dynamic_memory: bool) {
     let stored = GlobalSettingsStore::load(database).expect("settings");
     let mut settings = stored.settings;
     settings.dynamic_memory.enabled = dynamic_memory;
-    let limit = if dynamic_memory {
-        settings.dynamic_memory.summary_message_interval
-    } else {
-        settings.manual_mode_context_window
-    } as usize;
+    let limit = settings.manual_mode_context_window as usize;
     GlobalSettingsStore::save(database, settings, stored.default_model_profile_id, stored.revision)
         .expect("enable memory without changing the default window");
     let mut scenario = scenario_with_resolvable_profile(database, dynamic_memory, "long-history", true);
