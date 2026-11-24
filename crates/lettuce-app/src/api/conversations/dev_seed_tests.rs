@@ -172,6 +172,12 @@ async fn a_direct_seed_keeps_the_lines_in_order_with_their_authors_and_times() {
         panic!("a direct chat");
     };
     assert_eq!(details.character.source_id, ada);
+    let user = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.source == ParticipantSource::User)
+        .map(|participant| participant.id)
+        .expect("user participant");
     let character = conversation
         .participants
         .iter()
@@ -183,7 +189,7 @@ async fn a_direct_seed_keeps_the_lines_in_order_with_their_authors_and_times() {
         vec![
             (
                 MessageRole::User,
-                None,
+                Some(user),
                 "Morning.".to_owned(),
                 NOW - 90 * 60_000
             ),
@@ -195,7 +201,7 @@ async fn a_direct_seed_keeps_the_lines_in_order_with_their_authors_and_times() {
             ),
             (
                 MessageRole::User,
-                None,
+                Some(user),
                 "Coffee?".to_owned(),
                 NOW - 30 * 60_000
             ),
@@ -259,28 +265,27 @@ async fn a_group_seed_belongs_to_the_existing_group_and_maps_each_speaker() {
     };
     assert_eq!(details.group.source_id, group);
     assert_eq!(conversation.title, "Dev crew");
-    let participant = |character: CharacterId| {
+    let participant = |source| {
         conversation
             .participants
             .iter()
-            .find(|participant| participant.source == ParticipantSource::Character(character))
+            .find(|participant| participant.source == source)
             .map(|participant| participant.id)
-            .expect("member participant")
+            .expect("conversation participant")
     };
+    let user = participant(ParticipantSource::User);
+    let ada = participant(ParticipantSource::Character(ada));
+    let ben = participant(ParticipantSource::Character(ben));
     assert_eq!(
         lines
             .iter()
             .map(|(role, author, text, _)| (*role, *author, text.as_str()))
             .collect::<Vec<_>>(),
         vec![
-            (MessageRole::User, None, "Hello both."),
-            (MessageRole::Assistant, Some(participant(ada)), "Hi."),
-            (MessageRole::Assistant, Some(participant(ben)), "Hey."),
-            (
-                MessageRole::Assistant,
-                Some(participant(ada)),
-                "Ben, say more."
-            ),
+            (MessageRole::User, Some(user), "Hello both."),
+            (MessageRole::Assistant, Some(ada), "Hi."),
+            (MessageRole::Assistant, Some(ben), "Hey."),
+            (MessageRole::Assistant, Some(ada), "Ben, say more."),
         ]
     );
     assert!(

@@ -3188,7 +3188,14 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         continued_result.candidate.author_participant_id,
         speakers[0]
     );
-    assert!(continued_result.turn.selected_speaker.is_none());
+    let decision = continued_result
+        .turn
+        .selected_speaker
+        .as_ref()
+        .expect("persisted director speaker decision");
+    assert_eq!(decision.participant_id, speakers[0]);
+    assert_eq!(decision.method, SpeakerDecisionMethod::Director);
+    assert_eq!(decision.fallback, SpeakerFallback::None);
     assert!(
         !continued_inference.requests.lock().expect("requests")[0]
             .context
