@@ -1224,4 +1224,59 @@ describe("scene switching", () => {
     expect(select).toHaveBeenCalledWith(expect.objectContaining({ conversation_id: "c1", message_id: "sc", scene_id: "s3" }));
     expect(refresh).toHaveBeenCalled();
   });
+
+  it("renders character, user, and persona placeholders in scene text", async () => {
+    await open({
+      messages: () => [
+        message("sc", "scene", "{{char}} greets {{user}} (also {{persona}}, {{ char.name }} & {{user.name}})."),
+        message("a1", "assistant", "Sit down."),
+      ],
+      calls: {
+        conversationSettingsGet: () => ({ status: "ok", data: { ...settings, persona: { id: "p1", source: "conversation" } } }),
+        personasList: () => ({
+          status: "ok",
+          data: {
+            items: [{ id: "p1", title: "Morgan", nickname: null, description: "", avatar: null }],
+            next_cursor: null,
+            default_persona: { persona_id: null, revision: 1, created_at: 1, updated_at: 1 },
+          },
+        }),
+      },
+    });
+    expect(await screen.findByText("Cassian greets Morgan (also Morgan, Cassian & Morgan).")).toBeTruthy();
+  });
+
+  it("renders placeholders in scene text with inline images and group member mentions", async () => {
+    const sceneWithImage: TimelineMessage = {
+      ...message("sc", "scene", ""),
+      parts: [
+        { type: "text", text: '{{@"Aria"}} waves to {{user}} and {{persona}}, not {{@"Ghost"}}.' },
+        { type: "media", asset: { asset_id: "img1", url: "https://example.test/scene.png" }, kind: "image" },
+      ],
+    };
+    await open({
+      messages: () => [sceneWithImage],
+      calls: {
+        conversationOpen: () => ({
+          status: "ok",
+          data: view([sceneWithImage], {
+            kind: "group",
+            source: { type: "group", group_id: "g1" },
+            participants: [
+              { id: "p1", role: "character", name: "Aria", character_id: "ch1", avatar: null },
+              { id: "p2", role: "character", name: "Bram", character_id: "ch2", avatar: null },
+              { id: "pu", role: "user", name: "You", character_id: null, avatar: null },
+            ],
+          }),
+        }),
+      },
+    });
+    expect(
+      await screen.findByText(
+        (_, node) =>
+          node?.tagName === "P" &&
+          node.textContent === 'Aria waves to You and You, not {{@"Ghost"}}.',
+      ),
+    ).toBeTruthy();
+  });
 });

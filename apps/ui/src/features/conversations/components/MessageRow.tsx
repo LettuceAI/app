@@ -6,10 +6,11 @@ import type { ParticipantView, TimelineMessage } from "@/api/generated/bindings"
 import { useChatLook, useMessageAppearance } from "@/entities/preferences";
 import {
   authorOf,
+  displayTextOf,
   mediaOf,
+  resolveScenePlaceholders,
   type MediaItem,
   spacing,
-  textOf,
   type Group,
 } from "../data/messages";
 import { ReplyDetails } from "./ReplyDetails";
@@ -69,7 +70,15 @@ export function Attached({ media }: { media: readonly MediaItem[] }) {
 }
 
 /** A scene's text and inline images in the order the scene places them. */
-function SceneBody({ message, query }: { message: TimelineMessage; query: string }) {
+function SceneBody({
+  message,
+  participants,
+  query,
+}: {
+  message: TimelineMessage;
+  participants: readonly ParticipantView[];
+  query: string;
+}) {
   const segments: ({ kind: "text"; text: string } | { kind: "media"; media: MediaItem[] })[] = [];
   for (const part of message.parts) {
     const last = segments[segments.length - 1];
@@ -87,7 +96,15 @@ function SceneBody({ message, query }: { message: TimelineMessage; query: string
   return (
     <div className="space-y-2">
       {segments.map((segment, index) =>
-        segment.kind === "text" ? <MessageBody key={index} text={segment.text} query={query} /> : <Attached key={index} media={segment.media} />,
+        segment.kind === "text" ? (
+          <MessageBody
+            key={index}
+            text={resolveScenePlaceholders(segment.text, participants)}
+            query={query}
+          />
+        ) : (
+          <Attached key={index} media={segment.media} />
+        ),
       )}
     </div>
   );
@@ -167,7 +184,11 @@ function Row({
         held={held}
         className={cn("mt-0! transition-opacity", dimmed && "opacity-25")}
       >
-        {inlineScene ? <SceneBody message={message} query={query} /> : <MessageBody text={textOf(message)} query={query} />}
+        {inlineScene ? (
+          <SceneBody message={message} participants={participants} query={query} />
+        ) : (
+          <MessageBody text={displayTextOf(message, participants)} query={query} />
+        )}
         {picturesBelow.length > 0 && <div className="mt-2"><Attached media={picturesBelow} /></div>}
         {message.scene_image && <SceneImageStatus conversationId={conversationId} message={message} onReview={onSceneImage} />}
       </Message>

@@ -29,6 +29,45 @@ export function textOf(message: TimelineMessage): string {
   return message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n\n");
 }
 
+/**
+ * Resolves `{{char}}`, `{{user}}`, `{{persona}}` (and their `.name` / `_name`
+ * variants) plus group `{{@"Name"}}` mentions in scene text using the
+ * conversation's current participants.
+ */
+export function resolveScenePlaceholders(
+  text: string,
+  participants: readonly ParticipantView[],
+): string {
+  if (!text || !text.includes("{{")) return text;
+  const characters = participants.filter((participant) => participant.role === "character");
+  const userName = participants.find((participant) => participant.role === "user")?.name;
+  let result = text;
+  if (characters.length === 1 && characters[0]?.name) {
+    const charName = characters[0].name;
+    result = result.replace(/\{\{\s*char(?:\.name)?\s*\}\}/g, () => charName);
+  }
+  if (userName) {
+    result = result
+      .replace(/\{\{\s*persona(?:\.name|_name)?\s*\}\}/g, () => userName)
+      .replace(/\{\{\s*user(?:\.name|_name)?\s*\}\}/g, () => userName);
+  }
+  if (characters.length > 0 && result.includes('{{@"')) {
+    const names = new Set(characters.map((character) => character.name));
+    result = result.replace(/\{\{@"([^"]+)"\}\}/g, (match, name: string) =>
+      names.has(name) ? name : match,
+    );
+  }
+  return result;
+}
+
+export function displayTextOf(
+  message: TimelineMessage,
+  participants: readonly ParticipantView[],
+): string {
+  const raw = textOf(message);
+  return message.role === "scene" ? resolveScenePlaceholders(raw, participants) : raw;
+}
+
 export interface MediaItem {
   id: string;
   url: string | null;

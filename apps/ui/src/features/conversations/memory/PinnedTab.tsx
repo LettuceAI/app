@@ -2,7 +2,7 @@ import { Pin, PinOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, EmptyState, icon, IconButton, ListGroup } from "@lettuceai/crisp";
 import type { ParticipantView, TimelineMessage } from "@/api/generated/bindings";
-import { authorOf, textOf } from "../data/messages";
+import { authorOf, displayTextOf } from "../data/messages";
 
 export interface PinnedTabProps {
   messages: readonly TimelineMessage[];
@@ -30,7 +30,7 @@ export function PinnedTab({ messages, participants, hasMore, loadingMore, unpinn
             <div key={message.id} className="flex items-start gap-3 px-4 py-3.5">
               <button type="button" onClick={() => onOpen(message)} className="min-w-0 flex-1 text-left">
                 <p className="truncate text-sm text-fg-3">{[speaker, when.format(message.created_at)].filter(Boolean).join(" · ")}</p>
-                <p className="mt-1 line-clamp-3 text-base leading-snug text-fg">{textOf(message) || t("memory.pinnedTab.noText")}</p>
+                <p className="mt-1 line-clamp-3 text-base leading-snug text-fg">{displayTextOf(message, participants) || t("memory.pinnedTab.noText")}</p>
               </button>
               <IconButton label={t("memory.pinnedTab.unpin")} size="sm" variant="ghost" disabled={unpinning !== null} onClick={() => onUnpin(message)}>
                 <PinOff size={icon.sm} />

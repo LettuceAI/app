@@ -30,10 +30,10 @@ import type { GenerationStore } from "../data/generation-store";
 import {
   authorOf,
   dayLabel,
+  displayTextOf,
   groupOf,
   sameDay,
   spacing,
-  textOf,
   type Author,
   type MediaItem,
 } from "../data/messages";
@@ -374,7 +374,7 @@ export function Timeline({
                 ? dayLabel(message.created_at, now, locale)
                 : null;
             const group = groupOf(messages, index);
-            const dimmed = needle.length > 0 && !textOf(message).toLowerCase().includes(needle);
+            const dimmed = needle.length > 0 && !displayTextOf(message, participants).toLowerCase().includes(needle);
             return (
               <Fragment key={message.id}>
                 {label && (
