@@ -42,6 +42,7 @@
   "conflict": "Ez a lorebook megváltozott szerkesztés közben. A piszkozatod megmarad. Frissítsd a revíziót, nézd át a piszkozatod, majd mentés újra.",
   "refreshRevision": "Revízió frissítése",
   "settingsTitle": "Lorebook",
+  "coverImage": "Borítókép",
   "nameField": "Név",
   "deleteLorebook": "Lorebook törlése",
   "exportTitle": "Exportformátum",

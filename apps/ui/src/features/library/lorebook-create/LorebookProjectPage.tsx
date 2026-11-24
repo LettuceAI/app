@@ -219,6 +219,7 @@ function ProjectContent({ projectId }: { projectId: string }) {
       ...emptyBrief(),
       step: "brief",
       name: project.lorebook_name ?? "",
+      cover: null,
       brief: project.brief,
       target: project.target_count,
       texts: project.sources

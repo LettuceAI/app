@@ -42,6 +42,7 @@
   "conflict": "Dit lorebook is gewijzigd terwijl je aan het bewerken was. Je concept is bewaard. Vernieuw de revisie, bekijk je concept en sla dan opnieuw op.",
   "refreshRevision": "Revisie vernieuwen",
   "settingsTitle": "Lorebook",
+  "coverImage": "Omslagafbeelding",
   "nameField": "Naam",
   "deleteLorebook": "Lorebook verwijderen",
   "exportTitle": "Exportformaat",

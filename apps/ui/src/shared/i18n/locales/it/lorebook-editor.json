@@ -43,6 +43,7 @@
   "conflict": "Questo lorebook è cambiato mentre lo modificavi. La tua bozza è conservata. Aggiorna la revisione, controlla la bozza, poi salva di nuovo.",
   "refreshRevision": "Aggiorna revisione",
   "settingsTitle": "Lorebook",
+  "coverImage": "Immagine di copertina",
   "nameField": "Nome",
   "deleteLorebook": "Elimina lorebook",
   "exportTitle": "Formato di esportazione",

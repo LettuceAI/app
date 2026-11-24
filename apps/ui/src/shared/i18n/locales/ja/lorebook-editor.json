@@ -41,6 +41,7 @@
   "conflict": "編集中にこのロアブックが変更されました。下書きは保持されています。リビジョンを更新し、下書きを確認してから再度保存してください。",
   "refreshRevision": "リビジョンを更新",
   "settingsTitle": "ロアブック",
+  "coverImage": "表紙画像",
   "nameField": "名前",
   "deleteLorebook": "ロアブックを削除",
   "exportTitle": "エクスポート形式",

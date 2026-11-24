@@ -43,6 +43,7 @@
   "conflict": "Este libro de lore cambió mientras lo editabas. Tu borrador se conserva. Actualiza su revisión, revisa tu borrador y vuelve a guardar.",
   "refreshRevision": "Actualizar revisión",
   "settingsTitle": "Libro de lore",
+  "coverImage": "Imagen de portada",
   "nameField": "Nombre",
   "deleteLorebook": "Eliminar libro de lore",
   "exportTitle": "Formato de exportación",

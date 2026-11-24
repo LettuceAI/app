@@ -42,6 +42,7 @@
   "conflict": "Denne loreboken ble endret mens du redigerte. Utkastet ditt beholdes. Oppdater revisjonen, gå gjennom utkastet og lagre igjen.",
   "refreshRevision": "Oppdater revisjon",
   "settingsTitle": "Lorebok",
+  "coverImage": "Omslagsbilde",
   "nameField": "Navn",
   "deleteLorebook": "Slett lorebok",
   "exportTitle": "Eksportformat",

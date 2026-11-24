@@ -41,6 +41,7 @@
   "conflict": "Lorebook นี้ถูกเปลี่ยนระหว่างที่คุณแก้ไข ฉบับร่างของคุณยังอยู่ รีเฟรชเวอร์ชัน ตรวจสอบฉบับร่าง แล้วบันทึกอีกครั้ง",
   "refreshRevision": "รีเฟรชเวอร์ชัน",
   "settingsTitle": "Lorebook",
+  "coverImage": "ภาพปก",
   "nameField": "ชื่อ",
   "deleteLorebook": "ลบ Lorebook",
   "exportTitle": "รูปแบบการส่งออก",

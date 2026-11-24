@@ -41,6 +41,7 @@
   "conflict": "此設定集在你編輯時已變更。你的草稿已保留。請重新整理修訂版本、檢視草稿後再儲存。",
   "refreshRevision": "重新整理修訂版本",
   "settingsTitle": "設定集",
+  "coverImage": "封面圖片",
   "nameField": "名稱",
   "deleteLorebook": "刪除設定集",
   "exportTitle": "匯出格式",

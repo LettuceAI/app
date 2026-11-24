@@ -41,6 +41,7 @@
   "conflict": "Lorebook ini berubah saat Anda mengedit. Draf Anda disimpan. Segarkan revisinya, tinjau draf, lalu simpan lagi.",
   "refreshRevision": "Segarkan revisi",
   "settingsTitle": "Lorebook",
+  "coverImage": "Gambar sampul",
   "nameField": "Nama",
   "deleteLorebook": "Hapus lorebook",
   "exportTitle": "Format ekspor",

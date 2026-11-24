@@ -42,6 +42,7 @@
   "conflict": "Dieses Lorebook wurde geändert, während du bearbeitet hast. Dein Entwurf bleibt erhalten. Aktualisiere die Revision, prüfe deinen Entwurf und speichere dann erneut.",
   "refreshRevision": "Revision aktualisieren",
   "settingsTitle": "Lorebook",
+  "coverImage": "Titelbild",
   "nameField": "Name",
   "deleteLorebook": "Lorebook löschen",
   "exportTitle": "Exportformat",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
+import { useBlocker, useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -33,6 +33,7 @@ import {
   Stepper,
   Text,
   Textarea,
+  toast,
 } from "@lettuceai/crisp";
 import { ApiFailure } from "@/api/client";
 import type {
@@ -41,6 +42,7 @@ import type {
   LorebookProjectSourceInput,
 } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { AvatarLibrarySheet, pickImage } from "@/entities/image-input";
 import { ImportSheet } from "@/features/opened-files";
 import { useApi } from "@/api/use-api";
 import { usePageLayout } from "@/shared/hooks/usePageLayout";
@@ -48,6 +50,7 @@ import { FailureState } from "@/shared/ui/FailureState";
 import { SliderValue } from "@/shared/ui/SliderValue";
 import { SettingsControlRow } from "@/shared/ui/SettingsControlRow";
 import { refreshLibrary } from "../data/actions";
+import { LorebookCoverField } from "../LorebookCoverField";
 import {
   briefDraftKey,
   briefSources,
@@ -67,6 +70,7 @@ import { CreationError } from "./CreationError";
 
 export function NewLorebookPage() {
   const { t, i18n } = useTranslation("lorebook-create");
+  const { t: common } = useTranslation();
   const api = useApi();
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -89,6 +93,7 @@ export function NewLorebookPage() {
   const alive = useRef(true);
   const retry = useRef<() => void>(() => {});
   const [filesBusy, setFilesBusy] = useState(false);
+  const [coverLibraryOpen, setCoverLibraryOpen] = useState(false);
   const defaults = useQuery(generatorDefaultsQuery(api));
   const update = useCallback(
     (patch: Partial<BriefDraft> | ((current: BriefDraft) => BriefDraft)) => {
@@ -137,11 +142,19 @@ export function NewLorebookPage() {
     queryFn: () => api.call("personaGet", { persona_id: draft.personaId! }),
     enabled: Boolean(draft.personaId),
   });
-  const chooseSaved = async (id: string) => {
+  const finishSaved = async (id: string, destination: "editor" | "library") => {
     await refreshLibrary(client);
     if (!alive.current) return;
     client.removeQueries({ queryKey: briefDraftKey });
     client.removeQueries({ queryKey: ["lorebook-create-operation"] });
+    if (destination === "editor") {
+      await navigate({
+        to: "/library/lorebooks/$lorebookId",
+        params: { lorebookId: id },
+        replace: true,
+      });
+      return;
+    }
     void navigate({
       to: "/library",
       search: { kind: "lorebook", item: id },
@@ -149,6 +162,25 @@ export function NewLorebookPage() {
       replace: true,
     });
   };
+  const uploadCover = async () => {
+    setFilesBusy(true);
+    try {
+      const cover = await pickImage(api, "avatar");
+      if (cover) update({ cover });
+    } catch (failure) {
+      toast.error(common(`errors.code.${ApiFailure.fromRejection(failure).code}`));
+    } finally {
+      if (alive.current) setFilesBusy(false);
+    }
+  };
+  useBlocker({
+    shouldBlockFn: ({ action }) => {
+      if (action !== "BACK" || !coverLibraryOpen) return false;
+      setCoverLibraryOpen(false);
+      return true;
+    },
+    enableBeforeUnload: false,
+  });
   const operation = (request: unknown) => {
     const key = ["lorebook-create-operation", JSON.stringify(request)];
     let id = client.getQueryData<string>(key);
@@ -170,7 +202,7 @@ export function NewLorebookPage() {
           metadata: {
             name: draft.name.trim(),
             detection: "recent_messages" as const,
-            icon_asset_id: null,
+            icon_asset_id: draft.cover?.asset_id ?? null,
           },
           entries: [],
         };
@@ -178,7 +210,7 @@ export function NewLorebookPage() {
           ...payload,
           client_operation_id: operation(payload),
         });
-        await chooseSaved(result.lorebook.id);
+        await finishSaved(result.lorebook.id, "editor");
         return;
       }
       if (draft.mode === "import") {
@@ -618,13 +650,34 @@ export function NewLorebookPage() {
             }}
           />
         ) : null}
+        {draft.mode === "empty" && (
+          <>
+            <LorebookCoverField
+              cover={draft.cover}
+              busy={busy || filesBusy}
+              onUpload={() => void uploadCover()}
+              onChoose={() => setCoverLibraryOpen(true)}
+              onRemove={() => update({ cover: null })}
+            />
+            <AvatarLibrarySheet
+              api={api}
+              open={coverLibraryOpen}
+              banner={false}
+              onClose={() => setCoverLibraryOpen(false)}
+              onPick={(cover) => {
+                update({ cover });
+                setCoverLibraryOpen(false);
+              }}
+            />
+          </>
+        )}
         {importing && (
           <ImportSheet
             api={api}
             {...importing}
             onClose={() => setImporting(null)}
             onImported={(result) => {
-              if (result.kind === "imported") void chooseSaved(result.id);
+              if (result.kind === "imported") void finishSaved(result.id, "library");
             }}
           />
         )}

@@ -3,11 +3,13 @@ import { toast } from "@lettuceai/crisp";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  AssetRef_Serialize,
   JobEvent,
   JobView,
   LorebookEntriesMutateRequest,
   LorebookEntryView,
   LorebookView_Serialize,
+  MediaLibraryItem_Serialize,
 } from "@/api/generated/bindings";
 import { createMockTransport, mockAppStatus, type MockCallHandlers, type MockStreamHandlers } from "@/api/mock-transport";
 import { App } from "@/app/bootstrap/App";
@@ -56,7 +58,7 @@ const initial = (): LorebookView_Serialize => ({
     name: "World of Welan",
     status: "active",
     detection: "recent_messages",
-    icon: { asset_id: "icon-1", url: "https://example.test/icon.png" } as never,
+    icon: { asset_id: "icon-1", url: "https://example.test/icon.png" },
     revision: 4,
     created_at: 1,
     updated_at: 1,
@@ -103,6 +105,24 @@ function backend() {
       view = next;
     },
   };
+}
+
+function coverUpdate(store: ReturnType<typeof backend>, image: AssetRef_Serialize) {
+  return vi.fn<NonNullable<MockCallHandlers["lorebookUpdateMetadata"]>>(({ metadata }) => {
+    const current = store.current();
+    const next = {
+      ...current,
+      lorebook: {
+        ...current.lorebook,
+        name: metadata.name,
+        detection: metadata.detection,
+        icon: metadata.icon_asset_id === image.asset_id ? image : null,
+        revision: current.lorebook.revision + 1,
+      },
+    };
+    store.replace(next);
+    return ok(next);
+  });
 }
 
 async function setup(
@@ -578,6 +598,90 @@ describe("lorebook editor page", () => {
       metadata: { name: "Welan atlas", detection: "recent_messages", icon_asset_id: "icon-1" },
     });
     expect(await screen.findByText("Welan atlas")).toBeTruthy();
+  });
+
+  it("uploads a cover and keeps the lorebook name, detection and entries", async () => {
+    const store = backend();
+    const image = {
+      asset_id: "uploaded-cover",
+      url: "https://example.test/cover.png",
+      preview_url: "https://example.test/cover-preview.png",
+    };
+    const update = coverUpdate(store, image);
+    const source = { uri: "cover.png" };
+    const pick = vi.fn<NonNullable<MockCallHandlers["filesPickOpen"]>>()
+      .mockReturnValueOnce(ok({ sources: [] }))
+      .mockReturnValue(ok({ sources: [source] }));
+    const ingest = vi.fn<NonNullable<MockCallHandlers["assetsIngest"]>>(() => ok(image));
+    await setup({
+      filesPickOpen: pick,
+      assetsIngest: ingest,
+      lorebookUpdateMetadata: update,
+    }, "other", store);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Lorebook settings" }));
+    const upload = await screen.findByRole("button", { name: "Upload image" });
+    fireEvent.click(upload);
+    await waitFor(() => expect(pick).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(upload).not.toHaveProperty("disabled", true));
+    expect(ingest).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+
+    fireEvent.click(upload);
+    await waitFor(() => expect(screen.getByRole("img", { name: "Cover image" })
+      .getAttribute("src")).toBe(image.preview_url));
+    expect(pick).toHaveBeenLastCalledWith({ kinds: ["image"], multiple: false });
+    expect(ingest).toHaveBeenCalledWith({ source, role: "avatar" });
+    expect(update.mock.calls[0]![0]).toMatchObject({
+      lorebook_id: "book",
+      expected_revision: 4,
+      metadata: {
+        name: "World of Welan",
+        detection: "recent_messages",
+        icon_asset_id: "uploaded-cover",
+      },
+    });
+    expect(titles()).toEqual(["Gate", "Crown", "Vials"]);
+  });
+
+  it("sets a library image as the cover and removes it at the next revision", async () => {
+    const store = backend();
+    const asset = { asset_id: "library-cover", url: "https://example.test/library-cover.png" };
+    const item: MediaLibraryItem_Serialize = {
+      asset, role: "image", asset_kind: "generated_image", retention: "library",
+      source_label: "Forest map", expires_at: null, mime_type: "image/png", byte_size: 512,
+      width: 800, height: 600, duration_ms: null, created_at: 1, updated_at: 1, references: [],
+    };
+    const update = coverUpdate(store, asset);
+    const ingest = vi.fn();
+    await setup({
+      mediaLibraryList: () => ok({ items: [item], next_cursor: null }),
+      assetsIngest: ingest,
+      lorebookUpdateMetadata: update,
+    }, "other", store);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Lorebook settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Choose from library" }));
+    const library = await screen.findByRole("dialog", { name: "Choose from library" });
+    fireEvent.click(await within(library).findByRole("button", { name: "Forest map" }));
+    await waitFor(() => expect(screen.getByRole("img", { name: "Cover image" })
+      .getAttribute("src")).toBe(asset.url));
+    expect(update.mock.calls[0]![0]).toMatchObject({
+      expected_revision: 4,
+      metadata: { icon_asset_id: asset.asset_id },
+    });
+    expect(ingest).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove image" }));
+    await waitFor(() => expect(screen.queryByRole("img", { name: "Cover image" })).toBeNull());
+    expect(update.mock.calls[1]![0]).toMatchObject({
+      expected_revision: 5,
+      metadata: {
+        name: "World of Welan",
+        detection: "recent_messages",
+        icon_asset_id: null,
+      },
+    });
   });
 
   it("reverts the name on Escape without writing", async () => {

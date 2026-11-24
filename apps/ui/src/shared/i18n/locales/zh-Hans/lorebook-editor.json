@@ -41,6 +41,7 @@
   "conflict": "你编辑期间这个知识库发生了变化。你的草稿已保留。请刷新修订版本，检查草稿后再保存。",
   "refreshRevision": "刷新修订版本",
   "settingsTitle": "知识库",
+  "coverImage": "封面图片",
   "nameField": "名称",
   "deleteLorebook": "删除知识库",
   "exportTitle": "导出格式",

@@ -42,6 +42,7 @@
   "conflict": "Nagbago ang lorebook na ito habang nag-e-edit ka. Naitago ang draft mo. I-refresh ang revision nito, suriin ang draft, tapos i-save muli.",
   "refreshRevision": "I-refresh ang revision",
   "settingsTitle": "Lorebook",
+  "coverImage": "Larawan sa pabalat",
   "nameField": "Pangalan",
   "deleteLorebook": "Tanggalin ang lorebook",
   "exportTitle": "Format ng export",

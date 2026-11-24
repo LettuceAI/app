@@ -44,6 +44,7 @@
   "conflict": "Lorebook se během tvých úprav změnil. Tvůj koncept je zachovaný. Obnov jeho revizi, zkontroluj koncept a pak znovu ulož.",
   "refreshRevision": "Obnovit revizi",
   "settingsTitle": "Lorebook",
+  "coverImage": "Titulní obrázek",
   "nameField": "Název",
   "deleteLorebook": "Smazat lorebook",
   "exportTitle": "Formát exportu",

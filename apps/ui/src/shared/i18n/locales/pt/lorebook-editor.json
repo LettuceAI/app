@@ -43,6 +43,7 @@
   "conflict": "Este livro de lore mudou enquanto você editava. Seu rascunho foi mantido. Atualize a revisão, revise seu rascunho e salve de novo.",
   "refreshRevision": "Atualizar revisão",
   "settingsTitle": "Livro de lore",
+  "coverImage": "Imagem de capa",
   "nameField": "Nome",
   "deleteLorebook": "Excluir livro de lore",
   "exportTitle": "Formato de exportação",

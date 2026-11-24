@@ -41,6 +41,7 @@
   "conflict": "편집하는 동안 이 로어북이 변경됐어요. 작성 중인 내용은 보관돼요. 리비전을 새로 고치고 검토한 뒤 다시 저장하세요.",
   "refreshRevision": "리비전 새로 고침",
   "settingsTitle": "로어북",
+  "coverImage": "표지 이미지",
   "nameField": "이름",
   "deleteLorebook": "로어북 삭제",
   "exportTitle": "내보내기 형식",

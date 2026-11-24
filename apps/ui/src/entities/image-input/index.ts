@@ -5,5 +5,5 @@ export { useAvatarCrop } from "./use-avatar-crop";
 export { AvatarOwnerProvider } from "./AvatarOwnerProvider";
 export { useAvatarDraft, type AvatarDraft } from "./use-avatar-draft";
 export { staysOnPage, useAvatarPanelRoute } from "./use-avatar-panel-route";
-export { AvatarLibraryButton } from "./AvatarLibrary";
+export { AvatarLibraryButton, AvatarLibrarySheet } from "./AvatarLibrary";
 export { useAvatarLibrary } from "./use-avatar-library";

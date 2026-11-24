@@ -41,6 +41,7 @@
   "conflict": "Sách lore đã thay đổi trong lúc đang sửa. Bản nháp được giữ lại. Làm mới phiên bản, xem lại bản nháp rồi lưu lại.",
   "refreshRevision": "Làm mới phiên bản",
   "settingsTitle": "Sách lore",
+  "coverImage": "Ảnh bìa",
   "nameField": "Tên",
   "deleteLorebook": "Xóa sách lore",
   "exportTitle": "Định dạng xuất",

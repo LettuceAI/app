@@ -44,6 +44,7 @@
   "conflict": "Ten lorebook zmienił się, gdy go edytowałeś. Twój szkic jest zachowany. Odśwież jego wersję, przejrzyj szkic i zapisz ponownie.",
   "refreshRevision": "Odśwież wersję",
   "settingsTitle": "Lorebook",
+  "coverImage": "Obraz okładki",
   "nameField": "Nazwa",
   "deleteLorebook": "Usuń lorebook",
   "exportTitle": "Format eksportu",

@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { ApiFailure, type ApiClient } from "@/api/client";
 import type {
+  AssetRef,
   LorebookPlanView,
   LorebookPlanInput,
   LorebookProjectSourceInput,
@@ -83,6 +84,7 @@ export interface DocumentSource {
 }
 export interface BriefDraft {
   name: string;
+  cover: AssetRef | null;
   brief: string;
   target: number | null;
   characterId: string | null;
@@ -94,6 +96,7 @@ export interface BriefDraft {
 }
 export const emptyBrief = (): BriefDraft => ({
   name: "",
+  cover: null,
   brief: "",
   target: null,
   characterId: null,

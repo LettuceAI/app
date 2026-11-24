@@ -42,6 +42,7 @@
   "conflict": "This lorebook changed while you were editing. Your draft is kept. Refresh its revision, review your draft, then save again.",
   "refreshRevision": "Refresh revision",
   "settingsTitle": "Lorebook",
+  "coverImage": "Cover image",
   "nameField": "Name",
   "deleteLorebook": "Delete lorebook",
   "exportTitle": "Export format",

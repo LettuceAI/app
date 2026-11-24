@@ -297,6 +297,63 @@ describe("library operations", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("creates an empty lorebook with its chosen cover and opens the editor", async () => {
+    const create = vi.fn<NonNullable<MockCallHandlers["lorebookCreate"]>>(({ metadata }) =>
+      ok({
+        lorebook: {
+          id: "new-book",
+          name: metadata.name,
+          detection: metadata.detection,
+          icon: metadata.icon_asset_id === image.asset.asset_id ? image.asset : null,
+          status: "active",
+          revision: 1,
+          created_at: 1,
+          updated_at: 1,
+        },
+        entries: [],
+      }),
+    );
+    const { runtime } = await setup({
+      lorebookCreate: create,
+      lorebookGet: () => ok({
+        lorebook: {
+          id: "new-book",
+          name: "Welan",
+          detection: "recent_messages",
+          icon: image.asset,
+          status: "active",
+          revision: 1,
+          created_at: 1,
+          updated_at: 1,
+        },
+        entries: [],
+      }),
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+    const menu = await screen.findByRole("dialog");
+    fireEvent.click(within(menu).getByRole("button", { name: /^Lorebook/ }));
+    fireEvent.change(await screen.findByPlaceholderText("e.g. World of Welan"), {
+      target: { value: "Welan" },
+    });
+    fireEvent.click(screen.getByText("Empty", { exact: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Choose from library" }));
+    const picker = await screen.findByRole("dialog", { name: "Choose from library" });
+    fireEvent.click(await within(picker).findByRole("button", { name: "Throne room" }));
+    expect(await screen.findByRole("img", { name: "Cover image" })).toBeTruthy();
+    expect(create).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Create lorebook" }));
+
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library/lorebooks/new-book"));
+    expect(create).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      metadata: { name: "Welan", detection: "recent_messages", icon_asset_id: image.asset.asset_id },
+      entries: [],
+    }));
+    expect(await screen.findByText("No entries yet")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(within(document.querySelector("header")!).getByRole("button", { name: "Library" }));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
+  });
+
   it("redirects old character-create links to the wizard", async () => {
     const { runtime } = await setup({}, "/library?create=character");
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/characters/new"));

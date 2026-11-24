@@ -42,6 +42,7 @@
   "conflict": "Düzenlerken bu lore kitabı değişti. Taslağınız korunuyor. Revizyonunu yenileyin, taslağınızı inceleyin, sonra tekrar kaydedin.",
   "refreshRevision": "Revizyonu yenile",
   "settingsTitle": "Lore kitabı",
+  "coverImage": "Kapak görseli",
   "nameField": "Ad",
   "deleteLorebook": "Lore kitabını sil",
   "exportTitle": "Dışa aktarma biçimi",

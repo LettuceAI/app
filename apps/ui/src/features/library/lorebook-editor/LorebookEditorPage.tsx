@@ -21,11 +21,14 @@ import {
 } from "@lettuceai/crisp";
 import { ApiFailure, isApiFailure } from "@/api/client";
 import type {
+  AssetRef,
   LorebookEntryView,
   LorebookExportFormat,
+  LorebookMetadataInput,
   LorebookView_Serialize,
 } from "@/api/generated/bindings";
 import { useApi } from "@/api/use-api";
+import { AvatarLibrarySheet, pickImage } from "@/entities/image-input";
 import { usePageLayout } from "@/shared/hooks/usePageLayout";
 import { FailureState } from "@/shared/ui/FailureState";
 import { exportEntry, refreshLibrary } from "../data/actions";
@@ -74,6 +77,7 @@ export function LorebookEditorPage() {
     open: boolean;
   } | null>(null);
   const [settings, setSettings] = useState({ open: false, session: 0 });
+  const [coverLibraryOpen, setCoverLibraryOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [dragOrder, setDragOrder] = useState<LorebookEntryView[] | null>(null);
   const dragRef = useRef<LorebookEntryView[] | null>(null);
@@ -171,25 +175,36 @@ export function LorebookEditorPage() {
     if (done) closeEditor();
   };
 
-  const saveName = async (name: string) => {
-    const view = await writes.submit((revision) => {
-      const current = client.getQueryData<LorebookView_Serialize>(lorebookBookKey(lorebookId));
+  const saveMetadata = async (patch: Partial<Pick<LorebookMetadataInput, "name" | "icon_asset_id">>) => {
+    await writes.submit(async (revision) => {
+      const key = lorebookBookKey(lorebookId);
+      const current = client.getQueryData<LorebookView_Serialize>(key);
       if (!current) throw new ApiFailure("internal", "lorebook is not loaded", null);
-      return api.call("lorebookUpdateMetadata", {
+      const view = await api.call("lorebookUpdateMetadata", {
         lorebook_id: lorebookId,
         expected_revision: revision,
         client_operation_id: crypto.randomUUID(),
         metadata: {
-          name,
+          name: current.lorebook.name,
           detection: current.lorebook.detection,
           icon_asset_id: current.lorebook.icon?.asset_id ?? null,
+          ...patch,
         },
       });
+      writes.noteRevision(view.lorebook.revision);
+      client.setQueryData(key, view);
     });
-    writes.noteRevision(view.lorebook.revision);
-    client.setQueryData(lorebookBookKey(lorebookId), view);
     void refreshLibrary(client);
   };
+
+  const cover = useMutation({
+    mutationFn: async (source: "file" | AssetRef | null) => {
+      const image = source === "file" ? await pickImage(api, "avatar") : source;
+      if (source === "file" && !image) return;
+      await saveMetadata({ icon_asset_id: image?.asset_id ?? null });
+    },
+    onError: writes.fail,
+  });
 
   const removal = useMutation({
     mutationFn: async () => {
@@ -239,6 +254,11 @@ export function LorebookEditorPage() {
   useBlocker({
     shouldBlockFn: ({ action }) => {
       if (action !== "BACK" || removal.isPending || exporting.isPending) return false;
+      if (coverLibraryOpen) {
+        setCoverLibraryOpen(false);
+        return true;
+      }
+      if (cover.isPending) return true;
       if (exportOpen) {
         setExportOpen(false);
         return true;
@@ -455,12 +475,27 @@ export function LorebookEditorPage() {
           key={settings.session}
           open={settings.open}
           name={loaded.lorebook.name}
+          cover={loaded.lorebook.icon}
+          coverBusy={cover.isPending}
           deleting={removal.isPending}
-          onSave={saveName}
+          onSave={(name) => saveMetadata({ name })}
+          onUploadCover={() => cover.mutate("file")}
+          onChooseCover={() => setCoverLibraryOpen(true)}
+          onRemoveCover={() => cover.mutate(null)}
           onClose={() => setSettings((current) => ({ ...current, open: false }))}
           onDelete={() => removal.mutate()}
         />
       )}
+      <AvatarLibrarySheet
+        api={api}
+        open={coverLibraryOpen}
+        banner={false}
+        onClose={() => setCoverLibraryOpen(false)}
+        onPick={(asset) => {
+          setCoverLibraryOpen(false);
+          cover.mutate(asset);
+        }}
+      />
     </div>
   );
 }

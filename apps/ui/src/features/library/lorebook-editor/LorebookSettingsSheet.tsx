@@ -3,24 +3,37 @@ import { Trash2, Type } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { icon, ListGroup, ListRow, ListRowButton, Sheet, toast } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
+import type { AssetRef } from "@/api/generated/bindings";
+import { LorebookCoverField } from "../LorebookCoverField";
 
 export function LorebookSettingsSheet({
   open,
   name,
+  cover,
+  coverBusy,
   deleting,
   onSave,
+  onUploadCover,
+  onChooseCover,
+  onRemoveCover,
   onClose,
   onDelete,
 }: {
   open: boolean;
   name: string;
+  cover: AssetRef | null;
+  coverBusy: boolean;
   deleting: boolean;
   onSave: (name: string) => Promise<unknown>;
+  onUploadCover: () => void;
+  onChooseCover: () => void;
+  onRemoveCover: () => void;
   onClose: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation("lorebook-editor");
   const { t: common } = useTranslation();
+  const busy = deleting || coverBusy;
   const [draftName, setDraftName] = useState(name);
   const input = useRef<HTMLInputElement>(null);
   const commitName = () => {
@@ -32,8 +45,15 @@ export function LorebookSettingsSheet({
     );
   };
   return (
-    <Sheet open={open} onClose={onClose} dismissible={!deleting} title={t("settingsTitle")}>
+    <Sheet open={open} onClose={onClose} dismissible={!busy} title={t("settingsTitle")}>
       <div className="space-y-5 pb-1">
+        <LorebookCoverField
+          cover={cover}
+          busy={busy}
+          onUpload={onUploadCover}
+          onChoose={onChooseCover}
+          onRemove={onRemoveCover}
+        />
         <ListGroup>
           <ListRow
             icon={<Type size={icon.lg} />}
@@ -66,7 +86,7 @@ export function LorebookSettingsSheet({
             tone="danger"
             title={t("deleteLorebook")}
             chevron={false}
-            disabled={deleting}
+            disabled={busy}
             onClick={onDelete}
           />
         </ListGroup>

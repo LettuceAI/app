@@ -43,6 +43,7 @@
   "conflict": "Cette encyclopédie a changé pendant votre modification. Votre brouillon est conservé. Actualisez sa révision, vérifiez votre brouillon, puis enregistrez à nouveau.",
   "refreshRevision": "Actualiser la révision",
   "settingsTitle": "Encyclopédie",
+  "coverImage": "Image de couverture",
   "nameField": "Nom",
   "deleteLorebook": "Supprimer l'encyclopédie",
   "exportTitle": "Format d'export",
