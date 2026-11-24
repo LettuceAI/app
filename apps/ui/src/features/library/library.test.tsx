@@ -355,6 +355,32 @@ describe("library operations", () => {
     );
   });
 
+  it("opens the Android save picker from the persona menu", async () => {
+    const target = { uri: "content://documents/Hunter.uec" };
+    const pick = vi.fn(() => ok({ target }));
+    const write = vi.fn(() => ok({ uri: target.uri, suggested_name: "Hunter.uec", warnings: [] }));
+    const view: PersonaView_Serialize = {
+      id: "p1",
+      archived: false,
+      draft: newPersonaDraft("Hunter", "A quiet observer"),
+      assets: [],
+      revision: 7,
+      created_at: 1,
+      updated_at: 1,
+    };
+    await setup({
+      appStatus: () => ok({ ...mockAppStatus, platform: "android", ui_state: { onboarding: { completed: true } } }),
+      personaGet: () => ok(view),
+      filesPickSave: pick,
+      personaExport: write,
+    }, "/library?kind=persona&item=p1");
+    const menu = within(await screen.findByRole("dialog", { name: "Hunter" }));
+    await waitFor(() => expect((menu.getByRole("button", { name: "Delete persona" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(menu.getByRole("button", { name: /^Export/ }));
+    await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith({ id: "p1", target }));
+    expect(pick).toHaveBeenCalledExactlyOnceWith({ suggested_name: "Hunter.uec", kind: "any" });
+  });
+
   it("keeps referenced media visible after a rejected delete and retries explicitly", async () => {
     const remove = vi.fn<NonNullable<MockCallHandlers["mediaLibraryRemove"]>>(() => ({
       status: "error",

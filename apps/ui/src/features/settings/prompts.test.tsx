@@ -41,9 +41,10 @@ async function openPage(calls: MockCallHandlers = {}, path = "/settings/prompts"
 }
 const sheet = () => within(screen.getAllByRole("dialog").at(-1)!);
 
-it("exports a system prompt to Android Downloads without a save picker", async () => {
-  const pick = vi.fn(() => ok({ target: { uri: "content://picked/prompt" } }));
-  const write = vi.fn(() => ok({ uri: "content://downloads/prompt", suggested_name: "prompt.uec", warnings: [] }));
+it("exports a system prompt to the selected Android document", async () => {
+  const target = { uri: "content://picked/prompt.uec" };
+  const pick = vi.fn(() => ok({ target }));
+  const write = vi.fn(() => ok({ uri: target.uri, suggested_name: "prompt.uec", warnings: [] }));
   await openPage({
     appStatus: () => ok({ ...mockAppStatus, platform: "android", ui_state: { onboarding: { completed: true } } }),
     filesPickSave: pick,
@@ -51,8 +52,8 @@ it("exports a system prompt to Android Downloads without a save picker", async (
   });
   fireEvent.contextMenu((await screen.findByText("Story")).closest("button")!);
   fireEvent.click(await screen.findByRole("button", { name: /^Export/ }));
-  await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith({ id: "p1", target: null }));
-  expect(pick).not.toHaveBeenCalled();
+  await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith({ id: "p1", target }));
+  expect(pick).toHaveBeenCalledExactlyOnceWith({ suggested_name: "Story.uec", kind: "json" });
 });
 
 describe("system prompt management", () => {

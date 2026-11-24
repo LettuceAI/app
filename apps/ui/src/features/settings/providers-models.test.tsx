@@ -441,16 +441,17 @@ describe("model settings", () => {
     expect(exportModel).not.toHaveBeenCalled();
   });
 
-  it("exports a model to Android Downloads without a save picker", async () => {
+  it("exports a model to the selected Android document", async () => {
+    const target = { uri: "content://picked/model.uec" };
     const write = vi.fn<NonNullable<MockCallHandlers["modelExport"]>>(() => ({
-      status: "ok", data: { uri: "content://downloads/model", suggested_name: "model.uec", warnings: [] },
+      status: "ok", data: { uri: target.uri, suggested_name: "model.uec", warnings: [] },
     }));
-    const pick = vi.fn<NonNullable<MockCallHandlers["filesPickSave"]>>(() => ({ status: "ok", data: { target: null } }));
+    const pick = vi.fn<NonNullable<MockCallHandlers["filesPickSave"]>>(() => ({ status: "ok", data: { target } }));
     await mount("models", { filesPickSave: pick, modelExport: write });
     fireEvent.contextMenu(await screen.findByRole("button", { name: /My model/ }));
     await click(/Export/);
-    await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith({ id: model.id, target: null }));
-    expect(pick).not.toHaveBeenCalled();
+    await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith({ id: model.id, target }));
+    expect(pick).toHaveBeenCalledExactlyOnceWith({ suggested_name: "My model.uec", kind: "any" });
   });
 
   it("searches model names, IDs and providers across views, including collapsed groups", async () => {

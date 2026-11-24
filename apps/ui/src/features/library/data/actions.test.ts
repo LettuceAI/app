@@ -8,12 +8,14 @@ const ok = <T,>(data: T) => ({ status: "ok" as const, data });
 describe("entity export destinations", () => {
   it.each([
     { kind: "character" as const, command: "characterExport", format: "v3" },
-    { kind: "persona" as const, command: "personaExport" },
+    { kind: "persona" as const, command: "personaExport", format: undefined },
     { kind: "lorebook" as const, command: "lorebookExport", format: "uec" },
     { kind: "lorebook" as const, command: "lorebookExport", format: "world_info" },
-  ] as const)("publishes $kind $format to Android Downloads without a picker", async ({ kind, command, format }) => {
-    const pick = vi.fn(() => ok({ target: { uri: "content://picked/export" } }));
-    const write = vi.fn(() => ok({ uri: "content://downloads/export", suggested_name: "export.uec", warnings: [] }));
+  ] as const)("exports $kind $format to the selected Android document", async ({ kind, command, format }) => {
+    const extension = kind === "character" || format === "world_info" ? "json" : "uec";
+    const target = { uri: `content://picked/export.${extension}` };
+    const pick = vi.fn(() => ok({ target }));
+    const write = vi.fn(() => ok({ uri: target.uri, suggested_name: `Story.${extension}`, warnings: [] }));
     const api = createApiClient(createMockTransport({ calls: {
       appStatus: () => ok({ ...mockAppStatus, platform: "android" }),
       filesPickSave: pick,
@@ -23,18 +25,24 @@ describe("entity export destinations", () => {
     } }));
 
     await expect(exportEntry(api, { kind, id: "entity-1", name: "Story", description: "", image: null }, format === "world_info" ? format : "uec"))
-      .resolves.toMatchObject({ uri: "content://downloads/export" });
-    expect(pick).not.toHaveBeenCalled();
-    expect(write).toHaveBeenCalledExactlyOnceWith({ id: "entity-1", target: null, ...(command === "personaExport" ? {} : { format }) });
+      .resolves.toMatchObject({ uri: target.uri });
+    expect(pick).toHaveBeenCalledExactlyOnceWith({
+      suggested_name: `Story.${extension}`,
+      kind: kind === "character" ? "character_card" : extension === "uec" ? "any" : "json",
+    });
+    expect(write).toHaveBeenCalledExactlyOnceWith({ id: "entity-1", target, ...(command === "personaExport" ? {} : { format }) });
   });
 
-  it("does not export when the desktop save picker is cancelled", async () => {
+  it.each(["other", "android"] as const)("does not export when the save picker is cancelled on %s", async (platform) => {
+    const pick = vi.fn(() => ok({ target: null }));
     const write = vi.fn();
     const api = createApiClient(createMockTransport({ calls: {
-      filesPickSave: () => ok({ target: null }),
+      appStatus: () => ok({ ...mockAppStatus, platform }),
+      filesPickSave: pick,
       personaExport: write,
     } }));
     await expect(exportEntry(api, { kind: "persona", id: "p1", name: "Story", description: "", image: null })).resolves.toBeNull();
+    expect(pick).toHaveBeenCalledOnce();
     expect(write).not.toHaveBeenCalled();
   });
 });

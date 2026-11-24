@@ -61,17 +61,19 @@ describe("home characters", () => {
     expect(fallback.querySelector('img[src="asset://fallback-avatar"]')).not.toBeNull();
   });
 
-  it.each(["uec", "v3", "v2"] as const)("exports %s character cards to Android Downloads without a save picker", async (format) => {
-    const pick = vi.fn(() => ({ status: "ok" as const, data: { target: null } }));
-    const write = vi.fn(() => ({ status: "ok" as const, data: { uri: "content://downloads/character", suggested_name: "character.uec", warnings: [] } }));
+  it.each(["uec", "v3", "v2"] as const)("exports %s character cards to the selected Android document", async (format) => {
+    const extension = format === "uec" ? "uec" : "json";
+    const target = { uri: `content://picked/character.${extension}` };
+    const pick = vi.fn(() => ({ status: "ok" as const, data: { target } }));
+    const write = vi.fn(() => ({ status: "ok" as const, data: { uri: target.uri, suggested_name: `character.${extension}`, warnings: [] } }));
     const api = createApiClient(createMockTransport({ calls: {
       appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: "android" } }),
       filesPickSave: pick, characterExport: write,
     } }));
     await expect(exportCharacter({ api, queryClient: new QueryClient() }, character("ch1", "Cassian"), format))
-      .resolves.toMatchObject({ uri: "content://downloads/character" });
-    expect(write).toHaveBeenCalledExactlyOnceWith({ id: "ch1", format, target: null });
-    expect(pick).not.toHaveBeenCalled();
+      .resolves.toMatchObject({ uri: target.uri });
+    expect(pick).toHaveBeenCalledExactlyOnceWith({ suggested_name: expect.stringMatching(new RegExp(`\\.${extension}$`)), kind: "character_card" });
+    expect(write).toHaveBeenCalledExactlyOnceWith({ id: "ch1", format, target });
   });
 
   it("opens a character's history from its menu even before its first chat", async () => {
