@@ -1407,7 +1407,7 @@
     "manual": {
       "group": "Ruční paměť",
       "window": "Okno kontextu",
-      "windowBody": "Nedávné zprávy posílané s každou odpovědí při ruční paměti. Připnuté jdou vždy."
+      "windowBody": "Nedávné zprávy posílané s každou odpovědí. Připnuté jdou vždy."
     },
     "dynamic": {
       "group": "Dynamická paměť",

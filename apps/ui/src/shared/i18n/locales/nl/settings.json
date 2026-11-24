@@ -1383,7 +1383,7 @@
     "manual": {
       "group": "Handmatig geheugen",
       "window": "Contextvenster",
-      "windowBody": "Recente berichten die met elk antwoord worden meegestuurd bij handmatig geheugen. Vastgezette berichten gaan altijd mee."
+      "windowBody": "Recente berichten die met elk antwoord worden meegestuurd. Vastgezette berichten gaan altijd mee."
     },
     "dynamic": {
       "group": "Dynamisch geheugen",

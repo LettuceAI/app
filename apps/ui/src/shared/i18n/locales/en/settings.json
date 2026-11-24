@@ -1384,7 +1384,7 @@
     "manual": {
       "group": "Manual memory",
       "window": "Context window",
-      "windowBody": "Recent messages sent with each reply on manual memory. Pinned ones always go."
+      "windowBody": "Recent messages sent with each reply. Pinned ones always go."
     },
     "dynamic": {
       "group": "Dynamic memory",

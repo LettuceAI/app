@@ -165,7 +165,7 @@ mod tests {
             },
             value: GlobalSettings {
                 analytics_enabled: false,
-                manual_mode_context_window: 30,
+                message_context_window: 30,
                 ..GlobalSettings::default()
             },
             default_provider_account_id: None,
@@ -240,7 +240,7 @@ mod tests {
                 active_ms: 3_000,
             }]
         );
-        assert_eq!(stored.settings.manual_mode_context_window, 30);
+        assert_eq!(stored.settings.message_context_window, 30);
         let (model_settings, _) =
             lettuce_models::GlobalModelSettingsRepository::global_model_settings(
                 backend.database(),

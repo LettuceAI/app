@@ -159,7 +159,7 @@ fn apply(
             update_checks_enabled,
             developer_mode_enabled,
             auto_download_character_card_avatars,
-            manual_mode_context_window,
+            message_context_window,
             lorebook_scan_depth,
         } => {
             if let Some(value) = pure_mode {
@@ -177,14 +177,14 @@ fn apply(
             if let Some(value) = auto_download_character_card_avatars {
                 settings.auto_download_character_card_avatars = value;
             }
-            if let Some(value) = manual_mode_context_window {
+            if let Some(value) = message_context_window {
                 if value == 0 {
                     return Err(invalid_field(
-                        "manual_mode_context_window",
+                        "message_context_window",
                         "window must be positive",
                     ));
                 }
-                settings.manual_mode_context_window = value;
+                settings.message_context_window = value;
             }
             if let Some(value) = lorebook_scan_depth {
                 if !lettuce_settings::LOREBOOK_SCAN_DEPTH_RANGE.contains(&value) {

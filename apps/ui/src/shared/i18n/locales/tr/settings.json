@@ -1384,7 +1384,7 @@
     "manual": {
       "group": "Manuel hafıza",
       "window": "Bağlam penceresi",
-      "windowBody": "Manuel hafızada her yanıtla gönderilen son mesajlar. Sabitlenenler her zaman gider."
+      "windowBody": "Her yanıtla gönderilen son mesajlar. Sabitlenenler her zaman gider."
     },
     "dynamic": {
       "group": "Dinamik hafıza",

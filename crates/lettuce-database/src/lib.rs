@@ -3588,7 +3588,7 @@ mod tests {
         assert_eq!(blake3::hash(&before_bytes), blake3::hash(&serde_json::to_vec(&after).expect("bytes")));
         let stored = GlobalSettingsStore::load(&a).expect("settings");
         let mut changed = stored.settings;
-        changed.manual_mode_context_window = 77;
+        changed.message_context_window = 77;
         let saved = GlobalSettingsStore::save(&a, changed, None, stored.revision).expect("peer edit");
         sync_to(&a, &b, 100);
         assert_eq!(GlobalSettingsStore::load(&b).expect("b"), saved);
@@ -3605,7 +3605,7 @@ mod tests {
             &a,
             lettuce_settings::GlobalSettings {
                 analytics_enabled: false,
-                manual_mode_context_window: 77,
+                message_context_window: 77,
                 ..stored.settings.clone()
             },
             Some(model.id),

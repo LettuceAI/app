@@ -139,7 +139,7 @@ describe("security settings page", () => {
         update_checks_enabled: null,
         developer_mode_enabled: null,
         auto_download_character_card_avatars: null,
-        manual_mode_context_window: null,
+        message_context_window: null,
         lorebook_scan_depth: null,
       },
     });
@@ -199,7 +199,7 @@ describe("security settings page", () => {
       update_checks_enabled: null,
       developer_mode_enabled: null,
       auto_download_character_card_avatars: false,
-      manual_mode_context_window: null,
+      message_context_window: null,
       lorebook_scan_depth: null,
     });
   });

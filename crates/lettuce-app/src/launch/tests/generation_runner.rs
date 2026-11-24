@@ -334,7 +334,7 @@ async fn conversation_outgrows_its_context_window(dynamic_memory: bool) {
     let stored = GlobalSettingsStore::load(database).expect("settings");
     let mut settings = stored.settings;
     settings.dynamic_memory.enabled = dynamic_memory;
-    let limit = settings.manual_mode_context_window as usize;
+    let limit = settings.message_context_window as usize;
     GlobalSettingsStore::save(database, settings, stored.default_model_profile_id, stored.revision)
         .expect("enable memory without changing the default window");
     let mut scenario = scenario_with_resolvable_profile(database, dynamic_memory, "long-history", true);
@@ -1789,7 +1789,7 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
     let continued_work = admit_and_claim(backend.database(), &continued_scenario, 1_026);
     let stored_settings = GlobalSettingsStore::load(backend.database()).expect("settings");
     let mut narrow_window = stored_settings.settings;
-    narrow_window.manual_mode_context_window = 1;
+    narrow_window.message_context_window = 1;
     GlobalSettingsStore::save(
         backend.database(),
         narrow_window,

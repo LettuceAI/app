@@ -852,7 +852,7 @@ fn map_settings(
                 dimensions: optional_u32(advanced, "embeddingDimensions")?
                     .and_then(|value| u16::try_from(value).ok()),
             },
-            manual_mode_context_window: optional_u32(advanced, "manualModeContextWindow")?
+            message_context_window: optional_u32(advanced, "manualModeContextWindow")?
                 .unwrap_or(50),
             lorebook_scan_depth: lettuce_settings::DEFAULT_LOREBOOK_SCAN_DEPTH,
             llama_default_context_length: llama_default_context_length(advanced, notices),
@@ -4951,7 +4951,7 @@ mod tests {
         assert!(!debug.contains("header-secret"));
         assert!(!debug.contains("audio-secret"));
         assert_eq!(plan.settings.value.embedding.dimensions, Some(512));
-        assert_eq!(plan.settings.value.manual_mode_context_window, 30);
+        assert_eq!(plan.settings.value.message_context_window, 30);
         assert_eq!(
             plan.settings.value.llama_default_context_length,
             Some(16_384)

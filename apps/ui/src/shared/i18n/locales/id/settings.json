@@ -1371,7 +1371,7 @@
     "manual": {
       "group": "Memori manual",
       "window": "Jendela konteks",
-      "windowBody": "Pesan terbaru yang dikirim dengan setiap balasan pada memori manual. Yang disematkan selalu ikut."
+      "windowBody": "Pesan terbaru yang dikirim dengan setiap balasan. Yang disematkan selalu ikut."
     },
     "dynamic": {
       "group": "Memori dinamis",

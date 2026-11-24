@@ -1371,7 +1371,7 @@
     "manual": {
       "group": "Bộ nhớ thủ công",
       "window": "Cửa sổ ngữ cảnh",
-      "windowBody": "Các tin nhắn gần đây được gửi kèm mỗi câu trả lời khi dùng bộ nhớ thủ công. Tin nhắn đã ghim luôn được gửi."
+      "windowBody": "Các tin nhắn gần đây được gửi kèm mỗi câu trả lời. Tin nhắn đã ghim luôn được gửi."
     },
     "dynamic": {
       "group": "Bộ nhớ động",

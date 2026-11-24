@@ -1383,7 +1383,7 @@
     "manual": {
       "group": "Manueller Speicher",
       "window": "Kontextfenster",
-      "windowBody": "Aktuelle Nachrichten, die bei manuellem Speicher mit jeder Antwort gesendet werden. Angeheftete gehen immer mit."
+      "windowBody": "Aktuelle Nachrichten, die mit jeder Antwort gesendet werden. Angeheftete gehen immer mit."
     },
     "dynamic": {
       "group": "Dynamischer Speicher",

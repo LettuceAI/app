@@ -210,7 +210,7 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
     update_checks_enabled: null,
     developer_mode_enabled: null,
     auto_download_character_card_avatars: null,
-    manual_mode_context_window: value,
+    message_context_window: value,
     lorebook_scan_depth: null,
   });
 
@@ -226,7 +226,7 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
                 description={t("memory.manual.windowBody")}
                 trailing={
                   <CommitNumber
-                    value={global.manual_mode_context_window}
+                    value={global.message_context_window}
                     min={1}
                     max={1000}
                     onCommit={(next) => write(() => general(next))}

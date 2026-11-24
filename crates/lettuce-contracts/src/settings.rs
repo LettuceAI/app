@@ -41,7 +41,7 @@ pub struct SettingsGlobalSettings {
     #[cfg_attr(feature = "specta", specta(type = std::collections::HashMap<String, specta_typescript::Unknown>))]
     pub ui_preferences: serde_json::Value,
     pub auto_download_character_card_avatars: bool,
-    pub manual_mode_context_window: u32,
+    pub message_context_window: u32,
     pub lorebook_scan_depth: u8,
     pub llama_default_context_length: Option<u32>,
     pub llama_default_kv_cache_type: Option<SettingsLlamaDefaultKvCacheType>,
@@ -656,7 +656,7 @@ pub enum SettingsPatch {
         update_checks_enabled: Option<bool>,
         developer_mode_enabled: Option<bool>,
         auto_download_character_card_avatars: Option<bool>,
-        manual_mode_context_window: Option<u32>,
+        message_context_window: Option<u32>,
         lorebook_scan_depth: Option<u8>,
     },
     DynamicMemory {

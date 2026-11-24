@@ -2691,7 +2691,7 @@ struct MemoryPromptShape {
 fn history_window(
     settings: &lettuce_settings::GlobalSettings,
 ) -> lettuce_conversations::ContextWindowPolicy {
-    let messages = settings.manual_mode_context_window;
+    let messages = settings.message_context_window;
     lettuce_conversations::ContextWindowPolicy {
         recent_non_pinned_limit: usize::try_from(messages).unwrap_or(usize::MAX),
     }
@@ -4201,7 +4201,7 @@ mod tests {
     fn history_window_follows_the_general_context_window_setting() {
         let mut settings = lettuce_settings::GlobalSettings::default();
         settings.dynamic_memory.summary_message_interval = 20;
-        settings.manual_mode_context_window = 50;
+        settings.message_context_window = 50;
         let mut group = settings.dynamic_memory.clone();
         group.summary_message_interval = 8;
         settings.group_dynamic_memory = Some(group);
@@ -4213,9 +4213,9 @@ mod tests {
             50,
             "the context window ignores the summary intervals of single and group dynamic memory"
         );
-        settings.manual_mode_context_window = 1_000;
+        settings.message_context_window = 1_000;
         assert_eq!(limit(&settings), 1_000);
-        settings.manual_mode_context_window = 4_000;
+        settings.message_context_window = 4_000;
         assert_eq!(limit(&settings), 4_000);
     }
 

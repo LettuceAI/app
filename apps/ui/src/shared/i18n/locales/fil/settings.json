@@ -1383,7 +1383,7 @@
     "manual": {
       "group": "Manual memory",
       "window": "Context window",
-      "windowBody": "Mga kamakailang mensahe na ipinapadala sa bawat tugon sa manual memory. Laging kasama ang mga naka-pin."
+      "windowBody": "Mga kamakailang mensahe na ipinapadala sa bawat tugon. Laging kasama ang mga naka-pin."
     },
     "dynamic": {
       "group": "Dynamic memory",

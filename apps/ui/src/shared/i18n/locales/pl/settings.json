@@ -1407,7 +1407,7 @@
     "manual": {
       "group": "Pamięć ręczna",
       "window": "Okno kontekstu",
-      "windowBody": "Ostatnie wiadomości wysyłane z każdą odpowiedzią przy pamięci ręcznej. Przypięte zawsze idą."
+      "windowBody": "Ostatnie wiadomości wysyłane z każdą odpowiedzią. Przypięte zawsze idą."
     },
     "dynamic": {
       "group": "Pamięć dynamiczna",

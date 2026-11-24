@@ -1383,7 +1383,7 @@
     "manual": {
       "group": "Manuelt minne",
       "window": "Kontekstvindu",
-      "windowBody": "Nylige meldinger som sendes med hvert svar ved manuelt minne. Festede går alltid med."
+      "windowBody": "Nylige meldinger som sendes med hvert svar. Festede går alltid med."
     },
     "dynamic": {
       "group": "Dynamisk minne",

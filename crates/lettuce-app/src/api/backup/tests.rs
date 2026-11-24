@@ -208,7 +208,7 @@ async fn successful_restore_rebinds_settings_and_emits_database_reloaded_once() 
     assert_eq!(queued.state, lettuce_jobs::JobState::Queued);
     assert!(lettuce_jobs::JobStore::get(fresh.backend().database(), queued.id).expect("new database job lookup").is_none());
     let before = crate::api::settings_get(&fresh).await.expect("settings");
-    crate::api::settings_update(&fresh, dto::SettingsUpdateRequest { expected_revision: before.revision, patch: dto::SettingsPatch::General { lorebook_scan_depth: Some(11), pure_mode: None, analytics_enabled: None, update_checks_enabled: None, developer_mode_enabled: None, auto_download_character_card_avatars: None, manual_mode_context_window: None } }).await.expect("settings update");
+    crate::api::settings_update(&fresh, dto::SettingsUpdateRequest { expected_revision: before.revision, patch: dto::SettingsPatch::General { lorebook_scan_depth: Some(11), pure_mode: None, analytics_enabled: None, update_checks_enabled: None, developer_mode_enabled: None, auto_download_character_card_avatars: None, message_context_window: None } }).await.expect("settings update");
     tokio::time::timeout(std::time::Duration::from_secs(5), harness.events.until(|events| events.iter().any(|event| matches!(event, dto::ApiEvent::SettingsChanged { section } if section == "general")))).await.expect("settings event");
     let workers = host.workers.lock().expect("workers").take().expect("started");
     workers.stop().await;

@@ -69,8 +69,8 @@ pub struct GlobalSettings {
     /// Fetch http(s) avatars a character card links to while importing it.
     #[serde(default = "default_true")]
     pub auto_download_character_card_avatars: bool,
-    #[serde(default = "default_manual_mode_context_window")]
-    pub manual_mode_context_window: u32,
+    #[serde(default = "default_message_context_window", alias = "manual_mode_context_window")]
+    pub message_context_window: u32,
     /// How many of the latest messages a recent-message-window lorebook scans
     /// for keywords.
     #[serde(default = "default_lorebook_scan_depth")]
@@ -84,8 +84,8 @@ pub struct GlobalSettings {
     pub llama_default_kv_cache_type: Option<LlamaDefaultKvCacheType>,
 }
 
-const fn default_manual_mode_context_window() -> u32 {
-    50
+const fn default_message_context_window() -> u32 {
+    30
 }
 
 const fn default_lorebook_scan_depth() -> u8 {
@@ -116,7 +116,7 @@ impl Default for GlobalSettings {
             companion_soul_writer: CompanionSoulWriterSettings::default(),
             ui_preferences: UiPreferences::default(),
             auto_download_character_card_avatars: true,
-            manual_mode_context_window: default_manual_mode_context_window(),
+            message_context_window: default_message_context_window(),
             lorebook_scan_depth: DEFAULT_LOREBOOK_SCAN_DEPTH,
             llama_default_context_length: None,
             llama_default_kv_cache_type: None,
@@ -780,12 +780,20 @@ mod tests {
     }
 
     #[test]
+    fn the_message_context_window_still_reads_its_renamed_legacy_key() {
+        let stored = r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true,"manual_mode_context_window":77}"#;
+        let settings: GlobalSettings =
+            serde_json::from_str(stored).expect("settings written before the field was renamed");
+        assert_eq!(settings.message_context_window, 77);
+    }
+
+    #[test]
     fn legacy_generator_defaults_and_selection_precedence() {
         let legacy =
             r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true}"#;
         let settings: GlobalSettings = serde_json::from_str(legacy).expect("old settings document");
         assert_eq!(settings.lorebook_generator.target_count(), 12);
-        assert_eq!(settings.manual_mode_context_window, 50);
+        assert_eq!(settings.message_context_window, 30);
         assert_eq!(settings.lorebook_scan_depth, 10);
         assert_eq!(settings.lorebook_generator.output_tokens(), 4096);
         assert_eq!(settings.dynamic_memory, DynamicMemorySettings::default());

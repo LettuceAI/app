@@ -1383,7 +1383,7 @@
     "manual": {
       "group": "Manuális memória",
       "window": "Kontextusablak",
-      "windowBody": "A legutóbbi üzenetek, amelyeket manuális memóriánál minden válasszal elküldünk. A rögzítettek mindig mennek."
+      "windowBody": "A legutóbbi üzenetek, amelyeket minden válasszal elküldünk. A rögzítettek mindig mennek."
     },
     "dynamic": {
       "group": "Dinamikus memória",

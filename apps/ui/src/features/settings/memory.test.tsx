@@ -42,7 +42,7 @@ function viewOf(patch: Partial<SettingsView["global"]> = {}, revision = 7): Sett
       group_dynamic_memory: null,
       dynamic_memory_prompts: { summarizer_prompt_id: null, manager_prompt_id: null },
       dynamic_memory_llama_sampler_overwrite_enabled: true,
-      manual_mode_context_window: 50,
+      message_context_window: 50,
       ...patch,
     } as SettingsView["global"],
     sampler_defaults: {} as SettingsView["sampler_defaults"],
@@ -68,7 +68,7 @@ function backend(initial: SettingsView) {
     else if (patch.section === "group_dynamic_memory") global.group_dynamic_memory = patch.value;
     else if (patch.section === "dynamic_memory_sampler") global.dynamic_memory_llama_sampler_overwrite_enabled = patch.enabled;
     else if (patch.section === "dynamic_memory_prompts") global.dynamic_memory_prompts = patch.value;
-    else if (patch.section === "general" && patch.manual_mode_context_window !== null) global.manual_mode_context_window = patch.manual_mode_context_window;
+    else if (patch.section === "general" && patch.message_context_window !== null) global.message_context_window = patch.message_context_window;
     if (patch.section === "device_onnx") {
       const field = { eidos: "embedding_keep_model_loaded", thymos: "thymos_keep_model_loaded", kokoro: "kokoro_keep_model_loaded" } as const;
       view = { ...view, device: { ...view.device, [field[patch.model]]: patch.keep_model_loaded, revision: view.device.revision + 1 } };
@@ -149,7 +149,7 @@ describe("memory settings page", () => {
     const { store } = await mount(viewOf());
     await commit("Context window", "80");
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
-    expect(store.requests[0]).toMatchObject({ expected_revision: 7, patch: { section: "general", manual_mode_context_window: 80, pure_mode: null } });
+    expect(store.requests[0]).toMatchObject({ expected_revision: 7, patch: { section: "general", message_context_window: 80, pure_mode: null } });
   });
 
   it("turns dynamic memory on when the model is installed and off again", async () => {
@@ -373,7 +373,7 @@ describe("memory settings page", () => {
     fireEvent.blur(input);
     fireEvent.click(screen.getByRole("switch", { name: "Overwrite sampler configuration" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(2));
-    expect(store.current().global.manual_mode_context_window).toBe(90);
+    expect(store.current().global.message_context_window).toBe(90);
     expect(store.current().global.dynamic_memory_llama_sampler_overwrite_enabled).toBe(false);
   });
 

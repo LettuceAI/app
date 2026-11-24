@@ -13,7 +13,7 @@ async fn developer(context: &crate::api::ApiContext, enabled: bool) {
                 analytics_enabled: None,
                 update_checks_enabled: None,
                 auto_download_character_card_avatars: None,
-                manual_mode_context_window: None,
+                message_context_window: None,
                 lorebook_scan_depth: None,
             },
         },

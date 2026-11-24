@@ -1395,7 +1395,7 @@
     "manual": {
       "group": "Memoria manuale",
       "window": "Finestra di contesto",
-      "windowBody": "Messaggi recenti inviati con ogni risposta in memoria manuale. Quelli fissati vanno sempre."
+      "windowBody": "Messaggi recenti inviati con ogni risposta. Quelli fissati vanno sempre."
     },
     "dynamic": {
       "group": "Memoria dinamica",

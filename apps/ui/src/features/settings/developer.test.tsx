@@ -119,7 +119,7 @@ describe("developer mode", () => {
         update_checks_enabled: null,
         developer_mode_enabled: true,
         auto_download_character_card_avatars: null,
-        manual_mode_context_window: null,
+        message_context_window: null,
         lorebook_scan_depth: null,
       },
     });
