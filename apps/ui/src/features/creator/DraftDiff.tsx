@@ -35,7 +35,14 @@ export function DraftDiff({ before, after, kind }: { before: CreatorDraft; after
       {fields.map((field) => (
         <section key={field.key} className="min-w-0 space-y-2">
           <p className="text-sm font-medium text-fg">{field.label}</p>
-          <Diff before={field.before} after={field.after} beforeLabel={t("before")} afterLabel={t("after")} context={2} />
+          <Diff
+            before={field.before}
+            after={field.after}
+            beforeLabel={t("before")}
+            afterLabel={t("after")}
+            context={2}
+            className="[&_.overflow-x-auto]:grid [&_.overflow-x-auto]:grid-cols-[minmax(100%,max-content)]"
+          />
         </section>
       ))}
     </div>
