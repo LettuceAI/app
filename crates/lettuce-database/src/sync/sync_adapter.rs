@@ -2323,19 +2323,16 @@ fn conversation_apply_error(
 const CONVERSATION_CODEC: SnapshotCodec = SnapshotCodec {
     kind: lettuce_sync::CONVERSATION_SYNC_KIND,
     assets: |bytes| {
-        serde_json::from_slice::<crate::sync::conversation_sync_adapter::SyncConversationRoot>(
-            bytes,
-        )
-        .ok()
-        .and_then(|root| root.conversation.current_settings)
-        .and_then(|settings| match settings.background {
-            Some(lettuce_conversations::ConversationBackground::Image { asset_id }) => {
-                Some(asset_id.to_string())
-            }
-            _ => None,
-        })
-        .into_iter()
-        .collect()
+        let Ok(root) = serde_json::from_slice::<
+            crate::sync::conversation_sync_adapter::SyncConversationRoot,
+        >(bytes) else {
+            return Vec::new();
+        };
+        root.background_asset()
+            .into_iter()
+            .chain(root.initial_media_assets())
+            .map(|asset_id| asset_id.to_string())
+            .collect()
     },
     empty: None,
     seed: None,

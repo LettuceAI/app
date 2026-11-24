@@ -8,14 +8,15 @@
 //! so a new message does not rewrite the root on every device.
 
 use lettuce_conversations::{
-    BranchStatus, Conversation, ConversationAggregate, ConversationBranch,
+    BranchStatus, Conversation, ConversationAggregate, ConversationBackground, ConversationBranch,
     ConversationRepositoryError, GenerationInput, GenerationTarget, GenerationTurn,
     GenerationTurnStatus, IdempotencyKey, InitialMessageOrigin, Message, MessageRenderSource,
-    MessageRevision, MessageVisibility, OperationToken, ProtectedSnapshotRef,
+    MessagePart, MessageRevision, MessageVisibility, OperationToken, ProtectedSnapshotRef,
 };
 use lettuce_transfer::{BackupConversation, BackupMessage};
 use lettuce_types::{
-    CharacterId, ConversationBranchId, ConversationId, MessageId, Revision, TimestampMillis,
+    AssetId, CharacterId, ConversationBranchId, ConversationId, MessageId, Revision,
+    TimestampMillis,
 };
 use lettuce_usage::UsageEvent;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -47,6 +48,25 @@ pub(crate) struct SyncConversationRoot {
     pub root_branch: ConversationBranch,
     pub memory: SyncMemoryBinding,
     pub initial_messages: Vec<SyncInitialMessage>,
+}
+
+impl SyncConversationRoot {
+    pub(crate) fn background_asset(&self) -> Option<AssetId> {
+        match self.conversation.current_settings.as_ref()?.background {
+            Some(ConversationBackground::Image { asset_id }) => Some(asset_id),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn initial_media_assets(&self) -> impl Iterator<Item = AssetId> + '_ {
+        self.initial_messages
+            .iter()
+            .flat_map(|initial| &initial.revision.parts)
+            .filter_map(|part| match part {
+                MessagePart::MediaAsset { asset_id, .. } => Some(*asset_id),
+                _ => None,
+            })
+    }
 }
 
 fn storage(error: impl std::fmt::Debug) -> ConversationRepositoryError {
@@ -217,8 +237,8 @@ fn root_aggregate(root: &SyncConversationRoot) -> ConversationAggregate {
 /// Writes a synced conversation root. A new conversation is created with its
 /// root branch, initial messages, launch snapshot references, memory binding
 /// and create operation; an existing one takes the root's title, lifecycle,
-/// participants and settings. A missing snapshot artifact reports `NotFound`
-/// (it arrives as its own entity).
+/// participants and settings. Missing snapshot or media dependencies report
+/// `NotFound` so sync can retry the root after they arrive.
 pub(crate) fn sync_replace_conversation_root(
     transaction: &Transaction<'_>,
     root: &SyncConversationRoot,
@@ -248,10 +268,7 @@ pub(crate) fn sync_replace_conversation_root(
             return Err(ConversationRepositoryError::NotFound);
         }
     }
-    if let Some(lettuce_conversations::ConversationBackground::Image { asset_id }) = conversation
-        .current_settings
-        .as_ref()
-        .and_then(|settings| settings.background)
+    if let Some(asset_id) = root.background_asset()
         && !exists(
             transaction,
             "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id = ?1)",
@@ -293,6 +310,15 @@ pub(crate) fn sync_replace_conversation_root(
             }
         }
         return Ok(());
+    }
+    for asset_id in root.initial_media_assets() {
+        if !exists(
+            transaction,
+            "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id = ?1)",
+            [asset_id.to_string()],
+        )? {
+            return Err(ConversationRepositoryError::NotFound);
+        }
     }
     slice::save_conversation(transaction, conversation)?;
     match &root.memory {

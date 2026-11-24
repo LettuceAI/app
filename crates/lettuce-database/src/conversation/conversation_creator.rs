@@ -1374,6 +1374,107 @@ mod tests {
     }
 
     #[test]
+    fn sync_defers_an_initial_scene_until_its_media_arrives() {
+        use lettuce_conversations::{ConversationReader, MediaAssetRole};
+        use lettuce_media::{
+            AssetKind, AssetOrigin, BlobState, MediaAsset, MediaAssetRepository, MediaBlob,
+            MediaBlobRepository, MediaKind, RetentionClass,
+        };
+        use lettuce_sync::{
+            IncomingBatchState, IncomingChangeRepository, LocalChangeJournal, MediaSyncRepository,
+            canonical_batch_hash,
+        };
+        use lettuce_types::{MediaBlobId, OperationId};
+
+        let source = Database::open_in_memory().expect("source");
+        let target = Database::open_in_memory().expect("target");
+        let now = TimestampMillis::new(10);
+        let blob = MediaBlob {
+            id: MediaBlobId::new(),
+            content_hash: ContentHash::parse("ab".repeat(32)).expect("hash"),
+            kind: MediaKind::Image,
+            mime_type: "image/png".into(),
+            byte_size: 10,
+            width: Some(1),
+            height: Some(1),
+            duration_ms: None,
+            validation_version: 1,
+            state: BlobState::Staged,
+            created_at: now,
+            updated_at: now,
+        };
+        let asset = MediaAsset {
+            id: AssetId::new(),
+            blob_id: blob.id,
+            kind: AssetKind::MessageImage,
+            origin: AssetOrigin::Upload,
+            retention: RetentionClass::Persistent,
+            provenance: Default::default(),
+            revision: Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        };
+        let install_media = |database: &Database| {
+            MediaBlobRepository::register(database, blob.clone()).expect("register blob");
+            MediaBlobRepository::finalize_staged_to_ready(database, blob.id, now)
+                .expect("ready blob");
+            MediaAssetRepository::create(database, asset.clone()).expect("create asset");
+        };
+        install_media(&source);
+
+        let conversation_id = ConversationId::new();
+        let (mut plan, drafts) =
+            timeline_prepared(conversation_id, CharacterId::new()).into_parts();
+        let scene = &mut plan.initial_timeline.entries[0];
+        let revision_id = scene.revision_id;
+        scene.parts.push(MessagePart::MediaAsset {
+            asset_id: asset.id,
+            role: MediaAssetRole::Scene,
+        });
+        let expected_parts = scene.parts.clone();
+        let launch = PreparedConversationLaunch::new(plan, drafts).expect("media launch");
+        ConversationCreator::create(&source, launch, now).expect("create conversation");
+
+        source.journal_current_state(now).expect("journal source");
+        let changes = source
+            .outbound_changes(
+                &target.local_frontier().expect("target frontier"),
+                lettuce_sync::MAX_OUTBOUND_CHANGES,
+                lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("outbound")
+            .changes;
+        let batch = OperationId::new();
+        target
+            .stage_incoming_batch(
+                changes[0].origin_device(),
+                batch,
+                &canonical_batch_hash(&changes),
+                &changes,
+                now,
+            )
+            .expect("stage");
+        assert_eq!(
+            target.apply_incoming_batch(batch, now).expect("apply").state,
+            IncomingBatchState::Committed
+        );
+        assert!(matches!(
+            ConversationReader::get(&target, conversation_id),
+            Err(ConversationRepositoryError::NotFound)
+        ));
+        let pending = target.pending_media(None).expect("pending media");
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].asset, asset);
+
+        install_media(&target);
+        target.retry_deferred_changes(now).expect("settle deferred changes");
+        assert!(target.pending_media(None).expect("pending media").is_empty());
+        let revision =
+            ConversationReader::get_message_revision(&target, revision_id).expect("synced scene");
+        assert_eq!(revision.parts, expected_parts);
+    }
+
+    #[test]
     fn schema_rejects_mismatched_and_duplicate_creation_events() {
         let database = Database::open_in_memory().expect("database");
         let conversation_id = ConversationId::new();
