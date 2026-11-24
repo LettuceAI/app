@@ -9,6 +9,7 @@ import type {
   FileSource,
   ImportPreview_Serialize,
   ImportCommitResult,
+  ImportOptions,
 } from "@/api/generated/bindings";
 import { commitImport, refreshLibrary } from "@/features/library";
 
@@ -30,12 +31,14 @@ export function ImportSheet({
   api,
   source,
   preview,
+  options,
   onClose,
   onImported,
 }: {
   api: ApiClient;
   source: FileSource;
   preview: ImportPreview_Serialize;
+  options?: ImportOptions;
   onClose: () => void;
   onImported?: (result: ImportCommitResult) => void;
 }) {
@@ -47,7 +50,7 @@ export function ImportSheet({
   const kind = preview.content.kind as Kind;
   const Icon = kind === "character" ? User : kind === "persona" ? UserRound : BookOpen;
   const commit = useMutation({
-    mutationFn: () => commitImport(api, source, preview.digest, operationId),
+    mutationFn: () => commitImport(api, source, preview.digest, operationId, options),
     onSuccess: (result) => {
       onClose();
       void refreshLibrary(queryClient);

@@ -1,4 +1,4 @@
-use super::jobs::{failure, prompt, request_id, text_profile, with_api_replay, with_job_replay};
+use super::jobs::{failure, prompt, request_id, text_model, text_profile, with_api_replay, with_job_replay};
 use super::revision;
 use crate::api::{
     ApiContext,
@@ -186,6 +186,7 @@ fn render_project_view(
         project_id: project.id.to_string(),
         brief: project.brief.clone(),
         lorebook_name: project.initial_lorebook_name.clone(),
+        cover: project.cover_asset_id.map(|id| context.image_asset_ref(id)),
         target_count: project.target_count,
         stage: if failed {
             dto::LorebookProjectStage::PlanFailed
@@ -383,7 +384,7 @@ pub async fn lorebook_project_create(
                             .map_err(failure)?
                     };
                     let stored = GlobalSettingsStore::load(db).map_err(failure)?;
-                    let project = lettuce_creation::StagedLorebookProject::create(
+                    let mut project = lettuce_creation::StagedLorebookProject::create(
                         project_id,
                         request.brief,
                         request.lorebook_name,
@@ -394,6 +395,11 @@ pub async fn lorebook_project_create(
                         context.now(),
                     )
                     .map_err(failure)?;
+                    project.cover_asset_id = request
+                        .cover_asset_id
+                        .as_deref()
+                        .map(|id| parse_id(id, "cover_asset_id"))
+                        .transpose()?;
                     let project = db
                         .commit_api_operation(
                             "lorebook_project_create",
@@ -423,6 +429,7 @@ fn pending_view(
         project_id: project.id.to_string(),
         brief: project.brief.clone(),
         lorebook_name: project.initial_lorebook_name.clone(),
+        cover: project.cover_asset_id.map(|id| context.image_asset_ref(id)),
         target_count: project.target_count,
         stage: if project.stage == Stage::Cancelled {
             dto::LorebookProjectStage::Cancelled
@@ -944,11 +951,22 @@ pub async fn lorebook_generator_defaults(
         .blocking(|context| {
             let settings =
                 GlobalSettingsStore::load(context.backend().database()).map_err(failure)?;
+            let model_problem = match text_model(
+                context,
+                settings.settings.lorebook_generator.selection.model_profile_id,
+            ) {
+                Ok(_) => None,
+                Err(error) => match error.details {
+                    Some(dto::ApiErrorDetails::LorebookModelUnavailable { reason }) => Some(reason),
+                    _ => return Err(error),
+                },
+            };
             Ok(dto::LorebookGeneratorDefaults {
                 target_count: settings.settings.lorebook_generator.target_count(),
                 min_target_count: lettuce_creation::MIN_STAGED_LOREBOOK_TARGET_COUNT,
                 max_target_count: lettuce_creation::MAX_STAGED_LOREBOOK_TARGET_COUNT,
                 output_tokens: settings.settings.lorebook_generator.output_tokens(),
+                model_problem,
             })
         })
         .await

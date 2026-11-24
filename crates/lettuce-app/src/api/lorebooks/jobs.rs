@@ -135,12 +135,20 @@ pub(super) fn text_profile(
     configured: Option<ModelProfileId>,
     staged: bool,
 ) -> Result<lettuce_conversations::ResolvedInferenceProfile, ApiError> {
+    let settings = GlobalSettingsStore::load(context.backend().database()).map_err(failure)?;
+    let model = text_model(context, configured)?;
+    resolved_profile(context, &settings, model.profile, model.account, staged)
+}
+
+pub(super) fn text_model(
+    context: &ApiContext,
+    configured: Option<ModelProfileId>,
+) -> Result<crate::image::image_feature_models::FeatureModel, ApiError> {
     use crate::image::image_feature_models::{
         ImageFeatureModelError, LorebookEntryModelProblem, lorebook_text_model,
     };
     let db = context.backend().database();
-    let settings = GlobalSettingsStore::load(db).map_err(failure)?;
-    let model = lorebook_text_model(db, configured).map_err(|error| match error {
+    lorebook_text_model(db, configured).map_err(|error| match error {
         ImageFeatureModelError::LorebookEntryGenerator(problem) => model_error(match problem {
             LorebookEntryModelProblem::ConfiguredMissing => {
                 dto::LorebookModelProblem::ConfiguredModelMissing
@@ -151,8 +159,7 @@ pub(super) fn text_profile(
             LorebookEntryModelProblem::NoCompatible => dto::LorebookModelProblem::NoTextModel,
         }),
         other => api_error(ApiErrorCode::Unavailable, other.to_string()),
-    })?;
-    resolved_profile(context, &settings, model.profile, model.account, staged)
+    })
 }
 
 fn resolved_profile(

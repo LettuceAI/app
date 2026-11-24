@@ -1867,6 +1867,15 @@ async fn png_cards_and_charx_agree_with_file_inspection() {
 #[tokio::test]
 async fn uec3_lorebook_import_preserves_behavior_and_replays() {
     let (root, harness) = setup();
+    let cover = harness.context.media().expect("media").ingest(
+        crate::api::tests::png_bytes().as_slice(),
+        lettuce_media::IngestRequest::new(
+            lettuce_media::AssetKind::AvatarOriginal,
+            lettuce_media::AssetOrigin::Upload,
+            lettuce_media::RetentionClass::Persistent,
+            lettuce_media::AssetProvenanceV1::default(),
+        ),
+    ).expect("cover").asset.id;
     let value = json!({
         "schema": {"name": "UEC", "version": "3.0"}, "kind": "lorebook",
         "meta": {"exportedAt": 3, "app": "LettuceAI 3.x", "createdAt": 1,
@@ -1889,7 +1898,12 @@ async fn uec3_lorebook_import_preserves_behavior_and_replays() {
     assert_eq!(inspected.kind, dto::FileKind::Lorebook);
     let preview = preview(&harness.context, source.clone()).await;
     assert_eq!(preview.kind, inspected.kind);
-    let request = commit_request(source, preview.digest, json!({}), "uec3-lorebook");
+    let request = commit_request(
+        source,
+        preview.digest,
+        json!({ "lorebook_cover_asset_id": cover }),
+        "uec3-lorebook",
+    );
     let result = crate::api::import_commit(&harness.context, request.clone())
         .await
         .expect("import");
@@ -1920,6 +1934,7 @@ async fn uec3_lorebook_import_preserves_behavior_and_replays() {
         .iter()
         .find(|details| details.book.name == "UEC Harbour")
         .expect("book");
+    assert_eq!(details.book.icon_asset_id, Some(cover));
     assert_eq!(
         details.book.behavior_version,
         lettuce_context::LorebookBehaviorVersion::DeterministicV2

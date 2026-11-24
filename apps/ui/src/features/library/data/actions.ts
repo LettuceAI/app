@@ -6,6 +6,7 @@ import type {
   EntityExportResult,
   FileSource,
   ImportCommitResult,
+  ImportOptions,
   LorebookExportFormat,
   MediaLibraryItem,
 } from "@/api/generated/bindings";
@@ -81,11 +82,12 @@ export function commitImport(
   source: FileSource,
   digest: string,
   operationId: string,
+  options: ImportOptions = {},
 ): Promise<ImportCommitResult> {
   return api.call("importCommit", {
     source,
     digest,
-    options: {},
+    options,
     client_operation_id: operationId,
   });
 }

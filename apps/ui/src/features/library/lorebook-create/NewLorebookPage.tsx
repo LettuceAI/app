@@ -94,7 +94,10 @@ export function NewLorebookPage() {
   const retry = useRef<() => void>(() => {});
   const [filesBusy, setFilesBusy] = useState(false);
   const [coverLibraryOpen, setCoverLibraryOpen] = useState(false);
-  const defaults = useQuery(generatorDefaultsQuery(api));
+  const defaults = useQuery({ ...generatorDefaultsQuery(api), staleTime: 0 });
+  const modelProblem = defaults.data?.model_problem;
+  const canWriteWithAi = defaults.isSuccess && modelProblem === null;
+  const mode = draft.step === "start" && draft.mode === "ai" && modelProblem ? "empty" : draft.mode;
   const update = useCallback(
     (patch: Partial<BriefDraft> | ((current: BriefDraft) => BriefDraft)) => {
       if (!alive.current) return;
@@ -191,13 +194,13 @@ export function NewLorebookPage() {
     return id;
   };
   const submit = async () => {
-    if (running.current || filesBusy) return;
+    if (running.current || filesBusy || (mode === "ai" && !canWriteWithAi)) return;
     running.current = true;
     setBusy(true);
     setError(null);
     retry.current = () => void submit();
     try {
-      if (draft.mode === "empty") {
+      if (mode === "empty") {
         const payload = {
           metadata: {
             name: draft.name.trim(),
@@ -213,7 +216,7 @@ export function NewLorebookPage() {
         await finishSaved(result.lorebook.id, "editor");
         return;
       }
-      if (draft.mode === "import") {
+      if (mode === "import") {
         const files = await api.call("filesPickOpen", {
           kinds: ["json", "character_card"],
           multiple: false,
@@ -258,6 +261,7 @@ export function NewLorebookPage() {
       const payload = {
         brief: draft.brief.trim(),
         lorebook_name: draft.name.trim(),
+        ...(draft.cover ? { cover_asset_id: draft.cover.asset_id } : {}),
         target_count: draft.target ?? defaults.data?.target_count ?? null,
         sources,
       };
@@ -345,28 +349,29 @@ export function NewLorebookPage() {
           disabled={
             busy ||
             filesBusy ||
+            (mode === "ai" && !canWriteWithAi) ||
             !draft.name.trim() ||
             (draft.step === "brief" &&
               (!draft.brief.trim() || !defaults.data || bytes > totalSourceLimit))
           }
           leading={
-            draft.mode === "import" ? (
+            mode === "import" ? (
               <Upload size={icon.md} />
             ) : draft.step === "brief" ? (
               <Wand2 size={icon.md} />
             ) : undefined
           }
           trailing={
-            draft.mode === "ai" && draft.step === "start" ? (
+            mode === "ai" && draft.step === "start" ? (
               <ArrowRight size={icon.md} />
             ) : undefined
           }
           onClick={() => void submit()}
         >
           {t(
-            draft.mode === "import"
+            mode === "import"
               ? "chooseFile"
-              : draft.mode === "empty"
+              : mode === "empty"
                 ? "createLorebook"
                 : draft.step === "start"
                   ? "continue"
@@ -421,25 +426,31 @@ export function NewLorebookPage() {
           <section className="space-y-2">
             <Text variant="label">{t("howToStart")}</Text>
             <div className="grid gap-2">
-              {(["empty", "ai", "import"] as const).map((mode) => (
+              {(["empty", "ai", "import"] as const).map((option) => (
                 <ChoiceCard
-                  key={mode}
-                  selected={draft.mode === mode}
-                  onClick={() => update({ mode })}
+                  key={option}
+                  selected={mode === option}
+                  disabled={option === "ai" && !canWriteWithAi}
+                  onClick={() => update({ mode: option })}
                   icon={
-                    mode === "empty" ? (
+                    option === "empty" ? (
                       <FilePlus2 size={icon.lg} />
-                    ) : mode === "ai" ? (
+                    ) : option === "ai" ? (
                       <Wand2 size={icon.lg} />
                     ) : (
                       <Upload size={icon.lg} />
                     )
                   }
-                  title={t(`start.${mode}`)}
-                  description={t(`start.${mode}Body`)}
+                  title={t(`start.${option}`)}
+                  description={option === "ai" && modelProblem
+                    ? t(`modelErrors.${modelProblem}`)
+                    : t(`start.${option}Body`)}
                 />
               ))}
             </div>
+            {defaults.isError && (
+              <FailureState error={defaults.error} onRetry={() => void defaults.refetch()} />
+            )}
           </section>
         ) : (
           <>
@@ -650,31 +661,28 @@ export function NewLorebookPage() {
             }}
           />
         ) : null}
-        {draft.mode === "empty" && (
-          <>
-            <LorebookCoverField
-              cover={draft.cover}
-              busy={busy || filesBusy}
-              onUpload={() => void uploadCover()}
-              onChoose={() => setCoverLibraryOpen(true)}
-              onRemove={() => update({ cover: null })}
-            />
-            <AvatarLibrarySheet
-              api={api}
-              open={coverLibraryOpen}
-              banner={false}
-              onClose={() => setCoverLibraryOpen(false)}
-              onPick={(cover) => {
-                update({ cover });
-                setCoverLibraryOpen(false);
-              }}
-            />
-          </>
-        )}
+        <LorebookCoverField
+          cover={draft.cover}
+          busy={busy || filesBusy}
+          onUpload={() => void uploadCover()}
+          onChoose={() => setCoverLibraryOpen(true)}
+          onRemove={() => update({ cover: null })}
+        />
+        <AvatarLibrarySheet
+          api={api}
+          open={coverLibraryOpen}
+          banner={false}
+          onClose={() => setCoverLibraryOpen(false)}
+          onPick={(cover) => {
+            update({ cover });
+            setCoverLibraryOpen(false);
+          }}
+        />
         {importing && (
           <ImportSheet
             api={api}
             {...importing}
+            {...(draft.cover ? { options: { lorebook_cover_asset_id: draft.cover.asset_id } } : {})}
             onClose={() => setImporting(null)}
             onImported={(result) => {
               if (result.kind === "imported") void finishSaved(result.id, "library");

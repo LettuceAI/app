@@ -385,6 +385,8 @@ pub struct LorebookProjectCreateRequest {
     pub client_operation_id: String,
     pub brief: String,
     pub lorebook_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_asset_id: Option<String>,
     pub target_count: Option<u32>,
     pub sources: Vec<LorebookProjectSourceInput>,
 }
@@ -521,6 +523,9 @@ pub struct LorebookProjectView {
     pub project_id: String,
     pub brief: String,
     pub lorebook_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(optional))]
+    pub cover: Option<crate::AssetRef>,
     pub target_count: u32,
     pub stage: LorebookProjectStage,
     pub sources: Vec<LorebookProjectSourceView>,
@@ -709,4 +714,5 @@ pub struct LorebookGeneratorDefaults {
     pub min_target_count: u32,
     pub max_target_count: u32,
     pub output_tokens: u32,
+    pub model_problem: Option<crate::LorebookModelProblem>,
 }

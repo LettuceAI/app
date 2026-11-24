@@ -420,10 +420,18 @@ async fn project_creation_needs_no_text_model_and_planning_is_typed() {
         lettuce_models::CapabilityStatus::Unsupported;
     lettuce_models::ModelProfileRepository::upsert(db, model, Some(revision))
         .expect("non text model");
+    assert_eq!(
+        lorebook_generator_defaults(&harness.context)
+            .await
+            .expect("defaults")
+            .model_problem,
+        Some(dto::LorebookModelProblem::NoTextModel)
+    );
     let request = dto::LorebookProjectCreateRequest {
         client_operation_id: "project".into(),
         brief: "A coastal city and its districts".into(),
         lorebook_name: Some("Coast".into()),
+        cover_asset_id: None,
         target_count: Some(5),
         sources: vec![],
     };
@@ -480,6 +488,7 @@ async fn staged_project(
             client_operation_id: key.into(),
             brief: "A coastal city and its districts".into(),
             lorebook_name: Some("Coast".into()),
+            cover_asset_id: None,
             target_count: Some(5),
             sources: vec![],
         },
@@ -980,8 +989,41 @@ async fn project_get(harness: &crate::api::tests::Harness, id: &str) -> dto::Lor
 
 #[tokio::test(flavor = "multi_thread")]
 async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts() {
-    let harness = harness(Reply::LorebookTools);
-    let created = staged_project(&harness, "staged-api").await;
+    let root = std::env::temp_dir().join(format!("lettuce-project-cover-{}", lettuce_types::AssetId::new()));
+    std::fs::create_dir_all(&root).expect("media root");
+    let harness = crate::api::tests::media_harness(Reply::LorebookTools, &root);
+    let path = root.join("cover.png");
+    std::fs::write(&path, crate::api::tests::png_bytes()).expect("cover image");
+    let cover = assets_ingest(
+        &harness.context,
+        dto::AssetsIngestRequest {
+            source: dto::FileSource { uri: path.display().to_string() },
+            role: dto::AssetIngestRole::Avatar,
+        },
+    )
+    .await
+    .expect("cover asset");
+    assert_eq!(
+        lorebook_generator_defaults(&harness.context)
+            .await
+            .expect("defaults")
+            .model_problem,
+        None
+    );
+    let created = lorebook_project_create(
+        &harness.context,
+        dto::LorebookProjectCreateRequest {
+            client_operation_id: "staged-api".into(),
+            brief: "A coastal city and its districts".into(),
+            lorebook_name: Some("Coast".into()),
+            cover_asset_id: Some(cover.asset_id.clone()),
+            target_count: Some(5),
+            sources: vec![],
+        },
+    )
+    .await
+    .expect("project");
+    assert_eq!(created.cover.as_ref().map(|asset| &asset.asset_id), Some(&cover.asset_id));
     let plan_request = dto::LorebookProjectJobRequest {
         client_operation_id: "plan-staged".into(),
         project_id: created.project_id.clone(),
@@ -998,6 +1040,7 @@ async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts()
     );
     execute(&harness, &plan.job_id).await;
     let planned = project_get(&harness, &created.project_id).await;
+    assert_eq!(planned.cover, created.cover);
     assert_eq!(
         planned.stage,
         dto::LorebookProjectStage::AwaitingOutlineApproval
@@ -1166,6 +1209,7 @@ async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts()
     )
     .await
     .expect("committed book");
+    assert_eq!(committed_book.lorebook.icon, created.cover);
     lorebook_delete(
         &harness.context,
         dto::LorebookRevisionRequest {
@@ -1211,6 +1255,9 @@ async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts()
             "lorebook_coherence",
         ])
     );
+    drop(requests);
+    drop(harness);
+    std::fs::remove_dir_all(root).expect("cleanup");
 }
 
 async fn prepare_stage(harness: &crate::api::tests::Harness, stage: &str) -> (String, String) {

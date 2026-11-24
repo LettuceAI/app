@@ -7,6 +7,7 @@ import type {
   CharacterView_Serialize,
   CreatorView,
   LorebookSummary_Serialize,
+  LorebookProjectView_Serialize,
   MediaLibraryItem,
   PersonaPage_Serialize,
   PersonaView_Serialize,
@@ -117,6 +118,14 @@ async function setup(calls: MockCallHandlers = {}, initial: string | RouterHisto
     render(<App runtime={runtime} />);
   });
   return { runtime, transport };
+}
+
+async function chooseLorebookCover() {
+  fireEvent.click(await screen.findByRole("button", { name: "Choose from library" }));
+  const picker = await screen.findByRole("dialog", { name: "Choose from library" });
+  fireEvent.click(await within(picker).findByRole("button", { name: "Throne room" }));
+  expect(await screen.findByRole("img", { name: "Cover image" })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose from library" })).toBeNull());
 }
 
 describe("library design port", () => {
@@ -315,6 +324,10 @@ describe("library operations", () => {
     );
     const { runtime } = await setup({
       lorebookCreate: create,
+      lorebookGeneratorDefaults: () => ok({
+        target_count: 5, min_target_count: 5, max_target_count: 500, output_tokens: 4096,
+        model_problem: "no_text_model",
+      }),
       lorebookGet: () => ok({
         lorebook: {
           id: "new-book",
@@ -335,11 +348,9 @@ describe("library operations", () => {
     fireEvent.change(await screen.findByPlaceholderText("e.g. World of Welan"), {
       target: { value: "Welan" },
     });
-    fireEvent.click(screen.getByText("Empty", { exact: true }));
-    fireEvent.click(await screen.findByRole("button", { name: "Choose from library" }));
-    const picker = await screen.findByRole("dialog", { name: "Choose from library" });
-    fireEvent.click(await within(picker).findByRole("button", { name: "Throne room" }));
-    expect(await screen.findByRole("img", { name: "Cover image" })).toBeTruthy();
+    expect(await screen.findByText("Add a text model in Settings, then choose it for lorebooks.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Write it with AI/ })).toHaveProperty("disabled", true);
+    await chooseLorebookCover();
     expect(create).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Create lorebook" }));
 
@@ -352,6 +363,80 @@ describe("library operations", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     fireEvent.click(within(document.querySelector("header")!).getByRole("button", { name: "Library" }));
     await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/library"));
+  });
+
+  it("keeps the cover across AI setup and sends it with the project", async () => {
+    const project: LorebookProjectView_Serialize = {
+      project_id: "ai-book", brief: "A kingdom", lorebook_name: "Welan", cover: image.asset,
+      target_count: 5, stage: "created", sources: [], outline: [], drafts: [],
+      coherence_changes: [], commit: null, active_job_ids: [], active_phase: null,
+      plan_failure: null, revision: 1, created_at: 1, updated_at: 1,
+    };
+    const create = vi.fn<NonNullable<MockCallHandlers["lorebookProjectCreate"]>>(() => ok(project));
+    await setup({
+      lorebookGeneratorDefaults: () => ok({
+        target_count: 5, min_target_count: 5, max_target_count: 500, output_tokens: 4096,
+        model_problem: null,
+      }),
+      lorebookProjectCreate: create,
+      lorebookProjectGet: () => ok(project),
+      lorebookProjectPlan: () => ok({ job_id: "plan" }),
+      settingsGet: () => ok({
+        global: {
+          dynamic_memory: { enabled: false },
+          lorebook_generator: { selection: { model_profile_id: null } },
+        },
+      } as never),
+      modelsList: () => ok({ models: [], default_model_id: null, revision: 1 }),
+      providerAccountsList: () => ok([]),
+    }, "/library/lorebooks/new");
+    fireEvent.change(await screen.findByPlaceholderText("e.g. World of Welan"), {
+      target: { value: "Welan" },
+    });
+    const ai = screen.getByRole("button", { name: /^Write it with AI/ });
+    await waitFor(() => expect(ai).toHaveProperty("disabled", false));
+    fireEvent.click(ai);
+    await chooseLorebookCover();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.change(await screen.findByPlaceholderText(/^A kingdom after a civil war/), {
+      target: { value: "A kingdom" },
+    });
+    expect(screen.getByRole("img", { name: "Cover image" }).getAttribute("src")).toBe(image.asset.url);
+    fireEvent.click(screen.getByRole("button", { name: "Plan entries" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      brief: "A kingdom",
+      lorebook_name: "Welan",
+      cover_asset_id: image.asset.asset_id,
+    })));
+  });
+
+  it("passes the selected cover when importing a lorebook file", async () => {
+    const source = { uri: "lorebook.uec" };
+    const commit = vi.fn<NonNullable<MockCallHandlers["importCommit"]>>(() =>
+      ok({ kind: "imported", file_kind: "lorebook", id: "imported-book", warnings: [] }),
+    );
+    await setup({
+      filesPickOpen: () => ok({ sources: [source] }),
+      importPreview: () => ok({
+        kind: "lorebook", name: "Welan", digest: "digest",
+        content: { kind: "lorebook", name: "Welan", keyword_detection_mode: "recentMessageWindow", entries: [] },
+        uec3: null, images: [], warnings: [],
+      }),
+      importCommit: commit,
+    }, "/library/lorebooks/new");
+    fireEvent.click(await screen.findByRole("button", { name: /^From a file/ }));
+    fireEvent.change(screen.getByPlaceholderText("e.g. World of Welan"), {
+      target: { value: "Welan" },
+    });
+    await chooseLorebookCover();
+    fireEvent.click(screen.getByRole("button", { name: "Choose file" }));
+    const sheet = await screen.findByRole("dialog", { name: "Import lorebook" });
+    fireEvent.click(within(sheet).getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      source,
+      digest: "digest",
+      options: { lorebook_cover_asset_id: image.asset.asset_id },
+    })));
   });
 
   it("redirects old character-create links to the wizard", async () => {

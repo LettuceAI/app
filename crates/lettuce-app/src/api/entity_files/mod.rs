@@ -1197,6 +1197,20 @@ pub async fn import_commit(
             "the file changed after preview",
         ));
     }
+    let lorebook_cover = request
+        .options
+        .lorebook_cover_asset_id
+        .as_deref()
+        .map(|id| {
+            if file.kind != dto::FileKind::Lorebook {
+                return Err(invalid_field(
+                    "options.lorebook_cover_asset_id",
+                    "a lorebook file is required",
+                ));
+            }
+            parse_id(id, "options.lorebook_cover_asset_id")
+        })
+        .transpose()?;
     let mut warnings = Vec::new();
     enum Prepared {
         Character(Box<lettuce_transfer::CharacterPackage>),
@@ -1391,13 +1405,14 @@ pub async fn import_commit(
                         .as_deref()
                         .map(|value| uec3_asset(&assets, value))
                         .transpose()?;
-                    let (metadata, entries) = book.drafts(icon).map_err(uec3_error)?;
+                    let (metadata, entries) = book.drafts(lorebook_cover.or(icon)).map_err(uec3_error)?;
                     WritePlan::Lorebook(metadata, entries)
                 }
                 (dto::FileKind::Lorebook, _) => {
-                    let (metadata, entries) =
+                    let (mut metadata, entries) =
                         crate::files::lorebook_files::prepare_import(text(&file)?)
                             .map_err(format_error)?;
+                    metadata.icon_asset_id = lorebook_cover;
                     WritePlan::Lorebook(metadata, entries)
                 }
                 (dto::FileKind::PromptPreset, _) if uec3.is_some() => {

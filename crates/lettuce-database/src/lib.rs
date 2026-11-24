@@ -284,6 +284,11 @@ const MIGRATION_43: Migration = Migration {
     sql: include_str!("../migrations/0043_persona_intro.sql"),
 };
 
+const MIGRATION_44: Migration = Migration {
+    id: 44,
+    sql: include_str!("../migrations/0044_lorebook_project_covers.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -328,6 +333,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_41,
     MIGRATION_42,
     MIGRATION_43,
+    MIGRATION_44,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

@@ -174,7 +174,7 @@ export const commands = {
 	lorebookTriggerPreview: (request: LorebookTriggerPreviewRequest) => typedError<LorebookTriggerPreview, ApiError_Serialize>(__TAURI_INVOKE("lorebook_trigger_preview", { request })),
 	lorebookEntryDraft: (request: LorebookEntryDraftRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_entry_draft", { request })),
 	lorebookKeywordsDraft: (request: LorebookKeywordsDraftRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_keywords_draft", { request })),
-	lorebookProjectCreate: (request: LorebookProjectCreateRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_create", { request })),
+	lorebookProjectCreate: (request: LorebookProjectCreateRequest_Deserialize) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_create", { request })),
 	lorebookProjectGet: (request: LorebookProjectGetRequest) => typedError<LorebookProjectView_Serialize, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_get", { request })),
 	lorebookProjectsList: (request: LorebookProjectsListRequest) => typedError<LorebookProjectPage, ApiError_Serialize>(__TAURI_INVOKE("lorebook_projects_list", { request })),
 	lorebookProjectPlan: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("lorebook_project_plan", { request })),
@@ -4358,11 +4358,13 @@ export type ImportOptions = ImportOptions_Serialize | ImportOptions_Deserialize;
 export type ImportOptions_Deserialize = {
 	character_id?: string | null,
 	speakers?: { [key in string]: string },
+	lorebook_cover_asset_id?: string | null,
 };
 
 export type ImportOptions_Serialize = {
 	character_id: string | null,
 	speakers: { [key in string]: string },
+	lorebook_cover_asset_id?: string,
 };
 
 export type ImportPersonaContent = ImportPersonaContent_Serialize | ImportPersonaContent_Deserialize;
@@ -6165,6 +6167,7 @@ export type LorebookGeneratorDefaults = {
 	min_target_count: number,
 	max_target_count: number,
 	output_tokens: number,
+	model_problem: LorebookModelProblem | null,
 };
 
 export type LorebookGetRequest = {
@@ -6270,10 +6273,22 @@ export type LorebookProjectCommitView = {
 	entry_ids: string[],
 };
 
-export type LorebookProjectCreateRequest = {
+export type LorebookProjectCreateRequest = LorebookProjectCreateRequest_Serialize | LorebookProjectCreateRequest_Deserialize;
+
+export type LorebookProjectCreateRequest_Deserialize = {
 	client_operation_id: string,
 	brief: string,
 	lorebook_name: string | null,
+	cover_asset_id?: string | null,
+	target_count: number | null,
+	sources: LorebookProjectSourceInput[],
+};
+
+export type LorebookProjectCreateRequest_Serialize = {
+	client_operation_id: string,
+	brief: string,
+	lorebook_name: string | null,
+	cover_asset_id?: string,
 	target_count: number | null,
 	sources: LorebookProjectSourceInput[],
 };
@@ -6376,6 +6391,7 @@ export type LorebookProjectView_Deserialize = {
 	project_id: string,
 	brief: string,
 	lorebook_name: string | null,
+	cover?: AssetRef_Deserialize | null,
 	target_count: number,
 	stage: LorebookProjectStage,
 	sources: LorebookProjectSourceView_Deserialize[],
@@ -6397,6 +6413,7 @@ export type LorebookProjectView_Serialize = {
 	project_id: string,
 	brief: string,
 	lorebook_name: string | null,
+	cover?: AssetRef_Serialize,
 	target_count: number,
 	stage: LorebookProjectStage,
 	sources: LorebookProjectSourceView_Serialize[],

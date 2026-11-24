@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use lettuce_conversations::ResolvedInferenceProfile;
 use lettuce_conversations::{ProposedToolCall, ToolChoice, ToolDefinition, ToolRequest};
 use lettuce_types::{
-    CreationWorkflowId, JobId, LorebookEntryId, LorebookId, PromptDocumentId, RequestId, Revision,
+    AssetId, CreationWorkflowId, JobId, LorebookEntryId, LorebookId, PromptDocumentId, RequestId, Revision,
     TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
@@ -530,6 +530,8 @@ pub struct StagedLorebookProject {
     pub id: CreationWorkflowId,
     pub brief: String,
     pub initial_lorebook_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_asset_id: Option<AssetId>,
     pub target_count: u32,
     pub excerpts: Vec<StagedLorebookSourceExcerpt>,
     pub outline: Vec<StagedLorebookEntryPlan>,
@@ -1362,6 +1364,7 @@ impl StagedLorebookProject {
         let mut next = self.clone();
         next.cancelled_from = Some(self.stage);
         next.stage = StagedLorebookStage::Cancelled;
+        next.cover_asset_id = None;
         next.updated_at = now;
         next.revision =
             self.revision
@@ -1387,6 +1390,7 @@ impl StagedLorebookProject {
             initial_lorebook_name: initial_lorebook_name
                 .map(|name| name.trim().to_owned())
                 .filter(|name| !name.is_empty()),
+            cover_asset_id: None,
             target_count: clamp_staged_lorebook_target_count(target_count),
             excerpts,
             outline: Vec::new(),

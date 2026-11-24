@@ -129,7 +129,7 @@ async function mount(tab = "lorebook", gate?: Promise<void>, promptCount = 0) {
         }),
       jobsList: () => ok({ items: [], next_cursor: null }),
       lorebookGeneratorDefaults: () =>
-        ok({ target_count: 12, min_target_count: 1, max_target_count: 100, output_tokens: 4096 }),
+        ok({ target_count: 12, min_target_count: 1, max_target_count: 100, output_tokens: 4096, model_problem: null }),
     },
   });
   const history = createMemoryHistory({

@@ -312,7 +312,7 @@ pub(crate) fn load_required(
         .ok_or(LorebookRepositoryError::NotFound)
 }
 
-fn verify_icon(
+pub(super) fn verify_icon(
     connection: &Connection,
     asset: Option<lettuce_types::AssetId>,
 ) -> Result<(), LorebookRepositoryError> {

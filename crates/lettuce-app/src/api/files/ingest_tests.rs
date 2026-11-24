@@ -97,6 +97,7 @@ async fn source_document_ingest_keeps_names_and_projects_keep_source_identities(
         client_operation_id: OperationId::new().to_string(),
         brief: "Describe the coast".into(),
         lorebook_name: Some("Coast".into()),
+        cover_asset_id: None,
         target_count: Some(5),
         sources: vec![
             dto::LorebookProjectSourceInput::Text {
@@ -186,6 +187,7 @@ async fn source_document_ingest_accepts_pdf_and_rejects_binary_and_wrong_roles()
             client_operation_id: OperationId::new().to_string(),
             brief: "Describe the harbour".into(),
             lorebook_name: Some("Map".into()),
+            cover_asset_id: None,
             target_count: Some(5),
             sources: vec![dto::LorebookProjectSourceInput::Document {
                 asset_id: uploaded.asset_id,

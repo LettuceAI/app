@@ -386,6 +386,8 @@ pub struct ImportOptions {
     pub character_id: Option<String>,
     #[serde(default)]
     pub speakers: std::collections::BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lorebook_cover_asset_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

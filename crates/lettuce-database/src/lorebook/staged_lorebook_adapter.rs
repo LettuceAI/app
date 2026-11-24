@@ -1128,7 +1128,7 @@ pub(crate) fn commit_staged_lorebook_in(
                     status: LifecycleStatus::Active,
                     name: name.to_owned(),
                     detection_policy: DetectionPolicy::RecentMessageWindow,
-                    icon_asset_id: None,
+                    icon_asset_id: run.project.cover_asset_id,
                     behavior_version: LorebookBehaviorVersion::LegacyV1,
                     revision: Revision::INITIAL,
                     created_at: request.now,
@@ -1214,6 +1214,7 @@ pub(crate) fn commit_staged_lorebook_in(
         .map_err(failure)?;
     run.project.commit_receipt = Some(receipt.clone());
     run.project.stage = StagedLorebookStage::Committed;
+    run.project.cover_asset_id = None;
     run.project.revision = request.expected_project_revision.next().map_err(|error| {
         StagedLorebookRepositoryError::Invalid {
             reason: error.to_string(),
@@ -1540,6 +1541,8 @@ pub(crate) fn insert_pending_project_in(
             reason: "insert pending project in: a value failed validation".to_owned(),
         });
     }
+    super::lorebook_adapter::verify_icon(transaction, project.cover_asset_id)
+        .map_err(lorebook_error)?;
     transaction.execute("INSERT INTO creation_staged_lorebook_projects(project_id,revision,project_json) VALUES (?1,?2,?3)", params![project.id.to_string(), i64::try_from(project.revision.get()).map_err(failure)?, encode_versioned(project, 1).map_err(failure)?]).map_err(failure)?;
     for source in &project.excerpts {
         if let Some(asset) = source.asset_id {
