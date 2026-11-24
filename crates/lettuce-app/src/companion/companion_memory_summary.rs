@@ -677,8 +677,8 @@ fn summary_from_outcome(
 fn validate_summary_text(summary: &str) -> Result<String, &'static str> {
     let normalized =
         lettuce_memory::collapse_whitespace(&lettuce_memory::normalize_llm_output_text(summary));
-    if normalized.is_empty() || normalized.len() > 6_000 {
-        return Err("summary text is empty or longer than 6000 bytes");
+    if normalized.is_empty() {
+        return Err("summary text is empty");
     }
     let lower = normalized.to_ascii_lowercase();
     let refusal_prefixes = [
@@ -906,10 +906,13 @@ mod tests {
         );
         assert!(validate_summary_text("I'm sorry, I cannot summarize that.").is_err());
         assert!(validate_summary_text("write_summary({ summary: 'x' })").is_err());
+        assert!(validate_summary_text("  ").is_err());
     }
 
     #[test]
     fn summary_response_accepts_legacy_tool_or_plain_text() {
+        let summary = "Mira limana ulaştı. ".repeat(500).trim_end().to_owned();
+        assert!(summary.len() > 6_000);
         let outcome = |parts, tool_calls| InferenceOutcome {
             provider_response_id: None,
             candidates: vec![InferenceCandidate {
@@ -932,7 +935,7 @@ mod tests {
                     vec![ProposedToolCall {
                         provider_call_id: Some("summary".into()),
                         name: "write_summary".into(),
-                        arguments: json!({"summary":"Mira chose tea."}),
+                        arguments: json!({"summary": &summary}),
                         raw_arguments: None,
                         provider_replay: None,
                     }],
@@ -940,20 +943,20 @@ mod tests {
                 true,
             )
             .expect("tool summary"),
-            "Mira chose tea."
+            summary
         );
         assert_eq!(
             summary_from_outcome(
                 &outcome(
                     vec![MessagePart::Text {
-                        text: "Mira chose coffee.".into(),
+                        text: summary.clone(),
                     }],
                     Vec::new(),
                 ),
-                true,
+                false,
             )
             .expect("text summary"),
-            "Mira chose coffee."
+            summary
         );
         assert!(
             summary_from_outcome(
