@@ -311,9 +311,12 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
       ...(!audio && provider ? { group: common(`providerSelect.groups.${providerGroup(provider)}`) } : {}),
     };
   });
+  const isKokoro = audio && kind === "kokoro";
   const showKey = (audio ? kind !== "kokoro" : descriptor?.api_key !== "not_used") && (!isCustom || custom.auth !== "none");
   const optionalKey = isImage || (!audio && !isCustom && descriptor?.api_key === "optional");
   const showUrl = !audio || kind === "fish_speech" || kind === "open_ai_compatible";
+  const canDelete = Boolean(account || (voice && !isKokoro));
+  const canVerify = Boolean((audio && !isKokoro) || isOllama || descriptor?.verifies_key);
   return (
     <Sheet
       open={open}
@@ -449,16 +452,18 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
         )}
         {verified === false && <Text>{t("providers.verifyFailed")}</Text>}
         {changedEndpoint && !key.trim() && <Text variant="hint">{t("providers.saveBeforeVerify")}</Text>}
-        <div className="flex justify-between gap-2">
-          {(account || voice) && (
-            <Button variant="ghost" disabled={action.isPending} onClick={() => void askDelete()}>{t("manage.delete")}</Button>
-          )}
-          {(audio || isOllama || descriptor?.verifies_key) && (
-            <Button variant="ghost" disabled={action.isPending || (changedEndpoint && !key.trim())} onClick={verify}>
-              {t(verified ? "providers.verified" : "providers.verify")}
-            </Button>
-          )}
-        </div>
+        {(canDelete || canVerify) && (
+          <div className="flex justify-between gap-2">
+            {canDelete && (
+              <Button variant="ghost" disabled={action.isPending} onClick={() => void askDelete()}>{t("manage.delete")}</Button>
+            )}
+            {canVerify && (
+              <Button variant="ghost" disabled={action.isPending || (changedEndpoint && !key.trim())} onClick={verify}>
+                {t(verified ? "providers.verified" : "providers.verify")}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </Sheet>
   );

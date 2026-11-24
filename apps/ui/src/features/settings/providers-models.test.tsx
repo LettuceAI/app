@@ -351,6 +351,28 @@ describe("provider settings", () => {
       draft: { configuration: { type: "elevenlabs" }, api_key: "audio-secret" },
     });
   });
+
+  it("hides delete and verify connection for the Kokoro audio provider", async () => {
+    await mount("providers", {
+      audioProvidersList: () => ({
+        status: "ok",
+        data: [
+          {
+            id: "kokoro-1",
+            label: "Local Kokoro",
+            configuration: { type: "kokoro", variant: null },
+            has_api_key: false,
+            revision: 1,
+          },
+        ],
+      }),
+    });
+    fireEvent.click(await screen.findByRole("tab", { name: /Audio/ }));
+    await click(/Local Kokoro/);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Verify connection" })).toBeNull();
+  });
 });
 
 describe("model settings", () => {
