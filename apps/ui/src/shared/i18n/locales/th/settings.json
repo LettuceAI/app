@@ -769,6 +769,7 @@
     "chatModel": "แชท",
     "imageModel": "การสร้างรูปภาพ",
     "fields": {
+      "messageContextWindow": "หน้าต่างบริบท",
       "temperature": "อุณหภูมิ",
       "topP": "Top P",
       "topK": "Top K",
@@ -887,6 +888,7 @@
       "llamaKvTypeV": "ประเภทแคชค่า"
     },
     "hints": {
+      "messageContextWindow": "ข้อความล่าสุดที่ส่งกับแต่ละคำตอบ ข้อความที่ปักหมุดจะถูกส่งเสมอ ค่านี้จะแทนที่การตั้งค่าในส่วน ความจำ",
       "reasoningPrefill": "ไม่ค่อยจำเป็น — ลองปิดก่อน Gemma สำหรับโมเดล Gemma 4 รุ่นแรก และ <think> สำหรับโมเดลให้เหตุผลรุ่นเก่า (เช่น Qwen 3.5) โมเดลใหม่จัดการเองได้",
       "temperature": "สูงขึ้นจะหลากหลายขึ้น",
       "llamaSamplerProfile": "จุดเริ่มต้นที่ฟิลด์ด้านล่างปรับ",
@@ -1255,6 +1257,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "ค่าเริ่มต้นของแอป",
       "reasoningPrefill": "ปิด",
       "llamaThreads": "อัตโนมัติ",
       "llamaThreadsBatch": "อัตโนมัติ",

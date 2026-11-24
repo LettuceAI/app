@@ -781,6 +781,7 @@
     "chatModel": "चैट",
     "imageModel": "छवि निर्माण",
     "fields": {
+      "messageContextWindow": "कॉन्टेक्स्ट विंडो",
       "temperature": "तापमान",
       "topP": "Top P",
       "topK": "Top K",
@@ -899,6 +900,7 @@
       "llamaKvTypeV": "वैल्यू कैश प्रकार"
     },
     "hints": {
+      "messageContextWindow": "हर जवाब के साथ भेजे जाने वाले हाल के संदेश। पिन किए हुए हमेशा जाते हैं। यह मेमोरी में मौजूद सेटिंग को ओवरराइड करता है।",
       "reasoningPrefill": "शायद ही कभी ज़रूरत — पहले बंद आज़माएँ। Gemma शुरुआती Gemma 4 मॉडल के लिए और <think> पुराने रीज़निंग मॉडल (जैसे Qwen 3.5) के लिए है; नए मॉडल यह स्वयं करते हैं।",
       "temperature": "ज़्यादा मतलब ज़्यादा विविध",
       "llamaSamplerProfile": "एक शुरुआती बिंदु जिसे नीचे के फ़ील्ड बदलते हैं",
@@ -1267,6 +1269,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "ऐप डिफ़ॉल्ट",
       "reasoningPrefill": "बंद",
       "llamaThreads": "ऑटोमैटिक",
       "llamaThreadsBatch": "ऑटोमैटिक",

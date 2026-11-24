@@ -257,6 +257,7 @@ pub struct SettingsChatParameterProfile {
     pub top_k: Option<u32>,
     pub max_output_tokens: Option<u32>,
     pub context_length: Option<u32>,
+    pub message_context_window: Option<u32>,
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub repetition_penalty: Option<f64>,

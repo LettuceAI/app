@@ -659,6 +659,7 @@ mod integration_tests {
             top_k: Some(40),
             visible_max_output_tokens: None,
             context_length: Some(4096),
+            message_context_window: None,
             frequency_penalty: None,
             presence_penalty: None,
             repetition_penalty: None,

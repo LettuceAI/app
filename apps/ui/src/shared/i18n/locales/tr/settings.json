@@ -782,6 +782,7 @@
     "chatModel": "Sohbet",
     "imageModel": "Görsel üretimi",
     "fields": {
+      "messageContextWindow": "Bağlam penceresi",
       "temperature": "Sıcaklık",
       "topP": "Top P",
       "topK": "Top K",
@@ -900,6 +901,7 @@
       "llamaKvTypeV": "Değer önbellek türü"
     },
     "hints": {
+      "messageContextWindow": "Her yanıtla gönderilen son mesajlar. Sabitlenenler her zaman gider. Hafıza bölümündeki ayarı geçersiz kılar.",
       "reasoningPrefill": "Nadiren gerekir — önce Kapalı'yı deneyin. Gemma erken Gemma 4 modelleri, <think> eski akıl yürütme modelleri (ör. Qwen 3.5) içindir; yeni modeller bunu kendisi yapar.",
       "temperature": "Yüksek değer daha çeşitli",
       "llamaSamplerProfile": "Aşağıdaki alanların ayarladığı bir başlangıç noktası",
@@ -1268,6 +1270,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Uygulama varsayılanı",
       "reasoningPrefill": "Kapalı",
       "llamaThreads": "Otomatik",
       "llamaThreadsBatch": "Otomatik",

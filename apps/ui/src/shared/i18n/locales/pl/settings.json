@@ -805,6 +805,7 @@
     "chatModel": "Czat",
     "imageModel": "Generowanie obrazów",
     "fields": {
+      "messageContextWindow": "Okno kontekstu",
       "temperature": "Temperatura",
       "topP": "Top P",
       "topK": "Top K",
@@ -923,6 +924,7 @@
       "llamaKvTypeV": "Typ pamięci wartości"
     },
     "hints": {
+      "messageContextWindow": "Ostatnie wiadomości wysyłane z każdą odpowiedzią. Przypięte zawsze idą. Zastępuje ustawienie w sekcji Pamięć.",
       "reasoningPrefill": "Rzadko potrzebne — najpierw wypróbuj Wył. Gemma jest dla wczesnych modeli Gemma 4, a <think> dla starszych modeli rozumujących (np. Qwen 3.5); nowsze modele robią to same.",
       "temperature": "Wyższa daje więcej różnorodności",
       "llamaSamplerProfile": "Punkt wyjścia, który dostosowują pola poniżej",
@@ -1291,6 +1293,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Domyślne aplikacji",
       "reasoningPrefill": "Wył.",
       "llamaThreads": "Automatycznie",
       "llamaThreadsBatch": "Automatycznie",

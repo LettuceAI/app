@@ -769,6 +769,7 @@
     "chatModel": "채팅",
     "imageModel": "이미지 생성",
     "fields": {
+      "messageContextWindow": "컨텍스트 창",
       "temperature": "온도",
       "topP": "Top P",
       "topK": "Top K",
@@ -887,6 +888,7 @@
       "llamaKvTypeV": "값 캐시 유형"
     },
     "hints": {
+      "messageContextWindow": "각 답장과 함께 보내는 최근 메시지. 고정된 메시지는 항상 전송돼요. 메모리의 설정을 재정의해요.",
       "reasoningPrefill": "거의 필요 없음 — 먼저 끄기로 시도하세요. Gemma는 초기 Gemma 4 모델, <think>는 구형 추론 모델(예: Qwen 3.5)용이며, 최신 모델은 스스로 처리합니다.",
       "temperature": "높을수록 다양해져요",
       "llamaSamplerProfile": "아래 필드가 조정하는 시작점",
@@ -1255,6 +1257,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "앱 기본값",
       "reasoningPrefill": "끄기",
       "llamaThreads": "자동",
       "llamaThreadsBatch": "자동",

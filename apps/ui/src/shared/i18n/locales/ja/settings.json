@@ -769,6 +769,7 @@
     "chatModel": "チャット",
     "imageModel": "画像生成",
     "fields": {
+      "messageContextWindow": "コンテキストウィンドウ",
       "temperature": "温度",
       "topP": "Top P",
       "topK": "Top K",
@@ -887,6 +888,7 @@
       "llamaKvTypeV": "値キャッシュタイプ"
     },
     "hints": {
+      "messageContextWindow": "各返信に送る最近のメッセージ。固定したものは常に含まれます。メモリの設定を上書きします。",
       "reasoningPrefill": "ほとんど不要 — まずオフで試してください。Gemma は初期の Gemma 4 モデル、<think> は古い推論モデル（例: Qwen 3.5）向けで、新しいモデルは自分で推論を開始します。",
       "temperature": "高いほど多様",
       "llamaSamplerProfile": "以下のフィールドで調整する出発点",
@@ -1255,6 +1257,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "アプリの既定値",
       "reasoningPrefill": "オフ",
       "llamaThreads": "自動",
       "llamaThreadsBatch": "自動",

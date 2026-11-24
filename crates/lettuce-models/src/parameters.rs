@@ -8,6 +8,10 @@ pub struct ChatParameterProfile {
     pub top_k: Option<u32>,
     pub max_output_tokens: Option<u32>,
     pub context_length: Option<u32>,
+    /// Recent non-pinned messages this model sends with each reply; `None`
+    /// uses the app-wide `message_context_window`. Local text providers only.
+    #[serde(default)]
+    pub message_context_window: Option<u32>,
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub repetition_penalty: Option<f64>,
@@ -32,6 +36,7 @@ impl ChatParameterProfile {
         validate_positive("top_k", self.top_k)?;
         validate_positive("max_output_tokens", self.max_output_tokens)?;
         validate_positive("context_length", self.context_length)?;
+        validate_positive("message_context_window", self.message_context_window)?;
         validate_penalty("frequency_penalty", self.frequency_penalty)?;
         validate_penalty("presence_penalty", self.presence_penalty)?;
         if let Some(value) = self.repetition_penalty
@@ -175,6 +180,8 @@ pub struct ChatParameterOverrides {
     #[serde(default)]
     pub context_length: ParameterOverride<u32>,
     #[serde(default)]
+    pub message_context_window: ParameterOverride<u32>,
+    #[serde(default)]
     pub frequency_penalty: ParameterOverride<f64>,
     #[serde(default)]
     pub presence_penalty: ParameterOverride<f64>,
@@ -202,6 +209,7 @@ impl Default for ChatParameterOverrides {
             top_k: ParameterOverride::Inherit,
             max_output_tokens: ParameterOverride::Inherit,
             context_length: ParameterOverride::Inherit,
+            message_context_window: ParameterOverride::Inherit,
             frequency_penalty: ParameterOverride::Inherit,
             presence_penalty: ParameterOverride::Inherit,
             repetition_penalty: ParameterOverride::Inherit,
@@ -228,6 +236,11 @@ impl ChatParameterOverrides {
         validate_override(
             "context_length",
             &self.context_length,
+            validate_positive_value,
+        )?;
+        validate_override(
+            "message_context_window",
+            &self.message_context_window,
             validate_positive_value,
         )?;
         validate_override(

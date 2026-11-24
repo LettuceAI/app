@@ -328,16 +328,31 @@ fn admit_and_claim(
     claim(database, scenario, scenario.attempt_id, now + 1)
 }
 
-async fn conversation_outgrows_its_context_window(dynamic_memory: bool) {
+async fn conversation_outgrows_its_context_window(dynamic_memory: bool, model_override: Option<u32>) {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let database = backend.database();
     let stored = GlobalSettingsStore::load(database).expect("settings");
     let mut settings = stored.settings;
     settings.dynamic_memory.enabled = dynamic_memory;
-    let limit = settings.message_context_window as usize;
+    let default_window = settings.message_context_window as usize;
     GlobalSettingsStore::save(database, settings, stored.default_model_profile_id, stored.revision)
         .expect("enable memory without changing the default window");
     let mut scenario = scenario_with_resolvable_profile(database, dynamic_memory, "long-history", true);
+    // A per-model override on a local provider (the scenario uses `ollama`) takes
+    // precedence over the app-wide window for this model's transcript.
+    let limit = match model_override {
+        Some(window) => {
+            let mut model = ModelProfileRepository::get(database, scenario.model.source_id)
+                .expect("model")
+                .expect("model exists");
+            let revision = model.revision;
+            model.config.chat_parameters.message_context_window = Some(window);
+            ModelProfileRepository::upsert(database, model, Some(revision))
+                .expect("set the per-model context window override");
+            window as usize
+        }
+        None => default_window,
+    };
     let rounds = limit / 2 + 4;
     let inference = scripted((0..rounds).map(|index| {
         text_outcome(&format!("long-history-{index}"), &format!("History reply {index}"), 5, 2)
@@ -380,12 +395,19 @@ async fn conversation_outgrows_its_context_window(dynamic_memory: bool) {
 
 #[tokio::test]
 async fn ordinary_sends_survive_the_default_dynamic_memory_history_window() {
-    conversation_outgrows_its_context_window(true).await;
+    conversation_outgrows_its_context_window(true, None).await;
 }
 
 #[tokio::test]
 async fn ordinary_sends_survive_the_default_manual_history_window() {
-    conversation_outgrows_its_context_window(false).await;
+    conversation_outgrows_its_context_window(false, None).await;
+}
+
+#[tokio::test]
+async fn a_local_model_context_window_override_narrows_the_assembled_transcript() {
+    // The app default is 30; this local (ollama) model overrides it to 6, so the
+    // provider must receive only the 6 most recent messages, not 30.
+    conversation_outgrows_its_context_window(false, Some(6)).await;
 }
 
 fn execution_request(

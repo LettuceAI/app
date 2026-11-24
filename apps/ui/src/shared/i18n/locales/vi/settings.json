@@ -769,6 +769,7 @@
     "chatModel": "Trò chuyện",
     "imageModel": "Tạo hình ảnh",
     "fields": {
+      "messageContextWindow": "Cửa sổ ngữ cảnh",
       "temperature": "Nhiệt độ",
       "topP": "Top P",
       "topK": "Top K",
@@ -887,6 +888,7 @@
       "llamaKvTypeV": "Loại bộ nhớ đệm giá trị"
     },
     "hints": {
+      "messageContextWindow": "Các tin nhắn gần đây được gửi kèm mỗi câu trả lời. Tin nhắn đã ghim luôn được gửi. Ghi đè thiết lập trong Bộ nhớ.",
       "reasoningPrefill": "Hiếm khi cần — hãy thử Tắt trước. Gemma dành cho model Gemma 4 đời đầu và <think> cho model suy luận cũ (vd. Qwen 3.5); model mới tự xử lý.",
       "temperature": "Cao hơn thì đa dạng hơn",
       "llamaSamplerProfile": "Điểm khởi đầu để các trường bên dưới điều chỉnh",
@@ -1255,6 +1257,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Mặc định của ứng dụng",
       "reasoningPrefill": "Tắt",
       "llamaThreads": "Tự động",
       "llamaThreadsBatch": "Tự động",

@@ -781,6 +781,7 @@
     "chatModel": "Συνομιλία",
     "imageModel": "Δημιουργία εικόνας",
     "fields": {
+      "messageContextWindow": "Παράθυρο πλαισίου",
       "temperature": "Θερμοκρασία",
       "topP": "Top P",
       "topK": "Top K",
@@ -899,6 +900,7 @@
       "llamaKvTypeV": "Τύπος cache τιμών"
     },
     "hints": {
+      "messageContextWindow": "Πρόσφατα μηνύματα που στέλνονται με κάθε απάντηση. Τα καρφιτσωμένα πάνε πάντα. Αντικαθιστά τη ρύθμιση στην ενότητα Μνήμη.",
       "reasoningPrefill": "Σπάνια χρειάζεται — δοκιμάστε πρώτα Ανενεργό. Το Gemma είναι για πρώιμα μοντέλα Gemma 4 και το <think> για παλιότερα μοντέλα συλλογισμού (π.χ. Qwen 3.5)· τα νεότερα μοντέλα το κάνουν μόνα τους.",
       "temperature": "Υψηλότερη = πιο ποικίλο",
       "llamaSamplerProfile": "Σημείο εκκίνησης που προσαρμόζουν τα παρακάτω πεδία",
@@ -1267,6 +1269,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Προεπιλογή εφαρμογής",
       "reasoningPrefill": "Ανενεργό",
       "llamaThreads": "Αυτόματο",
       "llamaThreadsBatch": "Αυτόματο",

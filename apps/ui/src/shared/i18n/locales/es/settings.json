@@ -793,6 +793,7 @@
     "chatModel": "Chat",
     "imageModel": "Generación de imágenes",
     "fields": {
+      "messageContextWindow": "Ventana de contexto",
       "temperature": "Temperatura",
       "topP": "Top P",
       "topK": "Top K",
@@ -911,6 +912,7 @@
       "llamaKvTypeV": "Tipo de caché de valores"
     },
     "hints": {
+      "messageContextWindow": "Mensajes recientes enviados con cada respuesta. Los fijados siempre van. Anula el ajuste en Memoria.",
       "reasoningPrefill": "Rara vez necesario: prueba primero con Desactivado. Gemma es para los primeros modelos Gemma 4 y <think> para modelos de razonamiento antiguos (p. ej. Qwen 3.5); los modelos nuevos lo hacen solos.",
       "temperature": "Un valor más alto da más variedad",
       "llamaSamplerProfile": "Un punto de partida que los campos de abajo ajustan",
@@ -1279,6 +1281,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Predeterminado de la app",
       "reasoningPrefill": "Desactivado",
       "llamaThreads": "Automático",
       "llamaThreadsBatch": "Automático",

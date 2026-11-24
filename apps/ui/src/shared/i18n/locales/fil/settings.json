@@ -781,6 +781,7 @@
     "chatModel": "Chat",
     "imageModel": "Paggawa ng larawan",
     "fields": {
+      "messageContextWindow": "Context window",
       "temperature": "Temperature",
       "topP": "Top P",
       "topK": "Top K",
@@ -899,6 +900,7 @@
       "llamaKvTypeV": "Value cache type"
     },
     "hints": {
+      "messageContextWindow": "Mga kamakailang mensahe na ipinapadala sa bawat tugon. Laging kasama ang mga naka-pin. Ina-override nito ang setting sa Memory.",
       "reasoningPrefill": "Bihirang kailanganin — subukan muna ang Naka-off. Ang Gemma ay para sa maagang Gemma 4 na modelo at ang <think> para sa mas lumang reasoning na modelo (hal. Qwen 3.5); kaya na ito ng mga bagong modelo.",
       "temperature": "Mas mataas, mas iba-iba",
       "llamaSamplerProfile": "Panimulang punto na inaayos ng mga field sa ibaba",
@@ -1267,6 +1269,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Default ng app",
       "reasoningPrefill": "Naka-off",
       "llamaThreads": "Awtomatiko",
       "llamaThreadsBatch": "Awtomatiko",

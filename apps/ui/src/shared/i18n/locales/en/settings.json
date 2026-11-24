@@ -782,6 +782,7 @@
     "chatModel": "Chat",
     "imageModel": "Image generation",
     "fields": {
+      "messageContextWindow": "Context window",
       "temperature": "Temperature",
       "topP": "Top P",
       "topK": "Top K",
@@ -900,6 +901,7 @@
       "llamaKvTypeV": "Value cache type"
     },
     "hints": {
+      "messageContextWindow": "Recent messages sent with each reply. Pinned ones always go. This overrides the setting in Memory.",
       "reasoningPrefill": "Rarely needed — try Off first. Gemma is for early Gemma 4 models and <think> for older reasoning models (e.g. Qwen 3.5-era); newer models open reasoning on their own.",
       "temperature": "Higher is more varied",
       "llamaSamplerProfile": "A starting point the fields below adjust",
@@ -1268,6 +1270,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "App default",
       "reasoningPrefill": "Off",
       "llamaThreads": "Automatic",
       "llamaThreadsBatch": "Automatic",

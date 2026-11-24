@@ -805,6 +805,7 @@
     "chatModel": "Chat",
     "imageModel": "Generování obrázků",
     "fields": {
+      "messageContextWindow": "Okno kontextu",
       "temperature": "Teplota",
       "topP": "Top P",
       "topK": "Top K",
@@ -923,6 +924,7 @@
       "llamaKvTypeV": "Typ mezipaměti hodnot"
     },
     "hints": {
+      "messageContextWindow": "Nedávné zprávy posílané s každou odpovědí. Připnuté jdou vždy. Přepíše nastavení v sekci Paměť.",
       "reasoningPrefill": "Málokdy potřeba – nejdřív zkuste Vypnuto. Gemma je pro rané modely Gemma 4 a <think> pro starší uvažovací modely (např. Qwen 3.5); novější modely to zvládnou samy.",
       "temperature": "Vyšší je rozmanitější",
       "llamaSamplerProfile": "Výchozí bod, který pole níž upravují",
@@ -1291,6 +1293,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Výchozí v aplikaci",
       "reasoningPrefill": "Vypnuto",
       "llamaThreads": "Automaticky",
       "llamaThreadsBatch": "Automaticky",

@@ -805,6 +805,7 @@
     "chatModel": "Чат",
     "imageModel": "Генерація зображень",
     "fields": {
+      "messageContextWindow": "Вікно контексту",
       "temperature": "Температура",
       "topP": "Top P",
       "topK": "Top K",
@@ -923,6 +924,7 @@
       "llamaKvTypeV": "Тип кешу значень"
     },
     "hints": {
+      "messageContextWindow": "Останні повідомлення, що надсилаються з кожною відповіддю. Закріплені надсилаються завжди. Перевизначає налаштування в розділі Пам'ять.",
       "reasoningPrefill": "Рідко потрібно — спершу спробуйте Вимк. Gemma — для ранніх моделей Gemma 4, <think> — для старих моделей міркування (напр. Qwen 3.5); новіші моделі роблять це самі.",
       "temperature": "Вище — більше різноманіття",
       "llamaSamplerProfile": "Відправна точка, яку коригують поля нижче",
@@ -1291,6 +1293,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Типове значення застосунку",
       "reasoningPrefill": "Вимк.",
       "llamaThreads": "Автоматично",
       "llamaThreadsBatch": "Автоматично",

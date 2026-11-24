@@ -781,6 +781,7 @@
     "chatModel": "Samtale",
     "imageModel": "Bildegenerering",
     "fields": {
+      "messageContextWindow": "Kontekstvindu",
       "temperature": "Temperatur",
       "topP": "Top P",
       "topK": "Top K",
@@ -899,6 +900,7 @@
       "llamaKvTypeV": "Verdicachetype"
     },
     "hints": {
+      "messageContextWindow": "Nylige meldinger som sendes med hvert svar. Festede går alltid med. Dette overstyrer innstillingen i Minne.",
       "reasoningPrefill": "Sjelden nødvendig – prøv Av først. Gemma er for tidlige Gemma 4-modeller og <think> for eldre resonneringsmodeller (f.eks. Qwen 3.5); nyere modeller gjør det selv.",
       "temperature": "Høyere gir mer variasjon",
       "llamaSamplerProfile": "Et utgangspunkt som feltene nedenfor justerer",
@@ -1267,6 +1269,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "App-standard",
       "reasoningPrefill": "Av",
       "llamaThreads": "Automatisk",
       "llamaThreadsBatch": "Automatisk",

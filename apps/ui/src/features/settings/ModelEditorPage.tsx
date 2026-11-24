@@ -77,13 +77,17 @@ function ModelEditor({ model, accounts, catalog, defaults, defaultsError, retryD
   const gpuUnavailable = kind === "local" && (contextInfo.data?.supports_gpu_offload === false || devices.data?.devices.length === 0);
   const showGpu = kind === "local" && !devices.isPending && !gpuUnavailable;
   const multiGpuAvailable = (devices.data?.devices.filter((device) => device.device_type !== "IntegratedGpu").length ?? 0) >= 2;
+  // llama.cpp places the override in its Context & Memory section instead; the other local text providers have no such section, so it rides in Generation.
+  const localTextProvider = kind !== "image" && ["ollama", "lmstudio", "intenserp", "custom"].includes(account?.provider_kind ?? "");
   const sections = editorSections(kind, account?.provider_kind === "openrouter").filter((item) => {
     if (kind === "cloud" && descriptor && item.id === "reasoning") return descriptor.reasoning !== "none" && draft.config.capabilities.reasoning !== "unsupported";
     if (kind === "cloud" && descriptor && item.id === "caching") return descriptor.prompt_caching !== "none" && draft.config.capabilities.prompt_cache !== "unsupported";
     if (kind === "image" && !localFile && ["loras", "hires", "speed"].includes(item.id)) return false;
     if (kind === "image" && item.id === "loras") return draft.config.stable_diffusion.cpp?.supports_lora !== false;
     return true;
-  });
+  }).map((item) => localTextProvider && item.id === "generation"
+    ? { ...item, groups: item.groups.map((group, index) => index === 0 ? { ...group, fields: [...group.fields, "messageContextWindow" as FieldId] } : group) }
+    : item);
   const imageOptions = useQuery({ queryKey: ["image", "capabilities", draft.accountId, draft.externalId], queryFn: () => api.call("imageCapabilities", { target: { type: "provider", provider_kind: account!.provider_kind, model: draft.externalId || null } }), enabled: kind === "image" && Boolean(account) });
   const upscalers = useQuery({ queryKey: ["sd", "upscalers"], queryFn: () => api.call("sdUpscalersList"), enabled: kind === "image" && section === "hires" });
   const imageProfiles = useQuery({ queryKey: ["image", "profiles"], queryFn: () => api.call("hfImageBundleProfiles"), enabled: kind === "image" && localFile });

@@ -769,6 +769,7 @@
     "chatModel": "Obrolan",
     "imageModel": "Pembuatan gambar",
     "fields": {
+      "messageContextWindow": "Jendela konteks",
       "temperature": "Temperatur",
       "topP": "Top P",
       "topK": "Top K",
@@ -887,6 +888,7 @@
       "llamaKvTypeV": "Jenis cache nilai"
     },
     "hints": {
+      "messageContextWindow": "Pesan terbaru yang dikirim dengan setiap balasan. Yang disematkan selalu ikut. Ini menggantikan pengaturan di Memori.",
       "reasoningPrefill": "Jarang diperlukan — coba Nonaktif dulu. Gemma untuk model Gemma 4 awal dan <think> untuk model penalaran lama (mis. Qwen 3.5); model baru melakukannya sendiri.",
       "temperature": "Semakin tinggi semakin bervariasi",
       "llamaSamplerProfile": "Titik awal yang disesuaikan kolom di bawah",
@@ -1255,6 +1257,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Default aplikasi",
       "reasoningPrefill": "Nonaktif",
       "llamaThreads": "Otomatis",
       "llamaThreadsBatch": "Otomatis",

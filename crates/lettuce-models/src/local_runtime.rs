@@ -917,6 +917,7 @@ impl ModelSettingsLayer {
             top_k: set(&chat.top_k),
             max_output_tokens: set(&chat.max_output_tokens),
             context_length: set(&chat.context_length),
+            message_context_window: set(&chat.message_context_window),
             frequency_penalty: set(&chat.frequency_penalty),
             presence_penalty: set(&chat.presence_penalty),
             repetition_penalty: set(&chat.repetition_penalty),

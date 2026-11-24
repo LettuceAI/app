@@ -781,6 +781,7 @@
     "chatModel": "Chat",
     "imageModel": "Bildgenerierung",
     "fields": {
+      "messageContextWindow": "Kontextfenster",
       "temperature": "Temperatur",
       "topP": "Top P",
       "topK": "Top K",
@@ -899,6 +900,7 @@
       "llamaKvTypeV": "Wert-Cache-Typ"
     },
     "hints": {
+      "messageContextWindow": "Aktuelle Nachrichten, die mit jeder Antwort gesendet werden. Angeheftete gehen immer mit. Überschreibt die Einstellung unter Speicher.",
       "reasoningPrefill": "Selten nötig – zuerst mit Aus probieren. Gemma ist für frühe Gemma-4-Modelle, <think> für ältere Reasoning-Modelle (z. B. Qwen-3.5-Ära); neuere Modelle öffnen das Reasoning selbst.",
       "temperature": "Höher ist abwechslungsreicher",
       "llamaSamplerProfile": "Ein Ausgangspunkt, den die Felder unten anpassen",
@@ -1267,6 +1269,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "App-Standard",
       "reasoningPrefill": "Aus",
       "llamaThreads": "Automatisch",
       "llamaThreadsBatch": "Automatisch",

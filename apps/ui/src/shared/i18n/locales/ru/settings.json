@@ -805,6 +805,7 @@
     "chatModel": "Чат",
     "imageModel": "Генерация изображений",
     "fields": {
+      "messageContextWindow": "Окно контекста",
       "temperature": "Температура",
       "topP": "Top P",
       "topK": "Top K",
@@ -923,6 +924,7 @@
       "llamaKvTypeV": "Тип кэша значений"
     },
     "hints": {
+      "messageContextWindow": "Недавние сообщения, отправляемые с каждым ответом. Закреплённые идут всегда. Переопределяет настройку в разделе Память.",
       "reasoningPrefill": "Редко нужно — сначала попробуйте Выкл. Gemma — для ранних моделей Gemma 4, <think> — для старых рассуждающих моделей (напр. Qwen 3.5); новые модели делают это сами.",
       "temperature": "Выше — более разнообразно",
       "llamaSamplerProfile": "Отправная точка, которую настраивают поля ниже",
@@ -1291,6 +1293,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "По умолчанию в приложении",
       "reasoningPrefill": "Выкл.",
       "llamaThreads": "Автоматически",
       "llamaThreadsBatch": "Автоматически",

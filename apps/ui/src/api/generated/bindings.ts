@@ -9049,6 +9049,7 @@ export type SettingsChatParameterProfile = {
 	top_k: number | null,
 	max_output_tokens: number | null,
 	context_length: number | null,
+	message_context_window: number | null,
 	frequency_penalty: number | null,
 	presence_penalty: number | null,
 	repetition_penalty: number | null,

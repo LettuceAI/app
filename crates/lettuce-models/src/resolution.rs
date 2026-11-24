@@ -83,6 +83,7 @@ pub struct ResolvedChatParameters {
     pub top_k: Option<u32>,
     pub visible_max_output_tokens: Option<u32>,
     pub context_length: Option<u32>,
+    pub message_context_window: Option<u32>,
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub repetition_penalty: Option<f64>,
@@ -522,6 +523,12 @@ fn resolve_parameters(
             &session.context_length,
             profile.context_length,
             global.context_length,
+        ),
+        message_context_window: resolve_common(
+            &operation.message_context_window,
+            &session.message_context_window,
+            profile.message_context_window,
+            global.message_context_window,
         ),
         frequency_penalty: resolve_model_only(
             &operation.frequency_penalty,

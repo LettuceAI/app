@@ -35,8 +35,8 @@ export function editorSections(kind: EditorKind, openRouter: boolean): EditorSec
   ];
   if (kind === "local") return [
     section("generation", [
-      { fields: common },
-      group("sampler", ["llamaSamplerProfile", "samplerOrder", "llamaTopNSigma", "llamaMinP", "llamaTypicalP", "llamaSeed"]),
+      { fields: ["temperature", "topP", "topK", "llamaMinP", "llamaTypicalP", "llamaTopNSigma", "maxOutputTokens"] },
+      group("sampler", ["llamaSamplerProfile", "samplerOrder", "llamaSeed"]),
       group("penalties", [...penalties, "llamaRepeatPenalty", "llamaNPenRange"]),
       group("dry", ["llamaDryMultiplier", "llamaDryBase", "llamaDryAllowedLength", "llamaDryPenaltyLastN", "llamaDrySequenceBreakers"]),
       group("xtc", ["llamaXtcProbability", "llamaXtcThreshold"]),
@@ -45,6 +45,7 @@ export function editorSections(kind: EditorKind, openRouter: boolean): EditorSec
     section("reasoning", [{ toggle: "reasoningEnabled", fields: ["reasoningEffort", "reasoningBudgetTokens", "reasoningPrefill"] }, group("compatibility", ["forceSendThinkingState"])]),
     section("memory", [
       { fields: ["contextLength"] },
+      { fields: ["messageContextWindow"] },
       group("kv", ["llamaKvType", "llamaKvTypeK", "llamaKvTypeV", "llamaKvPlacement", "llamaSwaFull", "llamaFlashAttention"]),
       { area: "gpu", fields: ["llamaGpuLayers", "llamaCpuLayers"] },
       { area: "gpu", label: "multipleGpus", toggle: "llamaMultiGpuEnabled", fields: ["llamaGpuDistributionMode", "llamaMainGpu", "llamaPriorityVramLimitBytes"] },

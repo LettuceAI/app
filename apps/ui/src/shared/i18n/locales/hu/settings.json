@@ -781,6 +781,7 @@
     "chatModel": "Beszélgetés",
     "imageModel": "Képgenerálás",
     "fields": {
+      "messageContextWindow": "Kontextusablak",
       "temperature": "Hőmérséklet",
       "topP": "Top P",
       "topK": "Top K",
@@ -899,6 +900,7 @@
       "llamaKvTypeV": "Érték-gyorsítótár típusa"
     },
     "hints": {
+      "messageContextWindow": "A legutóbbi üzenetek, amelyeket minden válasszal elküldünk. A rögzítettek mindig mennek. Felülírja a(z) Memória beállítását.",
       "reasoningPrefill": "Ritkán kell – előbb próbáld Ki állásban. A Gemma a korai Gemma 4 modellekhez, a <think> régebbi gondolkodó modellekhez való (pl. Qwen 3.5); az újabb modellek maguktól megoldják.",
       "temperature": "A magasabb változatosabb",
       "llamaSamplerProfile": "Kiindulópont, amelyet az alábbi mezők módosítanak",
@@ -1267,6 +1269,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "Alkalmazás alapértelmezése",
       "reasoningPrefill": "Ki",
       "llamaThreads": "Automatikus",
       "llamaThreadsBatch": "Automatikus",

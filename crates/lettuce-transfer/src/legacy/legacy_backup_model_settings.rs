@@ -317,6 +317,7 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
         top_k: reader.u32("topK", 1, u32::MAX),
         max_output_tokens,
         context_length,
+        message_context_window: None,
         frequency_penalty: reader.f64("frequencyPenalty", -2.0, 2.0),
         presence_penalty: reader.f64("presencePenalty", -2.0, 2.0),
         repetition_penalty: reader.f64("ollamaRepeatPenalty", f64::MIN_POSITIVE, 2.0),

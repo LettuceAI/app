@@ -769,6 +769,7 @@
     "chatModel": "對話",
     "imageModel": "圖片產生",
     "fields": {
+      "messageContextWindow": "上下文視窗",
       "temperature": "溫度",
       "topP": "Top P",
       "topK": "Top K",
@@ -887,6 +888,7 @@
       "llamaKvTypeV": "值快取類型"
     },
     "hints": {
+      "messageContextWindow": "每次回覆會傳送的近期訊息。已標記的訊息一律會傳送。這會覆蓋「記憶」中的設定。",
       "reasoningPrefill": "很少需要——請先用關閉。Gemma 適用於早期 Gemma 4 模型，<think> 適用於較舊的推理模型（如 Qwen 3.5）；較新的模型會自行開啟推理。",
       "temperature": "數值越高變化越大",
       "llamaSamplerProfile": "下方欄位會依此起始值調整",
@@ -1255,6 +1257,7 @@
       }
     },
     "placeholders": {
+      "messageContextWindow": "應用程式預設",
       "reasoningPrefill": "關閉",
       "llamaThreads": "自動",
       "llamaThreadsBatch": "自動",

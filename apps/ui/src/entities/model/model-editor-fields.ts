@@ -43,6 +43,14 @@ export const editorFields = {
     "max": 2147483647,
     "step": 1
   },
+  "messageContextWindow": {
+    "store": "chat",
+    "key": "message_context_window",
+    "type": "number",
+    "min": 1,
+    "max": 1000,
+    "step": 1
+  },
   "frequencyPenalty": {
     "store": "chat",
     "key": "frequency_penalty",
