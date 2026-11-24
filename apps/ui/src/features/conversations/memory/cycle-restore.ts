@@ -6,7 +6,7 @@ export type RestorePlan =
   | { label: "addAnyway" | "addBack"; type: "add"; text: string; category: MemoryCategory | null; observedAt: number | null }
   | { label: "addBack"; type: "warm"; memoryId: string };
 
-const unaddable: readonly MemorySkipReason[] = ["missing_text", "empty_text", "invalid_text", "text_too_long"];
+const unaddable: readonly MemorySkipReason[] = ["missing_text", "empty_text", "invalid_text"];
 
 const same = (left: string, right: string) => left.trim().toLowerCase() === right.trim().toLowerCase();
 

@@ -158,8 +158,7 @@ pub fn consolidation_texts(group: &ConsolidationGroup, sources: &[ConsolidationS
             }
         }
         let raw = replacement.details.iter().map(|detail| detail.text.as_str()).collect::<Vec<_>>().join(" ");
-        // Check the bytes before normalization; never shorten a response to
-        // make it fit. The ordinary normalizer currently counts characters.
+        // Consolidation keeps its own byte budget; never shorten a response to make it fit.
         if raw.len() > CONSOLIDATION_MEMORY_BYTES { return Err("text_bytes"); }
         let text = crate::normalize_memory_text(&raw).map_err(|_| "invalid_text")?;
         if text != raw.split_whitespace().collect::<Vec<_>>().join(" ") { return Err("rewritten_during_validation"); }

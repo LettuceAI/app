@@ -498,16 +498,19 @@ describe("memory activity and pinned tabs", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Messages 81 to 100/ }));
     await screen.findByText("Mira hates the sea.");
     expect(screen.getAllByRole("button", { name: "Add it back" })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "Add anyway" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Add anyway" })).toHaveLength(2);
     fireEvent.click(screen.getAllByRole("button", { name: "Add it back" })[0]!);
     await waitFor(() => expect(called("memoryAdd")).toHaveLength(1));
     expect(called("memoryAdd")[0]?.request).toMatchObject({ text: "Mira hates the sea.", category: "preference", observed_at: 1_700_000_000_000, expected_revision: 5 });
     fireEvent.click(screen.getAllByRole("button", { name: "Add it back" })[1]!);
     await waitFor(() => expect(called("memorySetTemperature")).toHaveLength(1));
     expect(called("memorySetTemperature")[0]?.request).toMatchObject({ memory_id: "c1", temperature: "hot" });
-    fireEvent.click(screen.getByRole("button", { name: "Add anyway" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Add anyway" })[0]!);
     await waitFor(() => expect(called("memoryAdd")).toHaveLength(2));
     expect(called("memoryAdd")[1]?.request).toMatchObject({ text: "Fears flying.", category: "character_trait", observed_at: null });
+    fireEvent.click(screen.getAllByRole("button", { name: "Add anyway" })[1]!);
+    await waitFor(() => expect(called("memoryAdd")).toHaveLength(3));
+    expect(called("memoryAdd")[2]?.request).toMatchObject({ text: "Far too long.", observed_at: null });
   });
 
   const pinnedMessage = message("p1", "assistant", "Karsk was a choice.", { pinned: true });

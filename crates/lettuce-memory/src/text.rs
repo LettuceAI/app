@@ -1,5 +1,3 @@
-const MAX_MEMORY_TEXT_CHARS: usize = 280;
-
 const REFUSAL_MARKERS: [&str; 8] = [
     "i'm sorry",
     "i am sorry",
@@ -71,15 +69,12 @@ pub fn collapse_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// The stored form of a model-written memory: normalized, whitespace collapsed
-/// and within a 280-byte limit, rejecting refusals and meta output.
+/// The stored form of a model-written memory: normalized and whitespace
+/// collapsed, rejecting refusals and meta output.
 pub fn normalize_memory_text(raw: &str) -> Result<String, MemoryTextProblem> {
     let normalized = collapse_whitespace(&normalize_llm_output_text(raw));
     if normalized.is_empty() {
         return Err(MemoryTextProblem::Empty);
-    }
-    if normalized.chars().count() > MAX_MEMORY_TEXT_CHARS {
-        return Err(MemoryTextProblem::TooLong);
     }
     let lower = normalized.to_lowercase();
     let opening = lower.trim_start_matches(|character: char| {
@@ -135,11 +130,7 @@ mod tests {
             Ok("Ari owns a boat".to_owned())
         );
         assert_eq!(normalize_memory_text("  "), Err(MemoryTextProblem::Empty));
-        assert_eq!(
-            normalize_memory_text(&"a".repeat(281)),
-            Err(MemoryTextProblem::TooLong)
-        );
-        assert!(normalize_memory_text(&"a".repeat(280)).is_ok());
+        assert!(normalize_memory_text(&"a".repeat(5000)).is_ok());
         assert_eq!(
             normalize_memory_text("I'm sorry, but I can't help with that."),
             Err(MemoryTextProblem::Refusal)
@@ -169,16 +160,5 @@ mod tests {
         ] {
             assert!(normalize_memory_text(text).is_ok(), "{text}");
         }
-    }
-
-    #[test]
-    fn the_length_limit_counts_characters() {
-        let accented = "é".repeat(280);
-        assert!(accented.len() > 280);
-        assert!(normalize_memory_text(&accented).is_ok());
-        assert_eq!(
-            normalize_memory_text(&"é".repeat(281)),
-            Err(MemoryTextProblem::TooLong)
-        );
     }
 }
