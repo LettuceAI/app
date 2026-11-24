@@ -169,12 +169,14 @@ fn carry_local_diffusion_registrations(transaction: &rusqlite::Transaction<'_>) 
 
 fn read_only_uri(path: &str) -> String {
     let mut uri = String::from("file:");
-    let bytes = path.as_bytes();
-    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+    let drive_path = matches!(path.as_bytes(), [letter, b':', ..] if letter.is_ascii_alphabetic());
+    if drive_path {
         uri.push('/');
     }
+    // Encode backslashes in verbatim and UNC paths so SQLite receives the
+    // native path without treating its leading separators as a URI authority.
     for byte in path.bytes() {
-        if byte == b'\\' {
+        if drive_path && byte == b'\\' {
             uri.push('/');
         } else if byte.is_ascii_alphanumeric()
             || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'/' | b':')
@@ -264,6 +266,18 @@ mod tests {
             read_only_uri("C:\\Users\\a\\old.db"),
             "file:/C:/Users/a/old.db?mode=ro"
         );
+        assert_eq!(
+            read_only_uri(r"\\?\C:\Users\a b\old.db"),
+            "file:%5C%5C%3F%5CC:%5CUsers%5Ca%20b%5Cold.db?mode=ro"
+        );
+        assert_eq!(
+            read_only_uri(r"\\?\UNC\server\share\old.db"),
+            "file:%5C%5C%3F%5CUNC%5Cserver%5Cshare%5Cold.db?mode=ro"
+        );
+        assert_eq!(
+            read_only_uri(r"\\server\share\old.db"),
+            "file:%5C%5Cserver%5Cshare%5Cold.db?mode=ro"
+        );
     }
 
     #[test]
@@ -290,6 +304,8 @@ mod tests {
         use lettuce_settings::DeviceUiStateStore;
         let root = std::env::temp_dir().join(format!("device-ui-{}", OperationId::new()));
         std::fs::create_dir_all(&root).expect("fixture root");
+        // The desktop host canonicalizes its data directory before opening it.
+        let root = root.canonicalize().expect("canonical fixture root");
         let previous_path = root.join("previous.sqlite3");
         let previous = Database::open(&previous_path).expect("previous database");
         let state = |value: &str| {
