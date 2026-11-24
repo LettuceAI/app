@@ -49,58 +49,78 @@ fn locations(root: &TempDir, resources: bool) -> OnnxRuntimeLocations {
 }
 
 #[test]
-fn runtime_version_follows_the_ort_api_version() {
-    assert!(ONNX_RUNTIME_VERSION.starts_with(&format!("1.{}.", ort::MINOR_VERSION)));
+fn managed_runtimes_provide_the_selected_c_api() {
+    assert!(runtime_version_supported(ONNX_RUNTIME_VERSION, "1.22.0"));
+    assert!(runtime_version_supported(MAC_COMPAT_RUNTIME_VERSION, "1.22.0"));
+    assert!(!runtime_version_supported("1.22.0", ONNX_RUNTIME_VERSION));
+    assert!(!runtime_version_supported("1.22.0", MAC_COMPAT_RUNTIME_VERSION));
+    assert!(!runtime_version_supported("1.28.0-preview", ONNX_RUNTIME_VERSION));
 }
 
 #[test]
-fn archives_are_the_official_release_assets_per_platform() {
-    let windows = onnx_runtime_archives(OnnxRuntimeHostOs::Windows, "x86_64").expect("windows");
-    assert_eq!(windows.len(), 1);
-    assert_eq!(
-        windows[0].url,
-        "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-win-x64-1.22.0.zip"
-    );
-    assert_eq!(
-        windows[0].library_entry,
-        "onnxruntime-win-x64-1.22.0/lib/onnxruntime.dll"
-    );
-    assert_eq!(windows[0].sibling_extension, Some("dll"));
+fn archives_are_pinned_wheels_with_native_libraries_for_each_desktop_target() {
+    for (os, arch, version, platform, library) in [
+        (OnnxRuntimeHostOs::Windows, "x86_64", ONNX_RUNTIME_VERSION, "win_amd64", "onnxruntime.dll"),
+        (OnnxRuntimeHostOs::Linux, "x86_64", ONNX_RUNTIME_VERSION, "manylinux_2_28_x86_64", "libonnxruntime.so.1.28.0"),
+        (OnnxRuntimeHostOs::MacOs, "aarch64", mac_runtime_version("aarch64", Some(14)), "macosx_14_0_arm64", "libonnxruntime.1.28.0.dylib"),
+        (OnnxRuntimeHostOs::MacOs, "aarch64", mac_runtime_version("aarch64", Some(13)), "macosx_13_0_arm64", "libonnxruntime.1.23.2.dylib"),
+        (OnnxRuntimeHostOs::MacOs, "x86_64", mac_runtime_version("x86_64", Some(14)), "macosx_13_0_x86_64", "libonnxruntime.1.23.2.dylib"),
+    ] {
+        let [mirror, upstream]: [OnnxRuntimeArchive; 2] =
+            runtime_archives(os, arch, version).expect("archives").try_into().expect("mirror and upstream");
+        assert!(mirror.url.starts_with("https://github.com/LettuceAI/app/releases/download/onnxruntime-1.28.0/"));
+        assert!(upstream.url.starts_with("https://files.pythonhosted.org/packages/"));
+        assert!(upstream.file_name.ends_with(&format!("{platform}.whl")));
+        assert_eq!(upstream.library_entry, format!("onnxruntime/capi/{library}"));
+        assert_eq!(upstream.format, OnnxRuntimeArchiveFormat::Zip);
+        assert_eq!(upstream.sha256.expect("pinned digest").len(), 64);
+        assert_eq!(OnnxRuntimeArchive { url: upstream.url.clone(), ..mirror }, upstream);
+    }
+    assert!(onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "aarch64").is_err());
+}
 
-    let linux = onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "x86_64").expect("linux");
-    assert_eq!(
-        linux[0].url,
-        "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz"
-    );
-    assert_eq!(
-        linux[0].library_entry,
-        "onnxruntime-linux-x64-1.22.0/lib/libonnxruntime.so.1.22.0"
-    );
-    assert_eq!(linux[0].library_name, "libonnxruntime.so");
-    assert_eq!(linux[0].sibling_extension, None);
+fn fixture_archive(os: OnnxRuntimeHostOs) -> OnnxRuntimeArchive {
+    let (format, directory, file, name, siblings) = match os {
+        OnnxRuntimeHostOs::Windows => (OnnxRuntimeArchiveFormat::Zip, "onnxruntime-win-x64-1.22.0", "onnxruntime.dll", "onnxruntime.dll", Some("dll")),
+        OnnxRuntimeHostOs::Linux => (OnnxRuntimeArchiveFormat::TarGz, "onnxruntime-linux-x64-1.22.0", "libonnxruntime.so.1.22.0", "libonnxruntime.so", None),
+        OnnxRuntimeHostOs::MacOs => (OnnxRuntimeArchiveFormat::TarGz, "onnxruntime-osx-arm64-1.22.0", "libonnxruntime.1.22.0.dylib", "libonnxruntime.1.22.0.dylib", Some("dylib")),
+    };
+    OnnxRuntimeArchive {
+        url: String::new(),
+        file_name: format!("{directory}.fixture"),
+        format,
+        library_entry: format!("{directory}/lib/{file}"),
+        library_name: name.to_owned(),
+        sibling_extension: siblings,
+        sha256: None,
+    }
+}
 
-    let mac = onnx_runtime_archives(OnnxRuntimeHostOs::MacOs, "aarch64").expect("mac");
-    assert_eq!(
-        mac.iter()
-            .map(|archive| archive.file_name.as_str())
-            .collect::<Vec<_>>(),
-        [
-            "onnxruntime-osx-arm64-1.22.0.tgz",
-            "onnxruntime-osx-universal2-1.22.0.tgz"
-        ]
-    );
-    assert_eq!(mac[1].library_name, "libonnxruntime.1.22.0.dylib");
-    assert_eq!(
-        mac[1].library_entry,
-        "onnxruntime-osx-universal2-1.22.0/lib/libonnxruntime.1.22.0.dylib"
-    );
-    let intel = onnx_runtime_archives(OnnxRuntimeHostOs::MacOs, "x86_64").expect("intel");
-    assert_eq!(intel[0].file_name, "onnxruntime-osx-x86_64-1.22.0.tgz");
+fn resolve_fixture(
+    os: OnnxRuntimeHostOs,
+    override_path: Option<&OsStr>,
+    locations: &OnnxRuntimeLocations,
+) -> Option<ResolvedOnnxRuntime> {
+    resolve_installed_with_version_check(os, override_path, locations, |_| true)
+}
 
-    assert!(matches!(
-        onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "aarch64"),
-        Err(OnnxRuntimeProvisionError::UnsupportedPlatform { .. })
-    ));
+#[test]
+fn outdated_external_runtimes_fall_through_to_the_managed_install() {
+    let root = TempDir::new("old-runtime");
+    let custom = root.join("custom.so");
+    let bundled = root.join("resources/libonnxruntime.so");
+    let downloaded = root.join("onnxruntime/libonnxruntime.so");
+    for library in [&custom, &bundled, &downloaded] {
+        write(library, b"fixture");
+    }
+    let resolved = resolve_installed_with_version_check(
+        OnnxRuntimeHostOs::Linux, Some(custom.as_os_str()), &locations(&root, true),
+        |_| runtime_version_supported("1.22.0", ONNX_RUNTIME_VERSION),
+    ).expect("managed runtime");
+    assert_eq!(resolved.library, downloaded);
+    assert_eq!(resolved.source, OnnxRuntimeSource::Downloaded);
+    assert!(custom.exists());
+    assert!(bundled.exists());
 }
 
 #[test]
@@ -115,7 +135,7 @@ fn override_wins_over_bundled_and_downloaded_runtimes() {
     write(&root.join("onnxruntime/libonnxruntime.so"), b"downloaded");
     let locations = locations(&root, true);
 
-    let resolved = resolve_installed_onnx_runtime(
+    let resolved = resolve_fixture(
         OnnxRuntimeHostOs::Linux,
         Some(custom.as_os_str()),
         &locations,
@@ -124,7 +144,7 @@ fn override_wins_over_bundled_and_downloaded_runtimes() {
     assert_eq!(resolved.source, OnnxRuntimeSource::Override);
     assert_eq!(resolved.library, custom);
 
-    let resolved = resolve_installed_onnx_runtime(OnnxRuntimeHostOs::Linux, None, &locations)
+    let resolved = resolve_fixture(OnnxRuntimeHostOs::Linux, None, &locations)
         .expect("bundled");
     assert_eq!(resolved.source, OnnxRuntimeSource::Bundled);
     assert_eq!(
@@ -133,7 +153,7 @@ fn override_wins_over_bundled_and_downloaded_runtimes() {
     );
 
     std::fs::remove_file(root.join("resources/onnxruntime/libonnxruntime.so")).expect("remove");
-    let resolved = resolve_installed_onnx_runtime(OnnxRuntimeHostOs::Linux, None, &locations)
+    let resolved = resolve_fixture(OnnxRuntimeHostOs::Linux, None, &locations)
         .expect("downloaded");
     assert_eq!(resolved.source, OnnxRuntimeSource::Downloaded);
     assert_eq!(resolved.library, root.join("onnxruntime/libonnxruntime.so"));
@@ -152,7 +172,7 @@ fn blank_empty_or_missing_overrides_fall_through() {
         OsStr::new("/definitely/missing/libonnxruntime.so"),
     ] {
         let resolved =
-            resolve_installed_onnx_runtime(OnnxRuntimeHostOs::Linux, Some(value), &locations)
+            resolve_fixture(OnnxRuntimeHostOs::Linux, Some(value), &locations)
                 .expect("downloaded");
         assert_eq!(resolved.source, OnnxRuntimeSource::Downloaded);
     }
@@ -160,7 +180,7 @@ fn blank_empty_or_missing_overrides_fall_through() {
 
     let padded = root.join("onnxruntime/libonnxruntime.so");
     let padded = format!("  {}  ", padded.display());
-    let resolved = resolve_installed_onnx_runtime(
+    let resolved = resolve_fixture(
         OnnxRuntimeHostOs::Linux,
         Some(OsStr::new(&padded)),
         &locations,
@@ -176,7 +196,7 @@ fn windows_runtimes_need_the_shared_provider_library() {
     write(&custom, b"dll");
     let locations = locations(&root, false);
     assert!(
-        resolve_installed_onnx_runtime(
+        resolve_fixture(
             OnnxRuntimeHostOs::Windows,
             Some(custom.as_os_str()),
             &locations
@@ -185,7 +205,7 @@ fn windows_runtimes_need_the_shared_provider_library() {
     );
     write(&root.join("custom/onnxruntime_providers_shared.dll"), b"");
     assert!(
-        resolve_installed_onnx_runtime(
+        resolve_fixture(
             OnnxRuntimeHostOs::Windows,
             Some(custom.as_os_str()),
             &locations
@@ -195,7 +215,7 @@ fn windows_runtimes_need_the_shared_provider_library() {
     );
     write(&root.join("custom/onnxruntime_providers_shared.dll"), b"p");
     assert_eq!(
-        resolve_installed_onnx_runtime(
+        resolve_fixture(
             OnnxRuntimeHostOs::Windows,
             Some(custom.as_os_str()),
             &locations
@@ -207,7 +227,7 @@ fn windows_runtimes_need_the_shared_provider_library() {
 
     let downloaded = root.join("onnxruntime/onnxruntime.dll");
     write(&downloaded, b"dll");
-    assert!(resolve_installed_onnx_runtime(OnnxRuntimeHostOs::Windows, None, &locations).is_none());
+    assert!(resolve_fixture(OnnxRuntimeHostOs::Windows, None, &locations).is_none());
     assert!(
         is_nonempty_file(&downloaded),
         "a library missing its providers is replaced by the download, not deleted"
@@ -220,7 +240,7 @@ fn bundled_candidates_follow_the_legacy_order() {
     write(&root.join("resources/libonnxruntime.so"), b"flat");
     write(&root.join("resources/onnxruntime/libonnxruntime.so"), b"");
     let resolved =
-        resolve_installed_onnx_runtime(OnnxRuntimeHostOs::Linux, None, &locations(&root, true))
+        resolve_fixture(OnnxRuntimeHostOs::Linux, None, &locations(&root, true))
             .expect("bundled");
     assert_eq!(resolved.library, root.join("resources/libonnxruntime.so"));
     assert!(
@@ -236,7 +256,7 @@ fn a_zero_byte_downloaded_library_is_deleted_for_redownload() {
     let library = root.join("onnxruntime/libonnxruntime.so");
     write(&library, b"");
     assert!(
-        resolve_installed_onnx_runtime(OnnxRuntimeHostOs::Linux, None, &locations(&root, false))
+        resolve_fixture(OnnxRuntimeHostOs::Linux, None, &locations(&root, false))
             .is_none()
     );
     assert!(
@@ -297,9 +317,7 @@ fn no_partial_files(directory: &Path) -> bool {
 #[test]
 fn macos_archives_write_symlinks_and_hard_links_as_copies() {
     let root = TempDir::new("mac-tar");
-    let archive = onnx_runtime_archives(OnnxRuntimeHostOs::MacOs, "aarch64")
-        .expect("mac")
-        .remove(0);
+    let archive = fixture_archive(OnnxRuntimeHostOs::MacOs);
     let archive_file = root.join(&archive.file_name);
     tar_archive(
         &archive_file,
@@ -350,9 +368,7 @@ fn macos_archives_write_symlinks_and_hard_links_as_copies() {
 #[test]
 fn linux_archives_follow_a_link_chain_to_the_library() {
     let root = TempDir::new("linux-tar");
-    let archive = onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "x86_64")
-        .expect("linux")
-        .remove(0);
+    let archive = fixture_archive(OnnxRuntimeHostOs::Linux);
     let archive_file = root.join(&archive.file_name);
     tar_archive(
         &archive_file,
@@ -390,9 +406,7 @@ fn linux_archives_follow_a_link_chain_to_the_library() {
 #[test]
 fn empty_entries_and_broken_links_never_become_libraries() {
     let root = TempDir::new("broken");
-    let archive = onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "x86_64")
-        .expect("linux")
-        .remove(0);
+    let archive = fixture_archive(OnnxRuntimeHostOs::Linux);
     let empty = root.join("empty.tgz");
     tar_archive(
         &empty,
@@ -443,9 +457,7 @@ fn empty_entries_and_broken_links_never_become_libraries() {
 #[test]
 fn unneeded_unresolvable_links_are_skipped() {
     let root = TempDir::new("skip-links");
-    let archive = onnx_runtime_archives(OnnxRuntimeHostOs::MacOs, "aarch64")
-        .expect("mac")
-        .remove(0);
+    let archive = fixture_archive(OnnxRuntimeHostOs::MacOs);
     let archive_file = root.join(&archive.file_name);
     tar_archive(
         &archive_file,
@@ -484,9 +496,7 @@ fn unneeded_unresolvable_links_are_skipped() {
 #[test]
 fn cancelling_stops_unpacking_before_any_library_is_written() {
     let root = TempDir::new("cancel");
-    let archive = onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "x86_64")
-        .expect("linux")
-        .remove(0);
+    let archive = fixture_archive(OnnxRuntimeHostOs::Linux);
     let archive_file = root.join(&archive.file_name);
     tar_archive(
         &archive_file,
@@ -514,9 +524,7 @@ fn cancelling_stops_unpacking_before_any_library_is_written() {
 #[test]
 fn a_cancelled_macos_unpack_never_leaves_the_main_library_without_siblings() {
     let root = TempDir::new("mac-cancel");
-    let archive = onnx_runtime_archives(OnnxRuntimeHostOs::MacOs, "aarch64")
-        .expect("mac")
-        .remove(0);
+    let archive = fixture_archive(OnnxRuntimeHostOs::MacOs);
     let archive_file = root.join(&archive.file_name);
     tar_archive(
         &archive_file,
@@ -580,9 +588,7 @@ fn a_cancelled_macos_unpack_never_leaves_the_main_library_without_siblings() {
 #[test]
 fn windows_installs_require_the_shared_provider_library() {
     let root = TempDir::new("zip-no-shared");
-    let archive = onnx_runtime_archives(OnnxRuntimeHostOs::Windows, "x86_64")
-        .expect("windows")
-        .remove(0);
+    let archive = fixture_archive(OnnxRuntimeHostOs::Windows);
     let archive_file = root.join(&archive.file_name);
     let mut writer = zip::ZipWriter::new(std::fs::File::create(&archive_file).expect("zip"));
     writer
@@ -610,9 +616,7 @@ fn windows_installs_require_the_shared_provider_library() {
 #[test]
 fn windows_archives_unpack_every_dll_of_the_lib_folder() {
     let root = TempDir::new("zip");
-    let archive = onnx_runtime_archives(OnnxRuntimeHostOs::Windows, "x86_64")
-        .expect("windows")
-        .remove(0);
+    let archive = fixture_archive(OnnxRuntimeHostOs::Windows);
     let archive_file = root.join(&archive.file_name);
     let mut writer = zip::ZipWriter::new(std::fs::File::create(&archive_file).expect("zip"));
     let options = zip::write::SimpleFileOptions::default();
@@ -649,7 +653,7 @@ fn windows_archives_unpack_every_dll_of_the_lib_folder() {
         b"shared"
     );
     assert!(!install.join("onnxruntime.lib").exists());
-    let found = resolve_installed_onnx_runtime(
+    let found = resolve_fixture(
         OnnxRuntimeHostOs::Windows,
         None,
         &OnnxRuntimeLocations {

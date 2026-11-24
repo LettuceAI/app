@@ -10,9 +10,8 @@ use std::{
 use lettuce_jobs::handle::CancellationToken;
 use ort::{
     inputs,
-    session::{Input, RunOptions, Session, builder::GraphOptimizationLevel},
-    tensor::TensorElementType,
-    value::{Value, ValueType},
+    session::{RunOptions, Session, builder::GraphOptimizationLevel},
+    value::{Outlet, TensorElementType, Value, ValueType},
 };
 
 use crate::{KOKORO_STYLE_DIMENSIONS, KokoroVoiceBlend};
@@ -69,6 +68,13 @@ impl OnnxKokoroRuntime {
                 }
             })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
+            .and_then(|builder| {
+                if cfg!(any(target_os = "ios", all(target_os = "macos", target_arch = "x86_64"))) {
+                    return Ok(builder);
+                }
+                builder.with_config_entry("session.intra_op.spin_duration_us", "1000")?
+                    .with_config_entry("session.intra_op.spin_backoff_max", "8")
+            })
             .map_err(|error| {
                 tracing::warn!(%error, "setting the onnx optimization level failed");
                 KokoroRuntimeError::Unavailable {
@@ -82,20 +88,20 @@ impl OnnxKokoroRuntime {
                     reason: "loading the kokoro model file failed",
                 }
             })?;
-        let tokens_input_name = detect_tokens_input_name(&session.inputs).ok_or(
+        let tokens_input_name = detect_tokens_input_name(session.inputs()).ok_or(
             KokoroRuntimeError::InvalidModel {
                 reason: "model has no tokens input",
             },
         )?;
-        if !session.inputs.iter().any(|input| input.name == "style")
-            || !session.inputs.iter().any(|input| input.name == "speed")
-            || session.outputs.is_empty()
+        if !session.inputs().iter().any(|input| input.name() == "style")
+            || !session.inputs().iter().any(|input| input.name() == "speed")
+            || session.outputs().is_empty()
         {
             return Err(KokoroRuntimeError::InvalidModel {
                 reason: "model lacks the style or speed input or has no outputs",
             });
         }
-        let speed_uses_int32 = detect_speed_uses_int32(&session.inputs);
+        let speed_uses_int32 = detect_speed_uses_int32(session.inputs());
         Ok(Self {
             session,
             tokens_input_name,
@@ -374,20 +380,20 @@ fn validate_samples(samples: &[f32]) -> Result<(), KokoroRuntimeError> {
     Ok(())
 }
 
-fn detect_tokens_input_name(inputs: &[Input]) -> Option<String> {
+fn detect_tokens_input_name(inputs: &[Outlet]) -> Option<String> {
     inputs
         .iter()
-        .find(|input| matches!(input.name.as_str(), "input_ids" | "tokens"))
-        .map(|input| input.name.clone())
+        .find(|input| matches!(input.name(), "input_ids" | "tokens"))
+        .map(|input| input.name().to_owned())
 }
 
-fn detect_speed_uses_int32(inputs: &[Input]) -> bool {
+fn detect_speed_uses_int32(inputs: &[Outlet]) -> bool {
     inputs
         .iter()
-        .find(|input| input.name == "speed")
+        .find(|input| input.name() == "speed")
         .is_some_and(|input| {
             matches!(
-                &input.input_type,
+                input.dtype(),
                 ValueType::Tensor {
                     ty: TensorElementType::Int32,
                     ..

@@ -32,7 +32,7 @@ fn no_events(_: OnnxRuntimeInstallEvent) {}
 #[test]
 fn legacy_layout_keeps_the_runtime_below_the_app_folder() {
     let paths = OnnxRuntimePaths::legacy_layout(Path::new("/app/lettuce"), None);
-    assert_eq!(paths.install_dir, Path::new("/app/lettuce/onnxruntime"));
+    assert_eq!(paths.install_dir, Path::new("/app/lettuce/onnxruntime").join(managed_onnx_runtime_version()));
     assert_eq!(
         paths.downloads,
         Path::new("/app/lettuce/downloads/onnxruntime")
@@ -66,7 +66,7 @@ fn archive_downloads_are_size_checked_below_the_download_folder() {
     assert_eq!(plan.root, app.0.join("downloads/onnxruntime"));
     assert_eq!(
         plan.install_id,
-        "onnxruntime:1.22.0:onnxruntime-linux-x64-1.22.0.tgz"
+        format!("onnxruntime:{}:{}", managed_onnx_runtime_version(), archive.file_name)
     );
     let planned = &plan.artifacts[0];
     assert_eq!(
@@ -76,10 +76,10 @@ fn archive_downloads_are_size_checked_below_the_download_folder() {
         }
     );
     assert_eq!(planned.artifact.byte_size, 42);
-    assert_eq!(planned.artifact.sha256, None);
+    assert_eq!(planned.artifact.sha256.as_deref(), archive.sha256);
     assert_eq!(
         planned.artifact.local_segments,
-        ["1.22.0", "onnxruntime-linux-x64-1.22.0.tgz"]
+        [managed_onnx_runtime_version(), &archive.file_name]
     );
 }
 
@@ -198,7 +198,7 @@ mod linux {
 
     use super::*;
 
-    const LINUX_URL: &str = "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz";
+    const LINUX_URL: &str = "https://example.invalid/onnxruntime-linux-fixture.tgz";
 
     fn linux_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
@@ -311,12 +311,29 @@ mod linux {
     }
 
     fn archive_named(file_name: &str) -> OnnxRuntimeArchive {
-        let mut archive = onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "x86_64")
-            .expect("linux")
-            .remove(0);
-        archive.url = format!("https://example.invalid/{file_name}");
-        archive.file_name = file_name.to_owned();
-        archive
+        OnnxRuntimeArchive {
+            url: format!("https://example.invalid/{file_name}"),
+            file_name: file_name.to_owned(),
+            format: lettuce_embeddings::OnnxRuntimeArchiveFormat::TarGz,
+            library_entry: "onnxruntime-linux-x64-1.22.0/lib/libonnxruntime.so.1.22.0".to_owned(),
+            library_name: "libonnxruntime.so".to_owned(),
+            sibling_extension: None,
+            sha256: None,
+        }
+    }
+
+    impl<J: JobStore + ?Sized> OnnxRuntimeInstaller<'_, J> {
+        async fn ensure_fixture<S: OnnxRuntimeDownloadSource + ?Sized>(
+            &self,
+            override_path: Option<OsString>,
+            source: &S,
+            cancellation: &CancellationToken,
+            events: &(dyn Fn(OnnxRuntimeInstallEvent) + Send + Sync),
+        ) -> Result<OnnxRuntimeReady, OnnxRuntimeInstallError> {
+            self.ensure_with_archives(override_path, source, cancellation, events, |_, _| {
+                Ok(vec![archive_named("onnxruntime-linux-fixture.tgz")])
+            }).await
+        }
     }
 
     fn job_ids(events: &Mutex<Vec<OnnxRuntimeInstallEvent>>) -> Vec<JobId> {
@@ -344,12 +361,15 @@ mod linux {
         let events = Mutex::new(Vec::new());
         let record = |event| events.lock().expect("events").push(event);
 
+        let old = app.0.join("onnxruntime/libonnxruntime.so");
+        std::fs::create_dir_all(old.parent().expect("parent")).expect("old directory");
+        std::fs::write(&old, b"old runtime").expect("legacy install");
         assert_eq!(installer.installed_with_override(None), None);
         let ready = installer
-            .ensure_with_override(None, &source, &CancellationToken::new(), &record)
+            .ensure_fixture(None, &source, &CancellationToken::new(), &record)
             .await
             .expect("installed");
-        let library = app.0.join("onnxruntime/libonnxruntime.so");
+        let library = app.paths().install_dir.join("libonnxruntime.so");
         assert_eq!(
             ready,
             OnnxRuntimeReady::Library(ResolvedOnnxRuntime {
@@ -375,17 +395,18 @@ mod linux {
         );
         assert!(
             !app.0
-                .join("downloads/onnxruntime/1.22.0/onnxruntime-linux-x64-1.22.0.tgz")
+                .join("downloads/onnxruntime/1.28.0/onnxruntime-linux-fixture.tgz")
                 .exists(),
             "the archive is deleted once unpacked"
         );
 
         let again = installer
-            .ensure_with_override(None, &source, &CancellationToken::new(), &no_events)
+            .ensure_fixture(None, &source, &CancellationToken::new(), &no_events)
             .await
             .expect("reused");
         assert_eq!(again, ready);
         assert_eq!(source.opens().len(), 1);
+        assert_eq!(std::fs::read(&old).expect("legacy runtime"), b"old runtime");
     }
 
     #[tokio::test]
@@ -397,7 +418,7 @@ mod linux {
         let events = Mutex::new(Vec::new());
         let record = |event| events.lock().expect("events").push(event);
         let result = installer
-            .ensure_with_override(None, &source, &CancellationToken::new(), &record)
+            .ensure_fixture(None, &source, &CancellationToken::new(), &record)
             .await;
         assert!(matches!(
             result,
@@ -408,13 +429,13 @@ mod linux {
         assert_eq!(job_state(&database, job_ids(&events)[0]), JobState::Failed);
         assert!(
             !app.0
-                .join("downloads/onnxruntime/1.22.0/onnxruntime-linux-x64-1.22.0.tgz")
+                .join("downloads/onnxruntime/1.28.0/onnxruntime-linux-fixture.tgz")
                 .exists()
         );
-        assert!(!app.0.join("onnxruntime/libonnxruntime.so").exists());
+        assert!(!app.paths().install_dir.join("libonnxruntime.so").exists());
 
         let result = installer
-            .ensure_with_override(None, &source, &CancellationToken::new(), &record)
+            .ensure_fixture(None, &source, &CancellationToken::new(), &record)
             .await;
         assert!(result.is_err());
         assert_eq!(
@@ -452,7 +473,7 @@ mod linux {
         assert_eq!(source.opens(), [arch.url, universal.url]);
         assert!(
             !app.0
-                .join("downloads/onnxruntime/1.22.0/onnxruntime-arch-1.22.0.tgz")
+                .join("downloads/onnxruntime/1.28.0/onnxruntime-arch-1.22.0.tgz")
                 .exists()
         );
     }
@@ -463,9 +484,7 @@ mod linux {
         let database = Database::open_in_memory().expect("database");
         let installer = OnnxRuntimeInstaller::new(&database, app.paths());
         let source = Source::new(None);
-        let archive = onnx_runtime_archives(OnnxRuntimeHostOs::Linux, "x86_64")
-            .expect("linux")
-            .remove(0);
+        let archive = archive_named("onnxruntime-linux-fixture.tgz");
         let plan = archive_plan(&app.paths(), &archive, source.files[LINUX_URL].len() as u64);
         let coordinator = ArtifactInstallCoordinator::new(&database);
         let admitted = coordinator.admit(&plan).expect("admit");
@@ -481,7 +500,7 @@ mod linux {
             .expect("claim")
             .expect("claimed");
         let result = installer
-            .ensure_with_override(None, &source, &CancellationToken::new(), &no_events)
+            .ensure_fixture(None, &source, &CancellationToken::new(), &no_events)
             .await;
         assert!(matches!(result, Err(OnnxRuntimeInstallError::Busy)));
         assert!(source.opens().is_empty());
@@ -495,8 +514,8 @@ mod linux {
         let source = Source::new(None);
         let token = CancellationToken::new();
         let (first, second) = tokio::join!(
-            installer.ensure_with_override(None, &source, &token, &no_events),
-            installer.ensure_with_override(None, &source, &token, &no_events),
+            installer.ensure_fixture(None, &source, &token, &no_events),
+            installer.ensure_fixture(None, &source, &token, &no_events),
         );
         assert_eq!(first.expect("first"), second.expect("second"));
         assert_eq!(source.opens().len(), 1);
@@ -505,14 +524,14 @@ mod linux {
     #[tokio::test]
     async fn a_zero_byte_runtime_heals_by_downloading_again() {
         let app = TempApp::new();
-        let library = app.0.join("onnxruntime/libonnxruntime.so");
+        let library = app.paths().install_dir.join("libonnxruntime.so");
         std::fs::create_dir_all(library.parent().expect("parent")).expect("dir");
         std::fs::write(&library, b"").expect("empty");
         let database = Database::open_in_memory().expect("database");
         let installer = OnnxRuntimeInstaller::new(&database, app.paths());
         let source = Source::new(None);
         installer
-            .ensure_with_override(None, &source, &CancellationToken::new(), &no_events)
+            .ensure_fixture(None, &source, &CancellationToken::new(), &no_events)
             .await
             .expect("healed");
         assert_eq!(
@@ -523,7 +542,7 @@ mod linux {
     }
 
     #[tokio::test]
-    async fn an_override_skips_the_download() {
+    async fn a_non_library_override_falls_back_to_download() {
         let app = TempApp::new();
         let custom = app.0.join("custom.so");
         std::fs::write(&custom, b"custom").expect("custom");
@@ -531,22 +550,23 @@ mod linux {
         let installer = OnnxRuntimeInstaller::new(&database, app.paths());
         let source = Source::new(None);
         let ready = installer
-            .ensure_with_override(
+            .ensure_fixture(
                 Some(custom.clone().into_os_string()),
                 &source,
                 &CancellationToken::new(),
                 &no_events,
             )
             .await
-            .expect("override");
+            .expect("downloaded");
         assert_eq!(
             ready,
             OnnxRuntimeReady::Library(ResolvedOnnxRuntime {
-                library: custom,
-                source: OnnxRuntimeSource::Override,
+                library: app.paths().install_dir.join("libonnxruntime.so"),
+                source: OnnxRuntimeSource::Downloaded,
             })
         );
-        assert!(source.opens().is_empty());
+        assert_eq!(source.opens(), [LINUX_URL]);
+        assert!(custom.exists());
     }
 
     #[tokio::test]
@@ -557,13 +577,13 @@ mod linux {
         let cancellation = CancellationToken::new();
         let source = Source::new(Some(cancellation.clone()));
         let result = installer
-            .ensure_with_override(None, &source, &cancellation, &no_events)
+            .ensure_fixture(None, &source, &cancellation, &no_events)
             .await;
         assert!(matches!(result, Err(OnnxRuntimeInstallError::Cancelled)));
-        assert!(!app.0.join("onnxruntime/libonnxruntime.so").exists());
+        assert!(!app.paths().install_dir.join("libonnxruntime.so").exists());
 
         let result = installer
-            .ensure_with_override(None, &source, &cancellation, &no_events)
+            .ensure_fixture(None, &source, &cancellation, &no_events)
             .await;
         assert!(matches!(result, Err(OnnxRuntimeInstallError::Cancelled)));
         assert_eq!(source.opens().len(), 1, "a cancelled token starts nothing");
@@ -679,7 +699,7 @@ mod linux {
         let events = Mutex::new(Vec::new());
         let record = |event| events.lock().expect("events").push(event);
         let ready = installer
-            .ensure_with_override(None, &source, &CancellationToken::new(), &record)
+            .ensure_fixture(None, &source, &CancellationToken::new(), &record)
             .await
             .expect("the unpacked runtime is returned");
         assert_eq!(
@@ -687,7 +707,7 @@ mod linux {
             JobState::Failed,
             "the job is closed instead of staying running"
         );
-        let library = app.0.join("onnxruntime/libonnxruntime.so");
+        let library = app.paths().install_dir.join("libonnxruntime.so");
         assert_eq!(
             ready,
             OnnxRuntimeReady::Library(ResolvedOnnxRuntime {
@@ -723,7 +743,7 @@ mod linux {
     }
 
     #[tokio::test]
-    #[ignore = "downloads ONNX Runtime from GitHub and loads it into this process"]
+    #[ignore = "downloads an official ONNX Runtime wheel and loads it into this process"]
     async fn live_downloads_and_initializes_the_linux_runtime() {
         let app = TempApp::new();
         let database = Database::open_in_memory().expect("database");

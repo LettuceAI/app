@@ -282,6 +282,7 @@ impl OnnxEmbeddingRuntime {
                 reason: error.to_string(),
             })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
+            .and_then(crate::ort_runtime::configure_cpu_spinning)
             .map_err(|error| EmbeddingError::RuntimeUnavailable {
                 reason: error.to_string(),
             })?
@@ -296,11 +297,11 @@ impl OnnxEmbeddingRuntime {
         })?;
         prepare_tokenizer(&mut tokenizer)?;
         let expects_token_type_ids = session
-            .inputs
+            .inputs()
             .iter()
-            .any(|input| input.name.contains("token_type_ids"));
+            .any(|input| input.name().contains("token_type_ids"));
         // Force metadata access during load so malformed sessions fail before a job starts.
-        if session.outputs.is_empty() {
+        if session.outputs().is_empty() {
             return Err(EmbeddingError::InvalidOutput {
                 reason: "model declares no outputs".to_owned(),
             });
@@ -308,7 +309,7 @@ impl OnnxEmbeddingRuntime {
         if artifacts
             .family
             .output_name()
-            .is_some_and(|name| !session.outputs.iter().any(|output| output.name == name))
+            .is_some_and(|name| !session.outputs().iter().any(|output| output.name() == name))
         {
             return Err(EmbeddingError::InvalidOutput {
                 reason: "model lacks the expected output tensor".to_owned(),

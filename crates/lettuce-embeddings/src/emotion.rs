@@ -12,8 +12,7 @@ use lettuce_model_hub::VerifiedCompanionEmotionArtifacts;
 use ort::{
     inputs,
     session::{RunOptions, Session, builder::GraphOptimizationLevel},
-    tensor::TensorElementType,
-    value::{Value, ValueType},
+    value::{TensorElementType, Value, ValueType},
 };
 use tokenizers::Tokenizer;
 
@@ -65,6 +64,7 @@ impl OnnxEmotionClassifier {
                 reason: error.to_string(),
             })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
+            .and_then(crate::ort_runtime::configure_cpu_spinning)
             .map_err(|error| EmotionClassifierError::RuntimeUnavailable {
                 reason: error.to_string(),
             })?
@@ -72,17 +72,17 @@ impl OnnxEmotionClassifier {
             .map_err(|error| EmotionClassifierError::ModelLoad {
                 reason: error.to_string(),
             })?;
-        let has_input = |name: &str| session.inputs.iter().any(|input| input.name == name);
+        let has_input = |name: &str| session.inputs().iter().any(|input| input.name() == name);
         let label_count = i64::try_from(artifacts.labels.labels().len()).map_err(|error| {
             EmotionClassifierError::InvalidOutput {
                 reason: error.to_string(),
             }
         })?;
         let output_width = session
-            .outputs
+            .outputs()
             .iter()
-            .find(|output| output.name == PROBABILITIES_OUTPUT)
-            .and_then(|output| match &output.output_type {
+            .find(|output| output.name() == PROBABILITIES_OUTPUT)
+            .and_then(|output| match output.dtype() {
                 ValueType::Tensor {
                     ty: TensorElementType::Float32,
                     shape,
@@ -95,7 +95,7 @@ impl OnnxEmotionClassifier {
                 reason: "model output is not a two dimensional float tensor".to_owned(),
             });
         };
-        if !has_input("input_ids") || !has_input("attention_mask") || session.inputs.len() != 2 {
+        if !has_input("input_ids") || !has_input("attention_mask") || session.inputs().len() != 2 {
             return Err(EmotionClassifierError::InvalidOutput {
                 reason: "model inputs are not exactly input_ids and attention_mask".to_owned(),
             });
@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires a downloaded Thymos install and ONNX Runtime 1.22 (the reference values were taken with it; 1.23+ differs up to 1.4e-3 on the long text)"]
+    #[ignore = "requires a downloaded Thymos install and a compatible ONNX Runtime"]
     fn live_thymos_matches_the_upstream_reference() {
         let root = std::env::var_os("LETTUCE_TEST_THYMOS_ROOT")
             .map(std::path::PathBuf::from)
@@ -693,6 +693,7 @@ mod tests {
             .classify(&long, &CancellationToken::new())
             .expect("inference")
             .expect("nonblank");
+        assert_eq!(long.labels[0].label, "gratitude");
         for (label, expected) in [
             ("gratitude", 0.95087),
             ("anger", 0.66684),
@@ -700,8 +701,10 @@ mod tests {
             ("sadness", 0.24214),
             ("disappointment", 0.19362),
         ] {
+            // The stored reference is from 1.22. Newer runtimes slightly shift
+            // the probabilities after aggregating overlapping windows.
             assert!(
-                (score(&long, label) - expected).abs() < 1e-4,
+                (score(&long, label) - expected).abs() < 5e-3,
                 "{label}: {}",
                 score(&long, label)
             );

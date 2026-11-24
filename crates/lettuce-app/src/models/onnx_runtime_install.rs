@@ -11,10 +11,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use lettuce_embeddings::{
-    CommittedOnnxRuntime, ONNX_RUNTIME_VERSION, OnnxRuntimeArchive, OnnxRuntimeBinding,
+    CommittedOnnxRuntime, OnnxRuntimeArchive, OnnxRuntimeBinding,
     OnnxRuntimeHostOs, OnnxRuntimeInitError, OnnxRuntimeLink, OnnxRuntimeLocations,
     OnnxRuntimeProvisionError, OnnxRuntimeSource, ResolvedOnnxRuntime, committed_onnx_runtime,
-    initialize_process_onnx_runtime, install_onnx_runtime_archive, onnx_runtime_archives,
+    initialize_process_onnx_runtime, install_onnx_runtime_archive, managed_onnx_runtime_version, onnx_runtime_archives,
     resolve_installed_onnx_runtime,
 };
 use lettuce_jobs::handle::{CancellationToken, JobHandle};
@@ -41,7 +41,7 @@ static ENSURE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// Where a desktop runtime is unpacked, downloaded and bundled.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OnnxRuntimePaths {
-    /// `<app>/onnxruntime`
+    /// `<app>/onnxruntime/<runtime version>`
     pub install_dir: PathBuf,
     /// `<app>/downloads/onnxruntime`
     pub downloads: PathBuf,
@@ -50,12 +50,12 @@ pub struct OnnxRuntimePaths {
 }
 
 impl OnnxRuntimePaths {
-    /// Runtimes in `<app_dir>/onnxruntime`, archives in
+    /// Versioned runtimes in `<app_dir>/onnxruntime`, archives in
     /// `<app_dir>/downloads/onnxruntime`.
     #[must_use]
     pub fn legacy_layout(app_dir: &Path, resource_dir: Option<PathBuf>) -> Self {
         Self {
-            install_dir: app_dir.join("onnxruntime"),
+            install_dir: app_dir.join("onnxruntime").join(managed_onnx_runtime_version()),
             downloads: app_dir.join("downloads").join("onnxruntime"),
             resource_dir,
         }
@@ -311,6 +311,17 @@ impl<J: JobStore + ?Sized> OnnxRuntimeInstaller<'_, J> {
         cancellation: &CancellationToken,
         events: &(dyn Fn(OnnxRuntimeInstallEvent) + Send + Sync),
     ) -> Result<OnnxRuntimeReady, OnnxRuntimeInstallError> {
+        self.ensure_with_archives(override_path, source, cancellation, events, onnx_runtime_archives).await
+    }
+
+    async fn ensure_with_archives<S: OnnxRuntimeDownloadSource + ?Sized>(
+        &self,
+        override_path: Option<OsString>,
+        source: &S,
+        cancellation: &CancellationToken,
+        events: &(dyn Fn(OnnxRuntimeInstallEvent) + Send + Sync),
+        archives: impl FnOnce(OnnxRuntimeHostOs, &str) -> Result<Vec<OnnxRuntimeArchive>, OnnxRuntimeProvisionError>,
+    ) -> Result<OnnxRuntimeReady, OnnxRuntimeInstallError> {
         let _serialized = ENSURE_LOCK.lock().await;
         if let Some(committed) = committed_onnx_runtime() {
             return Ok(OnnxRuntimeReady::from(committed));
@@ -331,7 +342,7 @@ impl<J: JobStore + ?Sized> OnnxRuntimeInstaller<'_, J> {
             })
         };
         let os = OnnxRuntimeHostOs::current().ok_or_else(unsupported)?;
-        let archives = onnx_runtime_archives(os, std::env::consts::ARCH)
+        let archives = archives(os, std::env::consts::ARCH)
             .map_err(OnnxRuntimeInstallError::Unsupported)?;
         self.install_first(os, archives, source, cancellation, events)
             .await
@@ -396,7 +407,7 @@ impl<J: JobStore + ?Sized> OnnxRuntimeInstaller<'_, J> {
         let plan = archive_plan(&self.paths, &archive, bytes);
         let installer = ArtifactInstallCoordinator::new(self.jobs);
         let admitted = installer
-            .admit_labeled(&plan, &format!("ONNX Runtime {ONNX_RUNTIME_VERSION}"))
+            .admit_labeled(&plan, &format!("ONNX Runtime {}", managed_onnx_runtime_version()))
             .map_err(OnnxRuntimeInstallError::Download)?;
         let job_id = admitted.job.id;
         let now = TimestampMillis::now().unwrap_or(admitted.job.updated_at);
@@ -475,7 +486,7 @@ impl<J: JobStore + ?Sized> OnnxRuntimeInstaller<'_, J> {
             (ArtifactInstallRunResult::Succeeded { .. }, Some(Ok(resolved))) => {
                 tracing::info!(
                     library = %resolved.library.display(),
-                    version = ONNX_RUNTIME_VERSION,
+                    version = managed_onnx_runtime_version(),
                     "installed ONNX Runtime"
                 );
                 Ok(resolved)
@@ -520,9 +531,8 @@ async fn unpack_archive(
     .await
 }
 
-/// The archive's download. The release publishes no checksum, so the
-/// download is verified by the size the server reports, and the unpacked
-/// library is checked before it is used.
+/// The archive's download. Verify the pinned wheel digest as well as the
+/// size reported by the server before unpacking any native code.
 fn archive_plan(
     paths: &OnnxRuntimePaths,
     archive: &OnnxRuntimeArchive,
@@ -532,14 +542,14 @@ fn archive_plan(
         url: archive.url.clone(),
     };
     ArtifactInstallPlan {
-        install_id: format!("onnxruntime:{ONNX_RUNTIME_VERSION}:{}", archive.file_name),
+        install_id: format!("onnxruntime:{}:{}", managed_onnx_runtime_version(), archive.file_name),
         root: paths.downloads.clone(),
         artifacts: vec![PlannedArtifact {
             artifact: PinnedArtifact {
                 source_identity: source.identity(),
-                local_segments: vec![ONNX_RUNTIME_VERSION.to_owned(), archive.file_name.clone()],
+                local_segments: vec![managed_onnx_runtime_version().to_owned(), archive.file_name.clone()],
                 byte_size: bytes,
-                sha256: None,
+                sha256: archive.sha256.map(str::to_owned),
             },
             source,
         }],

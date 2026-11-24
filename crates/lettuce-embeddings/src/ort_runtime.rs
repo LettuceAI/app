@@ -9,19 +9,29 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
-/// The ONNX Runtime release loaded at runtime. `ort` =2.0.0-rc.10 with
-/// `load-dynamic` binds C API version 22, which only ONNX Runtime 1.22
-/// provides, so this version moves together with the `ort` pin.
-pub const ONNX_RUNTIME_VERSION: &str = "1.22.0";
+/// The managed ONNX Runtime release. Intel Macs and macOS Ventura use 1.23.2.
+/// API 22 also supports existing iOS static toolchains.
+pub const ONNX_RUNTIME_VERSION: &str = "1.28.0";
+const MAC_COMPAT_RUNTIME_VERSION: &str = "1.23.2";
 
 const _: () = assert!(
     ort::MINOR_VERSION == 22,
-    "ONNX_RUNTIME_VERSION must match the C API version the ort crate binds"
+    "ONNX Runtime packages must provide the selected C API"
 );
 
-const RELEASE_BASE_URL: &str = "https://github.com/microsoft/onnxruntime/releases/download";
 const WINDOWS_PROVIDERS_SHARED: &str = "onnxruntime_providers_shared.dll";
 const MAX_LINK_HOPS: usize = 8;
+
+pub(crate) fn configure_cpu_spinning(
+    builder: ort::session::builder::SessionBuilder,
+) -> ort::session::builder::BuilderResult {
+    if cfg!(target_os = "ios") || managed_onnx_runtime_version() != ONNX_RUNTIME_VERSION {
+        return Ok(builder);
+    }
+    // Bound idle spins to 1 ms and reduce pause-instruction density.
+    builder.with_config_entry("session.intra_op.spin_duration_us", "1000")?
+        .with_config_entry("session.intra_op.spin_backoff_max", "8")
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnnxRuntimeHostOs {
@@ -63,7 +73,36 @@ pub fn onnx_runtime_library_name(os: OnnxRuntimeHostOs) -> String {
     match os {
         OnnxRuntimeHostOs::Windows => "onnxruntime.dll".to_owned(),
         OnnxRuntimeHostOs::Linux => "libonnxruntime.so".to_owned(),
-        OnnxRuntimeHostOs::MacOs => format!("libonnxruntime.{ONNX_RUNTIME_VERSION}.dylib"),
+        OnnxRuntimeHostOs::MacOs => format!("libonnxruntime.{}.dylib", managed_onnx_runtime_version()),
+    }
+}
+
+/// Runtime version used by managed desktop installs on this target.
+pub fn managed_onnx_runtime_version() -> &'static str {
+    #[cfg(target_os = "macos")]
+    return mac_runtime_version(std::env::consts::ARCH, macos_major_version());
+    #[cfg(not(target_os = "macos"))]
+    ONNX_RUNTIME_VERSION
+}
+
+#[cfg(target_os = "macos")]
+fn macos_major_version() -> Option<u32> {
+    static VERSION: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *VERSION.get_or_init(|| {
+        let output = std::process::Command::new("/usr/bin/sw_vers").arg("-productVersion").output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        std::str::from_utf8(&output.stdout).ok()?.trim().split('.').next()?.parse().ok()
+    })
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn mac_runtime_version(arch: &str, macos_major: Option<u32>) -> &'static str {
+    if arch == "x86_64" || macos_major.is_some_and(|major| major < 14) {
+        MAC_COMPAT_RUNTIME_VERSION
+    } else {
+        ONNX_RUNTIME_VERSION
     }
 }
 
@@ -87,32 +126,10 @@ pub struct OnnxRuntimeArchive {
     /// folder is unpacked (Windows DLLs, macOS provider dylibs); otherwise
     /// only the library is.
     pub sibling_extension: Option<&'static str>,
+    pub sha256: Option<&'static str>,
 }
 
 impl OnnxRuntimeArchive {
-    fn release(
-        package: &str,
-        format: OnnxRuntimeArchiveFormat,
-        library_file: &str,
-        library_name: String,
-        sibling_extension: Option<&'static str>,
-    ) -> Self {
-        let directory = format!("onnxruntime-{package}-{ONNX_RUNTIME_VERSION}");
-        let extension = match format {
-            OnnxRuntimeArchiveFormat::Zip => "zip",
-            OnnxRuntimeArchiveFormat::TarGz => "tgz",
-        };
-        let file_name = format!("{directory}.{extension}");
-        Self {
-            url: format!("{RELEASE_BASE_URL}/v{ONNX_RUNTIME_VERSION}/{file_name}"),
-            file_name,
-            format,
-            library_entry: format!("{directory}/lib/{library_file}"),
-            library_name,
-            sibling_extension,
-        }
-    }
-
     fn library_directory(&self) -> &str {
         self.library_entry
             .rsplit_once('/')
@@ -120,53 +137,72 @@ impl OnnxRuntimeArchive {
     }
 }
 
-/// The release archives to try, in order, for `os` on `arch` (a
-/// `std::env::consts::ARCH` value). macOS falls back to the universal2
-/// build when the architecture-specific archive fails.
+/// The LettuceAI mirror and the original Microsoft PyPI wheel, in that order.
+/// Only the native library and its selected siblings are unpacked.
 pub fn onnx_runtime_archives(
     os: OnnxRuntimeHostOs,
     arch: &str,
 ) -> Result<Vec<OnnxRuntimeArchive>, OnnxRuntimeProvisionError> {
-    let library_name = onnx_runtime_library_name(os);
-    match (os, arch) {
-        (OnnxRuntimeHostOs::Windows, "x86_64") => Ok(vec![OnnxRuntimeArchive::release(
-            "win-x64",
-            OnnxRuntimeArchiveFormat::Zip,
+    runtime_archives(os, arch, managed_onnx_runtime_version())
+}
+
+fn runtime_archives(
+    os: OnnxRuntimeHostOs,
+    arch: &str,
+    version: &str,
+) -> Result<Vec<OnnxRuntimeArchive>, OnnxRuntimeProvisionError> {
+    let (url, library, sibling_extension, sha256) = match (os, arch) {
+        (OnnxRuntimeHostOs::Windows, "x86_64") => (
+            "https://files.pythonhosted.org/packages/3e/3b/986ca67c274932ba9ac5332fb10de56f643dfd433c74e33f8ae8f847cf24/onnxruntime-1.28.0-cp312-cp312-win_amd64.whl",
             "onnxruntime.dll",
-            library_name,
             Some("dll"),
-        )]),
-        (OnnxRuntimeHostOs::Linux, "x86_64") => Ok(vec![OnnxRuntimeArchive::release(
-            "linux-x64",
-            OnnxRuntimeArchiveFormat::TarGz,
-            &format!("libonnxruntime.so.{ONNX_RUNTIME_VERSION}"),
-            library_name,
+            "c35064f9b3c43c81c5d5d282091401d0f1ff22796d93ccade4ea2ece5e137ab8",
+        ),
+        (OnnxRuntimeHostOs::Linux, "x86_64") => (
+            "https://files.pythonhosted.org/packages/95/df/5486ab03e9be288d5268867054c8b04bebcf95bfd12e801c05cc67703dab/onnxruntime-1.28.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "libonnxruntime.so.1.28.0",
             None,
-        )]),
-        (OnnxRuntimeHostOs::MacOs, "aarch64" | "x86_64") => {
-            let package = if arch == "aarch64" {
-                "osx-arm64"
-            } else {
-                "osx-x86_64"
-            };
-            Ok([package, "osx-universal2"]
-                .into_iter()
-                .map(|package| {
-                    OnnxRuntimeArchive::release(
-                        package,
-                        OnnxRuntimeArchiveFormat::TarGz,
-                        &library_name,
-                        library_name.clone(),
-                        Some("dylib"),
-                    )
-                })
-                .collect())
-        }
-        _ => Err(OnnxRuntimeProvisionError::UnsupportedPlatform {
+            "0a83bdb70d143cede762b677789bf2a7acca54b3fb82565601d5c30695aa933c",
+        ),
+        (OnnxRuntimeHostOs::MacOs, "aarch64") if version == MAC_COMPAT_RUNTIME_VERSION => (
+            "https://files.pythonhosted.org/packages/1b/9e/f748cd64161213adeef83d0cb16cb8ace1e62fa501033acdd9f9341fff57/onnxruntime-1.23.2-cp312-cp312-macosx_13_0_arm64.whl",
+            "libonnxruntime.1.23.2.dylib",
+            Some("dylib"),
+            "b8f029a6b98d3cf5be564d52802bb50a8489ab73409fa9db0bf583eabb7c2321",
+        ),
+        (OnnxRuntimeHostOs::MacOs, "aarch64") => (
+            "https://files.pythonhosted.org/packages/98/f8/dcbe7700dca82fa540035abd3c868fe5ad0f86af00b9a3db7c2e27d15c7d/onnxruntime-1.28.0-cp312-cp312-macosx_14_0_arm64.whl",
+            "libonnxruntime.1.28.0.dylib",
+            Some("dylib"),
+            "26ff0fdd06efb6c155bae95387a09db1a2be89c7a03e4d0bffd5a171cc2826da",
+        ),
+        (OnnxRuntimeHostOs::MacOs, "x86_64") => (
+            "https://files.pythonhosted.org/packages/91/9d/a81aafd899b900101988ead7fb14974c8a58695338ab6a0f3d6b0100f30b/onnxruntime-1.23.2-cp312-cp312-macosx_13_0_x86_64.whl",
+            "libonnxruntime.1.23.2.dylib",
+            Some("dylib"),
+            "218295a8acae83905f6f1aed8cacb8e3eb3bd7513a13fe4ba3b2664a19fc4a6b",
+        ),
+        _ => return Err(OnnxRuntimeProvisionError::UnsupportedPlatform {
             os: os.as_str().to_owned(),
             arch: arch.to_owned(),
         }),
-    }
+    };
+    let library_name = if os == OnnxRuntimeHostOs::Linux { "libonnxruntime.so" } else { library };
+    let file_name = url.rsplit('/').next().expect("pinned wheel filename");
+    let upstream = OnnxRuntimeArchive {
+        url: url.to_owned(),
+        file_name: file_name.to_owned(),
+        format: OnnxRuntimeArchiveFormat::Zip,
+        library_entry: format!("onnxruntime/capi/{library}"),
+        library_name: library_name.to_owned(),
+        sibling_extension,
+        sha256: Some(sha256),
+    };
+    let mirror = OnnxRuntimeArchive {
+        url: format!("https://github.com/LettuceAI/app/releases/download/onnxruntime-1.28.0/{file_name}"),
+        ..upstream.clone()
+    };
+    Ok(vec![mirror, upstream])
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -233,7 +269,18 @@ pub fn resolve_installed_onnx_runtime(
     override_path: Option<&OsStr>,
     locations: &OnnxRuntimeLocations,
 ) -> Option<ResolvedOnnxRuntime> {
-    if let Some(library) = override_path.and_then(|path| usable_override(os, path)) {
+    resolve_installed_with_version_check(os, override_path, locations, desktop_runtime_supported)
+}
+
+fn resolve_installed_with_version_check(
+    os: OnnxRuntimeHostOs,
+    override_path: Option<&OsStr>,
+    locations: &OnnxRuntimeLocations,
+    version_supported: impl Fn(&Path) -> bool,
+) -> Option<ResolvedOnnxRuntime> {
+    if let Some(library) = override_path.and_then(|path| usable_override(os, path))
+        && version_supported(&library)
+    {
         return Some(ResolvedOnnxRuntime {
             library,
             source: OnnxRuntimeSource::Override,
@@ -242,7 +289,7 @@ pub fn resolve_installed_onnx_runtime(
     if let Some(library) = locations
         .resource_dir
         .as_deref()
-        .and_then(|resources| bundled_library(os, resources))
+        .and_then(|resources| bundled_library(os, resources, &version_supported))
     {
         tracing::info!(path = %library.display(), "using bundled ONNX Runtime");
         return Some(ResolvedOnnxRuntime {
@@ -254,6 +301,49 @@ pub fn resolve_installed_onnx_runtime(
         library,
         source: OnnxRuntimeSource::Downloaded,
     })
+}
+
+#[cfg(not(target_os = "ios"))]
+fn desktop_runtime_supported(path: &Path) -> bool {
+    use std::ffi::CStr;
+
+    // The library is a candidate for runtime initialization. Its handle
+    // stays live while we read the version returned by the C API.
+    let version = unsafe {
+        libloading::Library::new(path).and_then(|library| {
+            let api = library.get::<unsafe extern "system" fn() -> *const ort::sys::OrtApiBase>(b"OrtGetApiBase")?;
+            Ok(api().as_ref().and_then(|base| {
+                let version = (base.GetVersionString)();
+                (!version.is_null()).then(|| CStr::from_ptr(version).to_string_lossy().into_owned())
+            }))
+        })
+    };
+    match version {
+        Ok(Some(version)) if runtime_version_supported(&version, managed_onnx_runtime_version()) => true,
+        Ok(version) => {
+            tracing::warn!(path = %path.display(), ?version, minimum = managed_onnx_runtime_version(), "ignoring an incompatible ONNX Runtime library");
+            false
+        }
+        Err(error) => {
+            tracing::warn!(path = %path.display(), %error, "could not read the ONNX Runtime version");
+            false
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn desktop_runtime_supported(_: &Path) -> bool {
+    false
+}
+
+#[cfg(any(not(target_os = "ios"), test))]
+fn runtime_version_supported(version: &str, minimum: &str) -> bool {
+    fn parse(version: &str) -> Option<(u32, u32, u32)> {
+        let mut parts = version.split('.');
+        let parsed = (parts.next()?.parse().ok()?, parts.next()?.parse().ok()?, parts.next()?.parse().ok()?);
+        parts.next().is_none().then_some(parsed)
+    }
+    matches!((parse(version), parse(minimum)), (Some(actual), Some(required)) if actual.0 == required.0 && actual >= required)
 }
 
 fn usable_override(os: OnnxRuntimeHostOs, value: &OsStr) -> Option<PathBuf> {
@@ -315,11 +405,11 @@ fn bundled_candidates(os: OnnxRuntimeHostOs) -> Vec<String> {
     }
 }
 
-fn bundled_library(os: OnnxRuntimeHostOs, resources: &Path) -> Option<PathBuf> {
+fn bundled_library(os: OnnxRuntimeHostOs, resources: &Path, version_supported: impl Fn(&Path) -> bool) -> Option<PathBuf> {
     bundled_candidates(os)
         .into_iter()
         .map(|candidate| resources.join(candidate))
-        .find(|path| library_is_usable(os, path))
+        .find(|path| library_is_usable(os, path) && version_supported(path))
 }
 
 fn downloaded_library(os: OnnxRuntimeHostOs, install_dir: &Path) -> Option<PathBuf> {
@@ -854,6 +944,8 @@ pub enum OnnxRuntimeInitialization {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OnnxRuntimeInitError {
+    #[error("ONNX Runtime is shutting down")]
+    ShuttingDown,
     #[error("the ONNX Runtime library path is not valid UTF-8")]
     InvalidPath,
     #[error("the ONNX Runtime library at {0} is missing or empty")]
@@ -883,10 +975,8 @@ impl From<OnnxRuntimeBinding<'_>> for CommittedOnnxRuntime {
 }
 
 impl OnnxRuntimeInitError {
-    /// Whether the failure happened after `ort` took the library path and
-    /// ran its one-shot environment setup. `ort` keeps that path, and its
-    /// `OnceLock` counts a failed setup as done, so no later attempt in this
-    /// process can succeed safely.
+    /// Whether setup failed after `ort` could have pinned the library or
+    /// environment options for the process.
     #[must_use]
     pub const fn is_permanent(&self) -> bool {
         matches!(self, Self::Panicked(_) | Self::Environment(_))
@@ -898,6 +988,7 @@ enum ProcessState {
     Uninitialized,
     Committed(CommittedOnnxRuntime),
     Failed(OnnxRuntimeInitError),
+    Closed,
 }
 
 #[derive(Debug)]
@@ -915,7 +1006,7 @@ impl RuntimeOnce {
     fn committed(&self) -> Option<CommittedOnnxRuntime> {
         match &*self.state.lock().unwrap_or_else(PoisonError::into_inner) {
             ProcessState::Committed(committed) => Some(committed.clone()),
-            ProcessState::Uninitialized | ProcessState::Failed(_) => None,
+            ProcessState::Uninitialized | ProcessState::Failed(_) | ProcessState::Closed => None,
         }
     }
 
@@ -945,6 +1036,7 @@ impl RuntimeOnce {
                 return Ok(OnnxRuntimeInitialization::AlreadyInitialized);
             }
             ProcessState::Failed(error) => return Err(error.clone()),
+            ProcessState::Closed => return Err(OnnxRuntimeInitError::ShuttingDown),
             ProcessState::Uninitialized => {}
         }
         match commit() {
@@ -964,6 +1056,12 @@ impl RuntimeOnce {
 
 static PROCESS_RUNTIME: RuntimeOnce = RuntimeOnce::new();
 
+/// Prevents runtime initialization once the host begins draining sessions
+/// for process exit. `ort` releases its environment in its own exit hook.
+pub fn seal_process_onnx_runtime() {
+    *PROCESS_RUNTIME.state.lock().unwrap_or_else(PoisonError::into_inner) = ProcessState::Closed;
+}
+
 /// The runtime this process's ONNX Runtime environment was committed from,
 /// once [`initialize_process_onnx_runtime`] succeeded.
 #[must_use]
@@ -971,13 +1069,9 @@ pub fn committed_onnx_runtime() -> Option<CommittedOnnxRuntime> {
     PROCESS_RUNTIME.committed()
 }
 
-/// Initializes ONNX Runtime for the whole process, once. The library is
-/// preloaded first, so a missing or broken file fails with a retryable
-/// error before `ort` pins its path; the `ort` environment is committed
-/// inside `catch_unwind` because `ort` panics when loading fails, and a
-/// failure from that point on is permanent for the process (see
-/// [`OnnxRuntimeInitError::is_permanent`]). `name` labels the environment
-/// in ONNX Runtime's logs; the first successful caller's name is kept.
+/// Initializes ONNX Runtime for the whole process, once. Loading failures
+/// remain retryable until `ort` pins the library. `name` labels the
+/// environment in ONNX Runtime's logs.
 pub fn initialize_process_onnx_runtime(
     binding: OnnxRuntimeBinding<'_>,
     name: &str,
@@ -995,46 +1089,34 @@ fn commit_environment(
             if !is_nonempty_file(path) {
                 return Err(OnnxRuntimeInitError::MissingLibrary(path.to_path_buf()));
             }
-            preload_library(path)?;
+            if OnnxRuntimeHostOs::current().is_some() && !desktop_runtime_supported(path) {
+                return Err(OnnxRuntimeInitError::Load(format!(
+                    "{} is not a compatible ONNX Runtime {} library",
+                    path.display(), managed_onnx_runtime_version()
+                )));
+            }
             Some(text.to_owned())
         }
-        OnnxRuntimeBinding::Linked => {
-            preload_linked_library()?;
-            None
-        }
+        OnnxRuntimeBinding::Linked if cfg!(target_os = "android") => Some("libonnxruntime.so".to_owned()),
+        OnnxRuntimeBinding::Linked => None,
     };
-    let committed = std::panic::catch_unwind(|| match library {
-        #[cfg(not(target_os = "ios"))]
-        Some(library) => ort::init_from(library).with_name(name).commit(),
-        _ => ort::init().with_name(name).commit(),
+    std::panic::catch_unwind(|| {
+        let builder = match library {
+            #[cfg(not(target_os = "ios"))]
+            Some(library) => ort::init_from(library)
+                .map_err(|error| OnnxRuntimeInitError::Load(error.to_string()))?,
+            #[cfg(target_os = "ios")]
+            Some(_) => return Err(OnnxRuntimeInitError::Load("iOS links ONNX Runtime statically".to_owned())),
+            None => ort::init(),
+        };
+        builder.with_name(name).commit();
+        // `commit` sets the options in rc.13. Construct the environment now
+        // so initialization errors are reported before a session is built.
+        ort::environment::Environment::current()
+            .map(|_| ())
+            .map_err(|error| OnnxRuntimeInitError::Environment(error.to_string()))
     })
-    .map_err(|payload| OnnxRuntimeInitError::Panicked(panic_message(payload.as_ref())))?;
-    committed
-        .map(|_| ())
-        .map_err(|error| OnnxRuntimeInitError::Environment(error.to_string()))
-}
-
-#[cfg(not(target_os = "ios"))]
-fn preload_library(path: &Path) -> Result<(), OnnxRuntimeInitError> {
-    ort::util::preload_dylib(path).map_err(|error| OnnxRuntimeInitError::Load(error.to_string()))
-}
-
-#[cfg(target_os = "ios")]
-fn preload_library(_path: &Path) -> Result<(), OnnxRuntimeInitError> {
-    Err(OnnxRuntimeInitError::Load(
-        "iOS links ONNX Runtime statically".to_owned(),
-    ))
-}
-
-#[cfg(target_os = "android")]
-fn preload_linked_library() -> Result<(), OnnxRuntimeInitError> {
-    ort::util::preload_dylib("libonnxruntime.so")
-        .map_err(|error| OnnxRuntimeInitError::Load(error.to_string()))
-}
-
-#[cfg(not(target_os = "android"))]
-fn preload_linked_library() -> Result<(), OnnxRuntimeInitError> {
-    Ok(())
+    .map_err(|payload| OnnxRuntimeInitError::Panicked(panic_message(payload.as_ref())))?
 }
 
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {

@@ -29,4 +29,5 @@ tracing.workspace = true
 zip.workspace = true
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
+libloading.workspace = true
 ort = { workspace = true, features = ["load-dynamic"] }
