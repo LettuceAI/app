@@ -20,7 +20,7 @@ use super::messages::on_timeline;
 use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
 use crate::jobs::failure_labels as labels;
-use crate::{SceneFollowUps, SceneImageError, SceneImageFollowUpError};
+use crate::{SceneFollowUpOverrides, SceneFollowUps, SceneImageError, SceneImageFollowUpError};
 
 fn conversation_of(
     context: &ApiContext,
@@ -341,9 +341,11 @@ pub async fn message_scene_image_approve(
                 conversation_id,
                 target,
                 &[SceneFollowUpState::Pending],
-                prompt.as_deref(),
-                cast.as_ref(),
-                None,
+                SceneFollowUpOverrides {
+                    prompt: prompt.as_deref(),
+                    cast: cast.as_ref(),
+                    ..Default::default()
+                },
                 context.now(),
             ) {
                 Ok((_, job)) => Ok(job.id),
@@ -545,9 +547,7 @@ pub(in crate::api) fn start_auto(
         conversation_id,
         target,
         &[SceneFollowUpState::Pending],
-        None,
-        None,
-        None,
+        SceneFollowUpOverrides::default(),
         context.now(),
     ) {
         Ok(_) | Err(SceneImageFollowUpError::WrongState(_)) => {

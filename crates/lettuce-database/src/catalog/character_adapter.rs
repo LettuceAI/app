@@ -4026,7 +4026,10 @@ mod smoke_tests {
             })
             .expect("update");
         assert_eq!(changed.content, "Updated");
-        assert_eq!(database.list_scheduled_notes(character_id).expect("list"), [changed.clone()]);
+        assert_eq!(
+            database.list_scheduled_notes(character_id).expect("list"),
+            std::slice::from_ref(&changed),
+        );
         let switched = CharacterRepository::update_defaults(
             &database,
             character_id,
@@ -4043,7 +4046,10 @@ mod smoke_tests {
             switched.defaults.interaction_mode,
             lettuce_characters::InteractionMode::Companion
         );
-        assert_eq!(database.list_scheduled_notes(character_id).expect("list"), [changed.clone()]);
+        assert_eq!(
+            database.list_scheduled_notes(character_id).expect("list"),
+            std::slice::from_ref(&changed),
+        );
         database.delete_scheduled_note(changed.id).expect("delete");
         assert!(database.list_scheduled_notes(character_id).expect("list").is_empty());
         let unknown = CharacterId::new();

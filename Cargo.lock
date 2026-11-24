@@ -3168,7 +3168,6 @@ dependencies = [
  "cap-std",
  "dispatch2",
  "fs4",
- "lettuce-types",
  "libloading 0.8.9",
  "rustix",
  "same-file",

@@ -450,10 +450,9 @@ fn cycle_actions(cycle: &lettuce_memory::MemoryActivityCycle) -> Vec<dto::Memory
                 short_id,
                 memories,
             } = &result.outcome
+                && let Some(memory) = memories.iter().find(|memory| memory.short_id == *short_id)
             {
-                if let Some(memory) = memories.iter().find(|memory| memory.short_id == *short_id) {
-                    memory_texts.insert(*id, memory.text.clone());
-                }
+                memory_texts.insert(*id, memory.text.clone());
             }
             action(&result.outcome, proposed, &memory_texts, &starting)
         })

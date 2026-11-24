@@ -1049,8 +1049,10 @@ mod customization_tests {
 
     #[test]
     fn customization_override_names_must_identify_real_appearance_fields() {
-        let mut presentation = CharacterPresentationV1::default();
-        presentation.chat_appearance_overrides = Some(["font_size".to_owned()].into_iter().collect());
+        let mut presentation = CharacterPresentationV1 {
+            chat_appearance_overrides: Some(["font_size".to_owned()].into_iter().collect()),
+            ..Default::default()
+        };
         presentation.validate().expect("known field");
         presentation.chat_appearance_overrides = Some(["format_version".to_owned()].into_iter().collect());
         assert!(presentation.validate().is_err());

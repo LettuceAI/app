@@ -66,12 +66,13 @@ mod duplicate_consolidation_flow_tests {
         assert_eq!(memory.items.len(), 3);
         assert!(memory.items[0].is_cold && !memory.items[0].is_pinned);
         assert!(memory.items[1..].iter().all(|item| item.is_pinned && !item.is_cold));
-        let requests = llm.requests.lock().expect("requests");
-        assert_eq!(requests[0].profile.chat_profile.model_profile_id, run.profile.chat_profile.model_profile_id);
-        assert!(requests[0].tools.is_none());
-        assert_eq!(requests[0].profile.tool_policy, lettuce_conversations::ToolPolicy::Disabled);
-        assert_eq!(requests[0].profile.chat_profile.parameters.visible_max_output_tokens, Some(CONSOLIDATION_MAX_OUTPUT_TOKENS));
-        drop(requests);
+        {
+            let requests = llm.requests.lock().expect("requests");
+            assert_eq!(requests[0].profile.chat_profile.model_profile_id, run.profile.chat_profile.model_profile_id);
+            assert!(requests[0].tools.is_none());
+            assert_eq!(requests[0].profile.tool_policy, lettuce_conversations::ToolPolicy::Disabled);
+            assert_eq!(requests[0].profile.chat_profile.parameters.visible_max_output_tokens, Some(CONSOLIDATION_MAX_OUTPUT_TOKENS));
+        }
         let replay = consolidate_duplicates(&Engine, database, database, &llm, &run, round.attempt_id, &candidates, &policy(), &round.handle, h.context.now()).await.expect("replay");
         assert_eq!(replay, groups); assert_eq!(llm.calls.load(Ordering::SeqCst), 1);
         assert!(cycle_duplicate_candidates(database, run.id, round.attempt_id).expect("map").is_empty(), "replacements never enter the ordinary candidate map");

@@ -818,10 +818,12 @@ pub async fn group_message_audience_set(
             let (outcome, entries) = scope_transaction.apply_group_audience_correction(
                 conversation_id,
                 branch_id,
-                message_id,
-                character_id,
-                heard,
-                scope,
+                &lettuce_companions::GroupAudienceCorrection {
+                    message_id,
+                    character_id,
+                    heard,
+                    scope,
+                },
                 now,
             )?;
             if outcome == lettuce_database::AudienceCorrectionOutcome::Invalid {

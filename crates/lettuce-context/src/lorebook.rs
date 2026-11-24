@@ -1483,7 +1483,7 @@ mod tests {
     fn explain_reports_secondary_not_met_and_matched_secondary_keywords() {
         let (book, value) = secondary_entry(SecondaryKeywordLogic::NotAny, &["red", "blue"]);
         let explained = LorebookMatcher::new(DEPTH)
-            .explain(&book, &[value.clone()], &[], Some("needle and red"))
+            .explain(&book, std::slice::from_ref(&value), &[], Some("needle and red"))
             .expect("valid lorebook");
         assert_eq!(explained.entries[0].reason, "secondary_not_met");
         assert!(!explained.entries[0].active);

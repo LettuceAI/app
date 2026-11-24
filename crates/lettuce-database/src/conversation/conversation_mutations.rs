@@ -14518,12 +14518,17 @@ mod tests {
             },
         )
         .expect("copied timeline");
-        assert_eq!(timeline.items[0].message.role, MessageRole::Scene);
-        assert_eq!(timeline.items[0].message.parent_message_id, None);
-        assert_eq!(timeline.items[1].message.role, MessageRole::Assistant);
-        assert_eq!(timeline.items[1].message.parent_message_id, Some(copied[0]));
+        assert_eq!(timeline.items.len(), 2);
+        let assistant_message = &timeline.items[0].message;
+        let scene_message = &timeline.items[1].message;
+        assert_eq!(scene_message.id, copied[0]);
+        assert_eq!(scene_message.role, MessageRole::Scene);
+        assert_eq!(scene_message.parent_message_id, None);
+        assert_eq!(assistant_message.id, copied[1]);
+        assert_eq!(assistant_message.role, MessageRole::Assistant);
+        assert_eq!(assistant_message.parent_message_id, Some(scene_message.id));
         assert!(matches!(
-            timeline.items[1].message.active_render_source,
+            assistant_message.active_render_source,
             lettuce_conversations::MessageRenderSource::Candidate(_)
         ));
         assert_eq!(

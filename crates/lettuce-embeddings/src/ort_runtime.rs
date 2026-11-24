@@ -24,13 +24,16 @@ const MAX_LINK_HOPS: usize = 8;
 
 pub(crate) fn configure_cpu_spinning(
     builder: ort::session::builder::SessionBuilder,
-) -> ort::session::builder::BuilderResult {
+) -> ort::Result<ort::session::builder::SessionBuilder> {
     if cfg!(target_os = "ios") || managed_onnx_runtime_version() != ONNX_RUNTIME_VERSION {
         return Ok(builder);
     }
     // Bound idle spins to 1 ms and reduce pause-instruction density.
-    builder.with_config_entry("session.intra_op.spin_duration_us", "1000")?
+    builder
+        .with_config_entry("session.intra_op.spin_duration_us", "1000")
+        .map_err(ort::Error::<()>::from)?
         .with_config_entry("session.intra_op.spin_backoff_max", "8")
+        .map_err(ort::Error::<()>::from)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

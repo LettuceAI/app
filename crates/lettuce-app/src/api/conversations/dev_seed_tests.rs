@@ -68,19 +68,15 @@ fn direct(
     }
 }
 
+type TimelineLine = (
+    MessageRole,
+    Option<lettuce_types::ConversationParticipantId>,
+    String,
+    i64,
+);
+
 /// The active branch oldest first: role, author, text and effective time.
-fn timeline(
-    harness: &Harness,
-    conversation_id: &str,
-) -> (
-    Conversation,
-    Vec<(
-        MessageRole,
-        Option<lettuce_types::ConversationParticipantId>,
-        String,
-        i64,
-    )>,
-) {
+fn timeline(harness: &Harness, conversation_id: &str) -> (Conversation, Vec<TimelineLine>) {
     let database = harness.context.backend().database();
     let id: ConversationId = conversation_id.parse().expect("conversation id");
     let conversation = ConversationReader::get(database, id)

@@ -722,8 +722,10 @@ mod tests {
             json!("creation_edit_scene_id")
         );
         assert_eq!(described.definitions[2].description, None);
+        let preview = described.definitions.iter().find(|tool| tool.name == "show_preview")
+            .expect("preview tool");
         assert_eq!(
-            described.definitions[5].parameters["properties"]["message"]["description"],
+            preview.parameters["properties"]["message"]["description"],
             json!("creation_show_preview_message")
         );
     }

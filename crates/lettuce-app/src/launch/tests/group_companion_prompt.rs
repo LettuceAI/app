@@ -666,10 +666,12 @@ fn mark_member_left_audience(
                     .apply_group_audience_correction(
                         conversation.id,
                         conversation.active_branch_id,
-                        message_id,
-                        member,
-                        false,
-                        lettuce_memory::AudienceScope::Onward,
+                        &lettuce_companions::GroupAudienceCorrection {
+                            message_id,
+                            character_id: member,
+                            heard: false,
+                            scope: lettuce_memory::AudienceScope::Onward,
+                        },
                         now,
                     )
                     .map(|(outcome, _)| match outcome {

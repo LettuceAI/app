@@ -790,13 +790,16 @@ pub(crate) fn apply_audience_correction_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,
-    message_id: MessageId,
-    character_id: CharacterId,
-    heard: bool,
-    scope: AudienceScope,
+    correction: &lettuce_companions::GroupAudienceCorrection,
     origin: AudienceCorrectionOrigin,
     now: TimestampMillis,
 ) -> Result<AudienceCorrectionOutcome, Error> {
+    let lettuce_companions::GroupAudienceCorrection {
+        message_id,
+        character_id,
+        heard,
+        scope,
+    } = *correction;
     let member = transaction
         .query_row(
             "SELECT EXISTS(
@@ -1653,7 +1656,7 @@ mod tests {
         let second_zero = checkpoint(first_message, second, first, "second-zero", Vec::new());
         let second_two = checkpoint(third_message, second, first, "second-two", Vec::new());
         fixture.write(first_message, &[first_zero.clone(), second_zero.clone()]);
-        fixture.write(second_message, &[first_one.clone()]);
+        fixture.write(second_message, std::slice::from_ref(&first_one));
         fixture.write(third_message, &[first_two, second_two]);
 
         assert_eq!(
@@ -1697,7 +1700,7 @@ mod tests {
             ],
         );
         let replacement = checkpoint(message_id, first, second, "replacement", Vec::new());
-        fixture.write(message_id, &[replacement.clone()]);
+        fixture.write(message_id, std::slice::from_ref(&replacement));
         assert_eq!(
             fixture
                 .database
@@ -1754,7 +1757,7 @@ mod tests {
             "existing",
             vec![effect(second, "one")],
         );
-        fixture.write(message_id, &[existing.clone()]);
+        fixture.write(message_id, std::slice::from_ref(&existing));
 
         let mut invalid = checkpoint(
             message_id,
@@ -1841,7 +1844,7 @@ mod tests {
         second_checkpoint.source = source.clone();
         fixture.write(first_message, &[first_checkpoint, second_checkpoint]);
         let other = checkpoint(second_message, first, second, "other", Vec::new());
-        fixture.write(second_message, &[other.clone()]);
+        fixture.write(second_message, std::slice::from_ref(&other));
 
         assert_eq!(
             fixture
@@ -2733,10 +2736,12 @@ mod tests {
                 &transaction,
                 fixture.conversation_id,
                 fixture.branch_id,
-                fixture.message_id,
-                second,
-                false,
-                AudienceScope::Message,
+                &lettuce_companions::GroupAudienceCorrection {
+                    message_id: fixture.message_id,
+                    character_id: second,
+                    heard: false,
+                    scope: AudienceScope::Message,
+                },
                 AudienceCorrectionOrigin::User,
                 TimestampMillis::new(13),
             )
@@ -2909,7 +2914,7 @@ mod tests {
             &fixture.database,
             fixture.conversation_id,
             fixture.message_id,
-            &[first_checkpoint.clone()],
+            std::slice::from_ref(&first_checkpoint),
         );
         write_checkpoints(
             &fixture.database,
@@ -2925,10 +2930,12 @@ mod tests {
             &transaction,
             fixture.conversation_id,
             fixture.branch_id,
-            appended.id,
-            second,
-            true,
-            AudienceScope::Message,
+            &lettuce_companions::GroupAudienceCorrection {
+                message_id: appended.id,
+                character_id: second,
+                heard: true,
+                scope: AudienceScope::Message,
+            },
             AudienceCorrectionOrigin::Model,
             TimestampMillis::new(20),
         )

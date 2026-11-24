@@ -133,6 +133,13 @@ pub struct SceneFollowUps<'a, R: ?Sized, D: ?Sized> {
     media: &'a D,
 }
 
+#[derive(Debug, Default)]
+pub struct SceneFollowUpOverrides<'a> {
+    pub prompt: Option<&'a str>,
+    pub cast: Option<&'a lettuce_conversations::SceneCastSelection>,
+    pub mode: Option<SceneFollowUpMode>,
+}
+
 impl<'a, R: ?Sized, D: ?Sized> SceneFollowUps<'a, R, D> {
     #[must_use]
     pub const fn new(repository: &'a R, media: &'a D) -> Self {
@@ -155,9 +162,7 @@ where
         conversation_id: ConversationId,
         target: SceneFollowUpTarget,
         from: &[SceneFollowUpState],
-        prompt: Option<&str>,
-        cast: Option<&lettuce_conversations::SceneCastSelection>,
-        mode: Option<SceneFollowUpMode>,
+        overrides: SceneFollowUpOverrides<'_>,
         now: TimestampMillis,
     ) -> Result<(SceneFollowUp, JobSnapshot), SceneFollowUpError> {
         let current = self
@@ -171,13 +176,13 @@ where
             from,
             &SceneFollowUpChange {
                 state: Some(SceneFollowUpState::Approved),
-                prompt: prompt.map(str::to_owned),
-                mode,
+                prompt: overrides.prompt.map(str::to_owned),
+                mode: overrides.mode,
                 request_id: Some(Some(request_id)),
                 attempt: Some(1),
                 next_generation: true,
                 failure: Some(None),
-                cast: cast.map(|cast| Some(cast.clone())),
+                cast: overrides.cast.map(|cast| Some(cast.clone())),
             },
             now,
         )?;
@@ -401,9 +406,7 @@ where
                         follow_up.conversation_id,
                         follow_up.target,
                         &[SceneFollowUpState::Pending],
-                        None,
-                        None,
-                        None,
+                        SceneFollowUpOverrides::default(),
                         now,
                     )?;
                     return Ok(true);

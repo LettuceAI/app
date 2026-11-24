@@ -41,7 +41,7 @@ async function open(options: { initial?: TimelineMessage; calls?: MockCallHandle
       source: options.group ? { type: "group", source_group_id: "g1" } : { type: "direct", character_id: "ch1" }, missing_models: [], memory_blocked: null,
     } as ConversationView }),
     conversationSettingsGet: () => ({ status: "ok", data: settings }),
-    settingsGet: () => ({ status: "ok", data: { global: { image_generation: { ...imageSettings, scene_enabled: options.enabled ?? true }, ui_preferences: {} }, revision: 1 } as unknown as SettingsView }),
+    settingsGet: () => ({ status: "ok", data: { global: { image_generation: { ...imageSettings, scene_enabled: options.enabled ?? true }, help_me_reply: { enabled: false }, ui_preferences: {} }, revision: 1 } as unknown as SettingsView }),
     modelsList: () => ({ status: "ok", data: { models: options.models ?? [imageModel, writerModel], default_model_id: "writer", revision: 1 } }),
     providerAccountsList: () => ({ status: "ok", data: [{ id: "provider", provider_kind: "openai", label: "Provider" } as ProviderAccountView] }),
     charactersList: () => ({ status: "ok", data: { items: [], next_cursor: null } }),

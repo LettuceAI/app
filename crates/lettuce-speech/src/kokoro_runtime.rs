@@ -68,12 +68,16 @@ impl OnnxKokoroRuntime {
                 }
             })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
+            .map_err(ort::Error::<()>::from)
             .and_then(|builder| {
                 if cfg!(any(target_os = "ios", all(target_os = "macos", target_arch = "x86_64"))) {
                     return Ok(builder);
                 }
-                builder.with_config_entry("session.intra_op.spin_duration_us", "1000")?
+                builder
+                    .with_config_entry("session.intra_op.spin_duration_us", "1000")
+                    .map_err(ort::Error::<()>::from)?
                     .with_config_entry("session.intra_op.spin_backoff_max", "8")
+                    .map_err(ort::Error::<()>::from)
             })
             .map_err(|error| {
                 tracing::warn!(%error, "setting the onnx optimization level failed");

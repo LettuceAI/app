@@ -45,6 +45,8 @@ export function NoteSheetShell({ open, isNew, draft, onChange, busy, saving, onS
     if (sure) onDelete();
   };
   const recurring = draft.recurrence !== "none";
+  const startLabel = t(recurring ? "notes.startsOn" : "notes.showOn");
+  const endLabel = t(recurring ? "notes.stopsAfter" : "notes.hideOn");
 
   return (
     <Sheet
@@ -68,13 +70,13 @@ export function NoteSheetShell({ open, isNew, draft, onChange, busy, saving, onS
         <Field label={t("notes.repeat")}>
           <Select value={draft.recurrence} disabled={busy} options={recurrences.map((value) => ({ value, label: t(`notes.recurrence.${value}`) }))} onChange={(event) => onChange({ recurrence: event.target.value as CharacterNoteRecurrence })} />
         </Field>
-        <Field label={t(draft.recurrence === "none" ? "notes.showOn" : "notes.startsOn")}>
-          <DateTime24 value={draft.availableAt} disabled={busy} onChange={(availableAt) => onChange({ availableAt })} />
+        <Field label={startLabel}>
+          <DateTime24 label={startLabel} value={draft.availableAt} disabled={busy} onChange={(availableAt) => onChange({ availableAt })} />
         </Field>
-        <Field label={t(recurring ? "notes.stopsAfter" : "notes.hideOn")} hint={problem === "end" ? t("notes.endBeforeStart") : undefined}>
+        <Field label={endLabel} hint={problem === "end" ? t("notes.endBeforeStart") : undefined}>
           <div className="flex items-center gap-2">
             <div className="min-w-0 flex-1">
-              <DateTime24 value={draft.expiresAt} placeholder={t("notes.noEnd")} disabled={busy} onChange={(date) => onChange({ expiresAt: draft.expiresAt === null && recurring && pickedDayOnly(date) ? endOfDay(date) : date })} />
+              <DateTime24 label={endLabel} value={draft.expiresAt} placeholder={t("notes.noEnd")} disabled={busy} onChange={(date) => onChange({ expiresAt: draft.expiresAt === null && recurring && pickedDayOnly(date) ? endOfDay(date) : date })} />
             </div>
             {draft.expiresAt && <Button variant="ghost" size="sm" disabled={busy} onClick={() => onChange({ expiresAt: null })}>{t("notes.clearEnd")}</Button>}
           </div>

@@ -1843,7 +1843,7 @@ mod tests {
         assert!(outcome.candidates[0].provider_replay.is_none());
         assert_eq!(parse_response(response(
             r#"{"choices":[{"message":{"tool_calls":[{"function":{"name":"done","arguments":"{\"summary\":"}}]},"finish_reason":"tool_calls"}]}"#,
-        )).unwrap_err(), AdapterError::MalformedResponse);
+        )).expect_err("tool arguments contain incomplete JSON"), AdapterError::MalformedResponse);
     }
 
     #[test]

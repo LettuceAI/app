@@ -596,7 +596,12 @@ mod tests {
             DynamicMemoryStructuredFallbackFormat::Json,
         ).expect("JSON-encoded arguments");
         assert_eq!(calls[0].arguments, json!({"summary":"Complete"}));
-        assert!(parse_memory_operations_from_text(r#"{"operations":[]}"#, DynamicMemoryStructuredFallbackFormat::Json).unwrap().is_empty());
+        assert!(parse_memory_operations_from_text(
+            r#"{"operations":[]}"#,
+            DynamicMemoryStructuredFallbackFormat::Json,
+        )
+        .expect("valid empty JSON operations")
+        .is_empty());
     }
 
     #[test]
@@ -615,7 +620,9 @@ mod tests {
             assert!(parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml).is_err(), "{raw}");
         }
         for raw in ["<memory_ops />", "<memory_ops></memory_ops>"] {
-            assert!(parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml).unwrap().is_empty());
+            assert!(parse_memory_operations_from_text(raw, DynamicMemoryStructuredFallbackFormat::Xml)
+                .expect("valid empty XML operations")
+                .is_empty());
         }
     }
 

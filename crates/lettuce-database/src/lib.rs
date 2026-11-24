@@ -540,9 +540,11 @@ impl Database {
     }
 }
 
+const DATABASE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
 fn configure(connection: &Connection, persistent: bool) -> rusqlite::Result<()> {
     connection.pragma_update(None, "foreign_keys", true)?;
-    connection.busy_timeout(Duration::from_secs(5))?;
+    connection.busy_timeout(DATABASE_BUSY_TIMEOUT)?;
     if persistent {
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.pragma_update(None, "synchronous", "NORMAL")?;
@@ -571,7 +573,7 @@ fn refuse_newer_schema(
     connection: &Connection,
     migrations: &[Migration],
 ) -> Result<(), DatabaseError> {
-    connection.busy_timeout(Duration::from_secs(5))?;
+    connection.busy_timeout(DATABASE_BUSY_TIMEOUT)?;
     let tracked = connection
         .query_row(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'",
@@ -617,15 +619,20 @@ fn apply_migrations(
     // Rebuild tables using SQLite's create/copy/drop/rename procedure. Foreign
     // keys must be disabled before the transaction to prevent cascade deletes;
     // legacy rename keeps existing views and cross-table triggers intact.
-    connection.pragma_update(None, "foreign_keys", false)?;
+    // A concurrent opener can wait through the entire table rebuild, including
+    // the migration's foreign-key check, before it can verify the migration ledger.
+    connection.busy_timeout(Duration::from_secs(60))?;
     let result = (|| {
+        connection.pragma_update(None, "foreign_keys", false)?;
         connection.pragma_update(None, "legacy_alter_table", true)?;
         apply_migration_transaction(connection, migrations, true)
     })();
     let restore_rename = connection.pragma_update(None, "legacy_alter_table", false);
     let restore_foreign_keys = connection.pragma_update(None, "foreign_keys", true);
+    let restore_timeout = connection.busy_timeout(DATABASE_BUSY_TIMEOUT);
     restore_rename?;
     restore_foreign_keys?;
+    restore_timeout?;
     result
 }
 
@@ -5803,8 +5810,8 @@ mod tests {
         });
         barrier.wait();
 
-        assert!(first.join().expect("first upgrade thread").is_ok());
-        assert!(second.join().expect("second upgrade thread").is_ok());
+        first.join().expect("first upgrade thread").expect("open upgraded database");
+        second.join().expect("second upgrade thread").expect("open upgraded database");
         let database = Database::open(&path).expect("reopen upgraded file");
         let connection = database.connection().expect("database lock");
         assert_eq!(
@@ -6024,8 +6031,8 @@ mod tests {
             Database::open(second_path)
         });
         barrier.wait();
-        assert!(first.join().expect("first upgrade").is_ok());
-        assert!(second.join().expect("second upgrade").is_ok());
+        first.join().expect("first upgrade").expect("open upgraded database");
+        second.join().expect("second upgrade").expect("open upgraded database");
         let database = Database::open(&path).expect("reopen upgraded file");
         let connection = database.connection().expect("database lock");
         assert_eq!(

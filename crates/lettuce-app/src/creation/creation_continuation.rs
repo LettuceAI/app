@@ -402,8 +402,7 @@ impl<
                     &request.context,
                     &calls,
                     round,
-                    &images,
-                    &made,
+                    ReplayImages { known: &images, made: &made },
                 ),
             )?;
             request.context = replayed.context;
@@ -544,8 +543,7 @@ impl<
                     &request.context,
                     &calls,
                     &round,
-                    &images,
-                    &made,
+                    ReplayImages { known: &images, made: &made },
                 ),
             )?;
             request.context = replayed.context;
@@ -1036,6 +1034,11 @@ struct ReplayedRound {
     terminal: bool,
 }
 
+struct ReplayImages<'a> {
+    known: &'a [lettuce_types::AssetId],
+    made: &'a std::collections::HashMap<u16, lettuce_types::AssetId>,
+}
+
 fn replay_round(
     text: &crate::generation::runtime_text::RuntimeText,
     base: &CreationProposal,
@@ -1043,8 +1046,7 @@ fn replay_round(
     context: &ProviderNeutralContext,
     prior_calls: &[AdmittedCreationToolCall],
     round: &CreationInferenceRound,
-    images: &[lettuce_types::AssetId],
-    made: &std::collections::HashMap<u16, lettuce_types::AssetId>,
+    images: ReplayImages<'_>,
 ) -> Result<ReplayedRound, CreationContinuationError> {
     round
         .validate()
@@ -1064,7 +1066,7 @@ fn replay_round(
             attempt.planned_proposal_id,
             attempt.turn_id,
             &calls,
-            images,
+            images.known,
             round.admitted_at,
         )?;
         let first = usize::from(round.first_call_ordinal);
@@ -1086,7 +1088,7 @@ fn replay_round(
                     attempt.planned_proposal_id,
                     attempt.turn_id,
                     &calls[..=index],
-                    images,
+                    images.known,
                     round.admitted_at,
                 )?
                 .proposal
@@ -1102,7 +1104,7 @@ fn replay_round(
                     &draft,
                     u16::try_from(index)
                         .ok()
-                        .and_then(|ordinal| made.get(&ordinal).copied()),
+                        .and_then(|ordinal| images.made.get(&ordinal).copied()),
                 )
                 .map_err(|error| CreationContinuationError::PromptRender {
                     reason: error.to_string(),
@@ -1755,6 +1757,17 @@ mod tests {
             let requests = inference.requests.lock().expect("requests");
             assert_eq!(requests.len(), 3);
             let tools = requests[0].tools.as_ref().expect("tools");
+            let runtime_text = crate::generation::runtime_text::RuntimeText::from_seed(
+                crate::BuiltInPromptId::CreationRuntime,
+            );
+            let definition_description =
+                runtime_text.render_with("creation_write_definition_tool", []).expect("definition");
+            let generate_description =
+                runtime_text.render_with("creation_generate_image_tool", []).expect("generate image");
+            let edit_description =
+                runtime_text.render_with("creation_edit_avatar_image_tool", []).expect("edit avatar");
+            let uploaded_description =
+                runtime_text.render_with("creation_use_uploaded_image_tool", []).expect("use image");
             assert_eq!(
                 tools
                     .definitions
@@ -1762,16 +1775,11 @@ mod tests {
                     .map(|definition| (definition.name.as_str(), definition.description.as_deref()))
                     .collect::<Vec<_>>(),
                 [
-                    (
-                        "write_definition",
-                        crate::generation::runtime_text::RuntimeText::from_seed(
-                            crate::BuiltInPromptId::CreationRuntime
-                        )
-                        .render_with("creation_write_definition_tool", [])
-                        .ok()
-                        .as_deref()
-                    ),
+                    ("write_definition", Some(definition_description.as_str())),
                     ("set_name", Some("Set the character/persona/lorebook name.")),
+                    ("generate_image", Some(generate_description.as_str())),
+                    ("edit_avatar_image", Some(edit_description.as_str())),
+                    ("use_uploaded_image", Some(uploaded_description.as_str())),
                     (
                         "show_preview",
                         Some("Render a preview of the current draft to the user.")
@@ -1782,8 +1790,10 @@ mod tests {
                     ),
                 ]
             );
+            let preview = tools.definitions.iter().find(|tool| tool.name == "show_preview")
+                .expect("preview tool");
             assert_eq!(
-                tools.definitions[2].parameters["properties"]["message"]["description"],
+                preview.parameters["properties"]["message"]["description"],
                 serde_json::json!("Optional remark shown alongside the preview.")
             );
             assert!(
@@ -2669,7 +2679,7 @@ mod tests {
                         ),
                         tool_call("show_preview", serde_json::json!({}), "b"),
                         tool_call("request_confirmation", serde_json::json!({}), "c"),
-                        tool_call("generate_image", serde_json::json!({"prompt": "x"}), "d"),
+                        tool_call("unsupported_tool", serde_json::json!({}), "d"),
                     ],
                     1,
                     1,
@@ -2697,8 +2707,8 @@ mod tests {
                 .flat_map(|message| &message.parts)
                 .any(
                     |part| matches!(part, ProviderContextPart::ToolResult(result)
-                if result.name == "generate_image"
-                    && result.output.value["error"] == "unknown tool: generate_image")
+                if result.name == "unsupported_tool"
+                    && result.output.value["error"] == "unknown tool: unsupported_tool")
                 )
         );
 

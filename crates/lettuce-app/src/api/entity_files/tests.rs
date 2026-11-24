@@ -2175,6 +2175,7 @@ fn uec3_model_every_portable_setting_survives_native_conversion() {
     ))
     .expect("wire");
     let chat = json!({"temperature":0.7,"topP":0.8,"topK":32,"maxOutputTokens":256,"contextLength":4096,
+        "messageContextWindow":2048,
         "frequencyPenalty":0.2,"presencePenalty":0.3,"repetitionPenalty":1.1,"reasoningMode":"enabled","reasoningEffort":"high",
         "reasoningBudgetTokens":128,"promptCaching":{"enabled":{"retention":"one_hour"}},"sendThinkingState":true,
         "ollama":{"numCtx":4096,"numPredict":256,"numKeep":10,"numBatch":32,"numGpu":1,"numThread":8,"tfsZ":1.0,

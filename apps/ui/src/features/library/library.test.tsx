@@ -25,6 +25,9 @@ vi.mock("@/api/window-controls", () => ({
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+    return this.hasAttribute("data-index") ? 92 : 600;
+  });
 });
 afterEach(() => {
   cleanup();

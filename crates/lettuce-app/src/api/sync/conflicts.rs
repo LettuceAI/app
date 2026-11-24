@@ -37,7 +37,7 @@ fn candidate(
             value: Box::new(crate::api::library::characters::view(context, *value)?),
         },
         V::Persona(value) => dto::SyncConflictValue::Persona {
-            value: Box::new(crate::api::library::personas::view(context, value)),
+            value: Box::new(crate::api::library::personas::view(context, *value)),
         },
         V::Default(value) => dto::SyncConflictValue::PersonaDefault {
             value: dto::PersonaDefaultView {

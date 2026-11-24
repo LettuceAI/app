@@ -65,6 +65,8 @@ async function mount(
     return this.hasAttribute("data-index") ? (options.rowHeight ?? 28) : 600;
   });
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1000);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {

@@ -34,7 +34,7 @@ pub use reply_images::{CastName, ReplyImageFacts, SceneImageFollowUp};
 pub use scene_cast::{SceneCastSelection, SceneCastSources};
 pub use scene_follow_up::{
     MAX_ATTEMPTS as SCENE_IMAGE_MAX_ATTEMPTS, SceneFollowUpError as SceneImageFollowUpError,
-    SceneFollowUpSources, SceneFollowUps, job_of_scene_image_request,
+    SceneFollowUpOverrides, SceneFollowUpSources, SceneFollowUps, job_of_scene_image_request,
 };
 pub use scene_image::{
     SceneImageError, SceneImageRequest, attach_scene_image, scene_generation_request,

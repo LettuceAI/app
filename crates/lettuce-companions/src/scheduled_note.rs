@@ -533,7 +533,7 @@ mod tests {
         );
         let filler = "b".repeat(MAX_NOTE_CONTENT_CHARS);
         let lines = scheduled_note_lines(
-            &vec![filler.as_str(); MAX_BLOCK_CHARS / (MAX_NOTE_CONTENT_CHARS + 3) + 2],
+            &[filler.as_str(); MAX_BLOCK_CHARS / (MAX_NOTE_CONTENT_CHARS + 3) + 2],
             "...",
             &line,
         );

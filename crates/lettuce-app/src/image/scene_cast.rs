@@ -347,10 +347,10 @@ pub(crate) fn scene_cast<R: SceneCastSources + ?Sized>(
                         return Err(SceneCastError::ForeignCharacter);
                     }
                     for (_, id) in &members {
-                        if selection.character_ids.contains(id) {
-                            if let Some(character) = load(*id)? {
-                                chosen.push(character);
-                            }
+                        if selection.character_ids.contains(id)
+                            && let Some(character) = load(*id)?
+                        {
+                            chosen.push(character);
                         }
                     }
                 }

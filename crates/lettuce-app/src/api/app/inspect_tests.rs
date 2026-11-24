@@ -264,6 +264,10 @@ fn text_of(message: &dto::PromptMessage) -> String {
         .collect()
 }
 
+fn section_token_count(text: impl Into<String>) -> u32 {
+    lettuce_context::count_tokens_batch(&[text.into()]).expect("prompt tokenizer")[0]
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_snapshot_reports_the_speaker_reason_and_heuristic_fallback() {
     use lettuce_characters::GroupRepository;
@@ -326,18 +330,17 @@ async fn the_snapshot_shows_what_was_assembled_even_after_the_character_changes(
         .find(|section| section.kind == dto::PromptSectionKind::Character)
         .expect("character section");
     assert_eq!(character.label.as_deref(), Some("Ada"));
-    assert!(character.estimated_tokens > 0);
+    assert_eq!(
+        character.estimated_tokens,
+        section_token_count("A meticulous engineer"),
+    );
     assert!(sections.iter().any(
         |section| section.kind == dto::PromptSectionKind::PromptEntry && section.label.is_some()
     ));
     assert!(before.sections_unavailable.is_none());
     assert_eq!(
-        sections
-            .iter()
-            .map(|section| section.estimated_tokens)
-            .sum::<u32>(),
         before.budget.estimated_input_tokens,
-        "only actually sent bytes count once"
+        before.budget.input_bytes.div_ceil(4),
     );
     assert!(before.budget.estimated_input_tokens > 0);
     assert!(before.budget.selected_messages > 0);
@@ -789,9 +792,13 @@ async fn regeneration_guidance_breakdown_matches_dispatched_direct_and_group_con
                 .sections
                 .expect("sections")
                 .iter()
+                .filter(|section| {
+                    section.kind == dto::PromptSectionKind::PromptEntry
+                        && section.label.as_deref() == Some("Regenerate Instruction")
+                })
                 .map(|section| section.estimated_tokens)
                 .sum::<u32>(),
-            stored.budget.estimated_input_tokens
+            section_token_count(instruction.trim()),
         );
     }
 }
@@ -870,22 +877,18 @@ async fn the_snapshot_preserves_distinct_lore_titles_for_identical_placed_conten
         sections
             .iter()
             .filter(|section| section.kind == dto::PromptSectionKind::Lorebook)
-            .map(|section| section.label.as_deref())
+            .map(|section| (section.label.as_deref(), section.estimated_tokens))
             .collect::<Vec<_>>(),
-        vec![Some("First"), Some("Second")]
+        vec![
+            (Some("First"), section_token_count("same Ada")),
+            (Some("Second"), section_token_count("same Ada")),
+        ],
     );
     assert!(
         sections
             .iter()
             .filter(|section| section.kind == dto::PromptSectionKind::PromptEntry)
             .all(|section| section.label.is_some())
-    );
-    assert_eq!(
-        sections
-            .iter()
-            .map(|section| section.estimated_tokens)
-            .sum::<u32>(),
-        stored.budget.estimated_input_tokens
     );
 }
 

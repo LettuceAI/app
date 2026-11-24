@@ -1064,10 +1064,17 @@ mod tests {
             assert_eq!(arguments, serde_json::json!({"text":"tea"}));
         }
         for raw in ["{", "not JSON", "[]", "true", "<parameter=text>tea</parameter><parameter=id>partial"] {
-            assert_eq!(checked_tool_argument_value(Some(serde_json::Value::String(raw.into()))).unwrap_err(), AdapterError::MalformedResponse);
+            assert_eq!(
+                checked_tool_argument_value(Some(serde_json::Value::String(raw.into())))
+                    .expect_err("malformed tool arguments"),
+                AdapterError::MalformedResponse,
+            );
         }
         for value in [None, Some(serde_json::Value::Null), Some(serde_json::json!("")), Some(serde_json::json!({}))] {
-            assert_eq!(checked_tool_argument_value(value).unwrap().0, serde_json::json!({}));
+            assert_eq!(
+                checked_tool_argument_value(value).expect("empty tool arguments").0,
+                serde_json::json!({}),
+            );
         }
     }
 

@@ -492,6 +492,7 @@ describe("conversation screen", () => {
           status: "ok",
           data: {
             global: {
+              help_me_reply: { enabled: false },
               ui_preferences: {
                 chatAppearance: { composerFontSize: "xlarge", footerInputColorHex: "#123456" },
               },
@@ -520,6 +521,7 @@ describe("conversation screen", () => {
           status: "ok",
           data: {
             global: {
+              help_me_reply: { enabled: false },
               ui_preferences: { accessibility: { haptics: true, hapticIntensity: "heavy" } },
             },
             revision: 1,
@@ -569,6 +571,7 @@ describe("conversation screen", () => {
           status: "ok",
           data: {
             global: {
+              help_me_reply: { enabled: false },
               ui_preferences: { accessibility: { haptics: true, hapticIntensity: "heavy" } },
             },
             revision: 1,
@@ -869,8 +872,8 @@ describe("conversation screen", () => {
     });
     fireEvent.contextMenu(await screen.findByText("Old reply."));
     expect(await screen.findByText("Google: Gemini 3.8 Flash")).toBeTruthy();
-    expect(screen.getByTitle("Prompt tokens").textContent).toBe("↓17,223");
-    expect(screen.getByTitle("Reply tokens").textContent).toBe("↑1,258");
+    expect(screen.getByTitle("Prompt tokens").textContent).toBe("↑17,223");
+    expect(screen.getByTitle("Reply tokens").textContent).toBe("↓1,258");
     expect(screen.getByText("18,481")).toBeTruthy();
   });
 
@@ -1251,7 +1254,7 @@ describe("scene switching", () => {
       ...message("sc", "scene", ""),
       parts: [
         { type: "text", text: '{{@"Aria"}} waves to {{user}} and {{persona}}, not {{@"Ghost"}}.' },
-        { type: "media", asset: { asset_id: "img1", url: "https://example.test/scene.png" }, kind: "image" },
+        { type: "media", asset: { asset_id: "img1", url: "https://example.test/scene.png" }, role: "scene", kind: "image" },
       ],
     };
     await open({

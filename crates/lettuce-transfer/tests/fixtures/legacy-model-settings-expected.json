@@ -3,6 +3,7 @@
     "context_length": 8192,
     "frequency_penalty": 0.2,
     "max_output_tokens": 1024,
+    "message_context_window": null,
     "ollama": {
       "min_p": 0.05,
       "mirostat": 2,
@@ -68,6 +69,9 @@
           "kind": "inherit"
         },
         "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "message_context_window": {
           "kind": "inherit"
         },
         "ollama": {
@@ -176,6 +180,9 @@
         "max_output_tokens": {
           "kind": "inherit"
         },
+        "message_context_window": {
+          "kind": "inherit"
+        },
         "ollama": {
           "min_p": {
             "kind": "inherit"
@@ -280,6 +287,9 @@
           "kind": "inherit"
         },
         "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "message_context_window": {
           "kind": "inherit"
         },
         "ollama": {
@@ -387,6 +397,9 @@
           "kind": "inherit"
         },
         "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "message_context_window": {
           "kind": "inherit"
         },
         "ollama": {
@@ -499,6 +512,9 @@
         "max_output_tokens": {
           "kind": "inherit"
         },
+        "message_context_window": {
+          "kind": "inherit"
+        },
         "ollama": {
           "min_p": {
             "kind": "inherit"
@@ -603,6 +619,9 @@
           "kind": "inherit"
         },
         "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "message_context_window": {
           "kind": "inherit"
         },
         "ollama": {
@@ -711,6 +730,9 @@
         "max_output_tokens": {
           "kind": "inherit"
         },
+        "message_context_window": {
+          "kind": "inherit"
+        },
         "ollama": {
           "min_p": {
             "kind": "inherit"
@@ -817,6 +839,9 @@
         "max_output_tokens": {
           "kind": "inherit"
         },
+        "message_context_window": {
+          "kind": "inherit"
+        },
         "ollama": {
           "min_p": {
             "kind": "inherit"
@@ -921,6 +946,9 @@
           "kind": "inherit"
         },
         "max_output_tokens": {
+          "kind": "inherit"
+        },
+        "message_context_window": {
           "kind": "inherit"
         },
         "ollama": {

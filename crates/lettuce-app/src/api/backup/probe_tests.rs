@@ -99,5 +99,8 @@ async fn probe_backup_export_after_a_real_legacy_import() {
     let view = crate::api::job_get(&fresh, lettuce_contracts::JobGetRequest { job_id: accepted.job_id }).await.expect("import view");
     eprintln!("PROBE legacy import state={:?} failure={:?}", view.state, view.failure);
     run_backup_export(&fresh, &root, "after-legacy").await;
-    if let Some(workers) = host.workers.lock().expect("workers").take() { workers.stop().await; }
+    let workers = host.workers.lock().expect("workers").take();
+    if let Some(workers) = workers {
+        workers.stop().await;
+    }
 }

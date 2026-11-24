@@ -188,7 +188,7 @@ pub fn reduce_group_event(
             },
             social_event: None,
             emotion_delta: seed.emotion_delta,
-            relationship_change: addressed.then(|| GroupCompanionRelationshipChange {
+            relationship_change: addressed.then_some(GroupCompanionRelationshipChange {
                 target,
                 delta: seed.relationship_delta,
             }),
@@ -359,7 +359,7 @@ mod tests {
             GroupCompanionEffectReason::Witnessed
         );
         assert!(b_checkpoint.effects[0].relationship_change.is_none());
-        assert!(persona_relationships.get(&b).is_none());
+        assert!(!persona_relationships.contains_key(&b));
         assert_ne!(
             b_checkpoint.emotional_state.felt,
             initial_group_member_state(&config).emotional_state.felt

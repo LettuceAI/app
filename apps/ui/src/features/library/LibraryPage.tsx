@@ -8,7 +8,6 @@ import {
   useNavigate,
   useRouteContext,
   useRouter,
-  useRouterState,
   useSearch,
 } from "@tanstack/react-router";
 import { BookOpen, FileAudio, Image, MoreHorizontal, User, UserRound } from "lucide-react";
@@ -92,7 +91,7 @@ export function LibraryPage() {
   const router = useRouter();
   const search = useSearch({ from: "/library" });
   const pushed = useLocation({ select: (location) => location.state.libraryOverlayPushed });
-  const routeKey = useRouterState({ select: (state) => state.resolvedLocation?.state.__TSR_key });
+  const routeKey = useLocation({ select: (location) => location.state.__TSR_key });
   const mainRef = useRef<HTMLElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const filter = useLocation({

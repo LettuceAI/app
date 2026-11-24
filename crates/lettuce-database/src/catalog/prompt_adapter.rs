@@ -1630,7 +1630,7 @@ pub(crate) fn reconcile_built_ins_in(
             current.provenance = canonical_provenance.clone();
         }
         let legacy_unedited =
-            legacy_seed_is_unedited(&current, &seed, &current_seed, &current_authored);
+            legacy_seed_is_unedited(&current, seed, &current_seed, &current_authored);
         let edited = current_authored != current_seed && !legacy_unedited;
         if edited && request.mode == BuiltInReconcileMode::RefreshUnedited {
             outcomes.push(BuiltInReconcileOutcome {
@@ -1655,7 +1655,7 @@ pub(crate) fn reconcile_built_ins_in(
         };
         let legacy_ordinal_match = legacy_unedited;
         let (entries, touched, entries_changed) =
-            reconcile_entries(&current, &seed, legacy_ordinal_match);
+            reconcile_entries(&current, seed, legacy_ordinal_match);
         let mut metadata = seed.metadata.clone();
         let keep_name = request.mode == BuiltInReconcileMode::ResetToSeed || name_kept;
         if keep_name {

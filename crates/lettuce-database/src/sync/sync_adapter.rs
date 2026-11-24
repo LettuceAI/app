@@ -4822,7 +4822,7 @@ fn conflict_value(
                     reason: "conflict value: stored data failed a consistency check",
                 });
             }
-            Ok(SyncConflictValue::Persona(persona))
+            Ok(SyncConflictValue::Persona(Box::new(persona)))
         }
         "persona_default" => {
             if entity_id != "application" {

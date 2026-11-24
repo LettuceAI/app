@@ -594,22 +594,20 @@ pub async fn llama_unload(context: &ApiContext) -> Result<(), ApiError> {
 pub(crate) async fn unload_if_resident(context: &ApiContext, path: &str) -> Result<bool, ApiError> {
     let resident = context.local_models().resident_files(context);
     let target = Path::new(path);
-    if !resident.iter().any(|file| {
+    let is_resident = resident.iter().any(|file| {
         lettuce_local_llm::model_files::gguf_model_paths(target)
             .iter()
             .any(|target| crate::models::gguf_library::paths_equal(Path::new(file), target))
-    }) {
-        return Ok(false);
-    }
+    });
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
+    if is_resident {
         context
             .backend()
             .unload_local_llama()
             .await
             .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
     }
-    Ok(true)
+    Ok(is_resident)
 }
 
 const fn path_field(field: ModelPathField) -> dto::LocalModelPathField {

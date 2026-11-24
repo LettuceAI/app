@@ -112,7 +112,7 @@ async function renderEdit(view: CharacterView_Serialize, calls: MockCallHandlers
         modelsList: () => ok({ models: [], default_model_id: null, revision: 1 }),
         providerAccountsList: () => ok([]),
         promptsList: () => ok({ items: [], next_cursor: null }),
-        settingsGet: () => ok({ global: { dynamic_memory: { enabled: true } } } as never),
+        settingsGet: () => ok({ global: { dynamic_memory: { enabled: true }, companion_soul_writer: { model_profile_id: null } } } as never),
         lorebooksList: () => ok({ items: books, next_cursor: null }),
         audioProvidersList: () => ok([]),
         characterDraftDefault: (mode) => ok((mode === "companion" ? companionDraft : defaultDraft) as CharacterDraft),
@@ -885,12 +885,13 @@ describe("scheduled notes", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Add a note/ }));
     const sheet = within(await screen.findByRole("dialog"));
     fireEvent.change(sheet.getByPlaceholderText(/Today is your birthday/), { target: { value: "Founding day" } });
-    fireEvent.click(sheet.getByRole("button", { name: "Show on" }));
+    fireEvent.click(sheet.getByRole("button", { name: /^Show on/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Choose month and year" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Year" }), { target: { value: "1890" } });
     fireEvent.click(screen.getByRole("button", { name: "Mar" }));
     fireEvent.click(screen.getByRole("button", { name: "14" }));
-    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "10:00" } });
+    fireEvent.change(screen.getByLabelText("Hour"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Minute"), { target: { value: "00" } });
     expect(screen.getByText(/Mar 14, 1890, 10:00/)).toBeTruthy();
     fireEvent.click(sheet.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
@@ -906,7 +907,7 @@ describe("scheduled notes", () => {
     fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     const sheet = within(await screen.findByRole("dialog"));
-    fireEvent.click(sheet.getByRole("button", { name: "Stops after" }));
+    fireEvent.click(sheet.getByRole("button", { name: /^Stops after/ }));
     fireEvent.click(await screen.findByRole("button", { name: "20" }));
     fireEvent.click(sheet.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
@@ -921,8 +922,8 @@ describe("scheduled notes", () => {
     fireEvent.click(tab("Chat"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     const sheet = within(await screen.findByRole("dialog"));
-    fireEvent.click(sheet.getByRole("button", { name: "Stops after" }));
-    fireEvent.change(await screen.findByLabelText("Time"), { target: { value: "08:00" } });
+    fireEvent.click(sheet.getByRole("button", { name: /^Stops after/ }));
+    fireEvent.change(await screen.findByLabelText("Hour"), { target: { value: "08" } });
     fireEvent.click(sheet.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(upsert).toHaveBeenCalledTimes(1));
     const ended = new Date((upsert.mock.calls[0] as unknown as [{ expires_at: number }])[0].expires_at);

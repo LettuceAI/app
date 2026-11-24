@@ -153,10 +153,7 @@ impl ApiOperationTransaction<'_, '_> {
         &self,
         conversation_id: lettuce_types::ConversationId,
         branch_id: lettuce_types::ConversationBranchId,
-        message_id: lettuce_types::MessageId,
-        character_id: lettuce_types::CharacterId,
-        heard: bool,
-        scope: lettuce_memory::AudienceScope,
+        correction: &lettuce_companions::GroupAudienceCorrection,
         now: TimestampMillis,
     ) -> Result<
         (
@@ -169,10 +166,7 @@ impl ApiOperationTransaction<'_, '_> {
             self.transaction,
             conversation_id,
             branch_id,
-            message_id,
-            character_id,
-            heard,
-            scope,
+            correction,
             lettuce_companions::AudienceCorrectionOrigin::User,
             now,
         )
@@ -193,7 +187,7 @@ impl ApiOperationTransaction<'_, '_> {
             self.transaction,
             conversation_id,
             branch_id,
-            message_id,
+            correction.message_id,
         )
         .map_err(|_| ApiOperationError::Storage {
             reason: "group message audience could not be read",

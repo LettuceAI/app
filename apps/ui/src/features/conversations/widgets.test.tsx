@@ -207,7 +207,7 @@ async function mountChat(character: () => CharacterView_Serialize, calls: MockCa
     transport: createMockTransport({
       calls: {
         appStatus: () => ({ status: "ok", data: { ...mockAppStatus, ui_state: { onboarding: { completed: true } } } }),
-        settingsGet: () => ({ status: "ok", data: { global: { ui_preferences: { chatAppearance: { chatWidgetAreaEnabled: true, chatColumnWidth: "normal", chatColumnAlign: "center", chatWidgetCenterMode: "both" } } }, revision: 1 } as unknown as SettingsView }),
+        settingsGet: () => ({ status: "ok", data: { global: { ui_preferences: { chatAppearance: { chatWidgetAreaEnabled: true, chatColumnWidth: "normal", chatColumnAlign: "center", chatWidgetCenterMode: "both" } }, help_me_reply: { enabled: false } }, revision: 1 } as unknown as SettingsView }),
         conversationOpen: () => ({ status: "ok", data: chatView }),
         conversationSettingsGet: () => ({ status: "ok", data: chatSettings }),
         characterGet: () => ({ status: "ok", data: character() }),

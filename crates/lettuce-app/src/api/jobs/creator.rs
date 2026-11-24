@@ -215,12 +215,12 @@ impl crate::CreationSessionMedia for CreatorSessionMedia<'_> {
             }
             lettuce_creation::CreationReference::Persona { id } => {
                 let found = PersonaRepository::get(db, *id).ok().flatten()?;
-                (found.status == LifecycleStatus::Active).then(|| {
+                (found.status == LifecycleStatus::Active).then_some(
                     crate::creation::creation_prompt::CreationReferenceText {
                         name: found.title,
                         text: Some(found.description),
-                    }
-                })
+                    },
+                )
             }
         }
     }

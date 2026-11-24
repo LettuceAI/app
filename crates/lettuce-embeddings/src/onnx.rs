@@ -282,6 +282,7 @@ impl OnnxEmbeddingRuntime {
                 reason: error.to_string(),
             })?
             .with_optimization_level(GraphOptimizationLevel::Level3)
+            .map_err(ort::Error::<()>::from)
             .and_then(crate::ort_runtime::configure_cpu_spinning)
             .map_err(|error| EmbeddingError::RuntimeUnavailable {
                 reason: error.to_string(),

@@ -1358,10 +1358,7 @@ impl GroupCompanionMemoryRoundWriter for Database {
                     &transaction,
                     run.conversation_id,
                     run.branch_id,
-                    correction.message_id,
-                    correction.character_id,
-                    correction.heard,
-                    correction.scope,
+                    correction,
                     lettuce_companions::AudienceCorrectionOrigin::Model,
                     now,
                 )

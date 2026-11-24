@@ -13,7 +13,7 @@ vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockRe
 const account: ProviderAccountView = { id: "provider", provider_kind: "openrouter", protocol: "open_ai_compatible", label: "My provider", base_url: null, enabled: true, streaming_enabled: true, allow_invalid_tls: false, api_key_set: true, config: {}, revision: 1, created_at: 0, updated_at: 0 };
 const gpuDevices = [0, 1].map((index) => ({ index, name: `GPU ${index}`, description: "", backend: "CUDA", device_type: "Gpu", memory_free: 8 * 1024 ** 3, memory_total: 8 * 1024 ** 3 }));
 const model: ModelView = { id: "model", provider_account_id: account.id, display_name: "Editor model", external_model_id: "vendor/model", kind: "chat", input_scopes: ["text", "image"], output_scopes: ["text"], config: full, revision: 9, created_at: 0, updated_at: 0 };
-const settings = { sampler_defaults: { chat_parameters: { temperature: 0.65 }, llama_cpp: { sampler: {} }, stable_diffusion: { cpp: {} } }, revision: 1 } as unknown as SettingsView;
+const settings = { global: { developer_mode_enabled: false }, sampler_defaults: { chat_parameters: { temperature: 0.65 }, llama_cpp: { sampler: {} }, stable_diffusion: { cpp: {} } }, revision: 1 } as unknown as SettingsView;
 async function mount(path = "/settings/models/model", calls: MockCallHandlers = {}, phone = false) {
   if (phone) vi.spyOn(window, "matchMedia").mockImplementation((query) => ({ matches: query.includes("max-width"), media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false }));
   const transport = createMockTransport({ calls: {

@@ -7,6 +7,7 @@ export interface DateTime24Props {
   value: Date | null;
   onChange: (value: Date) => void;
   placeholder?: string;
+  label?: string;
   disabled?: boolean;
   locale?: string;
   min?: Date;
@@ -17,12 +18,12 @@ export interface DateTime24Props {
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Date + time field whose time is always 24h, independent of the webview locale, unlike a native `<input type="time">`. */
-export function DateTime24({ value, onChange, placeholder, disabled = false, locale, min, max, className }: DateTime24Props) {
+export function DateTime24({ value, onChange, placeholder, label, disabled = false, locale, min, max, className }: DateTime24Props) {
   const { t, i18n } = useTranslation();
   const loc = locale ?? i18n.language;
   const hour = value ? value.getHours() : 0;
   const minute = value ? value.getMinutes() : 0;
-  const label = value ? `${new Intl.DateTimeFormat(loc, { dateStyle: "medium" }).format(value)}, ${pad(hour)}:${pad(minute)}` : (placeholder ?? "");
+  const display = value ? `${new Intl.DateTimeFormat(loc, { dateStyle: "medium" }).format(value)}, ${pad(hour)}:${pad(minute)}` : (placeholder ?? "");
   const setParts = (h: number, m: number) => {
     const next = new Date(value ?? new Date());
     next.setHours(h, m, 0, 0);
@@ -33,6 +34,7 @@ export function DateTime24({ value, onChange, placeholder, disabled = false, loc
       <PopoverTrigger>
         <button
           type="button"
+          aria-label={label && display ? `${label}, ${display}` : label}
           disabled={disabled}
           className={cn(
             "control-md flex w-full items-center gap-2.5 rounded-xl border border-line bg-fill px-3.5 text-left transition-colors hover:border-line-2 focus-visible:border-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/35 disabled:cursor-not-allowed disabled:opacity-50",
@@ -40,7 +42,7 @@ export function DateTime24({ value, onChange, placeholder, disabled = false, loc
           )}
         >
           <CalendarDays size={16} className="shrink-0 text-fg-3" />
-          <span className={cn("min-w-0 flex-1 truncate", value ? "text-fg" : "text-fg-4")}>{label}</span>
+          <span className={cn("min-w-0 flex-1 truncate", value ? "text-fg" : "text-fg-4")}>{display}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent className="p-3">

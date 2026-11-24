@@ -397,7 +397,19 @@ pub(super) fn harness(reply: Reply) -> Harness {
 }
 
 pub(super) fn media_harness(reply: Reply, root: &std::path::Path) -> Harness {
-    harness_with(reply, Arc::new(SystemClock), Some(media_store(root)))
+    let media = media_store(root);
+    let backend = Arc::new(
+        AppBackend::open(root.join("media.sqlite3"), TimestampMillis::new(1)).expect("backend"),
+    );
+    harness_over(
+        backend,
+        reply,
+        Arc::new(SystemClock),
+        Some(media),
+        None,
+        Arc::new(NoModels),
+        Arc::new(NoImages),
+    )
 }
 
 fn harness_with(

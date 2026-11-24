@@ -746,7 +746,8 @@ describe("local model tools", () => {
     });
     await click("LoRAs");
     expect(await screen.findByRole("heading", { name: "LoRA library" })).toBeTruthy();
-    await click("Import file");
+    const [importFile] = await screen.findAllByRole("button", { name: "Import file" });
+    fireEvent.click(importFile!);
     expect(await screen.findByText("style.safetensors")).toBeTruthy();
     expect(add.mock.calls[0]?.[0]).toEqual({ source: { uri: "content://chosen-adapter" } });
   });

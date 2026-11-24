@@ -72,7 +72,7 @@ async function openSettings(setup: Setup = {}) {
     transport: createMockTransport({
       calls: {
         appStatus: () => ({ status: "ok", data: { ...mockAppStatus, platform: setup.platform ?? "other", ui_state: { onboarding: { completed: true } } } }),
-        settingsGet: () => ({ status: "ok", data: { global: { ui_preferences: {} }, revision: 1 } as unknown as SettingsView }),
+        settingsGet: () => ({ status: "ok", data: { global: { ui_preferences: {}, help_me_reply: { enabled: false } }, revision: 1 } as unknown as SettingsView }),
         conversationOpen: () => ({ status: "ok", data: chatView(group) }),
         conversationSettingsGet: () => ({ status: "ok", data: settings(group) }),
         characterGet: () => ({ status: "ok", data: characterView() }),
@@ -109,7 +109,10 @@ async function openDrawer(setup: Setup = {}) {
   return drawer;
 }
 
-const authorNames = () => screen.queryAllByText("Cassian").length;
+const authorNames = () => {
+  const message = document.getElementById(`m-${reply.id}`);
+  return message ? within(message).queryAllByText("Cassian").length : 0;
+};
 
 afterEach(() => {
   cleanup();
@@ -130,14 +133,13 @@ describe("chat appearance drawer", () => {
   it("restyles the chat with the draft without saving, and Discard reverts it", async () => {
     const save = vi.fn<NonNullable<MockCallHandlers["characterSave"]>>(() => ({ status: "ok", data: characterView() }));
     const drawer = await openDrawer({ calls: { characterSave: save } });
-    const shown = authorNames();
-    expect(shown).toBeGreaterThan(0);
+    await waitFor(() => expect(authorNames()).toBe(1));
     fireEvent.click(within(drawer).getByRole("switch", { name: "Show names" }));
-    await waitFor(() => expect(authorNames()).toBeLessThan(shown));
+    await waitFor(() => expect(authorNames()).toBe(0));
     expect(save).not.toHaveBeenCalled();
     expect(within(drawer).getAllByRole("img", { name: "Set for this character" })).toHaveLength(1);
     fireEvent.click(within(drawer).getByRole("button", { name: "Discard" }));
-    await waitFor(() => expect(authorNames()).toBe(shown));
+    await waitFor(() => expect(authorNames()).toBe(1));
     expect(within(drawer).getByRole("switch", { name: "Show names" }).getAttribute("aria-checked")).toBe("true");
     expect(within(drawer).queryByRole("button", { name: "Save" })).toBeNull();
     expect(save).not.toHaveBeenCalled();

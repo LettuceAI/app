@@ -1076,7 +1076,11 @@ mod backup_publication_tests {
         let target = root.join("selected.lettuce");
         std::fs::write(&temporary, b"complete encrypted backup").expect("staged backup");
         std::fs::write(&target, b"a longer existing document that must be truncated").expect("document");
-        let file = std::fs::OpenOptions::new().read(true).write(true).open(&target).expect("provider file");
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&target)
+            .expect("provider file");
         let uri = "content://documents/primary%3ABackups%2Fselected.lettuce";
         assert_eq!(publish_backup_document(temporary.to_str().expect("path"), uri, file, &|_, _| Ok(false)).expect("publish"), uri);
         assert_eq!(std::fs::read(&target).expect("published"), b"complete encrypted backup");

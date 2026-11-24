@@ -1,6 +1,28 @@
-import { configure } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
+import { notifyManager } from "@tanstack/react-query";
+import { afterEach } from "vitest";
 
 configure({ asyncUtilTimeout: 5_000 });
+
+let pendingNotifications = 0;
+notifyManager.setScheduler((notify) => {
+  pendingNotifications += 1;
+  setTimeout(() => {
+    try {
+      notify();
+    } finally {
+      pendingNotifications -= 1;
+    }
+  }, 0);
+});
+
+afterEach(async () => {
+  cleanup();
+  // Drain queued observers while the jsdom window is still available.
+  while (pendingNotifications > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+});
 
 Object.defineProperty(window, "scrollTo", { value: () => {}, writable: true, configurable: true });
 

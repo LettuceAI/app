@@ -15630,9 +15630,7 @@ async fn starter_scene_image(edit_after_admission: bool) {
             conversation.id,
             target,
             &[lettuce_conversations::SceneFollowUpState::Pending],
-            None,
-            None,
-            None,
+            crate::SceneFollowUpOverrides::default(),
             TimestampMillis::new(NOW.get() + 10),
         )
         .expect("start");
@@ -15690,15 +15688,22 @@ async fn starter_scene_image(edit_after_admission: bool) {
     .expect("follow-up")
     .expect("exists");
     assert_eq!(done.state, lettuce_conversations::SceneFollowUpState::Done);
-    let prompts = provider.prompts.lock().expect("prompts");
-    assert_eq!(prompts.len(), 2);
-    assert_eq!(prompts[0], prompts[1]);
-    for prompt in prompts.iter() {
-        assert_eq!(
-            prompt.matches("# Scene Request\nA harbor at dusk").count(),
-            1,
-            "{prompt}"
-        );
+    {
+        let prompts = provider.prompts.lock().expect("prompts");
+        assert_eq!(prompts.len(), 2);
+        if edit_after_admission {
+            assert!(prompts[0].contains("Recent Messages:\nWelcome."));
+            assert!(prompts[1].contains("Recent Messages:\nLater edit"));
+        } else {
+            assert_eq!(prompts[0], prompts[1]);
+        }
+        for prompt in prompts.iter() {
+            assert_eq!(
+                prompt.matches("# Scene Request\nA harbor at dusk").count(),
+                1,
+                "{prompt}"
+            );
+        }
     }
     let edited = ConversationReader::timeline_page(
         &database,
@@ -15762,9 +15767,10 @@ async fn starter_scene_image(edit_after_admission: bool) {
             conversation.id,
             target,
             &[lettuce_conversations::SceneFollowUpState::Done],
-            Some("Rain"),
-            None,
-            None,
+            crate::SceneFollowUpOverrides {
+                prompt: Some("Rain"),
+                ..Default::default()
+            },
             TimestampMillis::new(NOW.get() + 20),
         )
         .expect("start again");

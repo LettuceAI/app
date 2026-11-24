@@ -114,8 +114,8 @@ async fn run_capacity(harness: &Harness, batch: bool, cycles: usize) -> (String,
     let generation = ConversationGenerationWorker::new(harness.context.clone());
     let memory = MemoryWorker::new(harness.context.clone());
     let mut report = Vec::new();
-    for cycle in 0..cycles {
-        let facts = if batch { FACTS.join(" ") } else { FACTS[cycle].into() };
+    for (cycle, fact) in FACTS[..cycles].iter().enumerate() {
+        let facts = if batch { FACTS.join(" ") } else { (*fact).into() };
         for turn in 0..10 {
             send(harness, &chat, &format!("capacity-{cycle}-{turn}"),
                 if turn == 0 { &facts } else { "Continue the adventure." }, Arc::new(RecordingStream::default()))
@@ -175,10 +175,10 @@ async fn automatic_roleplay_drains_coalesced_windows_and_recovers_after_a_failed
     let memory = MemoryWorker::new(harness.context.clone());
     // Several ordinary turns can complete before the shared memory worker
     // gets to this conversation. Their wake-ups coalesce into one queue entry.
-    for cycle in 16..19 {
+    for (cycle, &fact) in FACTS.iter().enumerate().take(19).skip(16) {
         for turn in 0..10 {
             send(&harness, &chat, &format!("burst-{cycle}-{turn}"),
-                if turn == 0 { FACTS[cycle] } else { "Continue the adventure." }, Arc::new(RecordingStream::default()))
+                if turn == 0 { fact } else { "Continue the adventure." }, Arc::new(RecordingStream::default()))
                 .await.expect("burst send");
             assert!(generation.run_once().await.expect("burst reply"));
         }

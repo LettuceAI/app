@@ -94,13 +94,13 @@
     "chat_appearance": {
       "format_version": 1,
       "font_size": "medium",
-      "line_spacing": "normal",
+      "line_spacing": "relaxed",
       "bubble_style": "filled",
       "bubble_radius": "rounded",
       "bubble_max_width": "normal",
       "bubble_padding": "normal",
-      "show_message_author": false,
-      "show_message_timestamp": false,
+      "show_message_author": true,
+      "show_message_timestamp": true,
       "timestamp_format": "relative",
       "message_header_placement": "below",
       "show_message_model": false,
@@ -146,7 +146,7 @@
       "transparent_header": false,
       "background_dim": 0.0,
       "background_blur": 0.0,
-      "bubble_blur": "none",
+      "bubble_blur": "medium",
       "bubble_opacity": 35.0,
       "text_mode": "auto"
     }

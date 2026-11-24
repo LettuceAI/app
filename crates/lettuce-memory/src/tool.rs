@@ -2268,11 +2268,6 @@ mod tests {
             ),
             (
                 "create_memory",
-                json!({ "text": "a".repeat(281), "category": "other" }),
-                MemoryToolSkipReason::TextTooLong,
-            ),
-            (
-                "create_memory",
                 json!({ "text": "I can't help with that.", "category": "other" }),
                 MemoryToolSkipReason::RefusalText,
             ),

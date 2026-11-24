@@ -929,6 +929,14 @@ fn unknown(field: &str, row: &str) -> LegacyImportSkip {
     legacy_value_skip(field, row, LegacyImportSkipReason::UnknownLegacyValue)
 }
 
+/// A legacy JSON text column where the stored text `null` means the value is absent.
+pub(crate) fn json_text_or_absent<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let raw = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(raw.filter(|raw| raw.trim() != "null"))
+}
+
 #[cfg(test)]
 mod tests {
     use lettuce_characters::{HourFormat, WidgetImageSource};
@@ -1325,12 +1333,4 @@ mod tests {
         assert_eq!(facts[1].valid_from, TimestampMillis::new(7));
         assert_eq!(skipped.len(), 1);
     }
-}
-
-/// A legacy JSON text column where the stored text `null` means the value is absent.
-pub(crate) fn json_text_or_absent<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<String>, D::Error> {
-    let raw = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
-    Ok(raw.filter(|raw| raw.trim() != "null"))
 }

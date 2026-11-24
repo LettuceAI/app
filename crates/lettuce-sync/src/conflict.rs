@@ -5,7 +5,7 @@ use crate::{CanonicalChange, SyncChangeId, SyncDeviceId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SyncConflictValue {
-    Persona(Persona),
+    Persona(Box<Persona>),
     Default(PersonaDefaultState),
     Character(Box<lettuce_characters::CharacterDetails>),
     Lorebook(Box<lettuce_context::LorebookDetails>),
