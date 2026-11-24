@@ -46,6 +46,26 @@ impl Harness {
     }
 }
 
+#[tokio::test]
+async fn shutdown_drops_retained_models_and_waits_for_the_last_lease() {
+    let h = Harness::new();
+    let retained = h.cache(OnnxModelKind::Eidos);
+    let in_use = h.cache(OnnxModelKind::Kokoro);
+    drop(retained.acquire(1, || h.load(OnnxModelKind::Eidos)).expect("retained"));
+    let lease = in_use.acquire(1, || h.load(OnnxModelKind::Kokoro)).expect("active");
+    let other = lease.clone();
+
+    let mut shutdown = std::pin::pin!(h.manager.shutdown());
+    assert!(std::future::poll_fn(|cx| std::task::Poll::Ready(shutdown.as_mut().poll(cx))).await.is_pending());
+    assert!(!retained.is_loaded());
+    assert!(matches!(in_use.acquire(1, || h.load(OnnxModelKind::Kokoro)), Err(OnnxAcquireError::ShuttingDown)));
+    drop(lease);
+    assert!(std::future::poll_fn(|cx| std::task::Poll::Ready(shutdown.as_mut().poll(cx))).await.is_pending());
+    drop(other);
+    shutdown.await;
+    assert_eq!(*h.freed.lock().expect("freed"), vec![OnnxModelKind::Eidos, OnnxModelKind::Kokoro]);
+}
+
 #[test]
 fn all_three_models_remain_loaded_in_independent_caches() {
     let h = Harness::new();

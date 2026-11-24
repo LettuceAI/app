@@ -75,6 +75,9 @@ impl KokoroNativeSynthesisCoordinator {
         }
         let loaded = self.cache.acquire((model.path.clone(), metadata.len(), metadata.modified().ok()), || {
             OnnxKokoroRuntime::load(&model.path, runtime).map(|runtime| Arc::new(Mutex::new(runtime)))
+        }).map_err(|error| match error {
+            crate::onnx_models::OnnxAcquireError::ShuttingDown => KokoroRuntimeError::Cancelled,
+            crate::onnx_models::OnnxAcquireError::Load(error) => error,
         })?;
         let mut runtime = loaded.lock().map_err(|_| KokoroRuntimeError::Unavailable { reason: "Kokoro runtime lock is poisoned" })?;
         synthesize_kokoro_tokens(

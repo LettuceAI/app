@@ -433,8 +433,8 @@ impl ModelSlots {
             }
         }) {
             Ok(engine) => ModelLoad::Loaded(engine),
-            Err(false) => ModelLoad::NotInstalled,
-            Err(true) => ModelLoad::Unavailable,
+            Err(crate::onnx_models::OnnxAcquireError::Load(false)) => ModelLoad::NotInstalled,
+            Err(_) => ModelLoad::Unavailable,
         }
     }
 
@@ -455,8 +455,8 @@ impl ModelSlots {
             }
         }) {
             Ok(engine) => ModelLoad::Loaded(engine),
-            Err(false) => ModelLoad::NotInstalled,
-            Err(true) => ModelLoad::Unavailable,
+            Err(crate::onnx_models::OnnxAcquireError::Load(false)) => ModelLoad::NotInstalled,
+            Err(_) => ModelLoad::Unavailable,
         }
     }
 }

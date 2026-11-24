@@ -681,6 +681,13 @@ impl ApiContext {
         self.inner.jobs.wake();
     }
 
+    /// Drains model sessions before the process-level `ort` exit hook runs.
+    /// Call only on process exit, after stopping the workers.
+    pub async fn shutdown_onnx_runtime(&self) {
+        lettuce_embeddings::seal_process_onnx_runtime();
+        self.inner.onnx_models.shutdown().await;
+    }
+
     pub(crate) fn shutdown_token(&self) -> &CancellationToken {
         &self.inner.shutdown
     }

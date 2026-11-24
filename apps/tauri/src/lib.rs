@@ -182,6 +182,8 @@ fn open_context<R: Runtime>(handle: &AppHandle<R>, secrets: Arc<dyn lettuce_sett
 /// Stops the workers: cancels running work, stops the local diffusion
 /// server, records the active time and joins the worker threads.
 fn stop<R: Runtime>(handle: &AppHandle<R>) {
+    #[cfg(target_os = "macos")]
+    let onnx_context = handle.try_state::<ApiContextSlot>().and_then(|slot| slot.snapshot().ok());
     let workers = handle
         .try_state::<Workers>()
         .and_then(|workers| workers.0.lock().ok()?.take());
@@ -199,5 +201,9 @@ fn stop<R: Runtime>(handle: &AppHandle<R>) {
             tauri::async_runtime::block_on(context.backend().shutdown());
             context.flush_app_usage();
         }
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(context) = onnx_context {
+        tauri::async_runtime::block_on(context.shutdown_onnx_runtime());
     }
 }

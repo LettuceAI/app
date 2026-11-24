@@ -59,25 +59,12 @@ A full backup keeps this cache byte for byte, including repair-needed and stale 
 
 Every ONNX consumer (embeddings, the emotion classifier, Kokoro in `lettuce-speech`) uses the same shared library, and `ort_runtime.rs` owns where it comes from and how it is initialized.
 
-`ONNX_RUNTIME_VERSION` is 1.22.0 because `ort` 2.0.0-rc.10 with `load-dynamic` binds C API 22; a compile-time assertion keeps the two in step. `ort` loads the library dynamically on every target except iOS, which links it statically and compiles the dynamic paths out.
+The Rust binding is `ort` 2.0.0-rc.13 with C API 22. The managed runtime is 1.28.0 on Windows, Linux, Android and Apple Silicon on macOS 14 or newer. Intel Mac and Apple Silicon on macOS Ventura use 1.23.2, whose dylib declares macOS 13.4 as its deployment target. iOS links ONNX Runtime statically. Embedding and emotion sessions on the newer runtime cap intra-op thread spinning at 1 ms with an exponential backoff cap of 8.
 
-### Finding it
+### Finding and installing it
 
-`resolve_installed_onnx_runtime` checks, in order: a non-empty `ORT_DYLIB_PATH` (on Windows `onnxruntime_providers_shared.dll` must sit next to it, on macOS it must be an `MH_DYLIB` of this architecture per `lipo` and `otool`), the bundled resource names, then the downloaded library. Every check requires a non-empty regular file, never mere existence. A zero-byte or unusable downloaded library is deleted so the next download replaces it; override and bundled files are never touched.
-
-### Installing it
-
-`onnx_runtime_archives` names the release archive per platform (Windows x64 zip, Linux x64 tarball, macOS arm64 or x86_64 tarball with universal2 as fallback). `install_onnx_runtime_archive` unpacks it:
-
-- It reads only the entries it keeps: siblings with the library's extension, or on Linux the library's own link family. Windows keeps every DLL of `lib/` and requires `onnxruntime_providers_shared.dll`; Linux saves `libonnxruntime.so.1.22.0` as `libonnxruntime.so`; macOS keeps every dylib of `lib/`.
-- Symbolic and hard links in the tarball become full copies of their target, with chains resolved. Siblings whose links cannot be resolved or are empty are skipped; only the library itself is required. Empty entries and dangling links for the library fail.
-- Files are written under a temporary name first and the library is written last, so an interrupted unpack never leaves a zero-byte library or a usable library without its siblings. A failed write removes its temporary file, and a cancellation check runs between entries.
-- Downloaded macOS dylibs, old and new, are re-signed ad hoc (quarantine attribute removed, `codesign --force --sign -`) when `codesign -d` shows them unsigned or signed with a real team identifier. Failures are only logged.
-
-The official macOS 1.22.0 runtime links CoreML into the main dylib, but the app uses its CPU provider. The runtime does not ship separate shared or CoreML provider dylibs, so their absence is expected. The `otool` header check reads the `DYLIB` file type that Apple's tool prints for an `MH_DYLIB` binary.
+`resolve_installed_onnx_runtime` checks the compatible `ORT_DYLIB_PATH` override, bundled resources and the versioned download directory in that order. Older unversioned downloads are bypassed. The installer fetches the SHA-256-pinned native CPU archive from the LettuceAI release mirror, with the original PyPI file as a fallback. It extracts the native library and any required siblings, writing the main library last. Linux uses the stable local filename `libonnxruntime.so`. macOS checks architecture and dylib type and signs the installed library ad hoc as needed.
 
 ### Initializing it
 
-`initialize_process_onnx_runtime` is the only initializer, and the composition root calls it before anything else uses ONNX. It preloads the library before `ort` sees its path (on Android the bundled `libonnxruntime.so`, which Gradle merges into the APK from the `com.microsoft.onnxruntime:onnxruntime-android` AAR at the version `ONNX_RUNTIME_VERSION` names; the two must stay equal), so a missing or broken file fails with a retryable error. The `ort` environment is then committed inside `catch_unwind`, because `ort` panics when loading fails.
-
-From that point a failure is permanent for the process and returned to every later call: `init_from` has pinned the path, and `ort`'s `OnceLock` marks a failed setup as done, so a retry could report success over an uninitialized environment. After the first success every call reuses the environment, and `committed_onnx_runtime` reports it. Kokoro never initializes the runtime itself; it requires the `OnnxRuntimeCommitted` evidence the composition root hands out after this initializer succeeded.
+`initialize_process_onnx_runtime` commits one process-wide environment. A library load failure is retryable until `ort` pins a library. Kokoro receives evidence that this environment already exists from the composition root. On macOS, the host drains active and cached sessions before the `ort` exit hook releases the environment.

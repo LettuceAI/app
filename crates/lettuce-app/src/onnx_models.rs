@@ -1,7 +1,7 @@
 use std::{
     fmt,
     ops::Deref,
-    sync::{Arc, Mutex, Weak, atomic::{AtomicU64, Ordering}},
+    sync::{Arc, Mutex, Weak, atomic::{AtomicU64, AtomicUsize, Ordering}},
 };
 
 use lettuce_platform::MemorySnapshot;
@@ -30,6 +30,9 @@ pub(crate) struct OnnxModelManager {
     probe: Arc<MemoryProbe>,
     observer: Arc<PressureObserver>,
     wake: tokio::sync::Notify,
+    sessions_released: tokio::sync::Notify,
+    active_leases: AtomicUsize,
+    shutting_down: std::sync::atomic::AtomicBool,
     forced: std::sync::atomic::AtomicBool,
     policies: [std::sync::atomic::AtomicBool; 3],
     policy_lock: Mutex<()>,
@@ -57,6 +60,9 @@ impl OnnxModelManager {
             probe: Arc::new(probe),
             observer: Arc::new(observer),
             wake: tokio::sync::Notify::new(),
+            sessions_released: tokio::sync::Notify::new(),
+            active_leases: AtomicUsize::new(0),
+            shutting_down: std::sync::atomic::AtomicBool::new(false),
             forced: std::sync::atomic::AtomicBool::new(false),
             policies: [false, true, false].map(std::sync::atomic::AtomicBool::new),
             policy_lock: Mutex::new(()),
@@ -127,6 +133,21 @@ impl OnnxModelManager {
         }
     }
 
+    pub(crate) async fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::Release);
+        let caches = self.caches();
+        for cache in &caches {
+            cache.invalidate();
+        }
+        loop {
+            let released = self.sessions_released.notified();
+            if self.active_leases.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            released.await;
+        }
+    }
+
     fn policy_index(kind: OnnxModelKind) -> usize {
         match kind { OnnxModelKind::Eidos => 0, OnnxModelKind::Thymos => 1, OnnxModelKind::Kokoro => 2 }
     }
@@ -172,6 +193,12 @@ pub(crate) struct OnnxSessionCache<K, T: ?Sized> {
     pressure_requested: std::sync::atomic::AtomicBool,
 }
 
+#[derive(Debug)]
+pub(crate) enum OnnxAcquireError<E> {
+    ShuttingDown,
+    Load(E),
+}
+
 impl<K, T: ?Sized> fmt::Debug for OnnxSessionCache<K, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OnnxSessionCache").field("kind", &self.kind).finish_non_exhaustive()
@@ -195,8 +222,11 @@ impl<K: Clone + Eq + Send + 'static, T: ?Sized + Send + Sync + 'static> OnnxSess
     pub(crate) fn acquire<E>(
         self: &Arc<Self>, key: K,
         load: impl FnOnce() -> Result<Arc<T>, E>,
-    ) -> Result<OnnxModelLease<T>, E> {
+    ) -> Result<OnnxModelLease<T>, OnnxAcquireError<E>> {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.manager.shutting_down.load(Ordering::Acquire) {
+            return Err(OnnxAcquireError::ShuttingDown);
+        }
         let existing = state.entry.as_ref().filter(|entry| entry.key == key)
             .and_then(|entry| entry.active.upgrade());
         let model = match existing {
@@ -204,7 +234,7 @@ impl<K: Clone + Eq + Send + 'static, T: ?Sized + Send + Sync + 'static> OnnxSess
             None => {
                 state.entry = None;
                 self.manager.check();
-                load()?
+                load().map_err(OnnxAcquireError::Load)?
             },
         };
         state.active.retain(|active| active.strong_count() > 0);
@@ -218,6 +248,7 @@ impl<K: Clone + Eq + Send + 'static, T: ?Sized + Send + Sync + 'static> OnnxSess
             key, retained: self.manager.retains(self.kind).then(|| model.clone()), active: Arc::downgrade(&model),
             last_used: self.manager.tick(),
         });
+        self.manager.active_leases.fetch_add(1, Ordering::Relaxed);
         drop(state);
         let erased: Arc<dyn IdleCache> = self.clone();
         Ok(OnnxModelLease { model: Some(model), manager: self.manager.clone(), cache: Arc::downgrade(&erased), generation })
@@ -303,7 +334,10 @@ pub(crate) struct OnnxModelLease<T: ?Sized> {
 }
 
 impl<T: ?Sized> Clone for OnnxModelLease<T> {
-    fn clone(&self) -> Self { Self { model: self.model.clone(), manager: self.manager.clone(), cache: self.cache.clone(), generation: self.generation } }
+    fn clone(&self) -> Self {
+        self.manager.active_leases.fetch_add(1, Ordering::Relaxed);
+        Self { model: self.model.clone(), manager: self.manager.clone(), cache: self.cache.clone(), generation: self.generation }
+    }
 }
 impl<T: ?Sized> Deref for OnnxModelLease<T> {
     type Target = T;
@@ -318,6 +352,12 @@ impl<T: ?Sized> fmt::Debug for OnnxModelLease<T> {
 impl<T: ?Sized> Drop for OnnxModelLease<T> {
     fn drop(&mut self) {
         self.model.take();
+        if self.manager.active_leases.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.manager.sessions_released.notify_waiters();
+        }
+        if self.manager.shutting_down.load(Ordering::Acquire) {
+            return;
+        }
         if let Some(cache) = self.cache.upgrade() { cache.completed(self.generation); }
         self.manager.finished();
     }
