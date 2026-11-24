@@ -87,6 +87,7 @@
     "title": "A szinkronizálás nem sikerült",
     "retry": "Újra",
     "reason": {
+      "local_network_permission_denied": "Az azonos Wi-Fi-hálózaton lévő eszközök szinkronizálásához engedélyezd a helyi hálózat elérését az Android beállításaiban.",
       "invalid_state": "A szinkronizálás ezt most nem tudja megtenni. Állítsd le a munkamenetet, és próbáld újra.",
       "addresses_unavailable": "Ennek az eszköznek nincs megosztható hálózati címe. Csatlakozz egy hálózathoz, és próbáld újra.",
       "media_unavailable": "Néhány médiafájlt nem sikerült beolvasni, ezért a szinkronizálás leállt.",

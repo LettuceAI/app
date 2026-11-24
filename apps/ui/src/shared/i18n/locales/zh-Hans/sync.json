@@ -87,6 +87,7 @@
     "title": "同步失败",
     "retry": "重试",
     "reason": {
+      "local_network_permission_denied": "请在 Android 设置中允许访问本地网络，以便与同一 Wi-Fi 网络上的设备同步。",
       "invalid_state": "同步目前无法执行此操作。请停止会话后重试。",
       "addresses_unavailable": "此设备没有可共享的网络地址。请连接网络后重试。",
       "media_unavailable": "部分媒体文件无法读取，同步已停止。",

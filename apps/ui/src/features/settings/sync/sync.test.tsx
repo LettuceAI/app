@@ -103,6 +103,22 @@ describe("sync page", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
+  it("tells the host how to grant local network access after a denial", async () => {
+    await openPage("/settings/sync", {
+      syncShareStart: () => ({
+        status: "error",
+        error: {
+          code: "unavailable",
+          message: "Local network permission was denied",
+          details: { type: "sync", reason: { type: "local_network_permission_denied" } },
+        },
+      }),
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Host on this device/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start hosting" }));
+    expect(await screen.findByText(/Allow local network access in Android settings/)).toBeTruthy();
+  });
+
   it("summarises a finished sync with only the counts that are not zero and links to the conflicts", async () => {
     const list = { ...noConflicts, conflicts: [conflict] };
     let status: SyncStatus = { type: "idle" };

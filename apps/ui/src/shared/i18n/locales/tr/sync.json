@@ -87,6 +87,7 @@
     "title": "Senkronizasyon başarısız oldu",
     "retry": "Tekrar deneyin",
     "reason": {
+      "local_network_permission_denied": "Aynı Wi-Fi ağındaki cihazlarla eşitlemek için Android ayarlarından yerel ağ erişimine izin ver.",
       "invalid_state": "Senkronizasyon şu anda bunu yapamıyor. Oturumu durdurun ve tekrar deneyin.",
       "addresses_unavailable": "Bu cihazın paylaşacak bir ağ adresi yok. Bir ağa bağlanın ve tekrar deneyin.",
       "media_unavailable": "Bazı medya dosyaları okunamadığı için senkronizasyon durdu.",

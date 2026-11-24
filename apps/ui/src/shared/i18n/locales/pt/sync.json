@@ -87,6 +87,7 @@
     "title": "Falha na sincronização",
     "retry": "Tentar novamente",
     "reason": {
+      "local_network_permission_denied": "Permita o acesso à rede local nas configurações do Android para sincronizar com dispositivos conectados à mesma rede Wi-Fi.",
       "invalid_state": "A sincronização não pode fazer isso agora. Pare a sessão e tente novamente.",
       "addresses_unavailable": "Este dispositivo não tem um endereço de rede para compartilhar. Conecte-se a uma rede e tente novamente.",
       "media_unavailable": "Alguns arquivos de mídia não puderam ser lidos, então a sincronização parou.",

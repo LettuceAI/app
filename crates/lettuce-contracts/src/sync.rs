@@ -39,6 +39,7 @@ pub enum SyncPhase {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SyncFailure {
     InvalidState,
+    LocalNetworkPermissionDenied,
     AddressesUnavailable,
     MediaUnavailable,
     AuthenticationFailed,

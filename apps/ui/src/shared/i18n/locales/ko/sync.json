@@ -87,6 +87,7 @@
     "title": "동기화 실패",
     "retry": "다시 시도",
     "reason": {
+      "local_network_permission_denied": "같은 Wi-Fi 네트워크의 기기와 동기화하려면 Android 설정에서 로컬 네트워크 접근을 허용하세요.",
       "invalid_state": "지금은 동기화가 그 작업을 할 수 없어요. 세션을 중지하고 다시 시도하세요.",
       "addresses_unavailable": "이 기기에는 공유할 네트워크 주소가 없어요. 네트워크에 연결하고 다시 시도하세요.",
       "media_unavailable": "일부 미디어 파일을 읽을 수 없어서 동기화가 중단되었어요.",

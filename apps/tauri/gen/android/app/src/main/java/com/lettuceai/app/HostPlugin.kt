@@ -40,7 +40,12 @@ class BackgroundWorkArgs {
   var active: Boolean = false
 }
 
-@TauriPlugin(permissions = [Permission(alias = "microphone", strings = [Manifest.permission.RECORD_AUDIO])])
+@TauriPlugin(
+  permissions = [
+    Permission(alias = "microphone", strings = [Manifest.permission.RECORD_AUDIO]),
+    Permission(alias = "localNetwork", strings = ["android.permission.ACCESS_LOCAL_NETWORK"])
+  ]
+)
 class HostPlugin(private val activity: Activity) : Plugin(activity) {
   private var channel: Channel? = null
   private val pending = ArrayList<JSObject>()
@@ -50,6 +55,8 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
   private var memoryWarningPending = false
   private var pendingMicrophone: Invoke? = null
   private var microphoneDialog: AlertDialog? = null
+  private var pendingLocalNetwork: Invoke? = null
+  private var localNetworkDialog: AlertDialog? = null
   private val memoryCallbacks = object : ComponentCallbacks2 {
     override fun onConfigurationChanged(configuration: Configuration) {}
     override fun onLowMemory() { memoryWarning() }
@@ -66,6 +73,9 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
     val dialog = microphoneDialog
     pendingMicrophone?.let { finishMicrophonePermission(it, false) }
     dialog?.dismiss()
+    val localDialog = localNetworkDialog
+    pendingLocalNetwork?.let { finishLocalNetworkPermission(it, false) }
+    localDialog?.dismiss()
     activity.application.unregisterComponentCallbacks(memoryCallbacks)
   }
 
@@ -138,6 +148,80 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
     pendingMicrophone = null
     microphoneDialog = null
     invoke.reject("the microphone permission could not be requested", error)
+  }
+
+  @Command
+  fun requestLocalNetworkPermission(invoke: Invoke) {
+    activity.runOnUiThread {
+      if (Build.VERSION.SDK_INT < LOCAL_NETWORK_MIN_SDK) {
+        invoke.resolve(JSObject().put("granted", true))
+        return@runOnUiThread
+      }
+      if (activity.isFinishing || activity.isDestroyed) {
+        invoke.reject("the local network permission activity is unavailable")
+        return@runOnUiThread
+      }
+      if (pendingLocalNetwork != null) {
+        invoke.reject("a local network permission request is already open")
+        return@runOnUiThread
+      }
+      pendingLocalNetwork = invoke
+      try {
+        if (localNetworkGranted()) {
+          finishLocalNetworkPermission(invoke, true)
+        } else if (getPermissionState("localNetwork") == PermissionState.DENIED) {
+          localNetworkDialog = AlertDialog.Builder(activity)
+            .setTitle(R.string.local_network_permission_title)
+            .setMessage(R.string.local_network_permission_settings)
+            .setNegativeButton(android.R.string.cancel) { _, _ -> finishLocalNetworkPermission(invoke, false) }
+            .setPositiveButton(R.string.open_app_settings) { _, _ ->
+              try {
+                startActivityForResult(invoke, Intent(
+                  Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                  Uri.parse("package:${activity.packageName}")
+                ), "localNetworkSettingsResult")
+              } catch (error: Exception) {
+                rejectLocalNetworkPermission(invoke, error)
+              }
+            }
+            .setOnCancelListener { finishLocalNetworkPermission(invoke, false) }
+            .show()
+        } else {
+          requestPermissionForAlias("localNetwork", invoke, "localNetworkPermissionResult")
+        }
+      } catch (error: Exception) {
+        rejectLocalNetworkPermission(invoke, error)
+      }
+    }
+  }
+
+  @PermissionCallback
+  fun localNetworkPermissionResult(invoke: Invoke) {
+    finishLocalNetworkPermission(invoke, localNetworkGranted())
+  }
+
+  @ActivityCallback
+  @Suppress("UNUSED_PARAMETER")
+  fun localNetworkSettingsResult(invoke: Invoke, result: ActivityResult) {
+    finishLocalNetworkPermission(invoke, localNetworkGranted())
+  }
+
+  private fun localNetworkGranted(): Boolean =
+    Build.VERSION.SDK_INT < LOCAL_NETWORK_MIN_SDK ||
+      ContextCompat.checkSelfPermission(activity, LOCAL_NETWORK_PERMISSION) == PackageManager.PERMISSION_GRANTED
+
+  private fun finishLocalNetworkPermission(invoke: Invoke, granted: Boolean) {
+    if (pendingLocalNetwork !== invoke) return
+    pendingLocalNetwork = null
+    localNetworkDialog = null
+    invoke.resolve(JSObject().put("granted", granted))
+  }
+
+  private fun rejectLocalNetworkPermission(invoke: Invoke, error: Exception) {
+    if (pendingLocalNetwork !== invoke) return
+    pendingLocalNetwork = null
+    localNetworkDialog = null
+    invoke.reject("the local network permission could not be requested", error)
   }
 
   @Synchronized
@@ -267,5 +351,7 @@ class HostPlugin(private val activity: Activity) : Plugin(activity) {
     const val NAVIGATION_SCHEME = "lettuceai"
     const val NAVIGATION_HOST = "open"
     const val NOTIFICATION_REQUEST_CODE = 4101
+    const val LOCAL_NETWORK_MIN_SDK = 37
+    const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
   }
 }

@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, VecDeque},
     fmt, io,
     net::SocketAddr,
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -25,6 +26,7 @@ use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    time::{Instant, timeout_at},
 };
 
 use lettuce_settings::{SecretPurpose, SecretRef, SecretStore, SecretValue};
@@ -41,6 +43,7 @@ const PAIRING_PAKE_IDENTITY: &[u8] = b"lettuce-sync-pairing-v2";
 const MAX_PAIRING_FRAME_BYTES: usize = 1024;
 const MAX_SYNC_FRAME_BYTES: usize = MAX_CANONICAL_PAYLOAD_BYTES + 16 * 1024 * 1024;
 const MAX_PENDING_FRAMES: usize = 8;
+const PAIRING_TIMEOUT: Duration = Duration::from_secs(15);
 /// Failed PIN proofs a listener accepts before it refuses every further
 /// connection; a new listener brings a fresh PIN.
 const MAX_FAILED_PAIRING_ATTEMPTS: u32 = 3;
@@ -201,11 +204,22 @@ pub async fn connect_authenticated_sync<'a>(
     media: Option<&'a dyn SyncBlobSource>,
     cancellation: &CancellationToken,
 ) -> Result<AuthenticatedTcpSyncTransport<'a>, SyncPeerTransportError> {
+    let deadline = Instant::now() + PAIRING_TIMEOUT;
     let stream = tokio::select! {
         () = cancellation.cancelled() => return Err(SyncPeerTransportError::Cancelled),
-        connected = TcpStream::connect(address) => connected.map_err(SyncPeerTransportError::Io)?,
+        connected = timeout_at(deadline, TcpStream::connect(address)) => {
+            connected
+                .map_err(io::Error::from)
+                .flatten()
+                .map_err(SyncPeerTransportError::Io)?
+        }
     };
-    authenticate_client(stream, local_device, pin, media, cancellation).await
+    timeout_at(
+        deadline,
+        authenticate_client(stream, local_device, pin, media, cancellation),
+    )
+    .await
+    .map_err(|_| SyncPeerTransportError::PeerStalled)?
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -224,7 +238,7 @@ pub enum SyncPeerTransportError {
     Protocol,
     #[error("sync peer disconnected")]
     Disconnected,
-    #[error("sync peer stopped sending during transfer")]
+    #[error("sync peer stopped responding")]
     PeerStalled,
     #[error("sync socket failed")]
     Io(#[source] io::Error),
@@ -1431,6 +1445,21 @@ mod tests {
 
     fn pin(value: &str) -> PairingPin {
         PairingPin::new(value).expect("pairing PIN")
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn client_pairing_times_out_after_tcp_connects() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let address = listener.local_addr().expect("listener address");
+        let pin = pin("123456");
+        let cancellation = CancellationToken::new();
+        let (client, accepted) = tokio::join!(
+            connect_authenticated_sync(address, SyncDeviceId::new(), &pin, None, &cancellation),
+            listener.accept(),
+        );
+
+        assert!(accepted.is_ok());
+        assert!(matches!(client, Err(SyncPeerTransportError::PeerStalled)));
     }
 
     fn hello(database: &Database, name: &str, session: u128, now: i64) -> SyncHello {

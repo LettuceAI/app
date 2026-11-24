@@ -87,6 +87,7 @@
     "title": "Nabigo ang pag-sync",
     "retry": "Subukan muli",
     "reason": {
+      "local_network_permission_denied": "Payagan ang access sa lokal na network sa mga setting ng Android para mag-sync sa mga device na nakakonekta sa parehong Wi-Fi.",
       "invalid_state": "Hindi ito magawa ng sync ngayon. Ihinto ang session at subukan muli.",
       "addresses_unavailable": "Walang network address ang device na ito na maibabahagi. Kumonekta sa network at subukan muli.",
       "media_unavailable": "May mga media file na hindi mabasa, kaya huminto ang pag-sync.",

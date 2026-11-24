@@ -87,6 +87,7 @@
     "title": "Đồng bộ thất bại",
     "retry": "Thử lại",
     "reason": {
+      "local_network_permission_denied": "Hãy cho phép truy cập mạng cục bộ trong phần cài đặt Android để đồng bộ với các thiết bị trên cùng mạng Wi-Fi.",
       "invalid_state": "Đồng bộ chưa thể thực hiện việc đó lúc này. Hãy dừng phiên và thử lại.",
       "addresses_unavailable": "Thiết bị này không có địa chỉ mạng để chia sẻ. Hãy kết nối mạng và thử lại.",
       "media_unavailable": "Một số tệp phương tiện không đọc được nên quá trình đồng bộ đã dừng.",

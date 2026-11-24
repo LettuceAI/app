@@ -87,6 +87,7 @@
     "title": "Sync failed",
     "retry": "Try again",
     "reason": {
+      "local_network_permission_denied": "Allow local network access in Android settings to sync with devices on the same Wi-Fi network.",
       "invalid_state": "Sync cannot do that right now. Stop the session and try again.",
       "addresses_unavailable": "This device has no network address to share. Connect to a network and try again.",
       "media_unavailable": "Some media files could not be read, so the sync stopped.",

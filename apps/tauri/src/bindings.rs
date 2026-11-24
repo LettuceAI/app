@@ -31,10 +31,10 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::creator::creator_send,
             commands::creator::creator_regenerate,
 
-            commands::sync::sync_share_start,
+            commands::sync::sync_share_start::<tauri::DynRuntime>,
             commands::sync::sync_share_approve,
             commands::sync::sync_share_begin,
-            commands::sync::sync_connect,
+            commands::sync::sync_connect::<tauri::DynRuntime>,
             commands::sync::sync_stop,
             commands::sync::sync_status,
             commands::sync::sync_conflicts_list,

@@ -87,6 +87,7 @@
     "title": "Sinkronisasi gagal",
     "retry": "Coba lagi",
     "reason": {
+      "local_network_permission_denied": "Izinkan akses jaringan lokal di setelan Android untuk menyinkronkan dengan perangkat yang terhubung ke jaringan Wi-Fi yang sama.",
       "invalid_state": "Sinkronisasi tidak bisa melakukan itu sekarang. Hentikan sesi dan coba lagi.",
       "addresses_unavailable": "Perangkat ini tidak punya alamat jaringan untuk dibagikan. Hubungkan ke jaringan dan coba lagi.",
       "media_unavailable": "Beberapa file media tidak bisa dibaca, jadi sinkronisasi dihentikan.",

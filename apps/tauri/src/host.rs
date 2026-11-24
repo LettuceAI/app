@@ -180,14 +180,23 @@ pub(crate) fn plugin<R: Runtime>() -> TauriPlugin<R> {
             #[cfg(target_os = "android")]
             android::register(app, api)?;
             #[cfg(not(any(desktop, target_os = "android")))]
-            let _ = (app, api);
+            let _ = api;
             Ok(())
         })
         .build()
 }
 
 #[cfg(target_os = "android")]
-pub(crate) use android::{finish_startup, follow_active_work, request_microphone_permission};
+pub(crate) use android::{
+    finish_startup, follow_active_work, request_local_network_permission, request_microphone_permission,
+};
+
+#[cfg(not(target_os = "android"))]
+pub(crate) async fn request_local_network_permission<R: Runtime>(
+    _app: &AppHandle<R>,
+) -> Result<(), lettuce_contracts::ApiError> {
+    Ok(())
+}
 
 #[cfg(target_os = "android")]
 mod android {
@@ -207,7 +216,7 @@ mod android {
     struct AndroidHost<R: Runtime>(PluginHandle<R>);
 
     #[derive(serde::Deserialize)]
-    struct MicrophonePermission {
+    struct PermissionResult {
         granted: bool,
     }
 
@@ -217,13 +226,48 @@ mod android {
     ) -> Result<(), lettuce_app::MicrophoneError> {
         use lettuce_app::MicrophoneError;
         let host = app.try_state::<AndroidHost<R>>().ok_or(MicrophoneError::Failed)?;
-        let permission = host.0.run_mobile_plugin::<MicrophonePermission>(
+        let permission = host.0.run_mobile_plugin::<PermissionResult>(
             "requestMicrophonePermission", serde_json::json!({}),
         ).map_err(|error| {
             tracing::warn!(%error, "the Android microphone permission could not be requested");
             MicrophoneError::Failed
         })?;
         if permission.granted { Ok(()) } else { Err(MicrophoneError::PermissionDenied) }
+    }
+
+    pub(crate) async fn request_local_network_permission<R: Runtime>(
+        app: &AppHandle<R>,
+    ) -> Result<(), lettuce_contracts::ApiError> {
+        use lettuce_contracts::{ApiError, ApiErrorCode, ApiErrorDetails, SyncFailure};
+
+        let request_failed = || ApiError {
+            code: ApiErrorCode::Unavailable,
+            message: "Local network access could not be requested".into(),
+            details: None,
+        };
+        let host = app.try_state::<AndroidHost<R>>().ok_or_else(request_failed)?;
+        let permission = host
+            .0
+            .run_mobile_plugin_async::<PermissionResult>(
+                "requestLocalNetworkPermission",
+                serde_json::json!({}),
+            )
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "the Android local network permission could not be requested");
+                request_failed()
+            })?;
+        if permission.granted {
+            Ok(())
+        } else {
+            Err(ApiError {
+                code: ApiErrorCode::Unavailable,
+                message: "Local network permission was denied".into(),
+                details: Some(ApiErrorDetails::Sync {
+                    reason: SyncFailure::LocalNetworkPermissionDenied,
+                }),
+            })
+        }
     }
 
     pub(super) fn register<R: Runtime, C: DeserializeOwned>(

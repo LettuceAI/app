@@ -87,6 +87,7 @@
     "title": "同步失敗",
     "retry": "再試一次",
     "reason": {
+      "local_network_permission_denied": "請在 Android 設定中允許存取區域網路，以便與同一 Wi-Fi 網路上的裝置同步。",
       "invalid_state": "同步目前無法執行此操作。請停止工作階段後再試一次。",
       "addresses_unavailable": "此裝置沒有可分享的網路位址。請連上網路後再試一次。",
       "media_unavailable": "部分媒體檔案無法讀取，同步已停止。",

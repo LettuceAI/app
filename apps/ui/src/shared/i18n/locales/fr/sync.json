@@ -87,6 +87,7 @@
     "title": "Échec de la synchronisation",
     "retry": "Réessayer",
     "reason": {
+      "local_network_permission_denied": "Autorisez l’accès au réseau local dans les paramètres Android pour synchroniser les appareils connectés au même réseau Wi-Fi.",
       "invalid_state": "La synchronisation ne peut pas faire cela pour le moment. Arrêtez la session et réessayez.",
       "addresses_unavailable": "Cet appareil n'a aucune adresse réseau à partager. Connectez-vous à un réseau et réessayez.",
       "media_unavailable": "Certains fichiers multimédias n'ont pas pu être lus, la synchronisation s'est donc arrêtée.",

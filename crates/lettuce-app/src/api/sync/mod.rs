@@ -750,6 +750,7 @@ async fn run(
                     Err(
                         SyncPeerTransportError::AuthenticationFailed
                         | SyncPeerTransportError::Disconnected
+                        | SyncPeerTransportError::FrameTooLarge
                         | SyncPeerTransportError::Io(_)
                         | SyncPeerTransportError::Protocol,
                     ) => continue,

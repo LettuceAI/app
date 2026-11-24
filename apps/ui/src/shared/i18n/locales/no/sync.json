@@ -87,6 +87,7 @@
     "title": "Synkroniseringen mislyktes",
     "retry": "Prøv igjen",
     "reason": {
+      "local_network_permission_denied": "Tillat tilgang til lokalnettverket i Android-innstillingene for å synkronisere med enheter på samme Wi-Fi-nettverk.",
       "invalid_state": "Synkroniseringen kan ikke gjøre det akkurat nå. Stopp økten og prøv igjen.",
       "addresses_unavailable": "Denne enheten har ingen nettverksadresse å dele. Koble til et nettverk og prøv igjen.",
       "media_unavailable": "Noen mediefiler kunne ikke leses, så synkroniseringen stoppet.",

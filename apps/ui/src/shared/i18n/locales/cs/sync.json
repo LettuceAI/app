@@ -87,6 +87,7 @@
     "title": "Synchronizace selhala",
     "retry": "Zkusit znovu",
     "reason": {
+      "local_network_permission_denied": "Povolte přístup k místní síti v nastavení Androidu, abyste mohli synchronizovat zařízení ve stejné síti Wi-Fi.",
       "invalid_state": "Synchronizace to teď nemůže provést. Ukonči relaci a zkus to znovu.",
       "addresses_unavailable": "Toto zařízení nemá síťovou adresu, kterou by mohlo sdílet. Připoj se k síti a zkus to znovu.",
       "media_unavailable": "Některé mediální soubory se nepodařilo přečíst, proto se synchronizace zastavila.",

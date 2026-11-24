@@ -87,6 +87,7 @@
     "title": "La sincronización falló",
     "retry": "Reintentar",
     "reason": {
+      "local_network_permission_denied": "Permite el acceso a la red local en los ajustes de Android para sincronizar con dispositivos conectados a la misma red Wi-Fi.",
       "invalid_state": "La sincronización no puede hacer eso ahora mismo. Detén la sesión e inténtalo de nuevo.",
       "addresses_unavailable": "Este dispositivo no tiene una dirección de red para compartir. Conéctate a una red e inténtalo de nuevo.",
       "media_unavailable": "No se pudieron leer algunos archivos multimedia, así que la sincronización se detuvo.",

@@ -1,12 +1,14 @@
 use lettuce_app::api::{self, ApiContextSlot};
 use lettuce_contracts::{self as dto, ApiError};
-use tauri::State;
+use tauri::{AppHandle, Runtime, State};
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_share_start(
+pub async fn sync_share_start<R: Runtime>(
     context: State<'_, ApiContextSlot>,
+    app: AppHandle<R>,
 ) -> Result<dto::SyncSharing, ApiError> {
+    crate::host::request_local_network_permission(&app).await?;
     let context = context.snapshot()?;
     api::sync_share_start(&context).await
 }
@@ -32,10 +34,12 @@ pub async fn sync_share_begin(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_connect(
+pub async fn sync_connect<R: Runtime>(
     context: State<'_, ApiContextSlot>,
+    app: AppHandle<R>,
     request: dto::SyncConnectRequest,
 ) -> Result<dto::SyncStatus, ApiError> {
+    crate::host::request_local_network_permission(&app).await?;
     let context = context.snapshot()?;
     api::sync_connect(&context, request).await
 }

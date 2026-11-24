@@ -87,6 +87,7 @@
     "title": "Synchronisatie mislukt",
     "retry": "Opnieuw proberen",
     "reason": {
+      "local_network_permission_denied": "Sta toegang tot het lokale netwerk toe in de Android-instellingen om te synchroniseren met apparaten op hetzelfde wifi-netwerk.",
       "invalid_state": "Synchroniseren kan dat nu niet doen. Stop de sessie en probeer het opnieuw.",
       "addresses_unavailable": "Dit apparaat heeft geen netwerkadres om te delen. Maak verbinding met een netwerk en probeer het opnieuw.",
       "media_unavailable": "Sommige mediabestanden konden niet worden gelezen, dus de synchronisatie is gestopt.",

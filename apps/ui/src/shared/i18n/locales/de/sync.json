@@ -87,6 +87,7 @@
     "title": "Synchronisierung fehlgeschlagen",
     "retry": "Erneut versuchen",
     "reason": {
+      "local_network_permission_denied": "Erlaube in den Android-Einstellungen den Zugriff auf das lokale Netzwerk, um Geräte im selben WLAN zu synchronisieren.",
       "invalid_state": "Die Synchronisierung kann das gerade nicht tun. Beende die Sitzung und versuche es erneut.",
       "addresses_unavailable": "Dieses Gerät hat keine Netzwerkadresse zum Teilen. Verbinde dich mit einem Netzwerk und versuche es erneut.",
       "media_unavailable": "Einige Mediendateien konnten nicht gelesen werden, deshalb wurde die Synchronisierung gestoppt.",

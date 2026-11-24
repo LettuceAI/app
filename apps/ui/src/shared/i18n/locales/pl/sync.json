@@ -87,6 +87,7 @@
     "title": "Synchronizacja nie powiodła się",
     "retry": "Spróbuj ponownie",
     "reason": {
+      "local_network_permission_denied": "Zezwól na dostęp do sieci lokalnej w ustawieniach Androida, aby synchronizować dane z urządzeniami w tej samej sieci Wi-Fi.",
       "invalid_state": "Synchronizacja nie może teraz tego zrobić. Zatrzymaj sesję i spróbuj ponownie.",
       "addresses_unavailable": "To urządzenie nie ma adresu sieciowego do udostępnienia. Połącz się z siecią i spróbuj ponownie.",
       "media_unavailable": "Nie udało się odczytać niektórych plików multimedialnych, więc synchronizacja została zatrzymana.",
