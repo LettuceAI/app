@@ -289,6 +289,11 @@ const MIGRATION_44: Migration = Migration {
     sql: include_str!("../migrations/0044_lorebook_project_covers.sql"),
 };
 
+const MIGRATION_45: Migration = Migration {
+    id: 45,
+    sql: include_str!("../migrations/0045_summary_checkpoint_text_limit.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -334,6 +339,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_42,
     MIGRATION_43,
     MIGRATION_44,
+    MIGRATION_45,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -612,7 +618,7 @@ fn apply_migrations(
         [], |row| row.get(0),
     )?;
     let mut rebuild = false;
-    for migration in migrations.iter().filter(|migration| matches!(migration.id, 26 | 27 | 35)) {
+    for migration in migrations.iter().filter(|migration| matches!(migration.id, 26 | 27 | 35 | 45)) {
         let applied = history_exists && connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE id = ?1)",
             [migration.id], |row| row.get::<_, bool>(0),
