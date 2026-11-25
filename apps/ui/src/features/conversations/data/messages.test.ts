@@ -20,6 +20,7 @@ const msg = (role: TimelineMessage["role"], text: string): TimelineMessage => ({
   parts: [{ type: "text", text }],
   reasoning: null,
   created_at: 1,
+  effective_time: 1,
   candidate_index: null,
   candidate_count: 1,
   pinned: false,

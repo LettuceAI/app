@@ -186,7 +186,9 @@
     "video": "Відеофайл",
     "document": "Документ",
     "showMorePrompt": "Показати весь промпт",
-    "showLessPrompt": "Згорнути"
+    "showLessPrompt": "Згорнути",
+    "realtime": "Реальний час: {{when}}",
+    "gameTime": "Ігровий час: {{when}}"
   },
   "menu": {
     "selection": {

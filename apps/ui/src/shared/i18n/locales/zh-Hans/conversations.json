@@ -183,7 +183,9 @@
     "video": "视频文件",
     "document": "文档",
     "showMorePrompt": "显示完整提示词",
-    "showLessPrompt": "收起"
+    "showLessPrompt": "收起",
+    "realtime": "真实时间：{{when}}",
+    "gameTime": "游戏时间：{{when}}"
   },
   "menu": {
     "selection": {

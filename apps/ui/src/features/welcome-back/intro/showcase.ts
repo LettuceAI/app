@@ -331,6 +331,7 @@ export function createShowcase(now: number) {
     parts: [{ type: "text", text: "\"Come closer if you dare. I have an entire kingdom to rule, yet I find myself… *intrigued* by you.\"" }],
     reasoning: null,
     created_at: now - 2 * minute,
+    effective_time: now - 2 * minute,
     candidate_index: null,
     candidate_count: 1,
     pinned: false,

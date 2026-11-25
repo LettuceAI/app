@@ -183,7 +183,9 @@
     "video": "Tệp video",
     "document": "Tài liệu",
     "showMorePrompt": "Hiện toàn bộ prompt",
-    "showLessPrompt": "Thu gọn"
+    "showLessPrompt": "Thu gọn",
+    "realtime": "Thời gian thực: {{when}}",
+    "gameTime": "Thời gian trong trò chơi: {{when}}"
   },
   "menu": {
     "selection": {

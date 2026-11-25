@@ -184,7 +184,9 @@
     "video": "Αρχείο βίντεο",
     "document": "Έγγραφο",
     "showMorePrompt": "Εμφάνιση όλου του prompt",
-    "showLessPrompt": "Εμφάνιση λιγότερων"
+    "showLessPrompt": "Εμφάνιση λιγότερων",
+    "realtime": "Πραγματικός χρόνος: {{when}}",
+    "gameTime": "Χρόνος παιχνιδιού: {{when}}"
   },
   "menu": {
     "selection": {

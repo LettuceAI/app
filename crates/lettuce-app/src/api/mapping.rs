@@ -270,6 +270,7 @@ pub(crate) fn timeline_message(
         parts,
         reasoning,
         created_at: item.message.created_at.get(),
+        effective_time: item.message.effective_time.get(),
         candidate_index: item
             .active_candidate
             .as_ref()

@@ -184,7 +184,9 @@
     "video": "Video file",
     "document": "Dokumento",
     "showMorePrompt": "Ipakita ang buong prompt",
-    "showLessPrompt": "Ipakita nang kaunti"
+    "showLessPrompt": "Ipakita nang kaunti",
+    "realtime": "Totoong oras: {{when}}",
+    "gameTime": "Oras ng laro: {{when}}"
   },
   "menu": {
     "selection": {

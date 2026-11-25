@@ -9934,6 +9934,11 @@ export type TimelineMessage_Deserialize = {
 	parts: MessagePartView_Deserialize[],
 	reasoning: string | null,
 	created_at: number,
+	/**
+	 *  The in-game time stamped onto the message by the chat clock; equals
+	 *  `created_at` when time awareness is off.
+	 */
+	effective_time: number,
 	/**  The shown reply variant's ordinal; set on generated replies only. */
 	candidate_index: number | null,
 	candidate_count: number,
@@ -9952,6 +9957,11 @@ export type TimelineMessage_Serialize = {
 	parts: MessagePartView_Serialize[],
 	reasoning: string | null,
 	created_at: number,
+	/**
+	 *  The in-game time stamped onto the message by the chat clock; equals
+	 *  `created_at` when time awareness is off.
+	 */
+	effective_time: number,
 	/**  The shown reply variant's ordinal; set on generated replies only. */
 	candidate_index: number | null,
 	candidate_count: number,

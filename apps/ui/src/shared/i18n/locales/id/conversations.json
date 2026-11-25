@@ -183,7 +183,9 @@
     "video": "File video",
     "document": "Dokumen",
     "showMorePrompt": "Tampilkan seluruh prompt",
-    "showLessPrompt": "Tampilkan lebih sedikit"
+    "showLessPrompt": "Tampilkan lebih sedikit",
+    "realtime": "Waktu nyata: {{when}}",
+    "gameTime": "Waktu permainan: {{when}}"
   },
   "menu": {
     "selection": {

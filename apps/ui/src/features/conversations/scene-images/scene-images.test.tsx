@@ -13,7 +13,7 @@ vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockRe
 const pending: SceneImageView = { state: "pending", mode: "ask_first", prompt: "A quiet harbour at sunset", job_id: null, failure: null };
 const reply = (scene_image: SceneImageView | null = null): TimelineMessage => ({
   id: "a1", role: "assistant", author_participant_id: "pc", parts: [{ type: "text", text: "The harbour falls silent." }],
-  reasoning: null, created_at: 1_700_000_000_000, candidate_index: 0, candidate_count: 1, pinned: false, scene_image,
+  reasoning: null, created_at: 1_700_000_000_000, effective_time: 1_700_000_000_000, candidate_index: 0, candidate_count: 1, pinned: false, scene_image,
 });
 const settings = {
   conversation_id: "c1", kind: "direct", title: "Harbour", revision: 1, settings_revision: 1, author_note: null,

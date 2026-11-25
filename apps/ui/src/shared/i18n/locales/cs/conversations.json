@@ -186,7 +186,9 @@
     "video": "Video soubor",
     "document": "Dokument",
     "showMorePrompt": "Zobrazit celý prompt",
-    "showLessPrompt": "Zobrazit méně"
+    "showLessPrompt": "Zobrazit méně",
+    "realtime": "Reálný čas: {{when}}",
+    "gameTime": "Herní čas: {{when}}"
   },
   "menu": {
     "selection": {

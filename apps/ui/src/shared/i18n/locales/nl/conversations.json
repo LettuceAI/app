@@ -184,7 +184,9 @@
     "video": "Videobestand",
     "document": "Document",
     "showMorePrompt": "Hele prompt tonen",
-    "showLessPrompt": "Minder tonen"
+    "showLessPrompt": "Minder tonen",
+    "realtime": "Echte tijd: {{when}}",
+    "gameTime": "Speltijd: {{when}}"
   },
   "menu": {
     "selection": {

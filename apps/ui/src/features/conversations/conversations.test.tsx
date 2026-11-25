@@ -44,6 +44,7 @@ function message(
     parts: [{ type: "text", text }],
     reasoning: null,
     created_at: 1_700_000_000_000,
+    effective_time: 1_700_000_000_000,
     candidate_index: null,
     candidate_count: 1,
     pinned: false,

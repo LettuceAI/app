@@ -183,7 +183,9 @@
     "video": "動画ファイル",
     "document": "ドキュメント",
     "showMorePrompt": "プロンプト全体を表示",
-    "showLessPrompt": "表示を減らす"
+    "showLessPrompt": "表示を減らす",
+    "realtime": "実時間：{{when}}",
+    "gameTime": "ゲーム内時間：{{when}}"
   },
   "menu": {
     "selection": {

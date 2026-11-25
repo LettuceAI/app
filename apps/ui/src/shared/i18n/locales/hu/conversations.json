@@ -184,7 +184,9 @@
     "video": "Videófájl",
     "document": "Dokumentum",
     "showMorePrompt": "Teljes prompt mutatása",
-    "showLessPrompt": "Kevesebb mutatása"
+    "showLessPrompt": "Kevesebb mutatása",
+    "realtime": "Valós idő: {{when}}",
+    "gameTime": "Játékidő: {{when}}"
   },
   "menu": {
     "selection": {

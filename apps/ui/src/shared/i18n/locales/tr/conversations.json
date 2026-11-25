@@ -184,7 +184,9 @@
     "video": "Video dosyası",
     "document": "Belge",
     "showMorePrompt": "Promptun tamamını göster",
-    "showLessPrompt": "Daha az göster"
+    "showLessPrompt": "Daha az göster",
+    "realtime": "Gerçek zaman: {{when}}",
+    "gameTime": "Oyun zamanı: {{when}}"
   },
   "menu": {
     "selection": {

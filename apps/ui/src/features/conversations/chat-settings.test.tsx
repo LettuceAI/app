@@ -12,7 +12,7 @@ vi.mock("@/api/window-controls", () => ({ createWindowController: vi.fn().mockRe
 function message(id: string, role: TimelineMessage["role"], text: string, patch: Partial<TimelineMessage> = {}): TimelineMessage {
   return {
     id, role, author_participant_id: role === "user" ? "pu" : role === "assistant" ? "pc" : null, parts: [{ type: "text", text }], reasoning: null,
-    created_at: 1_700_000_000_000, candidate_index: null, candidate_count: 1, pinned: false, scene_image: null, ...patch,
+    created_at: 1_700_000_000_000, effective_time: 1_700_000_000_000, candidate_index: null, candidate_count: 1, pinned: false, scene_image: null, ...patch,
   };
 }
 

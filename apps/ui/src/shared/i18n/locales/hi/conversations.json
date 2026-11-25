@@ -184,7 +184,9 @@
     "video": "वीडियो फ़ाइल",
     "document": "दस्तावेज़",
     "showMorePrompt": "पूरा प्रॉम्प्ट दिखाएं",
-    "showLessPrompt": "कम दिखाएं"
+    "showLessPrompt": "कम दिखाएं",
+    "realtime": "वास्तविक समय: {{when}}",
+    "gameTime": "खेल समय: {{when}}"
   },
   "menu": {
     "selection": {

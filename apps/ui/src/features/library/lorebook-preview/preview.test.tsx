@@ -124,6 +124,7 @@ const message = (id: string, text: string): TimelineMessage_Serialize => ({
   parts: [{ type: "text", text }],
   reasoning: null,
   created_at: 1,
+  effective_time: 1,
   candidate_index: null,
   candidate_count: 0,
   pinned: false,

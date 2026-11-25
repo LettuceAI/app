@@ -184,7 +184,9 @@
     "video": "Videofil",
     "document": "Dokument",
     "showMorePrompt": "Vis hele prompten",
-    "showLessPrompt": "Vis mindre"
+    "showLessPrompt": "Vis mindre",
+    "realtime": "Sanntid: {{when}}",
+    "gameTime": "Spilltid: {{when}}"
   },
   "menu": {
     "selection": {

@@ -185,7 +185,9 @@
     "video": "Archivo de vídeo",
     "document": "Documento",
     "showMorePrompt": "Ver el prompt completo",
-    "showLessPrompt": "Ver menos"
+    "showLessPrompt": "Ver menos",
+    "realtime": "Tiempo real: {{when}}",
+    "gameTime": "Tiempo de juego: {{when}}"
   },
   "menu": {
     "selection": {

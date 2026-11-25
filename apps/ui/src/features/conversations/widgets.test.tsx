@@ -181,7 +181,7 @@ const characterDraft = (slots: WidgetSlots, overrides: string[]) =>
   }) as unknown as CharacterDraft_Serialize;
 const reply: TimelineMessage = {
   id: "a1", role: "assistant", author_participant_id: "pc", parts: [{ type: "text", text: "Sit down." }], reasoning: null,
-  created_at: 1_700_000_000_000, candidate_index: null, candidate_count: 1, pinned: false, scene_image: null,
+  created_at: 1_700_000_000_000, effective_time: 1_700_000_000_000, candidate_index: null, candidate_count: 1, pinned: false, scene_image: null,
 };
 const chatView: ConversationView = {
   id: "c1", origin_conversation_id: null, origin_message_id: null, kind: "direct", title: "Harbour", branch: { branch_id: "b", head_message_id: null },

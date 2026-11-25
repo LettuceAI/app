@@ -183,7 +183,9 @@
     "video": "동영상 파일",
     "document": "문서",
     "showMorePrompt": "프롬프트 전체 보기",
-    "showLessPrompt": "간단히 보기"
+    "showLessPrompt": "간단히 보기",
+    "realtime": "실시간: {{when}}",
+    "gameTime": "게임 시간: {{when}}"
   },
   "menu": {
     "selection": {

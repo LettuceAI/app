@@ -74,7 +74,7 @@ import {
 import {
   authorOf,
   characterParticipant,
-  formatTime,
+  formatDateTime,
   textOf,
   userParticipant,
   type MediaItem,
@@ -936,7 +936,16 @@ function ConversationScreen({ conversationId }: { conversationId: string }) {
               { name: (isGroup ? authorOf(participants, shownMenu)?.name : undefined) ?? name },
             )
           }
-          description={shownMenu && formatTime(shownMenu.created_at, i18n.language)}
+          description={
+            shownMenu && (
+              <span className="flex flex-col">
+                <span>{t("message.realtime", { when: formatDateTime(shownMenu.created_at, i18n.language) })}</span>
+                {settings.data?.time.enabled && (
+                  <span>{t("message.gameTime", { when: formatDateTime(shownMenu.effective_time, i18n.language) })}</span>
+                )}
+              </span>
+            )
+          }
         >
           {shownMenu && (
             <MessageMenu

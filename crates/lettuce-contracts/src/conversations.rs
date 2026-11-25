@@ -525,6 +525,10 @@ pub struct TimelineMessage {
     pub reasoning: Option<String>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub created_at: i64,
+    /// The in-game time stamped onto the message by the chat clock; equals
+    /// `created_at` when time awareness is off.
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub effective_time: i64,
     /// The shown reply variant's ordinal; set on generated replies only.
     pub candidate_index: Option<u16>,
     pub candidate_count: u32,

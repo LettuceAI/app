@@ -131,6 +131,10 @@ export function formatTime(timestamp: number, locale: string): string {
   return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(timestamp);
 }
 
+export function formatDateTime(timestamp: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(timestamp);
+}
+
 export type DayLabel = { kind: "today" } | { kind: "yesterday" } | { kind: "date"; text: string };
 
 export function dayLabel(timestamp: number, now: number, locale: string): DayLabel {

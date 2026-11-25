@@ -8,7 +8,7 @@ import { EditSheet } from "./EditSheet";
 const media = (id: string, kind: "image" | "audio") => ({ type: "media" as const, asset: { asset_id: id, url: `asset://${id}` }, role: "attachment" as const, kind });
 
 const message: TimelineMessage = {
-  id: "u1", role: "user", author_participant_id: "pu", reasoning: null, created_at: 1_700_000_000_000, candidate_index: null, candidate_count: 1, pinned: false, scene_image: null,
+  id: "u1", role: "user", author_participant_id: "pu", reasoning: null, created_at: 1_700_000_000_000, effective_time: 1_700_000_000_000, candidate_index: null, candidate_count: 1, pinned: false, scene_image: null,
   parts: [{ type: "text", text: "Look at these." }, media("first", "image"), media("second", "image"), media("voice", "audio")],
 };
 
