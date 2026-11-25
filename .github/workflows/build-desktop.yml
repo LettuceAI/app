@@ -199,6 +199,7 @@ jobs:
         with:
           version: ${{ inputs.version }}
           dev: ${{ inputs.dev }}
+      # The GitHub-hosted macOS VM discards the temporary keychain and trust settings after the job.
       - name: Import the persistent macOS signing identity
         if: runner.os == 'macOS'
         shell: bash
@@ -358,19 +359,6 @@ jobs:
           fi
           printf '%s\n%s\n%s\n' "$SOURCE_SHA" "$APP_VERSION" "$BUILD_ID" > dist-artifacts/BUILD_INFO
           (cd dist-artifacts && sha256sum -- * > SHA256SUMS.txt)
-      - name: Remove the macOS signing keychain and runner trust
-        if: always() && runner.os == 'macOS'
-        timeout-minutes: 2
-        shell: bash
-        run: |
-          cleanup_status=0
-          if [[ -n "${LETTUCE_SIGNING_CERTIFICATE_PATH:-}" ]]; then
-            sudo -n security remove-trusted-cert -d "$LETTUCE_SIGNING_CERTIFICATE_PATH" || cleanup_status=$?
-          fi
-          if [[ -n "${LETTUCE_SIGNING_KEYCHAIN:-}" && -f "$LETTUCE_SIGNING_KEYCHAIN" ]]; then
-            security delete-keychain "$LETTUCE_SIGNING_KEYCHAIN" || cleanup_status=$?
-          fi
-          exit "$cleanup_status"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-package-${{ inputs.build_id }}

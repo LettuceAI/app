@@ -22,11 +22,7 @@ openssl pkcs12 -in "$staging/certificate.p12" -passin env:MACOS_SIGNING_PASSWORD
   -clcerts -nokeys -out "$certificate"
 actual=$(openssl x509 -in "$certificate" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')
 [[ "$actual" == "$expected" ]] || { echo 'Signing certificate differs from the pinned identity.' >&2; exit 1; }
-# Register cleanup before changing the runner's keychain or trust settings.
-{
-  printf 'LETTUCE_SIGNING_KEYCHAIN=%s\n' "$keychain"
-  printf 'LETTUCE_SIGNING_CERTIFICATE_PATH=%s\n' "$certificate"
-} >> "$GITHUB_ENV"
+printf 'LETTUCE_SIGNING_KEYCHAIN=%s\n' "$keychain" >> "$GITHUB_ENV"
 keychain_password=$(openssl rand -base64 48)
 printf '::add-mask::%s\n' "$keychain_password"
 security create-keychain -p "$keychain_password" "$keychain"
