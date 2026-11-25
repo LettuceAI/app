@@ -34,6 +34,11 @@ pub(crate) async fn list_models<S: lettuce_settings::SecretStore + ?Sized>(
 ) -> Result<Vec<crate::RemoteModel>, crate::common::AdapterError> {
     use crate::common::{Credentials, decode_json, generation_policy, load_auth, load_secret_headers, parse_openai_model_list, AuthPlan};
     let mut models = crate::providers::openai_compatible::list_models(&NanoGpt, store, network, account).await?;
+    for model in &mut models {
+        model.input_price = model.input_price.map(|price| price / 1_000_000.0);
+        model.output_price = model.output_price.map(|price| price / 1_000_000.0);
+        model.cache_read_price = model.cache_read_price.map(|price| price / 1_000_000.0);
+    }
     let base = account.endpoint.as_deref().or(DESCRIPTOR.default_endpoint).ok_or(crate::common::AdapterError::Rejected)?.trim_end_matches('/');
     let path = if base.ends_with("/v1") { "/image-models?detailed=true" } else { "/v1/image-models?detailed=true" };
     let credentials = Credentials::from(account);

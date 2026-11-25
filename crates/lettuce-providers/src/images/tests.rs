@@ -607,13 +607,16 @@ async fn nanogpt_preserves_api_prefix_and_sends_documented_image_fields() {
 async fn nanogpt_model_discovery_merges_text_and_image_catalogs() {
     let (store, owner, key) = keyed().await;
     let (base, recorded) = server(vec![
-        json_response(&json!({"data":[{"id":"chat","architecture":{"output_modalities":["text"]}}]})),
+        json_response(&json!({"data":[{"id":"chat","architecture":{"output_modalities":["text"]},"pricing":{"prompt":3.0,"completion":15.0,"input_cache_read":0.15}}]})),
         json_response(&json!({"data":[{"id":"draw","name":"Image model","architecture":{"input_modalities":["text","image"],"output_modalities":["image"]}}]})),
     ]).await;
     let account = account("nanogpt", &format!("{base}/api"), Some(key), owner);
     let remote = crate::RemoteProviders::new(store, Arc::new(lettuce_network::JsonClient::new().expect("client")));
     let models = remote.list_models(&account).await.expect("models");
     assert_eq!(models.len(), 2);
+    assert!((models[0].input_price.expect("input") - 3e-6).abs() < 1e-12);
+    assert!((models[0].output_price.expect("output") - 15e-6).abs() < 1e-12);
+    assert!((models[0].cache_read_price.expect("cache") - 0.15e-6).abs() < 1e-12);
     assert_eq!(models[1].output_modalities, Some(vec!["image".into()]));
     let recorded = recorded.await.expect("requests");
     assert_eq!(recorded[0].request_line(), "GET /api/v1/models?detailed=true HTTP/1.1");
