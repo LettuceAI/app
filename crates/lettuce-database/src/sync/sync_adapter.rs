@@ -1538,7 +1538,12 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
                 })?;
             (codec.decode)(change.entity().id(), payload.bytes())
                 .map_err(|error| {
-                    tracing::warn!(?error, "supported change failed");
+                    tracing::warn!(
+                        ?error,
+                        entity_kind = change.entity().kind(),
+                        entity_id = change.entity().id(),
+                        "supported change failed"
+                    );
                     IncomingChangeError::Corrupt {
                         reason: "supported change: a storage step failed",
                     }
