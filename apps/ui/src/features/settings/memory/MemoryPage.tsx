@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Brain, Cpu, FileText, History, Layers, MemoryStick, Sparkles, User, Users } from "lucide-react";
+import { useLocation, useNavigate, useRouter, useSearch } from "@tanstack/react-router";
+import { Archive, BookOpen, Brain, Cpu, FileText, History, Layers, MemoryStick, Search, SlidersHorizontal, Sparkles, User, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Badge,
@@ -34,7 +35,7 @@ import { useSettingsApi, useSettingsLayout } from "../data";
 import { CommitNumber } from "./CommitNumber";
 import { capacities, defaultCapacity } from "./presets";
 import { MemoryPromptSheet } from "./MemoryPromptSheet";
-import { ScopedSettings } from "./ScopedSettings";
+import { ProfileRows, ScopedSettings, type MemorySection } from "./ScopedSettings";
 import { useSettingsWrite } from "../use-settings-write";
 
 const eidos = "lettuce_eidos_v5";
@@ -42,12 +43,44 @@ const summarizerPrompt = "dynamic_memory_summarizer";
 const managerPrompt = "dynamic_memory_manager";
 
 type Scope = "direct" | "group";
+type View = MemorySection;
+
+const views = ["saved", "recall", "summary", "advanced"] as const satisfies readonly View[];
+const viewIcons = { saved: Archive, recall: Search, summary: BookOpen, advanced: SlidersHorizontal } as const;
+
+function useMemoryNavigation() {
+  const navigate = useNavigate();
+  const router = useRouter();
+  const view = useSearch({ from: "/settings/$section", select: (search) => search.memoryView ?? null });
+  const scope: Scope = useSearch({ from: "/settings/$section", select: (search) => search.memoryScope ?? "direct" });
+  const pushed = useLocation({ select: (location) => location.state.memoryPushed });
+  const go = (next: View | null, nextScope: Scope, replace: boolean) =>
+    void navigate({
+      to: "/settings/$section",
+      params: { section: "memory" },
+      search: { ...(next ? { memoryView: next } : {}), ...(nextScope === "group" ? { memoryScope: "group" as const } : {}) },
+      state: { memoryPushed: next !== null && !replace ? true : pushed === true },
+      replace,
+      resetScroll: !replace,
+    });
+  return {
+    view,
+    scope,
+    setScope: (next: Scope) => go(view, next, true),
+    open: (next: View) => go(next, scope, false),
+    close: () => {
+      if (pushed) router.history.back();
+      else go(null, scope, true);
+    },
+  };
+}
 type Sheet = "model" | "summaryPrompt" | "managerPrompt" | null;
 
 export function MemoryPage() {
   const { t } = useTranslation("settings");
   const api = useSettingsApi();
   const { back } = useSettingsLayout();
+  const navigation = useMemoryNavigation();
   const settings = useQuery({
     queryKey: queryKeys.settings.detail(),
     queryFn: () => api.call("settingsGet"),
@@ -67,16 +100,21 @@ export function MemoryPage() {
       <MemoryForm
         view={settings.data}
         installed={status.data.some((model) => model.family === eidos)}
+        navigation={navigation}
       />
     );
   return (
-    <Page title={t("memory.title")} {...back} contentClassName="max-w-6xl">
+    <Page
+      title={navigation.view ? t(`memory.pages.${navigation.view}.title`) : t("memory.title")}
+      {...(navigation.view ? { onBack: navigation.close, backLabel: t("memory.title") } : back)}
+      contentClassName="max-w-6xl"
+    >
       {body}
     </Page>
   );
 }
 
-function MemoryForm({ view, installed }: { view: SettingsView; installed: boolean }) {
+function MemoryForm({ view, installed, navigation }: { view: SettingsView; installed: boolean; navigation: ReturnType<typeof useMemoryNavigation> }) {
   const { t, i18n } = useTranslation("settings");
   const { t: common } = useTranslation("common");
   const { t: characters } = useTranslation("characters");
@@ -85,7 +123,7 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
   const queryClient = useQueryClient();
   const write = useSettingsWrite(api);
   const chat = useChatModels(api);
-  const [scope, setScope] = useState<Scope>("direct");
+  const { scope, setScope } = navigation;
   const [sheet, setSheet] = useState<Sheet>(null);
   const [download, setDownload] = useState<"enable" | "install" | null>(null);
   const install = useEmbeddingInstall(api, false);
@@ -109,20 +147,21 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
       section: "group_dynamic_memory",
       value: change(latest.global.group_dynamic_memory, latest.global.dynamic_memory),
     }));
-  const writeScoped = (
+  const writeGroupSettings = (
     change: (current: SettingsDynamicMemorySettings) => SettingsDynamicMemorySettings,
   ) =>
-    scope === "direct"
-      ? writeDynamic(change)
-      : write((latest) => {
-          const current = latest.global.group_dynamic_memory;
-          return current
-            ? {
-                section: "group_dynamic_memory",
-                value: { ...change(current), enabled: latest.global.dynamic_memory.enabled },
-              }
-            : null;
-        });
+    write((latest) => {
+      const current = latest.global.group_dynamic_memory;
+      return current
+        ? {
+            section: "group_dynamic_memory",
+            value: { ...change(current), enabled: latest.global.dynamic_memory.enabled },
+          }
+        : null;
+    });
+  const writeScoped = (
+    change: (current: SettingsDynamicMemorySettings) => SettingsDynamicMemorySettings,
+  ) => (scope === "direct" ? writeDynamic(change) : writeGroupSettings(change));
   const setEnabled = async (enabled: boolean) => {
     await writeDynamic((current) => ({ ...current, enabled }));
     await write((latest) => {
@@ -214,6 +253,58 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
     lorebook_scan_depth: null,
   });
 
+  const scopeBar = (
+    <>
+      <Segmented<Scope>
+        block
+        aria-label={t("memory.dynamic.title")}
+        value={scope}
+        onChange={setScope}
+        options={[
+          {
+            value: "direct",
+            label: t("memory.scope.direct"),
+            icon: <User size={icon.sm} />,
+          },
+          {
+            value: "group",
+            label: t("memory.scope.group"),
+            icon: <Users size={icon.sm} />,
+          },
+        ]}
+      />
+
+      {scope === "group" && (
+        <ListGroup>
+          <ListRow
+            title={t("memory.scope.same")}
+            description={t(group ? "memory.scope.sameOff" : "memory.scope.sameOn")}
+            trailing={
+              <Switch
+                checked={group === null}
+                onChange={(same) =>
+                  void writeGroup((_current, latest) => (same ? null : { ...latest }))
+                }
+                aria-label={t("memory.scope.same")}
+              />
+            }
+          />
+        </ListGroup>
+      )}
+    </>
+  );
+
+  if (navigation.view) {
+    return (
+      <div className="@container">
+        <div className="space-y-7">
+          {scopeBar}
+          {scoped && <ScopedSettings section={navigation.view} value={scoped} onChange={writeScoped} />}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="@container">
@@ -248,50 +339,45 @@ function MemoryForm({ view, installed }: { view: SettingsView; installed: boolea
                   />
                 }
               />
+              {dynamic.enabled && <ProfileRows value={dynamic} onChange={writeDynamic} tour />}
             </ListGroup>
 
             {dynamic.enabled && (
               <>
-                <Segmented<Scope>
-                  block
-                  aria-label={t("memory.dynamic.title")}
-                  value={scope}
-                  onChange={setScope}
-                  options={[
-                    {
-                      value: "direct",
-                      label: t("memory.scope.direct"),
-                      icon: <User size={icon.sm} />,
-                    },
-                    {
-                      value: "group",
-                      label: t("memory.scope.group"),
-                      icon: <Users size={icon.sm} />,
-                    },
-                  ]}
-                />
+                <ListGroup label={t("memory.scope.group")}>
+                  <ListRow
+                    title={t("memory.scope.same")}
+                    description={t(group ? "memory.scope.sameOff" : "memory.scope.sameOn")}
+                    trailing={
+                      <Switch
+                        checked={group === null}
+                        onChange={(same) =>
+                          void writeGroup((_current, latest) => (same ? null : { ...latest }))
+                        }
+                        aria-label={t("memory.scope.same")}
+                      />
+                    }
+                  />
+                  {group && <ProfileRows value={group} onChange={writeGroupSettings} />}
+                </ListGroup>
 
-                {scope === "group" && (
-                  <ListGroup>
-                    <ListRow
-                      title={t("memory.scope.same")}
-                      description={t(group ? "memory.scope.sameOff" : "memory.scope.sameOn")}
-                      trailing={
-                        <Switch
-                          checked={group === null}
-                          onChange={(same) =>
-                            void writeGroup((_current, latest) => (same ? null : { ...latest }))
-                          }
-                          aria-label={t("memory.scope.same")}
-                        />
-                      }
-                    />
-                  </ListGroup>
-                )}
-
-                {scoped && <ScopedSettings value={scoped} onChange={writeScoped} />}
+                <ListGroup label={t("memory.pages.group")}>
+                  {views.map((page) => {
+                    const Icon = viewIcons[page];
+                    return (
+                      <ListRowButton
+                        key={page}
+                        icon={<Icon size={icon.lg} />}
+                        title={t(`memory.pages.${page}.title`)}
+                        description={t(`memory.pages.${page}.body`)}
+                        onClick={() => navigation.open(page)}
+                      />
+                    );
+                  })}
+                </ListGroup>
               </>
             )}
+
           </div>
           {dynamic.enabled && (
             <div className="min-w-0 space-y-7">

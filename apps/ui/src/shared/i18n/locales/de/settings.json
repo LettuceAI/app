@@ -1429,8 +1429,6 @@
       "balancedBody": "Eine gute Mischung aus Abruf und Geschwindigkeit für die meisten Chats.",
       "comprehensiveBody": "Erinnert sich am meisten. Am besten für lange, detaillierte Geschichten.",
       "customBody": "Benutzerdefiniert: deine eigenen Werte. Wähle ein Profil, um davon neu zu starten.",
-      "advanced": "Erweiterte Optionen",
-      "advancedBody": "Jeder Wert, den das Profil festlegt",
       "interval": "Zusammenfassungsintervall",
       "intervalBody": "Nachrichten zwischen Zusammenfassungen. Auch wie viele aktuelle Nachrichten mit jeder Antwort gesendet werden.",
       "maxEntries": "Max. Speichereinträge",
@@ -1456,9 +1454,21 @@
       "similarityValue": "Schwelle",
       "similarityValueBody": "Mindestähnlichkeit, damit eine Erinnerung abgerufen wird"
     },
+    "groups": {
+      "saved": "Was gespeichert wird",
+      "reply": "Was mit jeder Antwort mitgeht",
+      "summary": "Kontextzusammenfassung",
+      "forgetting": "Vergessen",
+      "manager": "Speicherverwaltung"
+    },
+    "pages": {
+      "group": "Weitere Einstellungen",
+      "saved": { "title": "Was gespeichert wird", "body": "Zusammenfassungsintervall, Speicherlimit, Duplikate und Anheften" },
+      "recall": { "title": "Abruf", "body": "Was mit jeder Antwort mitgeht und wie Erinnerungen gewählt werden" },
+      "summary": { "title": "Kontextzusammenfassung", "body": "Kapitelzusammenfassungen und das Budget der Zusammenfassung" },
+      "advanced": { "title": "Erweitert", "body": "Vergessen und wie die Speicherverwaltung arbeitet" }
+    },
     "advanced": {
-      "title": "Erweitert",
-      "body": "Kontextanreicherung und Verhalten der Speicherverwaltung",
       "enrichment": "Kontextanreicherung",
       "experimental": "Experimentell",
       "enrichmentBody": "Verwendet die letzten Nachrichten, um Erinnerungen zu suchen, nicht nur die neueste",

@@ -1441,8 +1441,6 @@
       "balancedBody": "Uma boa mistura de recall e velocidade para a maioria das conversas.",
       "comprehensiveBody": "Lembra mais. Ideal para histórias longas e detalhadas.",
       "customBody": "Personalizado: seus próprios valores. Escolha um perfil para recomeçar a partir dele.",
-      "advanced": "Opções avançadas",
-      "advancedBody": "Cada valor que o perfil define",
       "interval": "Intervalo de resumo",
       "intervalBody": "Mensagens entre resumos. Também quantas mensagens recentes vão com cada resposta.",
       "maxEntries": "Máx. entradas de memória",
@@ -1468,9 +1466,21 @@
       "similarityValue": "Limite",
       "similarityValueBody": "Similaridade mínima para uma memória ser recuperada"
     },
+    "groups": {
+      "saved": "O que é salvo",
+      "reply": "O que vai com cada resposta",
+      "summary": "Resumo do contexto",
+      "forgetting": "Esquecimento",
+      "manager": "Gerenciador de memória"
+    },
+    "pages": {
+      "group": "Mais configurações",
+      "saved": { "title": "O que é salvo", "body": "Intervalo de resumo, limite de memórias, duplicatas e fixação" },
+      "recall": { "title": "Lembrança", "body": "O que vai com cada resposta e como as memórias são escolhidas" },
+      "summary": { "title": "Resumo do contexto", "body": "Resumos por capítulos e o orçamento do resumo" },
+      "advanced": { "title": "Avançado", "body": "O esquecimento e como o gerenciador de memória funciona" }
+    },
     "advanced": {
-      "title": "Avançado",
-      "body": "Enriquecimento de contexto e comportamento do gerenciador de memória",
       "enrichment": "Enriquecimento de contexto",
       "experimental": "Experimental",
       "enrichmentBody": "Usa as últimas mensagens para pesquisar memórias, não só a mais recente",

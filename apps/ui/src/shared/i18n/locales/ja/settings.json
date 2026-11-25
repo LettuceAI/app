@@ -1417,8 +1417,6 @@
       "balancedBody": "ほとんどのチャットに適した想起と速度のバランス。",
       "comprehensiveBody": "最も多く記憶。長く詳細な物語に最適。",
       "customBody": "カスタム：独自の値。プロファイルを選ぶとそこからやり直せます。",
-      "advanced": "詳細オプション",
-      "advancedBody": "プロファイルが設定するすべての値",
       "interval": "要約間隔",
       "intervalBody": "要約間のメッセージ数。各返信に含める最近のメッセージ数でもあります。",
       "maxEntries": "最大メモリ件数",
@@ -1444,9 +1442,21 @@
       "similarityValue": "しきい値",
       "similarityValueBody": "メモリが取得される最小類似度"
     },
+    "groups": {
+      "saved": "保存される内容",
+      "reply": "返信ごとに送る内容",
+      "summary": "コンテキスト要約",
+      "forgetting": "忘却",
+      "manager": "メモリマネージャー"
+    },
+    "pages": {
+      "group": "その他の設定",
+      "saved": { "title": "保存される内容", "body": "要約間隔、記憶の上限、重複チェック、ピン留め" },
+      "recall": { "title": "想起", "body": "返信ごとに送る内容と記憶の選び方" },
+      "summary": { "title": "コンテキスト要約", "body": "章ごとの要約と要約の予算" },
+      "advanced": { "title": "詳細", "body": "忘却とメモリマネージャーの動作" }
+    },
     "advanced": {
-      "title": "詳細設定",
-      "body": "コンテキスト拡充とメモリマネージャーの動作",
       "enrichment": "コンテキスト拡充",
       "experimental": "実験的",
       "enrichmentBody": "最新の1件だけでなく、直近の数件のメッセージを使ってメモリを検索します",

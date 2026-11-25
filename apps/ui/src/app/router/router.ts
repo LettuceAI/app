@@ -258,6 +258,8 @@ const settingsSectionRoute = createRoute({
     imagePicker?: "avatar" | "scene" | "writer";
     imagePrompt?: "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer";
     localImageView?: "engine" | "models" | "bundle" | "loras";
+    memoryView?: "saved" | "recall" | "summary" | "advanced";
+    memoryScope?: "group";
     engineInstall?: boolean;
     civitaiModel?: number;
     prompt?: string;
@@ -422,6 +424,8 @@ const settingsSectionRoute = createRoute({
     ...(typeof search.imagePrompt === "string" && ["avatar_generation", "avatar_edit_request", "scene_generation", "scene_prompt_writer", "design_reference_writer"].includes(search.imagePrompt)
       ? { imagePrompt: search.imagePrompt as "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer" }
       : {}),
+    ...(search.memoryView === "saved" || search.memoryView === "recall" || search.memoryView === "summary" || search.memoryView === "advanced" ? { memoryView: search.memoryView } : {}),
+    ...(search.memoryScope === "group" ? { memoryScope: "group" as const } : {}),
     ...(search.localImageView === "engine" ||
     search.localImageView === "models" ||
     search.localImageView === "bundle" ||
@@ -657,6 +661,7 @@ declare module "@tanstack/history" {
     avatarCropPushed?: boolean;
     avatarLibraryPushed?: boolean;
     localImagesPushed?: boolean;
+    memoryPushed?: boolean;
     runtimePushed?: boolean;
     engineInstallPushed?: boolean;
     loraDetailPushed?: boolean;

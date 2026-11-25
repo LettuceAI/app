@@ -1441,8 +1441,6 @@
       "balancedBody": "Una buena mezcla de recuerdo y velocidad para la mayoría de los chats.",
       "comprehensiveBody": "Es lo que más recuerda. Ideal para historias largas y detalladas.",
       "customBody": "Personalizado: tus propios valores. Elige un perfil para empezar de nuevo desde él.",
-      "advanced": "Opciones avanzadas",
-      "advancedBody": "Cada valor que define el perfil",
       "interval": "Intervalo de resumen",
       "intervalBody": "Mensajes entre resúmenes. También cuántos mensajes recientes van con cada respuesta.",
       "maxEntries": "Máximo de entradas de memoria",
@@ -1468,9 +1466,21 @@
       "similarityValue": "Umbral",
       "similarityValueBody": "Similitud mínima para que se recupere una memoria"
     },
+    "groups": {
+      "saved": "Qué se guarda",
+      "reply": "Qué va con cada respuesta",
+      "summary": "Resumen del contexto",
+      "forgetting": "Olvido",
+      "manager": "Gestor de memoria"
+    },
+    "pages": {
+      "group": "Más ajustes",
+      "saved": { "title": "Qué se guarda", "body": "Intervalo de resumen, límite de recuerdos, duplicados y fijación" },
+      "recall": { "title": "Recuerdo", "body": "Qué va con cada respuesta y cómo se eligen los recuerdos" },
+      "summary": { "title": "Resumen del contexto", "body": "Resúmenes por capítulos y el presupuesto del resumen" },
+      "advanced": { "title": "Avanzado", "body": "El olvido y cómo funciona el gestor de memoria" }
+    },
     "advanced": {
-      "title": "Avanzado",
-      "body": "Enriquecimiento de contexto y comportamiento del gestor de memoria",
       "enrichment": "Enriquecimiento de contexto",
       "experimental": "Experimental",
       "enrichmentBody": "Usa los últimos mensajes para buscar memorias, no solo el más reciente",

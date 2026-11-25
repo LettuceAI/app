@@ -1429,8 +1429,6 @@
       "balancedBody": "Magandang balanse ng pag-alala at bilis para sa karamihan ng chat.",
       "comprehensiveBody": "Pinakamaraming natatandaan. Pinakamainam para sa mahahaba at detalyadong kuwento.",
       "customBody": "Custom: sarili mong value. Pumili ng profile para magsimulang muli mula rito.",
-      "advanced": "Mga advanced na opsyon",
-      "advancedBody": "Bawat value na itinatakda ng profile",
       "interval": "Summary interval",
       "intervalBody": "Mga mensahe sa pagitan ng summary. Ito rin ang bilang ng kamakailang mensahe na kasama sa bawat tugon.",
       "maxEntries": "Max na memory entry",
@@ -1456,9 +1454,21 @@
       "similarityValue": "Threshold",
       "similarityValueBody": "Minimum na similarity para ma-retrieve ang isang memory"
     },
+    "groups": {
+      "saved": "Ano ang sine-save",
+      "reply": "Ano ang kasama sa bawat sagot",
+      "summary": "Summary ng context",
+      "forgetting": "Paglimot",
+      "manager": "Memory manager"
+    },
+    "pages": {
+      "group": "Iba pang setting",
+      "saved": { "title": "Ano ang sine-save", "body": "Pagitan ng buod, limitasyon ng alaala, mga duplikado, at pag-pin" },
+      "recall": { "title": "Pag-alala", "body": "Ano ang kasama sa bawat sagot at paano pinipili ang mga alaala" },
+      "summary": { "title": "Summary ng context", "body": "Mga summary na may kabanata at ang budget ng summary" },
+      "advanced": { "title": "Advanced", "body": "Paglimot at kung paano gumagana ang memory manager" }
+    },
     "advanced": {
-      "title": "Advanced",
-      "body": "Context enrichment at gawi ng memory manager",
       "enrichment": "Context enrichment",
       "experimental": "Experimental",
       "enrichmentBody": "Ginagamit ang huling ilang mensahe para maghanap ng memory, hindi lang ang pinakabago",

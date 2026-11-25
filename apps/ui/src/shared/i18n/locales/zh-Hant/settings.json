@@ -1417,8 +1417,6 @@
       "balancedBody": "對大多數對話而言，兼顧回想和速度。",
       "comprehensiveBody": "記住最多內容。最適合長篇、詳細的故事。",
       "customBody": "自訂：你自己的數值。選擇設定檔可從該設定檔重新開始。",
-      "advanced": "進階選項",
-      "advancedBody": "設定檔所設定的每個數值",
       "interval": "摘要間隔",
       "intervalBody": "摘要之間的訊息數。也是每次回覆會附帶的近期訊息數。",
       "maxEntries": "記憶條目上限",
@@ -1444,9 +1442,21 @@
       "similarityValue": "閾值",
       "similarityValueBody": "記憶被檢索的最低相似度"
     },
+    "groups": {
+      "saved": "儲存哪些內容",
+      "reply": "每次回覆附帶的內容",
+      "summary": "上下文摘要",
+      "forgetting": "遺忘",
+      "manager": "記憶管理器"
+    },
+    "pages": {
+      "group": "更多設定",
+      "saved": { "title": "儲存哪些內容", "body": "摘要間隔、記憶上限、重複檢查與釘選" },
+      "recall": { "title": "回憶", "body": "每次回覆附帶的內容以及記憶的挑選方式" },
+      "summary": { "title": "上下文摘要", "body": "分章節摘要和摘要預算" },
+      "advanced": { "title": "進階", "body": "遺忘以及記憶管理器的運作方式" }
+    },
     "advanced": {
-      "title": "進階",
-      "body": "上下文擴充與記憶管理器行為",
       "enrichment": "上下文擴充",
       "experimental": "實驗性",
       "enrichmentBody": "使用最近幾則訊息搜尋記憶，而不只使用最新一則",

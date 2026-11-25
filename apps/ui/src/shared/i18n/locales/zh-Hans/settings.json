@@ -1417,8 +1417,6 @@
       "balancedBody": "兼顾回忆和速度，适合大多数聊天。",
       "comprehensiveBody": "记住的最多。最适合长篇、详细的故事。",
       "customBody": "自定义：使用你自己的数值。选择一个配置可从它重新开始。",
-      "advanced": "高级选项",
-      "advancedBody": "该配置设置的所有数值",
       "interval": "摘要间隔",
       "intervalBody": "两次摘要之间的消息数。也决定每次回复携带多少条最近消息。",
       "maxEntries": "最大记忆条目数",
@@ -1444,9 +1442,21 @@
       "similarityValue": "阈值",
       "similarityValueBody": "记忆被调取所需的最低相似度"
     },
+    "groups": {
+      "saved": "保存哪些内容",
+      "reply": "每次回复附带的内容",
+      "summary": "上下文摘要",
+      "forgetting": "遗忘",
+      "manager": "记忆管理器"
+    },
+    "pages": {
+      "group": "更多设置",
+      "saved": { "title": "保存哪些内容", "body": "摘要间隔、记忆上限、重复检查与固定" },
+      "recall": { "title": "回忆", "body": "每次回复附带的内容以及记忆的挑选方式" },
+      "summary": { "title": "上下文摘要", "body": "分章节摘要和摘要预算" },
+      "advanced": { "title": "高级", "body": "遗忘以及记忆管理器的工作方式" }
+    },
     "advanced": {
-      "title": "高级",
-      "body": "上下文增强与记忆管理器行为",
       "enrichment": "上下文增强",
       "experimental": "实验性",
       "enrichmentBody": "使用最近几条消息来搜索记忆，而不只是最新一条",

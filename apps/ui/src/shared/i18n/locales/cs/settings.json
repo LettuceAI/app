@@ -1453,8 +1453,6 @@
       "balancedBody": "Dobrý poměr vybavování a rychlosti pro většinu chatů.",
       "comprehensiveBody": "Pamatuje si nejvíc. Nejlepší pro dlouhé a detailní příběhy.",
       "customBody": "Vlastní: tvoje hodnoty. Vyber profil, ať začneš z něj.",
-      "advanced": "Pokročilé možnosti",
-      "advancedBody": "Všechny hodnoty, které profil nastavuje",
       "interval": "Interval shrnutí",
       "intervalBody": "Zprávy mezi shrnutími. Také kolik nedávných zpráv jde s každou odpovědí.",
       "maxEntries": "Maximální počet záznamů paměti",
@@ -1480,9 +1478,21 @@
       "similarityValue": "Práh",
       "similarityValueBody": "Minimální shoda, aby se paměť vybavila"
     },
+    "groups": {
+      "saved": "Co se ukládá",
+      "reply": "Co jde s každou odpovědí",
+      "summary": "Shrnutí kontextu",
+      "forgetting": "Zapomínání",
+      "manager": "Správce paměti"
+    },
+    "pages": {
+      "group": "Další nastavení",
+      "saved": { "title": "Co se ukládá", "body": "Interval shrnutí, limit vzpomínek, duplikáty a připínání" },
+      "recall": { "title": "Vybavování", "body": "Co jde s každou odpovědí a jak se vybírají vzpomínky" },
+      "summary": { "title": "Shrnutí kontextu", "body": "Shrnutí po kapitolách a rozpočet shrnutí" },
+      "advanced": { "title": "Pokročilé", "body": "Zapomínání a jak pracuje správce paměti" }
+    },
     "advanced": {
-      "title": "Pokročilé",
-      "body": "Obohacení kontextu a chování správce paměti",
       "enrichment": "Obohacení kontextu",
       "experimental": "Experimentální",
       "enrichmentBody": "Používá posledních několik zpráv k hledání pamětí, ne jen tu nejnovější",

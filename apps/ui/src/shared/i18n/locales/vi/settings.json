@@ -1417,8 +1417,6 @@
       "balancedBody": "Cân bằng tốt giữa gợi nhớ và tốc độ cho hầu hết cuộc trò chuyện.",
       "comprehensiveBody": "Ghi nhớ nhiều nhất. Phù hợp cho câu chuyện dài, chi tiết.",
       "customBody": "Tùy chỉnh: giá trị của riêng bạn. Chọn một hồ sơ để bắt đầu lại từ đó.",
-      "advanced": "Tùy chọn nâng cao",
-      "advancedBody": "Mọi giá trị mà hồ sơ đặt",
       "interval": "Khoảng tóm tắt",
       "intervalBody": "Số tin nhắn giữa các lần tóm tắt. Cũng là số tin nhắn gần đây đi kèm mỗi câu trả lời.",
       "maxEntries": "Số mục ký ức tối đa",
@@ -1444,9 +1442,21 @@
       "similarityValue": "Ngưỡng",
       "similarityValueBody": "Mức tương đồng tối thiểu để ký ức được truy xuất"
     },
+    "groups": {
+      "saved": "Những gì được lưu",
+      "reply": "Những gì đi kèm mỗi câu trả lời",
+      "summary": "Tóm tắt ngữ cảnh",
+      "forgetting": "Quên",
+      "manager": "Trình quản lý bộ nhớ"
+    },
+    "pages": {
+      "group": "Cài đặt khác",
+      "saved": { "title": "Những gì được lưu", "body": "Khoảng cách tóm tắt, giới hạn ký ức, trùng lặp và ghim" },
+      "recall": { "title": "Hồi tưởng", "body": "Những gì đi kèm mỗi câu trả lời và cách chọn ký ức" },
+      "summary": { "title": "Tóm tắt ngữ cảnh", "body": "Tóm tắt theo chương và ngân sách tóm tắt" },
+      "advanced": { "title": "Nâng cao", "body": "Việc quên và cách trình quản lý bộ nhớ hoạt động" }
+    },
     "advanced": {
-      "title": "Nâng cao",
-      "body": "Làm giàu ngữ cảnh và hành vi quản lý bộ nhớ",
       "enrichment": "Làm giàu ngữ cảnh",
       "experimental": "Thử nghiệm",
       "enrichmentBody": "Dùng vài tin nhắn cuối để tìm ký ức, không chỉ tin mới nhất",

@@ -1429,8 +1429,6 @@
       "balancedBody": "Jó egyensúly a felidézés és a sebesség között a legtöbb beszélgetéshez.",
       "comprehensiveBody": "A legtöbbre emlékszik. Hosszú, részletes történetekhez a legjobb.",
       "customBody": "Egyéni: a saját értékeid. Válassz egy profilt az újrakezdéshez.",
-      "advanced": "Speciális beállítások",
-      "advancedBody": "Minden érték, amelyet a profil beállít",
       "interval": "Összegzési időköz",
       "intervalBody": "Üzenetek az összegzések között. Ez adja meg azt is, hány legutóbbi üzenet megy minden válasszal.",
       "maxEntries": "Max. memóriabejegyzés",
@@ -1456,9 +1454,21 @@
       "similarityValue": "Küszöb",
       "similarityValueBody": "A minimális hasonlóság egy memória visszakereséséhez"
     },
+    "groups": {
+      "saved": "Mi kerül mentésre",
+      "reply": "Mi megy minden válasszal",
+      "summary": "Kontextus-összefoglaló",
+      "forgetting": "Felejtés",
+      "manager": "Memóriakezelő"
+    },
+    "pages": {
+      "group": "További beállítások",
+      "saved": { "title": "Mi kerül mentésre", "body": "Összefoglalási időköz, emlékkorlát, duplikátumok és kitűzés" },
+      "recall": { "title": "Felidézés", "body": "Mi megy minden válasszal, és hogyan választódnak ki az emlékek" },
+      "summary": { "title": "Kontextus-összefoglaló", "body": "Fejezetes összefoglalók és az összefoglaló kerete" },
+      "advanced": { "title": "Haladó", "body": "Felejtés és a memóriakezelő működése" }
+    },
     "advanced": {
-      "title": "Speciális",
-      "body": "Kontextusgazdagítás és a memóriakezelő viselkedése",
       "enrichment": "Kontextusgazdagítás",
       "experimental": "Kísérleti",
       "enrichmentBody": "A legutóbbi néhány üzenetet használja a memóriák kereséséhez, nem csak a legújabbat",

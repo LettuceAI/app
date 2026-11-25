@@ -1429,8 +1429,6 @@
       "balancedBody": "En god blanding av gjenkalling og hastighet for de fleste samtaler.",
       "comprehensiveBody": "Husker mest. Best for lange, detaljerte historier.",
       "customBody": "Egendefinert: dine egne verdier. Velg en profil for å starte på nytt fra den.",
-      "advanced": "Avanserte alternativer",
-      "advancedBody": "Hver verdi profilen angir",
       "interval": "Sammendragsintervall",
       "intervalBody": "Meldinger mellom sammendrag. Også hvor mange nylige meldinger som følger hvert svar.",
       "maxEntries": "Maks antall minner",
@@ -1456,9 +1454,21 @@
       "similarityValue": "Terskel",
       "similarityValueBody": "Minste likhet for at et minne hentes"
     },
+    "groups": {
+      "saved": "Hva som lagres",
+      "reply": "Hva som følger med hvert svar",
+      "summary": "Kontekstsammendrag",
+      "forgetting": "Glemsel",
+      "manager": "Minnebehandler"
+    },
+    "pages": {
+      "group": "Flere innstillinger",
+      "saved": { "title": "Hva som lagres", "body": "Sammendragsintervall, minnegrense, duplikater og festing" },
+      "recall": { "title": "Gjenkalling", "body": "Hva som følger med hvert svar og hvordan minner velges" },
+      "summary": { "title": "Kontekstsammendrag", "body": "Kapittelsammendrag og budsjettet for sammendraget" },
+      "advanced": { "title": "Avansert", "body": "Glemsel og hvordan minnebehandleren jobber" }
+    },
     "advanced": {
-      "title": "Avansert",
-      "body": "Kontekstberikelse og minnebehandlerens oppførsel",
       "enrichment": "Kontekstberikelse",
       "experimental": "Eksperimentelt",
       "enrichmentBody": "Bruker de siste meldingene til å søke i minner, ikke bare den nyeste",

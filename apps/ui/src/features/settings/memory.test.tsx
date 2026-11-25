@@ -232,9 +232,11 @@ describe("memory settings page", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Comprehensive" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
     expect(lastPatch(store)).toMatchObject({ section: "dynamic_memory", value: { summary_message_interval: 15, max_entries: 400, retrieval_limit: 8, hot_memory_token_budget: 10240, decay_rate_basis_points: 500, cold_threshold_basis_points: 2000, retrieval_strategy: "smart" } });
-    fireEvent.click(screen.getByRole("button", { name: /Advanced options/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^What gets saved/ }));
+    await screen.findByText("Max memory entries");
     await commit("Max memory entries", "250");
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "Memory" }));
     expect(await screen.findByText(/^Custom: your own values/)).toBeTruthy();
     expect(within(screen.getByRole("radiogroup", { name: "Memory profile" })).getAllByRole("radio").every((radio) => radio.getAttribute("aria-checked") === "false")).toBe(true);
   });
@@ -258,7 +260,8 @@ describe("memory settings page", () => {
 
   it("uses the model's calibrated threshold until Custom is chosen", async () => {
     const { store } = await mount(viewOf());
-    fireEvent.click(screen.getByRole("button", { name: /Advanced options/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Recall/ }));
+    await screen.findByText("What goes with each reply");
     expect(screen.getByText("Uses Lettuce Eidos's calibrated threshold.")).toBeTruthy();
     expect(screen.queryByText("Threshold")).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Custom" }));
@@ -290,28 +293,45 @@ describe("memory settings page", () => {
     expect(calls[0]).toEqual({ section: "device_embedding", model_version: null, max_tokens: 2048, keep_model_loaded: false });
   });
 
-  it("edits the scope being shown: one-on-one, then a group copy that can go back to the same settings", async () => {
+  it("switches chat scope inside a sub-page and writes that scope there", async () => {
+    const { store } = await mount(viewOf());
+    expect(screen.queryByRole("radio", { name: "Group chats" })).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Use one-on-one settings" }));
+    await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /^Recall/ }));
+    await screen.findByText("What goes with each reply");
+    fireEvent.click(screen.getByRole("radio", { name: "Group chats" }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Group chats" }).getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(screen.getByRole("radio", { name: "Cosine" }));
+    await waitFor(() => expect(store.update).toHaveBeenCalledTimes(2));
+    expect(lastPatch(store)).toMatchObject({ section: "group_dynamic_memory", value: { retrieval_strategy: "cosine" } });
+    fireEvent.click(screen.getByRole("button", { name: "Memory" }));
+    expect(await screen.findByText("Manual memory")).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "Group chats" })).toBeNull();
+  });
+
+  it("edits one-on-one on the main page and reveals group controls when unlinked", async () => {
     const { store } = await mount(viewOf());
     fireEvent.click(screen.getByRole("radio", { name: "Ask first" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
     expect(lastPatch(store)).toMatchObject({ section: "dynamic_memory", value: { run_mode: "ask_first" } });
     await waitFor(() => expect(screen.getByRole("radio", { name: "Ask first" }).getAttribute("aria-checked")).toBe("true"));
 
-    fireEvent.click(screen.getByRole("radio", { name: "Group chats" }));
     expect(screen.getByText("Group chats remember the same way as one-on-one chats")).toBeTruthy();
-    expect(screen.queryByText("Memory updates")).toBeNull();
+    expect(screen.getAllByRole("radiogroup", { name: "Memory updates" })).toHaveLength(1);
     fireEvent.click(screen.getByRole("switch", { name: "Use one-on-one settings" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(2));
     expect(lastPatch(store)).toMatchObject({ section: "group_dynamic_memory", value: { run_mode: "ask_first", enabled: true, max_entries: 200 } });
-    expect(await screen.findByText("Memory updates")).toBeTruthy();
-    fireEvent.click(screen.getByRole("radio", { name: "Manual" }));
+    await waitFor(() => expect(screen.getAllByRole("radiogroup", { name: "Memory updates" })).toHaveLength(2));
+    const groupUpdates = screen.getAllByRole("radiogroup", { name: "Memory updates" })[1]!;
+    fireEvent.click(within(groupUpdates).getByRole("radio", { name: "Manual" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(3));
     expect(lastPatch(store)).toMatchObject({ section: "group_dynamic_memory", value: { run_mode: "manual", enabled: true } });
     expect(store.current().global.dynamic_memory.run_mode).toBe("ask_first");
     fireEvent.click(screen.getByRole("switch", { name: "Use one-on-one settings" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(4));
     expect(lastPatch(store)).toMatchObject({ section: "group_dynamic_memory", value: null });
-    await waitFor(() => expect(screen.queryByText("Memory updates")).toBeNull());
+    await waitFor(() => expect(screen.getAllByRole("radiogroup", { name: "Memory updates" })).toHaveLength(1));
   });
 
   it("writes the sampler switch and an advanced field", async () => {
@@ -319,7 +339,8 @@ describe("memory settings page", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Overwrite sampler configuration" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
     expect(lastPatch(store)).toEqual({ section: "dynamic_memory_sampler", enabled: false });
-    fireEvent.click(screen.getByRole("button", { name: /Context enrichment and memory manager/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Advanced/ }));
+    await screen.findByText("Forgetting");
     await commit("Delete confidence default", "0.7");
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(2));
     expect(lastPatch(store)).toMatchObject({ section: "dynamic_memory", value: { delete_confidence_basis_points: 7000 } });
@@ -330,8 +351,8 @@ describe("memory settings page", () => {
 
   it("lets the model pin memories until the switch is turned off", async () => {
     const { store } = await mount(viewOf());
-    fireEvent.click(screen.getByRole("button", { name: /Context enrichment and memory manager/ }));
-    const toggle = screen.getByRole("switch", { name: "Let the model pin memories" });
+    fireEvent.click(screen.getByRole("button", { name: /^What gets saved/ }));
+    const toggle = await screen.findByRole("switch", { name: "Let the model pin memories" });
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
@@ -340,7 +361,8 @@ describe("memory settings page", () => {
 
   it("toggles chapter summaries and shows budget and chapter size controls", async () => {
     const { store } = await mount(viewOf());
-    fireEvent.click(screen.getByRole("button", { name: /Context enrichment and memory manager/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Context summary/ }));
+    await screen.findByText("Chapter summaries");
     expect(screen.queryByText("Summary budget")).toBeNull();
     const toggle = screen.getByRole("switch", { name: "Chapter summaries" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
@@ -414,15 +436,16 @@ describe("memory settings page", () => {
 
   it("keeps the group copy's enabled equal to dynamic memory when editing it", async () => {
     const { store } = await mount(viewOf({ group_dynamic_memory: { ...memory, enabled: false } }));
-    fireEvent.click(screen.getByRole("radio", { name: "Group chats" }));
-    fireEvent.click(await screen.findByRole("radio", { name: "Manual" }));
+    const groupUpdates = screen.getAllByRole("radiogroup", { name: "Memory updates" })[1]!;
+    fireEvent.click(within(groupUpdates).getByRole("radio", { name: "Manual" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
     expect(lastPatch(store)).toMatchObject({ section: "group_dynamic_memory", value: { run_mode: "manual", enabled: true } });
   });
 
   it("commits a pending number before the scope switch", async () => {
     const { store } = await mount(viewOf());
-    fireEvent.click(screen.getByRole("button", { name: /Advanced options/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^What gets saved/ }));
+    await screen.findByText("Max memory entries");
     fireEvent.change(numberFor("Max memory entries"), { target: { value: "250" } });
     fireEvent.click(screen.getByRole("radio", { name: "Group chats" }));
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
@@ -431,7 +454,8 @@ describe("memory settings page", () => {
 
   it("takes a typed value into a field whose minimum is above one digit", async () => {
     const { store } = await mount(viewOf());
-    fireEvent.click(screen.getByRole("button", { name: /Advanced options/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^What gets saved/ }));
+    await screen.findByText("Summary interval");
     await commit("Summary interval", "30");
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
     expect(lastPatch(store)).toMatchObject({ section: "dynamic_memory", value: { summary_message_interval: 30 } });

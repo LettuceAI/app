@@ -1429,8 +1429,6 @@
       "balancedBody": "Een goede mix van ophalen en snelheid voor de meeste chats.",
       "comprehensiveBody": "Onthoudt het meest. Het best voor lange, gedetailleerde verhalen.",
       "customBody": "Aangepast: je eigen waarden. Kies een profiel om daarvanaf opnieuw te beginnen.",
-      "advanced": "Geavanceerde opties",
-      "advancedBody": "Elke waarde die het profiel instelt",
       "interval": "Samenvattingsinterval",
       "intervalBody": "Berichten tussen samenvattingen. Ook hoeveel recente berichten met elk antwoord meegaan.",
       "maxEntries": "Max geheugenitems",
@@ -1456,9 +1454,21 @@
       "similarityValue": "Drempel",
       "similarityValueBody": "Minimale gelijkenis voordat een herinnering wordt opgehaald"
     },
+    "groups": {
+      "saved": "Wat wordt opgeslagen",
+      "reply": "Wat met elk antwoord meegaat",
+      "summary": "Contextsamenvatting",
+      "forgetting": "Vergeten",
+      "manager": "Geheugenbeheer"
+    },
+    "pages": {
+      "group": "Meer instellingen",
+      "saved": { "title": "Wat wordt opgeslagen", "body": "Samenvattingsinterval, geheugenlimiet, duplicaten en vastzetten" },
+      "recall": { "title": "Ophalen", "body": "Wat met elk antwoord meegaat en hoe herinneringen worden gekozen" },
+      "summary": { "title": "Contextsamenvatting", "body": "Samenvattingen per hoofdstuk en het budget van de samenvatting" },
+      "advanced": { "title": "Geavanceerd", "body": "Vergeten en hoe het geheugenbeheer werkt" }
+    },
     "advanced": {
-      "title": "Geavanceerd",
-      "body": "Contextverrijking en gedrag van geheugenbeheer",
       "enrichment": "Contextverrijking",
       "experimental": "Experimenteel",
       "enrichmentBody": "Gebruikt de laatste paar berichten om herinneringen te zoeken, niet alleen het nieuwste",

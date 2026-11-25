@@ -1441,8 +1441,6 @@
       "balancedBody": "Un buon equilibrio tra richiamo e velocità per la maggior parte delle chat.",
       "comprehensiveBody": "Ricorda di più. Ideale per storie lunghe e dettagliate.",
       "customBody": "Personalizzato: i tuoi valori. Scegli un profilo per ripartire da quello.",
-      "advanced": "Opzioni avanzate",
-      "advancedBody": "Ogni valore impostato dal profilo",
       "interval": "Intervallo dei riepiloghi",
       "intervalBody": "Messaggi tra un riepilogo e l'altro. Anche quanti messaggi recenti accompagnano ogni risposta.",
       "maxEntries": "Voci di memoria massime",
@@ -1468,9 +1466,21 @@
       "similarityValue": "Soglia",
       "similarityValueBody": "Similarità minima perché un ricordo venga recuperato"
     },
+    "groups": {
+      "saved": "Cosa viene salvato",
+      "reply": "Cosa accompagna ogni risposta",
+      "summary": "Riepilogo del contesto",
+      "forgetting": "Dimenticanza",
+      "manager": "Gestore della memoria"
+    },
+    "pages": {
+      "group": "Altre impostazioni",
+      "saved": { "title": "Cosa viene salvato", "body": "Intervallo di riepilogo, limite di ricordi, duplicati e fissaggio" },
+      "recall": { "title": "Richiamo", "body": "Cosa accompagna ogni risposta e come vengono scelti i ricordi" },
+      "summary": { "title": "Riepilogo del contesto", "body": "Riepiloghi a capitoli e budget del riepilogo" },
+      "advanced": { "title": "Avanzate", "body": "La dimenticanza e come funziona il gestore della memoria" }
+    },
     "advanced": {
-      "title": "Avanzate",
-      "body": "Arricchimento del contesto e comportamento del gestore di memoria",
       "enrichment": "Arricchimento del contesto",
       "experimental": "Sperimentale",
       "enrichmentBody": "Usa gli ultimi messaggi per cercare i ricordi, non solo il più recente",

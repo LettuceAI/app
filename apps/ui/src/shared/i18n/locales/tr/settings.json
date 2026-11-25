@@ -1430,8 +1430,6 @@
       "balancedBody": "Çoğu sohbet için iyi bir hatırlama ve hız dengesi.",
       "comprehensiveBody": "En çok hatırlar. Uzun, ayrıntılı hikâyeler için en iyisi.",
       "customBody": "Özel: kendi değerleriniz. Baştan başlamak için bir profil seçin.",
-      "advanced": "Gelişmiş seçenekler",
-      "advancedBody": "Profilin ayarladığı her değer",
       "interval": "Özet aralığı",
       "intervalBody": "Özetler arasındaki mesajlar. Ayrıca her yanıtla kaç son mesajın gideceği.",
       "maxEntries": "Maksimum anı sayısı",
@@ -1457,9 +1455,21 @@
       "similarityValue": "Eşik",
       "similarityValueBody": "Bir anının getirilmesi için minimum benzerlik"
     },
+    "groups": {
+      "saved": "Neler kaydedilir",
+      "reply": "Her cevapla ne gider",
+      "summary": "Bağlam özeti",
+      "forgetting": "Unutma",
+      "manager": "Bellek yöneticisi"
+    },
+    "pages": {
+      "group": "Diğer ayarlar",
+      "saved": { "title": "Neler kaydedilir", "body": "Özet aralığı, bellek sınırı, yinelenenler ve sabitleme" },
+      "recall": { "title": "Hatırlama", "body": "Her cevapla ne gittiği ve anıların nasıl seçildiği" },
+      "summary": { "title": "Bağlam özeti", "body": "Bölümlü özetler ve özet bütçesi" },
+      "advanced": { "title": "Gelişmiş", "body": "Unutma ve bellek yöneticisinin çalışması" }
+    },
     "advanced": {
-      "title": "Gelişmiş",
-      "body": "Bağlam zenginleştirme ve hafıza yöneticisi davranışı",
       "enrichment": "Bağlam zenginleştirme",
       "experimental": "Deneysel",
       "enrichmentBody": "Anıları aramak için yalnızca en yeni mesajı değil, son birkaç mesajı da kullanır",

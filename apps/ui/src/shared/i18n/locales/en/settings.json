@@ -1430,8 +1430,6 @@
       "balancedBody": "A good mix of recall and speed for most chats.",
       "comprehensiveBody": "Remembers the most. Best for long, detailed stories.",
       "customBody": "Custom: your own values. Pick a profile to start over from it.",
-      "advanced": "Advanced options",
-      "advancedBody": "Every value the profile sets",
       "interval": "Summary interval",
       "intervalBody": "Messages between summaries. Also how many recent messages go with each reply.",
       "maxEntries": "Max memory entries",
@@ -1457,9 +1455,21 @@
       "similarityValue": "Threshold",
       "similarityValueBody": "Minimum similarity for a memory to be retrieved"
     },
+    "groups": {
+      "saved": "What gets saved",
+      "reply": "What goes with each reply",
+      "summary": "Context summary",
+      "forgetting": "Forgetting",
+      "manager": "Memory manager"
+    },
+    "pages": {
+      "group": "More settings",
+      "saved": { "title": "What gets saved", "body": "Summary interval, memory cap, duplicates, and pinning" },
+      "recall": { "title": "Recall", "body": "What goes with each reply and how memories are picked" },
+      "summary": { "title": "Context summary", "body": "Chapter summaries and the summary budget" },
+      "advanced": { "title": "Advanced", "body": "Forgetting and how the memory manager works" }
+    },
     "advanced": {
-      "title": "Advanced",
-      "body": "Context enrichment and memory manager behavior",
       "enrichment": "Context enrichment",
       "experimental": "Experimental",
       "enrichmentBody": "Uses the last few messages to search memories, not only the newest one",

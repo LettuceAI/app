@@ -1453,8 +1453,6 @@
       "balancedBody": "Dobry kompromis między przywoływaniem a szybkością dla większości czatów.",
       "comprehensiveBody": "Pamięta najwięcej. Najlepszy do długich, szczegółowych historii.",
       "customBody": "Niestandardowy: twoje wartości. Wybierz profil, aby zacząć od niego.",
-      "advanced": "Opcje zaawansowane",
-      "advancedBody": "Każda wartość ustawiana przez profil",
       "interval": "Interwał podsumowań",
       "intervalBody": "Wiadomości między podsumowaniami. Także ile ostatnich wiadomości towarzyszy każdej odpowiedzi.",
       "maxEntries": "Maks. wpisów pamięci",
@@ -1480,9 +1478,21 @@
       "similarityValue": "Próg",
       "similarityValueBody": "Minimalne podobieństwo, aby wspomnienie zostało przywołane"
     },
+    "groups": {
+      "saved": "Co jest zapisywane",
+      "reply": "Co idzie z każdą odpowiedzią",
+      "summary": "Podsumowanie kontekstu",
+      "forgetting": "Zapominanie",
+      "manager": "Menedżer pamięci"
+    },
+    "pages": {
+      "group": "Więcej ustawień",
+      "saved": { "title": "Co jest zapisywane", "body": "Interwał podsumowań, limit wspomnień, duplikaty i przypinanie" },
+      "recall": { "title": "Przywoływanie", "body": "Co idzie z każdą odpowiedzią i jak wybierane są wspomnienia" },
+      "summary": { "title": "Podsumowanie kontekstu", "body": "Podsumowania rozdziałami i budżet podsumowania" },
+      "advanced": { "title": "Zaawansowane", "body": "Zapominanie i działanie menedżera pamięci" }
+    },
     "advanced": {
-      "title": "Zaawansowane",
-      "body": "Wzbogacanie kontekstu i zachowanie menedżera pamięci",
       "enrichment": "Wzbogacanie kontekstu",
       "experimental": "Eksperymentalne",
       "enrichmentBody": "Używa kilku ostatnich wiadomości do wyszukiwania wspomnień, nie tylko najnowszej",

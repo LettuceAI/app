@@ -1441,8 +1441,6 @@
       "balancedBody": "Un bon équilibre entre rappel et vitesse pour la plupart des discussions.",
       "comprehensiveBody": "Mémorise le plus. Idéal pour les histoires longues et détaillées.",
       "customBody": "Personnalisé : vos propres valeurs. Choisissez un profil pour repartir de celui-ci.",
-      "advanced": "Options avancées",
-      "advancedBody": "Toutes les valeurs définies par le profil",
       "interval": "Intervalle de résumé",
       "intervalBody": "Messages entre les résumés. Aussi le nombre de messages récents qui accompagnent chaque réponse.",
       "maxEntries": "Nombre max. de souvenirs",
@@ -1468,9 +1466,21 @@
       "similarityValue": "Seuil",
       "similarityValueBody": "Similarité minimale pour qu'un souvenir soit récupéré"
     },
+    "groups": {
+      "saved": "Ce qui est enregistré",
+      "reply": "Ce qui accompagne chaque réponse",
+      "summary": "Résumé du contexte",
+      "forgetting": "Oubli",
+      "manager": "Gestionnaire de mémoire"
+    },
+    "pages": {
+      "group": "Plus de réglages",
+      "saved": { "title": "Ce qui est enregistré", "body": "Intervalle de résumé, limite de souvenirs, doublons et épinglage" },
+      "recall": { "title": "Rappel", "body": "Ce qui accompagne chaque réponse et comment les souvenirs sont choisis" },
+      "summary": { "title": "Résumé du contexte", "body": "Résumés par chapitres et budget du résumé" },
+      "advanced": { "title": "Avancé", "body": "L'oubli et le fonctionnement du gestionnaire de mémoire" }
+    },
     "advanced": {
-      "title": "Avancé",
-      "body": "Enrichissement du contexte et comportement du gestionnaire de mémoire",
       "enrichment": "Enrichissement du contexte",
       "experimental": "Expérimental",
       "enrichmentBody": "Utilise les derniers messages pour rechercher des souvenirs, pas seulement le plus récent",

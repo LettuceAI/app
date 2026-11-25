@@ -1417,8 +1417,6 @@
       "balancedBody": "대부분 채팅에 기억과 속도의 좋은 균형이에요.",
       "comprehensiveBody": "가장 많이 기억해요. 길고 상세한 이야기에 좋아요.",
       "customBody": "사용자 지정: 직접 설정한 값. 프로필을 선택해 거기서 다시 시작할 수 있어요.",
-      "advanced": "고급 옵션",
-      "advancedBody": "프로필이 설정하는 모든 값",
       "interval": "요약 간격",
       "intervalBody": "요약 사이의 메시지 수. 각 답장에 함께 보내는 최근 메시지 수이기도 해요.",
       "maxEntries": "최대 메모리 항목",
@@ -1444,9 +1442,21 @@
       "similarityValue": "임계값",
       "similarityValueBody": "기억이 검색될 최소 유사도"
     },
+    "groups": {
+      "saved": "저장되는 내용",
+      "reply": "답변마다 함께 가는 내용",
+      "summary": "컨텍스트 요약",
+      "forgetting": "잊기",
+      "manager": "메모리 관리자"
+    },
+    "pages": {
+      "group": "추가 설정",
+      "saved": { "title": "저장되는 내용", "body": "요약 간격, 기억 상한, 중복 확인 및 고정" },
+      "recall": { "title": "회상", "body": "답변마다 함께 가는 내용과 기억을 고르는 방식" },
+      "summary": { "title": "컨텍스트 요약", "body": "장 단위 요약과 요약 예산" },
+      "advanced": { "title": "고급", "body": "잊기와 메모리 관리자의 동작 방식" }
+    },
     "advanced": {
-      "title": "고급",
-      "body": "컨텍스트 강화 및 메모리 관리자 동작",
       "enrichment": "컨텍스트 강화",
       "experimental": "실험적",
       "enrichmentBody": "최신 메시지만이 아니라 최근 몇 개 메시지로 기억을 검색해요",

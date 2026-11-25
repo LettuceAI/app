@@ -1417,8 +1417,6 @@
       "balancedBody": "Campuran recall dan kecepatan yang baik untuk sebagian besar obrolan.",
       "comprehensiveBody": "Mengingat paling banyak. Terbaik untuk cerita panjang dan detail.",
       "customBody": "Kustom: nilai Anda sendiri. Pilih profil untuk memulainya lagi.",
-      "advanced": "Opsi lanjutan",
-      "advancedBody": "Setiap nilai yang diatur profil",
       "interval": "Interval ringkasan",
       "intervalBody": "Pesan di antara ringkasan. Juga berapa banyak pesan terbaru yang ikut di setiap balasan.",
       "maxEntries": "Entri memori maksimal",
@@ -1444,9 +1442,21 @@
       "similarityValue": "Ambang",
       "similarityValueBody": "Kesamaan minimum agar memori diambil"
     },
+    "groups": {
+      "saved": "Apa yang disimpan",
+      "reply": "Apa yang ikut di setiap balasan",
+      "summary": "Ringkasan konteks",
+      "forgetting": "Melupakan",
+      "manager": "Pengelola memori"
+    },
+    "pages": {
+      "group": "Pengaturan lain",
+      "saved": { "title": "Apa yang disimpan", "body": "Interval ringkasan, batas memori, duplikat, dan penyematan" },
+      "recall": { "title": "Ingatan", "body": "Apa yang ikut di setiap balasan dan cara memori dipilih" },
+      "summary": { "title": "Ringkasan konteks", "body": "Ringkasan per bab dan anggaran ringkasan" },
+      "advanced": { "title": "Lanjutan", "body": "Melupakan dan cara kerja pengelola memori" }
+    },
     "advanced": {
-      "title": "Lanjutan",
-      "body": "Pengayaan konteks dan perilaku manajer memori",
       "enrichment": "Pengayaan konteks",
       "experimental": "Eksperimental",
       "enrichmentBody": "Menggunakan beberapa pesan terakhir untuk mencari memori, bukan hanya yang terbaru",
