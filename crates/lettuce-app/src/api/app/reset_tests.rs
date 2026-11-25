@@ -771,3 +771,61 @@ async fn a_reset_requested_during_a_generation_waits_and_keeps_its_reply() {
     drop(h);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[tokio::test]
+async fn reset_succeeds_when_provider_account_secret_is_missing() {
+    use lettuce_models::{ProviderAccount, ProviderAccountRepository, ProviderConfig, ProviderProtocol};
+    use lettuce_settings::{SecretOwnerId, SecretRef};
+    use lettuce_types::{ProviderAccountId, Revision};
+
+    let (root, location, h) = harness();
+    let old = location.active_path().expect("active");
+    let account = ProviderAccount {
+        id: ProviderAccountId::new(),
+        secret_owner_id: SecretOwnerId::new(),
+        provider_kind: "openrouter".into(),
+        protocol: ProviderProtocol::OpenAiCompatible,
+        label: "Missing key account".into(),
+        endpoint: Some("https://openrouter.ai/api/v1".into()),
+        enabled: true,
+        streaming_enabled: true,
+        allow_invalid_tls: false,
+        api_key_ref: Some(SecretRef::new()),
+        secret_headers: Vec::new(),
+        config: ProviderConfig::Standard,
+        revision: Revision::INITIAL,
+        created_at: TimestampMillis::new(10),
+        updated_at: TimestampMillis::new(10),
+    };
+    ProviderAccountRepository::upsert(h.context.backend().database(), account.clone(), None)
+        .expect("insert provider account");
+    let host = Arc::new(Host::default());
+    h.context.attach_reset_host(host.clone()).expect("host");
+    let accepted = crate::api::app_data_reset(
+        &h.context,
+        dto::AppDataResetRequest {
+            client_operation_id: RequestId::new().to_string(),
+        },
+    )
+    .await
+    .expect("admit");
+    run(&h.context).await;
+    let view = crate::api::job_get(
+        &h.context,
+        dto::JobGetRequest {
+            job_id: accepted.job_id,
+        },
+    )
+    .await
+    .expect("terminal");
+    assert_eq!(view.state, dto::JobStateDto::Succeeded);
+    let fresh_path = location.active_path().expect("fresh active");
+    assert_ne!(fresh_path, old);
+    let fresh = lettuce_database::Database::open(&fresh_path).expect("open fresh");
+    assert_eq!(
+        ProviderAccountRepository::get(&fresh, account.id).expect("account"),
+        Some(account)
+    );
+    drop((fresh, h));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

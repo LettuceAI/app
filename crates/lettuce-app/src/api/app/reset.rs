@@ -230,6 +230,7 @@ pub async fn app_data_reset(
                 .map_err(IntoApiError::into_api_error)
         })
         .await?;
+    tracing::info!(job_id = %job.id, "admitted app data reset job");
     context.jobs().wake();
     Ok(dto::JobAccepted {
         job_id: job.id.to_string(),
@@ -462,39 +463,59 @@ impl Work {
         detail.target = format!("reset-{attempt}.sqlite3");
         detail.kept = format!("kept-{attempt}.sqlite3");
         let shell = host(context)?;
-        shell.preflight().await?;
+        shell.preflight().await.map_err(|error| {
+            tracing::warn!(code = ?error.code, message = %error.message, "app data reset preflight failed");
+            error
+        })?;
         self.stopped
             .store(true, std::sync::atomic::Ordering::Release);
-        shell
-            .stop_workers()
-            .await
-            .map_err(|_| reset_error(dto::AppDataResetStage::Workers, None))?;
-        context.flush_app_usage_for_reset()?;
+        shell.stop_workers().await.map_err(|error| {
+            tracing::warn!(code = ?error.code, message = %error.message, "app data reset stop_workers failed");
+            reset_error(dto::AppDataResetStage::Workers, None)
+        })?;
+        context.flush_app_usage_for_reset().map_err(|error| {
+            tracing::warn!(code = ?error.code, message = %error.message, "app data reset flush_app_usage failed");
+            error
+        })?;
         context.begin_shutdown();
-        let fence = Database::lock_file_writes(&files.active)
-            .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?;
-        fence
-            .set_fenced(true)
-            .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?;
-        let seed = Database::read_reset_seed(&files.active)
-            .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?;
+        let fence = Database::lock_file_writes(&files.active).map_err(|error| {
+            tracing::warn!(%error, "app data reset lock_file_writes failed");
+            reset_error(dto::AppDataResetStage::Database, None)
+        })?;
+        fence.set_fenced(true).map_err(|error| {
+            tracing::warn!(%error, "app data reset set_fenced failed");
+            reset_error(dto::AppDataResetStage::Database, None)
+        })?;
+        let seed = Database::read_reset_seed(&files.active).map_err(|error| {
+            tracing::warn!(%error, "app data reset read_reset_seed failed");
+            reset_error(dto::AppDataResetStage::Database, None)
+        })?;
         drop(fence);
         for account in &seed.accounts {
             for record in lettuce_database::account_secret_records(account) {
-                context
+                if let Err(error) = context
                     .secret_store()
                     .load(&record.reference, &record.purpose)
                     .await
-                    .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?;
+                {
+                    tracing::warn!(
+                        account_id = %account.id,
+                        %error,
+                        "app data reset could not load provider secret; continuing reset"
+                    );
+                }
             }
         }
         let path = lifecycle
             .begin_file(&detail.target, DatabaseFileKind::Reset, context.now())
-            .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?;
-        let database = Arc::new(
-            Database::create_reset_database(&path, &seed)
-                .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?,
-        );
+            .map_err(|error| {
+                tracing::warn!(%error, target = %detail.target, "app data reset begin_file failed");
+                reset_error(dto::AppDataResetStage::Database, None)
+            })?;
+        let database = Arc::new(Database::create_reset_database(&path, &seed).map_err(|error| {
+            tracing::warn!(%error, target = %detail.target, "app data reset create_reset_database failed");
+            reset_error(dto::AppDataResetStage::Database, None)
+        })?);
         let job = database
             .admit_job_with_detail_and_id(
                 spec(detail.request_id)?,
@@ -540,19 +561,27 @@ impl Work {
                     .backend()
                     .database()
                     .close_for_reset()
-                    .map_err(|_| AppDatabaseLocationError::Storage)?;
+                    .map_err(|error| {
+                        tracing::warn!(%error, "app data reset close backend database failed");
+                        AppDatabaseLocationError::Storage
+                    })?;
                 if let Some(media) = context.media() {
                     let (blobs, assets) = media.repositories();
-                    blobs
-                        .close_for_reset()
-                        .map_err(|_| AppDatabaseLocationError::Storage)?;
-                    assets
-                        .close_for_reset()
-                        .map_err(|_| AppDatabaseLocationError::Storage)?;
+                    blobs.close_for_reset().map_err(|error| {
+                        tracing::warn!(%error, "app data reset close media blobs database failed");
+                        AppDatabaseLocationError::Storage
+                    })?;
+                    assets.close_for_reset().map_err(|error| {
+                        tracing::warn!(%error, "app data reset close media assets database failed");
+                        AppDatabaseLocationError::Storage
+                    })?;
                 }
                 Ok(())
             })
-            .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?;
+            .map_err(|error| {
+                tracing::warn!(%error, "app data reset cutover failed");
+                reset_error(dto::AppDataResetStage::Database, None)
+            })?;
         *context
             .reset_state()
             .current
@@ -638,6 +667,14 @@ impl ClaimedJob for Work {
             match self.execute(&context, &lifecycle).await {
                 Ok(result) => result,
                 Err(error) => {
+                    tracing::warn!(
+                        job_id = %self.claim.job_id,
+                        code = ?error.code,
+                        message = %error.message,
+                        details = ?error.details,
+                        stopped = self.stopped.load(std::sync::atomic::Ordering::Acquire),
+                        "app data reset execute failed; recovering previous database"
+                    );
                     lifecycle
                         .recover_reset_preparation()
                         .map_err(|_| reset_error(dto::AppDataResetStage::Database, None))?;
@@ -685,9 +722,18 @@ impl ClaimedJob for Work {
             let cleared = shell.clear_webview_storage().await;
             let relaunch = shell.prepare_restart().await;
             match (cleared, relaunch) {
-                (Err(_), _) => Err(dto::AppDataResetStage::WebviewStorage),
-                (Ok(()), Err(_)) => Err(dto::AppDataResetStage::Restart),
-                (Ok(()), Ok(())) => Ok(detail.request_id),
+                (Err(error), _) => {
+                    tracing::warn!(code = ?error.code, message = %error.message, "app data reset clear_webview_storage failed");
+                    Err(dto::AppDataResetStage::WebviewStorage)
+                }
+                (Ok(()), Err(error)) => {
+                    tracing::warn!(code = ?error.code, message = %error.message, "app data reset prepare_restart failed");
+                    Err(dto::AppDataResetStage::Restart)
+                }
+                (Ok(()), Ok(())) => {
+                    tracing::info!(job_id = %claim.job_id, kept = %detail.kept, "app data reset succeeded; exiting for restart");
+                    Ok(detail.request_id)
+                }
             }
         };
         let job = settle(&database, &claim, &context, result)?;

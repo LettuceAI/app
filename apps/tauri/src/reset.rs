@@ -133,7 +133,14 @@ impl<R: Runtime> AppResetHost for ResetHost<R> {
             .map_err(|_| failure(AppDataResetStage::WebviewStorage))?;
         match received.await {
             Ok(true) => Ok(()),
-            _ => Err(failure(AppDataResetStage::WebviewStorage)),
+            Ok(false) => {
+                tracing::warn!("webview storage clear reported failure or window destroyed");
+                Err(failure(AppDataResetStage::WebviewStorage))
+            }
+            Err(error) => {
+                tracing::warn!(%error, "webview storage clear channel closed");
+                Err(failure(AppDataResetStage::WebviewStorage))
+            }
         }
     }
 
@@ -145,12 +152,17 @@ impl<R: Runtime> AppResetHost for ResetHost<R> {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             let env = self.0.env();
-            let binary = tauri::process::current_binary(&env)
-                .map_err(|_| failure(AppDataResetStage::Restart))?;
-            std::process::Command::new(binary)
+            let binary = tauri::process::current_binary(&env).map_err(|error| {
+                tracing::warn!(%error, "current_binary failed during reset restart");
+                failure(AppDataResetStage::Restart)
+            })?;
+            std::process::Command::new(&binary)
                 .args(env.args_os.iter().skip(1))
                 .spawn()
-                .map_err(|_| failure(AppDataResetStage::Restart))?;
+                .map_err(|error| {
+                    tracing::warn!(%error, path = %binary.display(), "spawning app binary failed during reset restart");
+                    failure(AppDataResetStage::Restart)
+                })?;
             Ok(())
         }
     }
@@ -225,6 +237,45 @@ mod tests {
         let workers = app.state::<crate::Workers>().0.lock().expect("workers").take().expect("new workers");
         workers.stop_for_restore().await.expect("stop replacement workers");
         drop(fresh);
+        drop(original);
+        drop(app);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn real_desktop_context_resets_and_switches_active_database() {
+        let root = std::env::temp_dir().join(format!("lettuce-real-reset-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("logs")).expect("logs");
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().app.app_directories_override = Some(tauri::utils::config::AppDirectoriesOverride::Root(root.clone()));
+        let builder = crate::specta_builder::<tauri::test::MockRuntime>();
+        let app = tauri::test::mock_builder().build(context).expect("mock shell");
+        builder.mount_events(&app);
+        tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default()).build().expect("main webview");
+        let output = lettuce_observability::install(lettuce_observability::ObservabilityConfig::default().with_local_output(lettuce_observability::LocalOutputConfig::new(root.join("logs")))).expect("logging").expect("local output");
+        app.manage(output);
+        let original = Arc::new(crate::open_context(app.handle(), Arc::new(lettuce_settings::InMemorySecretStore::new())).expect("context"));
+        let old_file = lettuce_app::api::storage_database_files_list(&original).await.expect("inventory").into_iter().find(|file| file.active).expect("active").file;
+        let workers = lettuce_app::api::startup(&original).await.expect("startup");
+        workers.started_result().await.expect("workers running");
+        app.manage(ApiContextSlot::new(original.clone()));
+        app.manage(crate::Workers(Mutex::new(Some(workers))));
+        struct TestResetHost(tauri::AppHandle<tauri::test::MockRuntime>);
+        #[async_trait]
+        impl AppResetHost for TestResetHost {
+            async fn preflight(&self) -> Result<(), ApiError> { Ok(()) }
+            async fn stop_workers(&self) -> Result<(), ApiError> { ResetHost(self.0.clone()).stop_workers().await }
+            async fn clear_webview_storage(&self) -> Result<(), ApiError> { Ok(()) }
+            async fn prepare_restart(&self) -> Result<(), ApiError> { Ok(()) }
+            fn exit_for_restart(&self) {}
+        }
+        original.attach_reset_host(Arc::new(TestResetHost(app.handle().clone()))).expect("attach");
+        let accepted = lettuce_app::api::app_data_reset(&original, dto::AppDataResetRequest { client_operation_id: uuid::Uuid::new_v4().to_string() }).await.expect("admit reset");
+        completed(&original, accepted.job_id).await;
+        let reopened = Arc::new(crate::open_context(app.handle(), Arc::new(lettuce_settings::InMemorySecretStore::new())).expect("reopen"));
+        let new_file = lettuce_app::api::storage_database_files_list(&reopened).await.expect("new inventory").into_iter().find(|file| file.active).expect("new active").file;
+        assert_ne!(new_file, old_file);
+        drop(reopened);
         drop(original);
         drop(app);
         std::fs::remove_dir_all(root).expect("cleanup");
