@@ -3,7 +3,6 @@ import {
   AlignLeft,
   Brain,
   CalendarDays,
-  Clock,
   Dices,
   Image,
   ImagePlus,
@@ -474,16 +473,6 @@ function TimeForm({ node, set, design }: FormProps<Node<"time">>) {
   return (
     <ListGroup>
       <TitleRow node={node} set={set} />
-      <ChoiceRow
-        icon={<Clock size={icon.lg} />}
-        title={t("widgets.config.time.hourFormat")}
-        value={node.hour_format ?? "h24"}
-        options={[
-          { value: "h12", label: t("widgets.config.time.h12") },
-          { value: "h24", label: t("widgets.config.time.h24") },
-        ]}
-        onChange={(hour_format) => set({ ...node, hour_format })}
-      />
       <SwitchRow icon={<Timer size={icon.lg} />} title={t("widgets.config.time.showSeconds")} checked={node.show_seconds ?? false} onChange={(show_seconds) => set({ ...node, show_seconds })} />
       <SwitchRow icon={<CalendarDays size={icon.lg} />} title={t("widgets.config.time.showDate")} checked={node.show_date ?? true} onChange={(show_date) => set({ ...node, show_date })} />
       {design}

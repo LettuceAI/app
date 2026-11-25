@@ -19,16 +19,11 @@ const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Date + time field whose time is always 24h, independent of the webview locale, unlike a native `<input type="time">`. */
 export function DateTime24({ value, onChange, placeholder, label, disabled = false, locale, min, max, className }: DateTime24Props) {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const loc = locale ?? i18n.language;
   const hour = value ? value.getHours() : 0;
   const minute = value ? value.getMinutes() : 0;
   const display = value ? `${new Intl.DateTimeFormat(loc, { dateStyle: "medium" }).format(value)}, ${pad(hour)}:${pad(minute)}` : (placeholder ?? "");
-  const setParts = (h: number, m: number) => {
-    const next = new Date(value ?? new Date());
-    next.setHours(h, m, 0, 0);
-    onChange(next);
-  };
   return (
     <Popover>
       <PopoverTrigger>
@@ -46,17 +41,37 @@ export function DateTime24({ value, onChange, placeholder, label, disabled = fal
         </button>
       </PopoverTrigger>
       <PopoverContent className="p-3">
-        <Calendar value={value} locale={loc} onChange={(picked) => { const next = new Date(picked); next.setHours(hour, minute, 0, 0); onChange(next); }} {...(min ? { min } : {})} {...(max ? { max } : {})} />
-        <div className="mt-3 border-t border-line pt-3">
-          <div className="flex items-center justify-center gap-2">
-            <TimeField value={hour} max={23} disabled={disabled} label={t("dateTime.hour")} onChange={(h) => setParts(h, minute)} />
-            <span className="text-fg-3">{t("dateTime.separator")}</span>
-            <TimeField value={minute} max={59} disabled={disabled} label={t("dateTime.minute")} onChange={(m) => setParts(hour, m)} />
-          </div>
-          <p className="mt-1.5 text-center text-2xs text-fg-3">{t("dateTime.format24")}</p>
-        </div>
+        <DateTime24Panel value={value} onChange={onChange} disabled={disabled} locale={loc} {...(min ? { min } : {})} {...(max ? { max } : {})} />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** The calendar and 24h time fields on their own, for showing the picker inline instead of inside the popover. */
+export function DateTime24Panel({ value, onChange, disabled = false, locale, min, max }: Pick<DateTime24Props, "value" | "onChange" | "disabled" | "locale" | "min" | "max">) {
+  const { t, i18n } = useTranslation();
+  const loc = locale ?? i18n.language;
+  const hour = value ? value.getHours() : 0;
+  const minute = value ? value.getMinutes() : 0;
+  const setParts = (h: number, m: number) => {
+    const next = new Date(value ?? new Date());
+    next.setHours(h, m, 0, 0);
+    onChange(next);
+  };
+  return (
+    <>
+      <div className="flex justify-center">
+        <Calendar value={value} locale={loc} onChange={(picked) => { const next = new Date(picked); next.setHours(hour, minute, 0, 0); onChange(next); }} {...(min ? { min } : {})} {...(max ? { max } : {})} />
+      </div>
+      <div className="mt-3 border-t border-line pt-3">
+        <div className="flex items-center justify-center gap-2">
+          <TimeField value={hour} max={23} disabled={disabled} label={t("dateTime.hour")} onChange={(h) => setParts(h, minute)} />
+          <span className="text-fg-3">{t("dateTime.separator")}</span>
+          <TimeField value={minute} max={59} disabled={disabled} label={t("dateTime.minute")} onChange={(m) => setParts(hour, m)} />
+        </div>
+        <p className="mt-1.5 text-center text-2xs text-fg-3">{t("dateTime.format24")}</p>
+      </div>
+    </>
   );
 }
 

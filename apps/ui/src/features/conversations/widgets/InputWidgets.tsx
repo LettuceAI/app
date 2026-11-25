@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Minus, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Minus, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Chip, cn, CrispStringsProvider, icon, IconButton, motion as presets, Segmented, Skeleton, Textarea } from "@lettuceai/crisp";
-import { DateTime24 } from "@/shared/ui/DateTime24";
+import { DateTime24, DateTime24Panel } from "@/shared/ui/DateTime24";
 import type { LibraryWidgetStat_Serialize, TimeChange, TimeMode } from "@/api/generated/bindings";
 import { defaultNotation, diceLabel, quickDice, rollText } from "../data/dice";
 import { datePickerStrings } from "../components/settings/date-picker-strings";
@@ -263,7 +263,7 @@ export function TimeWidget({ node }: { node: Node<"time"> }) {
     hour: "2-digit",
     minute: "2-digit",
     second: node.show_seconds ? "2-digit" : undefined,
-    hour12: node.hour_format === "h12",
+    hour12: false,
   });
   const day = new Intl.DateTimeFormat(i18n.language, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const run = async (change: TimeChange) => {
@@ -277,6 +277,14 @@ export function TimeWidget({ node }: { node: Node<"time"> }) {
     if (mode === "live") void run({ type: "set", mode, anchor_at: null });
     else setDraft({ mode, anchor: new Date(time.mode === "ticking" ? time.effective_at : (time.anchor_at ?? time.effective_at)) });
   };
+  const stepFrozen = (unit: "hour" | "minute", delta: number) => {
+    if (shown === null) return;
+    const next = new Date(shown);
+    if (unit === "hour") next.setHours((next.getHours() + delta + 24) % 24);
+    else next.setMinutes((next.getMinutes() + delta + 60) % 60);
+    void run({ type: "set", mode: "frozen", anchor_at: next.getTime() });
+  };
+  const steppable = time?.enabled && time.mode === "frozen" && !draft;
   return (
     <WidgetCard
       design={node.design}
@@ -289,7 +297,16 @@ export function TimeWidget({ node }: { node: Node<"time"> }) {
           <Skeleton shape="block" height={36} />
         ) : (
           <>
-            <p className="text-3xl font-semibold leading-none tabular-nums text-fg">{clock.format(shown)}</p>
+            {steppable ? (
+              <FrozenClockStepper
+                parts={clock.formatToParts(shown)}
+                disabled={saving}
+                onStep={stepFrozen}
+                label={(unit, delta) => t(delta === 1 ? "widgets.statTracker.increase" : "widgets.statTracker.decrease", { label: t(unit === "hour" ? "dateTime.hour" : "dateTime.minute", { ns: "common" }) })}
+              />
+            ) : (
+              <p className="text-3xl font-semibold leading-none tabular-nums text-fg">{clock.format(shown)}</p>
+            )}
             {node.show_date !== false && <p className="mt-1 text-2xs text-fg-3">{day.format(shown)}</p>}
           </>
         )}
@@ -308,7 +325,11 @@ export function TimeWidget({ node }: { node: Node<"time"> }) {
             />
             {draft && (
               <>
-                <DateTime24 value={draft.anchor} onChange={(anchor) => setDraft({ ...draft, anchor })} locale={i18n.language} disabled={saving} placeholder={t("settings.time.chooseAnchor")} />
+                {draft.mode === "frozen" ? (
+                  <DateTime24Panel value={draft.anchor} onChange={(anchor) => setDraft({ ...draft, anchor })} locale={i18n.language} disabled={saving} />
+                ) : (
+                  <DateTime24 value={draft.anchor} onChange={(anchor) => setDraft({ ...draft, anchor })} locale={i18n.language} disabled={saving} placeholder={t("settings.time.chooseAnchor")} />
+                )}
                 <div className="flex items-center justify-end gap-2">
                   <Button variant="ghost" size="sm" disabled={saving} onClick={() => setDraft(null)}>{t("settings.time.cancel")}</Button>
                   <Button size="sm" loading={saving} disabled={saving || !Number.isFinite(draft.anchor.getTime())} onClick={() => void run({ type: "set", mode: draft.mode, anchor_at: draft.anchor.getTime() })}>
@@ -321,5 +342,33 @@ export function TimeWidget({ node }: { node: Node<"time"> }) {
         </CrispStringsProvider>
       )}
     </WidgetCard>
+  );
+}
+
+/** The frozen clock with a chevron above and below the hour and the minute, each click nudging that field by one (wrapping at its bounds). */
+function FrozenClockStepper({ parts, disabled, onStep, label }: {
+  parts: Intl.DateTimeFormatPart[];
+  disabled: boolean;
+  onStep: (unit: "hour" | "minute", delta: 1 | -1) => void;
+  label: (unit: "hour" | "minute", delta: 1 | -1) => string;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-0.5 text-3xl font-semibold leading-none tabular-nums text-fg">
+      {parts.map((part, index) => {
+        if (part.type !== "hour" && part.type !== "minute") return <span key={index}>{part.value}</span>;
+        const unit = part.type;
+        return (
+          <span key={index} className="flex flex-col items-center gap-1">
+            <button type="button" disabled={disabled} aria-label={label(unit, 1)} onClick={() => onStep(unit, 1)} className="text-fg-3 transition-colors hover:text-fg disabled:opacity-40">
+              <ChevronUp size={icon.sm} />
+            </button>
+            <span>{part.value}</span>
+            <button type="button" disabled={disabled} aria-label={label(unit, -1)} onClick={() => onStep(unit, -1)} className="text-fg-3 transition-colors hover:text-fg disabled:opacity-40">
+              <ChevronDown size={icon.sm} />
+            </button>
+          </span>
+        );
+      })}
+    </div>
   );
 }
