@@ -771,7 +771,8 @@
     "tabs": {
       "memories": "Ký ức",
       "activity": "Hoạt động",
-      "pinned": "Đã ghim"
+      "pinned": "Đã ghim",
+      "summary": "Tóm tắt"
     },
     "loading": "Đang tải bộ nhớ",
     "off": {
@@ -910,27 +911,17 @@
         },
         "nextMerge_other": "Lần gộp tiếp theo: các phần được đánh dấu bên dưới sẽ được gộp khi các phần vượt quá {{budget}} token.",
         "mergesNext": "Gộp tiếp theo",
-        "how": {
-          "title": "Cách hoạt động",
-          "update": "Mỗi lần cập nhật bộ nhớ tóm tắt các tin nhắn mới thành một phần.",
-          "merge": "Khi các phần vượt quá {{budget}} token, {{size}} phần cũ nhất được gộp thành một chương. Các chương cũng được gộp thành hồi theo cách tương tự.",
-          "seed": "Tóm tắt ban đầu là tóm tắt có từ trước khi có các phần, chẳng hạn bạn tự viết. Nó được giữ nguyên và không tính vào ngân sách.",
-          "edit": "Sửa hoặc xóa một phần để chỉnh lại. Lần cập nhật tới sẽ nhận thay đổi của bạn và các chương sau sẽ giữ nó.",
-          "recent": "Những tin nhắn chưa được tóm tắt vẫn được mô hình đọc từ lịch sử trò chuyện."
-        },
-        "showMore": "Xem thêm",
-        "showLess": "Thu gọn",
         "arc": "Hồi",
         "arcLevel": "Hồi, cấp {{level}}",
         "arcs_other": "{{count}} hồi",
         "sources": {
           "madeFrom_other": "Tạo từ {{count}} phần",
           "replaced_other": "Đã thay {{count}} phần",
-          "hide": "Ẩn nguồn",
-          "note": "Chỉ đọc. Đây là các bản gốc tạo nên phần này. Để thay đổi tóm tắt, hãy sửa phần ở trên.",
-          "list": "Nguồn",
-          "failed": "Không tải được nguồn."
-        }
+          "failed": "Không tải được nguồn.",
+          "back": "Quay lại",
+          "readOnly": "Bản gốc chỉ đọc. Nó đã được gộp vào một phần sau; hãy sửa phần đó để thay đổi tóm tắt."
+        },
+        "emptyTitle": "Chưa có phần nào"
       }
     },
     "status": {

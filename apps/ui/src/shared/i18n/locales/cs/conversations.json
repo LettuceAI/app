@@ -810,7 +810,8 @@
     "tabs": {
       "memories": "Paměti",
       "activity": "Aktivita",
-      "pinned": "Připnuté"
+      "pinned": "Připnuté",
+      "summary": "Shrnutí"
     },
     "loading": "Načítání paměti",
     "off": {
@@ -970,16 +971,6 @@
         "nextMerge_one": "Další sloučení: označené části níže se sloučí, jakmile části přesáhnou {{budget}} tokenů.",
         "nextMerge_other": "Další sloučení: označené části níže se sloučí, jakmile části přesáhnou {{budget}} tokenů.",
         "mergesNext": "Sloučí se jako další",
-        "how": {
-          "title": "Jak to funguje",
-          "update": "Každá aktualizace paměti shrne své nové zprávy do jedné části.",
-          "merge": "Když části přesáhnou {{budget}} tokenů, {{size}} nejstarších částí se sloučí do kapitoly. Kapitoly se stejně slučují do oblouků.",
-          "seed": "Úvodní shrnutí existovalo před částmi, například to, které jsi napsal. Zůstává beze změny a nepočítá se do rozpočtu.",
-          "edit": "Část opravíš úpravou nebo smazáním. Další aktualizace tvou změnu převezme a pozdější kapitoly ji zachovají.",
-          "recent": "Zprávy, které ještě nejsou shrnuté, model dál čte z historie chatu."
-        },
-        "showMore": "Zobrazit více",
-        "showLess": "Zobrazit méně",
         "arc": "Oblouk",
         "arcLevel": "Oblouk, úroveň {{level}}",
         "arcs_one": "{{count}} oblouk",
@@ -995,11 +986,11 @@
           "replaced_many": "Nahradilo {{count}} částí",
           "replaced_one": "Nahradilo {{count}} částí",
           "replaced_other": "Nahradilo {{count}} částí",
-          "hide": "Skrýt zdroje",
-          "note": "Jen pro čtení. Toto jsou originály, ze kterých tato část vznikla. Shrnutí změníš úpravou části výše.",
-          "list": "Zdroje",
-          "failed": "Zdroje se nepodařilo načíst."
-        }
+          "failed": "Zdroje se nepodařilo načíst.",
+          "back": "Zpět",
+          "readOnly": "Originál jen pro čtení. Byl sloučen do pozdější části; shrnutí změníš úpravou té části."
+        },
+        "emptyTitle": "Zatím žádné části"
       }
     },
     "status": {

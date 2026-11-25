@@ -784,7 +784,8 @@
     "tabs": {
       "memories": "Mga Memory",
       "activity": "Activity",
-      "pinned": "Naka-pin"
+      "pinned": "Naka-pin",
+      "summary": "Summary"
     },
     "loading": "Naglo-load ng memory",
     "off": {
@@ -930,16 +931,6 @@
         "nextMerge_one": "Susunod na pagsasama: pagsasamahin ang mga bahaging may marka sa ibaba kapag lumampas ang mga bahagi sa {{budget}} token.",
         "nextMerge_other": "Susunod na pagsasama: pagsasamahin ang mga bahaging may marka sa ibaba kapag lumampas ang mga bahagi sa {{budget}} token.",
         "mergesNext": "Susunod na isasama",
-        "how": {
-          "title": "Paano ito gumagana",
-          "update": "Isinu-summarize ng bawat update ng memory ang mga bago nitong mensahe sa isang bahagi.",
-          "merge": "Kapag lumampas ang mga bahagi sa {{budget}} token, pinagsasama ang {{size}} pinakalumang bahagi sa isang kabanata. Pinagsasama rin ang mga kabanata sa mga arko sa parehong paraan.",
-          "seed": "Ang panimulang summary ay umiiral na bago ang mga bahagi, gaya ng isinulat mo. Nananatili ito at hindi binibilang sa budget.",
-          "edit": "I-edit o burahin ang isang bahagi para ayusin ito. Kukunin ng susunod na update ang pagbabago mo at pananatilihin ito ng mga susunod na kabanata.",
-          "recent": "Binabasa pa rin ng model mula sa chat history ang mga mensaheng hindi pa naisu-summarize."
-        },
-        "showMore": "Ipakita pa",
-        "showLess": "Ipakita nang kaunti",
         "arc": "Arko",
         "arcLevel": "Arko, antas {{level}}",
         "arcs_one": "{{count}} arko",
@@ -949,11 +940,11 @@
           "madeFrom_other": "Binuo mula sa {{count}} bahagi",
           "replaced_one": "Pinalitan ang {{count}} bahagi",
           "replaced_other": "Pinalitan ang {{count}} bahagi",
-          "hide": "Itago ang mga pinagmulan",
-          "note": "Basahin lang. Ito ang mga orihinal na pinagmulan ng bahaging ito. Para baguhin ang summary, i-edit ang bahagi sa itaas.",
-          "list": "Mga pinagmulan",
-          "failed": "Hindi ma-load ang mga pinagmulan."
-        }
+          "failed": "Hindi ma-load ang mga pinagmulan.",
+          "back": "Bumalik",
+          "readOnly": "Orihinal na basahin lang. Isinama ito sa isang mas huling bahagi; i-edit ang bahaging iyon para baguhin ang summary."
+        },
+        "emptyTitle": "Wala pang bahagi"
       }
     },
     "status": {

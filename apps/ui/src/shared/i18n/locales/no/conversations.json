@@ -784,7 +784,8 @@
     "tabs": {
       "memories": "Minner",
       "activity": "Aktivitet",
-      "pinned": "Festede"
+      "pinned": "Festede",
+      "summary": "Sammendrag"
     },
     "loading": "Laster minne",
     "off": {
@@ -930,16 +931,6 @@
         "nextMerge_one": "Neste sammenslåing: delene som er merket nedenfor slås sammen når delene passerer {{budget}} tokens.",
         "nextMerge_other": "Neste sammenslåing: delene som er merket nedenfor slås sammen når delene passerer {{budget}} tokens.",
         "mergesNext": "Slås sammen neste",
-        "how": {
-          "title": "Slik fungerer det",
-          "update": "Hver minneoppdatering oppsummerer de nye meldingene sine i én del.",
-          "merge": "Når delene passerer {{budget}} tokens, slås de {{size}} eldste delene sammen til et kapittel. Kapitler slås sammen til buer på samme måte.",
-          "seed": "Et startsammendrag fantes før delene, for eksempel ett du skrev. Det beholdes som det er og teller ikke mot budsjettet.",
-          "edit": "Rediger eller slett en del for å rette den. Neste oppdatering tar med endringen din, og senere kapitler beholder den.",
-          "recent": "Meldinger som ikke er oppsummert ennå, leser modellen fortsatt fra chatloggen."
-        },
-        "showMore": "Vis mer",
-        "showLess": "Vis mindre",
         "arc": "Bue",
         "arcLevel": "Bue, nivå {{level}}",
         "arcs_one": "{{count}} bue",
@@ -949,11 +940,11 @@
           "madeFrom_other": "Laget av {{count}} deler",
           "replaced_one": "Erstattet {{count}} deler",
           "replaced_other": "Erstattet {{count}} deler",
-          "hide": "Skjul kilder",
-          "note": "Skrivebeskyttet. Dette er originalene denne delen ble laget av. Rediger delen over for å endre sammendraget.",
-          "list": "Kilder",
-          "failed": "Kildene kunne ikke lastes inn."
-        }
+          "failed": "Kildene kunne ikke lastes inn.",
+          "back": "Tilbake",
+          "readOnly": "Skrivebeskyttet original. Den er slått sammen i en senere del; rediger den delen for å endre sammendraget."
+        },
+        "emptyTitle": "Ingen deler ennå"
       }
     },
     "status": {

@@ -30,3 +30,10 @@ export function nextMerge(parts: readonly MemorySummaryPartView[], chapterSize: 
 export function summarizedUpTo(parts: readonly MemorySummaryPartView[]): number {
   return parts.reduce((end, part) => Math.max(end, part.message_end), 0);
 }
+
+export type PartTier = "seed" | "cycle" | "chapter" | "arc";
+
+export function partTier(part: MemorySummaryPartView): PartTier {
+  if (part.kind !== "chapter") return part.kind;
+  return part.level >= 2 ? "arc" : "chapter";
+}

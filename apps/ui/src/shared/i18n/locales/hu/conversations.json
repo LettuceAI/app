@@ -784,7 +784,8 @@
     "tabs": {
       "memories": "Memóriák",
       "activity": "Tevékenység",
-      "pinned": "Rögzítve"
+      "pinned": "Rögzítve",
+      "summary": "Összefoglaló"
     },
     "loading": "Memória betöltése",
     "off": {
@@ -930,16 +931,6 @@
         "nextMerge_one": "Következő összevonás: a lent megjelölt részek összeolvadnak, amint a részek meghaladják a(z) {{budget}} tokent.",
         "nextMerge_other": "Következő összevonás: a lent megjelölt részek összeolvadnak, amint a részek meghaladják a(z) {{budget}} tokent.",
         "mergesNext": "Következőként összevonva",
-        "how": {
-          "title": "Hogyan működik",
-          "update": "Minden memóriafrissítés egy részben foglalja össze az új üzeneteit.",
-          "merge": "Ha a részek meghaladják a(z) {{budget}} tokent, a {{size}} legrégebbi rész egy fejezetbe olvad. A fejezetek ugyanígy ívekbe olvadnak.",
-          "seed": "A kezdő összefoglaló már a részek előtt létezett, például amit te írtál. Változatlan marad, és nem számít bele a keretbe.",
-          "edit": "Egy részt szerkesztéssel vagy törléssel javíthatsz. A következő frissítés átveszi a módosítást, a későbbi fejezetek pedig megtartják.",
-          "recent": "A még össze nem foglalt üzeneteket a modell továbbra is a csevegés előzményeiből olvassa."
-        },
-        "showMore": "Több",
-        "showLess": "Kevesebb",
         "arc": "Ív",
         "arcLevel": "Ív, {{level}}. szint",
         "arcs_one": "{{count}} ív",
@@ -949,11 +940,11 @@
           "madeFrom_other": "{{count}} részből készült",
           "replaced_one": "{{count}} részt váltott fel",
           "replaced_other": "{{count}} részt váltott fel",
-          "hide": "Források elrejtése",
-          "note": "Csak olvasható. Ezekből az eredetikből készült ez a rész. Az összefoglaló módosításához a fenti részt szerkeszd.",
-          "list": "Források",
-          "failed": "A forrásokat nem sikerült betölteni."
-        }
+          "failed": "A forrásokat nem sikerült betölteni.",
+          "back": "Vissza",
+          "readOnly": "Csak olvasható eredeti. Egy későbbi részbe olvadt; az összefoglaló módosításához azt a részt szerkeszd."
+        },
+        "emptyTitle": "Még nincsenek részek"
       }
     },
     "status": {

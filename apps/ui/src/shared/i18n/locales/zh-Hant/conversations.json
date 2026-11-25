@@ -771,7 +771,8 @@
     "tabs": {
       "memories": "記憶",
       "activity": "活動",
-      "pinned": "已標記"
+      "pinned": "已標記",
+      "summary": "摘要"
     },
     "loading": "正在載入記憶",
     "off": {
@@ -910,27 +911,17 @@
         },
         "nextMerge_other": "下次合併：當各部分超過 {{budget}} 個 token 時，下方標記的部分會被合併。",
         "mergesNext": "下次合併",
-        "how": {
-          "title": "運作方式",
-          "update": "每次記憶更新都會把新訊息總結成一個部分。",
-          "merge": "當各部分超過 {{budget}} 個 token 時，最早的 {{size}} 個部分會合併成一章。章節也會以同樣方式合併成篇。",
-          "seed": "起始摘要是在各部分出現之前就已存在的摘要，例如你自己寫的。它保持原樣，不計入預算。",
-          "edit": "編輯或刪除某個部分來修正它。下次更新會採納你的修改，之後的章節也會保留。",
-          "recent": "尚未總結的訊息，模型仍會從聊天紀錄中讀取。"
-        },
-        "showMore": "顯示更多",
-        "showLess": "收合",
         "arc": "篇",
         "arcLevel": "篇，第 {{level}} 級",
         "arcs_other": "{{count}} 篇",
         "sources": {
           "madeFrom_other": "由 {{count}} 個部分生成",
           "replaced_other": "取代了 {{count}} 個部分",
-          "hide": "隱藏來源",
-          "note": "唯讀。這些是生成此部分的原文。要修改摘要，請編輯上面的部分。",
-          "list": "來源",
-          "failed": "無法載入來源。"
-        }
+          "failed": "無法載入來源。",
+          "back": "返回",
+          "readOnly": "唯讀原文。它已合併到後面的部分中；要修改摘要，請編輯那個部分。"
+        },
+        "emptyTitle": "還沒有摘要部分"
       }
     },
     "status": {

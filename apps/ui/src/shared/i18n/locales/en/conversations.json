@@ -784,7 +784,8 @@
     "tabs": {
       "memories": "Memories",
       "activity": "Activity",
-      "pinned": "Pinned"
+      "pinned": "Pinned",
+      "summary": "Summary"
     },
     "loading": "Loading memory",
     "off": {
@@ -930,16 +931,6 @@
         "nextMerge_one": "Next merge: the parts marked below are combined once the parts pass {{budget}} tokens.",
         "nextMerge_other": "Next merge: the parts marked below are combined once the parts pass {{budget}} tokens.",
         "mergesNext": "Merges next",
-        "how": {
-          "title": "How this works",
-          "update": "Each memory update summarizes its new messages into one part.",
-          "merge": "When the parts pass {{budget}} tokens, the {{size}} oldest parts are merged into a chapter. Chapters are merged into arcs the same way.",
-          "seed": "A starting summary is one that existed before the parts, such as one you wrote. It stays as it is and doesn't count toward the budget.",
-          "edit": "Edit or delete a part to fix it. The next update takes your change in, and later chapters keep it.",
-          "recent": "Messages that aren't summarized yet are still read by the model from the chat history."
-        },
-        "showMore": "Show more",
-        "showLess": "Show less",
         "arc": "Arc",
         "arcLevel": "Arc, level {{level}}",
         "arcs_one": "{{count}} arc",
@@ -949,11 +940,11 @@
           "madeFrom_other": "Made from {{count}} parts",
           "replaced_one": "Replaced {{count}} parts",
           "replaced_other": "Replaced {{count}} parts",
-          "hide": "Hide sources",
-          "note": "Read-only. These are the originals this part was built from. To change the summary, edit the part above.",
-          "list": "Sources",
-          "failed": "The sources couldn't be loaded."
-        }
+          "failed": "The sources couldn't be loaded.",
+          "back": "Back",
+          "readOnly": "Read-only original. It was merged into a later part; edit that part to change the summary."
+        },
+        "emptyTitle": "No summary parts yet"
       }
     },
     "status": {

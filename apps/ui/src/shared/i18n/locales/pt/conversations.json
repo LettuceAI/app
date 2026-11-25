@@ -797,7 +797,8 @@
     "tabs": {
       "memories": "Memórias",
       "activity": "Atividade",
-      "pinned": "Fixadas"
+      "pinned": "Fixadas",
+      "summary": "Resumo"
     },
     "loading": "Carregando memória",
     "off": {
@@ -950,16 +951,6 @@
         "nextMerge_one": "Próxima junção: as partes marcadas abaixo são juntadas quando as partes passarem de {{budget}} tokens.",
         "nextMerge_other": "Próxima junção: as partes marcadas abaixo são juntadas quando as partes passarem de {{budget}} tokens.",
         "mergesNext": "Junta em seguida",
-        "how": {
-          "title": "Como funciona",
-          "update": "Cada atualização da memória resume as mensagens novas em uma parte.",
-          "merge": "Quando as partes passam de {{budget}} tokens, as {{size}} partes mais antigas são juntadas em um capítulo. Os capítulos são juntados em arcos do mesmo jeito.",
-          "seed": "Um resumo inicial já existia antes das partes, como um que você escreveu. Ele fica como está e não conta no orçamento.",
-          "edit": "Edite ou exclua uma parte para corrigi-la. A próxima atualização incorpora a sua mudança e os capítulos seguintes a mantêm.",
-          "recent": "As mensagens ainda não resumidas continuam sendo lidas pelo modelo no histórico do chat."
-        },
-        "showMore": "Mostrar mais",
-        "showLess": "Mostrar menos",
         "arc": "Arco",
         "arcLevel": "Arco, nível {{level}}",
         "arcs_one": "{{count}} arco",
@@ -972,11 +963,11 @@
           "replaced_many": "Substituiu {{count}} partes",
           "replaced_one": "Substituiu {{count}} partes",
           "replaced_other": "Substituiu {{count}} partes",
-          "hide": "Ocultar fontes",
-          "note": "Somente leitura. Estes são os originais dos quais esta parte foi feita. Para mudar o resumo, edite a parte acima.",
-          "list": "Fontes",
-          "failed": "Não foi possível carregar as fontes."
-        }
+          "failed": "Não foi possível carregar as fontes.",
+          "back": "Voltar",
+          "readOnly": "Original somente leitura. Foi juntado em uma parte posterior; edite essa parte para mudar o resumo."
+        },
+        "emptyTitle": "Ainda não há partes"
       }
     },
     "status": {

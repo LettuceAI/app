@@ -797,7 +797,8 @@
     "tabs": {
       "memories": "Memorias",
       "activity": "Actividad",
-      "pinned": "Fijadas"
+      "pinned": "Fijadas",
+      "summary": "Resumen"
     },
     "loading": "Cargando la memoria",
     "off": {
@@ -950,16 +951,6 @@
         "nextMerge_one": "Próxima combinación: las partes marcadas abajo se combinan cuando las partes superen {{budget}} tokens.",
         "nextMerge_other": "Próxima combinación: las partes marcadas abajo se combinan cuando las partes superen {{budget}} tokens.",
         "mergesNext": "Se combina a continuación",
-        "how": {
-          "title": "Cómo funciona",
-          "update": "Cada actualización de memoria resume sus mensajes nuevos en una parte.",
-          "merge": "Cuando las partes superan {{budget}} tokens, las {{size}} partes más antiguas se combinan en un capítulo. Los capítulos se combinan en arcos del mismo modo.",
-          "seed": "Un resumen inicial existía antes de las partes, por ejemplo uno que escribiste tú. Se mantiene tal cual y no cuenta para el presupuesto.",
-          "edit": "Edita o elimina una parte para corregirla. La próxima actualización incorpora tu cambio y los capítulos posteriores lo conservan.",
-          "recent": "Los mensajes que aún no se han resumido el modelo los sigue leyendo del historial del chat."
-        },
-        "showMore": "Ver más",
-        "showLess": "Ver menos",
         "arc": "Arco",
         "arcLevel": "Arco, nivel {{level}}",
         "arcs_one": "{{count}} arco",
@@ -972,11 +963,11 @@
           "replaced_many": "Reemplazó {{count}} partes",
           "replaced_one": "Reemplazó {{count}} partes",
           "replaced_other": "Reemplazó {{count}} partes",
-          "hide": "Ocultar fuentes",
-          "note": "Solo lectura. Son los originales con los que se hizo esta parte. Para cambiar el resumen, edita la parte de arriba.",
-          "list": "Fuentes",
-          "failed": "No se pudieron cargar las fuentes."
-        }
+          "failed": "No se pudieron cargar las fuentes.",
+          "back": "Atrás",
+          "readOnly": "Original de solo lectura. Se combinó en una parte posterior; edita esa parte para cambiar el resumen."
+        },
+        "emptyTitle": "Aún no hay partes"
       }
     },
     "status": {

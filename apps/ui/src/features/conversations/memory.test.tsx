@@ -325,47 +325,48 @@ describe("chat memory page", () => {
     expect(called("memorySummaryUpdate")[1]?.request).toMatchObject({ summary: { type: "clear" }, expected_revision: 6 });
   });
 
-  it("shows the summary as parts and edits or deletes one part at a time", async () => {
+  it("shows the summary parts in their own tab and edits or deletes one part in a drawer", async () => {
     const parts: MemorySummaryPartsView = {
       token_budget: 300,
       chapter_size: 2,
       message_count: 24,
       parts: [
-        { id: "u-chapter", kind: "chapter", level: 1, origin: "model", message_start: 0, message_end: 12, text: "Mira reached the harbor.", token_count: 40, pending: false, source_count: 2 },
+        { id: "u-chapter", kind: "chapter", level: 1, origin: "model", message_start: 0, message_end: 12, text: "Mira reached the harbor.", token_count: 40, pending: false, source_count: 0 },
         { id: "u-cycle", kind: "cycle", level: 0, origin: "model", message_start: 12, message_end: 18, text: "She hired a boat.", token_count: 20, pending: false, source_count: 0 },
       ],
     };
     const { called } = await open({ world: { summary: { text: "Mira reached the harbor.\n\nShe hired a boat.", origin: "model", token_count: 60 }, summary_parts: parts } });
     expect(await screen.findByText("2 parts · 1 chapter")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Context summary/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Context summary" });
-    const list = within(dialog).getByRole("list", { name: "Summary parts" });
-    const [chapter, cycle] = within(list).getAllByRole("listitem");
-    expect(within(chapter!).getByText("Chapter")).toBeTruthy();
-    expect(within(cycle!).getByText("Part")).toBeTruthy();
-    expect(within(cycle!).getByText("Messages 12 to 18")).toBeTruthy();
-    expect(within(dialog).getByText("60 / 300 tokens")).toBeTruthy();
-    expect(within(dialog).getByRole("group", { name: "What the summary covers" })).toBeTruthy();
-    expect(within(dialog).getByText("Not summarized yet")).toBeTruthy();
-    expect(within(dialog).getAllByText("Merges next")).toHaveLength(2);
+    expect(await screen.findByText("60 / 300 tokens")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /^Summary/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("group", { name: "What the summary covers" })).toBeTruthy();
+    expect(screen.getByText("Not summarized yet")).toBeTruthy();
+    expect(screen.getAllByText("Merges next")).toHaveLength(2);
 
-    fireEvent.click(within(chapter!).getByRole("button", { name: "Edit" }));
-    fireEvent.change(within(chapter!).getByDisplayValue("Mira reached the harbor."), { target: { value: "Mira reached the north harbor." } });
-    fireEvent.click(within(chapter!).getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: /Mira reached the harbor\./ }));
+    const chapter = await screen.findByRole("dialog", { name: "Chapter" });
+    expect(within(chapter).getByText("Messages 0 to 12 · 40 tokens")).toBeTruthy();
+    fireEvent.click(within(chapter).getByRole("button", { name: "Edit" }));
+    fireEvent.change(within(chapter).getByDisplayValue("Mira reached the harbor."), { target: { value: "Mira reached the north harbor." } });
+    fireEvent.click(within(chapter).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(called("memorySummaryUpdate")).toHaveLength(1));
     expect(called("memorySummaryUpdate")[0]?.request).toMatchObject({ summary: { type: "set", text: "Mira reached the north harbor.\n\nShe hired a boat." } });
-    expect(screen.getByRole("dialog", { name: "Context summary" })).toBeTruthy();
 
-    fireEvent.click(within(cycle!).getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: /She hired a boat\./ }));
+    const part = await screen.findByRole("dialog", { name: "Part" });
+    fireEvent.click(within(part).getByRole("button", { name: "Delete" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete part" }));
     await waitFor(() => expect(called("memorySummaryUpdate")).toHaveLength(2));
     expect(called("memorySummaryUpdate")[1]?.request).toMatchObject({ summary: { type: "set", text: "Mira reached the harbor." } });
 
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Context summary" })).getByRole("button", { name: "Edit as one text" }));
-    expect(within(screen.getByRole("dialog", { name: "Context summary" })).getByDisplayValue(/She hired a boat\./)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit as one text" }));
+    const sheet = await screen.findByRole("dialog", { name: "Context summary" });
+    expect(within(sheet).getByDisplayValue(/She hired a boat\./)).toBeTruthy();
+    expect(within(sheet).queryByRole("button", { name: "Show parts" })).toBeNull();
   });
 
-  it("shows the original parts a chapter was made from, read-only", async () => {
+  it("walks into the original parts a chapter was made from, read-only", async () => {
     const asked: Record<string, unknown>[] = [];
     const parts: MemorySummaryPartsView = {
       token_budget: 300,
@@ -389,12 +390,15 @@ describe("chat memory page", () => {
       } as never,
     });
     fireEvent.click(await screen.findByRole("button", { name: /Context summary/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Context summary" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Made from 2 parts" }));
-    const sources = await within(dialog).findByRole("list", { name: "Sources" });
-    expect(within(sources).getByText("Mira left the village at dawn.")).toBeTruthy();
-    expect(within(sources).getByText("Messages 6 to 12")).toBeTruthy();
-    expect(within(sources).queryByRole("button", { name: "Edit" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: /Mira reached the harbor\./ }));
+    const drawer = await screen.findByRole("dialog", { name: "Chapter" });
+    expect(await within(drawer).findByText("Made from 2 parts")).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole("button", { name: /Mira left the village at dawn\./ }));
+    const original = await screen.findByRole("dialog", { name: "Part" });
+    expect(within(original).getByText(/Read-only original/)).toBeTruthy();
+    expect(within(original).queryByRole("button", { name: "Edit" })).toBeNull();
+    fireEvent.click(within(original).getByRole("button", { name: "Back" }));
+    expect(await screen.findByRole("dialog", { name: "Chapter" })).toBeTruthy();
     expect(asked[0]).toMatchObject({ conversation_id: "c1", part_id: "u-chapter" });
   });
 
@@ -410,11 +414,10 @@ describe("chat memory page", () => {
     };
     await open({ world: { summary: { text: "An old recap.\n\nShe hired a boat, not a raft.", origin: "user", token_count: 510 }, summary_parts: parts } });
     fireEvent.click(await screen.findByRole("button", { name: /Context summary/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Context summary" });
-    expect(within(within(dialog).getByRole("list", { name: "Summary parts" })).getByText("Starting summary")).toBeTruthy();
-    expect(within(dialog).getByText("Edited by you")).toBeTruthy();
-    expect(within(dialog).getByText("Applied at the next update")).toBeTruthy();
-    expect(within(dialog).getByText("0 / 300 tokens")).toBeTruthy();
+    expect(await screen.findByText("0 / 300 tokens")).toBeTruthy();
+    expect(screen.getAllByText("Starting summary").length).toBeGreaterThan(0);
+    expect(screen.getByText("Edited by you")).toBeTruthy();
+    expect(screen.getByText("Applied at the next update")).toBeTruthy();
   });
 });
 

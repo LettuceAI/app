@@ -810,7 +810,8 @@
     "tabs": {
       "memories": "Wspomnienia",
       "activity": "Aktywność",
-      "pinned": "Przypięte"
+      "pinned": "Przypięte",
+      "summary": "Podsumowanie"
     },
     "loading": "Ładowanie pamięci",
     "off": {
@@ -970,16 +971,6 @@
         "nextMerge_one": "Następne łączenie: oznaczone niżej części zostaną połączone, gdy części przekroczą {{budget}} tokenów.",
         "nextMerge_other": "Następne łączenie: oznaczone niżej części zostaną połączone, gdy części przekroczą {{budget}} tokenów.",
         "mergesNext": "Łączone jako następne",
-        "how": {
-          "title": "Jak to działa",
-          "update": "Każda aktualizacja pamięci podsumowuje swoje nowe wiadomości w jednej części.",
-          "merge": "Gdy części przekroczą {{budget}} tokenów, {{size}} najstarszych części łączy się w rozdział. Rozdziały w ten sam sposób łączą się w wątki.",
-          "seed": "Podsumowanie początkowe istniało przed częściami, np. napisane przez ciebie. Zostaje bez zmian i nie liczy się do budżetu.",
-          "edit": "Aby poprawić część, edytuj ją lub usuń. Następna aktualizacja przejmie zmianę, a późniejsze rozdziały ją zachowają.",
-          "recent": "Wiadomości, które nie są jeszcze podsumowane, model nadal czyta z historii czatu."
-        },
-        "showMore": "Pokaż więcej",
-        "showLess": "Pokaż mniej",
         "arc": "Wątek",
         "arcLevel": "Wątek, poziom {{level}}",
         "arcs_one": "{{count}} wątek",
@@ -995,11 +986,11 @@
           "replaced_many": "Zastąpiło {{count}} części",
           "replaced_one": "Zastąpiło {{count}} części",
           "replaced_other": "Zastąpiło {{count}} części",
-          "hide": "Ukryj źródła",
-          "note": "Tylko do odczytu. To oryginały, z których powstała ta część. Aby zmienić podsumowanie, edytuj część powyżej.",
-          "list": "Źródła",
-          "failed": "Nie udało się wczytać źródeł."
-        }
+          "failed": "Nie udało się wczytać źródeł.",
+          "back": "Wstecz",
+          "readOnly": "Oryginał tylko do odczytu. Połączono go w późniejszą część; aby zmienić podsumowanie, edytuj tamtą część."
+        },
+        "emptyTitle": "Nie ma jeszcze części"
       }
     },
     "status": {

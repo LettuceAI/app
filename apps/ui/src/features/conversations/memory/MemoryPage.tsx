@@ -19,11 +19,12 @@ import { createOperationIds } from "./operation-ids";
 import { PinnedTab } from "./PinnedTab";
 import { StatusCard } from "./StatusCard";
 import { SummaryCard, SummarySheet } from "./SummaryParts";
+import { SummaryPartsPanel } from "./SummaryPartsPanel";
 import { useMemoryWrite } from "./use-memory-write";
 import { restoreCycleAction, type RestorePlan } from "./cycle-restore";
 import { saveMemoryDraft } from "./save-memory";
 
-type Tab = "memories" | "activity" | "pinned";
+type Tab = "memories" | "activity" | "pinned" | "summary";
 type SheetTarget = { kind: "edit"; item: MemoryItemView } | { kind: "add" };
 
 export function MemoryPage() {
@@ -46,6 +47,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
   const [saving, setSaving] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summarySession, setSummarySession] = useState(0);
+  const [summaryAsText, setSummaryAsText] = useState(false);
   const [unpinning, setUnpinning] = useState<string | null>(null);
   const { shown, session } = useClosingValue(target);
 
@@ -171,21 +173,24 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
     setTarget(null);
     void navigate({ to: "/chat/$conversationId/memory", params: { conversationId }, search: { scope: next }, resetScroll: false, replace: true });
   };
-  const openSummary = () => {
+  const openSummary = (asText = false) => {
+    setSummaryAsText(asText);
     setSummarySession((current) => current + 1);
     setSummaryOpen(true);
   };
 
   const data: MemoryView | undefined = current.data;
-  const tabs: readonly Tab[] = member === null && dynamic ? ["memories", "activity", "pinned"] : ["memories", "pinned"];
+  const chapterParts = member === null && dynamic ? (data?.summary_parts ?? null) : null;
+  const tabs: readonly Tab[] = member === null && dynamic ? ["memories", "activity", "pinned", ...(chapterParts ? (["summary"] as const) : [])] : ["memories", "pinned"];
   const active = tabs.includes(tab) ? tab : "memories";
   const complete = (query: { isSuccess: boolean; hasNextPage: boolean }, count: number) => (query.isSuccess && !query.hasNextPage ? count : undefined);
   const counts: Record<Tab, number | undefined> = {
     memories: data?.items.length,
     activity: complete(cycles, cycleItems.length),
     pinned: member === null ? complete(pinned, pinnedItems.length) : data?.items.filter((entry) => entry.pinned).length,
+    summary: chapterParts?.parts.length,
   };
-  const tabLabel: Record<Tab, string> = { memories: t("memory.tabs.memories"), activity: t("memory.tabs.activity"), pinned: t("memory.tabs.pinned") };
+  const tabLabel: Record<Tab, string> = { memories: t("memory.tabs.memories"), activity: t("memory.tabs.activity"), pinned: t("memory.tabs.pinned"), summary: t("memory.tabs.summary") };
 
   let body;
   if (settings.isPending) body = <LoadingState />;
@@ -219,6 +224,15 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
     const main =
       active === "memories" ? (
         <MemoriesTab items={data.items} dynamic={dynamic} onOpen={(item) => setTarget({ kind: "edit", item })} onAdd={() => setTarget({ kind: "add" })} />
+      ) : active === "summary" && chapterParts ? (
+        <SummaryPartsPanel
+          view={chapterParts}
+          conversationId={conversationId}
+          busy={saving}
+          onSave={(text) => void saveSummary(text, false)}
+          onClear={() => void saveSummary(null, false)}
+          onWriteText={() => openSummary(true)}
+        />
       ) : active === "activity" ? (
         <ActivityTab
           cycles={cycleItems}
@@ -254,7 +268,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
         <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[minmax(0,1fr)_21rem]">
           <aside className="order-1 space-y-4 @4xl:sticky @4xl:top-[calc(var(--page-bar-height)+1rem)] @4xl:order-2 @4xl:self-start">
             {dynamic && <StatusCard api={api} conversationId={conversationId} status={data.status} />}
-            <SummaryCard summary={data.summary} parts={data.summary_parts} onOpen={openSummary} />
+            {active !== "summary" && <SummaryCard summary={data.summary} parts={chapterParts} onOpen={() => (chapterParts ? setTab("summary") : openSummary())} />}
           </aside>
           <div className="order-2 min-w-0 @4xl:order-1">{main}</div>
         </div>
@@ -322,6 +336,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
           text={memory.data.summary?.text ?? ""}
           parts={memory.data.summary_parts}
           conversationId={conversationId}
+          textOnly={summaryAsText}
           dynamic={dynamic}
           busy={saving}
           onClose={() => setSummaryOpen(false)}

@@ -784,7 +784,8 @@
     "tabs": {
       "memories": "Herinneringen",
       "activity": "Activiteit",
-      "pinned": "Vastgezet"
+      "pinned": "Vastgezet",
+      "summary": "Samenvatting"
     },
     "loading": "Geheugen laden",
     "off": {
@@ -930,16 +931,6 @@
         "nextMerge_one": "Volgende samenvoeging: de hieronder gemarkeerde delen worden samengevoegd zodra de delen {{budget}} tokens overschrijden.",
         "nextMerge_other": "Volgende samenvoeging: de hieronder gemarkeerde delen worden samengevoegd zodra de delen {{budget}} tokens overschrijden.",
         "mergesNext": "Wordt hierna samengevoegd",
-        "how": {
-          "title": "Hoe het werkt",
-          "update": "Elke geheugenupdate vat zijn nieuwe berichten samen in één deel.",
-          "merge": "Als de delen meer dan {{budget}} tokens worden, worden de {{size}} oudste delen samengevoegd tot een hoofdstuk. Hoofdstukken worden op dezelfde manier samengevoegd tot bogen.",
-          "seed": "Een beginsamenvatting bestond al vóór de delen, bijvoorbeeld een die jij schreef. Die blijft zoals hij is en telt niet mee voor het budget.",
-          "edit": "Bewerk of verwijder een deel om het te verbeteren. De volgende update neemt je wijziging over en latere hoofdstukken behouden die.",
-          "recent": "Berichten die nog niet zijn samengevat, leest het model nog steeds uit de chatgeschiedenis."
-        },
-        "showMore": "Meer tonen",
-        "showLess": "Minder tonen",
         "arc": "Boog",
         "arcLevel": "Boog, niveau {{level}}",
         "arcs_one": "{{count}} boog",
@@ -949,11 +940,11 @@
           "madeFrom_other": "Gemaakt van {{count}} delen",
           "replaced_one": "Verving {{count}} delen",
           "replaced_other": "Verving {{count}} delen",
-          "hide": "Bronnen verbergen",
-          "note": "Alleen-lezen. Dit zijn de originelen waaruit dit deel is gemaakt. Bewerk het deel hierboven om de samenvatting te wijzigen.",
-          "list": "Bronnen",
-          "failed": "De bronnen konden niet worden geladen."
-        }
+          "failed": "De bronnen konden niet worden geladen.",
+          "back": "Terug",
+          "readOnly": "Alleen-lezen origineel. Het is samengevoegd in een later deel; bewerk dat deel om de samenvatting te wijzigen."
+        },
+        "emptyTitle": "Nog geen delen"
       }
     },
     "status": {

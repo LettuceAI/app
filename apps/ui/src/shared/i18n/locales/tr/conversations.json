@@ -784,7 +784,8 @@
     "tabs": {
       "memories": "Anılar",
       "activity": "Etkinlik",
-      "pinned": "Sabitlenenler"
+      "pinned": "Sabitlenenler",
+      "summary": "Özet"
     },
     "loading": "Hafıza yükleniyor",
     "off": {
@@ -930,16 +931,6 @@
         "nextMerge_one": "Sıradaki birleştirme: parçalar {{budget}} tokeni aşınca aşağıda işaretli parçalar birleştirilir.",
         "nextMerge_other": "Sıradaki birleştirme: parçalar {{budget}} tokeni aşınca aşağıda işaretli parçalar birleştirilir.",
         "mergesNext": "Sıradaki birleştirme",
-        "how": {
-          "title": "Nasıl çalışır",
-          "update": "Her bellek güncellemesi yeni mesajlarını tek bir parçada özetler.",
-          "merge": "Parçalar {{budget}} tokeni aşınca en eski {{size}} parça bir bölümde birleştirilir. Bölümler de aynı şekilde kısımlarda birleştirilir.",
-          "seed": "Başlangıç özeti, parçalardan önce var olan özettir; örneğin senin yazdığın. Olduğu gibi kalır ve bütçeye sayılmaz.",
-          "edit": "Bir parçayı düzeltmek için düzenle ya da sil. Sonraki güncelleme değişikliğini alır, sonraki bölümler de korur.",
-          "recent": "Henüz özetlenmemiş mesajları model sohbet geçmişinden okumaya devam eder."
-        },
-        "showMore": "Devamını göster",
-        "showLess": "Daha az göster",
         "arc": "Kısım",
         "arcLevel": "Kısım, seviye {{level}}",
         "arcs_one": "{{count}} kısım",
@@ -949,11 +940,11 @@
           "madeFrom_other": "{{count}} parçadan oluştu",
           "replaced_one": "{{count}} parçanın yerini aldı",
           "replaced_other": "{{count}} parçanın yerini aldı",
-          "hide": "Kaynakları gizle",
-          "note": "Salt okunur. Bu parçanın oluşturulduğu orijinaller. Özeti değiştirmek için yukarıdaki parçayı düzenle.",
-          "list": "Kaynaklar",
-          "failed": "Kaynaklar yüklenemedi."
-        }
+          "failed": "Kaynaklar yüklenemedi.",
+          "back": "Geri",
+          "readOnly": "Salt okunur orijinal. Daha sonraki bir parçada birleştirildi; özeti değiştirmek için o parçayı düzenle."
+        },
+        "emptyTitle": "Henüz özet parçası yok"
       }
     },
     "status": {

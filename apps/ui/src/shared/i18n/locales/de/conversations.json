@@ -784,7 +784,8 @@
     "tabs": {
       "memories": "Erinnerungen",
       "activity": "Aktivität",
-      "pinned": "Angeheftet"
+      "pinned": "Angeheftet",
+      "summary": "Zusammenfassung"
     },
     "loading": "Speicher wird geladen",
     "off": {
@@ -930,16 +931,6 @@
         "nextMerge_one": "Nächste Zusammenfassung: Die unten markierten Teile werden zusammengefasst, sobald die Teile {{budget}} Tokens überschreiten.",
         "nextMerge_other": "Nächste Zusammenfassung: Die unten markierten Teile werden zusammengefasst, sobald die Teile {{budget}} Tokens überschreiten.",
         "mergesNext": "Wird als Nächstes zusammengefasst",
-        "how": {
-          "title": "So funktioniert es",
-          "update": "Jede Speicheraktualisierung fasst ihre neuen Nachrichten in einem Teil zusammen.",
-          "merge": "Überschreiten die Teile {{budget}} Tokens, werden die {{size}} ältesten Teile zu einem Kapitel zusammengefasst. Kapitel werden auf dieselbe Weise zu Bögen zusammengefasst.",
-          "seed": "Eine Startzusammenfassung gab es schon vor den Teilen, etwa eine, die du geschrieben hast. Sie bleibt unverändert und zählt nicht zum Budget.",
-          "edit": "Bearbeite oder lösche einen Teil, um ihn zu korrigieren. Die nächste Aktualisierung übernimmt deine Änderung, und spätere Kapitel behalten sie.",
-          "recent": "Noch nicht zusammengefasste Nachrichten liest das Modell weiterhin aus dem Chatverlauf."
-        },
-        "showMore": "Mehr anzeigen",
-        "showLess": "Weniger anzeigen",
         "arc": "Bogen",
         "arcLevel": "Bogen, Ebene {{level}}",
         "arcs_one": "{{count}} Bogen",
@@ -949,11 +940,11 @@
           "madeFrom_other": "Aus {{count}} Teilen erstellt",
           "replaced_one": "Ersetzt {{count}} Teile",
           "replaced_other": "Ersetzt {{count}} Teile",
-          "hide": "Quellen ausblenden",
-          "note": "Nur lesbar. Das sind die Originale, aus denen dieser Teil entstand. Um die Zusammenfassung zu ändern, bearbeite den Teil oben.",
-          "list": "Quellen",
-          "failed": "Die Quellen konnten nicht geladen werden."
-        }
+          "failed": "Die Quellen konnten nicht geladen werden.",
+          "back": "Zurück",
+          "readOnly": "Nur lesbares Original. Es wurde in einen späteren Teil zusammengefasst; bearbeite diesen Teil, um die Zusammenfassung zu ändern."
+        },
+        "emptyTitle": "Noch keine Teile"
       }
     },
     "status": {

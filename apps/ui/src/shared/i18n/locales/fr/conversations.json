@@ -797,7 +797,8 @@
     "tabs": {
       "memories": "Souvenirs",
       "activity": "Activité",
-      "pinned": "Épinglés"
+      "pinned": "Épinglés",
+      "summary": "Résumé"
     },
     "loading": "Chargement de la mémoire",
     "off": {
@@ -950,16 +951,6 @@
         "nextMerge_one": "Prochaine fusion : les parties marquées ci-dessous sont fusionnées dès que les parties dépassent {{budget}} tokens.",
         "nextMerge_other": "Prochaine fusion : les parties marquées ci-dessous sont fusionnées dès que les parties dépassent {{budget}} tokens.",
         "mergesNext": "Fusionnée ensuite",
-        "how": {
-          "title": "Comment ça marche",
-          "update": "Chaque mise à jour de la mémoire résume ses nouveaux messages en une partie.",
-          "merge": "Quand les parties dépassent {{budget}} tokens, les {{size}} plus anciennes sont fusionnées en un chapitre. Les chapitres sont fusionnés en arcs de la même façon.",
-          "seed": "Un résumé de départ existait avant les parties, par exemple un résumé que tu as écrit. Il reste tel quel et ne compte pas dans le budget.",
-          "edit": "Modifie ou supprime une partie pour la corriger. La prochaine mise à jour reprend ta modification et les chapitres suivants la conservent.",
-          "recent": "Les messages pas encore résumés restent lus par le modèle dans l'historique du chat."
-        },
-        "showMore": "Afficher plus",
-        "showLess": "Afficher moins",
         "arc": "Arc",
         "arcLevel": "Arc, niveau {{level}}",
         "arcs_one": "{{count}} arc",
@@ -972,11 +963,11 @@
           "replaced_many": "A remplacé {{count}} parties",
           "replaced_one": "A remplacé {{count}} parties",
           "replaced_other": "A remplacé {{count}} parties",
-          "hide": "Masquer les sources",
-          "note": "Lecture seule. Ce sont les originaux à partir desquels cette partie a été créée. Pour changer le résumé, modifie la partie ci-dessus.",
-          "list": "Sources",
-          "failed": "Impossible de charger les sources."
-        }
+          "failed": "Impossible de charger les sources.",
+          "back": "Retour",
+          "readOnly": "Original en lecture seule. Il a été fusionné dans une partie ultérieure ; modifie cette partie pour changer le résumé."
+        },
+        "emptyTitle": "Pas encore de parties"
       }
     },
     "status": {
