@@ -537,21 +537,57 @@
   "developer": {
     "group": "テストチャット",
     "templates": {
-      "roleplay": { "title": "ロールプレイチャット", "description": "キャラクター、ペルソナ、履歴のあるチャット" },
-      "companion": { "title": "コンパニオンチャット（入力済み）", "description": "ソウル、関係、履歴、記憶を持つコンパニオン" },
-      "group": { "title": "グループチャット", "description": "履歴のあるグループに3人のキャラクター" },
-      "group_companion": { "title": "コンパニオングループチャット", "description": "履歴のあるコンパニオングループにソウルを持つ3人のコンパニオン" },
-      "roleplay_widgets": { "title": "ウィジェット付きロールプレイチャット", "description": "チャットの横にすべてのウィジェットを置いたロールプレイチャット" },
-      "companion_widgets": { "title": "ウィジェット付きコンパニオンチャット", "description": "コンパニオンの状態とメモリを含むすべてのウィジェットを置いたコンパニオンチャット" },
-      "chapters_backlog": { "title": "チャプター：長い履歴", "description": "要約のない42メッセージの渡し船の物語。送信するたびに次の古い6メッセージが要約されます。" },
-      "chapters_user_seed": { "title": "チャプター：手書きの要約", "description": "同じ物語に短い手書きの要約を付けたもの。要約は起点として残ります。" },
-      "chapters_large_seed": { "title": "チャプター：大きすぎる要約", "description": "同じ物語にテスト予算より大きい手書きの要約を付けたもの。新しいサイクルだけがまとめられます。" },
-      "chapters_group": { "title": "チャプター：グループ", "description": "動的メモリを使うグループでの、サルベージ船員の36メッセージの物語。" }
+      "roleplay": {
+        "title": "ロールプレイチャット",
+        "description": "キャラクター、ペルソナ、履歴のあるチャット"
+      },
+      "companion": {
+        "title": "コンパニオンチャット（入力済み）",
+        "description": "ソウル、関係、履歴、記憶を持つコンパニオン"
+      },
+      "group": {
+        "title": "グループチャット",
+        "description": "履歴のあるグループに3人のキャラクター"
+      },
+      "group_companion": {
+        "title": "コンパニオングループチャット",
+        "description": "履歴のあるコンパニオングループにソウルを持つ3人のコンパニオン"
+      },
+      "roleplay_widgets": {
+        "title": "ウィジェット付きロールプレイチャット",
+        "description": "チャットの横にすべてのウィジェットを置いたロールプレイチャット"
+      },
+      "companion_widgets": {
+        "title": "ウィジェット付きコンパニオンチャット",
+        "description": "コンパニオンの状態とメモリを含むすべてのウィジェットを置いたコンパニオンチャット"
+      },
+      "chapters_backlog": {
+        "title": "チャプター：長い履歴",
+        "description": "要約のない42メッセージの渡し船の物語。送信するたびに次の古い6メッセージが要約されます。"
+      },
+      "chapters_user_seed": {
+        "title": "チャプター：手書きの要約",
+        "description": "同じ物語に短い手書きの要約を付けたもの。要約は起点として残ります。"
+      },
+      "chapters_large_seed": {
+        "title": "チャプター：大きすぎる要約",
+        "description": "同じ物語にテスト予算より大きい手書きの要約を付けたもの。新しいサイクルだけがまとめられます。"
+      },
+      "chapters_group": {
+        "title": "チャプター：グループ",
+        "description": "動的メモリを使うグループでの、サルベージ船員の36メッセージの物語。"
+      }
     },
     "chapters": {
       "group": "チャプター要約のテスト",
-      "apply": { "title": "チャプターのテスト設定を使う", "description": "6メッセージごとのサイクル、800トークンの予算、チャプターあたり2サイクルで動的メモリとチャプター要約をオンにします。先に現在のメモリ設定を保存します。" },
-      "restore": { "title": "メモリ設定を元に戻す", "description": "テスト設定の前に保存したメモリ設定に戻します。" },
+      "apply": {
+        "title": "チャプターのテスト設定を使う",
+        "description": "6メッセージごとのサイクル、800トークンの予算、チャプターあたり2サイクルで動的メモリとチャプター要約をオンにします。先に現在のメモリ設定を保存します。"
+      },
+      "restore": {
+        "title": "メモリ設定を元に戻す",
+        "description": "テスト設定の前に保存したメモリ設定に戻します。"
+      },
       "applied": "チャプターのテスト設定がオンです",
       "restored": "メモリ設定を元に戻しました"
     }
@@ -615,18 +651,24 @@
     "verified": "接続を確認しました",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "OpenAI互換",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "接続を確認できませんでした。",
     "saveBeforeVerify": "保存済みキーで確認する前に接続変更を保存してください。",
     "deleteWithModelsTitle": "{{name}}とそのモデルを削除しますか？",
     "deleteWithModelsBody_other": "このプロバイダーにはまだ{{count}}件のモデルがあります：{{names}}。プロバイダーを削除するとそれらも削除されます。",
     "deleteWithModels_other": "プロバイダーと{{count}}件のモデルを削除",
-    "modelCount_other": "{{count}}件のモデル"
+    "modelCount_other": "{{count}}件のモデル",
+    "linkedAccount": "プロバイダーアカウント",
+    "linkedAccountHint": "既存のプロバイダーアカウントのAPIキーを使用します",
+    "linkedAccountEmpty": "先に「モデル」タブでOpenRouterまたはNanoGPTアカウントを追加してください"
   },
   "models": {
     "vision": "ビジョン",
@@ -1451,10 +1493,22 @@
     },
     "pages": {
       "group": "その他の設定",
-      "saved": { "title": "保存される内容", "body": "要約間隔、記憶の上限、重複チェック、ピン留め" },
-      "recall": { "title": "想起", "body": "返信ごとに送る内容と記憶の選び方" },
-      "summary": { "title": "コンテキスト要約", "body": "章ごとの要約と要約の予算" },
-      "advanced": { "title": "詳細", "body": "忘却とメモリマネージャーの動作" }
+      "saved": {
+        "title": "保存される内容",
+        "body": "要約間隔、記憶の上限、重複チェック、ピン留め"
+      },
+      "recall": {
+        "title": "想起",
+        "body": "返信ごとに送る内容と記憶の選び方"
+      },
+      "summary": {
+        "title": "コンテキスト要約",
+        "body": "章ごとの要約と要約の予算"
+      },
+      "advanced": {
+        "title": "詳細",
+        "body": "忘却とメモリマネージャーの動作"
+      }
     },
     "advanced": {
       "enrichment": "コンテキスト拡充",
@@ -1808,7 +1862,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "その他のスコープ",
-    "scopeName": "スコープ名"
+    "scopeName": "スコープ名",
+    "source": "音声認識のソース",
+    "sourceLocal": "ローカル (Whisper)",
+    "sourceCloud": "クラウド",
+    "cloudModel": "クラウド音声モデル",
+    "cloudProvider": "プロバイダーアカウント",
+    "cloudProviderEmpty": "先に「プロバイダー」でOpenRouterまたはNanoGPTアカウントを追加してください"
   },
   "hf": {
     "title": "モデルを取得",
@@ -2013,8 +2073,17 @@
     "mtpBundledBody": "このファイルの予測レイヤーを使って返信を高速化",
     "systemRam": "システムRAM",
     "vramShort": "VRAM",
-    "offloadChoices": { "auto": "自動", "gpu": "GPU", "mixed": "ミックス", "cpu": "CPU" },
-    "placementChoices": { "auto": "自動", "vram": "VRAM", "ram": "RAM" },
+    "offloadChoices": {
+      "auto": "自動",
+      "gpu": "GPU",
+      "mixed": "ミックス",
+      "cpu": "CPU"
+    },
+    "placementChoices": {
+      "auto": "自動",
+      "vram": "VRAM",
+      "ram": "RAM"
+    },
     "noRecommendation": "8,192トークンとQ8またはQ6 KVで適合が確認されたファイルはありません。手動でファイルを選べます。",
     "retryMove": "ファイル移動を再試行",
     "localProvider": "llama.cpp（ローカル）",
@@ -2201,10 +2270,22 @@
       "group": "コンテンツフィルタリング",
       "title": "ピュアモード",
       "levels": {
-        "off": { "label": "オフ", "description": "すべてのコンテンツを許可" },
-        "low": { "label": "低", "description": "露骨な性的コンテンツとスラングをブロック" },
-        "standard": { "label": "標準", "description": "NSFWと過激な暴力をブロック" },
-        "strict": { "label": "厳格", "description": "最大限のフィルタリングと暗示的なトーンなし" }
+        "off": {
+          "label": "オフ",
+          "description": "すべてのコンテンツを許可"
+        },
+        "low": {
+          "label": "低",
+          "description": "露骨な性的コンテンツとスラングをブロック"
+        },
+        "standard": {
+          "label": "標準",
+          "description": "NSFWと過激な暴力をブロック"
+        },
+        "strict": {
+          "label": "厳格",
+          "description": "最大限のフィルタリングと暗示的なトーンなし"
+        }
       }
     },
     "privacy": {
@@ -2312,7 +2393,8 @@
       "previewFirst": "作成するには、先に音声をプレビューしてください。",
       "fishVoiceIdRequired": "Fish Audioには音声IDが必要です。",
       "openaiModelIdRequired": "エンドポイントが求めるモデルIDを入力してください。",
-      "openaiVoiceIdRequired": "エンドポイントが対応している音声IDを入力してください。"
+      "openaiVoiceIdRequired": "エンドポイントが対応している音声IDを入力してください。",
+      "cloudVoice": "音声"
     },
     "kokoro": {
       "studio": "Kokoroスタジオ",

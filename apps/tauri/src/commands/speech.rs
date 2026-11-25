@@ -71,6 +71,16 @@ pub async fn whisper_dictation_model_set(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn speech_cloud_models(
+    context: State<'_, ApiContextSlot>,
+    request: dto::SpeechCloudModelsRequest,
+) -> Result<Vec<dto::SpeechCloudModelView>, ApiError> {
+    let context = context.snapshot()?;
+    lettuce_app::api::speech_cloud_models(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn transcribe_file(
     context: State<'_, ApiContextSlot>,
     request: dto::TranscribeFileRequest,

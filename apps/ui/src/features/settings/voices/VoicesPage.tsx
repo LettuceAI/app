@@ -7,6 +7,7 @@ import { Button, confirm, fileSize, icon, KeyValue, ListGroup, ListRow, ListRowB
 import type { ApiClient } from "@/api/client";
 import type { AudioProviderView, AudioVoiceView, UserVoiceView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
+import { useClosingValue } from "@/shared/hooks/useClosingValue";
 import { AssetAudio } from "@/shared/ui/AssetAudio";
 import { FailureState } from "@/shared/ui/FailureState";
 import { useSettingsApi, useSettingsLayout } from "../data";
@@ -15,7 +16,7 @@ import { KokoroBlendEditor } from "./KokoroBlendEditor";
 import { KokoroSetupSheet } from "./KokoroSetupSheet";
 import { KokoroStudio } from "./KokoroStudio";
 import { VoiceEditorSheet, type VoicePrefill } from "./VoiceEditorSheet";
-import { audioProvidersQuery, cacheStatsQuery, isCustomVoice, isKokoro, kokoroInventoryQuery, kokoroInstalled, kokoroVariantOf, kokoroVariantsQuery, kokoroVoiceName, parseBlend, providerVoiceLimit, useInvalidate, useProviderVoices, useSynthesis, useVoicesNavigation, userVoicesQuery } from "./data";
+import { audioProvidersQuery, cacheStatsQuery, isCustomVoice, isKokoro, kokoroInventoryQuery, kokoroInstalled, kokoroVariantOf, kokoroVariantsQuery, kokoroVoiceName, parseBlend, useInvalidate, useProviderVoices, useSynthesis, useVoicesNavigation, userVoicesQuery } from "./data";
 import { VoicesSkeleton } from "./VoicesSkeleton";
 
 const promptPreviewLength = 40;
@@ -31,7 +32,7 @@ export function VoicesPage() {
   const search = useSearch({ from: "/settings/$section" });
   const providers = useQuery(audioProvidersQuery(api));
   const voices = useQuery(userVoicesQuery(api));
-  const providerVoices = useProviderVoices(api, providers.data ?? []);
+  const providerVoices = useProviderVoices(api, (providers.data ?? []).filter((provider) => provider.configuration.type === "elevenlabs" || provider.configuration.type === "fish_tts"));
   const synthesis = useSynthesis(api);
   const [previewName, setPreviewName] = useState("");
   const [prefill, setPrefill] = useState<VoicePrefill | null>(null);
@@ -54,11 +55,17 @@ export function VoicesPage() {
   const providerOf = (id: string) => providerList.find((provider) => provider.id === id);
   const cloudVoices = (voices.data ?? []).filter((voice) => { const provider = providerOf(voice.provider_id); return provider && !isKokoro(provider); });
   const kokoroVoices = (voices.data ?? []).filter((voice) => { const provider = providerOf(voice.provider_id); return provider && isKokoro(provider); });
-  const customVoices = providerVoices.filter(({ provider }) => provider.configuration.type !== "gemini").flatMap(({ provider, query }) => (query.data ?? []).filter(isCustomVoice).map((voice) => ({ provider, voice })));
+  const customVoices = providerVoices.flatMap(({ provider, query }) => (query.data ?? []).filter(isCustomVoice).map((voice) => ({ provider, voice })));
   const studio = search.kokoro ? kokoroProviders.find((provider) => provider.id === search.kokoro) : undefined;
   const editing = search.voiceEditor && search.voiceEditor !== "new" ? cloudVoices.find((voice) => voice.id === search.voiceEditor) : undefined;
   const sheetVoice = search.voiceProvider && search.voiceItem ? providerVoices.find(({ provider }) => provider.id === search.voiceProvider)?.query.data?.find((voice) => voice.voice_id === search.voiceItem) : undefined;
   const sheetProvider = providerOf(search.voiceProvider ?? "");
+  const editorOpen = Boolean(ready && search.voiceEditor && (search.voiceEditor === "new" || editing) && cloudProviders.length > 0);
+  const { shown: editorKey, session: editorSession } = useClosingValue(editorOpen ? `${search.voiceEditor}:${prefill?.voiceId ?? ""}` : null);
+  const { shown: editedVoice } = useClosingValue(editing ?? null);
+  const voiceOpen = Boolean(sheetVoice && sheetProvider);
+  const { shown: shownVoice } = useClosingValue(sheetVoice ?? null);
+  const { shown: shownVoiceProvider } = useClosingValue(sheetProvider ?? null);
   const cut = (prompt: string) => prompt.length > promptPreviewLength ? `${prompt.slice(0, promptPreviewLength).trimEnd()}…` : prompt;
   const preview = (voice: UserVoiceView) => {
     setPreviewName(voice.name);
@@ -74,9 +81,9 @@ export function VoicesPage() {
       if (firstKokoro) open({ kokoro: firstKokoro.id, kokoroBlend: "new" });
       else setupKokoro.mutate();
     }
-    else open({ voiceEditor: "new" });
+    else { setPrefill(null); open({ voiceEditor: "new" }); }
   };
-  const closeEditor = () => { setPrefill(null); close(); };
+  const closeEditor = () => close();
   const noRows = cloudVoices.length + kokoroVoices.length + customVoices.length === 0;
   return (
     <>
@@ -90,7 +97,7 @@ export function VoicesPage() {
             <div className="@container">
               {providerList.length === 0 && (
                 <ListGroup className="mb-7">
-                  <ListRowButton icon={<AudioLines size={icon.lg} />} title={t("voices.noProviders.title")} description={t("voices.noProviders.body")} onClick={() => void navigate({ to: "/settings/$section", params: { section: "providers" }, search: { providersTab: "audio" } })} />
+                  <ListRowButton icon={<AudioLines size={icon.lg} />} title={t("voices.noProviders.title")} description={t("voices.noProviders.body")} onClick={() => void navigate({ to: "/settings/$section", params: { section: "providers" } })} />
                 </ListGroup>
               )}
               <div className="grid grid-cols-1 gap-7 @4xl:grid-cols-2 @4xl:items-start @4xl:gap-x-10">
@@ -143,7 +150,6 @@ export function VoicesPage() {
                       {setupKokoro.isError && <div className="p-3"><FailureState error={setupKokoro.error} size="sm" onRetry={() => setupKokoro.mutate()} /></div>}
                     </ListGroup>
                   )}
-                  {providerVoices.map(({ provider, query }) => <ProviderVoices key={provider.id} api={api} provider={provider} query={query} />)}
                   <CacheGroup api={api} />
                 </div>
               </div>
@@ -153,11 +159,11 @@ export function VoicesPage() {
       </div>
       {studio && <div className={search.kokoroBlend ? "hidden" : "h-full min-h-0"}><KokoroStudio api={api} provider={studio} onSetup={() => openSetup(studio.id)} /></div>}
       {studio && search.kokoroBlend && <KokoroBlendEditor key={search.kokoroBlend} api={api} provider={studio} blendId={search.kokoroBlend} />}
-      {ready && search.voiceEditor && (search.voiceEditor === "new" || editing) && cloudProviders.length > 0 && (
-        <VoiceEditorSheet key={`${search.voiceEditor}:${prefill?.voiceId ?? ""}`} api={api} providers={cloudProviders} voice={editing ?? null} prefill={prefill} onClose={closeEditor} />
+      {editorKey && cloudProviders.length > 0 && (
+        <VoiceEditorSheet key={`${editorKey}:${editorSession}`} api={api} open={editorOpen} providers={cloudProviders} voice={editorKey.startsWith("new:") ? null : editedVoice} prefill={prefill} onClose={closeEditor} />
       )}
       {setup && kokoroProviders.some((provider) => provider.id === setup.id) && <KokoroSetupSheet key={setup.id} api={api} provider={kokoroProviders.find((provider) => provider.id === setup.id)!} open={setup.open} phone={phone} onClose={() => setSetup((current) => current && { ...current, open: false })} />}
-      {sheetVoice && sheetProvider && <ProviderVoiceSheet provider={sheetProvider} voice={sheetVoice} onClose={() => close()} onUse={() => { setPrefill({ providerId: sheetProvider.id, name: sheetVoice.name, voiceId: sheetVoice.voice_id }); open({ voiceEditor: "new" }, true); }} />}
+      {shownVoice && shownVoiceProvider && <ProviderVoiceSheet open={voiceOpen} provider={shownVoiceProvider} voice={shownVoice} onClose={() => close()} onUse={() => { setPrefill({ providerId: shownVoiceProvider.id, name: shownVoice.name, voiceId: shownVoice.voice_id }); open({ voiceEditor: "new" }, true); }} />}
     </>
   );
 }
@@ -175,27 +181,6 @@ function KokoroEntry({ api, provider, onOpen }: { api: ApiClient; provider: Audi
       <ListRowButton icon={<Cpu size={icon.lg} />} title={t("voices.kokoro.studio")}
         description={pending ? <Skeleton className="h-4 w-40 max-w-full" /> : installed ? t("voices.kokoro.ready", { variant: label, count: inventory.data?.installed_voices.length ?? 0 }) : t("voices.kokoro.notSetUp")}
         onClick={() => onOpen(installed)} disabled={pending} />
-    </ListGroup>
-  );
-}
-
-function ProviderVoices({ api, provider, query }: { api: ApiClient; provider: AudioProviderView; query: ReturnType<typeof useProviderVoices>[number]["query"] }) {
-  const { t } = useTranslation("settings");
-  const invalidate = useInvalidate();
-  const [showAll, setShowAll] = useState(false);
-  const refresh = useMutation({ mutationFn: async () => { await api.call("audioProviderVoicesRefresh", { provider_id: provider.id }); await invalidate(queryKeys.voices.providerVoices(provider.id)); } });
-  const premade = (query.data ?? []).filter((voice) => !isCustomVoice(voice));
-  const shown = showAll ? premade : premade.slice(0, providerVoiceLimit);
-  const detail = (voice: AudioVoiceView) => voice.labels.category || voice.labels.description || voice.labels.gender;
-  return (
-    <ListGroup label={t("voices.providerVoices.group")}>
-      <ListRow title={provider.label} description={query.isPending ? <Skeleton className="h-4 w-20" /> : t("voices.providerVoices.count", { count: premade.length })}
-        trailing={provider.configuration.type === "gemini" ? undefined : <Button size="sm" variant="ghost" loading={refresh.isPending} onClick={() => refresh.mutate()}>{t("voices.providerVoices.refresh")}</Button>} />
-      {query.isError && <div className="p-3"><FailureState error={query.error} size="sm" onRetry={() => void query.refetch()} /></div>}
-      {refresh.isError && <div className="p-3"><FailureState error={refresh.error} size="sm" /></div>}
-      {query.isSuccess && premade.length === 0 && <ListRow title={t("voices.providerVoices.empty")} />}
-      {shown.map((voice) => <ListRow key={voice.voice_id} title={voice.name} {...(detail(voice) ? { description: detail(voice) } : {})} />)}
-      {premade.length > providerVoiceLimit && <ListRowButton title={t(showAll ? "voices.providerVoices.showLess" : "voices.providerVoices.showAll", { count: premade.length })} chevron={false} onClick={() => setShowAll((value) => !value)} />}
     </ListGroup>
   );
 }
@@ -219,7 +204,7 @@ function CacheGroup({ api }: { api: ApiClient }) {
   );
 }
 
-function ProviderVoiceSheet({ provider, voice, onClose, onUse }: { provider: AudioProviderView; voice: AudioVoiceView; onClose: () => void; onUse: () => void }) {
+function ProviderVoiceSheet({ open, provider, voice, onClose, onUse }: { open: boolean; provider: AudioProviderView; voice: AudioVoiceView; onClose: () => void; onUse: () => void }) {
   const { t } = useTranslation("settings");
   const items = [
     { label: t("voices.providerVoice.provider"), value: provider.label },
@@ -227,7 +212,7 @@ function ProviderVoiceSheet({ provider, voice, onClose, onUse }: { provider: Aud
     ...(voice.labels.description ? [{ label: t("voices.providerVoice.description"), value: voice.labels.description }] : []),
   ];
   return (
-    <Sheet open onClose={onClose} size="sm" title={voice.name} footer={<Button variant="primary" block onClick={onUse}>{t("voices.providerVoice.use")}</Button>}>
+    <Sheet open={open} onClose={onClose} size="sm" title={voice.name} footer={<Button variant="primary" block onClick={onUse}>{t("voices.providerVoice.use")}</Button>}>
       <KeyValue items={items} />
     </Sheet>
   );

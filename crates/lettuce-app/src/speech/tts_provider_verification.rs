@@ -83,6 +83,9 @@ where
                 | AudioProviderConfig::Gemini { .. }
                 | AudioProviderConfig::FishSpeech { .. }
                 | AudioProviderConfig::OpenAiCompatible { .. }
+                | AudioProviderConfig::OpenRouter { .. }
+                | AudioProviderConfig::NanoGpt { .. }
+                | AudioProviderConfig::GeminiAudio { .. }
         ) {
             return Err(TtsProviderVerificationError::InvalidInput {
                 reason: "the provider kind has no verification",

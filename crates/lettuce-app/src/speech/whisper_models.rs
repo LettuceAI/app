@@ -74,12 +74,12 @@ impl<R: WhisperModelRepository + ?Sized> WhisperModelCoordinator<'_, R> {
                 .ok_or(WhisperModelCoordinatorError::NotInstalled)?,
         };
         let verified = manifest.verify()?;
-        let descriptor = AsrModelDescriptor {
-            id: AsrModelId::new(verified.model_id.clone())
+        let descriptor = AsrModelDescriptor::local(
+            AsrModelId::new(verified.model_id.clone())
                 .map_err(|_| WhisperModelCoordinatorError::InvalidModelId)?,
-            artifact_hash: verified.blake3.clone(),
-            english_only: verified.english_only,
-        };
+            verified.blake3.clone(),
+            verified.english_only,
+        );
         Ok((descriptor, verified))
     }
 
@@ -152,9 +152,9 @@ mod tests {
                 .expect("admitted models");
             assert_eq!(admitted.len(), 2);
             let (descriptor, verified) = coordinator.resolve(None).expect("default model");
-            assert_eq!(descriptor.id.as_str(), "base");
+            assert_eq!(descriptor.model_id(), "base");
             assert_eq!(verified.model_id, "base");
-            selected_id = descriptor.id.as_str().to_owned();
+            selected_id = descriptor.model_id().to_owned();
         }
         let database = Database::open(&database_path).expect("reopen database");
         let coordinator = WhisperModelCoordinator::new(&database);
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(repeated.len(), 2);
         assert_eq!(coordinator.list().expect("list models").len(), 2);
         assert_eq!(
-            coordinator.resolve(None).expect("resolve").0.id.as_str(),
+            coordinator.resolve(None).expect("resolve").0.model_id(),
             selected_id
         );
         assert_eq!(

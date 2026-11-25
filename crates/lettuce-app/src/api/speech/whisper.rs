@@ -78,31 +78,76 @@ pub(super) fn installed(context: &ApiContext) -> Result<Vec<InstalledWhisperMani
     Ok(models)
 }
 
-fn dictation_model_id(context: &ApiContext) -> Result<Option<String>, ApiError> {
-    Ok(context
+fn dictation_settings(
+    context: &ApiContext,
+) -> Result<(Option<String>, Option<String>), ApiError> {
+    let speech = context
         .backend()
         .database()
         .load_device_settings()
         .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
-        .speech
-        .dictation_model_id)
+        .speech;
+    Ok((speech.dictation_model_id, speech.dictation_provider_account_id))
 }
 
-/// The model a transcription runs with: the requested one, else the
-/// dictation choice, else the first installed.
+fn dictation_model_id(context: &ApiContext) -> Result<Option<String>, ApiError> {
+    Ok(dictation_settings(context)?.0)
+}
+
+fn resolve_cloud_model(
+    context: &ApiContext,
+    account_id_str: &str,
+    model_id: &str,
+) -> Result<Option<AsrModelDescriptor>, ApiError> {
+    let account_id: lettuce_types::ProviderAccountId =
+        crate::api::error::parse_id(account_id_str, "provider_account_id")?;
+    let Some(account) = lettuce_models::ProviderAccountRepository::get(
+        context.backend().database(),
+        account_id,
+    )
+    .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
+    else {
+        return Ok(None);
+    };
+    let kind = lettuce_speech::CloudAsrProviderKind::from_provider_kind(&account.provider_kind)
+        .ok_or_else(|| {
+            invalid_field(
+                "provider_account_id",
+                "only OpenRouter, NanoGPT and Gemini accounts support cloud speech recognition",
+            )
+        })?;
+    let id = lettuce_speech::CloudModelId::new(model_id)
+        .map_err(|_| invalid_field("model_id", "invalid cloud speech model id"))?;
+    Ok(Some(AsrModelDescriptor::cloud(account_id, kind, id)))
+}
+
+/// The model a transcription runs with: an explicit requested id always
+/// resolves as local Whisper; otherwise the dictation default (cloud or local)
+/// is used, falling back to the first installed local model if a configured
+/// cloud account was removed.
 pub(crate) fn resolve_model(
     context: &ApiContext,
     requested: Option<&str>,
 ) -> Result<AsrModelDescriptor, ApiError> {
-    ensure_legacy_admitted(context)?;
-    let coordinator = context.backend().whisper_models();
     if let Some(model_id) = requested {
-        return coordinator
+        ensure_legacy_admitted(context)?;
+        return context
+            .backend()
+            .whisper_models()
             .resolve(Some(model_id))
             .map(|(descriptor, _)| descriptor)
             .map_err(IntoApiError::into_api_error);
     }
-    if let Some(model_id) = dictation_model_id(context)?
+    let (chosen_model, chosen_provider) = dictation_settings(context)?;
+    if let (Some(account_id), Some(model_id)) =
+        (chosen_provider.as_deref(), chosen_model.as_deref())
+        && let Some(descriptor) = resolve_cloud_model(context, account_id, model_id)?
+    {
+        return Ok(descriptor);
+    }
+    ensure_legacy_admitted(context)?;
+    let coordinator = context.backend().whisper_models();
+    if let Some(model_id) = chosen_model
         && let Ok((descriptor, _)) = coordinator.resolve(Some(&model_id))
     {
         return Ok(descriptor);
@@ -294,6 +339,9 @@ pub async fn whisper_preload(
                 crate::api::jobs::local::folder_move_active(context)?;
             }
             let model = resolve_model(context, request.model_id.as_deref())?;
+            if model.is_remote() {
+                return Ok(());
+            }
             let options = engine_options(&dto::TranscribeOptions {
                 run: request.run,
                 ..dto::TranscribeOptions::default()
@@ -329,14 +377,25 @@ pub async fn whisper_clear_cache(
 }
 
 /// Chooses the model dictation uses; `None` goes back to the first
-/// installed one.
+/// installed local Whisper model. When `provider_account_id` is set, dictation
+/// routes to that cloud provider account (OpenRouter or NanoGPT).
 pub async fn whisper_dictation_model_set(
     context: &ApiContext,
     request: dto::DictationModelSetRequest,
 ) -> Result<(), ApiError> {
     context
         .blocking(move |context| {
-            if let Some(model_id) = &request.model_id {
+            if let Some(account_id) = request.provider_account_id.as_deref() {
+                let model_id = request.model_id.as_deref().ok_or_else(|| {
+                    invalid_field("model_id", "a cloud dictation provider requires a model id")
+                })?;
+                if resolve_cloud_model(context, account_id, model_id)?.is_none() {
+                    return Err(api_error(
+                        ApiErrorCode::NotFound,
+                        "the cloud speech provider was not found",
+                    ));
+                }
+            } else if let Some(model_id) = &request.model_id {
                 let known = installed(context)?
                     .iter()
                     .any(|manifest| &manifest.model_id == model_id);
@@ -346,8 +405,69 @@ pub async fn whisper_dictation_model_set(
             }
             let database = context.backend().database();
             database
-                .update_device_settings(&|device| device.speech.dictation_model_id.clone_from(&request.model_id))
+                .update_device_settings(&|device| {
+                    device
+                        .speech
+                        .dictation_model_id
+                        .clone_from(&request.model_id);
+                    device
+                        .speech
+                        .dictation_provider_account_id
+                        .clone_from(&request.provider_account_id);
+                })
                 .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))
+        })
+        .await
+}
+
+/// Lists available cloud speech-to-text models for an OpenRouter or NanoGPT
+/// provider account.
+pub async fn speech_cloud_models(
+    context: &ApiContext,
+    request: dto::SpeechCloudModelsRequest,
+) -> Result<Vec<dto::SpeechCloudModelView>, ApiError> {
+    let account_id: lettuce_types::ProviderAccountId =
+        crate::api::error::parse_id(&request.provider_account_id, "provider_account_id")?;
+    context
+        .blocking(move |context| {
+            let resolver = super::host::AppLinkedProviderCredentials::new(context.clone());
+            let client = resolver.speech_json_client()?;
+            let models = tokio::runtime::Handle::current().block_on(async move {
+                let (account, credential) =
+                    resolver
+                        .resolve_account(account_id)
+                        .await
+                        .map_err(|error| match error {
+                            lettuce_speech::TtsRuntimeError::Unauthorized { .. } => {
+                                super::errors::secret_missing()
+                            }
+                            lettuce_speech::TtsRuntimeError::Rejected { .. } => api_error(
+                                ApiErrorCode::NotFound,
+                                "the cloud speech provider was not found",
+                            ),
+                            _ => api_error(ApiErrorCode::Unavailable, error.to_string()),
+                        })?;
+                let kind = lettuce_speech::CloudAsrProviderKind::from_provider_kind(
+                    &account.provider_kind,
+                )
+                .ok_or_else(|| {
+                    invalid_field(
+                        "provider_account_id",
+                        "only OpenRouter, NanoGPT and Gemini accounts support cloud speech recognition",
+                    )
+                })?;
+                lettuce_speech::CloudAsrRuntime::new(client)
+                    .fetch_models(account.endpoint.as_deref(), kind, &credential)
+                    .await
+                    .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))
+            })?;
+            Ok(models
+                .into_iter()
+                .map(|model| dto::SpeechCloudModelView {
+                    id: model.id,
+                    name: model.name,
+                })
+                .collect())
         })
         .await
 }

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Play } from "lucide-react";
-import { Button, confirm, Field, icon, Input, SelectMenu, Sheet, Textarea } from "@lettuceai/crisp";
+import { Play, RotateCcw } from "lucide-react";
+import { Button, confirm, Field, icon, IconButton, Input, SelectMenu, Sheet, Textarea } from "@lettuceai/crisp";
 import type { ApiClient } from "@/api/client";
 import type { AudioProviderView, AudioVoiceView, UserVoiceView } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
@@ -20,7 +20,7 @@ export interface VoicePrefill {
 const designMinimum = 100;
 type FieldKey = "name" | "model" | "voice" | "preview";
 
-export function VoiceEditorSheet({ api, providers, voice, prefill, onClose }: { api: ApiClient; providers: readonly AudioProviderView[]; voice: UserVoiceView | null; prefill: VoicePrefill | null; onClose: () => void }) {
+export function VoiceEditorSheet({ api, open, providers, voice, prefill, onClose }: { api: ApiClient; open: boolean; providers: readonly AudioProviderView[]; voice: UserVoiceView | null; prefill: VoicePrefill | null; onClose: () => void }) {
   const { t, i18n } = useTranslation("settings");
   const { t: common } = useTranslation();
   const invalidate = useInvalidate();
@@ -30,10 +30,11 @@ export function VoiceEditorSheet({ api, providers, voice, prefill, onClose }: { 
   const [design, setDesign] = useState<{ id: string; url: string } | null>(null);
   const provider = providers.find((entry) => entry.id === draft.providerId) ?? providers[0]!;
   const type = provider.configuration.type;
+  const isCloudLinked = type === "open_router" || type === "nano_gpt" || type === "gemini_audio";
   const designing = type === "elevenlabs" && voice === null && prefill === null;
-  const listsVoices = type === "elevenlabs" || type === "fish_tts" || type === "gemini";
+  const listsVoices = type === "elevenlabs" || type === "fish_tts" || type === "gemini" || isCloudLinked;
   const picksModel = type !== "open_ai_compatible";
-  const models = useQuery({ ...ttsModelsQuery(api, type, designing), enabled: picksModel });
+  const models = useQuery({ ...ttsModelsQuery(api, type, designing, isCloudLinked ? provider.id : undefined), enabled: picksModel });
   const voices = useQuery({ ...providerVoicesQuery(api, provider.id), enabled: listsVoices && !designing });
   const synthesis = useSynthesis(api);
   const controller = useRef(new AbortController());
@@ -44,15 +45,29 @@ export function VoiceEditorSheet({ api, providers, voice, prefill, onClose }: { 
   const { mutate: refreshVoices } = refresh;
   useEffect(() => () => controller.current.abort(), []);
   useEffect(() => {
-    if ((type === "elevenlabs" || type === "fish_tts") && !designing && voices.isSuccess && voices.data.length === 0 && !refreshed.current.has(provider.id)) {
+    if ((type === "elevenlabs" || type === "fish_tts" || isCloudLinked) && !designing && voices.isSuccess && voices.data.length === 0 && !refreshed.current.has(provider.id)) {
       refreshed.current.add(provider.id);
       refreshVoices();
     }
-  }, [type, designing, voices.isSuccess, voices.data, provider.id, refreshVoices]);
+  }, [type, isCloudLinked, designing, voices.isSuccess, voices.data, provider.id, refreshVoices]);
   const modelList = models.data ?? [];
   const model = picksModel ? modelList.some((entry) => entry.id === draft.modelId) ? draft.modelId : modelList[0]?.id ?? "" : draft.modelId;
-  const voiceList = voices.data ?? [];
-  const voiceId = type === "gemini" && !draft.voiceId.trim() ? voiceList[0]?.voice_id ?? "" : draft.voiceId;
+  const allVoices = voices.data ?? [];
+  const voiceList = isCloudLinked
+    ? model
+      ? allVoices.filter((entry) => {
+          const listed = entry.labels.models?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
+          return listed.includes(model) || entry.labels.model_id === model;
+        })
+      : []
+    : allVoices;
+  const voiceId = isCloudLinked
+    ? (voiceList.some((entry) => entry.voice_id === draft.voiceId)
+        ? draft.voiceId
+        : (voiceList[0]?.voice_id ?? "default"))
+    : type === "gemini" && !draft.voiceId.trim()
+      ? (voiceList[0]?.voice_id ?? "")
+      : draft.voiceId;
   const edit = (patch: Partial<typeof draft>) => { setProblem(null); setDraft((previous) => ({ ...previous, ...patch })); };
   const changeProvider = (id: string | null) => { if (id && id !== draft.providerId) { setDesign(null); edit({ providerId: id, modelId: "", voiceId: "" }); } };
   const pickVoice = (id: string | null) => {
@@ -122,7 +137,7 @@ export function VoiceEditorSheet({ api, providers, voice, prefill, onClose }: { 
   const previewing = designing ? designPreview.isPending : synthesis.busy;
   const previewError = designing ? designPreview.error : synthesis.error;
   return (
-    <Sheet open onClose={onClose} placement="auto" title={t(voice ? "voices.editor.editTitle" : "voices.editor.createTitle")}
+    <Sheet open={open} onClose={onClose} placement="auto" title={t(voice ? "voices.editor.editTitle" : "voices.editor.createTitle")}
       footer={
         <div className="flex items-center gap-2">
           {voice && <Button variant="danger" disabled={busy} onClick={() => void askDelete()}>{t("voices.editor.delete")}</Button>}
@@ -159,6 +174,11 @@ export function VoiceEditorSheet({ api, providers, voice, prefill, onClose }: { 
             <SelectMenu options={voiceOptions} value={voiceOptions.some((entry) => entry.value === voiceId) ? voiceId : null} onChange={pickVoice} disabled={voices.isPending} />
           </Field>
         )}
+        {isCloudLinked && voiceOptions.length > 0 && (
+          <Field label={<span className="flex items-center justify-between gap-2">{t("voices.editor.cloudVoice")}{refreshButton}</span>}>
+            <SelectMenu options={voiceOptions} value={voiceOptions.some((entry) => entry.value === voiceId) ? voiceId : null} onChange={pickVoice} disabled={voices.isPending} />
+          </Field>
+        )}
         {listsVoices && !designing && voices.isError && <FailureState error={voices.error} size="sm" onRetry={() => void voices.refetch()} />}
         {refresh.isError && <FailureState error={refresh.error} size="sm" />}
         {needsVoiceId && (
@@ -174,9 +194,14 @@ export function VoiceEditorSheet({ api, providers, voice, prefill, onClose }: { 
         </Field>
         <Field {...(error("preview") ? { error: error("preview") } : {})}>
           <div className="space-y-3">
-            <Button variant="secondary" leading={<Play size={icon.sm} />} loading={previewing} disabled={previewBlocked} onClick={preview}>{t(previewing ? "voices.editor.previewing" : "voices.editor.preview")}</Button>
+            {audioUrl ? (
+              <AssetAudio src={audioUrl} title={draft.name.trim() || t("voices.editor.sample")}
+                {...(previewing ? { description: t("voices.editor.previewing") } : {})}
+                actions={<IconButton label={t("voices.editor.preview")} variant="ghost" size="sm" disabled={previewBlocked || previewing} onClick={preview}><RotateCcw size={icon.sm} /></IconButton>} />
+            ) : (
+              <Button variant="secondary" leading={<Play size={icon.sm} />} loading={previewing} disabled={previewBlocked} onClick={preview}>{t(previewing ? "voices.editor.previewing" : "voices.editor.preview")}</Button>
+            )}
             {previewError !== null && <FailureState error={previewError} size="sm" />}
-            {audioUrl && <AssetAudio src={audioUrl} title={draft.name.trim() || t("voices.editor.preview")} />}
           </div>
         </Field>
       </div>

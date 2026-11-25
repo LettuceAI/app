@@ -541,21 +541,57 @@
   "developer": {
     "group": "Mga test chat",
     "templates": {
-      "roleplay": { "title": "Roleplay chat", "description": "Isang karakter, isang persona at isang chat na may history" },
-      "companion": { "title": "Companion chat, may laman", "description": "Isang companion na may Soul, relasyon, history at mga alaala" },
-      "group": { "title": "Group chat", "description": "Tatlong karakter sa isang grupo na may history" },
-      "group_companion": { "title": "Companion group chat", "description": "Tatlong companion na may Soul sa isang companion group na may history" },
-      "roleplay_widgets": { "title": "Roleplay chat na may mga widget", "description": "Ang roleplay chat na may lahat ng widget sa tabi ng chat" },
-      "companion_widgets": { "title": "Companion chat na may mga widget", "description": "Ang companion chat na may lahat ng widget, kasama ang companion state at memory" },
-      "chapters_backlog": { "title": "Mga kabanata: mahabang kasaysayan", "description": "Isang kuwento ng ferry na may 42 mensahe at walang buod. Bawat mensaheng ipinapadala mo ay nagbubuod ng susunod na anim na luma." },
-      "chapters_user_seed": { "title": "Mga kabanata: nakasulat na buod", "description": "Parehong kuwento na may maikling buod na isinulat ng kamay, na pinapanatili bilang panimula." },
-      "chapters_large_seed": { "title": "Mga kabanata: sobrang laking buod", "description": "Parehong kuwento na may buod na isinulat ng kamay at mas malaki sa test budget. Ang mga bagong cycle lang ang pinagsasama." },
-      "chapters_group": { "title": "Mga kabanata: grupo", "description": "Isang kuwento ng salvage crew na may 36 mensahe sa isang grupong may dynamic memory." }
+      "roleplay": {
+        "title": "Roleplay chat",
+        "description": "Isang karakter, isang persona at isang chat na may history"
+      },
+      "companion": {
+        "title": "Companion chat, may laman",
+        "description": "Isang companion na may Soul, relasyon, history at mga alaala"
+      },
+      "group": {
+        "title": "Group chat",
+        "description": "Tatlong karakter sa isang grupo na may history"
+      },
+      "group_companion": {
+        "title": "Companion group chat",
+        "description": "Tatlong companion na may Soul sa isang companion group na may history"
+      },
+      "roleplay_widgets": {
+        "title": "Roleplay chat na may mga widget",
+        "description": "Ang roleplay chat na may lahat ng widget sa tabi ng chat"
+      },
+      "companion_widgets": {
+        "title": "Companion chat na may mga widget",
+        "description": "Ang companion chat na may lahat ng widget, kasama ang companion state at memory"
+      },
+      "chapters_backlog": {
+        "title": "Mga kabanata: mahabang kasaysayan",
+        "description": "Isang kuwento ng ferry na may 42 mensahe at walang buod. Bawat mensaheng ipinapadala mo ay nagbubuod ng susunod na anim na luma."
+      },
+      "chapters_user_seed": {
+        "title": "Mga kabanata: nakasulat na buod",
+        "description": "Parehong kuwento na may maikling buod na isinulat ng kamay, na pinapanatili bilang panimula."
+      },
+      "chapters_large_seed": {
+        "title": "Mga kabanata: sobrang laking buod",
+        "description": "Parehong kuwento na may buod na isinulat ng kamay at mas malaki sa test budget. Ang mga bagong cycle lang ang pinagsasama."
+      },
+      "chapters_group": {
+        "title": "Mga kabanata: grupo",
+        "description": "Isang kuwento ng salvage crew na may 36 mensahe sa isang grupong may dynamic memory."
+      }
     },
     "chapters": {
       "group": "Mga test ng buod ayon sa kabanata",
-      "apply": { "title": "Gamitin ang test settings ng kabanata", "description": "Binubuksan ang dynamic memory at buod ayon sa kabanata na may cycle na 6 na mensahe, budget na 800 token at 2 cycle bawat kabanata. Ise-save muna ang memory settings mo." },
-      "restore": { "title": "Ibalik ang memory settings", "description": "Ibinabalik ang memory settings na na-save bago ang test settings." },
+      "apply": {
+        "title": "Gamitin ang test settings ng kabanata",
+        "description": "Binubuksan ang dynamic memory at buod ayon sa kabanata na may cycle na 6 na mensahe, budget na 800 token at 2 cycle bawat kabanata. Ise-save muna ang memory settings mo."
+      },
+      "restore": {
+        "title": "Ibalik ang memory settings",
+        "description": "Ibinabalik ang memory settings na na-save bago ang test settings."
+      },
       "applied": "Naka-on ang test settings ng kabanata",
       "restored": "Naibalik ang memory settings"
     }
@@ -619,11 +655,14 @@
     "verified": "Na-verify ang koneksyon",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "OpenAI compatible",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "Hindi ma-verify ang koneksyon.",
     "saveBeforeVerify": "I-save ang mga pagbabago sa koneksyon bago mag-verify gamit ang naka-save na key.",
@@ -633,7 +672,10 @@
     "deleteWithModels_one": "Tanggalin ang provider at 1 modelo",
     "deleteWithModels_other": "Tanggalin ang provider at {{count}} modelo",
     "modelCount_one": "{{count}} modelo",
-    "modelCount_other": "{{count}} modelo"
+    "modelCount_other": "{{count}} modelo",
+    "linkedAccount": "Account ng provider",
+    "linkedAccountHint": "Ginagamit ang API key mula sa dati mong provider account",
+    "linkedAccountEmpty": "Magdagdag muna ng OpenRouter o NanoGPT account sa Mga Modelo"
   },
   "models": {
     "vision": "Vision",
@@ -1463,10 +1505,22 @@
     },
     "pages": {
       "group": "Iba pang setting",
-      "saved": { "title": "Ano ang sine-save", "body": "Pagitan ng buod, limitasyon ng alaala, mga duplikado, at pag-pin" },
-      "recall": { "title": "Pag-alala", "body": "Ano ang kasama sa bawat sagot at paano pinipili ang mga alaala" },
-      "summary": { "title": "Summary ng context", "body": "Mga summary na may kabanata at ang budget ng summary" },
-      "advanced": { "title": "Advanced", "body": "Paglimot at kung paano gumagana ang memory manager" }
+      "saved": {
+        "title": "Ano ang sine-save",
+        "body": "Pagitan ng buod, limitasyon ng alaala, mga duplikado, at pag-pin"
+      },
+      "recall": {
+        "title": "Pag-alala",
+        "body": "Ano ang kasama sa bawat sagot at paano pinipili ang mga alaala"
+      },
+      "summary": {
+        "title": "Summary ng context",
+        "body": "Mga summary na may kabanata at ang budget ng summary"
+      },
+      "advanced": {
+        "title": "Advanced",
+        "body": "Paglimot at kung paano gumagana ang memory manager"
+      }
     },
     "advanced": {
       "enrichment": "Context enrichment",
@@ -1821,7 +1875,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Ibang scope",
-    "scopeName": "Pangalan ng scope"
+    "scopeName": "Pangalan ng scope",
+    "source": "Pinagmulan ng speech recognition",
+    "sourceLocal": "Lokal (Whisper)",
+    "sourceCloud": "Cloud",
+    "cloudModel": "Cloud speech model",
+    "cloudProvider": "Account ng provider",
+    "cloudProviderEmpty": "Magdagdag muna ng OpenRouter o NanoGPT account sa Mga Provider"
   },
   "hf": {
     "title": "Kumuha ng modelo",
@@ -2352,7 +2412,8 @@
       "previewFirst": "I-preview muna ang boses para magawa ito.",
       "fishVoiceIdRequired": "Kailangan ng Fish Audio ng voice ID.",
       "openaiModelIdRequired": "Ilagay ang model ID na inaasahan ng iyong endpoint.",
-      "openaiVoiceIdRequired": "Maglagay ng voice ID na sinusuportahan ng iyong endpoint."
+      "openaiVoiceIdRequired": "Maglagay ng voice ID na sinusuportahan ng iyong endpoint.",
+      "cloudVoice": "Boses"
     },
     "kokoro": {
       "studio": "Kokoro studio",

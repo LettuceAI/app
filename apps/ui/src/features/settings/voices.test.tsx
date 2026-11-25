@@ -88,12 +88,10 @@ describe("voices settings", () => {
     expect(history.location.search).not.toContain("kokoro=");
   });
 
-  it("points to the audio providers when there are none", async () => {
+  it("points to the providers page when there are none", async () => {
     const { history } = await mount();
     fireEvent.click(await screen.findByRole("button", { name: /No voice providers yet/ }));
     await waitFor(() => expect(history.location.pathname).toBe("/settings/providers"));
-    expect(history.location.search).toContain("providersTab=audio");
-    expect(await screen.findByRole("tab", { name: /Audio/ })).toHaveProperty("ariaSelected", "true");
     expect(screen.queryByText("My voices")).toBeNull();
   });
 

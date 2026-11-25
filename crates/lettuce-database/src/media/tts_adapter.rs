@@ -35,6 +35,9 @@ fn kind_name(kind: AudioProviderKind) -> &'static str {
         AudioProviderKind::FishTts => "fish_tts",
         AudioProviderKind::FishSpeech => "fish_speech",
         AudioProviderKind::OpenAiTts => "open_ai_tts",
+        AudioProviderKind::OpenRouterTts => "openrouter_tts",
+        AudioProviderKind::NanoGptTts => "nanogpt_tts",
+        AudioProviderKind::GeminiAudio => "gemini_audio",
         AudioProviderKind::Kokoro => "kokoro",
     }
 }

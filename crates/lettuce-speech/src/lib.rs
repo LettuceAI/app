@@ -6,6 +6,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod asr;
+mod cloud_asr;
+mod cloud_tts;
 mod elevenlabs_tts;
 mod fish_speech_tts;
 mod fish_tts;
@@ -24,6 +26,8 @@ mod voice_design;
 mod whisper_runtime;
 
 pub use asr::*;
+pub use cloud_asr::*;
+pub use cloud_tts::*;
 pub use elevenlabs_tts::*;
 pub use fish_speech_tts::*;
 pub use fish_tts::*;

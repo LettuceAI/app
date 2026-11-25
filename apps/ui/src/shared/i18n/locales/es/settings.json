@@ -545,21 +545,57 @@
   "developer": {
     "group": "Chats de prueba",
     "templates": {
-      "roleplay": { "title": "Chat de rol", "description": "Un personaje, una persona y un chat con historial" },
-      "companion": { "title": "Chat de compañero, completo", "description": "Un compañero con alma, relación, historial y recuerdos" },
-      "group": { "title": "Chat de grupo", "description": "Tres personajes en un grupo con historial" },
-      "group_companion": { "title": "Chat de grupo de compañeros", "description": "Tres compañeros con alma en un grupo de compañeros con historial" },
-      "roleplay_widgets": { "title": "Chat de rol con widgets", "description": "El chat de rol con todos los widgets junto al chat" },
-      "companion_widgets": { "title": "Chat de compañero con widgets", "description": "El chat de compañero con todos los widgets, incluido el estado del compañero y la memoria" },
-      "chapters_backlog": { "title": "Capítulos: historial largo", "description": "Una historia de ferry de 42 mensajes sin resumen. Cada mensaje que envías resume los seis antiguos siguientes." },
-      "chapters_user_seed": { "title": "Capítulos: resumen escrito", "description": "La misma historia con un resumen corto escrito a mano, que se conserva como punto de partida." },
-      "chapters_large_seed": { "title": "Capítulos: resumen demasiado grande", "description": "La misma historia con un resumen escrito a mano mayor que el presupuesto de prueba. Solo se agrupan los ciclos nuevos." },
-      "chapters_group": { "title": "Capítulos: grupo", "description": "Una historia de 36 mensajes de una tripulación de rescate en un grupo con memoria dinámica." }
+      "roleplay": {
+        "title": "Chat de rol",
+        "description": "Un personaje, una persona y un chat con historial"
+      },
+      "companion": {
+        "title": "Chat de compañero, completo",
+        "description": "Un compañero con alma, relación, historial y recuerdos"
+      },
+      "group": {
+        "title": "Chat de grupo",
+        "description": "Tres personajes en un grupo con historial"
+      },
+      "group_companion": {
+        "title": "Chat de grupo de compañeros",
+        "description": "Tres compañeros con alma en un grupo de compañeros con historial"
+      },
+      "roleplay_widgets": {
+        "title": "Chat de rol con widgets",
+        "description": "El chat de rol con todos los widgets junto al chat"
+      },
+      "companion_widgets": {
+        "title": "Chat de compañero con widgets",
+        "description": "El chat de compañero con todos los widgets, incluido el estado del compañero y la memoria"
+      },
+      "chapters_backlog": {
+        "title": "Capítulos: historial largo",
+        "description": "Una historia de ferry de 42 mensajes sin resumen. Cada mensaje que envías resume los seis antiguos siguientes."
+      },
+      "chapters_user_seed": {
+        "title": "Capítulos: resumen escrito",
+        "description": "La misma historia con un resumen corto escrito a mano, que se conserva como punto de partida."
+      },
+      "chapters_large_seed": {
+        "title": "Capítulos: resumen demasiado grande",
+        "description": "La misma historia con un resumen escrito a mano mayor que el presupuesto de prueba. Solo se agrupan los ciclos nuevos."
+      },
+      "chapters_group": {
+        "title": "Capítulos: grupo",
+        "description": "Una historia de 36 mensajes de una tripulación de rescate en un grupo con memoria dinámica."
+      }
     },
     "chapters": {
       "group": "Pruebas de resúmenes por capítulos",
-      "apply": { "title": "Usar ajustes de prueba de capítulos", "description": "Activa la memoria dinámica y los resúmenes por capítulos con ciclos de 6 mensajes, un presupuesto de 800 tokens y 2 ciclos por capítulo. Antes se guardan tus ajustes de memoria." },
-      "restore": { "title": "Restaurar ajustes de memoria", "description": "Devuelve los ajustes de memoria guardados antes de los de prueba." },
+      "apply": {
+        "title": "Usar ajustes de prueba de capítulos",
+        "description": "Activa la memoria dinámica y los resúmenes por capítulos con ciclos de 6 mensajes, un presupuesto de 800 tokens y 2 ciclos por capítulo. Antes se guardan tus ajustes de memoria."
+      },
+      "restore": {
+        "title": "Restaurar ajustes de memoria",
+        "description": "Devuelve los ajustes de memoria guardados antes de los de prueba."
+      },
       "applied": "Ajustes de prueba de capítulos activados",
       "restored": "Ajustes de memoria restaurados"
     }
@@ -623,11 +659,14 @@
     "verified": "Conexión verificada",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "Compatible con OpenAI",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "No se pudo verificar la conexión.",
     "saveBeforeVerify": "Guarda los cambios de la conexión antes de verificar con la clave guardada.",
@@ -640,7 +679,10 @@
     "deleteWithModels_other": "Eliminar el proveedor y {{count}} modelos",
     "modelCount_one": "1 modelo",
     "modelCount_many": "{{count}} modelos",
-    "modelCount_other": "{{count}} modelos"
+    "modelCount_other": "{{count}} modelos",
+    "linkedAccount": "Cuenta de proveedor",
+    "linkedAccountHint": "Usa la clave API de tu cuenta de proveedor existente",
+    "linkedAccountEmpty": "Agrega primero una cuenta de OpenRouter o NanoGPT en Modelos"
   },
   "models": {
     "vision": "Visión",
@@ -1475,10 +1517,22 @@
     },
     "pages": {
       "group": "Más ajustes",
-      "saved": { "title": "Qué se guarda", "body": "Intervalo de resumen, límite de recuerdos, duplicados y fijación" },
-      "recall": { "title": "Recuerdo", "body": "Qué va con cada respuesta y cómo se eligen los recuerdos" },
-      "summary": { "title": "Resumen del contexto", "body": "Resúmenes por capítulos y el presupuesto del resumen" },
-      "advanced": { "title": "Avanzado", "body": "El olvido y cómo funciona el gestor de memoria" }
+      "saved": {
+        "title": "Qué se guarda",
+        "body": "Intervalo de resumen, límite de recuerdos, duplicados y fijación"
+      },
+      "recall": {
+        "title": "Recuerdo",
+        "body": "Qué va con cada respuesta y cómo se eligen los recuerdos"
+      },
+      "summary": {
+        "title": "Resumen del contexto",
+        "body": "Resúmenes por capítulos y el presupuesto del resumen"
+      },
+      "advanced": {
+        "title": "Avanzado",
+        "body": "El olvido y cómo funciona el gestor de memoria"
+      }
     },
     "advanced": {
       "enrichment": "Enriquecimiento de contexto",
@@ -1834,7 +1888,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Otro ámbito",
-    "scopeName": "Nombre del ámbito"
+    "scopeName": "Nombre del ámbito",
+    "source": "Fuente de reconocimiento de voz",
+    "sourceLocal": "Local (Whisper)",
+    "sourceCloud": "Nube",
+    "cloudModel": "Modelo de voz en la nube",
+    "cloudProvider": "Cuenta de proveedor",
+    "cloudProviderEmpty": "Agrega primero una cuenta de OpenRouter o NanoGPT en Proveedores"
   },
   "hf": {
     "title": "Obtener modelos",
@@ -2371,7 +2431,8 @@
       "previewFirst": "Escucha primero la vista previa de la voz para crearla.",
       "fishVoiceIdRequired": "Fish Audio necesita un ID de voz.",
       "openaiModelIdRequired": "Introduce el ID del modelo que espera tu endpoint.",
-      "openaiVoiceIdRequired": "Introduce un ID de voz que admita tu endpoint."
+      "openaiVoiceIdRequired": "Introduce un ID de voz que admita tu endpoint.",
+      "cloudVoice": "Voz"
     },
     "kokoro": {
       "studio": "Estudio Kokoro",

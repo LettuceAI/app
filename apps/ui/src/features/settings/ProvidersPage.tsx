@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Cpu, EthernetPort, ExternalLink, Plus, Volume2 } from "lucide-react";
-import { Button, Checkbox, confirm, Field, Input, ListGroup, ListRow, ListRowButton, LoadingState, Page, Sheet, Switch, Tab, TabList, Tabs, Text, Textarea, icon } from "@lettuceai/crisp";
+import { Button, Checkbox, confirm, Field, Input, ListGroup, ListRow, ListRowButton, LoadingState, Page, Sheet, Switch, Text, Textarea, icon } from "@lettuceai/crisp";
 import { isApiFailure } from "@/api/client";
 import type { AudioProviderConfiguration, AudioProviderView, ProviderAccountView, ProviderDescriptorContract } from "@/api/generated/bindings";
 import { queryKeys } from "@/api/query-keys";
@@ -16,10 +15,14 @@ import { customProviderDraft, customProviderConfig, parseImageExtraBody } from "
 import { useProviderData, useSettingsAction, useSettingsApi, useSettingsLayout } from "./data";
 import { ExternalButton } from "./model-browser/ModelBrowserPage";
 
-const audioKinds = ["elevenlabs", "gemini", "fish_tts", "fish_speech", "open_ai_compatible", "kokoro"] as const;
+const audioOnlyKinds = ["elevenlabs", "gemini", "fish_tts", "fish_speech", "open_ai_compatible", "kokoro"] as const;
+const audioOnlyKindSet: ReadonlySet<string> = new Set(audioOnlyKinds);
+const localAudioKinds: ReadonlySet<string> = new Set(["fish_speech", "kokoro"]);
+const linkedAudioKinds: ReadonlySet<string> = new Set(["open_router", "nano_gpt", "gemini_audio"]);
+const hybridProviderKinds: ReadonlySet<string> = new Set(["openrouter", "nanogpt", "gemini", "google", "google-gemini"]);
 const appManagedKinds: ReadonlySet<string> = new Set(["llamacpp", "sdcpp"]);
 const exampleSproutUrl = "http://192.168.1.10:8477";
-type Editor = { audio: boolean; account?: ProviderAccountView; voice?: AudioProviderView };
+type Editor = { account?: ProviderAccountView; voice?: AudioProviderView };
 
 export function ProvidersPage() {
   const { t } = useTranslation("settings");
@@ -31,17 +34,22 @@ export function ProvidersPage() {
   const audio = useQuery({ queryKey: queryKeys.audioProviders.all, queryFn: () => api.call("audioProvidersList") });
   const models = useQuery({ queryKey: queryKeys.models.list(), queryFn: () => api.call("modelsList") });
   const { t: common } = useTranslation();
-  const startTab = useSearch({ from: "/settings/$section", select: (search) => search.providersTab ?? "llm" });
-  const [tab, setTab] = useState<"llm" | "audio">(startTab);
   const [editor, setEditor] = useState<Editor | null>(null);
   const closingEditor = useClosingValue(editor);
-  const query = tab === "audio" ? audio : accounts;
+  const visibleAudio = (audio.data ?? []).filter((provider) => !linkedAudioKinds.has(provider.configuration.type));
+  const pending = accounts.isPending || audio.isPending;
+  const error = accounts.isError ? accounts.error : audio.isError ? audio.error : null;
+  const retry = () => {
+    if (accounts.isError) void accounts.refetch();
+    if (audio.isError) void audio.refetch();
+  };
   const modelCounts = new Map<string, number>();
   for (const model of models.data?.models ?? []) modelCounts.set(model.provider_account_id, (modelCounts.get(model.provider_account_id) ?? 0) + 1);
   const groupOf = (account: ProviderAccountView): ProviderGroup => {
     const descriptor = catalog.data?.find((d) => d.kind === account.provider_kind);
     return descriptor ? providerGroup(descriptor) : "custom";
   };
+  const hasAny = (accounts.data?.length ?? 0) + visibleAudio.length > 0;
   return (
     <>
       <Page
@@ -50,14 +58,14 @@ export function ProvidersPage() {
         className="relative"
         footer={
           phone &&
-          !query.isPending && (
+          !pending && (
             <div className="pointer-events-none absolute inset-x-0 bottom-[calc(1.5rem+var(--safe-bottom,0px))] flex justify-end px-6">
               <Button
                 className="pointer-events-auto shadow-raised"
                 variant="primary"
-                disabled={tab === "llm" && !catalog.data?.length}
+                disabled={!catalog.data?.length}
                 leading={<Plus size={icon.md} />}
-                onClick={() => setEditor({ audio: tab === "audio" })}
+                onClick={() => setEditor({})}
               >
                 {t("manage.add")}
               </Button>
@@ -71,100 +79,102 @@ export function ProvidersPage() {
             <Button
               variant="tonal"
               size="sm"
-              disabled={tab === "llm" && !catalog.data?.length}
+              disabled={!catalog.data?.length}
               leading={<Plus size={icon.sm} />}
-              onClick={() => setEditor({ audio: tab === "audio" })}
+              onClick={() => setEditor({})}
             >
               {t("manage.add")}
             </Button>
           )
         }
       >
-        <Tabs value={tab} onChange={setTab}>
-          <TabList aria-label={t("providers.type")}>
-            <Tab value="llm" count={accounts.data?.length ?? 0}>{t("providers.models")}</Tab>
-            <Tab value="audio" count={audio.data?.length ?? 0}>{t("providers.audio")}</Tab>
-          </TabList>
-        </Tabs>
-        {tab === "llm" && catalog.isError && <FailureState error={catalog.error} onRetry={() => void catalog.refetch()} />}
-        {query.isPending ? (
+        {catalog.isError && <FailureState error={catalog.error} onRetry={() => void catalog.refetch()} />}
+        {pending ? (
           <LoadingState />
-        ) : query.isError ? (
-          <FailureState error={query.error} onRetry={() => void query.refetch()} />
+        ) : error ? (
+          <FailureState error={error} onRetry={retry} />
         ) : (
-          tab === "llm" ? (
-            <div className="@container space-y-7">
-              {providerGroups.map((group) => {
-                const members = (accounts.data ?? []).filter((p) => groupOf(p) === group).sort((a, b) => a.label.localeCompare(b.label));
-                if (members.length === 0) return null;
-                return (
-                  <section key={group} aria-label={common(`providerSelect.groups.${group}`)} className="space-y-3">
-                    <h3 className="flex items-center gap-2.5 px-1 text-fg-2">
-                      <span className="text-sm font-medium">{common(`providerSelect.groups.${group}`)}</span>
-                      <span className="text-xs tabular-nums text-fg-4" aria-hidden>{members.length}</span>
-                      <span className="h-px flex-1 bg-line" aria-hidden />
-                    </h3>
-                    <div className="grid grid-cols-1 gap-2 @min-[53rem]:grid-cols-2">
-                      {members.map((p) => {
-                        const kind = catalog.data?.find((d) => d.kind === p.provider_kind);
-                        const needsSetup = kind?.api_key === "required" && !p.api_key_set;
-                        const address = p.base_url ?? kind?.default_endpoint ?? null;
-                        const showAddress = address !== null && (group !== "cloud" || (p.base_url !== null && p.base_url !== kind?.default_endpoint));
-                        const count = modelCounts.get(p.id) ?? 0;
-                        return (
-                          <ListGroup key={p.id} className="min-w-0 [&>div]:h-full [&>div>button]:h-full">
-                            <ListRowButton
-                              icon={
-                                providerLogo(p.provider_kind) ? (
-                                  <ProviderMark kind={p.provider_kind} name={p.label} />
-                                ) : address ? (
-                                  <EthernetPort size={icon.lg} />
-                                ) : (
-                                  <Cpu size={icon.lg} />
-                                )
-                              }
-                              tone={needsSetup ? "warning" : address ? "info" : "accent"}
-                              title={p.label}
-                              description={[
-                                kind?.display_name ?? p.provider_kind,
-                                needsSetup ? t("providers.needsSetup") : t("providers.modelCount", { count }),
-                                showAddress ? address : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                              onClick={() => setEditor({ audio: false, account: p })}
-                            />
-                          </ListGroup>
-                        );
-                      })}
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-          ) : (
-          <ListGroup>
-            {[...(audio.data ?? [])].sort((a, b) => a.label.localeCompare(b.label)).map((p) => (
-                  <ListRowButton
-                    key={p.id}
-                    icon={
-                      providerLogo(p.configuration.type) ? (
-                        <ProviderMark kind={p.configuration.type} name={p.label} />
-                      ) : (
-                        <Volume2 size={icon.lg} />
-                      )
-                    }
-                    tone="info"
-                    title={p.label}
-                    description={t(`providers.audioKinds.${p.configuration.type}`)}
-                    onClick={() => setEditor({ audio: true, voice: p })}
-                  />
-                ))}
-          </ListGroup>
-          )
+          <div className="@container space-y-7">
+            {providerGroups.map((group) => {
+              const members = (accounts.data ?? []).filter((p) => groupOf(p) === group).sort((a, b) => a.label.localeCompare(b.label));
+              if (members.length === 0) return null;
+              return (
+                <section key={group} aria-label={common(`providerSelect.groups.${group}`)} className="space-y-3">
+                  <h3 className="flex items-center gap-2.5 px-1 text-fg-2">
+                    <span className="text-sm font-medium">{common(`providerSelect.groups.${group}`)}</span>
+                    <span className="text-xs tabular-nums text-fg-4" aria-hidden>{members.length}</span>
+                    <span className="h-px flex-1 bg-line" aria-hidden />
+                  </h3>
+                  <div className="grid grid-cols-1 gap-2 @min-[53rem]:grid-cols-2">
+                    {members.map((p) => {
+                      const kind = catalog.data?.find((d) => d.kind === p.provider_kind);
+                      const needsSetup = kind?.api_key === "required" && !p.api_key_set;
+                      const address = p.base_url ?? kind?.default_endpoint ?? null;
+                      const showAddress = address !== null && (group !== "cloud" || (p.base_url !== null && p.base_url !== kind?.default_endpoint));
+                      const count = modelCounts.get(p.id) ?? 0;
+                      const supportsAudio = hybridProviderKinds.has(p.provider_kind);
+                      return (
+                        <ListGroup key={p.id} className="min-w-0 [&>div]:h-full [&>div>button]:h-full">
+                          <ListRowButton
+                            icon={
+                              providerLogo(p.provider_kind) ? (
+                                <ProviderMark kind={p.provider_kind} name={p.label} />
+                              ) : address ? (
+                                <EthernetPort size={icon.lg} />
+                              ) : (
+                                <Cpu size={icon.lg} />
+                              )
+                            }
+                            tone={needsSetup ? "warning" : address ? "info" : "accent"}
+                            title={p.label}
+                            description={[
+                              kind?.display_name ?? p.provider_kind,
+                              needsSetup ? t("providers.needsSetup") : t("providers.modelCount", { count }),
+                              supportsAudio ? t("providers.audio") : null,
+                              showAddress ? address : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            onClick={() => setEditor({ account: p })}
+                          />
+                        </ListGroup>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+            {visibleAudio.length > 0 && (
+              <section aria-label={t("providers.audio")} className="space-y-3">
+                <h3 className="flex items-center gap-2.5 px-1 text-fg-2">
+                  <span className="text-sm font-medium">{t("providers.audio")}</span>
+                  <span className="text-xs tabular-nums text-fg-4" aria-hidden>{visibleAudio.length}</span>
+                  <span className="h-px flex-1 bg-line" aria-hidden />
+                </h3>
+                <div className="grid grid-cols-1 gap-2 @min-[53rem]:grid-cols-2">
+                  {[...visibleAudio].sort((a, b) => a.label.localeCompare(b.label)).map((p) => (
+                    <ListGroup key={p.id} className="min-w-0 [&>div]:h-full [&>div>button]:h-full">
+                      <ListRowButton
+                        icon={
+                          providerLogo(p.configuration.type) ? (
+                            <ProviderMark kind={p.configuration.type} name={p.label} />
+                          ) : (
+                            <Volume2 size={icon.lg} />
+                          )
+                        }
+                        tone="info"
+                        title={p.label}
+                        description={t(`providers.audioKinds.${p.configuration.type}`)}
+                        onClick={() => setEditor({ voice: p })}
+                      />
+                    </ListGroup>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
         )}
-        {query.data?.length === 0 && <Text variant="hint">{t("providers.empty")}</Text>}
-        {tab === "audio" && <Text variant="hint">{t("providers.voicesHint")}</Text>}
+        {!pending && !error && !hasAny && <Text variant="hint">{t("providers.empty")}</Text>}
       </Page>
       {closingEditor.shown && (
         <ProviderEditor
@@ -184,10 +194,11 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
   const api = useSettingsApi();
   const action = useSettingsAction();
   const queryClient = useQueryClient();
-  const { account, voice, audio } = editor;
+  const { account, voice } = editor;
   const { phone } = useSettingsLayout();
   const { t: common } = useTranslation();
-  const [kind, setKind] = useState(account?.provider_kind ?? voice?.configuration.type ?? (audio ? "elevenlabs" : catalog.find((p) => p.kind === "openrouter")?.kind ?? catalog[0]?.kind ?? ""));
+  const [kind, setKind] = useState(account?.provider_kind ?? voice?.configuration.type ?? catalog.find((p) => p.kind === "openrouter")?.kind ?? catalog[0]?.kind ?? "");
+  const audio = Boolean(voice) || audioOnlyKindSet.has(kind);
   const isCustom = !audio && (kind === "custom" || kind === "custom-anthropic");
   const [custom, setCustom] = useState(() => customProviderDraft(kind, account?.config));
   const [allowInvalidTls, setAllowInvalidTls] = useState(account?.allow_invalid_tls ?? false);
@@ -227,10 +238,13 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
   const [project, setProject] = useState(voice?.configuration.type === "gemini" ? voice.configuration.project_id ?? "" : "");
   const [location, setLocation] = useState(voice?.configuration.type === "gemini" ? voice.configuration.location : "us-central1");
   const descriptor = catalog.find((p) => p.kind === kind);
-  const options = audio ? audioKinds.map((value) => ({ value, label: t(`providers.audioKinds.${value}`) })) : catalog.map((p) => ({ value: p.kind, label: p.display_name }));
+  const allOptions = [
+    ...catalog.map((p) => ({ value: p.kind, label: p.display_name, audio: false })),
+    ...audioOnlyKinds.map((value) => ({ value, label: t(`providers.audioKinds.${value}`), audio: true })),
+  ];
   const hasSavedKey = Boolean(account?.api_key_set || voice?.has_api_key);
   const needsKey = (audio ? !["kokoro", "fish_speech"].includes(kind) : isCustom ? custom.auth !== "none" : descriptor?.api_key === "required") && !hasSavedKey;
-  const name = label.trim() || options.find((p) => p.value === kind)?.label || kind;
+  const name = label.trim() || allOptions.find((p) => p.value === kind)?.label || kind;
   const configuration = (): AudioProviderConfiguration => {
     switch (kind) {
       case "gemini": return { type: "gemini", project_id: project.trim() || null, location: location.trim() };
@@ -250,11 +264,14 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
         }
         await api.call("audioProviderUpdate", { provider_id: voice.id, expected_revision: voice.revision, label: name, configuration: configuration() });
       } else await api.call("audioProviderCreate", { label: name, draft: { configuration: configuration(), api_key: key.trim() || null }, client_operation_id: crypto.randomUUID() });
-    } else await api.call("providerAccountSave", {
-      account: { id: account?.id ?? null, provider_kind: kind, label: name, base_url: host.trim() || null, enabled: account?.enabled ?? true, streaming_enabled: isImage ? false : isCustom ? custom.supportsStreaming : streaming, allow_invalid_tls: allowInvalidTls, config },
-      api_key: isCustom && custom.auth === "none" ? null : key.trim() || null, clear_api_key: false, expected_revision: account?.revision ?? null, client_operation_id: crypto.randomUUID(),
-      ...(isOllama && sproutCredential ? { sprout_credential: sproutCredential } : {}),
-    });
+    } else {
+      await api.call("providerAccountSave", {
+        account: { id: account?.id ?? null, provider_kind: kind, label: name, base_url: host.trim() || null, enabled: account?.enabled ?? true, streaming_enabled: isImage ? false : isCustom ? custom.supportsStreaming : streaming, allow_invalid_tls: allowInvalidTls, config },
+        api_key: isCustom && custom.auth === "none" ? null : key.trim() || null, clear_api_key: false, expected_revision: account?.revision ?? null, client_operation_id: crypto.randomUUID(),
+        ...(isOllama && sproutCredential ? { sprout_credential: sproutCredential } : {}),
+      });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.audioProviders.all });
+    }
     onClose();
   });
   const deleteAccount = (target: ProviderAccountView, withModels: boolean) =>
@@ -302,17 +319,18 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
     });
     if (sure) remove();
   };
-  const providerOptions = options.map((option) => {
+  const providerOptions = allOptions.map((option) => {
     const provider = catalog.find((p) => p.kind === option.value);
+    const localSuffix = option.audio && localAudioKinds.has(option.value) ? ` (${common("providerSelect.groups.local")})` : "";
     return {
       id: option.value,
-      name: option.label,
+      name: `${option.label}${localSuffix}`,
       kind: option.value,
-      ...(!audio && provider ? { group: common(`providerSelect.groups.${providerGroup(provider)}`) } : {}),
+      group: option.audio ? t("providers.audio") : provider ? common(`providerSelect.groups.${providerGroup(provider)}`) : t("providers.audio"),
     };
   });
   const isKokoro = audio && kind === "kokoro";
-  const showKey = (audio ? kind !== "kokoro" : descriptor?.api_key !== "not_used") && (!isCustom || custom.auth !== "none");
+  const showKey = (audio ? !isKokoro : descriptor?.api_key !== "not_used") && (!isCustom || custom.auth !== "none");
   const optionalKey = isImage || (!audio && !isCustom && descriptor?.api_key === "optional");
   const showUrl = !audio || kind === "fish_speech" || kind === "open_ai_compatible";
   const canDelete = Boolean(account || (voice && !isKokoro));
@@ -357,7 +375,7 @@ function ProviderEditor({ open, editor, catalog, onClose }: { open: boolean; edi
           />
         </Field>
         <Field label={t("providers.label")} hint={t("providers.labelHint")}>
-          <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={options.find((p) => p.value === kind)?.label} />
+          <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={allOptions.find((p) => p.value === kind)?.label} />
         </Field>
         {showKey && (
           <Field label={t(optionalKey ? "providers.optionalKey" : "providers.key")} hint={hasSavedKey ? t("providers.keepKey") : undefined}>

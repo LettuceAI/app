@@ -18,6 +18,15 @@ pub enum AudioProviderConfiguration {
         base_url: Option<String>,
         request_path: Option<String>,
     },
+    OpenRouter {
+        provider_account_id: String,
+    },
+    NanoGpt {
+        provider_account_id: String,
+    },
+    GeminiAudio {
+        provider_account_id: String,
+    },
     Kokoro {
         variant: Option<String>,
     },
@@ -85,6 +94,9 @@ pub enum AudioProviderType {
     FishTts,
     FishSpeech,
     OpenAiCompatible,
+    OpenRouter,
+    NanoGpt,
+    GeminiAudio,
     Kokoro,
 }
 
@@ -93,6 +105,8 @@ pub enum AudioProviderType {
 #[serde(deny_unknown_fields)]
 pub struct TtsModelsRequest {
     pub provider_type: AudioProviderType,
+    #[serde(default)]
+    pub provider_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

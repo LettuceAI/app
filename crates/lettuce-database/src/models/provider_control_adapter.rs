@@ -1,10 +1,57 @@
 use lettuce_models::{ModelRepositoryError, ProviderAccount};
-use lettuce_settings::{DeviceSettings, SecretRecord, TrustedCertificate};
-use lettuce_types::ModelProfileId;
-use lettuce_types::{ProviderAccountId, Revision, TimestampMillis};
+use lettuce_settings::{DeviceSettings, SecretOwnerId, SecretRecord, TrustedCertificate};
+use lettuce_speech::{AudioProvider, AudioProviderConfig};
+use lettuce_types::{AudioProviderId, ModelProfileId, ProviderAccountId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{ApiOperationError, ApiOperationTransaction, Database};
+
+/// Derives a deterministic linked audio provider id from a provider account id
+/// so every synced device computes the same identity.
+#[must_use]
+pub fn linked_audio_provider_id(account_id: ProviderAccountId) -> AudioProviderId {
+    AudioProviderId::from_uuid(uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_OID,
+        format!("lettuce-linked-audio-provider:{account_id}").as_bytes(),
+    ))
+}
+
+fn linked_audio_secret_owner_id(account_id: ProviderAccountId) -> SecretOwnerId {
+    SecretOwnerId::from_uuid(uuid::Uuid::new_v5(
+        &uuid::Uuid::NAMESPACE_OID,
+        format!("lettuce-linked-audio-owner:{account_id}").as_bytes(),
+    ))
+}
+
+fn linked_audio_provider_spec(account: &ProviderAccount) -> Option<(AudioProviderConfig, String)> {
+    match account.provider_kind.to_ascii_lowercase().as_str() {
+        "openrouter" => Some((
+            AudioProviderConfig::OpenRouter {
+                provider_account_id: account.id,
+            },
+            account.label.clone(),
+        )),
+        "nanogpt" => Some((
+            AudioProviderConfig::NanoGpt {
+                provider_account_id: account.id,
+            },
+            account.label.clone(),
+        )),
+        "gemini" | "google" | "google-gemini" => Some((
+            AudioProviderConfig::GeminiAudio {
+                provider_account_id: account.id,
+            },
+            if account.label.eq_ignore_ascii_case("gemini")
+                || account.label.eq_ignore_ascii_case("google gemini")
+            {
+                "Google Gemini Audio".to_owned()
+            } else {
+                account.label.clone()
+            },
+        )),
+        _ => None,
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum CertificateImportError {
@@ -176,6 +223,33 @@ impl ApiOperationTransaction<'_, '_> {
             _ => return Err(ModelRepositoryError::StaleRevision),
         }
         crate::sync_upsert_provider_account(self.transaction, &account)?;
+        if let Some((config, default_label)) = linked_audio_provider_spec(&account) {
+            let audio_id = linked_audio_provider_id(account.id);
+            let exists = self
+                .transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
+                    [audio_id.to_string()],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(crate::model_error)?;
+            if !exists {
+                let provider = AudioProvider {
+                    id: audio_id,
+                    secret_owner_id: linked_audio_secret_owner_id(account.id),
+                    label: default_label,
+                    api_key_ref: None,
+                    config,
+                    revision: Revision::INITIAL,
+                    created_at: account.created_at,
+                    updated_at: account.updated_at,
+                };
+                crate::media::tts_adapter::insert_audio_provider(self.transaction, &provider)
+                    .map_err(|error| ModelRepositoryError::Storage {
+                        reason: error.to_string(),
+                    })?;
+            }
+        }
         for record in account_secret_records(&account) {
             self.transaction
                 .execute(
@@ -222,6 +296,23 @@ impl ApiOperationTransaction<'_, '_> {
                 delete_model_in(self.transaction, model, at)?;
             characters.append(&mut changed_characters);
             groups.append(&mut changed_groups);
+        }
+        if linked_audio_provider_spec(&account).is_some() {
+            let audio_id = linked_audio_provider_id(account.id);
+            let in_use_by_character = self
+                .transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM characters WHERE voice_audio_provider_id=?1)",
+                    [audio_id.to_string()],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(crate::model_error)?;
+            if in_use_by_character {
+                return Err(ModelRepositoryError::InUse(Vec::new()));
+            }
+            self.transaction
+                .execute("DELETE FROM audio_providers WHERE id=?1", [audio_id.to_string()])
+                .map_err(crate::model_error)?;
         }
         retire(self.transaction, &account)?;
         self.transaction

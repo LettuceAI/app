@@ -488,11 +488,25 @@ fn classify_error(error: &SpeechTranscriptionError) -> SpeechJobError {
             | AsrAudioError::TooLarge,
         )
         | SpeechTranscriptionError::Library(AsrLibraryError::InvalidData { .. })
-        | SpeechTranscriptionError::Runtime(AsrRuntimeError::Rejected { .. })
+        | SpeechTranscriptionError::Runtime(
+            AsrRuntimeError::Rejected { .. }
+            | AsrRuntimeError::RequestTooLarge { .. }
+            | AsrRuntimeError::UnsupportedAsyncModel { .. },
+        )
         | SpeechTranscriptionError::InvalidWork { .. } => (
             JobErrorCode::InvalidInput,
             false,
             "speech transcription input is invalid",
+        ),
+        SpeechTranscriptionError::Runtime(AsrRuntimeError::Unauthorized { .. }) => (
+            JobErrorCode::CapabilityUnavailable,
+            false,
+            crate::SPEECH_SECRET_MISSING,
+        ),
+        SpeechTranscriptionError::Runtime(AsrRuntimeError::ProviderUnavailable { .. }) => (
+            JobErrorCode::ResourceUnavailable,
+            true,
+            "speech transcription provider is temporarily unavailable",
         ),
         SpeechTranscriptionError::Runtime(AsrRuntimeError::ModelUnavailable { .. }) => (
             JobErrorCode::CapabilityUnavailable,
@@ -654,11 +668,11 @@ mod tests {
             retain_audio: false,
             id: RequestId::new(),
             audio_asset_id: Some(audio_asset_id),
-            model: AsrModelDescriptor {
-                id: AsrModelId::new("small.en-q5_1").expect("model id"),
-                artifact_hash: ContentHash::parse("cd".repeat(32)).expect("model hash"),
-                english_only: true,
-            },
+            model: AsrModelDescriptor::local(
+                AsrModelId::new("small.en-q5_1").expect("model id"),
+                ContentHash::parse("cd".repeat(32)).expect("model hash"),
+                true,
+            ),
             options: TranscriptionOptions {
                 language: Some("en".into()),
                 initial_prompt: Some("custom   prompt".into()),

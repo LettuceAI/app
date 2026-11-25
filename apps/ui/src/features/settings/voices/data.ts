@@ -8,20 +8,19 @@ import { queryKeys } from "@/api/query-keys";
 import { watchJob } from "@/entities/job";
 
 export const speedRange = { min: 0.5, max: 2, step: 0.05 } as const;
-export const providerVoiceLimit = 10;
 
 export const audioProvidersQuery = (api: ApiClient) => queryOptions({ queryKey: queryKeys.audioProviders.all, queryFn: () => api.call("audioProvidersList") });
 export const userVoicesQuery = (api: ApiClient) => queryOptions({ queryKey: queryKeys.voices.user(), queryFn: () => api.call("userVoicesList") });
 export const cacheStatsQuery = (api: ApiClient) => queryOptions({ queryKey: queryKeys.voices.cache(), queryFn: () => api.call("ttsCacheStats") });
 export const providerVoicesQuery = (api: ApiClient, providerId: string) => queryOptions({ queryKey: queryKeys.voices.providerVoices(providerId), queryFn: () => api.call("audioProviderVoices", { provider_id: providerId }) });
-export const ttsModelsQuery = (api: ApiClient, providerType: AudioProviderType, design: boolean) => queryOptions({ queryKey: queryKeys.voices.models(providerType, design), queryFn: () => api.call(design ? "ttsVoiceDesignModels" : "ttsModels", { provider_type: providerType }) });
+export const ttsModelsQuery = (api: ApiClient, providerType: AudioProviderType, design: boolean, providerId?: string) => queryOptions({ queryKey: queryKeys.voices.models(providerType, design, providerId), queryFn: () => api.call(design ? "ttsVoiceDesignModels" : "ttsModels", { provider_type: providerType, provider_id: providerId ?? null }) });
 export const kokoroVariantsQuery = (api: ApiClient) => queryOptions({ queryKey: queryKeys.voices.kokoroVariants(), queryFn: () => api.call("kokoroVariants") });
 export const kokoroInventoryQuery = (api: ApiClient, variant: string | null) => queryOptions({ queryKey: queryKeys.voices.kokoroInventory(variant ?? ""), queryFn: () => api.call("kokoroInventory", { variant: variant ?? "", selected_voice_id: null }), enabled: variant !== null });
 export const kokoroAvailableQuery = (api: ApiClient, enabled: boolean) => queryOptions({ queryKey: queryKeys.voices.kokoroAvailable(), queryFn: () => api.call("kokoroVoicesAvailable"), enabled });
 
 export const isKokoro = (provider: AudioProviderView) => provider.configuration.type === "kokoro";
 export const kokoroVariantOf = (provider: AudioProviderView) => provider.configuration.type === "kokoro" ? provider.configuration.variant : null;
-export const hasProviderVoices = (provider: AudioProviderView) => ["elevenlabs", "fish_tts", "gemini"].includes(provider.configuration.type);
+export const hasProviderVoices = (provider: AudioProviderView) => ["elevenlabs", "fish_tts", "gemini", "open_router", "nano_gpt", "gemini_audio"].includes(provider.configuration.type);
 
 /** Whether Kokoro has every file of its engine for the variant; voices are separate. */
 export const kokoroInstalled = (inventory: KokoroInventory | undefined) => !!inventory?.model && !!inventory.config && !!inventory.tokenizer && !!inventory.tokenizer_config;

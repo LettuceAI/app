@@ -2,10 +2,13 @@ import anthropic from "./assets/anthropic_light.svg";
 import cerebras from "./assets/cerebras.svg";
 import chutes from "./assets/chutes.webp";
 import deepseek from "./assets/deepseek.svg";
+import elevenlabs from "./assets/elevenlabs_light.svg";
 import featherless from "./assets/featherless.svg";
+import fishaudio from "./assets/fishaudio_light.svg";
 import gemini from "./assets/gemini.svg";
 import groq from "./assets/groq.svg";
 import intenserp from "./assets/intenserp.png";
+import kokoro from "./assets/kokoro.svg";
 import literouter from "./assets/literouter.png";
 import llamaCpp from "./assets/llama-cpp.svg";
 import stableDiffusionCpp from "./assets/stable-diffusion-cpp.png";
@@ -47,6 +50,14 @@ const providerLogos: Readonly<Record<string, string>> = {
   llamacpp: llamaCpp,
   sdcpp: stableDiffusionCpp,
   intenserp,
+  elevenlabs,
+  fish_tts: fishaudio,
+  fish_speech: fishaudio,
+  open_ai_compatible: openai,
+  open_router: openrouter,
+  nano_gpt: nanogpt,
+  gemini_audio: gemini,
+  kokoro,
 };
 
 export const logos = {

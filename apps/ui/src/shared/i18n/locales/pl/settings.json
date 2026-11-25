@@ -549,21 +549,57 @@
   "developer": {
     "group": "Czaty testowe",
     "templates": {
-      "roleplay": { "title": "Czat fabularny", "description": "Postać, persona i czat z historią" },
-      "companion": { "title": "Czat z towarzyszem, wypełniony", "description": "Towarzysz z Duszą, relacją, historią i wspomnieniami" },
-      "group": { "title": "Czat grupowy", "description": "Trzy postacie w grupie z historią" },
-      "group_companion": { "title": "Czat grupowy z towarzyszami", "description": "Trzech towarzyszy z Duszami w grupie towarzyszy z historią" },
-      "roleplay_widgets": { "title": "Czat fabularny z widżetami", "description": "Czat fabularny ze wszystkimi widżetami obok czatu" },
-      "companion_widgets": { "title": "Czat z towarzyszem z widżetami", "description": "Czat z towarzyszem ze wszystkimi widżetami, także ze stanem towarzysza i pamięcią" },
-      "chapters_backlog": { "title": "Rozdziały: długa historia", "description": "Historia promu z 42 wiadomościami bez podsumowania. Każda wysłana wiadomość podsumowuje kolejne sześć starych." },
-      "chapters_user_seed": { "title": "Rozdziały: napisane podsumowanie", "description": "Ta sama historia z krótkim podsumowaniem napisanym ręcznie, zachowanym jako punkt wyjścia." },
-      "chapters_large_seed": { "title": "Rozdziały: zbyt duże podsumowanie", "description": "Ta sama historia z ręcznym podsumowaniem większym niż budżet testowy. Łączone są tylko nowe cykle." },
-      "chapters_group": { "title": "Rozdziały: grupa", "description": "Historia załogi ratowniczej z 36 wiadomościami w grupie z pamięcią dynamiczną." }
+      "roleplay": {
+        "title": "Czat fabularny",
+        "description": "Postać, persona i czat z historią"
+      },
+      "companion": {
+        "title": "Czat z towarzyszem, wypełniony",
+        "description": "Towarzysz z Duszą, relacją, historią i wspomnieniami"
+      },
+      "group": {
+        "title": "Czat grupowy",
+        "description": "Trzy postacie w grupie z historią"
+      },
+      "group_companion": {
+        "title": "Czat grupowy z towarzyszami",
+        "description": "Trzech towarzyszy z Duszami w grupie towarzyszy z historią"
+      },
+      "roleplay_widgets": {
+        "title": "Czat fabularny z widżetami",
+        "description": "Czat fabularny ze wszystkimi widżetami obok czatu"
+      },
+      "companion_widgets": {
+        "title": "Czat z towarzyszem z widżetami",
+        "description": "Czat z towarzyszem ze wszystkimi widżetami, także ze stanem towarzysza i pamięcią"
+      },
+      "chapters_backlog": {
+        "title": "Rozdziały: długa historia",
+        "description": "Historia promu z 42 wiadomościami bez podsumowania. Każda wysłana wiadomość podsumowuje kolejne sześć starych."
+      },
+      "chapters_user_seed": {
+        "title": "Rozdziały: napisane podsumowanie",
+        "description": "Ta sama historia z krótkim podsumowaniem napisanym ręcznie, zachowanym jako punkt wyjścia."
+      },
+      "chapters_large_seed": {
+        "title": "Rozdziały: zbyt duże podsumowanie",
+        "description": "Ta sama historia z ręcznym podsumowaniem większym niż budżet testowy. Łączone są tylko nowe cykle."
+      },
+      "chapters_group": {
+        "title": "Rozdziały: grupa",
+        "description": "Historia załogi ratowniczej z 36 wiadomościami w grupie z pamięcią dynamiczną."
+      }
     },
     "chapters": {
       "group": "Testy podsumowań rozdziałów",
-      "apply": { "title": "Użyj ustawień testowych rozdziałów", "description": "Włącza pamięć dynamiczną i podsumowania rozdziałów z cyklami po 6 wiadomości, budżetem 800 tokenów i 2 cyklami na rozdział. Najpierw zapisywane są twoje ustawienia pamięci." },
-      "restore": { "title": "Przywróć ustawienia pamięci", "description": "Przywraca ustawienia pamięci zapisane przed ustawieniami testowymi." },
+      "apply": {
+        "title": "Użyj ustawień testowych rozdziałów",
+        "description": "Włącza pamięć dynamiczną i podsumowania rozdziałów z cyklami po 6 wiadomości, budżetem 800 tokenów i 2 cyklami na rozdział. Najpierw zapisywane są twoje ustawienia pamięci."
+      },
+      "restore": {
+        "title": "Przywróć ustawienia pamięci",
+        "description": "Przywraca ustawienia pamięci zapisane przed ustawieniami testowymi."
+      },
       "applied": "Ustawienia testowe rozdziałów są włączone",
       "restored": "Przywrócono ustawienia pamięci"
     }
@@ -627,11 +663,14 @@
     "verified": "Połączenie sprawdzone",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "Zgodny z OpenAI",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "Nie udało się zweryfikować połączenia.",
     "saveBeforeVerify": "Zapisz zmiany połączenia przed weryfikacją zapisanym kluczem.",
@@ -647,7 +686,10 @@
     "modelCount_one": "1 model",
     "modelCount_few": "{{count}} modele",
     "modelCount_many": "{{count}} modeli",
-    "modelCount_other": "{{count}} modelu"
+    "modelCount_other": "{{count}} modelu",
+    "linkedAccount": "Konto dostawcy",
+    "linkedAccountHint": "Używa klucza API z istniejącego konta dostawcy",
+    "linkedAccountEmpty": "Najpierw dodaj konto OpenRouter lub NanoGPT w zakładce Modele"
   },
   "models": {
     "vision": "Wizja",
@@ -1487,10 +1529,22 @@
     },
     "pages": {
       "group": "Więcej ustawień",
-      "saved": { "title": "Co jest zapisywane", "body": "Interwał podsumowań, limit wspomnień, duplikaty i przypinanie" },
-      "recall": { "title": "Przywoływanie", "body": "Co idzie z każdą odpowiedzią i jak wybierane są wspomnienia" },
-      "summary": { "title": "Podsumowanie kontekstu", "body": "Podsumowania rozdziałami i budżet podsumowania" },
-      "advanced": { "title": "Zaawansowane", "body": "Zapominanie i działanie menedżera pamięci" }
+      "saved": {
+        "title": "Co jest zapisywane",
+        "body": "Interwał podsumowań, limit wspomnień, duplikaty i przypinanie"
+      },
+      "recall": {
+        "title": "Przywoływanie",
+        "body": "Co idzie z każdą odpowiedzią i jak wybierane są wspomnienia"
+      },
+      "summary": {
+        "title": "Podsumowanie kontekstu",
+        "body": "Podsumowania rozdziałami i budżet podsumowania"
+      },
+      "advanced": {
+        "title": "Zaawansowane",
+        "body": "Zapominanie i działanie menedżera pamięci"
+      }
     },
     "advanced": {
       "enrichment": "Wzbogacanie kontekstu",
@@ -1847,7 +1901,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Inny zakres",
-    "scopeName": "Nazwa zakresu"
+    "scopeName": "Nazwa zakresu",
+    "source": "Źródło rozpoznawania mowy",
+    "sourceLocal": "Lokalne (Whisper)",
+    "sourceCloud": "Chmura",
+    "cloudModel": "Chmurowy model mowy",
+    "cloudProvider": "Konto dostawcy",
+    "cloudProviderEmpty": "Najpierw dodaj konto OpenRouter lub NanoGPT w Dostawcach"
   },
   "hf": {
     "title": "Pobierz modele",
@@ -2058,8 +2118,17 @@
     "mtpBundledBody": "Szybsze odpowiedzi dzięki warstwom przewidywania w tym pliku",
     "systemRam": "Pamięć systemowa",
     "vramShort": "VRAM",
-    "offloadChoices": { "auto": "Auto", "gpu": "GPU", "mixed": "Mieszane", "cpu": "CPU" },
-    "placementChoices": { "auto": "Auto", "vram": "VRAM", "ram": "RAM" },
+    "offloadChoices": {
+      "auto": "Auto",
+      "gpu": "GPU",
+      "mixed": "Mieszane",
+      "cpu": "CPU"
+    },
+    "placementChoices": {
+      "auto": "Auto",
+      "vram": "VRAM",
+      "ram": "RAM"
+    },
     "noRecommendation": "Żaden plik nie został potwierdzony jako mieszczący się z 8192 tokenami i KV Q8 lub Q6. Możesz wybrać plik ręcznie.",
     "retryMove": "Ponów przenoszenie plików",
     "localProvider": "llama.cpp (lokalny)",
@@ -2252,10 +2321,22 @@
       "group": "Filtrowanie treści",
       "title": "Tryb Pure",
       "levels": {
-        "off": { "label": "Wył.", "description": "Wszystkie treści dozwolone" },
-        "low": { "label": "Niski", "description": "Blokuje wyraźne treści seksualne i obelgi" },
-        "standard": { "label": "Standardowy", "description": "Blokuje NSFW i drastyczną przemoc" },
-        "strict": { "label": "Ścisły", "description": "Maksymalne filtrowanie i brak sugestywnego tonu" }
+        "off": {
+          "label": "Wył.",
+          "description": "Wszystkie treści dozwolone"
+        },
+        "low": {
+          "label": "Niski",
+          "description": "Blokuje wyraźne treści seksualne i obelgi"
+        },
+        "standard": {
+          "label": "Standardowy",
+          "description": "Blokuje NSFW i drastyczną przemoc"
+        },
+        "strict": {
+          "label": "Ścisły",
+          "description": "Maksymalne filtrowanie i brak sugestywnego tonu"
+        }
       }
     },
     "privacy": {
@@ -2369,7 +2450,8 @@
       "previewFirst": "Aby utworzyć głos, najpierw odsłuchaj jego podgląd.",
       "fishVoiceIdRequired": "Fish Audio wymaga identyfikatora głosu.",
       "openaiModelIdRequired": "Wpisz identyfikator modelu, którego oczekuje Twój endpoint.",
-      "openaiVoiceIdRequired": "Wpisz identyfikator głosu obsługiwany przez Twój endpoint."
+      "openaiVoiceIdRequired": "Wpisz identyfikator głosu obsługiwany przez Twój endpoint.",
+      "cloudVoice": "Głos"
     },
     "kokoro": {
       "studio": "Studio Kokoro",

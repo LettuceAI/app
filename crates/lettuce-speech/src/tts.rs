@@ -6,8 +6,8 @@ use lettuce_media::{
 };
 use lettuce_settings::{SecretOwnerId, SecretRef, SecretValue};
 use lettuce_types::{
-    AssetId, AudioProviderId, ContentHash, JobId, MediaBlobId, RequestId, Revision,
-    TimestampMillis, VoiceProfileId,
+    AssetId, AudioProviderId, ContentHash, JobId, MediaBlobId, ProviderAccountId, RequestId,
+    Revision, TimestampMillis, VoiceProfileId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ const MAX_VALUE_BYTES: usize = 4096;
 const MAX_PROMPT_BYTES: usize = 1024 * 1024;
 const MAX_SYNTHESIS_TEXT_BYTES: usize = lettuce_types::limits::MAX_TEXT_BYTES;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioProviderKind {
     GeminiTts,
@@ -24,6 +24,9 @@ pub enum AudioProviderKind {
     FishTts,
     FishSpeech,
     OpenAiTts,
+    OpenRouterTts,
+    NanoGptTts,
+    GeminiAudio,
     Kokoro,
 }
 
@@ -44,6 +47,15 @@ pub enum AudioProviderConfig {
         base_url: Option<String>,
         request_path: Option<String>,
     },
+    OpenRouter {
+        provider_account_id: ProviderAccountId,
+    },
+    NanoGpt {
+        provider_account_id: ProviderAccountId,
+    },
+    GeminiAudio {
+        provider_account_id: ProviderAccountId,
+    },
     Kokoro {
         variant: Option<String>,
     },
@@ -58,7 +70,26 @@ impl AudioProviderConfig {
             Self::FishTts => AudioProviderKind::FishTts,
             Self::FishSpeech { .. } => AudioProviderKind::FishSpeech,
             Self::OpenAiCompatible { .. } => AudioProviderKind::OpenAiTts,
+            Self::OpenRouter { .. } => AudioProviderKind::OpenRouterTts,
+            Self::NanoGpt { .. } => AudioProviderKind::NanoGptTts,
+            Self::GeminiAudio { .. } => AudioProviderKind::GeminiAudio,
             Self::Kokoro { .. } => AudioProviderKind::Kokoro,
+        }
+    }
+
+    #[must_use]
+    pub const fn linked_provider_account_id(&self) -> Option<ProviderAccountId> {
+        match self {
+            Self::OpenRouter {
+                provider_account_id,
+            }
+            | Self::NanoGpt {
+                provider_account_id,
+            }
+            | Self::GeminiAudio {
+                provider_account_id,
+            } => Some(*provider_account_id),
+            _ => None,
         }
     }
 
@@ -83,7 +114,11 @@ impl AudioProviderConfig {
                 validate_optional(request_path)
             }
             Self::Kokoro { variant } => validate_optional(variant),
-            Self::Elevenlabs | Self::FishTts => Ok(()),
+            Self::Elevenlabs
+            | Self::FishTts
+            | Self::OpenRouter { .. }
+            | Self::NanoGpt { .. }
+            | Self::GeminiAudio { .. } => Ok(()),
         }
     }
 }
@@ -106,11 +141,16 @@ impl AudioProvider {
         validate_required(&self.label, MAX_LABEL_BYTES)?;
         self.config.validate()?;
         if self.created_at > self.updated_at
-            || (self.config.provider_kind() == AudioProviderKind::Kokoro
-                && self.api_key_ref.is_some())
+            || (matches!(
+                self.config.provider_kind(),
+                AudioProviderKind::Kokoro
+                    | AudioProviderKind::OpenRouterTts
+                    | AudioProviderKind::NanoGptTts
+                    | AudioProviderKind::GeminiAudio
+            ) && self.api_key_ref.is_some())
         {
             return Err(TtsConfigurationError::InvalidData {
-                reason: "timestamps are out of order or a kokoro provider carries an api key",
+                reason: "timestamps are out of order or a keyless provider carries an api key",
             });
         }
         Ok(())
@@ -231,7 +271,7 @@ fn validate_optional(value: &Option<String>) -> Result<(), TtsConfigurationError
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TtsOutputPolicy {
     Preview { expires_at: TimestampMillis },
@@ -261,7 +301,10 @@ impl SynthesisRequest {
             }
         })?;
         let credential_valid = match self.provider.config.provider_kind() {
-            AudioProviderKind::Kokoro => self.provider.api_key_ref.is_none(),
+            AudioProviderKind::Kokoro
+            | AudioProviderKind::OpenRouterTts
+            | AudioProviderKind::NanoGptTts
+            | AudioProviderKind::GeminiAudio => self.provider.api_key_ref.is_none(),
             AudioProviderKind::FishSpeech => true,
             AudioProviderKind::GeminiTts
             | AudioProviderKind::Elevenlabs
@@ -512,6 +555,10 @@ pub enum TtsRuntimeError {
     Unavailable { reason: &'static str },
     #[error("TTS runtime rejected the request: {reason}")]
     Rejected { reason: &'static str },
+    #[error("TTS provider rejected credentials: {reason}")]
+    Unauthorized { reason: &'static str },
+    #[error("a voice must be selected before synthesis")]
+    VoiceRequired,
     #[error("TTS runtime failed: {reason}")]
     Failed { reason: &'static str },
     #[error("the local speech model is not installed")]

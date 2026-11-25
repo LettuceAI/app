@@ -24,7 +24,10 @@ impl<'a, R: ?Sized, S: ?Sized> TtsVoiceRefreshCoordinator<'a, R, S> {
 
 impl<R, S> TtsVoiceRefreshCoordinator<'_, R, S>
 where
-    R: TtsConfigurationRepository + DiscoveredVoiceRepository + ?Sized,
+    R: TtsConfigurationRepository
+        + DiscoveredVoiceRepository
+        + lettuce_models::ProviderAccountRepository
+        + ?Sized,
     S: SecretStore + ?Sized,
 {
     pub fn list(
@@ -99,7 +102,11 @@ where
             ))?;
         if !matches!(
             &provider.config,
-            AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts
+            AudioProviderConfig::Elevenlabs
+                | AudioProviderConfig::FishTts
+                | AudioProviderConfig::OpenRouter { .. }
+                | AudioProviderConfig::NanoGpt { .. }
+                | AudioProviderConfig::GeminiAudio { .. }
         ) {
             let drafts = lettuce_speech::tts_catalog_voices(provider.config.provider_kind())
                 .into_iter()
@@ -117,21 +124,46 @@ where
             return materialize_discovered_voices(provider.id, drafts, now)
                 .map_err(TtsVoiceRefreshError::Discovery);
         }
-        let reference = provider
-            .api_key_ref
-            .ok_or(TtsVoiceRefreshError::InvalidInput {
-                reason: "the provider has no API key reference",
-            })?;
-        let credential = self
-            .secrets
-            .load(
-                &reference,
-                &SecretPurpose::AudioApiKey {
-                    owner: provider.secret_owner_id,
-                },
-            )
-            .await
-            .map_err(TtsVoiceRefreshError::SecretStore)?;
+        let credential = if let Some(account_id) = provider.config.linked_provider_account_id() {
+            let account = self
+                .repository
+                .get(account_id)
+                .map_err(|_| TtsVoiceRefreshError::InvalidInput {
+                    reason: "linked provider account could not be loaded",
+                })?
+                .ok_or(TtsVoiceRefreshError::InvalidInput {
+                    reason: "linked provider account was not found",
+                })?;
+            let reference = account
+                .api_key_ref
+                .ok_or(TtsVoiceRefreshError::InvalidInput {
+                    reason: "linked provider account has no API key reference",
+                })?;
+            self.secrets
+                .load(
+                    &reference,
+                    &SecretPurpose::ProviderApiKey {
+                        owner: account.secret_owner_id,
+                    },
+                )
+                .await
+                .map_err(TtsVoiceRefreshError::SecretStore)?
+        } else {
+            let reference = provider
+                .api_key_ref
+                .ok_or(TtsVoiceRefreshError::InvalidInput {
+                    reason: "the provider has no API key reference",
+                })?;
+            self.secrets
+                .load(
+                    &reference,
+                    &SecretPurpose::AudioApiKey {
+                        owner: provider.secret_owner_id,
+                    },
+                )
+                .await
+                .map_err(TtsVoiceRefreshError::SecretStore)?
+        };
         let drafts = discovery
             .fetch_configured_voices(&provider, &credential)
             .await

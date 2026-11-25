@@ -75,7 +75,7 @@ export const queryKeys = {
     all: ["voices"] as const,
     user: () => [...queryKeys.voices.all, "user"] as const,
     providerVoices: (providerId: string) => [...queryKeys.voices.all, "provider-voices", providerId] as const,
-    models: (providerType: string, design: boolean) => [...queryKeys.voices.all, "models", providerType, design] as const,
+    models: (providerType: string, design: boolean, providerId?: string) => [...queryKeys.voices.all, "models", providerType, design, ...(providerId ? [providerId] : [])] as const,
     cache: () => [...queryKeys.voices.all, "cache"] as const,
     kokoroVariants: () => [...queryKeys.voices.all, "kokoro", "variants"] as const,
     kokoroInventory: (variant: string) => [...queryKeys.voices.all, "kokoro", "inventory", variant] as const,

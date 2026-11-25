@@ -307,11 +307,11 @@ fn ingest_wav(context: &ApiContext, bytes: Vec<u8>) -> AssetId {
 }
 
 fn descriptor(id: &str) -> AsrModelDescriptor {
-    AsrModelDescriptor {
-        id: AsrModelId::new(id).expect("model id"),
-        artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"),
-        english_only: false,
-    }
+    AsrModelDescriptor::local(
+        AsrModelId::new(id).expect("model id"),
+        ContentHash::parse("0".repeat(64)).expect("hash"),
+        false,
+    )
 }
 
 fn transcription_request(context: &ApiContext, id: &str) -> TranscriptionRequest {
@@ -3764,4 +3764,204 @@ async fn microphone_permission_denials_are_retried_for_dictation_and_settings_ca
             capture_id: capture.capture_id,
         }).await.expect("cancel successful recording");
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn linked_audio_provider_lifecycle_is_deterministic_and_preserves_sync_safety() {
+    use lettuce_characters::{CharacterRepository, VoicePreference};
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+    let saved = crate::api::provider_account_save(
+        &env.context,
+        dto::ProviderAccountSaveRequest {
+            account: dto::ProviderAccountInput {
+                id: None,
+                provider_kind: "openrouter".into(),
+                label: "OpenRouter".into(),
+                base_url: None,
+                enabled: true,
+                streaming_enabled: true,
+                allow_invalid_tls: false,
+                config: serde_json::json!({ "kind": "standard" }),
+            },
+            api_key: Some("or-key-test".into()),
+            clear_api_key: false,
+            sprout_credential: None,
+            expected_revision: None,
+            client_operation_id: "op-create-or".into(),
+        },
+    )
+    .await
+    .expect("save openrouter account");
+
+    let account_id: lettuce_types::ProviderAccountId = saved.id.parse().expect("account id");
+    let expected_audio_id = lettuce_database::linked_audio_provider_id(account_id);
+    assert_eq!(
+        expected_audio_id,
+        lettuce_database::linked_audio_provider_id(account_id)
+    );
+
+    let providers = super::audio_providers_list(&env.context)
+        .await
+        .expect("list audio providers");
+    let linked = providers
+        .iter()
+        .find(|p| p.id == expected_audio_id.to_string())
+        .expect("linked audio provider created on account save");
+    assert_eq!(linked.label, "OpenRouter");
+
+    let renamed = super::audio_provider_update(
+        &env.context,
+        dto::AudioProviderUpdateRequest {
+            provider_id: linked.id.clone(),
+            expected_revision: linked.revision,
+            label: "My Custom Audio Label".into(),
+            configuration: linked.configuration.clone(),
+        },
+    )
+    .await
+    .expect("rename linked audio provider");
+    assert_eq!(renamed.label, "My Custom Audio Label");
+
+    crate::api::provider_account_save(
+        &env.context,
+        dto::ProviderAccountSaveRequest {
+            account: dto::ProviderAccountInput {
+                id: Some(saved.id.clone()),
+                provider_kind: "openrouter".into(),
+                label: "OpenRouter Renamed".into(),
+                base_url: None,
+                enabled: true,
+                streaming_enabled: true,
+                allow_invalid_tls: false,
+                config: serde_json::json!({ "kind": "standard" }),
+            },
+            api_key: None,
+            clear_api_key: false,
+            sprout_credential: None,
+            expected_revision: Some(saved.revision),
+            client_operation_id: "op-update-or".into(),
+        },
+    )
+    .await
+    .expect("update openrouter account");
+
+    let after_update = super::audio_providers_list(&env.context)
+        .await
+        .expect("list after update");
+    let kept = after_update
+        .iter()
+        .find(|p| p.id == expected_audio_id.to_string())
+        .expect("linked provider still present");
+    assert_eq!(kept.label, "My Custom Audio Label");
+
+    let synced_account_id = lettuce_types::ProviderAccountId::new();
+    let synced_audio_id = lettuce_database::linked_audio_provider_id(synced_account_id);
+    lettuce_speech::TtsConfigurationRepository::upsert_audio_provider(
+        env.context.backend().database(),
+        lettuce_speech::AudioProvider {
+            id: synced_audio_id,
+            secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            label: "Synced Pending Account".into(),
+            api_key_ref: None,
+            config: lettuce_speech::AudioProviderConfig::NanoGpt {
+                provider_account_id: synced_account_id,
+            },
+            revision: lettuce_types::Revision::INITIAL,
+            created_at: env.context.now(),
+            updated_at: env.context.now(),
+        },
+        None,
+    )
+    .expect("insert synced audio provider before account arrives");
+
+    let after_list = super::audio_providers_list(&env.context)
+        .await
+        .expect("list does not delete unsynced linked provider");
+    assert!(
+        after_list
+            .iter()
+            .any(|p| p.id == synced_audio_id.to_string())
+    );
+
+    let database = env.context.backend().database();
+    let character = CharacterRepository::get(database, env.harness.character_id)
+        .expect("get")
+        .expect("character")
+        .character;
+    let mut defaults = character.defaults.clone();
+    defaults.voice = Some(VoicePreference::Provider {
+        provider_id: expected_audio_id,
+        voice_id: "narrator".into(),
+        model_id: None,
+        voice_name: None,
+    });
+    CharacterRepository::update_defaults(
+        database,
+        character.id,
+        character.revision,
+        defaults,
+        env.context.now(),
+    )
+    .expect("attach linked audio provider to character");
+
+    let delete_err = crate::api::provider_account_delete(
+        &env.context,
+        dto::ProviderAccountDeleteRequest {
+            account_id: saved.id.clone(),
+            expected_revision: saved.revision + 1,
+            delete_models: true,
+            client_operation_id: "op-delete-or-in-use".into(),
+        },
+    )
+    .await
+    .expect_err("deleting provider account referenced by character must fail");
+    assert_eq!(delete_err.code, ApiErrorCode::InUse);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resolve_model_uses_local_whisper_for_explicit_requested_id_even_with_cloud_default() {
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+    install_whisper_file(&env.root);
+    let saved = crate::api::provider_account_save(
+        &env.context,
+        dto::ProviderAccountSaveRequest {
+            account: dto::ProviderAccountInput {
+                id: None,
+                provider_kind: "openrouter".into(),
+                label: "OpenRouter".into(),
+                base_url: None,
+                enabled: true,
+                streaming_enabled: true,
+                allow_invalid_tls: false,
+                config: serde_json::json!({ "kind": "standard" }),
+            },
+            api_key: Some("or-key-test".into()),
+            clear_api_key: false,
+            sprout_credential: None,
+            expected_revision: None,
+            client_operation_id: "op-or-dictation".into(),
+        },
+    )
+    .await
+    .expect("save openrouter account");
+
+    super::whisper::whisper_dictation_model_set(
+        &env.context,
+        dto::DictationModelSetRequest {
+            model_id: Some("openai/whisper-large-v3-turbo".into()),
+            provider_account_id: Some(saved.id.clone()),
+        },
+    )
+    .await
+    .expect("set cloud dictation default");
+
+    let default_resolved =
+        super::whisper::resolve_model(&env.context, None).expect("default resolves to cloud");
+    assert!(default_resolved.is_remote());
+    assert_eq!(default_resolved.model_id(), "openai/whisper-large-v3-turbo");
+
+    let explicit_local = super::whisper::resolve_model(&env.context, Some("base"))
+        .expect("explicit requested id resolves to local whisper");
+    assert!(!explicit_local.is_remote());
+    assert_eq!(explicit_local.model_id(), "base");
 }

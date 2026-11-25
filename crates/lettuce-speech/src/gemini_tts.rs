@@ -55,12 +55,15 @@ struct GeminiParts {
 
 #[derive(Serialize)]
 struct GeminiGenerationConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_modalities: Option<&'static [&'static str]>,
     speech_config: GeminiSpeechConfig,
 }
 
 #[derive(Serialize)]
 struct GeminiSpeechConfig {
-    language_code: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language_code: Option<&'static str>,
     voice_config: GeminiVoiceConfig,
 }
 
@@ -91,14 +94,14 @@ struct GeminiContent {
 
 #[derive(Deserialize)]
 struct GeminiPart {
-    #[serde(rename = "inlineData")]
+    #[serde(rename = "inlineData", alias = "inline_data")]
     inline_data: Option<GeminiInlineData>,
 }
 
 #[derive(Deserialize)]
 struct GeminiInlineData {
     data: String,
-    #[serde(rename = "mimeType", default)]
+    #[serde(rename = "mimeType", alias = "mime_type", default)]
     mime_type: Option<String>,
 }
 
@@ -110,7 +113,7 @@ const PCM_BITS_PER_SAMPLE: u16 = 16;
 /// 16-bit little-endian PCM (`audio/L16;codec=pcm;rate=24000`, mono) on
 /// others. PCM is wrapped in a WAV header with the rate and channel count its
 /// MIME type names, 24 kHz mono by default.
-fn gemini_wav(bytes: Vec<u8>, mime_type: Option<&str>) -> Result<Vec<u8>, TtsRuntimeError> {
+pub(crate) fn gemini_wav(bytes: Vec<u8>, mime_type: Option<&str>) -> Result<Vec<u8>, TtsRuntimeError> {
     if bytes.starts_with(b"RIFF") {
         return Ok(bytes);
     }
@@ -250,6 +253,118 @@ impl AudioProviderVerifier for GeminiTtsRuntime {
     }
 }
 
+pub(crate) struct GeminiGenerateContentParams<'a> {
+    pub endpoint: &'a str,
+    pub path: &'a str,
+    pub auth: JsonAuth,
+    pub extra_headers: Vec<JsonSecretHeader>,
+    pub text: String,
+    pub voice_name: String,
+    pub include_response_modalities: bool,
+    pub language_code: Option<&'static str>,
+}
+
+pub(crate) async fn synthesize_gemini_generate_content(
+    network: &JsonClient,
+    params: GeminiGenerateContentParams<'_>,
+    cancellation: &CancellationToken,
+) -> Result<RuntimeSynthesis, TtsRuntimeError> {
+    let body = serde_json::to_vec(&GeminiRequest {
+        contents: GeminiContents {
+            role: "user",
+            parts: GeminiParts { text: params.text },
+        },
+        generation_config: GeminiGenerationConfig {
+            response_modalities: params.include_response_modalities.then_some(&["AUDIO"]),
+            speech_config: GeminiSpeechConfig {
+                language_code: params.language_code,
+                voice_config: GeminiVoiceConfig {
+                    prebuilt_voice_config: GeminiPrebuiltVoiceConfig {
+                        voice_name: params.voice_name,
+                    },
+                },
+            },
+        },
+    })
+    .map_err(|error| {
+        tracing::warn!(%error, "request body could not be serialized");
+        TtsRuntimeError::Rejected {
+            reason: "request body could not be serialized",
+        }
+    })?;
+    if cancellation.is_cancelled() {
+        return Err(TtsRuntimeError::Cancelled);
+    }
+    let response = tokio::select! {
+        response = network.post_json(
+            params.endpoint,
+            params.path,
+            body,
+            &[],
+            params.auth,
+            params.extra_headers,
+            RequestPolicy::GENERATION,
+        ) => response.map_err(map_network)?,
+        () = cancellation.cancelled() => return Err(TtsRuntimeError::Cancelled),
+    };
+    if !(200..300).contains(&response.status) {
+        return Err(match response.status {
+            401 | 403 => TtsRuntimeError::Unauthorized {
+                reason: "provider rejected credentials",
+            },
+            408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable {
+                status: response.status,
+            },
+            _ => TtsRuntimeError::Rejected {
+                reason: "provider returned a non-retryable http status",
+            },
+        });
+    }
+    let response: GeminiResponse = serde_json::from_slice(&response.body).map_err(|error| {
+        tracing::warn!(%error, "provider response is not valid json");
+        TtsRuntimeError::Rejected {
+            reason: "provider response is not valid json",
+        }
+    })?;
+    let inline = response
+        .candidates
+        .iter()
+        .flat_map(|candidate| &candidate.content.parts)
+        .find_map(|part| part.inline_data.as_ref())
+        .ok_or(TtsRuntimeError::Rejected {
+            reason: "gemini response has no inline audio data",
+        })?;
+    let bytes = STANDARD.decode(&inline.data).map_err(|error| {
+        tracing::warn!(%error, "audio payload is not valid base64");
+        TtsRuntimeError::Rejected {
+            reason: "audio payload is not valid base64",
+        }
+    })?;
+    if bytes.is_empty() || bytes.len() > crate::MAX_TTS_RESPONSE_BYTES {
+        return Err(TtsRuntimeError::Failed {
+            reason: "gemini returned empty or oversized audio",
+        });
+    }
+    let mime = inline.mime_type.as_deref();
+    let lower = mime.unwrap_or_default().to_ascii_lowercase();
+    if bytes.starts_with(b"RIFF") || lower.is_empty() || lower.starts_with("audio/l16") || lower.starts_with("audio/pcm") {
+        return Ok(RuntimeSynthesis {
+            bytes: gemini_wav(bytes, mime)?,
+            declared_mime_type: "audio/wav".into(),
+        });
+    }
+    let declared_mime_type = mime
+        .and_then(|value| value.split(';').next())
+        .map(str::trim)
+        .filter(|value| value.starts_with("audio/"))
+        .unwrap_or("audio/wav")
+        .to_owned();
+    Ok(RuntimeSynthesis {
+        bytes,
+        declared_mime_type,
+    })
+}
+
 #[async_trait]
 impl TtsRuntime for GeminiTtsRuntime {
     async fn synthesize(
@@ -300,31 +415,6 @@ impl TtsRuntime for GeminiTtsRuntime {
             Some(prompt) if !prompt.is_empty() => format!("{prompt}: {}", request.text),
             _ => request.text.clone(),
         };
-        let body = serde_json::to_vec(&GeminiRequest {
-            contents: GeminiContents {
-                role: "user",
-                parts: GeminiParts { text: full_text },
-            },
-            generation_config: GeminiGenerationConfig {
-                speech_config: GeminiSpeechConfig {
-                    language_code: "en-us",
-                    voice_config: GeminiVoiceConfig {
-                        prebuilt_voice_config: GeminiPrebuiltVoiceConfig {
-                            voice_name: resolve_voice_name(&request.voice_id),
-                        },
-                    },
-                },
-            },
-        })
-        .map_err(|error| {
-            tracing::warn!(%error, "request body could not be serialized");
-            TtsRuntimeError::Rejected {
-                reason: "request body could not be serialized",
-            }
-        })?;
-        if cancellation.is_cancelled() {
-            return Err(TtsRuntimeError::Cancelled);
-        }
         let endpoint = self
             .endpoint_override
             .clone()
@@ -333,56 +423,28 @@ impl TtsRuntime for GeminiTtsRuntime {
             "/v1beta1/projects/{project_id}/locations/{location}/publishers/google/models/{}:generateContent",
             request.model_id
         );
-        let response = tokio::select! {
-            response = self.network.post_json(
-                &endpoint,
-                &path,
-                body,
-                &[],
-                JsonAuth::Bearer(auth),
-                vec![JsonSecretHeader {
-                    name: HeaderName::new("x-goog-user-project")
-                        .map_err(|_| TtsRuntimeError::Rejected { reason: "auth header name is invalid" })?,
+        synthesize_gemini_generate_content(
+            &self.network,
+            GeminiGenerateContentParams {
+                endpoint: &endpoint,
+                path: &path,
+                auth: JsonAuth::Bearer(auth),
+                extra_headers: vec![JsonSecretHeader {
+                    name: HeaderName::new("x-goog-user-project").map_err(|_| {
+                        TtsRuntimeError::Rejected {
+                            reason: "auth header name is invalid",
+                        }
+                    })?,
                     value: project_header,
                 }],
-                RequestPolicy::GENERATION,
-            ) => response.map_err(map_network)?,
-            () = cancellation.cancelled() => return Err(TtsRuntimeError::Cancelled),
-        };
-        if !(200..300).contains(&response.status) {
-            return Err(match response.status {
-                408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable {
-                    status: response.status,
-                },
-                _ => TtsRuntimeError::Rejected {
-                    reason: "provider returned a non-retryable http status",
-                },
-            });
-        }
-        let response: GeminiResponse = serde_json::from_slice(&response.body).map_err(|error| {
-            tracing::warn!(%error, "provider response is not valid json");
-            TtsRuntimeError::Rejected {
-                reason: "provider response is not valid json",
-            }
-        })?;
-        let inline = response
-            .candidates
-            .iter()
-            .flat_map(|candidate| &candidate.content.parts)
-            .find_map(|part| part.inline_data.as_ref())
-            .ok_or(TtsRuntimeError::Rejected {
-                reason: "gemini response has no inline audio data",
-            })?;
-        let bytes = STANDARD.decode(&inline.data).map_err(|error| {
-            tracing::warn!(%error, "audio payload is not valid base64");
-            TtsRuntimeError::Rejected {
-                reason: "audio payload is not valid base64",
-            }
-        })?;
-        Ok(RuntimeSynthesis {
-            bytes: gemini_wav(bytes, inline.mime_type.as_deref())?,
-            declared_mime_type: "audio/wav".into(),
-        })
+                text: full_text,
+                voice_name: resolve_voice_name(&request.voice_id),
+                include_response_modalities: false,
+                language_code: Some("en-us"),
+            },
+            cancellation,
+        )
+        .await
     }
 }
 

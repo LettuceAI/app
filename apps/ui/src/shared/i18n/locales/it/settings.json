@@ -545,21 +545,57 @@
   "developer": {
     "group": "Chat di prova",
     "templates": {
-      "roleplay": { "title": "Chat di gioco di ruolo", "description": "Un personaggio, un persona e una chat con cronologia" },
-      "companion": { "title": "Chat con compagno, compilata", "description": "Un compagno con anima, relazione, cronologia e ricordi" },
-      "group": { "title": "Chat di gruppo", "description": "Tre personaggi in un gruppo con cronologia" },
-      "group_companion": { "title": "Chat di gruppo di compagni", "description": "Tre compagni con anima in un gruppo di compagni con cronologia" },
-      "roleplay_widgets": { "title": "Chat di gioco di ruolo con widget", "description": "La chat di gioco di ruolo con tutti i widget accanto alla chat" },
-      "companion_widgets": { "title": "Chat con compagno e widget", "description": "La chat con compagno con tutti i widget, inclusi stato del compagno e memoria" },
-      "chapters_backlog": { "title": "Capitoli: cronologia lunga", "description": "Una storia del traghetto di 42 messaggi senza riassunto. Ogni messaggio inviato riassume i sei vecchi successivi." },
-      "chapters_user_seed": { "title": "Capitoli: riassunto scritto", "description": "La stessa storia con un breve riassunto scritto a mano, mantenuto come punto di partenza." },
-      "chapters_large_seed": { "title": "Capitoli: riassunto troppo grande", "description": "La stessa storia con un riassunto scritto a mano più grande del budget di test. Vengono raggruppati solo i nuovi cicli." },
-      "chapters_group": { "title": "Capitoli: gruppo", "description": "Una storia di 36 messaggi di un equipaggio di recupero in un gruppo con memoria dinamica." }
+      "roleplay": {
+        "title": "Chat di gioco di ruolo",
+        "description": "Un personaggio, un persona e una chat con cronologia"
+      },
+      "companion": {
+        "title": "Chat con compagno, compilata",
+        "description": "Un compagno con anima, relazione, cronologia e ricordi"
+      },
+      "group": {
+        "title": "Chat di gruppo",
+        "description": "Tre personaggi in un gruppo con cronologia"
+      },
+      "group_companion": {
+        "title": "Chat di gruppo di compagni",
+        "description": "Tre compagni con anima in un gruppo di compagni con cronologia"
+      },
+      "roleplay_widgets": {
+        "title": "Chat di gioco di ruolo con widget",
+        "description": "La chat di gioco di ruolo con tutti i widget accanto alla chat"
+      },
+      "companion_widgets": {
+        "title": "Chat con compagno e widget",
+        "description": "La chat con compagno con tutti i widget, inclusi stato del compagno e memoria"
+      },
+      "chapters_backlog": {
+        "title": "Capitoli: cronologia lunga",
+        "description": "Una storia del traghetto di 42 messaggi senza riassunto. Ogni messaggio inviato riassume i sei vecchi successivi."
+      },
+      "chapters_user_seed": {
+        "title": "Capitoli: riassunto scritto",
+        "description": "La stessa storia con un breve riassunto scritto a mano, mantenuto come punto di partenza."
+      },
+      "chapters_large_seed": {
+        "title": "Capitoli: riassunto troppo grande",
+        "description": "La stessa storia con un riassunto scritto a mano più grande del budget di test. Vengono raggruppati solo i nuovi cicli."
+      },
+      "chapters_group": {
+        "title": "Capitoli: gruppo",
+        "description": "Una storia di 36 messaggi di un equipaggio di recupero in un gruppo con memoria dinamica."
+      }
     },
     "chapters": {
       "group": "Test dei riassunti a capitoli",
-      "apply": { "title": "Usa le impostazioni di test dei capitoli", "description": "Attiva la memoria dinamica e i riassunti a capitoli con cicli di 6 messaggi, un budget di 800 token e 2 cicli per capitolo. Prima vengono salvate le tue impostazioni di memoria." },
-      "restore": { "title": "Ripristina le impostazioni di memoria", "description": "Rimette le impostazioni di memoria salvate prima di quelle di test." },
+      "apply": {
+        "title": "Usa le impostazioni di test dei capitoli",
+        "description": "Attiva la memoria dinamica e i riassunti a capitoli con cicli di 6 messaggi, un budget di 800 token e 2 cicli per capitolo. Prima vengono salvate le tue impostazioni di memoria."
+      },
+      "restore": {
+        "title": "Ripristina le impostazioni di memoria",
+        "description": "Rimette le impostazioni di memoria salvate prima di quelle di test."
+      },
       "applied": "Impostazioni di test dei capitoli attive",
       "restored": "Impostazioni di memoria ripristinate"
     }
@@ -623,11 +659,14 @@
     "verified": "Connessione verificata",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "Compatibile con OpenAI",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "Impossibile verificare la connessione.",
     "saveBeforeVerify": "Salva le modifiche alla connessione prima di verificare con la chiave salvata.",
@@ -640,7 +679,10 @@
     "deleteWithModels_other": "Elimina provider e {{count}} modelli",
     "modelCount_one": "1 modello",
     "modelCount_many": "{{count}} modelli",
-    "modelCount_other": "{{count}} modelli"
+    "modelCount_other": "{{count}} modelli",
+    "linkedAccount": "Account provider",
+    "linkedAccountHint": "Usa la chiave API del tuo account provider esistente",
+    "linkedAccountEmpty": "Aggiungi prima un account OpenRouter o NanoGPT nella scheda Modelli"
   },
   "models": {
     "vision": "Visione",
@@ -1475,10 +1517,22 @@
     },
     "pages": {
       "group": "Altre impostazioni",
-      "saved": { "title": "Cosa viene salvato", "body": "Intervallo di riepilogo, limite di ricordi, duplicati e fissaggio" },
-      "recall": { "title": "Richiamo", "body": "Cosa accompagna ogni risposta e come vengono scelti i ricordi" },
-      "summary": { "title": "Riepilogo del contesto", "body": "Riepiloghi a capitoli e budget del riepilogo" },
-      "advanced": { "title": "Avanzate", "body": "La dimenticanza e come funziona il gestore della memoria" }
+      "saved": {
+        "title": "Cosa viene salvato",
+        "body": "Intervallo di riepilogo, limite di ricordi, duplicati e fissaggio"
+      },
+      "recall": {
+        "title": "Richiamo",
+        "body": "Cosa accompagna ogni risposta e come vengono scelti i ricordi"
+      },
+      "summary": {
+        "title": "Riepilogo del contesto",
+        "body": "Riepiloghi a capitoli e budget del riepilogo"
+      },
+      "advanced": {
+        "title": "Avanzate",
+        "body": "La dimenticanza e come funziona il gestore della memoria"
+      }
     },
     "advanced": {
       "enrichment": "Arricchimento del contesto",
@@ -1834,7 +1888,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Altro ambito",
-    "scopeName": "Nome dell'ambito"
+    "scopeName": "Nome dell'ambito",
+    "source": "Origine riconoscimento vocale",
+    "sourceLocal": "Locale (Whisper)",
+    "sourceCloud": "Cloud",
+    "cloudModel": "Modello vocale cloud",
+    "cloudProvider": "Account provider",
+    "cloudProviderEmpty": "Aggiungi prima un account OpenRouter o NanoGPT in Provider"
   },
   "hf": {
     "title": "Ottieni modelli",
@@ -2043,8 +2103,17 @@
     "mtpBundledBody": "Risposte più veloci, usando i layer di previsione in questo file",
     "systemRam": "RAM di sistema",
     "vramShort": "VRAM",
-    "offloadChoices": { "auto": "Auto", "gpu": "GPU", "mixed": "Mista", "cpu": "CPU" },
-    "placementChoices": { "auto": "Auto", "vram": "VRAM", "ram": "RAM" },
+    "offloadChoices": {
+      "auto": "Auto",
+      "gpu": "GPU",
+      "mixed": "Mista",
+      "cpu": "CPU"
+    },
+    "placementChoices": {
+      "auto": "Auto",
+      "vram": "VRAM",
+      "ram": "RAM"
+    },
     "noRecommendation": "Nessun file è confermato compatibile con 8.192 token e KV Q8 o Q6. Puoi scegliere un file manualmente.",
     "retryMove": "Riprova spostamento file",
     "localProvider": "llama.cpp (locale)",
@@ -2235,10 +2304,22 @@
       "group": "Filtro dei contenuti",
       "title": "Modalità pura",
       "levels": {
-        "off": { "label": "Off", "description": "Tutti i contenuti consentiti" },
-        "low": { "label": "Bassa", "description": "Blocca contenuti sessuali espliciti e insulti" },
-        "standard": { "label": "Standard", "description": "Blocca NSFW e violenza esplicita" },
-        "strict": { "label": "Stretta", "description": "Filtro massimo e nessun tono allusivo" }
+        "off": {
+          "label": "Off",
+          "description": "Tutti i contenuti consentiti"
+        },
+        "low": {
+          "label": "Bassa",
+          "description": "Blocca contenuti sessuali espliciti e insulti"
+        },
+        "standard": {
+          "label": "Standard",
+          "description": "Blocca NSFW e violenza esplicita"
+        },
+        "strict": {
+          "label": "Stretta",
+          "description": "Filtro massimo e nessun tono allusivo"
+        }
       }
     },
     "privacy": {
@@ -2350,7 +2431,8 @@
       "previewFirst": "Ascolta prima l'anteprima della voce per crearla.",
       "fishVoiceIdRequired": "Fish Audio richiede un ID voce.",
       "openaiModelIdRequired": "Inserisci l'ID del modello che il tuo endpoint si aspetta.",
-      "openaiVoiceIdRequired": "Inserisci un ID voce supportato dal tuo endpoint."
+      "openaiVoiceIdRequired": "Inserisci un ID voce supportato dal tuo endpoint.",
+      "cloudVoice": "Voce"
     },
     "kokoro": {
       "studio": "Studio Kokoro",

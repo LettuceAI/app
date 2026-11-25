@@ -9395,6 +9395,73 @@
           "promptEntryPayload": null
         }
       ]
+    },
+    {
+      "key": "prompt_app_speech_runtime",
+      "aliases": [],
+      "name": "Speech Runtime",
+      "purpose": "runtimeText",
+      "condense": false,
+      "required": true,
+      "protected": true,
+      "entries": [
+        {
+          "key": "gemini_stt_instruction",
+          "name": "Gemini STT instruction",
+          "role": "system",
+          "content": "Transcribe the spoken audio verbatim. Output only the transcript text without commentary.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "gemini_stt_language_suffix",
+          "name": "Gemini STT language suffix",
+          "role": "system",
+          "content": " Language: {{speech_language}}.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "gemini_stt_hints_suffix",
+          "name": "Gemini STT hints suffix",
+          "role": "system",
+          "content": " Vocabulary / context hints: {{speech_hints}}",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "gemini_tts_directed_text",
+          "name": "Gemini TTS directed text",
+          "role": "system",
+          "content": "{{speech_instructions}}: {{speech_text}}",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        }
+      ]
     }
   ]
 }

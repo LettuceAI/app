@@ -541,21 +541,57 @@
   "developer": {
     "group": "Tesztcsetek",
     "templates": {
-      "roleplay": { "title": "Szerepjátékos csevegés", "description": "Egy karakter, egy persona és egy előzményekkel rendelkező csevegés" },
-      "companion": { "title": "Társ csevegés, kitöltve", "description": "Egy társ lélekkel, kapcsolattal, előzményekkel és emlékekkel" },
-      "group": { "title": "Csoportos csevegés", "description": "Három karakter egy csoportban, előzményekkel" },
-      "group_companion": { "title": "Társ csoportos csevegés", "description": "Három társ lélekkel egy társcsoportban, előzményekkel" },
-      "roleplay_widgets": { "title": "Szerepjátékos csevegés widgetekkel", "description": "A szerepjátékos csevegés az összes widgettel a csevegés mellett" },
-      "companion_widgets": { "title": "Társ csevegés widgetekkel", "description": "A társ csevegés az összes widgettel, a társ állapotával és a memóriával együtt" },
-      "chapters_backlog": { "title": "Fejezetek: hosszú előzmény", "description": "Egy 42 üzenetes kompos történet összefoglaló nélkül. Minden elküldött üzenet a következő hat régit foglalja össze." },
-      "chapters_user_seed": { "title": "Fejezetek: megírt összefoglaló", "description": "Ugyanaz a történet egy rövid, kézzel írt összefoglalóval, amely kiindulópont marad." },
-      "chapters_large_seed": { "title": "Fejezetek: túl nagy összefoglaló", "description": "Ugyanaz a történet a tesztkeretnél nagyobb, kézzel írt összefoglalóval. Csak az új ciklusok vonódnak össze." },
-      "chapters_group": { "title": "Fejezetek: csoport", "description": "Egy 36 üzenetes mentőcsapat-történet egy dinamikus memóriájú csoportban." }
+      "roleplay": {
+        "title": "Szerepjátékos csevegés",
+        "description": "Egy karakter, egy persona és egy előzményekkel rendelkező csevegés"
+      },
+      "companion": {
+        "title": "Társ csevegés, kitöltve",
+        "description": "Egy társ lélekkel, kapcsolattal, előzményekkel és emlékekkel"
+      },
+      "group": {
+        "title": "Csoportos csevegés",
+        "description": "Három karakter egy csoportban, előzményekkel"
+      },
+      "group_companion": {
+        "title": "Társ csoportos csevegés",
+        "description": "Három társ lélekkel egy társcsoportban, előzményekkel"
+      },
+      "roleplay_widgets": {
+        "title": "Szerepjátékos csevegés widgetekkel",
+        "description": "A szerepjátékos csevegés az összes widgettel a csevegés mellett"
+      },
+      "companion_widgets": {
+        "title": "Társ csevegés widgetekkel",
+        "description": "A társ csevegés az összes widgettel, a társ állapotával és a memóriával együtt"
+      },
+      "chapters_backlog": {
+        "title": "Fejezetek: hosszú előzmény",
+        "description": "Egy 42 üzenetes kompos történet összefoglaló nélkül. Minden elküldött üzenet a következő hat régit foglalja össze."
+      },
+      "chapters_user_seed": {
+        "title": "Fejezetek: megírt összefoglaló",
+        "description": "Ugyanaz a történet egy rövid, kézzel írt összefoglalóval, amely kiindulópont marad."
+      },
+      "chapters_large_seed": {
+        "title": "Fejezetek: túl nagy összefoglaló",
+        "description": "Ugyanaz a történet a tesztkeretnél nagyobb, kézzel írt összefoglalóval. Csak az új ciklusok vonódnak össze."
+      },
+      "chapters_group": {
+        "title": "Fejezetek: csoport",
+        "description": "Egy 36 üzenetes mentőcsapat-történet egy dinamikus memóriájú csoportban."
+      }
     },
     "chapters": {
       "group": "Fejezetösszefoglalók tesztje",
-      "apply": { "title": "Fejezet tesztbeállítások használata", "description": "Bekapcsolja a dinamikus memóriát és a fejezetösszefoglalókat 6 üzenetes ciklusokkal, 800 tokenes kerettel és fejezetenként 2 ciklussal. Előbb elmenti a memóriabeállításaidat." },
-      "restore": { "title": "Memóriabeállítások visszaállítása", "description": "Visszaállítja a tesztbeállítások előtt mentett memóriabeállításokat." },
+      "apply": {
+        "title": "Fejezet tesztbeállítások használata",
+        "description": "Bekapcsolja a dinamikus memóriát és a fejezetösszefoglalókat 6 üzenetes ciklusokkal, 800 tokenes kerettel és fejezetenként 2 ciklussal. Előbb elmenti a memóriabeállításaidat."
+      },
+      "restore": {
+        "title": "Memóriabeállítások visszaállítása",
+        "description": "Visszaállítja a tesztbeállítások előtt mentett memóriabeállításokat."
+      },
       "applied": "A fejezet tesztbeállítások be vannak kapcsolva",
       "restored": "Memóriabeállítások visszaállítva"
     }
@@ -619,11 +655,14 @@
     "verified": "Kapcsolat ellenőrizve",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "OpenAI-kompatibilis",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "A kapcsolatot nem sikerült ellenőrizni.",
     "saveBeforeVerify": "Mentsd el a kapcsolati módosításokat, mielőtt a mentett kulccsal ellenőrzöd.",
@@ -633,7 +672,10 @@
     "deleteWithModels_one": "Szolgáltató és 1 modell törlése",
     "deleteWithModels_other": "Szolgáltató és {{count}} modell törlése",
     "modelCount_one": "1 modell",
-    "modelCount_other": "{{count}} modell"
+    "modelCount_other": "{{count}} modell",
+    "linkedAccount": "Szolgáltatói fiók",
+    "linkedAccountHint": "A meglévő szolgáltatói fiókod API-kulcsát használja",
+    "linkedAccountEmpty": "Először adj hozzá egy OpenRouter vagy NanoGPT fiókot a Modellek fülön"
   },
   "models": {
     "vision": "Látás",
@@ -1463,10 +1505,22 @@
     },
     "pages": {
       "group": "További beállítások",
-      "saved": { "title": "Mi kerül mentésre", "body": "Összefoglalási időköz, emlékkorlát, duplikátumok és kitűzés" },
-      "recall": { "title": "Felidézés", "body": "Mi megy minden válasszal, és hogyan választódnak ki az emlékek" },
-      "summary": { "title": "Kontextus-összefoglaló", "body": "Fejezetes összefoglalók és az összefoglaló kerete" },
-      "advanced": { "title": "Haladó", "body": "Felejtés és a memóriakezelő működése" }
+      "saved": {
+        "title": "Mi kerül mentésre",
+        "body": "Összefoglalási időköz, emlékkorlát, duplikátumok és kitűzés"
+      },
+      "recall": {
+        "title": "Felidézés",
+        "body": "Mi megy minden válasszal, és hogyan választódnak ki az emlékek"
+      },
+      "summary": {
+        "title": "Kontextus-összefoglaló",
+        "body": "Fejezetes összefoglalók és az összefoglaló kerete"
+      },
+      "advanced": {
+        "title": "Haladó",
+        "body": "Felejtés és a memóriakezelő működése"
+      }
     },
     "advanced": {
       "enrichment": "Kontextusgazdagítás",
@@ -1821,7 +1875,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Egyéb hatókör",
-    "scopeName": "Hatókör neve"
+    "scopeName": "Hatókör neve",
+    "source": "Beszédfelismerés forrása",
+    "sourceLocal": "Helyi (Whisper)",
+    "sourceCloud": "Felhő",
+    "cloudModel": "Felhőalapú beszédmodell",
+    "cloudProvider": "Szolgáltatói fiók",
+    "cloudProviderEmpty": "Először adj hozzá egy OpenRouter vagy NanoGPT fiókot a Szolgáltatóknál"
   },
   "hf": {
     "title": "Modellek beszerzése",
@@ -2352,7 +2412,8 @@
       "previewFirst": "A létrehozáshoz előbb hallgasd meg a hang előnézetét.",
       "fishVoiceIdRequired": "A Fish Audiónak hangazonosító kell.",
       "openaiModelIdRequired": "Add meg a végpontod által várt modellazonosítót.",
-      "openaiVoiceIdRequired": "Adj meg a végpontod által támogatott hangazonosítót."
+      "openaiVoiceIdRequired": "Adj meg a végpontod által támogatott hangazonosítót.",
+      "cloudVoice": "Hang"
     },
     "kokoro": {
       "studio": "Kokoro stúdió",

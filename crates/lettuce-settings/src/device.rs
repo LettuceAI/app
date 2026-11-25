@@ -35,11 +35,16 @@ pub struct RetainedModelRoots {
     pub thymos: Option<String>,
 }
 
-/// The Whisper model dictation uses (unset means the first installed one).
+/// The speech recognition model dictation uses (unset means the first installed
+/// local Whisper model). When `dictation_provider_account_id` is set, dictation
+/// routes to that cloud provider account (OpenRouter or NanoGPT) with
+/// `dictation_model_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DeviceSpeechSettings {
     pub dictation_model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dictation_provider_account_id: Option<String>,
 }
 
 /// A root certificate every provider request trusts.
@@ -143,7 +148,12 @@ impl DeviceSettings {
             .speech
             .dictation_model_id
             .as_deref()
-            .is_none_or(|model| text(model, 128));
+            .is_none_or(|model| text(model, 128))
+            && self
+                .speech
+                .dictation_provider_account_id
+                .as_deref()
+                .is_none_or(|account| text(account, 128));
         let retained = [
             &self.retained_model_roots.whisper,
             &self.retained_model_roots.kokoro,

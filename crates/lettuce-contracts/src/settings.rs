@@ -751,6 +751,7 @@ pub struct SettingsDeviceView {
     pub kokoro_keep_model_loaded: bool,
     pub llm_models_dir: Option<String>,
     pub dictation_model_id: Option<String>,
+    pub dictation_provider_account_id: Option<String>,
     pub trusted_certificates: Vec<crate::TrustedCertificateView>,
 }
 

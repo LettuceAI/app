@@ -537,21 +537,57 @@
   "developer": {
     "group": "测试聊天",
     "templates": {
-      "roleplay": { "title": "角色扮演聊天", "description": "一个角色、一个人设和一段带历史的聊天" },
-      "companion": { "title": "伙伴聊天（已填充）", "description": "一个带有灵魂、关系、历史和记忆的伙伴" },
-      "group": { "title": "群聊", "description": "一个带历史的群组，含三个角色" },
-      "group_companion": { "title": "伙伴群聊", "description": "一个带历史的伙伴群组，含三个有灵魂的伙伴" },
-      "roleplay_widgets": { "title": "带小组件的角色扮演聊天", "description": "聊天旁放有全部小组件的角色扮演聊天" },
-      "companion_widgets": { "title": "带小组件的伙伴聊天", "description": "放有全部小组件的伙伴聊天，包括伙伴状态和记忆" },
-      "chapters_backlog": { "title": "章节：长历史", "description": "一个没有摘要的 42 条消息的渡船故事。你每发送一条消息，就会摘要接下来的 6 条旧消息。" },
-      "chapters_user_seed": { "title": "章节：手写摘要", "description": "同一个故事，带一段简短的手写摘要，作为起点保留。" },
-      "chapters_large_seed": { "title": "章节：过大的摘要", "description": "同一个故事，带一段超过测试预算的手写摘要。只有新周期会被合并。" },
-      "chapters_group": { "title": "章节：群组", "description": "在开启动态记忆的群组中，一个打捞船员的 36 条消息故事。" }
+      "roleplay": {
+        "title": "角色扮演聊天",
+        "description": "一个角色、一个人设和一段带历史的聊天"
+      },
+      "companion": {
+        "title": "伙伴聊天（已填充）",
+        "description": "一个带有灵魂、关系、历史和记忆的伙伴"
+      },
+      "group": {
+        "title": "群聊",
+        "description": "一个带历史的群组，含三个角色"
+      },
+      "group_companion": {
+        "title": "伙伴群聊",
+        "description": "一个带历史的伙伴群组，含三个有灵魂的伙伴"
+      },
+      "roleplay_widgets": {
+        "title": "带小组件的角色扮演聊天",
+        "description": "聊天旁放有全部小组件的角色扮演聊天"
+      },
+      "companion_widgets": {
+        "title": "带小组件的伙伴聊天",
+        "description": "放有全部小组件的伙伴聊天，包括伙伴状态和记忆"
+      },
+      "chapters_backlog": {
+        "title": "章节：长历史",
+        "description": "一个没有摘要的 42 条消息的渡船故事。你每发送一条消息，就会摘要接下来的 6 条旧消息。"
+      },
+      "chapters_user_seed": {
+        "title": "章节：手写摘要",
+        "description": "同一个故事，带一段简短的手写摘要，作为起点保留。"
+      },
+      "chapters_large_seed": {
+        "title": "章节：过大的摘要",
+        "description": "同一个故事，带一段超过测试预算的手写摘要。只有新周期会被合并。"
+      },
+      "chapters_group": {
+        "title": "章节：群组",
+        "description": "在开启动态记忆的群组中，一个打捞船员的 36 条消息故事。"
+      }
     },
     "chapters": {
       "group": "章节摘要测试",
-      "apply": { "title": "使用章节测试设置", "description": "开启动态记忆和章节摘要：每 6 条消息一个周期，预算 800 个 token，每章 2 个周期。会先保存你当前的记忆设置。" },
-      "restore": { "title": "恢复记忆设置", "description": "恢复使用测试设置之前保存的记忆设置。" },
+      "apply": {
+        "title": "使用章节测试设置",
+        "description": "开启动态记忆和章节摘要：每 6 条消息一个周期，预算 800 个 token，每章 2 个周期。会先保存你当前的记忆设置。"
+      },
+      "restore": {
+        "title": "恢复记忆设置",
+        "description": "恢复使用测试设置之前保存的记忆设置。"
+      },
       "applied": "章节测试设置已开启",
       "restored": "记忆设置已恢复"
     }
@@ -615,18 +651,24 @@
     "verified": "连接已验证",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "兼容 OpenAI",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "无法验证连接。",
     "saveBeforeVerify": "请先保存连接更改，再用已保存的密钥验证。",
     "deleteWithModelsTitle": "删除 {{name}} 及其模型？",
     "deleteWithModelsBody_other": "此服务商仍有 {{count}} 个模型：{{names}}。删除服务商会一并删除它们。",
     "deleteWithModels_other": "删除服务商和 {{count}} 个模型",
-    "modelCount_other": "{{count}} 个模型"
+    "modelCount_other": "{{count}} 个模型",
+    "linkedAccount": "提供商账户",
+    "linkedAccountHint": "使用现有提供商账户中的 API 密钥",
+    "linkedAccountEmpty": "请先在“模型”选项卡中添加 OpenRouter 或 NanoGPT 账户"
   },
   "models": {
     "vision": "视觉",
@@ -1451,10 +1493,22 @@
     },
     "pages": {
       "group": "更多设置",
-      "saved": { "title": "保存哪些内容", "body": "摘要间隔、记忆上限、重复检查与固定" },
-      "recall": { "title": "回忆", "body": "每次回复附带的内容以及记忆的挑选方式" },
-      "summary": { "title": "上下文摘要", "body": "分章节摘要和摘要预算" },
-      "advanced": { "title": "高级", "body": "遗忘以及记忆管理器的工作方式" }
+      "saved": {
+        "title": "保存哪些内容",
+        "body": "摘要间隔、记忆上限、重复检查与固定"
+      },
+      "recall": {
+        "title": "回忆",
+        "body": "每次回复附带的内容以及记忆的挑选方式"
+      },
+      "summary": {
+        "title": "上下文摘要",
+        "body": "分章节摘要和摘要预算"
+      },
+      "advanced": {
+        "title": "高级",
+        "body": "遗忘以及记忆管理器的工作方式"
+      }
     },
     "advanced": {
       "enrichment": "上下文增强",
@@ -1808,7 +1862,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "其他范围",
-    "scopeName": "范围名称"
+    "scopeName": "范围名称",
+    "source": "语音识别来源",
+    "sourceLocal": "本地 (Whisper)",
+    "sourceCloud": "云端",
+    "cloudModel": "云端语音模型",
+    "cloudProvider": "提供商账户",
+    "cloudProviderEmpty": "请先在“提供商”中添加 OpenRouter 或 NanoGPT 账户"
   },
   "hf": {
     "title": "获取模型",
@@ -2013,8 +2073,17 @@
     "mtpBundledBody": "使用此文件中的预测层，让回复更快",
     "systemRam": "系统内存",
     "vramShort": "显存",
-    "offloadChoices": { "auto": "自动", "gpu": "GPU", "mixed": "混合", "cpu": "CPU" },
-    "placementChoices": { "auto": "自动", "vram": "显存", "ram": "内存" },
+    "offloadChoices": {
+      "auto": "自动",
+      "gpu": "GPU",
+      "mixed": "混合",
+      "cpu": "CPU"
+    },
+    "placementChoices": {
+      "auto": "自动",
+      "vram": "显存",
+      "ram": "内存"
+    },
     "noRecommendation": "没有文件被确认能在 8,192 token 和 Q8 或 Q6 KV 下适配。你可以手动选择文件。",
     "retryMove": "重试移动文件",
     "localProvider": "llama.cpp（本地）",
@@ -2201,10 +2270,22 @@
       "group": "内容过滤",
       "title": "纯净模式",
       "levels": {
-        "off": { "label": "关闭", "description": "允许所有内容" },
-        "low": { "label": "低", "description": "屏蔽露骨性内容和侮辱性称呼" },
-        "standard": { "label": "标准", "description": "屏蔽不适合工作场合的内容和血腥暴力" },
-        "strict": { "label": "严格", "description": "最大程度过滤，且不允许暗示性语气" }
+        "off": {
+          "label": "关闭",
+          "description": "允许所有内容"
+        },
+        "low": {
+          "label": "低",
+          "description": "屏蔽露骨性内容和侮辱性称呼"
+        },
+        "standard": {
+          "label": "标准",
+          "description": "屏蔽不适合工作场合的内容和血腥暴力"
+        },
+        "strict": {
+          "label": "严格",
+          "description": "最大程度过滤，且不允许暗示性语气"
+        }
       }
     },
     "privacy": {
@@ -2312,7 +2393,8 @@
       "previewFirst": "请先预览语音再创建。",
       "fishVoiceIdRequired": "Fish Audio 需要语音 ID。",
       "openaiModelIdRequired": "请输入你的端点所需的模型 ID。",
-      "openaiVoiceIdRequired": "请输入你的端点支持的语音 ID。"
+      "openaiVoiceIdRequired": "请输入你的端点支持的语音 ID。",
+      "cloudVoice": "音色"
     },
     "kokoro": {
       "studio": "Kokoro 工作室",

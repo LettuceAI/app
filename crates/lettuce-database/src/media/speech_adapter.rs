@@ -11,6 +11,8 @@ use crate::{Database, decode_versioned, encode_versioned};
 
 const TRANSCRIPTION_REQUEST_FORMAT_VERSION: u32 = 1;
 const TRANSCRIPTION_RESULT_FORMAT_VERSION: u32 = 1;
+const CLOUD_MODEL_ARTIFACT_HASH_PLACEHOLDER: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
 
 fn storage(error: impl std::fmt::Debug) -> TranscriptionRepositoryError {
     tracing::warn!(?error, "speech adapter storage step failed");
@@ -82,8 +84,11 @@ fn load_in(
                 .map(AssetId::from_str)
                 .transpose()
                 .map_err(corrupt)?
-        || record.request.model.id.as_str() != row.2
-        || record.request.model.artifact_hash != ContentHash::parse(row.3).map_err(corrupt)?
+        || record.request.model.model_id() != row.2
+        || match record.request.model.artifact_hash() {
+            Some(hash) => *hash != ContentHash::parse(row.3).map_err(corrupt)?,
+            None => row.3 != CLOUD_MODEL_ARTIFACT_HASH_PLACEHOLDER,
+        }
         || record.request.created_at != TimestampMillis::new(row.4)
         || match (&record.state, row.7) {
             (TranscriptionState::Pending, None) => false,
@@ -116,8 +121,12 @@ fn insert_pending_row(
                 record.job_id.to_string(),
                 record.request.id.to_string(),
                 record.request.audio_asset_id.map(|id| id.to_string()),
-                record.request.model.id.as_str(),
-                record.request.model.artifact_hash.as_str(),
+                record.request.model.model_id(),
+                record
+                    .request
+                    .model
+                    .artifact_hash()
+                    .map_or(CLOUD_MODEL_ARTIFACT_HASH_PLACEHOLDER, ContentHash::as_str),
                 record.request.created_at.get(),
                 request_json,
             ],

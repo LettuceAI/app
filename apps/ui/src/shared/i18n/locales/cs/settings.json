@@ -549,21 +549,57 @@
   "developer": {
     "group": "Testovací chaty",
     "templates": {
-      "roleplay": { "title": "Chat na hrdiny", "description": "Postava, persona a chat s historií" },
-      "companion": { "title": "Chat s parťákem, vyplněný", "description": "Parťák s Duší, vztahem, historií a vzpomínkami" },
-      "group": { "title": "Skupinový chat", "description": "Tři postavy ve skupině s historií" },
-      "group_companion": { "title": "Skupinový chat s parťáky", "description": "Tři parťáci s Dušemi ve skupině s parťáky a s historií" },
-      "roleplay_widgets": { "title": "Chat na hrdiny s widgety", "description": "Chat na hrdiny se všemi widgety vedle chatu" },
-      "companion_widgets": { "title": "Chat s parťákem s widgety", "description": "Chat s parťákem se všemi widgety včetně stavu parťáka a paměti" },
-      "chapters_backlog": { "title": "Kapitoly: dlouhá historie", "description": "Příběh o přívozu se 42 zprávami bez shrnutí. Každá odeslaná zpráva shrne dalších šest starých." },
-      "chapters_user_seed": { "title": "Kapitoly: napsané shrnutí", "description": "Stejný příběh s krátkým ručně psaným shrnutím, které zůstane jako výchozí bod." },
-      "chapters_large_seed": { "title": "Kapitoly: příliš velké shrnutí", "description": "Stejný příběh s ručně psaným shrnutím větším než testovací rozpočet. Slučují se jen nové cykly." },
-      "chapters_group": { "title": "Kapitoly: skupina", "description": "Příběh záchranné posádky se 36 zprávami ve skupině s dynamickou pamětí." }
+      "roleplay": {
+        "title": "Chat na hrdiny",
+        "description": "Postava, persona a chat s historií"
+      },
+      "companion": {
+        "title": "Chat s parťákem, vyplněný",
+        "description": "Parťák s Duší, vztahem, historií a vzpomínkami"
+      },
+      "group": {
+        "title": "Skupinový chat",
+        "description": "Tři postavy ve skupině s historií"
+      },
+      "group_companion": {
+        "title": "Skupinový chat s parťáky",
+        "description": "Tři parťáci s Dušemi ve skupině s parťáky a s historií"
+      },
+      "roleplay_widgets": {
+        "title": "Chat na hrdiny s widgety",
+        "description": "Chat na hrdiny se všemi widgety vedle chatu"
+      },
+      "companion_widgets": {
+        "title": "Chat s parťákem s widgety",
+        "description": "Chat s parťákem se všemi widgety včetně stavu parťáka a paměti"
+      },
+      "chapters_backlog": {
+        "title": "Kapitoly: dlouhá historie",
+        "description": "Příběh o přívozu se 42 zprávami bez shrnutí. Každá odeslaná zpráva shrne dalších šest starých."
+      },
+      "chapters_user_seed": {
+        "title": "Kapitoly: napsané shrnutí",
+        "description": "Stejný příběh s krátkým ručně psaným shrnutím, které zůstane jako výchozí bod."
+      },
+      "chapters_large_seed": {
+        "title": "Kapitoly: příliš velké shrnutí",
+        "description": "Stejný příběh s ručně psaným shrnutím větším než testovací rozpočet. Slučují se jen nové cykly."
+      },
+      "chapters_group": {
+        "title": "Kapitoly: skupina",
+        "description": "Příběh záchranné posádky se 36 zprávami ve skupině s dynamickou pamětí."
+      }
     },
     "chapters": {
       "group": "Testy shrnutí po kapitolách",
-      "apply": { "title": "Použít testovací nastavení kapitol", "description": "Zapne dynamickou paměť a shrnutí po kapitolách s cykly po 6 zprávách, rozpočtem 800 tokenů a 2 cykly na kapitolu. Nejdřív se uloží tvoje nastavení paměti." },
-      "restore": { "title": "Obnovit nastavení paměti", "description": "Vrátí nastavení paměti uložená před testovacím nastavením." },
+      "apply": {
+        "title": "Použít testovací nastavení kapitol",
+        "description": "Zapne dynamickou paměť a shrnutí po kapitolách s cykly po 6 zprávách, rozpočtem 800 tokenů a 2 cykly na kapitolu. Nejdřív se uloží tvoje nastavení paměti."
+      },
+      "restore": {
+        "title": "Obnovit nastavení paměti",
+        "description": "Vrátí nastavení paměti uložená před testovacím nastavením."
+      },
       "applied": "Testovací nastavení kapitol je zapnuté",
       "restored": "Nastavení paměti obnoveno"
     }
@@ -627,11 +663,14 @@
     "verified": "Připojení ověřeno",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "Kompatibilní s OpenAI",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "Připojení se nepodařilo ověřit.",
     "saveBeforeVerify": "Před ověřením uloženým klíčem ulož změny připojení.",
@@ -647,7 +686,10 @@
     "modelCount_one": "1 model",
     "modelCount_few": "{{count}} modely",
     "modelCount_many": "{{count}} modelu",
-    "modelCount_other": "{{count}} modelů"
+    "modelCount_other": "{{count}} modelů",
+    "linkedAccount": "Účet poskytovatele",
+    "linkedAccountHint": "Použije API klíč z vašeho stávajícího účtu poskytovatele",
+    "linkedAccountEmpty": "Nejprve přidejte účet OpenRouter nebo NanoGPT na kartě Modely"
   },
   "models": {
     "vision": "Vision",
@@ -1487,10 +1529,22 @@
     },
     "pages": {
       "group": "Další nastavení",
-      "saved": { "title": "Co se ukládá", "body": "Interval shrnutí, limit vzpomínek, duplikáty a připínání" },
-      "recall": { "title": "Vybavování", "body": "Co jde s každou odpovědí a jak se vybírají vzpomínky" },
-      "summary": { "title": "Shrnutí kontextu", "body": "Shrnutí po kapitolách a rozpočet shrnutí" },
-      "advanced": { "title": "Pokročilé", "body": "Zapomínání a jak pracuje správce paměti" }
+      "saved": {
+        "title": "Co se ukládá",
+        "body": "Interval shrnutí, limit vzpomínek, duplikáty a připínání"
+      },
+      "recall": {
+        "title": "Vybavování",
+        "body": "Co jde s každou odpovědí a jak se vybírají vzpomínky"
+      },
+      "summary": {
+        "title": "Shrnutí kontextu",
+        "body": "Shrnutí po kapitolách a rozpočet shrnutí"
+      },
+      "advanced": {
+        "title": "Pokročilé",
+        "body": "Zapomínání a jak pracuje správce paměti"
+      }
     },
     "advanced": {
       "enrichment": "Obohacení kontextu",
@@ -1847,7 +1901,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Jiný obor",
-    "scopeName": "Název oboru"
+    "scopeName": "Název oboru",
+    "source": "Zdroj rozpoznávání řeči",
+    "sourceLocal": "Místní (Whisper)",
+    "sourceCloud": "Cloud",
+    "cloudModel": "Cloudový model řeči",
+    "cloudProvider": "Účet poskytovatele",
+    "cloudProviderEmpty": "Nejprve přidejte účet OpenRouter nebo NanoGPT v Poskytovatelích"
   },
   "hf": {
     "title": "Získat modely",
@@ -2390,7 +2450,8 @@
       "previewFirst": "Nejdřív si hlas poslechněte, pak ho můžete vytvořit.",
       "fishVoiceIdRequired": "Fish Audio potřebuje ID hlasu.",
       "openaiModelIdRequired": "Zadejte ID modelu, které váš koncový bod očekává.",
-      "openaiVoiceIdRequired": "Zadejte ID hlasu, které váš koncový bod podporuje."
+      "openaiVoiceIdRequired": "Zadejte ID hlasu, které váš koncový bod podporuje.",
+      "cloudVoice": "Hlas"
     },
     "kokoro": {
       "studio": "Studio Kokoro",

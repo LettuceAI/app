@@ -26,8 +26,8 @@ pub(crate) use state::SpeechApiState;
 pub use transcribe::transcribe_file;
 pub(crate) use transcribe::{collect_recordings, transcription_view};
 pub use whisper::{
-    whisper_catalog, whisper_clear_cache, whisper_delete, whisper_dictation_model_set,
-    whisper_download, whisper_models_list, whisper_preload,
+    speech_cloud_models, whisper_catalog, whisper_clear_cache, whisper_delete,
+    whisper_dictation_model_set, whisper_download, whisper_models_list, whisper_preload,
 };
 
 pub use providers::{

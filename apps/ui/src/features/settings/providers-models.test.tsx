@@ -342,8 +342,9 @@ describe("provider settings", () => {
       },
     }));
     await mount("providers", { audioProviderCreate: create });
-    fireEvent.click(await screen.findByRole("tab", { name: /Audio/ }));
     await click("Add");
+    fireEvent.click(screen.getByRole("button", { name: "Provider type" }));
+    fireEvent.click(await screen.findByRole("button", { name: /ElevenLabs/ }));
     fireEvent.change(screen.getByLabelText("API key"), { target: { value: "audio-secret" } });
     await click("Add provider");
     await waitFor(() => expect(create).toHaveBeenCalled());
@@ -367,7 +368,6 @@ describe("provider settings", () => {
         ],
       }),
     });
-    fireEvent.click(await screen.findByRole("tab", { name: /Audio/ }));
     await click(/Local Kokoro/);
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();

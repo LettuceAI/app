@@ -161,7 +161,8 @@ pub use speech::{
     microphone_devices, transcribe_file, tts_cache_clear, tts_cache_stats, tts_models,
     tts_synthesize, tts_voice_design_models, user_voice_create, user_voice_delete,
     user_voice_update, user_voices_list, voice_design_preview, whisper_catalog,
-    whisper_clear_cache, whisper_delete, whisper_dictation_model_set, whisper_download,
+    speech_cloud_models, whisper_clear_cache, whisper_delete, whisper_dictation_model_set,
+    whisper_download,
     whisper_models_list, whisper_preload,
 };
 pub use worker::ConversationGenerationWorker;

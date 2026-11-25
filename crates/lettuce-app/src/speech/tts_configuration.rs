@@ -361,7 +361,10 @@ pub(crate) fn validate_secret_choice(
     has_api_key: bool,
 ) -> Result<(), TtsConfigurationCoordinatorError> {
     let valid = match config.provider_kind() {
-        AudioProviderKind::Kokoro => !has_api_key,
+        AudioProviderKind::Kokoro
+        | AudioProviderKind::OpenRouterTts
+        | AudioProviderKind::NanoGptTts
+        | AudioProviderKind::GeminiAudio => !has_api_key,
         AudioProviderKind::FishSpeech => true,
         AudioProviderKind::GeminiTts
         | AudioProviderKind::Elevenlabs

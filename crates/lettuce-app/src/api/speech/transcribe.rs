@@ -166,7 +166,7 @@ pub(crate) fn transcription_view(
     Ok(Some(dto::TranscriptionView {
         request_id: result.request_id.to_string(),
         audio: result.audio_asset_id.map(|id| context.asset_ref(id)),
-        model_id: result.model.id.as_str().to_owned(),
+        model_id: result.model.model_id().to_owned(),
         raw_text: result.raw_text,
         text: result.corrected_text,
         detected_language: result.detected_language,

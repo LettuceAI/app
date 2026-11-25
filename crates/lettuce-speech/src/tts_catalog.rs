@@ -56,6 +56,9 @@ pub fn tts_catalog_models(provider_kind: AudioProviderKind) -> Vec<TtsCatalogMod
             ("tts-1", "tts-1"),
             ("tts-1-hd", "tts-1-hd"),
         ],
+        AudioProviderKind::OpenRouterTts
+        | AudioProviderKind::NanoGptTts
+        | AudioProviderKind::GeminiAudio => &[],
         AudioProviderKind::Kokoro => unreachable!(),
     };
     values
@@ -91,7 +94,10 @@ pub fn tts_voice_design_models(provider_kind: AudioProviderKind) -> Vec<TtsCatal
 
 #[must_use]
 pub fn tts_catalog_voices(provider_kind: AudioProviderKind) -> Vec<TtsCatalogVoice> {
-    if provider_kind != AudioProviderKind::GeminiTts {
+    if !matches!(
+        provider_kind,
+        AudioProviderKind::GeminiTts | AudioProviderKind::GeminiAudio
+    ) {
         return Vec::new();
     }
     [

@@ -537,21 +537,57 @@
   "developer": {
     "group": "Trò chuyện thử nghiệm",
     "templates": {
-      "roleplay": { "title": "Trò chuyện nhập vai", "description": "Một nhân vật, một persona và một cuộc trò chuyện có lịch sử" },
-      "companion": { "title": "Trò chuyện với bạn đồng hành, đã điền", "description": "Một bạn đồng hành có Soul, mối quan hệ, lịch sử và ký ức" },
-      "group": { "title": "Trò chuyện nhóm", "description": "Ba nhân vật trong một nhóm có lịch sử" },
-      "group_companion": { "title": "Trò chuyện nhóm bạn đồng hành", "description": "Ba bạn đồng hành có Soul trong một nhóm bạn đồng hành có lịch sử" },
-      "roleplay_widgets": { "title": "Trò chuyện nhập vai với tiện ích", "description": "Cuộc trò chuyện nhập vai với mọi tiện ích bên cạnh khung chat" },
-      "companion_widgets": { "title": "Trò chuyện với bạn đồng hành và tiện ích", "description": "Cuộc trò chuyện với bạn đồng hành có mọi tiện ích, gồm cả trạng thái bạn đồng hành và bộ nhớ" },
-      "chapters_backlog": { "title": "Chương: lịch sử dài", "description": "Một câu chuyện phà 42 tin nhắn chưa có tóm tắt. Mỗi tin nhắn bạn gửi sẽ tóm tắt sáu tin cũ tiếp theo." },
-      "chapters_user_seed": { "title": "Chương: tóm tắt viết tay", "description": "Cùng câu chuyện với một tóm tắt ngắn viết tay, được giữ làm điểm xuất phát." },
-      "chapters_large_seed": { "title": "Chương: tóm tắt quá lớn", "description": "Cùng câu chuyện với tóm tắt viết tay lớn hơn ngân sách thử nghiệm. Chỉ các chu kỳ mới được gộp." },
-      "chapters_group": { "title": "Chương: nhóm", "description": "Câu chuyện 36 tin nhắn của một đội trục vớt trong nhóm có bộ nhớ động." }
+      "roleplay": {
+        "title": "Trò chuyện nhập vai",
+        "description": "Một nhân vật, một persona và một cuộc trò chuyện có lịch sử"
+      },
+      "companion": {
+        "title": "Trò chuyện với bạn đồng hành, đã điền",
+        "description": "Một bạn đồng hành có Soul, mối quan hệ, lịch sử và ký ức"
+      },
+      "group": {
+        "title": "Trò chuyện nhóm",
+        "description": "Ba nhân vật trong một nhóm có lịch sử"
+      },
+      "group_companion": {
+        "title": "Trò chuyện nhóm bạn đồng hành",
+        "description": "Ba bạn đồng hành có Soul trong một nhóm bạn đồng hành có lịch sử"
+      },
+      "roleplay_widgets": {
+        "title": "Trò chuyện nhập vai với tiện ích",
+        "description": "Cuộc trò chuyện nhập vai với mọi tiện ích bên cạnh khung chat"
+      },
+      "companion_widgets": {
+        "title": "Trò chuyện với bạn đồng hành và tiện ích",
+        "description": "Cuộc trò chuyện với bạn đồng hành có mọi tiện ích, gồm cả trạng thái bạn đồng hành và bộ nhớ"
+      },
+      "chapters_backlog": {
+        "title": "Chương: lịch sử dài",
+        "description": "Một câu chuyện phà 42 tin nhắn chưa có tóm tắt. Mỗi tin nhắn bạn gửi sẽ tóm tắt sáu tin cũ tiếp theo."
+      },
+      "chapters_user_seed": {
+        "title": "Chương: tóm tắt viết tay",
+        "description": "Cùng câu chuyện với một tóm tắt ngắn viết tay, được giữ làm điểm xuất phát."
+      },
+      "chapters_large_seed": {
+        "title": "Chương: tóm tắt quá lớn",
+        "description": "Cùng câu chuyện với tóm tắt viết tay lớn hơn ngân sách thử nghiệm. Chỉ các chu kỳ mới được gộp."
+      },
+      "chapters_group": {
+        "title": "Chương: nhóm",
+        "description": "Câu chuyện 36 tin nhắn của một đội trục vớt trong nhóm có bộ nhớ động."
+      }
     },
     "chapters": {
       "group": "Kiểm thử tóm tắt theo chương",
-      "apply": { "title": "Dùng cài đặt thử nghiệm chương", "description": "Bật bộ nhớ động và tóm tắt theo chương với chu kỳ 6 tin nhắn, ngân sách 800 token và 2 chu kỳ mỗi chương. Cài đặt bộ nhớ của bạn được lưu trước." },
-      "restore": { "title": "Khôi phục cài đặt bộ nhớ", "description": "Đặt lại cài đặt bộ nhớ đã lưu trước khi dùng cài đặt thử nghiệm." },
+      "apply": {
+        "title": "Dùng cài đặt thử nghiệm chương",
+        "description": "Bật bộ nhớ động và tóm tắt theo chương với chu kỳ 6 tin nhắn, ngân sách 800 token và 2 chu kỳ mỗi chương. Cài đặt bộ nhớ của bạn được lưu trước."
+      },
+      "restore": {
+        "title": "Khôi phục cài đặt bộ nhớ",
+        "description": "Đặt lại cài đặt bộ nhớ đã lưu trước khi dùng cài đặt thử nghiệm."
+      },
       "applied": "Đã bật cài đặt thử nghiệm chương",
       "restored": "Đã khôi phục cài đặt bộ nhớ"
     }
@@ -615,18 +651,24 @@
     "verified": "Đã xác minh kết nối",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "Tương thích OpenAI",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "Không thể xác minh kết nối.",
     "saveBeforeVerify": "Lưu thay đổi kết nối trước khi xác minh bằng khóa đã lưu.",
     "deleteWithModelsTitle": "Xóa {{name}} và các mô hình của nó?",
     "deleteWithModelsBody_other": "Nhà cung cấp này còn {{count}} mô hình: {{names}}. Xóa nhà cung cấp cũng xóa chúng.",
     "deleteWithModels_other": "Xóa nhà cung cấp và {{count}} mô hình",
-    "modelCount_other": "{{count}} mô hình"
+    "modelCount_other": "{{count}} mô hình",
+    "linkedAccount": "Tài khoản nhà cung cấp",
+    "linkedAccountHint": "Sử dụng khóa API từ tài khoản nhà cung cấp hiện có của bạn",
+    "linkedAccountEmpty": "Hãy thêm tài khoản OpenRouter hoặc NanoGPT trong mục Mô hình trước"
   },
   "models": {
     "vision": "Thị giác",
@@ -1451,10 +1493,22 @@
     },
     "pages": {
       "group": "Cài đặt khác",
-      "saved": { "title": "Những gì được lưu", "body": "Khoảng cách tóm tắt, giới hạn ký ức, trùng lặp và ghim" },
-      "recall": { "title": "Hồi tưởng", "body": "Những gì đi kèm mỗi câu trả lời và cách chọn ký ức" },
-      "summary": { "title": "Tóm tắt ngữ cảnh", "body": "Tóm tắt theo chương và ngân sách tóm tắt" },
-      "advanced": { "title": "Nâng cao", "body": "Việc quên và cách trình quản lý bộ nhớ hoạt động" }
+      "saved": {
+        "title": "Những gì được lưu",
+        "body": "Khoảng cách tóm tắt, giới hạn ký ức, trùng lặp và ghim"
+      },
+      "recall": {
+        "title": "Hồi tưởng",
+        "body": "Những gì đi kèm mỗi câu trả lời và cách chọn ký ức"
+      },
+      "summary": {
+        "title": "Tóm tắt ngữ cảnh",
+        "body": "Tóm tắt theo chương và ngân sách tóm tắt"
+      },
+      "advanced": {
+        "title": "Nâng cao",
+        "body": "Việc quên và cách trình quản lý bộ nhớ hoạt động"
+      }
     },
     "advanced": {
       "enrichment": "Làm giàu ngữ cảnh",
@@ -1808,7 +1862,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Phạm vi khác",
-    "scopeName": "Tên phạm vi"
+    "scopeName": "Tên phạm vi",
+    "source": "Nguồn nhận dạng giọng nói",
+    "sourceLocal": "Cục bộ (Whisper)",
+    "sourceCloud": "Đám mây",
+    "cloudModel": "Mô hình giọng nói đám mây",
+    "cloudProvider": "Tài khoản nhà cung cấp",
+    "cloudProviderEmpty": "Hãy thêm tài khoản OpenRouter hoặc NanoGPT trong Nhà cung cấp trước"
   },
   "hf": {
     "title": "Tải mô hình",
@@ -2333,7 +2393,8 @@
       "previewFirst": "Hãy xem trước giọng nói trước khi tạo.",
       "fishVoiceIdRequired": "Fish Audio cần một ID giọng nói.",
       "openaiModelIdRequired": "Nhập ID mô hình mà endpoint của bạn yêu cầu.",
-      "openaiVoiceIdRequired": "Nhập ID giọng nói mà endpoint của bạn hỗ trợ."
+      "openaiVoiceIdRequired": "Nhập ID giọng nói mà endpoint của bạn hỗ trợ.",
+      "cloudVoice": "Giọng nói"
     },
     "kokoro": {
       "studio": "Studio Kokoro",

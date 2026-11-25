@@ -73,6 +73,7 @@ fn view(
             kokoro_keep_model_loaded: device.onnx.kokoro_keep_model_loaded,
             llm_models_dir: device.llm_models_dir,
             dictation_model_id: device.speech.dictation_model_id,
+            dictation_provider_account_id: device.speech.dictation_provider_account_id,
             trusted_certificates: crate::api::providers::certificate_view(
                 device.trusted_certificates,
                 device_revision,

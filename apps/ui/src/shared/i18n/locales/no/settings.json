@@ -541,21 +541,57 @@
   "developer": {
     "group": "Testchatter",
     "templates": {
-      "roleplay": { "title": "Rollespillchat", "description": "En karakter, en persona og en chat med historikk" },
-      "companion": { "title": "Følgesvenn-chat, utfylt", "description": "En følgesvenn med sjel, forhold, historikk og minner" },
-      "group": { "title": "Gruppechat", "description": "Tre karakterer i en gruppe med historikk" },
-      "group_companion": { "title": "Følgesvenn-gruppechat", "description": "Tre følgesvenner med sjel i en følgesvenngruppe med historikk" },
-      "roleplay_widgets": { "title": "Rollespillchat med widgeter", "description": "Rollespillchatten med alle widgeter ved siden av chatten" },
-      "companion_widgets": { "title": "Følgesvenn-chat med widgeter", "description": "Følgesvenn-chatten med alle widgeter, inkludert følgesvennstatus og minne" },
-      "chapters_backlog": { "title": "Kapitler: lang historikk", "description": "En fergehistorie på 42 meldinger uten sammendrag. Hver melding du sender oppsummerer de neste seks gamle." },
-      "chapters_user_seed": { "title": "Kapitler: skrevet sammendrag", "description": "Den samme historien med et kort, håndskrevet sammendrag som beholdes som utgangspunkt." },
-      "chapters_large_seed": { "title": "Kapitler: for stort sammendrag", "description": "Den samme historien med et håndskrevet sammendrag større enn testbudsjettet. Bare nye sykluser slås sammen." },
-      "chapters_group": { "title": "Kapitler: gruppe", "description": "En bergingsmannskapshistorie på 36 meldinger i en gruppe med dynamisk minne." }
+      "roleplay": {
+        "title": "Rollespillchat",
+        "description": "En karakter, en persona og en chat med historikk"
+      },
+      "companion": {
+        "title": "Følgesvenn-chat, utfylt",
+        "description": "En følgesvenn med sjel, forhold, historikk og minner"
+      },
+      "group": {
+        "title": "Gruppechat",
+        "description": "Tre karakterer i en gruppe med historikk"
+      },
+      "group_companion": {
+        "title": "Følgesvenn-gruppechat",
+        "description": "Tre følgesvenner med sjel i en følgesvenngruppe med historikk"
+      },
+      "roleplay_widgets": {
+        "title": "Rollespillchat med widgeter",
+        "description": "Rollespillchatten med alle widgeter ved siden av chatten"
+      },
+      "companion_widgets": {
+        "title": "Følgesvenn-chat med widgeter",
+        "description": "Følgesvenn-chatten med alle widgeter, inkludert følgesvennstatus og minne"
+      },
+      "chapters_backlog": {
+        "title": "Kapitler: lang historikk",
+        "description": "En fergehistorie på 42 meldinger uten sammendrag. Hver melding du sender oppsummerer de neste seks gamle."
+      },
+      "chapters_user_seed": {
+        "title": "Kapitler: skrevet sammendrag",
+        "description": "Den samme historien med et kort, håndskrevet sammendrag som beholdes som utgangspunkt."
+      },
+      "chapters_large_seed": {
+        "title": "Kapitler: for stort sammendrag",
+        "description": "Den samme historien med et håndskrevet sammendrag større enn testbudsjettet. Bare nye sykluser slås sammen."
+      },
+      "chapters_group": {
+        "title": "Kapitler: gruppe",
+        "description": "En bergingsmannskapshistorie på 36 meldinger i en gruppe med dynamisk minne."
+      }
     },
     "chapters": {
       "group": "Tester av kapittelsammendrag",
-      "apply": { "title": "Bruk testinnstillinger for kapitler", "description": "Slår på dynamisk minne og kapittelsammendrag med sykluser på 6 meldinger, et budsjett på 800 tokens og 2 sykluser per kapittel. Minneinnstillingene dine lagres først." },
-      "restore": { "title": "Gjenopprett minneinnstillinger", "description": "Setter tilbake minneinnstillingene som ble lagret før testinnstillingene." },
+      "apply": {
+        "title": "Bruk testinnstillinger for kapitler",
+        "description": "Slår på dynamisk minne og kapittelsammendrag med sykluser på 6 meldinger, et budsjett på 800 tokens og 2 sykluser per kapittel. Minneinnstillingene dine lagres først."
+      },
+      "restore": {
+        "title": "Gjenopprett minneinnstillinger",
+        "description": "Setter tilbake minneinnstillingene som ble lagret før testinnstillingene."
+      },
       "applied": "Testinnstillinger for kapitler er på",
       "restored": "Minneinnstillinger gjenopprettet"
     }
@@ -619,11 +655,14 @@
     "verified": "Tilkoblingen er verifisert",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "OpenAI-kompatibel",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "Tilkoblingen kunne ikke verifiseres.",
     "saveBeforeVerify": "Lagre tilkoblingsendringene før du verifiserer med den lagrede nøkkelen.",
@@ -633,7 +672,10 @@
     "deleteWithModels_one": "Slett leverandør og 1 modell",
     "deleteWithModels_other": "Slett leverandør og {{count}} modeller",
     "modelCount_one": "1 modell",
-    "modelCount_other": "{{count}} modeller"
+    "modelCount_other": "{{count}} modeller",
+    "linkedAccount": "Leverandørkonto",
+    "linkedAccountHint": "Bruker API-nøkkelen fra din eksisterende leverandørkonto",
+    "linkedAccountEmpty": "Legg først til en OpenRouter- eller NanoGPT-konto under Modeller"
   },
   "models": {
     "vision": "Visjon",
@@ -1463,10 +1505,22 @@
     },
     "pages": {
       "group": "Flere innstillinger",
-      "saved": { "title": "Hva som lagres", "body": "Sammendragsintervall, minnegrense, duplikater og festing" },
-      "recall": { "title": "Gjenkalling", "body": "Hva som følger med hvert svar og hvordan minner velges" },
-      "summary": { "title": "Kontekstsammendrag", "body": "Kapittelsammendrag og budsjettet for sammendraget" },
-      "advanced": { "title": "Avansert", "body": "Glemsel og hvordan minnebehandleren jobber" }
+      "saved": {
+        "title": "Hva som lagres",
+        "body": "Sammendragsintervall, minnegrense, duplikater og festing"
+      },
+      "recall": {
+        "title": "Gjenkalling",
+        "body": "Hva som følger med hvert svar og hvordan minner velges"
+      },
+      "summary": {
+        "title": "Kontekstsammendrag",
+        "body": "Kapittelsammendrag og budsjettet for sammendraget"
+      },
+      "advanced": {
+        "title": "Avansert",
+        "body": "Glemsel og hvordan minnebehandleren jobber"
+      }
     },
     "advanced": {
       "enrichment": "Kontekstberikelse",
@@ -1821,7 +1875,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Annet omfang",
-    "scopeName": "Navn på omfanget"
+    "scopeName": "Navn på omfanget",
+    "source": "Kilde for talegjenkjenning",
+    "sourceLocal": "Lokal (Whisper)",
+    "sourceCloud": "Sky",
+    "cloudModel": "Sky-talemodell",
+    "cloudProvider": "Leverandørkonto",
+    "cloudProviderEmpty": "Legg først til en OpenRouter- eller NanoGPT-konto under Leverandører"
   },
   "hf": {
     "title": "Hent modeller",
@@ -2028,8 +2088,17 @@
     "mtpBundledBody": "Raskere svar, ved hjelp av prediksjonslagene i denne filen",
     "systemRam": "System-RAM",
     "vramShort": "VRAM",
-    "offloadChoices": { "auto": "Auto", "gpu": "GPU", "mixed": "Blandet", "cpu": "CPU" },
-    "placementChoices": { "auto": "Auto", "vram": "VRAM", "ram": "RAM" },
+    "offloadChoices": {
+      "auto": "Auto",
+      "gpu": "GPU",
+      "mixed": "Blandet",
+      "cpu": "CPU"
+    },
+    "placementChoices": {
+      "auto": "Auto",
+      "vram": "VRAM",
+      "ram": "RAM"
+    },
     "noRecommendation": "Ingen fil er bekreftet å passe med 8192 tokens og Q8- eller Q6-KV. Du kan velge en fil manuelt.",
     "retryMove": "Prøv å flytte filene på nytt",
     "localProvider": "llama.cpp (lokal)",
@@ -2218,10 +2287,22 @@
       "group": "Innholdsfiltrering",
       "title": "Ren modus",
       "levels": {
-        "off": { "label": "Av", "description": "Alt innhold tillatt" },
-        "low": { "label": "Lav", "description": "Blokkerer eksplisitt seksuelt innhold og skjellsord" },
-        "standard": { "label": "Standard", "description": "Blokkerer NSFW og grafisk vold" },
-        "strict": { "label": "Streng", "description": "Maksimal filtrering og ingen antydende tone" }
+        "off": {
+          "label": "Av",
+          "description": "Alt innhold tillatt"
+        },
+        "low": {
+          "label": "Lav",
+          "description": "Blokkerer eksplisitt seksuelt innhold og skjellsord"
+        },
+        "standard": {
+          "label": "Standard",
+          "description": "Blokkerer NSFW og grafisk vold"
+        },
+        "strict": {
+          "label": "Streng",
+          "description": "Maksimal filtrering og ingen antydende tone"
+        }
       }
     },
     "privacy": {
@@ -2331,7 +2412,8 @@
       "previewFirst": "Forhåndsvis stemmen først for å lage den.",
       "fishVoiceIdRequired": "Fish Audio trenger en stemme-ID.",
       "openaiModelIdRequired": "Skriv inn modell-ID-en endepunktet ditt forventer.",
-      "openaiVoiceIdRequired": "Skriv inn en stemme-ID endepunktet ditt støtter."
+      "openaiVoiceIdRequired": "Skriv inn en stemme-ID endepunktet ditt støtter.",
+      "cloudVoice": "Stemme"
     },
     "kokoro": {
       "studio": "Kokoro-studio",

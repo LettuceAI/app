@@ -1302,6 +1302,10 @@ pub enum PromptVariable {
     ReferenceRange,
     ReferenceSource,
     OtherSubjectName,
+    SpeechLanguage,
+    SpeechHints,
+    SpeechInstructions,
+    SpeechText,
 }
 
 impl PromptVariable {
@@ -1464,6 +1468,10 @@ impl PromptVariable {
             Self::ReferenceRange => "{{reference_range}}",
             Self::ReferenceSource => "{{reference_source}}",
             Self::OtherSubjectName => "{{other_subject_name}}",
+            Self::SpeechLanguage => "{{speech_language}}",
+            Self::SpeechHints => "{{speech_hints}}",
+            Self::SpeechInstructions => "{{speech_instructions}}",
+            Self::SpeechText => "{{speech_text}}",
         }
     }
 
@@ -1625,6 +1633,10 @@ impl PromptVariable {
         Self::ReferenceRange,
         Self::ReferenceSource,
         Self::OtherSubjectName,
+        Self::SpeechLanguage,
+        Self::SpeechHints,
+        Self::SpeechInstructions,
+        Self::SpeechText,
     ];
 
     /// The prompt editor's allowed-variable contract.

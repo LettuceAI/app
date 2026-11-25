@@ -28,6 +28,7 @@ use crate::{
 /// A running speech job renews its claim at a third of this.
 const SPEECH_LEASE: Duration = Duration::from_secs(10 * 60);
 const TRANSCRIBE_LANE: &str = "speech:whisper";
+const CLOUD_TRANSCRIBE_LANE: &str = "speech:cloud";
 const KOKORO_LANE: &str = "speech:kokoro";
 const MEDIA_UNAVAILABLE: &str = "speech-media-unavailable";
 const WORK_INVALID: &str = "speech-work-invalid";
@@ -197,8 +198,19 @@ impl JobHandler for SpeechTranscribeHandler {
         &[JobKind::SpeechTranscribe]
     }
 
-    fn lane(&self, _context: &ApiContext, _job: &JobSnapshot) -> Option<JobLane> {
-        Some(JobLane(TRANSCRIBE_LANE.to_owned()))
+    fn lane(&self, context: &ApiContext, job: &JobSnapshot) -> Option<JobLane> {
+        let is_remote =
+            lettuce_speech::TranscriptionRepository::get(context.backend().database(), job.id)
+                .map(|record| record.request.model.is_remote())
+                .unwrap_or(false);
+        Some(JobLane(
+            if is_remote {
+                CLOUD_TRANSCRIBE_LANE
+            } else {
+                TRANSCRIBE_LANE
+            }
+            .to_owned(),
+        ))
     }
 
     fn not_before(
@@ -218,12 +230,20 @@ impl JobHandler for SpeechTranscribeHandler {
         let job_id = job.id;
         let claimed = context
             .blocking(move |context| {
-                let _folder_access = context.local_models().folder_access();
-                let root = crate::api::speech::whisper::whisper_root(context)?;
-                if root.starts_with(crate::api::models::local::models_root(context)?)
-                    && folder_moving(context)?
-                {
-                    return Ok(None);
+                let is_remote = lettuce_speech::TranscriptionRepository::get(
+                    context.backend().database(),
+                    job_id,
+                )
+                .map(|record| record.request.model.is_remote())
+                .unwrap_or(false);
+                if !is_remote {
+                    let _folder_access = context.local_models().folder_access();
+                    let root = crate::api::speech::whisper::whisper_root(context)?;
+                    if root.starts_with(crate::api::models::local::models_root(context)?)
+                        && folder_moving(context)?
+                    {
+                        return Ok(None);
+                    }
                 }
                 let claimed = context.backend().speech_transcriptions().claim(
                     job_id,
@@ -514,14 +534,15 @@ pub(crate) fn active_local_files(
                                 error.to_string(),
                             )
                         })?;
-                    if let Some(model) = database
-                        .get_whisper_model(record.request.model.id.as_str())
-                        .map_err(|error| {
-                            crate::api::error::api_error(
-                                dto::ApiErrorCode::Internal,
-                                error.to_string(),
-                            )
-                        })?
+                    if !record.request.model.is_remote()
+                        && let Some(model) = database
+                            .get_whisper_model(record.request.model.model_id())
+                            .map_err(|error| {
+                                crate::api::error::api_error(
+                                    dto::ApiErrorCode::Internal,
+                                    error.to_string(),
+                                )
+                            })?
                         && model.model.path.starts_with(root)
                     {
                         return Ok(Some((

@@ -46,10 +46,11 @@ pub enum BuiltInPromptId {
     CompanionRuntime,
     CreationRuntime,
     CreationHelper,
+    SpeechRuntime,
 }
 
 impl BuiltInPromptId {
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 33] = [
         Self::AppDefault,
         Self::LocalRoleplay,
         Self::Companion,
@@ -82,6 +83,7 @@ impl BuiltInPromptId {
         Self::CompanionRuntime,
         Self::CreationRuntime,
         Self::CreationHelper,
+        Self::SpeechRuntime,
     ];
 
     #[must_use]
@@ -119,6 +121,7 @@ impl BuiltInPromptId {
             Self::CompanionRuntime => "prompt_app_companion_runtime",
             Self::CreationRuntime => "prompt_app_creation_runtime",
             Self::CreationHelper => "prompt_app_creation_helper",
+            Self::SpeechRuntime => "prompt_app_speech_runtime",
         }
     }
 
@@ -163,7 +166,8 @@ impl BuiltInPromptId {
             | Self::MemoryRuntime
             | Self::CompanionRuntime
             | Self::CreationRuntime
-            | Self::CreationHelper => PromptPurpose::RuntimeText,
+            | Self::CreationHelper
+            | Self::SpeechRuntime => PromptPurpose::RuntimeText,
         }
     }
 
@@ -290,6 +294,7 @@ pub struct BuiltInPromptIds {
     pub companion_runtime: PromptDocumentId,
     pub creation_runtime: PromptDocumentId,
     pub creation_helper: PromptDocumentId,
+    pub speech_runtime: PromptDocumentId,
 }
 
 impl BuiltInPromptIds {
@@ -343,6 +348,7 @@ impl BuiltInPromptIds {
             companion_runtime: required(BuiltInPromptId::CompanionRuntime),
             creation_runtime: required(BuiltInPromptId::CreationRuntime),
             creation_helper: required(BuiltInPromptId::CreationHelper),
+            speech_runtime: required(BuiltInPromptId::SpeechRuntime),
         })
     }
 
@@ -381,6 +387,7 @@ impl BuiltInPromptIds {
             BuiltInPromptId::CompanionRuntime => self.companion_runtime,
             BuiltInPromptId::CreationRuntime => self.creation_runtime,
             BuiltInPromptId::CreationHelper => self.creation_helper,
+            BuiltInPromptId::SpeechRuntime => self.speech_runtime,
         }
     }
 }
@@ -859,6 +866,10 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "reference_range"
             | "reference_source"
             | "other_subject_name"
+            | "speech_language"
+            | "speech_hints"
+            | "speech_instructions"
+            | "speech_text"
     )
 }
 
@@ -1112,7 +1123,7 @@ mod tests {
     #[test]
     fn catalog_is_the_exact_closed_legacy_set() {
         let catalog = BuiltInPromptCatalog::bundled().expect("valid embedded catalog");
-        assert_eq!(catalog.seeds().len(), 32);
+        assert_eq!(catalog.seeds().len(), 33);
 
         let actual = catalog
             .seeds()
@@ -1223,7 +1234,7 @@ mod tests {
         assert_eq!(calls[1].mode, BuiltInReconcileMode::ResetToSeed);
         assert_eq!(calls[1].seeds.len(), 1);
         assert_eq!(calls[2].mode, BuiltInReconcileMode::ResetToSeed);
-        assert_eq!(calls[2].seeds.len(), 32);
+        assert_eq!(calls[2].seeds.len(), 33);
     }
 
     #[test]

@@ -322,7 +322,11 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
             ),
             None if !matches!(
                 work.record.request.provider.config.provider_kind(),
-                AudioProviderKind::Kokoro | AudioProviderKind::FishSpeech
+                AudioProviderKind::Kokoro
+                    | AudioProviderKind::FishSpeech
+                    | AudioProviderKind::OpenRouterTts
+                    | AudioProviderKind::NanoGptTts
+                    | AudioProviderKind::GeminiAudio
             ) =>
             {
                 return Err(SecretStoreError::Missing.into());
@@ -492,7 +496,9 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
 
     match error {
         TtsSynthesisError::Invalid(_)
-        | TtsSynthesisError::Runtime(TtsRuntimeError::Rejected { .. })
+        | TtsSynthesisError::Runtime(
+            TtsRuntimeError::Rejected { .. } | TtsRuntimeError::VoiceRequired,
+        )
         | TtsSynthesisError::Audio(TtsAudioError::Invalid(_))
         | TtsSynthesisError::Audio(TtsAudioError::Media(
             MediaStoreError::EmptyInput
@@ -544,7 +550,8 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
             false,
             SPEECH_ESPEAK_MISSING,
         ),
-        TtsSynthesisError::Secret(SecretStoreError::Missing) => {
+        TtsSynthesisError::Secret(SecretStoreError::Missing)
+        | TtsSynthesisError::Runtime(TtsRuntimeError::Unauthorized { .. }) => {
             (JobErrorCode::Authentication, false, SPEECH_SECRET_MISSING)
         }
         TtsSynthesisError::Runtime(TtsRuntimeError::Failed { .. }) => {

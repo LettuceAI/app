@@ -39,7 +39,7 @@ const memory: SettingsDynamicMemorySettings = {
 
 function viewOf(patch: Partial<SettingsView["global"]> = {}, revision = 7): SettingsView {
   return {
-    device: { revision: 1, embedding_model_version: null, embedding_max_tokens: null, embedding_keep_model_loaded: false, thymos_keep_model_loaded: true, kokoro_keep_model_loaded: false, llm_models_dir: null, dictation_model_id: null, trusted_certificates: [] },
+    device: { revision: 1, embedding_model_version: null, embedding_max_tokens: null, embedding_keep_model_loaded: false, thymos_keep_model_loaded: true, kokoro_keep_model_loaded: false, llm_models_dir: null, dictation_model_id: null, dictation_provider_account_id: null, trusted_certificates: [] },
     global: {
       dynamic_memory: memory,
       group_dynamic_memory: null,

@@ -1226,6 +1226,66 @@ impl JsonClient {
         self.send_with_headers(request, secret_headers, 0).await
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct transport concern; bundling them hides the policy"
+    )]
+    pub async fn post_multipart(
+        &self,
+        endpoint: &str,
+        path: &str,
+        fields: Vec<MultipartField>,
+        static_headers: &[JsonStaticHeader],
+        auth: JsonAuth,
+        secret_headers: Vec<JsonSecretHeader>,
+        policy: RequestPolicy,
+    ) -> Result<JsonResponse, JsonClientError> {
+        let size = fields
+            .iter()
+            .map(|field| match field {
+                MultipartField::Text { value, .. } => value.len(),
+                MultipartField::File { bytes, .. } => bytes.len(),
+            })
+            .sum::<usize>();
+        if size > MAX_REQUEST_BYTES {
+            return Err(JsonClientError::RequestTooLarge);
+        }
+        let url = build_url(endpoint, path)?;
+        let (static_headers, auth, secret_headers) =
+            resolve_header_collection(static_headers, auth, secret_headers)?;
+        let mut form = reqwest::multipart::Form::new();
+        for field in fields {
+            form = match field {
+                MultipartField::Text { name, value } => form.text(name, value),
+                MultipartField::File {
+                    name,
+                    filename,
+                    mime_type,
+                    bytes,
+                } => form.part(
+                    name,
+                    reqwest::multipart::Part::bytes(bytes)
+                        .file_name(filename)
+                        .mime_str(&mime_type)
+                        .map_err(|error| {
+                            tracing::warn!(%error, "multipart mime type is invalid");
+                            JsonClientError::InvalidRequest {
+                                reason: "multipart mime type is invalid",
+                            }
+                        })?,
+                ),
+            };
+        }
+        let request = self
+            .client(policy)?
+            .post(url)
+            .timeout(timeout_for(policy))
+            .multipart(form);
+        let request = apply_static_headers(request, &static_headers)?;
+        let request = apply_auth(request, auth)?;
+        self.send_with_headers(request, secret_headers, 0).await
+    }
+
     /// Starts a JSON POST while leaving the response body attached to the
     /// caller. Retries only happen before any body bytes become observable.
     #[expect(

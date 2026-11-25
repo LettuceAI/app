@@ -2,8 +2,10 @@ use std::{fmt, io::Read};
 
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_media::{AssetKind, LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
-use lettuce_types::{AssetId, ContentHash, JobId, RequestId, TimestampMillis};
+use lettuce_types::{AssetId, ContentHash, JobId, ProviderAccountId, RequestId, TimestampMillis};
 use serde::{Deserialize, Serialize};
+
+use crate::CloudAsrProviderKind;
 
 pub const MAX_TRANSCRIPTION_AUDIO_SAMPLES: usize = i32::MAX as usize;
 const MAX_MODEL_ID_SCALARS: usize = 128;
@@ -23,6 +25,7 @@ impl AsrModelId {
         if value.trim() != value
             || value.is_empty()
             || value.chars().count() > MAX_MODEL_ID_SCALARS
+            || value.contains("..")
             || !value
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
@@ -58,12 +61,130 @@ impl From<AsrModelId> for String {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CloudModelId(String);
+
+impl CloudModelId {
+    pub fn new(value: impl Into<String>) -> Result<Self, AsrValidationError> {
+        let value = value.into();
+        if value.trim() != value
+            || value.is_empty()
+            || value.chars().count() > MAX_MODEL_ID_SCALARS
+            || value.contains("..")
+            || !value.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/' | b':')
+            })
+        {
+            return Err(AsrValidationError::InvalidModelId);
+        }
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for CloudModelId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("CloudModelId")
+            .field(&self.0)
+            .finish()
+    }
+}
+
+impl TryFrom<String> for CloudModelId {
+    type Error = AsrValidationError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<CloudModelId> for String {
+    fn from(value: CloudModelId) -> Self {
+        value.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AsrModelDescriptor {
-    pub id: AsrModelId,
-    pub artifact_hash: ContentHash,
-    pub english_only: bool,
+#[serde(untagged)]
+pub enum AsrModelSource {
+    Local {
+        id: AsrModelId,
+        artifact_hash: ContentHash,
+        english_only: bool,
+    },
+    Cloud {
+        provider_account_id: ProviderAccountId,
+        kind: CloudAsrProviderKind,
+        model_id: CloudModelId,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AsrModelDescriptor(pub AsrModelSource);
+
+impl AsrModelDescriptor {
+    #[must_use]
+    pub const fn local(id: AsrModelId, artifact_hash: ContentHash, english_only: bool) -> Self {
+        Self(AsrModelSource::Local {
+            id,
+            artifact_hash,
+            english_only,
+        })
+    }
+
+    #[must_use]
+    pub const fn cloud(
+        provider_account_id: ProviderAccountId,
+        kind: CloudAsrProviderKind,
+        model_id: CloudModelId,
+    ) -> Self {
+        Self(AsrModelSource::Cloud {
+            provider_account_id,
+            kind,
+            model_id,
+        })
+    }
+
+    #[must_use]
+    pub const fn source(&self) -> &AsrModelSource {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn model_id(&self) -> &str {
+        match &self.0 {
+            AsrModelSource::Local { id, .. } => id.as_str(),
+            AsrModelSource::Cloud { model_id, .. } => model_id.as_str(),
+        }
+    }
+
+    #[must_use]
+    pub const fn artifact_hash(&self) -> Option<&ContentHash> {
+        match &self.0 {
+            AsrModelSource::Local { artifact_hash, .. } => Some(artifact_hash),
+            AsrModelSource::Cloud { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn english_only(&self) -> bool {
+        match &self.0 {
+            AsrModelSource::Local { english_only, .. } => *english_only,
+            AsrModelSource::Cloud { .. } => false,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_remote(&self) -> bool {
+        matches!(self.0, AsrModelSource::Cloud { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -164,7 +285,7 @@ pub struct TranscriptionRequest {
 impl TranscriptionRequest {
     pub fn validate(&self) -> Result<(), AsrValidationError> {
         self.options.validate()?;
-        if self.model.english_only
+        if self.model.english_only()
             && self.options.language.as_deref().is_some_and(|language| {
                 !language.eq_ignore_ascii_case("en")
                     && !language.eq_ignore_ascii_case("english")
@@ -601,8 +722,16 @@ pub enum AsrRuntimeError {
     Cancelled,
     #[error("speech runtime is unavailable: {reason}")]
     Unavailable { reason: &'static str },
+    #[error("speech provider returned HTTP {status}")]
+    ProviderUnavailable { status: u16 },
+    #[error("speech provider rejected credentials: {reason}")]
+    Unauthorized { reason: &'static str },
     #[error("speech model is unavailable: {reason}")]
     ModelUnavailable { reason: &'static str },
+    #[error("speech request exceeds provider size or duration limits: {reason}")]
+    RequestTooLarge { reason: &'static str },
+    #[error("speech model requires asynchronous polling which is not supported: {reason}")]
+    UnsupportedAsyncModel { reason: &'static str },
     #[error("speech runtime rejected the request: {reason}")]
     Rejected { reason: &'static str },
     #[error("speech runtime failed: {reason}")]
@@ -781,5 +910,44 @@ mod tests {
                 ..TranscriptionOptions::default()
             }
         );
+    }
+
+    #[test]
+    fn local_model_id_rejects_paths_and_colons_while_cloud_allows_them() {
+        assert!(AsrModelId::new("base.en").is_ok());
+        assert!(AsrModelId::new("openai/whisper-large-v3").is_err());
+        assert!(AsrModelId::new("model:v1").is_err());
+        assert!(AsrModelId::new("../escape").is_err());
+        assert!(AsrModelId::new("..").is_err());
+
+        assert!(CloudModelId::new("openai/whisper-large-v3-turbo").is_ok());
+        assert!(CloudModelId::new("models/gemini-3.5-transcribe:latest").is_ok());
+        assert!(CloudModelId::new("../escape").is_err());
+        assert!(CloudModelId::new("").is_err());
+    }
+
+    #[test]
+    fn asr_model_descriptor_preserves_legacy_local_serde_and_supports_cloud() {
+        let hash = ContentHash::parse("0".repeat(64)).expect("hash");
+        let legacy_json = format!(
+            r#"{{"id":"base","artifact_hash":"{}","english_only":false}}"#,
+            hash.as_str()
+        );
+        let decoded: AsrModelDescriptor = serde_json::from_str(&legacy_json).expect("legacy local");
+        assert!(!decoded.is_remote());
+        assert_eq!(decoded.model_id(), "base");
+        assert_eq!(decoded.artifact_hash(), Some(&hash));
+        assert!(!decoded.english_only());
+
+        let cloud = AsrModelDescriptor::cloud(
+            ProviderAccountId::new(),
+            CloudAsrProviderKind::OpenRouter,
+            CloudModelId::new("openai/whisper-large-v3-turbo").expect("cloud id"),
+        );
+        assert!(cloud.is_remote());
+        assert!(cloud.artifact_hash().is_none());
+        let encoded = serde_json::to_string(&cloud).expect("encode cloud");
+        let roundtrip: AsrModelDescriptor = serde_json::from_str(&encoded).expect("decode cloud");
+        assert_eq!(roundtrip, cloud);
     }
 }

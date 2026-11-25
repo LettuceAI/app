@@ -541,21 +541,57 @@
   "developer": {
     "group": "Test chats",
     "templates": {
-      "roleplay": { "title": "Roleplay chat", "description": "A character, a persona and a chat with history" },
-      "companion": { "title": "Companion chat, filled", "description": "A companion with a Soul, a relationship, history and memories" },
-      "group": { "title": "Group chat", "description": "Three characters in a group with history" },
-      "group_companion": { "title": "Companion group chat", "description": "Three companions with Souls in a companion group with history" },
-      "roleplay_widgets": { "title": "Roleplay chat with widgets", "description": "The roleplay chat with every widget placed beside the chat" },
-      "companion_widgets": { "title": "Companion chat with widgets", "description": "The companion chat with every widget, including companion state and memory" },
-      "chapters_backlog": { "title": "Chapters: long history", "description": "A 42-message ferry story with no summary. Each message you send summarizes the next six old ones." },
-      "chapters_user_seed": { "title": "Chapters: written summary", "description": "The same story with a short hand-written summary, kept as the starting point." },
-      "chapters_large_seed": { "title": "Chapters: oversized summary", "description": "The same story with a hand-written summary larger than the test budget. Only new cycles get folded." },
-      "chapters_group": { "title": "Chapters: group", "description": "A 36-message salvage crew story in a group with dynamic memory." }
+      "roleplay": {
+        "title": "Roleplay chat",
+        "description": "A character, a persona and a chat with history"
+      },
+      "companion": {
+        "title": "Companion chat, filled",
+        "description": "A companion with a Soul, a relationship, history and memories"
+      },
+      "group": {
+        "title": "Group chat",
+        "description": "Three characters in a group with history"
+      },
+      "group_companion": {
+        "title": "Companion group chat",
+        "description": "Three companions with Souls in a companion group with history"
+      },
+      "roleplay_widgets": {
+        "title": "Roleplay chat with widgets",
+        "description": "The roleplay chat with every widget placed beside the chat"
+      },
+      "companion_widgets": {
+        "title": "Companion chat with widgets",
+        "description": "The companion chat with every widget, including companion state and memory"
+      },
+      "chapters_backlog": {
+        "title": "Chapters: long history",
+        "description": "A 42-message ferry story with no summary. Each message you send summarizes the next six old ones."
+      },
+      "chapters_user_seed": {
+        "title": "Chapters: written summary",
+        "description": "The same story with a short hand-written summary, kept as the starting point."
+      },
+      "chapters_large_seed": {
+        "title": "Chapters: oversized summary",
+        "description": "The same story with a hand-written summary larger than the test budget. Only new cycles get folded."
+      },
+      "chapters_group": {
+        "title": "Chapters: group",
+        "description": "A 36-message salvage crew story in a group with dynamic memory."
+      }
     },
     "chapters": {
       "group": "Chapter summary tests",
-      "apply": { "title": "Use chapter test settings", "description": "Turns on dynamic memory and chapter summaries with 6-message cycles, a 800-token budget and 2 cycles per chapter. Your memory settings are saved first." },
-      "restore": { "title": "Restore memory settings", "description": "Puts back the memory settings saved before the test settings." },
+      "apply": {
+        "title": "Use chapter test settings",
+        "description": "Turns on dynamic memory and chapter summaries with 6-message cycles, a 800-token budget and 2 cycles per chapter. Your memory settings are saved first."
+      },
+      "restore": {
+        "title": "Restore memory settings",
+        "description": "Puts back the memory settings saved before the test settings."
+      },
       "applied": "Chapter test settings are on",
       "restored": "Memory settings restored"
     }
@@ -619,11 +655,14 @@
     "verified": "Connection verified",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "OpenAI compatible",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "The connection could not be verified.",
     "saveBeforeVerify": "Save the connection changes before verifying with the saved key.",
@@ -634,7 +673,10 @@
     "deleteWithModels_other": "Delete provider and {{count}} models",
     "modelCount_zero": "No models yet",
     "modelCount_one": "1 model",
-    "modelCount_other": "{{count}} models"
+    "modelCount_other": "{{count}} models",
+    "linkedAccount": "Provider account",
+    "linkedAccountHint": "Uses the API key from your existing provider account",
+    "linkedAccountEmpty": "Add an OpenRouter or NanoGPT account under Models first"
   },
   "models": {
     "vision": "Vision",
@@ -1464,10 +1506,22 @@
     },
     "pages": {
       "group": "More settings",
-      "saved": { "title": "What gets saved", "body": "Summary interval, memory cap, duplicates, and pinning" },
-      "recall": { "title": "Recall", "body": "What goes with each reply and how memories are picked" },
-      "summary": { "title": "Context summary", "body": "Chapter summaries and the summary budget" },
-      "advanced": { "title": "Advanced", "body": "Forgetting and how the memory manager works" }
+      "saved": {
+        "title": "What gets saved",
+        "body": "Summary interval, memory cap, duplicates, and pinning"
+      },
+      "recall": {
+        "title": "Recall",
+        "body": "What goes with each reply and how memories are picked"
+      },
+      "summary": {
+        "title": "Context summary",
+        "body": "Chapter summaries and the summary budget"
+      },
+      "advanced": {
+        "title": "Advanced",
+        "body": "Forgetting and how the memory manager works"
+      }
     },
     "advanced": {
       "enrichment": "Context enrichment",
@@ -1822,7 +1876,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Other scope",
-    "scopeName": "Scope name"
+    "scopeName": "Scope name",
+    "source": "Speech recognition source",
+    "sourceLocal": "Local (Whisper)",
+    "sourceCloud": "Cloud",
+    "cloudModel": "Cloud speech model",
+    "cloudProvider": "Provider account",
+    "cloudProviderEmpty": "Add an OpenRouter or NanoGPT account in Providers first"
   },
   "hf": {
     "title": "Get models",
@@ -2029,8 +2089,17 @@
     "mtpBundledBody": "Faster replies, using the prediction layers in this file",
     "systemRam": "System RAM",
     "vramShort": "VRAM",
-    "offloadChoices": { "auto": "Auto", "gpu": "GPU", "mixed": "Mixed", "cpu": "CPU" },
-    "placementChoices": { "auto": "Auto", "vram": "VRAM", "ram": "RAM" },
+    "offloadChoices": {
+      "auto": "Auto",
+      "gpu": "GPU",
+      "mixed": "Mixed",
+      "cpu": "CPU"
+    },
+    "placementChoices": {
+      "auto": "Auto",
+      "vram": "VRAM",
+      "ram": "RAM"
+    },
     "noRecommendation": "No file is confirmed to fit with 8,192 tokens and Q8 or Q6 KV. You can choose a file manually.",
     "retryMove": "Retry moving files",
     "localProvider": "llama.cpp (Local)",
@@ -2219,10 +2288,22 @@
       "group": "Content filtering",
       "title": "Pure mode",
       "levels": {
-        "off": { "label": "Off", "description": "All content allowed" },
-        "low": { "label": "Low", "description": "Blocks explicit sexual content and slurs" },
-        "standard": { "label": "Standard", "description": "Blocks NSFW and graphic violence" },
-        "strict": { "label": "Strict", "description": "Maximum filtering and no suggestive tone" }
+        "off": {
+          "label": "Off",
+          "description": "All content allowed"
+        },
+        "low": {
+          "label": "Low",
+          "description": "Blocks explicit sexual content and slurs"
+        },
+        "standard": {
+          "label": "Standard",
+          "description": "Blocks NSFW and graphic violence"
+        },
+        "strict": {
+          "label": "Strict",
+          "description": "Maximum filtering and no suggestive tone"
+        }
       }
     },
     "privacy": {
@@ -2332,7 +2413,8 @@
       "previewFirst": "Preview the voice first to create it.",
       "fishVoiceIdRequired": "Fish Audio needs a voice ID.",
       "openaiModelIdRequired": "Enter the model ID your endpoint expects.",
-      "openaiVoiceIdRequired": "Enter a voice ID your endpoint supports."
+      "openaiVoiceIdRequired": "Enter a voice ID your endpoint supports.",
+      "cloudVoice": "Voice"
     },
     "kokoro": {
       "studio": "Kokoro studio",

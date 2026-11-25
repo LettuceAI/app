@@ -18,6 +18,7 @@ pub struct AppBackend {
     database: Arc<Database>,
     pub(crate) provider_json_clients: std::sync::Mutex<Vec<lettuce_network::WeakJsonClient>>,
     pub(crate) provider_bulk_clients: std::sync::Mutex<Vec<lettuce_network::WeakBulkHttpClient>>,
+    speech_json_client: std::sync::Mutex<Option<Arc<lettuce_network::JsonClient>>>,
     built_in_prompt_ids: BuiltInPromptIds,
     inference_runtime: Arc<InferenceRuntime>,
     whisper_runtime: Arc<WhisperCppRuntime<Database>>,
@@ -73,6 +74,7 @@ impl AppBackend {
             database,
             provider_json_clients: Default::default(),
             provider_bulk_clients: Default::default(),
+            speech_json_client: Default::default(),
             built_in_prompt_ids,
             inference_runtime: Arc::new(InferenceRuntime::default()),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -519,6 +521,26 @@ impl AppBackend {
         crate::TtsSynthesisCoordinator::new(self.database.as_ref(), self.database.as_ref())
     }
 
+    pub(crate) fn speech_json_client(
+        &self,
+    ) -> Result<Arc<lettuce_network::JsonClient>, lettuce_network::JsonClientError> {
+        let mut slot = self
+            .speech_json_client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(client) = slot.as_ref() {
+            return Ok(Arc::clone(client));
+        }
+        let tls_policy = self.tls_policy().unwrap_or_default();
+        let client = Arc::new(
+            lettuce_network::JsonClient::with_tls(&tls_policy)?
+                .with_max_response_bytes(lettuce_speech::MAX_TTS_RESPONSE_BYTES),
+        );
+        self.register_provider_json_client(client.as_ref())?;
+        *slot = Some(Arc::clone(&client));
+        Ok(client)
+    }
+
     pub fn remote_tts_runtime(
         &self,
         tls_policy: &lettuce_network::TlsPolicy,
@@ -539,20 +561,32 @@ impl AppBackend {
         phonemizer: Arc<dyn lettuce_platform::EspeakPhonemizer>,
         onnx_runtime: crate::OnnxRuntimePaths,
     ) -> Result<crate::ApplicationTtsRuntime, lettuce_network::JsonClientError> {
-        self.tts_runtime_with_cache(tls_policy, models, voices, phonemizer, onnx_runtime,
-            crate::onnx_models::OnnxModelManager::new(|_| {}))
+        self.tts_runtime_with_cache(
+            tls_policy,
+            models,
+            voices,
+            phonemizer,
+            onnx_runtime,
+            crate::onnx_models::OnnxModelManager::new(|_| {}),
+            None,
+        )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn tts_runtime_with_cache(
         &self,
-        tls_policy: &lettuce_network::TlsPolicy,
+        _tls_policy: &lettuce_network::TlsPolicy,
         models: lettuce_model_hub::KokoroInstallStore,
         voices: lettuce_model_hub::KokoroVoiceInstallStore,
         phonemizer: Arc<dyn lettuce_platform::EspeakPhonemizer>,
         onnx_runtime: crate::OnnxRuntimePaths,
         cache: Arc<crate::onnx_models::OnnxModelManager>,
+        linked: Option<Arc<dyn lettuce_speech::LinkedProviderCredentials>>,
     ) -> Result<crate::ApplicationTtsRuntime, lettuce_network::JsonClientError> {
-        let remote = Arc::new(self.remote_tts_runtime(tls_policy)?);
+        let remote = Arc::new(lettuce_speech::RemoteTtsRuntime::with_linked_credentials(
+            self.speech_json_client()?,
+            linked,
+        ));
         let kokoro = Arc::new(crate::KokoroTtsRuntime::new(
             models,
             voices,

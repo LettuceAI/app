@@ -409,6 +409,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::speech::whisper_preload,
             commands::speech::whisper_clear_cache,
             commands::speech::whisper_dictation_model_set,
+            commands::speech::speech_cloud_models,
             commands::speech::transcribe_file,
             commands::speech::dictation_start,
             commands::speech::dictation_stop,

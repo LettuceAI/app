@@ -1064,6 +1064,7 @@ pub(crate) mod tests {
             retained_model_roots: Default::default(),
             speech: lettuce_settings::DeviceSpeechSettings {
                 dictation_model_id: Some("base.en".into()),
+                dictation_provider_account_id: None,
             },
         };
         source

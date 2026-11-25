@@ -100,9 +100,19 @@ impl<R: WhisperModelRepository + ?Sized> WhisperCppRuntime<R> {
         &self,
         model: &AsrModelDescriptor,
     ) -> Result<VerifiedWhisperArtifacts, AsrRuntimeError> {
+        let crate::AsrModelSource::Local {
+            id,
+            artifact_hash,
+            english_only,
+        } = model.source()
+        else {
+            return Err(AsrRuntimeError::Rejected {
+                reason: "cloud speech models cannot run on the local whisper runtime",
+            });
+        };
         let manifest = self
             .repository
-            .get_whisper_model(model.id.as_str())
+            .get_whisper_model(id.as_str())
             .map_err(|error| {
                 tracing::warn!(%error, "reading the whisper model manifest failed");
                 AsrRuntimeError::Unavailable {
@@ -118,9 +128,9 @@ impl<R: WhisperModelRepository + ?Sized> WhisperCppRuntime<R> {
                 reason: "whisper model artifacts failed verification",
             }
         })?;
-        if artifacts.model_id != model.id.as_str()
-            || artifacts.blake3 != model.artifact_hash
-            || artifacts.english_only != model.english_only
+        if artifacts.model_id != id.as_str()
+            || &artifacts.blake3 != artifact_hash
+            || artifacts.english_only != *english_only
         {
             return Err(AsrRuntimeError::ModelUnavailable {
                 reason: "installed model does not match the requested model",
@@ -470,11 +480,11 @@ mod tests {
         let manifest =
             InstalledWhisperManifest::inspect_legacy(&root, &model_path, TimestampMillis::new(10))
                 .expect("manifest");
-        let descriptor = AsrModelDescriptor {
-            id: crate::AsrModelId::new(manifest.model_id.clone()).expect("model id"),
-            artifact_hash: manifest.model.blake3.clone(),
-            english_only: manifest.english_only,
-        };
+        let descriptor = AsrModelDescriptor::local(
+            crate::AsrModelId::new(manifest.model_id.clone()).expect("model id"),
+            manifest.model.blake3.clone(),
+            manifest.english_only,
+        );
         (Arc::new(Repository { manifest }), descriptor)
     }
 
@@ -500,8 +510,18 @@ mod tests {
     #[test]
     fn rejects_a_changed_descriptor_before_native_loading() {
         let root = std::env::temp_dir().join(format!("whisper-runtime-{}", OperationId::new()));
-        let (repository, mut descriptor) = fixture(&root);
-        descriptor.artifact_hash = ContentHash::parse("ab".repeat(32)).expect("different hash");
+        let (repository, descriptor) = fixture(&root);
+        let crate::AsrModelSource::Local {
+            id, english_only, ..
+        } = descriptor.source()
+        else {
+            panic!("expected local descriptor");
+        };
+        let descriptor = AsrModelDescriptor::local(
+            id.clone(),
+            ContentHash::parse("ab".repeat(32)).expect("different hash"),
+            *english_only,
+        );
         let runtime = WhisperCppRuntime::new(repository);
         assert!(matches!(
             runtime.preload(&descriptor, &TranscriptionOptions::default()),

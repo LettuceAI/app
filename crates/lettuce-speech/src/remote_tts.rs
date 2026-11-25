@@ -5,12 +5,39 @@ use lettuce_jobs::handle::CancellationToken;
 use lettuce_network::JsonClient;
 use lettuce_settings::SecretValue;
 
+use lettuce_types::ProviderAccountId;
+
 use crate::{
-    AudioProviderConfig, CreatedVoice, ElevenLabsTtsRuntime, FishSpeechTtsRuntime, FishTtsRuntime,
-    GeminiTtsRuntime, OpenAiCompatibleTtsRuntime, RuntimeSynthesis, RuntimeVoiceDesignPreview,
-    SynthesisRequest, TtsRuntime, TtsRuntimeError, VoiceCreationRequest, VoiceDesignRequest,
-    VoiceDesignRuntime, VoiceDesignRuntimeError,
+    AudioProviderConfig, CloudTtsRuntime, CreatedVoice, ElevenLabsTtsRuntime,
+    FishSpeechTtsRuntime, FishTtsRuntime, GeminiTtsRuntime, OpenAiCompatibleTtsRuntime,
+    RuntimeSynthesis, RuntimeVoiceDesignPreview, SynthesisRequest, TtsRuntime, TtsRuntimeError,
+    VoiceCreationRequest, VoiceDesignRequest, VoiceDesignRuntime, VoiceDesignRuntimeError,
 };
+
+#[derive(Debug)]
+pub struct ResolvedLinkedProvider {
+    pub endpoint: Option<String>,
+    pub api_key: SecretValue,
+}
+
+#[async_trait]
+pub trait LinkedProviderCredentials: Send + Sync {
+    async fn resolve_linked_provider(
+        &self,
+        account_id: ProviderAccountId,
+    ) -> Result<ResolvedLinkedProvider, TtsRuntimeError>;
+
+    fn render_gemini_tts_text(
+        &self,
+        instructions: &str,
+        text: &str,
+    ) -> Result<String, TtsRuntimeError> {
+        let _ = (instructions, text);
+        Err(TtsRuntimeError::Unavailable {
+            reason: "speech runtime prompt catalog is unavailable",
+        })
+    }
+}
 
 /// The response cap for remote synthesis; long replies from local or
 /// high-bitrate servers pass 8 MiB.
@@ -22,19 +49,31 @@ pub struct RemoteTtsRuntime {
     fish: Arc<dyn TtsRuntime>,
     fish_speech: Arc<dyn TtsRuntime>,
     open_ai: Arc<dyn TtsRuntime>,
+    cloud: CloudTtsRuntime,
+    linked: Option<Arc<dyn LinkedProviderCredentials>>,
     voice_design: Arc<dyn VoiceDesignRuntime>,
 }
 
 impl RemoteTtsRuntime {
     #[must_use]
     pub fn new(network: Arc<JsonClient>) -> Self {
+        Self::with_linked_credentials(network, None)
+    }
+
+    #[must_use]
+    pub fn with_linked_credentials(
+        network: Arc<JsonClient>,
+        linked: Option<Arc<dyn LinkedProviderCredentials>>,
+    ) -> Self {
         let elevenlabs = Arc::new(ElevenLabsTtsRuntime::new(network.clone()));
         Self {
             gemini: Arc::new(GeminiTtsRuntime::new(network.clone())),
             elevenlabs: elevenlabs.clone(),
             fish: Arc::new(FishTtsRuntime::new(network.clone())),
             fish_speech: Arc::new(FishSpeechTtsRuntime::new(network.clone())),
-            open_ai: Arc::new(OpenAiCompatibleTtsRuntime::new(network)),
+            open_ai: Arc::new(OpenAiCompatibleTtsRuntime::new(network.clone())),
+            cloud: CloudTtsRuntime::new(network),
+            linked,
             voice_design: elevenlabs,
         }
     }
@@ -54,6 +93,8 @@ impl RemoteTtsRuntime {
             fish,
             fish_speech,
             open_ai,
+            cloud: CloudTtsRuntime::new(Arc::new(JsonClient::new().expect("test client"))),
+            linked: None,
             voice_design,
         }
     }
@@ -104,6 +145,47 @@ impl TtsRuntime for RemoteTtsRuntime {
             AudioProviderConfig::FishTts => &self.fish,
             AudioProviderConfig::FishSpeech { .. } => &self.fish_speech,
             AudioProviderConfig::OpenAiCompatible { .. } => &self.open_ai,
+            AudioProviderConfig::OpenRouter {
+                provider_account_id,
+            }
+            | AudioProviderConfig::NanoGpt {
+                provider_account_id,
+            }
+            | AudioProviderConfig::GeminiAudio {
+                provider_account_id,
+            } => {
+                let resolver = self.linked.as_ref().ok_or(TtsRuntimeError::Unavailable {
+                    reason: "linked provider credential resolver is not configured",
+                })?;
+                let resolved = resolver
+                    .resolve_linked_provider(*provider_account_id)
+                    .await?;
+                let kind = request.provider.config.provider_kind();
+                let directed_text = if kind == crate::AudioProviderKind::GeminiAudio {
+                    request
+                        .prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(|instructions| {
+                            resolver.render_gemini_tts_text(instructions, &request.text)
+                        })
+                        .transpose()?
+                } else {
+                    None
+                };
+                return self
+                    .cloud
+                    .synthesize(
+                        resolved.endpoint.as_deref(),
+                        kind,
+                        request,
+                        directed_text.as_deref(),
+                        &resolved.api_key,
+                        cancellation,
+                    )
+                    .await;
+            }
             AudioProviderConfig::Kokoro { .. } => {
                 return Err(TtsRuntimeError::Rejected {
                     reason: "local kokoro provider cannot use the remote runtime",

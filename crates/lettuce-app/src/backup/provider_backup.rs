@@ -1862,12 +1862,11 @@ mod tests {
                 retain_audio: false,
                 id: lettuce_types::RequestId::new(),
                 audio_asset_id: Some(voice_audio.asset.id),
-                model: lettuce_speech::AsrModelDescriptor {
-                    id: lettuce_speech::AsrModelId::new("small.en-q5_1").expect("model id"),
-                    artifact_hash: lettuce_types::ContentHash::parse("cd".repeat(32))
-                        .expect("model hash"),
-                    english_only: true,
-                },
+                model: lettuce_speech::AsrModelDescriptor::local(
+                    lettuce_speech::AsrModelId::new("small.en-q5_1").expect("model id"),
+                    lettuce_types::ContentHash::parse("cd".repeat(32)).expect("model hash"),
+                    true,
+                ),
                 options: lettuce_speech::TranscriptionOptions::default(),
                 created_at: TimestampMillis::new(2),
             })

@@ -14,8 +14,8 @@ use lettuce_types::AudioProviderId;
 use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
 
-fn configuration(value: dto::AudioProviderConfiguration) -> AudioProviderConfig {
-    match value {
+fn configuration(value: dto::AudioProviderConfiguration) -> Result<AudioProviderConfig, ApiError> {
+    Ok(match value {
         dto::AudioProviderConfiguration::Gemini {
             project_id,
             location,
@@ -39,10 +39,25 @@ fn configuration(value: dto::AudioProviderConfiguration) -> AudioProviderConfig 
             base_url,
             request_path,
         },
+        dto::AudioProviderConfiguration::OpenRouter {
+            provider_account_id,
+        } => AudioProviderConfig::OpenRouter {
+            provider_account_id: parse_id(&provider_account_id, "provider_account_id")?,
+        },
+        dto::AudioProviderConfiguration::NanoGpt {
+            provider_account_id,
+        } => AudioProviderConfig::NanoGpt {
+            provider_account_id: parse_id(&provider_account_id, "provider_account_id")?,
+        },
+        dto::AudioProviderConfiguration::GeminiAudio {
+            provider_account_id,
+        } => AudioProviderConfig::GeminiAudio {
+            provider_account_id: parse_id(&provider_account_id, "provider_account_id")?,
+        },
         dto::AudioProviderConfiguration::Kokoro { variant } => {
             AudioProviderConfig::Kokoro { variant }
         }
-    }
+    })
 }
 
 fn provider_kind(value: dto::AudioProviderType) -> AudioProviderKind {
@@ -52,21 +67,23 @@ fn provider_kind(value: dto::AudioProviderType) -> AudioProviderKind {
         dto::AudioProviderType::FishTts => AudioProviderKind::FishTts,
         dto::AudioProviderType::FishSpeech => AudioProviderKind::FishSpeech,
         dto::AudioProviderType::OpenAiCompatible => AudioProviderKind::OpenAiTts,
+        dto::AudioProviderType::OpenRouter => AudioProviderKind::OpenRouterTts,
+        dto::AudioProviderType::NanoGpt => AudioProviderKind::NanoGptTts,
+        dto::AudioProviderType::GeminiAudio => AudioProviderKind::GeminiAudio,
         dto::AudioProviderType::Kokoro => AudioProviderKind::Kokoro,
     }
 }
 
-struct Control(Arc<JsonClient>);
+struct Control {
+    network: Arc<JsonClient>,
+    linked: super::host::AppLinkedProviderCredentials,
+}
 
 impl Control {
     fn new(context: &ApiContext) -> Result<Self, ApiError> {
-        let policy = context
-            .backend()
-            .tls_policy()
-            .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
-        Ok(Self(Arc::new(JsonClient::with_tls(&policy).map_err(
-            |error| api_error(ApiErrorCode::Unavailable, error.to_string()),
-        )?)))
+        let linked = super::host::AppLinkedProviderCredentials::new(context.clone());
+        let network = linked.speech_json_client()?;
+        Ok(Self { network, linked })
     }
 }
 
@@ -79,29 +96,69 @@ impl AudioProviderVerifier for Control {
     ) -> Result<bool, AudioProviderVerificationError> {
         match provider.config.provider_kind() {
             AudioProviderKind::Elevenlabs => {
-                lettuce_speech::ElevenLabsTtsRuntime::new(self.0.clone())
+                lettuce_speech::ElevenLabsTtsRuntime::new(self.network.clone())
                     .verify_audio_provider(provider, credential)
                     .await
             }
             AudioProviderKind::FishTts => {
-                lettuce_speech::FishTtsRuntime::new(self.0.clone())
+                lettuce_speech::FishTtsRuntime::new(self.network.clone())
                     .verify_audio_provider(provider, credential)
                     .await
             }
             AudioProviderKind::FishSpeech => {
-                lettuce_speech::FishSpeechTtsRuntime::new(self.0.clone())
+                lettuce_speech::FishSpeechTtsRuntime::new(self.network.clone())
                     .verify_audio_provider(provider, credential)
                     .await
             }
             AudioProviderKind::GeminiTts => {
-                lettuce_speech::GeminiTtsRuntime::new(self.0.clone())
+                lettuce_speech::GeminiTtsRuntime::new(self.network.clone())
                     .verify_audio_provider(provider, credential)
                     .await
             }
             AudioProviderKind::OpenAiTts => {
-                lettuce_speech::OpenAiCompatibleTtsRuntime::new(self.0.clone())
+                lettuce_speech::OpenAiCompatibleTtsRuntime::new(self.network.clone())
                     .verify_audio_provider(provider, credential)
                     .await
+            }
+            AudioProviderKind::OpenRouterTts
+            | AudioProviderKind::NanoGptTts
+            | AudioProviderKind::GeminiAudio => {
+                let account_id = provider
+                    .config
+                    .linked_provider_account_id()
+                    .ok_or(AudioProviderVerificationError::InvalidInput {
+                        reason: "provider has no linked provider account",
+                    })?;
+                let resolved =
+                    lettuce_speech::LinkedProviderCredentials::resolve_linked_provider(
+                        &self.linked,
+                        account_id,
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        lettuce_speech::TtsRuntimeError::Rejected { reason }
+                        | lettuce_speech::TtsRuntimeError::Unauthorized { reason } => {
+                            AudioProviderVerificationError::InvalidInput { reason }
+                        }
+                        _ => AudioProviderVerificationError::Unavailable {
+                            reason: "linked provider account is unavailable",
+                        },
+                    })?;
+                lettuce_speech::CloudTtsRuntime::new(self.network.clone())
+                    .verify(
+                        resolved.endpoint.as_deref(),
+                        provider.config.provider_kind(),
+                        &resolved.api_key,
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        VoiceDiscoveryError::InvalidData { reason } => {
+                            AudioProviderVerificationError::InvalidInput { reason }
+                        }
+                        VoiceDiscoveryError::Unavailable { reason } => {
+                            AudioProviderVerificationError::Unavailable { reason }
+                        }
+                    })
             }
             AudioProviderKind::Kokoro => Ok(true),
         }
@@ -117,14 +174,45 @@ impl VoiceDiscovery for Control {
     ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
         match provider.config.provider_kind() {
             AudioProviderKind::Elevenlabs => {
-                lettuce_speech::ElevenLabsTtsRuntime::new(self.0.clone())
+                lettuce_speech::ElevenLabsTtsRuntime::new(self.network.clone())
                     .fetch_configured_voices(provider, credential)
                     .await
             }
             AudioProviderKind::FishTts => {
-                lettuce_speech::FishTtsRuntime::new(self.0.clone())
+                lettuce_speech::FishTtsRuntime::new(self.network.clone())
                     .fetch_configured_voices(provider, credential)
                     .await
+            }
+            AudioProviderKind::OpenRouterTts
+            | AudioProviderKind::NanoGptTts
+            | AudioProviderKind::GeminiAudio => {
+                let account_id = provider
+                    .config
+                    .linked_provider_account_id()
+                    .ok_or(VoiceDiscoveryError::InvalidData {
+                        reason: "provider has no linked provider account",
+                    })?;
+                let (account, _) = self
+                    .linked
+                    .resolve_account(account_id)
+                    .await
+                    .map_err(|error| match error {
+                        lettuce_speech::TtsRuntimeError::Rejected { reason }
+                        | lettuce_speech::TtsRuntimeError::Unauthorized { reason } => {
+                            VoiceDiscoveryError::InvalidData { reason }
+                        }
+                        _ => VoiceDiscoveryError::Unavailable {
+                            reason: "linked provider account is unavailable",
+                        },
+                    })?;
+                let catalog = lettuce_speech::CloudTtsRuntime::new(self.network.clone())
+                    .fetch_catalog(
+                        account.endpoint.as_deref(),
+                        provider.config.provider_kind(),
+                        credential,
+                    )
+                    .await?;
+                Ok(lettuce_speech::flatten_catalog_voices(&catalog))
             }
             _ => Ok(Vec::new()),
         }
@@ -187,7 +275,7 @@ pub async fn audio_provider_verify(
                             lettuce_database::Database,
                             dyn lettuce_settings::SecretStore,
                         >::verify_draft(
-                            configuration(draft.configuration),
+                            configuration(draft.configuration)?,
                             credential.as_ref(),
                             &verifier,
                         )
@@ -255,7 +343,11 @@ fn built_in_provider_voices(
         AudioProviderConfig::OpenAiCompatible { .. } | AudioProviderConfig::FishSpeech { .. } => {
             Ok(Some(Vec::new()))
         }
-        AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts => Ok(None),
+        AudioProviderConfig::Elevenlabs
+        | AudioProviderConfig::FishTts
+        | AudioProviderConfig::OpenRouter { .. }
+        | AudioProviderConfig::NanoGpt { .. }
+        | AudioProviderConfig::GeminiAudio { .. } => Ok(None),
     }
 }
 
@@ -320,18 +412,80 @@ pub async fn audio_provider_voices(
 }
 
 pub async fn tts_models(
-    _context: &ApiContext,
+    context: &ApiContext,
     request: dto::TtsModelsRequest,
 ) -> Result<Vec<dto::TtsModelView>, ApiError> {
-    Ok(
-        lettuce_speech::tts_catalog_models(provider_kind(request.provider_type))
-            .into_iter()
-            .map(|model| dto::TtsModelView {
-                id: model.id.to_owned(),
-                name: model.name.to_owned(),
+    let kind = provider_kind(request.provider_type);
+    if matches!(
+        kind,
+        AudioProviderKind::OpenRouterTts
+            | AudioProviderKind::NanoGptTts
+            | AudioProviderKind::GeminiAudio
+    ) {
+        let Some(provider_id) = request.provider_id else {
+            return Ok(Vec::new());
+        };
+        let id: AudioProviderId = parse_id(&provider_id, "provider_id")?;
+        return context
+            .blocking(move |context| {
+                let provider = context
+                    .backend()
+                    .database()
+                    .get_audio_provider(id)
+                    .map_err(IntoApiError::into_api_error)?
+                    .ok_or_else(|| {
+                        api_error(ApiErrorCode::NotFound, "the audio provider was not found")
+                    })?;
+                let control = Control::new(context)?;
+                let account_id = provider
+                    .config
+                    .linked_provider_account_id()
+                    .ok_or_else(|| {
+                        api_error(
+                            ApiErrorCode::InvalidInput,
+                            "provider has no linked provider account",
+                        )
+                    })?;
+                let catalog = tokio::runtime::Handle::current()
+                    .block_on(async {
+                        let resolved =
+                            lettuce_speech::LinkedProviderCredentials::resolve_linked_provider(
+                                &control.linked,
+                                account_id,
+                            )
+                            .await
+                            .map_err(|error| VoiceDiscoveryError::Unavailable {
+                                reason: match error {
+                                    lettuce_speech::TtsRuntimeError::Unauthorized { reason }
+                                    | lettuce_speech::TtsRuntimeError::Rejected { reason }
+                                    | lettuce_speech::TtsRuntimeError::Unavailable { reason } => {
+                                        reason
+                                    }
+                                    _ => "linked provider account is unavailable",
+                                },
+                            })?;
+                        lettuce_speech::CloudTtsRuntime::new(control.network.clone())
+                            .fetch_catalog(resolved.endpoint.as_deref(), kind, &resolved.api_key)
+                            .await
+                    })
+                    .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
+                Ok(catalog
+                    .into_iter()
+                    .map(|model| dto::TtsModelView {
+                        id: model.id,
+                        name: model.name,
+                    })
+                    .collect())
             })
-            .collect(),
-    )
+            .await;
+    }
+    Ok(lettuce_speech::tts_catalog_models(kind)
+        .into_iter()
+        .map(|model| dto::TtsModelView {
+            id: model.id.to_owned(),
+            name: model.name.to_owned(),
+        })
+        .collect())
 }
 
 pub async fn tts_voice_design_models(
@@ -417,6 +571,21 @@ fn configuration_view(value: AudioProviderConfig) -> dto::AudioProviderConfigura
             base_url,
             request_path,
         },
+        AudioProviderConfig::OpenRouter {
+            provider_account_id,
+        } => dto::AudioProviderConfiguration::OpenRouter {
+            provider_account_id: provider_account_id.to_string(),
+        },
+        AudioProviderConfig::NanoGpt {
+            provider_account_id,
+        } => dto::AudioProviderConfiguration::NanoGpt {
+            provider_account_id: provider_account_id.to_string(),
+        },
+        AudioProviderConfig::GeminiAudio {
+            provider_account_id,
+        } => dto::AudioProviderConfiguration::GeminiAudio {
+            provider_account_id: provider_account_id.to_string(),
+        },
         AudioProviderConfig::Kokoro { variant } => {
             dto::AudioProviderConfiguration::Kokoro { variant }
         }
@@ -485,7 +654,7 @@ pub async fn audio_provider_update(
                     id,
                     expected,
                     request.label,
-                    configuration(request.configuration),
+                    configuration(request.configuration)?,
                     context.now(),
                 )
                 .map(provider_view)
@@ -580,7 +749,7 @@ impl VoiceSearch for Control {
         credential: &SecretValue,
         search: &str,
     ) -> Result<Vec<DiscoveredVoiceDraft>, VoiceDiscoveryError> {
-        lettuce_speech::ElevenLabsTtsRuntime::new(self.0.clone())
+        lettuce_speech::ElevenLabsTtsRuntime::new(self.network.clone())
             .search_voices(provider, credential, search)
             .await
     }
@@ -653,7 +822,7 @@ pub async fn voice_design_preview(
                 })
                 .map_err(IntoApiError::into_api_error)?;
             let client = Control::new(context)?;
-            let runtime = lettuce_speech::ElevenLabsTtsRuntime::new(client.0);
+            let runtime = lettuce_speech::ElevenLabsTtsRuntime::new(client.network);
             tokio::runtime::Handle::current()
                 .block_on(coordinator.preview(
                     &admitted,
@@ -883,7 +1052,7 @@ pub async fn audio_provider_create(
                 fill_missing_provider_key(context, &provider, credential)?;
                 return Ok(provider_view(provider));
             }
-            let config = configuration(request.draft.configuration);
+            let config = configuration(request.draft.configuration)?;
             crate::speech::tts_configuration::validate_secret_choice(&config, credential.is_some())
                 .map_err(IntoApiError::into_api_error)?;
             let (id, owner, reference) = provider_create_ids(&request.client_operation_id);

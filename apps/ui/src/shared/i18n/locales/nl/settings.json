@@ -541,21 +541,57 @@
   "developer": {
     "group": "Testchats",
     "templates": {
-      "roleplay": { "title": "Rollenspelchat", "description": "Een personage, een persona en een chat met geschiedenis" },
-      "companion": { "title": "Metgezelchat, gevuld", "description": "Een metgezel met een ziel, relatie, geschiedenis en herinneringen" },
-      "group": { "title": "Groepschat", "description": "Drie personages in een groep met geschiedenis" },
-      "group_companion": { "title": "Metgezel-groepschat", "description": "Drie metgezellen met een ziel in een metgezelgroep met geschiedenis" },
-      "roleplay_widgets": { "title": "Rollenspelchat met widgets", "description": "De rollenspelchat met alle widgets naast de chat" },
-      "companion_widgets": { "title": "Metgezelchat met widgets", "description": "De metgezelchat met alle widgets, inclusief metgezelstatus en geheugen" },
-      "chapters_backlog": { "title": "Hoofdstukken: lange geschiedenis", "description": "Een veerbootverhaal van 42 berichten zonder samenvatting. Elk bericht dat je stuurt vat de volgende zes oude samen." },
-      "chapters_user_seed": { "title": "Hoofdstukken: geschreven samenvatting", "description": "Hetzelfde verhaal met een korte, met de hand geschreven samenvatting als beginpunt." },
-      "chapters_large_seed": { "title": "Hoofdstukken: te grote samenvatting", "description": "Hetzelfde verhaal met een handgeschreven samenvatting groter dan het testbudget. Alleen nieuwe cycli worden samengevoegd." },
-      "chapters_group": { "title": "Hoofdstukken: groep", "description": "Een bergingsploegverhaal van 36 berichten in een groep met dynamisch geheugen." }
+      "roleplay": {
+        "title": "Rollenspelchat",
+        "description": "Een personage, een persona en een chat met geschiedenis"
+      },
+      "companion": {
+        "title": "Metgezelchat, gevuld",
+        "description": "Een metgezel met een ziel, relatie, geschiedenis en herinneringen"
+      },
+      "group": {
+        "title": "Groepschat",
+        "description": "Drie personages in een groep met geschiedenis"
+      },
+      "group_companion": {
+        "title": "Metgezel-groepschat",
+        "description": "Drie metgezellen met een ziel in een metgezelgroep met geschiedenis"
+      },
+      "roleplay_widgets": {
+        "title": "Rollenspelchat met widgets",
+        "description": "De rollenspelchat met alle widgets naast de chat"
+      },
+      "companion_widgets": {
+        "title": "Metgezelchat met widgets",
+        "description": "De metgezelchat met alle widgets, inclusief metgezelstatus en geheugen"
+      },
+      "chapters_backlog": {
+        "title": "Hoofdstukken: lange geschiedenis",
+        "description": "Een veerbootverhaal van 42 berichten zonder samenvatting. Elk bericht dat je stuurt vat de volgende zes oude samen."
+      },
+      "chapters_user_seed": {
+        "title": "Hoofdstukken: geschreven samenvatting",
+        "description": "Hetzelfde verhaal met een korte, met de hand geschreven samenvatting als beginpunt."
+      },
+      "chapters_large_seed": {
+        "title": "Hoofdstukken: te grote samenvatting",
+        "description": "Hetzelfde verhaal met een handgeschreven samenvatting groter dan het testbudget. Alleen nieuwe cycli worden samengevoegd."
+      },
+      "chapters_group": {
+        "title": "Hoofdstukken: groep",
+        "description": "Een bergingsploegverhaal van 36 berichten in een groep met dynamisch geheugen."
+      }
     },
     "chapters": {
       "group": "Tests voor hoofdstuksamenvattingen",
-      "apply": { "title": "Testinstellingen voor hoofdstukken gebruiken", "description": "Zet dynamisch geheugen en hoofdstuksamenvattingen aan met cycli van 6 berichten, een budget van 800 tokens en 2 cycli per hoofdstuk. Je geheugeninstellingen worden eerst bewaard." },
-      "restore": { "title": "Geheugeninstellingen herstellen", "description": "Zet de geheugeninstellingen terug die vóór de testinstellingen zijn bewaard." },
+      "apply": {
+        "title": "Testinstellingen voor hoofdstukken gebruiken",
+        "description": "Zet dynamisch geheugen en hoofdstuksamenvattingen aan met cycli van 6 berichten, een budget van 800 tokens en 2 cycli per hoofdstuk. Je geheugeninstellingen worden eerst bewaard."
+      },
+      "restore": {
+        "title": "Geheugeninstellingen herstellen",
+        "description": "Zet de geheugeninstellingen terug die vóór de testinstellingen zijn bewaard."
+      },
       "applied": "Testinstellingen voor hoofdstukken staan aan",
       "restored": "Geheugeninstellingen hersteld"
     }
@@ -619,11 +655,14 @@
     "verified": "Verbinding geverifieerd",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "OpenAI-compatibel",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "De verbinding kon niet worden geverifieerd.",
     "saveBeforeVerify": "Sla de verbindingswijzigingen op voordat je met de opgeslagen sleutel controleert.",
@@ -633,7 +672,10 @@
     "deleteWithModels_one": "Provider en 1 model verwijderen",
     "deleteWithModels_other": "Provider en {{count}} modellen verwijderen",
     "modelCount_one": "1 model",
-    "modelCount_other": "{{count}} modellen"
+    "modelCount_other": "{{count}} modellen",
+    "linkedAccount": "Provideraccount",
+    "linkedAccountHint": "Gebruikt de API-sleutel van je bestaande provideraccount",
+    "linkedAccountEmpty": "Voeg eerst een OpenRouter- of NanoGPT-account toe onder Modellen"
   },
   "models": {
     "vision": "Visie",
@@ -1463,10 +1505,22 @@
     },
     "pages": {
       "group": "Meer instellingen",
-      "saved": { "title": "Wat wordt opgeslagen", "body": "Samenvattingsinterval, geheugenlimiet, duplicaten en vastzetten" },
-      "recall": { "title": "Ophalen", "body": "Wat met elk antwoord meegaat en hoe herinneringen worden gekozen" },
-      "summary": { "title": "Contextsamenvatting", "body": "Samenvattingen per hoofdstuk en het budget van de samenvatting" },
-      "advanced": { "title": "Geavanceerd", "body": "Vergeten en hoe het geheugenbeheer werkt" }
+      "saved": {
+        "title": "Wat wordt opgeslagen",
+        "body": "Samenvattingsinterval, geheugenlimiet, duplicaten en vastzetten"
+      },
+      "recall": {
+        "title": "Ophalen",
+        "body": "Wat met elk antwoord meegaat en hoe herinneringen worden gekozen"
+      },
+      "summary": {
+        "title": "Contextsamenvatting",
+        "body": "Samenvattingen per hoofdstuk en het budget van de samenvatting"
+      },
+      "advanced": {
+        "title": "Geavanceerd",
+        "body": "Vergeten en hoe het geheugenbeheer werkt"
+      }
     },
     "advanced": {
       "enrichment": "Contextverrijking",
@@ -1821,7 +1875,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Ander bereik",
-    "scopeName": "Naam van bereik"
+    "scopeName": "Naam van bereik",
+    "source": "Spraakherkenningsbron",
+    "sourceLocal": "Lokaal (Whisper)",
+    "sourceCloud": "Cloud",
+    "cloudModel": "Cloud-spraakmodel",
+    "cloudProvider": "Provideraccount",
+    "cloudProviderEmpty": "Voeg eerst een OpenRouter- of NanoGPT-account toe bij Providers"
   },
   "hf": {
     "title": "Modellen ophalen",
@@ -2028,8 +2088,17 @@
     "mtpBundledBody": "Snellere antwoorden, met de voorspellingslagen in dit bestand",
     "systemRam": "Systeem-RAM",
     "vramShort": "VRAM",
-    "offloadChoices": { "auto": "Auto", "gpu": "GPU", "mixed": "Gemengd", "cpu": "CPU" },
-    "placementChoices": { "auto": "Auto", "vram": "VRAM", "ram": "RAM" },
+    "offloadChoices": {
+      "auto": "Auto",
+      "gpu": "GPU",
+      "mixed": "Gemengd",
+      "cpu": "CPU"
+    },
+    "placementChoices": {
+      "auto": "Auto",
+      "vram": "VRAM",
+      "ram": "RAM"
+    },
     "noRecommendation": "Er is geen bestand bevestigd dat past bij 8.192 tokens en Q8- of Q6-KV. Je kunt handmatig een bestand kiezen.",
     "retryMove": "Bestanden verplaatsen opnieuw proberen",
     "localProvider": "llama.cpp (lokaal)",
@@ -2218,10 +2287,22 @@
       "group": "Inhoudsfiltering",
       "title": "Pure-modus",
       "levels": {
-        "off": { "label": "Uit", "description": "Alle inhoud toegestaan" },
-        "low": { "label": "Laag", "description": "Blokkeert expliciete seksuele inhoud en scheldwoorden" },
-        "standard": { "label": "Standaard", "description": "Blokkeert NSFW en grafisch geweld" },
-        "strict": { "label": "Strikt", "description": "Maximale filtering en geen suggestieve toon" }
+        "off": {
+          "label": "Uit",
+          "description": "Alle inhoud toegestaan"
+        },
+        "low": {
+          "label": "Laag",
+          "description": "Blokkeert expliciete seksuele inhoud en scheldwoorden"
+        },
+        "standard": {
+          "label": "Standaard",
+          "description": "Blokkeert NSFW en grafisch geweld"
+        },
+        "strict": {
+          "label": "Strikt",
+          "description": "Maximale filtering en geen suggestieve toon"
+        }
       }
     },
     "privacy": {
@@ -2331,7 +2412,8 @@
       "previewFirst": "Luister eerst naar het voorbeeld van de stem om hem te maken.",
       "fishVoiceIdRequired": "Fish Audio heeft een stem-ID nodig.",
       "openaiModelIdRequired": "Voer de model-ID in die je endpoint verwacht.",
-      "openaiVoiceIdRequired": "Voer een stem-ID in die je endpoint ondersteunt."
+      "openaiVoiceIdRequired": "Voer een stem-ID in die je endpoint ondersteunt.",
+      "cloudVoice": "Stem"
     },
     "kokoro": {
       "studio": "Kokoro-studio",

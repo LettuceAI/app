@@ -545,21 +545,57 @@
   "developer": {
     "group": "Chats de test",
     "templates": {
-      "roleplay": { "title": "Chat de jeu de rôle", "description": "Un personnage, un persona et un chat avec historique" },
-      "companion": { "title": "Chat de compagnon, rempli", "description": "Un compagnon avec une âme, une relation, un historique et des souvenirs" },
-      "group": { "title": "Chat de groupe", "description": "Trois personnages dans un groupe avec historique" },
-      "group_companion": { "title": "Chat de groupe de compagnons", "description": "Trois compagnons avec une âme dans un groupe de compagnons avec historique" },
-      "roleplay_widgets": { "title": "Chat de jeu de rôle avec widgets", "description": "Le chat de jeu de rôle avec tous les widgets à côté du chat" },
-      "companion_widgets": { "title": "Chat de compagnon avec widgets", "description": "Le chat de compagnon avec tous les widgets, dont l'état du compagnon et la mémoire" },
-      "chapters_backlog": { "title": "Chapitres : long historique", "description": "Une histoire de bac de 42 messages sans résumé. Chaque message envoyé résume les six anciens suivants." },
-      "chapters_user_seed": { "title": "Chapitres : résumé écrit", "description": "La même histoire avec un court résumé écrit à la main, conservé comme point de départ." },
-      "chapters_large_seed": { "title": "Chapitres : résumé trop long", "description": "La même histoire avec un résumé écrit à la main plus grand que le budget de test. Seuls les nouveaux cycles sont regroupés." },
-      "chapters_group": { "title": "Chapitres : groupe", "description": "Une histoire de 36 messages d'un équipage de renflouage dans un groupe avec mémoire dynamique." }
+      "roleplay": {
+        "title": "Chat de jeu de rôle",
+        "description": "Un personnage, un persona et un chat avec historique"
+      },
+      "companion": {
+        "title": "Chat de compagnon, rempli",
+        "description": "Un compagnon avec une âme, une relation, un historique et des souvenirs"
+      },
+      "group": {
+        "title": "Chat de groupe",
+        "description": "Trois personnages dans un groupe avec historique"
+      },
+      "group_companion": {
+        "title": "Chat de groupe de compagnons",
+        "description": "Trois compagnons avec une âme dans un groupe de compagnons avec historique"
+      },
+      "roleplay_widgets": {
+        "title": "Chat de jeu de rôle avec widgets",
+        "description": "Le chat de jeu de rôle avec tous les widgets à côté du chat"
+      },
+      "companion_widgets": {
+        "title": "Chat de compagnon avec widgets",
+        "description": "Le chat de compagnon avec tous les widgets, dont l'état du compagnon et la mémoire"
+      },
+      "chapters_backlog": {
+        "title": "Chapitres : long historique",
+        "description": "Une histoire de bac de 42 messages sans résumé. Chaque message envoyé résume les six anciens suivants."
+      },
+      "chapters_user_seed": {
+        "title": "Chapitres : résumé écrit",
+        "description": "La même histoire avec un court résumé écrit à la main, conservé comme point de départ."
+      },
+      "chapters_large_seed": {
+        "title": "Chapitres : résumé trop long",
+        "description": "La même histoire avec un résumé écrit à la main plus grand que le budget de test. Seuls les nouveaux cycles sont regroupés."
+      },
+      "chapters_group": {
+        "title": "Chapitres : groupe",
+        "description": "Une histoire de 36 messages d'un équipage de renflouage dans un groupe avec mémoire dynamique."
+      }
     },
     "chapters": {
       "group": "Tests des résumés par chapitres",
-      "apply": { "title": "Utiliser les réglages de test des chapitres", "description": "Active la mémoire dynamique et les résumés par chapitres avec des cycles de 6 messages, un budget de 800 jetons et 2 cycles par chapitre. Tes réglages de mémoire sont d'abord sauvegardés." },
-      "restore": { "title": "Restaurer les réglages de mémoire", "description": "Remet les réglages de mémoire sauvegardés avant les réglages de test." },
+      "apply": {
+        "title": "Utiliser les réglages de test des chapitres",
+        "description": "Active la mémoire dynamique et les résumés par chapitres avec des cycles de 6 messages, un budget de 800 jetons et 2 cycles par chapitre. Tes réglages de mémoire sont d'abord sauvegardés."
+      },
+      "restore": {
+        "title": "Restaurer les réglages de mémoire",
+        "description": "Remet les réglages de mémoire sauvegardés avant les réglages de test."
+      },
       "applied": "Réglages de test des chapitres activés",
       "restored": "Réglages de mémoire restaurés"
     }
@@ -623,11 +659,14 @@
     "verified": "Connexion vérifiée",
     "audioKinds": {
       "elevenlabs": "ElevenLabs",
-      "gemini": "Gemini",
+      "gemini": "Google Gemini (Vertex AI)",
       "fish_tts": "Fish Audio",
       "fish_speech": "Fish Speech",
       "open_ai_compatible": "Compatible OpenAI",
-      "kokoro": "Kokoro"
+      "kokoro": "Kokoro",
+      "open_router": "OpenRouter",
+      "nano_gpt": "NanoGPT",
+      "gemini_audio": "Google Gemini Audio"
     },
     "verifyFailed": "La connexion n'a pas pu être vérifiée.",
     "saveBeforeVerify": "Enregistrez les modifications de connexion avant de vérifier avec la clé enregistrée.",
@@ -640,7 +679,10 @@
     "deleteWithModels_other": "Supprimer le fournisseur et {{count}} modèles",
     "modelCount_one": "{{count}} modèle",
     "modelCount_many": "{{count}} modèles",
-    "modelCount_other": "{{count}} modèles"
+    "modelCount_other": "{{count}} modèles",
+    "linkedAccount": "Compte fournisseur",
+    "linkedAccountHint": "Utilise la clé API de votre compte fournisseur existant",
+    "linkedAccountEmpty": "Ajoutez d'abord un compte OpenRouter ou NanoGPT dans Modèles"
   },
   "models": {
     "vision": "Vision",
@@ -1475,10 +1517,22 @@
     },
     "pages": {
       "group": "Plus de réglages",
-      "saved": { "title": "Ce qui est enregistré", "body": "Intervalle de résumé, limite de souvenirs, doublons et épinglage" },
-      "recall": { "title": "Rappel", "body": "Ce qui accompagne chaque réponse et comment les souvenirs sont choisis" },
-      "summary": { "title": "Résumé du contexte", "body": "Résumés par chapitres et budget du résumé" },
-      "advanced": { "title": "Avancé", "body": "L'oubli et le fonctionnement du gestionnaire de mémoire" }
+      "saved": {
+        "title": "Ce qui est enregistré",
+        "body": "Intervalle de résumé, limite de souvenirs, doublons et épinglage"
+      },
+      "recall": {
+        "title": "Rappel",
+        "body": "Ce qui accompagne chaque réponse et comment les souvenirs sont choisis"
+      },
+      "summary": {
+        "title": "Résumé du contexte",
+        "body": "Résumés par chapitres et budget du résumé"
+      },
+      "advanced": {
+        "title": "Avancé",
+        "body": "L'oubli et le fonctionnement du gestionnaire de mémoire"
+      }
     },
     "advanced": {
       "enrichment": "Enrichissement du contexte",
@@ -1834,7 +1888,13 @@
     "metadata": "{{left}} · {{right}}",
     "range": "{{start}}–{{end}}",
     "customScope": "Autre portée",
-    "scopeName": "Nom de la portée"
+    "scopeName": "Nom de la portée",
+    "source": "Source de reconnaissance vocale",
+    "sourceLocal": "Local (Whisper)",
+    "sourceCloud": "Cloud",
+    "cloudModel": "Modèle vocal cloud",
+    "cloudProvider": "Compte fournisseur",
+    "cloudProviderEmpty": "Ajoutez d'abord un compte OpenRouter ou NanoGPT dans Fournisseurs"
   },
   "hf": {
     "title": "Obtenir des modèles",
@@ -2371,7 +2431,8 @@
       "previewFirst": "Écoutez d'abord l'aperçu de la voix pour la créer.",
       "fishVoiceIdRequired": "Fish Audio a besoin d'un ID de voix.",
       "openaiModelIdRequired": "Saisissez l'ID du modèle attendu par votre point de terminaison.",
-      "openaiVoiceIdRequired": "Saisissez un ID de voix pris en charge par votre point de terminaison."
+      "openaiVoiceIdRequired": "Saisissez un ID de voix pris en charge par votre point de terminaison.",
+      "cloudVoice": "Voix"
     },
     "kokoro": {
       "studio": "Studio Kokoro",

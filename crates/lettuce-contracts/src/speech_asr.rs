@@ -55,11 +55,30 @@ pub struct WhisperModelRequest {
 }
 
 /// The model dictation uses; `None` returns to the first installed one.
+/// When `provider_account_id` is set, dictation routes to that cloud provider
+/// account (OpenRouter or NanoGPT) using `model_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct DictationModelSetRequest {
     pub model_id: Option<String>,
+    #[serde(default)]
+    pub provider_account_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SpeechCloudModelsRequest {
+    pub provider_account_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SpeechCloudModelView {
+    pub id: String,
+    pub name: String,
 }
 
 /// How a Whisper model runs: on the GPU or the CPU, with flash attention
