@@ -68,7 +68,7 @@ export function CreatorSettingsPage() {
   const native = value?.tool_fallback === "native";
 
   return (
-    <Page title={settingsText("sections.smartCreator.title")} meta={phone ? undefined : settingsText("sections.smartCreator.subtitle")} {...back} contentClassName="space-y-7">
+    <Page title={settingsText("sections.smartCreator.title")} meta={phone ? undefined : settingsText("sections.smartCreator.subtitle")} {...back} contentClassName="max-w-3xl space-y-7">
       {settings.isError && <FailureState error={settings.error} onRetry={() => void settings.refetch()} />}
       {!value ? (
         settings.isError ? null : <LoadingRows />
