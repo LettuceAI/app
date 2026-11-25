@@ -114,6 +114,16 @@ pub async fn memory_skip(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn memory_summary_part_sources(
+    context: State<'_, ApiContextSlot>,
+    request: dto::MemorySummaryPartSourcesRequest,
+) -> Result<Vec<dto::MemorySummaryPartView>, ApiError> {
+    let context = context.snapshot()?;
+    api::memory_summary_part_sources(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn memory_cycles(
     context: State<'_, ApiContextSlot>,
     request: dto::MemoryCyclesRequest,

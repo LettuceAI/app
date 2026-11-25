@@ -107,10 +107,10 @@ function CompanionScreen({ conversationId }: { conversationId: string }) {
     if (ok) toast.success(t("memory.sheet.deleted"));
     return ok;
   });
-  const saveSummary = (text: string | null) => perform(async () => {
+  const saveSummary = (text: string | null, close = true) => perform(async () => {
     const ok = await write(`summary:${summarySession}:${text ?? ""}`, (current, operationId) => api.call("memorySummaryUpdate", { conversation_id: conversationId, summary: text === null ? { type: "clear" } : { type: "set", text }, expected_revision: current.revision, client_operation_id: operationId }));
     if (ok) {
-      setSummaryOpen(false);
+      if (close) setSummaryOpen(false);
       toast.success(t(text === null ? "memory.summary.cleared" : "memory.summary.saved"));
     }
     return ok;
@@ -164,7 +164,7 @@ function CompanionScreen({ conversationId }: { conversationId: string }) {
     {dynamic && <StatusCard api={api} conversationId={conversationId} status={memory.data.status} />}
     {tab === "memories" && <>
       {state.isPending || soul.isPending ? <Skeleton className="h-28 w-full" /> : state.isError && state.data === undefined ? <FailureState error={state.error} onRetry={() => void state.refetch()} size="sm" /> : soul.isError && soul.data === undefined ? <FailureState error={soul.error} onRetry={() => void soul.refetch()} size="sm" /> : state.data && soul.data ? <section><SectionHead title={t("companion.currentState")} right={t("companion.updated", { when: relativeTime(state.data.updated_at, undefined, i18n.language).toLowerCase() })} /><div className="grid grid-cols-2 gap-2"><BondTiles state={state.data} defaults={soul.data.config.relationship_defaults} compact /></div>{emotion.data?.type === "installed" && <><div className="mt-2"><EmotionGroup group="felt" values={state.data.felt} limit={3} /></div><Drivers values={state.data.active_drivers} /></>}</section> : null}
-      <SummaryCard companion summary={memory.data.summary} onOpen={openSummary} />
+      <SummaryCard companion summary={memory.data.summary} parts={memory.data.summary_parts} onOpen={openSummary} />
     </>}
   </div>;
   const sourceItems = shownSources ? (memory.data?.items ?? []).filter((item) => shownSources.source_memory_ids.includes(item.id) || shownSources.source_memory_ids.includes(item.short_id)) : [];
@@ -181,7 +181,7 @@ function CompanionScreen({ conversationId }: { conversationId: string }) {
       </main>
     </div>
     {memory.data && shown && <MemorySheet key={session} open={target !== null} item={shown.kind === "edit" ? shown.item : null} companionName={name} categories={memory.data.allowed_categories} busy={saving} onClose={() => setTarget(null)} onSave={(draft) => void save(shown.kind === "edit" ? shown.item : null, draft)} onDelete={() => { if (shown.kind === "edit") void remove(shown.item); }} />}
-    {memory.data && <SummarySheet key={summarySession} open={summaryOpen} text={memory.data.summary?.text ?? ""} dynamic={dynamic} busy={saving} onClose={() => setSummaryOpen(false)} onSave={(text) => void saveSummary(text)} onClear={() => void saveSummary(null)} />}
+    {memory.data && <SummarySheet key={summarySession} open={summaryOpen} text={memory.data.summary?.text ?? ""} parts={memory.data.summary_parts} conversationId={conversationId} dynamic={dynamic} busy={saving} onClose={() => setSummaryOpen(false)} onSave={(text, close) => void saveSummary(text, close)} onClear={() => void saveSummary(null)} />}
     <Sheet open={sources !== null} onClose={() => setSources(null)} placement="auto" size="md" title={t("companion.soul.sourcesTitle")} description={shownSources ? t("companion.soul.sourceDescription", { category: t(`companion.soul.categories.${shownSources.category}`), text: shownSources.value }) : undefined}>
       <div className="space-y-3 pb-2">{!memoryOn ? <Text variant="hint">{t("memory.off.description")}</Text> : memory.isPending ? <LoadingState /> : memory.isError && memory.data === undefined ? <FailureState error={memory.error} onRetry={() => void memory.refetch()} /> : sourceItems.length > 0 ? <ListGroup label={t("companion.memories.total", { count: sourceItems.length })}>{sourceItems.map((item) => <MemoryRow key={item.id} companion item={item} onOpen={() => edit(item)} />)}</ListGroup> : <Text variant="hint">{t("companion.soul.sourcesEmpty")}</Text>}{sourceItems.length > 0 && missingSources > 0 && <Text variant="hint">{t("companion.soul.sourcesMissing", { count: missingSources })}</Text>}</div>
     </Sheet>

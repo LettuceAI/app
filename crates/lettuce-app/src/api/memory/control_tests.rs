@@ -2377,7 +2377,7 @@ async fn generated_summary_with_failed_tokenizer_keeps_usage_without_publishing_
     let failed = crate::CompanionMemorySummaryCoordinator::new(
         &FailedTokenizer, database, database, harness.context.inference(),
     ).run(round.run_id, round.attempt_id, crate::CompanionMemoryWindowSelection::Recent,
-        &prompt, &round.handle, None, harness.context.now()).await;
+        &prompt, crate::SummaryMode::Cumulative, &round.handle, None, harness.context.now()).await;
     assert!(matches!(failed, Err(crate::CompanionMemoryInferenceError::UnknownTokenCount)),
         "a successful inference with an unavailable tokenizer must fail truthfully: {failed:?}");
     assert!(database.load_dynamic_memory_summary_checkpoint(round.run_id).expect("checkpoint").is_none());
@@ -2388,13 +2388,13 @@ async fn generated_summary_with_failed_tokenizer_keeps_usage_without_publishing_
     let recovered = crate::CompanionMemorySummaryCoordinator::new(
         engine.as_ref(), database, database, harness.context.inference(),
     ).run(round.run_id, round.attempt_id, crate::CompanionMemoryWindowSelection::Recent,
-        &prompt, &round.handle, None, harness.context.now()).await.expect("retry summary");
+        &prompt, crate::SummaryMode::Cumulative, &round.handle, None, harness.context.now()).await.expect("retry summary");
     assert_eq!(recovered.checkpoint.summary.token_count, Some(1));
     let dispatched = harness.provider.requests.lock().expect("requests").len();
     let replayed = crate::CompanionMemorySummaryCoordinator::new(
         &FailedTokenizer, database, database, harness.context.inference(),
     ).run(round.run_id, round.attempt_id, crate::CompanionMemoryWindowSelection::Recent,
-        &prompt, &round.handle, None, harness.context.now()).await.expect("durable checkpoint replay");
+        &prompt, crate::SummaryMode::Cumulative, &round.handle, None, harness.context.now()).await.expect("durable checkpoint replay");
     assert!(replayed.replayed);
     assert_eq!(replayed.checkpoint, recovered.checkpoint);
     assert_eq!(harness.provider.requests.lock().expect("requests").len(), dispatched);

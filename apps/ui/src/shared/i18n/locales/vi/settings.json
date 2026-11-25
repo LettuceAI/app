@@ -542,7 +542,18 @@
       "group": { "title": "Trò chuyện nhóm", "description": "Ba nhân vật trong một nhóm có lịch sử" },
       "group_companion": { "title": "Trò chuyện nhóm bạn đồng hành", "description": "Ba bạn đồng hành có Soul trong một nhóm bạn đồng hành có lịch sử" },
       "roleplay_widgets": { "title": "Trò chuyện nhập vai với tiện ích", "description": "Cuộc trò chuyện nhập vai với mọi tiện ích bên cạnh khung chat" },
-      "companion_widgets": { "title": "Trò chuyện với bạn đồng hành và tiện ích", "description": "Cuộc trò chuyện với bạn đồng hành có mọi tiện ích, gồm cả trạng thái bạn đồng hành và bộ nhớ" }
+      "companion_widgets": { "title": "Trò chuyện với bạn đồng hành và tiện ích", "description": "Cuộc trò chuyện với bạn đồng hành có mọi tiện ích, gồm cả trạng thái bạn đồng hành và bộ nhớ" },
+      "chapters_backlog": { "title": "Chương: lịch sử dài", "description": "Một câu chuyện phà 42 tin nhắn chưa có tóm tắt. Mỗi tin nhắn bạn gửi sẽ tóm tắt sáu tin cũ tiếp theo." },
+      "chapters_user_seed": { "title": "Chương: tóm tắt viết tay", "description": "Cùng câu chuyện với một tóm tắt ngắn viết tay, được giữ làm điểm xuất phát." },
+      "chapters_large_seed": { "title": "Chương: tóm tắt quá lớn", "description": "Cùng câu chuyện với tóm tắt viết tay lớn hơn ngân sách thử nghiệm. Chỉ các chu kỳ mới được gộp." },
+      "chapters_group": { "title": "Chương: nhóm", "description": "Câu chuyện 36 tin nhắn của một đội trục vớt trong nhóm có bộ nhớ động." }
+    },
+    "chapters": {
+      "group": "Kiểm thử tóm tắt theo chương",
+      "apply": { "title": "Dùng cài đặt thử nghiệm chương", "description": "Bật bộ nhớ động và tóm tắt theo chương với chu kỳ 6 tin nhắn, ngân sách 800 token và 2 chu kỳ mỗi chương. Cài đặt bộ nhớ của bạn được lưu trước." },
+      "restore": { "title": "Khôi phục cài đặt bộ nhớ", "description": "Đặt lại cài đặt bộ nhớ đã lưu trước khi dùng cài đặt thử nghiệm." },
+      "applied": "Đã bật cài đặt thử nghiệm chương",
+      "restored": "Đã khôi phục cài đặt bộ nhớ"
     }
   },
   "manage": {
@@ -1439,6 +1450,12 @@
       "enrichment": "Làm giàu ngữ cảnh",
       "experimental": "Thử nghiệm",
       "enrichmentBody": "Dùng vài tin nhắn cuối để tìm ký ức, không chỉ tin mới nhất",
+      "chapterSummaries": "Tóm tắt theo chương",
+      "chapterSummariesBody": "Tóm tắt riêng từng chu kỳ trí nhớ và gộp các chu kỳ cũ thành chương khi bản tóm tắt vượt quá ngân sách. Bản tóm tắt hiện tại được giữ làm điểm khởi đầu.",
+      "summaryBudget": "Ngân sách tóm tắt",
+      "summaryBudgetBody": "Số token bản tóm tắt cuộc trò chuyện có thể dùng trước khi các chu kỳ cũ được gộp thành chương.",
+      "chapterSize": "Chu kỳ mỗi chương",
+      "chapterSizeBody": "Số lượng bản tóm tắt được gộp vào một chương.",
       "loops": "Vòng lặp bộ nhớ đệ quy",
       "loopsBody": "Gửi kết quả công cụ trở lại cho đến khi mô hình gọi done. Giúp mô hình yếu hơn nhưng tốn thêm token.",
       "loopCap": "Giới hạn cứng vòng lặp đệ quy",

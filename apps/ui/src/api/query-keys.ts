@@ -21,6 +21,7 @@ export const queryKeys = {
     detail: (conversationId: string) => [...queryKeys.memory.all, conversationId] as const,
     perspective: (conversationId: string, characterId: string) =>
       [...queryKeys.memory.detail(conversationId), "perspective", characterId] as const,
+    partSources: (conversationId: string, partId: string) => [...queryKeys.memory.detail(conversationId), "part-sources", partId] as const,
   },
   characters: {
     all: ["characters"] as const,

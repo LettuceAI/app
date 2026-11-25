@@ -546,7 +546,18 @@
       "group": { "title": "Groepschat", "description": "Drie personages in een groep met geschiedenis" },
       "group_companion": { "title": "Metgezel-groepschat", "description": "Drie metgezellen met een ziel in een metgezelgroep met geschiedenis" },
       "roleplay_widgets": { "title": "Rollenspelchat met widgets", "description": "De rollenspelchat met alle widgets naast de chat" },
-      "companion_widgets": { "title": "Metgezelchat met widgets", "description": "De metgezelchat met alle widgets, inclusief metgezelstatus en geheugen" }
+      "companion_widgets": { "title": "Metgezelchat met widgets", "description": "De metgezelchat met alle widgets, inclusief metgezelstatus en geheugen" },
+      "chapters_backlog": { "title": "Hoofdstukken: lange geschiedenis", "description": "Een veerbootverhaal van 42 berichten zonder samenvatting. Elk bericht dat je stuurt vat de volgende zes oude samen." },
+      "chapters_user_seed": { "title": "Hoofdstukken: geschreven samenvatting", "description": "Hetzelfde verhaal met een korte, met de hand geschreven samenvatting als beginpunt." },
+      "chapters_large_seed": { "title": "Hoofdstukken: te grote samenvatting", "description": "Hetzelfde verhaal met een handgeschreven samenvatting groter dan het testbudget. Alleen nieuwe cycli worden samengevoegd." },
+      "chapters_group": { "title": "Hoofdstukken: groep", "description": "Een bergingsploegverhaal van 36 berichten in een groep met dynamisch geheugen." }
+    },
+    "chapters": {
+      "group": "Tests voor hoofdstuksamenvattingen",
+      "apply": { "title": "Testinstellingen voor hoofdstukken gebruiken", "description": "Zet dynamisch geheugen en hoofdstuksamenvattingen aan met cycli van 6 berichten, een budget van 800 tokens en 2 cycli per hoofdstuk. Je geheugeninstellingen worden eerst bewaard." },
+      "restore": { "title": "Geheugeninstellingen herstellen", "description": "Zet de geheugeninstellingen terug die vóór de testinstellingen zijn bewaard." },
+      "applied": "Testinstellingen voor hoofdstukken staan aan",
+      "restored": "Geheugeninstellingen hersteld"
     }
   },
   "manage": {
@@ -1451,6 +1462,12 @@
       "enrichment": "Contextverrijking",
       "experimental": "Experimenteel",
       "enrichmentBody": "Gebruikt de laatste paar berichten om herinneringen te zoeken, niet alleen het nieuwste",
+      "chapterSummaries": "Hoofdstuksamenvattingen",
+      "chapterSummariesBody": "Vat elke geheugencyclus afzonderlijk samen en voegt oudere cycli samen tot hoofdstukken wanneer de samenvatting het budget overschrijdt. De huidige samenvatting blijft het uitgangspunt.",
+      "summaryBudget": "Samenvattingsbudget",
+      "summaryBudgetBody": "Tokens die de gesprekssamenvatting mag gebruiken voordat oudere cycli tot hoofdstukken worden samengevoegd.",
+      "chapterSize": "Cycli per hoofdstuk",
+      "chapterSizeBody": "Hoeveel samenvattingen worden samengevoegd tot één hoofdstuk.",
       "loops": "Recursieve geheugenlussen",
       "loopsBody": "Stuurt toolresultaten terug tot het model done aanroept. Helpt zwakkere modellen, kost meer tokens.",
       "loopCap": "Harde limiet voor recursieve lus",

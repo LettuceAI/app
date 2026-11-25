@@ -546,7 +546,18 @@
       "group": { "title": "Csoportos csevegés", "description": "Három karakter egy csoportban, előzményekkel" },
       "group_companion": { "title": "Társ csoportos csevegés", "description": "Három társ lélekkel egy társcsoportban, előzményekkel" },
       "roleplay_widgets": { "title": "Szerepjátékos csevegés widgetekkel", "description": "A szerepjátékos csevegés az összes widgettel a csevegés mellett" },
-      "companion_widgets": { "title": "Társ csevegés widgetekkel", "description": "A társ csevegés az összes widgettel, a társ állapotával és a memóriával együtt" }
+      "companion_widgets": { "title": "Társ csevegés widgetekkel", "description": "A társ csevegés az összes widgettel, a társ állapotával és a memóriával együtt" },
+      "chapters_backlog": { "title": "Fejezetek: hosszú előzmény", "description": "Egy 42 üzenetes kompos történet összefoglaló nélkül. Minden elküldött üzenet a következő hat régit foglalja össze." },
+      "chapters_user_seed": { "title": "Fejezetek: megírt összefoglaló", "description": "Ugyanaz a történet egy rövid, kézzel írt összefoglalóval, amely kiindulópont marad." },
+      "chapters_large_seed": { "title": "Fejezetek: túl nagy összefoglaló", "description": "Ugyanaz a történet a tesztkeretnél nagyobb, kézzel írt összefoglalóval. Csak az új ciklusok vonódnak össze." },
+      "chapters_group": { "title": "Fejezetek: csoport", "description": "Egy 36 üzenetes mentőcsapat-történet egy dinamikus memóriájú csoportban." }
+    },
+    "chapters": {
+      "group": "Fejezetösszefoglalók tesztje",
+      "apply": { "title": "Fejezet tesztbeállítások használata", "description": "Bekapcsolja a dinamikus memóriát és a fejezetösszefoglalókat 6 üzenetes ciklusokkal, 800 tokenes kerettel és fejezetenként 2 ciklussal. Előbb elmenti a memóriabeállításaidat." },
+      "restore": { "title": "Memóriabeállítások visszaállítása", "description": "Visszaállítja a tesztbeállítások előtt mentett memóriabeállításokat." },
+      "applied": "A fejezet tesztbeállítások be vannak kapcsolva",
+      "restored": "Memóriabeállítások visszaállítva"
     }
   },
   "manage": {
@@ -1451,6 +1462,12 @@
       "enrichment": "Kontextusgazdagítás",
       "experimental": "Kísérleti",
       "enrichmentBody": "A legutóbbi néhány üzenetet használja a memóriák kereséséhez, nem csak a legújabbat",
+      "chapterSummaries": "Fejezet-összefoglalók",
+      "chapterSummariesBody": "Minden memóriaciklust külön foglal össze, és a régebbi ciklusokat fejezetekbe vonja össze, amikor az összefoglaló túllépi a keretét. A jelenlegi összefoglaló marad a kiindulópont.",
+      "summaryBudget": "Összefoglaló keret",
+      "summaryBudgetBody": "Ennyi tokent használhat a beszélgetés összefoglalója, mielőtt a régebbi ciklusok fejezetekbe kerülnek.",
+      "chapterSize": "Ciklusok fejezetenként",
+      "chapterSizeBody": "Hány összefoglaló kerül összevonásra egy fejezetbe.",
       "loops": "Rekurzív memóriaciklusok",
       "loopsBody": "Visszaküldi az eszközeredményeket, amíg a modell nem hívja a done-t. Gyengébb modelleknek segít, több tokenbe kerül.",
       "loopCap": "Rekurzív ciklus kemény korlátja",

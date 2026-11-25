@@ -294,6 +294,11 @@ const MIGRATION_45: Migration = Migration {
     sql: include_str!("../migrations/0045_summary_checkpoint_text_limit.sql"),
 };
 
+const MIGRATION_46: Migration = Migration {
+    id: 46,
+    sql: include_str!("../migrations/0046_memory_summary_units.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -340,6 +345,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_43,
     MIGRATION_44,
     MIGRATION_45,
+    MIGRATION_46,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
@@ -6357,6 +6363,8 @@ mod tests {
                 "memory_spaces",
                 "memory_summaries",
                 "memory_summary_source_messages",
+                "memory_summary_unit_inputs",
+                "memory_summary_units",
                 "memory_synced_cursors",
                 "message_signals",
                 "model_changes",

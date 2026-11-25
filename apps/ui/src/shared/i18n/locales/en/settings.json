@@ -546,7 +546,18 @@
       "group": { "title": "Group chat", "description": "Three characters in a group with history" },
       "group_companion": { "title": "Companion group chat", "description": "Three companions with Souls in a companion group with history" },
       "roleplay_widgets": { "title": "Roleplay chat with widgets", "description": "The roleplay chat with every widget placed beside the chat" },
-      "companion_widgets": { "title": "Companion chat with widgets", "description": "The companion chat with every widget, including companion state and memory" }
+      "companion_widgets": { "title": "Companion chat with widgets", "description": "The companion chat with every widget, including companion state and memory" },
+      "chapters_backlog": { "title": "Chapters: long history", "description": "A 42-message ferry story with no summary. Each message you send summarizes the next six old ones." },
+      "chapters_user_seed": { "title": "Chapters: written summary", "description": "The same story with a short hand-written summary, kept as the starting point." },
+      "chapters_large_seed": { "title": "Chapters: oversized summary", "description": "The same story with a hand-written summary larger than the test budget. Only new cycles get folded." },
+      "chapters_group": { "title": "Chapters: group", "description": "A 36-message salvage crew story in a group with dynamic memory." }
+    },
+    "chapters": {
+      "group": "Chapter summary tests",
+      "apply": { "title": "Use chapter test settings", "description": "Turns on dynamic memory and chapter summaries with 6-message cycles, a 800-token budget and 2 cycles per chapter. Your memory settings are saved first." },
+      "restore": { "title": "Restore memory settings", "description": "Puts back the memory settings saved before the test settings." },
+      "applied": "Chapter test settings are on",
+      "restored": "Memory settings restored"
     }
   },
   "manage": {
@@ -1452,6 +1463,12 @@
       "enrichment": "Context enrichment",
       "experimental": "Experimental",
       "enrichmentBody": "Uses the last few messages to search memories, not only the newest one",
+      "chapterSummaries": "Chapter summaries",
+      "chapterSummariesBody": "Summarizes each memory cycle on its own and folds older cycles into chapters when the summary grows past its budget. The current summary is kept as the starting point.",
+      "summaryBudget": "Summary budget",
+      "summaryBudgetBody": "Tokens the conversation summary may use before older cycles are folded into chapters.",
+      "chapterSize": "Cycles per chapter",
+      "chapterSizeBody": "How many summaries are folded into one chapter.",
       "loops": "Recursive memory loops",
       "loopsBody": "Sends tool results back until the model calls done. Helps weaker models, costs more tokens.",
       "loopCap": "Recursive loop hard cap",

@@ -23,7 +23,7 @@ pub(in crate::api) fn conversation(
     .conversation
 }
 
-pub(in crate::api) async fn open(harness: &Harness, id: &str) -> dto::ConversationView {
+pub(crate) async fn open(harness: &Harness, id: &str) -> dto::ConversationView {
     conversation_open(
         &harness.context,
         dto::ConversationOpenRequest {
@@ -41,7 +41,7 @@ pub(in crate::api) async fn run_generation(harness: &Harness) {
 
 /// A chat with one user message and its settled reply; returns the
 /// conversation and the reply's message id.
-pub(in crate::api) async fn replied_chat(harness: &Harness, key: &str) -> (String, String) {
+pub(crate) async fn replied_chat(harness: &Harness, key: &str) -> (String, String) {
     let chat = launch(harness, &format!("{key}-launch")).await;
     send(
         harness,

@@ -550,7 +550,18 @@
       "group": { "title": "Chat de grupo", "description": "Tres personajes en un grupo con historial" },
       "group_companion": { "title": "Chat de grupo de compañeros", "description": "Tres compañeros con alma en un grupo de compañeros con historial" },
       "roleplay_widgets": { "title": "Chat de rol con widgets", "description": "El chat de rol con todos los widgets junto al chat" },
-      "companion_widgets": { "title": "Chat de compañero con widgets", "description": "El chat de compañero con todos los widgets, incluido el estado del compañero y la memoria" }
+      "companion_widgets": { "title": "Chat de compañero con widgets", "description": "El chat de compañero con todos los widgets, incluido el estado del compañero y la memoria" },
+      "chapters_backlog": { "title": "Capítulos: historial largo", "description": "Una historia de ferry de 42 mensajes sin resumen. Cada mensaje que envías resume los seis antiguos siguientes." },
+      "chapters_user_seed": { "title": "Capítulos: resumen escrito", "description": "La misma historia con un resumen corto escrito a mano, que se conserva como punto de partida." },
+      "chapters_large_seed": { "title": "Capítulos: resumen demasiado grande", "description": "La misma historia con un resumen escrito a mano mayor que el presupuesto de prueba. Solo se agrupan los ciclos nuevos." },
+      "chapters_group": { "title": "Capítulos: grupo", "description": "Una historia de 36 mensajes de una tripulación de rescate en un grupo con memoria dinámica." }
+    },
+    "chapters": {
+      "group": "Pruebas de resúmenes por capítulos",
+      "apply": { "title": "Usar ajustes de prueba de capítulos", "description": "Activa la memoria dinámica y los resúmenes por capítulos con ciclos de 6 mensajes, un presupuesto de 800 tokens y 2 ciclos por capítulo. Antes se guardan tus ajustes de memoria." },
+      "restore": { "title": "Restaurar ajustes de memoria", "description": "Devuelve los ajustes de memoria guardados antes de los de prueba." },
+      "applied": "Ajustes de prueba de capítulos activados",
+      "restored": "Ajustes de memoria restaurados"
     }
   },
   "manage": {
@@ -1463,6 +1474,12 @@
       "enrichment": "Enriquecimiento de contexto",
       "experimental": "Experimental",
       "enrichmentBody": "Usa los últimos mensajes para buscar memorias, no solo el más reciente",
+      "chapterSummaries": "Resúmenes por capítulos",
+      "chapterSummariesBody": "Resume cada ciclo de memoria por separado y agrupa los ciclos antiguos en capítulos cuando el resumen supera su presupuesto. El resumen actual se conserva como punto de partida.",
+      "summaryBudget": "Presupuesto del resumen",
+      "summaryBudgetBody": "Tokens que puede usar el resumen de la conversación antes de agrupar los ciclos antiguos en capítulos.",
+      "chapterSize": "Ciclos por capítulo",
+      "chapterSizeBody": "Cuántos resúmenes se agrupan en un solo capítulo.",
       "loops": "Bucles de memoria recursivos",
       "loopsBody": "Devuelve los resultados de herramientas hasta que el modelo llama a done. Ayuda a los modelos más débiles y consume más tokens.",
       "loopCap": "Límite máximo de bucles recursivos",

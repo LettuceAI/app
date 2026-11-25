@@ -146,6 +146,7 @@ async function open(setup: Setup = {}) {
               "other",
             ],
             summary: null,
+            summary_parts: null,
             revision: 1,
             status: {
               run_mode: "auto",

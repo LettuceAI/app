@@ -63,6 +63,7 @@ impl<
     R: DynamicMemoryRunRepository
         + MemoryRepository
         + MemorySummaryRepository
+        + lettuce_memory::MemorySummaryUnitRepository
         + lettuce_memory::MemoryTokenCountRepository
         + MemoryEmbeddingRepository
         + lettuce_characters::CharacterRepository
@@ -112,11 +113,13 @@ impl<
         let settings = GlobalSettingsStore::load(self.repository)
             .map_err(CompanionMemoryJobRunError::Settings)?
             .settings;
-        let loop_policy = crate::CompanionMemoryLoopPolicy::from_settings(if group {
+        let dynamic_memory = if group {
             settings.effective_group_dynamic_memory()
         } else {
             &settings.dynamic_memory
-        });
+        };
+        let loop_policy = crate::CompanionMemoryLoopPolicy::from_settings(dynamic_memory);
+        let summary_mode = crate::SummaryMode::from_settings(dynamic_memory);
         let mut dispatch =
             CompanionPostTurnMemoryRunCoordinator::new(self.repository, self.conversations)
                 .admit_or_recover(
@@ -158,6 +161,7 @@ impl<
             dispatch.attempt.id,
             admission.batch.window_selection,
             summary_prompt,
+            summary_mode,
             handle,
             stream_sink,
             now,

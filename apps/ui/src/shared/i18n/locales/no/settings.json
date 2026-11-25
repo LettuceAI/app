@@ -546,7 +546,18 @@
       "group": { "title": "Gruppechat", "description": "Tre karakterer i en gruppe med historikk" },
       "group_companion": { "title": "Følgesvenn-gruppechat", "description": "Tre følgesvenner med sjel i en følgesvenngruppe med historikk" },
       "roleplay_widgets": { "title": "Rollespillchat med widgeter", "description": "Rollespillchatten med alle widgeter ved siden av chatten" },
-      "companion_widgets": { "title": "Følgesvenn-chat med widgeter", "description": "Følgesvenn-chatten med alle widgeter, inkludert følgesvennstatus og minne" }
+      "companion_widgets": { "title": "Følgesvenn-chat med widgeter", "description": "Følgesvenn-chatten med alle widgeter, inkludert følgesvennstatus og minne" },
+      "chapters_backlog": { "title": "Kapitler: lang historikk", "description": "En fergehistorie på 42 meldinger uten sammendrag. Hver melding du sender oppsummerer de neste seks gamle." },
+      "chapters_user_seed": { "title": "Kapitler: skrevet sammendrag", "description": "Den samme historien med et kort, håndskrevet sammendrag som beholdes som utgangspunkt." },
+      "chapters_large_seed": { "title": "Kapitler: for stort sammendrag", "description": "Den samme historien med et håndskrevet sammendrag større enn testbudsjettet. Bare nye sykluser slås sammen." },
+      "chapters_group": { "title": "Kapitler: gruppe", "description": "En bergingsmannskapshistorie på 36 meldinger i en gruppe med dynamisk minne." }
+    },
+    "chapters": {
+      "group": "Tester av kapittelsammendrag",
+      "apply": { "title": "Bruk testinnstillinger for kapitler", "description": "Slår på dynamisk minne og kapittelsammendrag med sykluser på 6 meldinger, et budsjett på 800 tokens og 2 sykluser per kapittel. Minneinnstillingene dine lagres først." },
+      "restore": { "title": "Gjenopprett minneinnstillinger", "description": "Setter tilbake minneinnstillingene som ble lagret før testinnstillingene." },
+      "applied": "Testinnstillinger for kapitler er på",
+      "restored": "Minneinnstillinger gjenopprettet"
     }
   },
   "manage": {
@@ -1451,6 +1462,12 @@
       "enrichment": "Kontekstberikelse",
       "experimental": "Eksperimentelt",
       "enrichmentBody": "Bruker de siste meldingene til å søke i minner, ikke bare den nyeste",
+      "chapterSummaries": "Kapittelsammendrag",
+      "chapterSummariesBody": "Oppsummerer hver minnesyklus for seg og slår eldre sykluser sammen til kapitler når sammendraget overstiger budsjettet. Det nåværende sammendraget beholdes som utgangspunkt.",
+      "summaryBudget": "Sammendragsbudsjett",
+      "summaryBudgetBody": "Tokens som samtalesammendraget kan bruke før eldre sykluser slås sammen til kapitler.",
+      "chapterSize": "Sykluser per kapittel",
+      "chapterSizeBody": "Hvor mange sammendrag som slås sammen til ett kapittel.",
       "loops": "Rekursive minneløkker",
       "loopsBody": "Sender verktøyresultater tilbake til modellen kaller done. Hjelper svakere modeller, koster flere tokens.",
       "loopCap": "Hard grense for rekursiv løkke",

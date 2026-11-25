@@ -872,7 +872,66 @@
       "cancel": "취소",
       "save": "저장",
       "saved": "요약을 저장했어요",
-      "cleared": "요약을 지웠어요"
+      "cleared": "요약을 지웠어요",
+      "parts": {
+        "description": "메모리 업데이트마다 하나씩 추가되는 부분으로 구성됩니다",
+        "budget": "부분 예산",
+        "budgetValue": "{{used}} / {{budget}}토큰",
+        "list": "요약 부분",
+        "count_other": "{{count}}개 부분",
+        "chapters_other": "{{count}}개 장",
+        "seed": "시작 요약",
+        "cycle": "부분",
+        "chapter": "장",
+        "edited": "직접 편집함",
+        "pending": "다음 업데이트 때 적용",
+        "seedNote": "그대로 유지됩니다. 장으로 합쳐지지 않고 예산에도 포함되지 않습니다.",
+        "edit": "편집",
+        "delete": "삭제",
+        "deleteTitle": "이 부분을 삭제할까요?",
+        "deleteBody": "요약에서 더 이상 포함되지 않습니다. 이 부분이 다루던 메시지는 다시 요약되지 않습니다.",
+        "deleteConfirm": "부분 삭제",
+        "asText": "하나의 텍스트로 편집",
+        "asParts": "부분 보기",
+        "done": "완료",
+        "textHint": "변경 내용은 부분과 대조됩니다. 텍스트가 더 이상 부분과 맞지 않으면 시작 요약이 됩니다.",
+        "empty": "아직 부분이 없습니다. 첫 부분은 다음 메모리 업데이트 때 작성됩니다.",
+        "writeStart": "시작 요약 쓰기",
+        "overBudget": "예산을 넘었습니다. 다음 업데이트들이 맞을 때까지 부분을 합칩니다.",
+        "lead": "메모리 업데이트마다 부분이 추가됩니다. 요약이 예산 안에 머물도록 오래된 부분은 장으로 합쳐집니다.",
+        "coverage": "요약이 다루는 범위",
+        "messages_other": "메시지 {{count}}개",
+        "legend": {
+          "seed": "시작 요약",
+          "chapter": "장",
+          "cycle": "부분",
+          "unsummarized": "아직 요약되지 않음",
+          "arc": "편"
+        },
+        "nextMerge_other": "다음 병합: 부분의 합이 {{budget}}토큰을 넘으면 아래에 표시된 부분이 합쳐집니다.",
+        "mergesNext": "다음에 병합",
+        "how": {
+          "title": "작동 방식",
+          "update": "메모리 업데이트마다 새 메시지를 하나의 부분으로 요약합니다.",
+          "merge": "부분의 합이 {{budget}}토큰을 넘으면 가장 오래된 {{size}}개 부분이 하나의 장으로 합쳐집니다. 장도 같은 방식으로 편으로 합쳐집니다.",
+          "seed": "시작 요약은 부분이 생기기 전부터 있던 요약입니다(예: 직접 쓴 요약). 그대로 유지되며 예산에 포함되지 않습니다.",
+          "edit": "부분을 고치려면 편집하거나 삭제하세요. 다음 업데이트가 변경 내용을 반영하고, 이후의 장도 이를 유지합니다.",
+          "recent": "아직 요약되지 않은 메시지는 모델이 계속 채팅 기록에서 읽습니다."
+        },
+        "showMore": "더 보기",
+        "showLess": "간단히 보기",
+        "arc": "편",
+        "arcLevel": "편, 레벨 {{level}}",
+        "arcs_other": "{{count}}개 편",
+        "sources": {
+          "madeFrom_other": "{{count}}개 부분으로 만듦",
+          "replaced_other": "{{count}}개 부분을 대체함",
+          "hide": "원본 숨기기",
+          "note": "읽기 전용입니다. 이 부분을 만든 원본입니다. 요약을 바꾸려면 위의 부분을 편집하세요.",
+          "list": "원본",
+          "failed": "원본을 불러오지 못했습니다."
+        }
+      }
     },
     "status": {
       "approvalTitle": "기억을 업데이트할까요?",
@@ -988,6 +1047,37 @@
         "addBack": "다시 추가",
         "added": "기억을 추가했어요",
         "addedBack": "기억을 다시 추가했어요"
+      },
+      "steps": {
+        "title": "요약",
+        "cycle": {
+          "label": "새 부분",
+          "body": "메시지 {{from}}~{{to}}를 새 부분으로 요약했습니다"
+        },
+        "chapter": {
+          "label": "장",
+          "body_other": "메시지 {{from}}~{{to}}를 다루는 {{count}}개 부분을 하나의 장으로 합쳤습니다"
+        },
+        "edit": {
+          "label": "내 편집",
+          "body": "메시지 {{from}}~{{to}}에 대한 변경 내용을 반영했습니다"
+        },
+        "seedUser": {
+          "label": "시작 요약",
+          "body": "내 요약이 시작 요약이 되었습니다"
+        },
+        "seedExisting": {
+          "label": "시작 요약",
+          "body": "기존 요약이 시작 요약이 되었습니다"
+        },
+        "reset": {
+          "label": "지움",
+          "body": "요약을 지웠으므로 부분이 처음부터 다시 시작됩니다"
+        },
+        "arc": {
+          "label": "편",
+          "body_other": "메시지 {{from}}~{{to}}를 다루는 {{count}}개 부분을 하나의 편으로 합쳤습니다"
+        }
       }
     },
     "pinnedTab": {

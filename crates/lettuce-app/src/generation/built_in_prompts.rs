@@ -1504,6 +1504,19 @@ mod tests {
             "memory_skip_duplicate_semantic",
             "memory_skip_duplicate_overlap",
             "memory_transcript_heard",
+            "summary_cycle_system",
+            "summary_cycle_time_rules",
+            "summary_cycle_earlier_label",
+            "summary_cycle_no_earlier",
+            "summary_cycle_transcript_label",
+            "summary_cycle_output_request",
+            "summary_cycle_fallback_request",
+            "summary_chapter_system",
+            "summary_chapter_reference_label",
+            "summary_chapter_no_reference",
+            "summary_chapter_entries_label",
+            "summary_chapter_output_request",
+            "summary_chapter_fallback_request",
         ];
         for key in lettuce_memory::DYNAMIC_MEMORY_TOOL_TEXT_KEYS
             .into_iter()

@@ -872,7 +872,66 @@
       "cancel": "取消",
       "save": "儲存",
       "saved": "已儲存摘要",
-      "cleared": "已清除摘要"
+      "cleared": "已清除摘要",
+      "parts": {
+        "description": "由多個部分組成，每次記憶更新新增一個部分",
+        "budget": "部分預算",
+        "budgetValue": "{{used}} / {{budget}} 個 token",
+        "list": "摘要部分",
+        "count_other": "{{count}} 個部分",
+        "chapters_other": "{{count}} 章",
+        "seed": "起始摘要",
+        "cycle": "部分",
+        "chapter": "章節",
+        "edited": "由你編輯",
+        "pending": "將在下次更新時套用",
+        "seedNote": "保持原樣。不會合併到章節中，也不計入預算。",
+        "edit": "編輯",
+        "delete": "刪除",
+        "deleteTitle": "刪除這個部分？",
+        "deleteBody": "摘要將不再包含它。它涵蓋的訊息不會被重新總結。",
+        "deleteConfirm": "刪除部分",
+        "asText": "作為一段文字編輯",
+        "asParts": "顯示各部分",
+        "done": "完成",
+        "textHint": "你的修改會與各部分對應。如果文字不再與它們對應，它會成為起始摘要。",
+        "empty": "還沒有部分。第一個部分會在下次記憶更新時寫出。",
+        "writeStart": "寫一個起始摘要",
+        "overBudget": "超出預算。之後的更新會合併各部分，直到放得下。",
+        "lead": "每次記憶更新都會新增一個部分。舊的部分會合併成章節，讓摘要保持在預算內。",
+        "coverage": "摘要涵蓋的範圍",
+        "messages_other": "{{count}} 則訊息",
+        "legend": {
+          "seed": "起始摘要",
+          "chapter": "章節",
+          "cycle": "部分",
+          "unsummarized": "尚未總結",
+          "arc": "篇"
+        },
+        "nextMerge_other": "下次合併：當各部分超過 {{budget}} 個 token 時，下方標記的部分會被合併。",
+        "mergesNext": "下次合併",
+        "how": {
+          "title": "運作方式",
+          "update": "每次記憶更新都會把新訊息總結成一個部分。",
+          "merge": "當各部分超過 {{budget}} 個 token 時，最早的 {{size}} 個部分會合併成一章。章節也會以同樣方式合併成篇。",
+          "seed": "起始摘要是在各部分出現之前就已存在的摘要，例如你自己寫的。它保持原樣，不計入預算。",
+          "edit": "編輯或刪除某個部分來修正它。下次更新會採納你的修改，之後的章節也會保留。",
+          "recent": "尚未總結的訊息，模型仍會從聊天紀錄中讀取。"
+        },
+        "showMore": "顯示更多",
+        "showLess": "收合",
+        "arc": "篇",
+        "arcLevel": "篇，第 {{level}} 級",
+        "arcs_other": "{{count}} 篇",
+        "sources": {
+          "madeFrom_other": "由 {{count}} 個部分生成",
+          "replaced_other": "取代了 {{count}} 個部分",
+          "hide": "隱藏來源",
+          "note": "唯讀。這些是生成此部分的原文。要修改摘要，請編輯上面的部分。",
+          "list": "來源",
+          "failed": "無法載入來源。"
+        }
+      }
     },
     "status": {
       "approvalTitle": "要更新記憶嗎？",
@@ -988,6 +1047,37 @@
         "addBack": "重新新增",
         "added": "已新增記憶",
         "addedBack": "已重新新增記憶"
+      },
+      "steps": {
+        "title": "摘要",
+        "cycle": {
+          "label": "新部分",
+          "body": "已將訊息 {{from}} 至 {{to}} 總結為新部分"
+        },
+        "chapter": {
+          "label": "章節",
+          "body_other": "已將涵蓋訊息 {{from}} 至 {{to}} 的 {{count}} 個部分合併成一章"
+        },
+        "edit": {
+          "label": "你的修改",
+          "body": "已採納你對訊息 {{from}} 至 {{to}} 的修改"
+        },
+        "seedUser": {
+          "label": "起始摘要",
+          "body": "你的摘要成為了起始摘要"
+        },
+        "seedExisting": {
+          "label": "起始摘要",
+          "body": "既有的摘要成為了起始摘要"
+        },
+        "reset": {
+          "label": "已清除",
+          "body": "你清除了摘要，因此各部分重新開始"
+        },
+        "arc": {
+          "label": "篇",
+          "body_other": "已將涵蓋訊息 {{from}} 至 {{to}} 的 {{count}} 個部分合併成一篇"
+        }
       }
     },
     "pinnedTab": {

@@ -33,7 +33,7 @@ mod worker;
 #[cfg(test)]
 mod foundation_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use app::inspect::{
     conversation_participation_stats, conversation_speaker_selection_preview,
@@ -181,7 +181,7 @@ pub use memory::control::{
     memory_cycle_revert, memory_cycles, memory_error_dismiss, memory_retry, memory_skip,
     memory_trigger,
 };
-pub use memory::read::{group_companion_memory_get, memory_get};
+pub use memory::read::{group_companion_memory_get, memory_get, memory_summary_part_sources};
 
 mod serial_events;
 

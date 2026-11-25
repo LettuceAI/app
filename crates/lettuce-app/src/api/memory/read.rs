@@ -5,7 +5,9 @@ use lettuce_conversations::{ConversationKind, ConversationReader};
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_jobs::{JobCatalog, JobKind, JobListFilter, JobSnapshot, JobState};
 use lettuce_memory::{
-    MemoryOrigin, MemoryReadRepository, MemoryReadScope, MemoryRepository, MemoryToolOutcome,
+    MemoryOrigin, MemoryReadRepository, MemoryReadScope, MemoryRepository, MemorySummaryUnit,
+    MemorySummaryUnitKind, MemorySummaryUnitRepository, MemorySummaryUnitScope, MemoryToolOutcome,
+    plan_summary_adoption,
 };
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{PageLimit, PageRequest};
@@ -19,6 +21,157 @@ fn origin(value: MemoryOrigin) -> dto::MemoryOrigin {
         MemoryOrigin::Model => dto::MemoryOrigin::Model,
         MemoryOrigin::Import => dto::MemoryOrigin::Import,
     }
+}
+
+fn part_kind(kind: MemorySummaryUnitKind) -> Option<dto::MemorySummaryPartKind> {
+    match kind {
+        MemorySummaryUnitKind::Seed => Some(dto::MemorySummaryPartKind::Seed),
+        MemorySummaryUnitKind::Cycle => Some(dto::MemorySummaryPartKind::Cycle),
+        MemorySummaryUnitKind::Chapter => Some(dto::MemorySummaryPartKind::Chapter),
+        MemorySummaryUnitKind::Reset => None,
+    }
+}
+
+fn part_view(
+    database: &lettuce_database::Database,
+    unit: &MemorySummaryUnit,
+) -> Result<Option<dto::MemorySummaryPartView>, ApiError> {
+    let Some(kind) = part_kind(unit.kind) else {
+        return Ok(None);
+    };
+    Ok(Some(dto::MemorySummaryPartView {
+        id: Some(unit.id.to_string()),
+        kind,
+        level: unit.level,
+        origin: origin(unit.origin),
+        message_start: unit.window_start,
+        message_end: unit.window_end,
+        text: unit.text.clone(),
+        token_count: Some(unit.token_count),
+        pending: false,
+        source_count: database
+            .summary_unit_input_count(unit.id)
+            .map_err(memory_error)?,
+    }))
+}
+
+pub async fn memory_summary_part_sources(
+    context: &ApiContext,
+    request: dto::MemorySummaryPartSourcesRequest,
+) -> Result<Vec<dto::MemorySummaryPartView>, ApiError> {
+    let conversation_id: lettuce_types::ConversationId =
+        parse_id(&request.conversation_id, "conversation_id")?;
+    let part_id: lettuce_types::MemorySummaryUnitId = parse_id(&request.part_id, "part_id")?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let conversation = ConversationReader::get(database, conversation_id)
+                .map_err(IntoApiError::into_api_error)?
+                .conversation;
+            let space = database
+                .get_for_branch(conversation_id, conversation.active_branch_id)
+                .map_err(memory_error)?
+                .ok_or_else(|| {
+                    api_error(ApiErrorCode::NotFound, "conversation memory is missing")
+                })?;
+            let unit = database
+                .summary_unit(part_id)
+                .map_err(memory_error)?
+                .filter(|unit| {
+                    unit.scope
+                        == MemorySummaryUnitScope {
+                            space_id: space.id,
+                            conversation_id,
+                            branch_id: conversation.active_branch_id,
+                        }
+                })
+                .ok_or_else(|| {
+                    api_error(
+                        ApiErrorCode::NotFound,
+                        "the summary part is not in this chat",
+                    )
+                })?;
+            let mut views = Vec::new();
+            for input in database
+                .summary_unit_inputs(unit.id)
+                .map_err(memory_error)?
+            {
+                views.extend(part_view(database, &input)?);
+            }
+            Ok(views)
+        })
+        .await
+}
+
+fn summary_parts(
+    context: &ApiContext,
+    scope: &MemoryReadScope,
+    dynamic: &lettuce_settings::DynamicMemorySettings,
+) -> Result<dto::MemorySummaryPartsView, ApiError> {
+    let parts: Vec<MemorySummaryUnit> = context
+        .backend()
+        .database()
+        .active_summary_units(
+            MemorySummaryUnitScope {
+                space_id: scope.memory.id,
+                conversation_id: scope.conversation_id,
+                branch_id: scope.branch_id,
+            },
+            None,
+        )
+        .map_err(memory_error)?
+        .into_iter()
+        .filter(|unit| unit.kind != MemorySummaryUnitKind::Reset)
+        .collect();
+    let database = context.backend().database();
+    let stored = |unit: &MemorySummaryUnit| part_view(database, unit);
+    let views = match &scope.summary {
+        None => Vec::new(),
+        Some(published) => {
+            match plan_summary_adoption(&parts, &published.text, scope.summary_cursor) {
+                None => parts
+                    .iter()
+                    .map(stored)
+                    .collect::<Result<Vec<_>, ApiError>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+                Some(adoption) => {
+                    let mut views = parts[..adoption.start]
+                        .iter()
+                        .map(stored)
+                        .collect::<Result<Vec<_>, ApiError>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>();
+                    if let Some(kind) = part_kind(adoption.kind) {
+                        views.push(dto::MemorySummaryPartView {
+                            id: None,
+                            kind,
+                            level: adoption.level,
+                            origin: origin(published.origin),
+                            message_start: adoption.window_start,
+                            message_end: adoption.window_end,
+                            token_count: context.embedding().count_tokens(&adoption.text).ok(),
+                            text: adoption.text,
+                            pending: true,
+                            source_count: 0,
+                        });
+                    }
+                    for unit in &parts[adoption.end..] {
+                        views.extend(stored(unit)?);
+                    }
+                    views
+                }
+            }
+        }
+    };
+    Ok(dto::MemorySummaryPartsView {
+        parts: views,
+        token_budget: dynamic.summary_token_budget,
+        chapter_size: dynamic.summary_chapter_size,
+        message_count: scope.message_count,
+    })
 }
 
 pub(super) fn category(value: lettuce_memory::MemoryCategory) -> dto::MemoryCategory {
@@ -243,8 +396,19 @@ fn memory_view(
             }
         }
     }
+    let chapters = dynamic.chapter_summaries_enabled
+        && crate::companion::companion_memory_host::dynamic_memory_on(
+            database,
+            conversation,
+            &stored.settings,
+        )
+        .map_err(IntoApiError::into_api_error)?;
+    let summary_parts = chapters
+        .then(|| summary_parts(context, &scope, dynamic))
+        .transpose()?;
     let since = scope.message_count.saturating_sub(scope.summary_cursor);
     Ok(dto::MemoryView {
+        summary_parts,
         revision: scope.memory.revision.get(),
         allowed_categories: super::allowed_categories(database, conversation)?
             .into_iter()

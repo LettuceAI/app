@@ -105,7 +105,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
     }
   };
 
-  const saveSummary = async (text: string | null) => {
+  const saveSummary = async (text: string | null, close = true) => {
     setSaving(true);
     try {
       const ok = await write(`summary:${summarySession}:${text ?? ""}`, (current, operationId) =>
@@ -118,7 +118,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
       );
       if (ok) {
         toast.success(text === null ? t("memory.summary.cleared") : t("memory.summary.saved"));
-        setSummaryOpen(false);
+        if (close) setSummaryOpen(false);
       }
     } finally {
       setSaving(false);
@@ -254,7 +254,7 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
         <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[minmax(0,1fr)_21rem]">
           <aside className="order-1 space-y-4 @4xl:sticky @4xl:top-[calc(var(--page-bar-height)+1rem)] @4xl:order-2 @4xl:self-start">
             {dynamic && <StatusCard api={api} conversationId={conversationId} status={data.status} />}
-            <SummaryCard summary={data.summary} onOpen={openSummary} />
+            <SummaryCard summary={data.summary} parts={data.summary_parts} onOpen={openSummary} />
           </aside>
           <div className="order-2 min-w-0 @4xl:order-1">{main}</div>
         </div>
@@ -320,10 +320,12 @@ function MemoryScreen({ conversationId }: { conversationId: string }) {
           key={summarySession}
           open={summaryOpen}
           text={memory.data.summary?.text ?? ""}
+          parts={memory.data.summary_parts}
+          conversationId={conversationId}
           dynamic={dynamic}
           busy={saving}
           onClose={() => setSummaryOpen(false)}
-          onSave={(text) => void saveSummary(text)}
+          onSave={(text, close) => void saveSummary(text, close)}
           onClear={() => void saveSummary(null)}
         />
       )}

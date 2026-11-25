@@ -904,7 +904,80 @@
       "cancel": "Cancelar",
       "save": "Salvar",
       "saved": "Resumo salvo",
-      "cleared": "Resumo limpo"
+      "cleared": "Resumo limpo",
+      "parts": {
+        "description": "Feito de partes, uma por atualização da memória",
+        "budget": "Orçamento das partes",
+        "budgetValue": "{{used}} / {{budget}} tokens",
+        "list": "Partes do resumo",
+        "count_one": "{{count}} parte",
+        "count_many": "{{count}} partes",
+        "count_other": "{{count}} partes",
+        "chapters_one": "{{count}} capítulo",
+        "chapters_many": "{{count}} capítulos",
+        "chapters_other": "{{count}} capítulos",
+        "seed": "Resumo inicial",
+        "cycle": "Parte",
+        "chapter": "Capítulo",
+        "edited": "Editado por você",
+        "pending": "Aplicado na próxima atualização",
+        "seedNote": "Fica como está. Não é juntado em capítulos e não conta no orçamento.",
+        "edit": "Editar",
+        "delete": "Excluir",
+        "deleteTitle": "Excluir esta parte?",
+        "deleteBody": "O resumo deixa de incluí-la. As mensagens que ela cobria não são resumidas de novo.",
+        "deleteConfirm": "Excluir parte",
+        "asText": "Editar como um texto único",
+        "asParts": "Mostrar partes",
+        "done": "Pronto",
+        "textHint": "Suas alterações são associadas às partes. Se o texto não corresponder mais a elas, ele se torna o resumo inicial.",
+        "empty": "Ainda não há partes. A primeira é escrita na próxima atualização da memória.",
+        "writeStart": "Escrever um resumo inicial",
+        "overBudget": "Acima do orçamento. As próximas atualizações juntam partes até caber.",
+        "lead": "As atualizações da memória adicionam partes. Partes antigas são juntadas em capítulos para o resumo caber no orçamento.",
+        "coverage": "O que o resumo cobre",
+        "messages_one": "{{count}} mensagem",
+        "messages_many": "{{count}} mensagens",
+        "messages_other": "{{count}} mensagens",
+        "legend": {
+          "seed": "Resumo inicial",
+          "chapter": "Capítulo",
+          "cycle": "Parte",
+          "unsummarized": "Ainda não resumido",
+          "arc": "Arco"
+        },
+        "nextMerge_many": "Próxima junção: as partes marcadas abaixo são juntadas quando as partes passarem de {{budget}} tokens.",
+        "nextMerge_one": "Próxima junção: as partes marcadas abaixo são juntadas quando as partes passarem de {{budget}} tokens.",
+        "nextMerge_other": "Próxima junção: as partes marcadas abaixo são juntadas quando as partes passarem de {{budget}} tokens.",
+        "mergesNext": "Junta em seguida",
+        "how": {
+          "title": "Como funciona",
+          "update": "Cada atualização da memória resume as mensagens novas em uma parte.",
+          "merge": "Quando as partes passam de {{budget}} tokens, as {{size}} partes mais antigas são juntadas em um capítulo. Os capítulos são juntados em arcos do mesmo jeito.",
+          "seed": "Um resumo inicial já existia antes das partes, como um que você escreveu. Ele fica como está e não conta no orçamento.",
+          "edit": "Edite ou exclua uma parte para corrigi-la. A próxima atualização incorpora a sua mudança e os capítulos seguintes a mantêm.",
+          "recent": "As mensagens ainda não resumidas continuam sendo lidas pelo modelo no histórico do chat."
+        },
+        "showMore": "Mostrar mais",
+        "showLess": "Mostrar menos",
+        "arc": "Arco",
+        "arcLevel": "Arco, nível {{level}}",
+        "arcs_one": "{{count}} arco",
+        "arcs_many": "{{count}} arcos",
+        "arcs_other": "{{count}} arcos",
+        "sources": {
+          "madeFrom_many": "Feita de {{count}} partes",
+          "madeFrom_one": "Feita de {{count}} partes",
+          "madeFrom_other": "Feita de {{count}} partes",
+          "replaced_many": "Substituiu {{count}} partes",
+          "replaced_one": "Substituiu {{count}} partes",
+          "replaced_other": "Substituiu {{count}} partes",
+          "hide": "Ocultar fontes",
+          "note": "Somente leitura. Estes são os originais dos quais esta parte foi feita. Para mudar o resumo, edite a parte acima.",
+          "list": "Fontes",
+          "failed": "Não foi possível carregar as fontes."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Atualizar a memória?",
@@ -1030,6 +1103,41 @@
         "addBack": "Adicionar de volta",
         "added": "Memória adicionada",
         "addedBack": "Memória adicionada de volta"
+      },
+      "steps": {
+        "title": "Resumo",
+        "cycle": {
+          "label": "Parte nova",
+          "body": "Mensagens {{from}} a {{to}} resumidas em uma parte nova"
+        },
+        "chapter": {
+          "label": "Capítulo",
+          "body_many": "{{count}} partes com as mensagens {{from}} a {{to}} juntadas em um capítulo",
+          "body_one": "{{count}} partes com as mensagens {{from}} a {{to}} juntadas em um capítulo",
+          "body_other": "{{count}} partes com as mensagens {{from}} a {{to}} juntadas em um capítulo"
+        },
+        "edit": {
+          "label": "Sua edição",
+          "body": "Sua mudança nas mensagens {{from}} a {{to}} foi incorporada"
+        },
+        "seedUser": {
+          "label": "Resumo inicial",
+          "body": "O seu resumo virou o resumo inicial"
+        },
+        "seedExisting": {
+          "label": "Resumo inicial",
+          "body": "O resumo que já existia virou o resumo inicial"
+        },
+        "reset": {
+          "label": "Limpo",
+          "body": "Você limpou o resumo, então as partes recomeçam"
+        },
+        "arc": {
+          "label": "Arco",
+          "body_many": "{{count}} partes com as mensagens {{from}} a {{to}} juntadas em um arco",
+          "body_one": "{{count}} partes com as mensagens {{from}} a {{to}} juntadas em um arco",
+          "body_other": "{{count}} partes com as mensagens {{from}} a {{to}} juntadas em um arco"
+        }
       }
     },
     "pinnedTab": {

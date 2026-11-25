@@ -32,6 +32,9 @@ const memory: SettingsDynamicMemorySettings = {
   duplicate_threshold_basis_points: 7800,
   structured_fallback_format: "xml",
   model_pinning_enabled: true,
+  chapter_summaries_enabled: false,
+  summary_token_budget: 1536,
+  summary_chapter_size: 4,
 };
 
 function viewOf(patch: Partial<SettingsView["global"]> = {}, revision = 7): SettingsView {
@@ -333,6 +336,19 @@ describe("memory settings page", () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
     expect(lastPatch(store)).toMatchObject({ section: "dynamic_memory", value: { model_pinning_enabled: false } });
+  });
+
+  it("toggles chapter summaries and shows budget and chapter size controls", async () => {
+    const { store } = await mount(viewOf());
+    fireEvent.click(screen.getByRole("button", { name: /Context enrichment and memory manager/ }));
+    expect(screen.queryByText("Summary budget")).toBeNull();
+    const toggle = screen.getByRole("switch", { name: "Chapter summaries" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(store.update).toHaveBeenCalledTimes(1));
+    expect(lastPatch(store)).toMatchObject({ section: "dynamic_memory", value: { chapter_summaries_enabled: true } });
+    expect(await screen.findByText("Summary budget")).toBeTruthy();
+    expect(screen.getByText("Cycles per chapter")).toBeTruthy();
   });
 
   it("keeps the page and shows the typed error when the revision is stale", async () => {

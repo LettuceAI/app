@@ -37,7 +37,7 @@ mod settings_time_tests;
 mod settings_tests;
 pub(super) mod turns;
 #[cfg(test)]
-pub(super) mod turns_tests;
+pub(crate) mod turns_tests;
 
 use std::{collections::HashMap, sync::Arc};
 

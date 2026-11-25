@@ -173,7 +173,7 @@ impl lettuce_image_generation::ImageProviderPort for NoImages {
     }
 }
 
-pub(super) enum Reply {
+pub(crate) enum Reply {
     LorebookTools,
     LorebookToolsUntil(&'static str),
     Text(&'static str),
@@ -383,8 +383,8 @@ impl InferencePort for FakeProvider {
     }
 }
 
-pub(super) struct Harness {
-    pub(super) context: ApiContext,
+pub(crate) struct Harness {
+    pub(crate) context: ApiContext,
     pub(super) provider: Arc<FakeProvider>,
     pub(super) events: Arc<RecordingEvents>,
     pub(super) character_id: CharacterId,
@@ -392,7 +392,7 @@ pub(super) struct Harness {
         crate::generation::provider_runtime::ProviderRuntime<lettuce_settings::InMemorySecretStore>,
 }
 
-pub(super) fn harness(reply: Reply) -> Harness {
+pub(crate) fn harness(reply: Reply) -> Harness {
     harness_with(reply, Arc::new(SystemClock), None)
 }
 

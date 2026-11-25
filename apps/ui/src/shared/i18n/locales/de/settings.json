@@ -546,7 +546,18 @@
       "group": { "title": "Gruppenchat", "description": "Drei Figuren in einer Gruppe mit Verlauf" },
       "group_companion": { "title": "Begleiter-Gruppenchat", "description": "Drei Begleiter mit Soul in einer Begleitergruppe mit Verlauf" },
       "roleplay_widgets": { "title": "Rollenspiel-Chat mit Widgets", "description": "Der Rollenspiel-Chat mit allen Widgets neben dem Chat" },
-      "companion_widgets": { "title": "Begleiter-Chat mit Widgets", "description": "Der Begleiter-Chat mit allen Widgets, auch Begleiterstatus und Erinnerungen" }
+      "companion_widgets": { "title": "Begleiter-Chat mit Widgets", "description": "Der Begleiter-Chat mit allen Widgets, auch Begleiterstatus und Erinnerungen" },
+      "chapters_backlog": { "title": "Kapitel: lange Vorgeschichte", "description": "Eine Fährgeschichte mit 42 Nachrichten ohne Zusammenfassung. Jede gesendete Nachricht fasst die nächsten sechs alten zusammen." },
+      "chapters_user_seed": { "title": "Kapitel: geschriebene Zusammenfassung", "description": "Dieselbe Geschichte mit einer kurzen, von Hand geschriebenen Zusammenfassung als Ausgangspunkt." },
+      "chapters_large_seed": { "title": "Kapitel: übergroße Zusammenfassung", "description": "Dieselbe Geschichte mit einer handgeschriebenen Zusammenfassung über dem Testbudget. Nur neue Zyklen werden zusammengefasst." },
+      "chapters_group": { "title": "Kapitel: Gruppe", "description": "Eine Bergungscrew-Geschichte mit 36 Nachrichten in einer Gruppe mit dynamischem Gedächtnis." }
+    },
+    "chapters": {
+      "group": "Kapitelzusammenfassung testen",
+      "apply": { "title": "Kapitel-Testeinstellungen verwenden", "description": "Schaltet dynamisches Gedächtnis und Kapitelzusammenfassungen mit Zyklen von 6 Nachrichten, 800 Token Budget und 2 Zyklen pro Kapitel ein. Deine Gedächtniseinstellungen werden vorher gesichert." },
+      "restore": { "title": "Gedächtniseinstellungen wiederherstellen", "description": "Stellt die vor den Testeinstellungen gesicherten Gedächtniseinstellungen wieder her." },
+      "applied": "Kapitel-Testeinstellungen sind aktiv",
+      "restored": "Gedächtniseinstellungen wiederhergestellt"
     }
   },
   "manage": {
@@ -1451,6 +1462,12 @@
       "enrichment": "Kontextanreicherung",
       "experimental": "Experimentell",
       "enrichmentBody": "Verwendet die letzten Nachrichten, um Erinnerungen zu suchen, nicht nur die neueste",
+      "chapterSummaries": "Kapitelzusammenfassungen",
+      "chapterSummariesBody": "Fasst jeden Speicherzyklus einzeln zusammen und bündelt ältere Zyklen in Kapiteln, sobald die Zusammenfassung das Budget überschreitet. Die aktuelle Zusammenfassung bleibt der Ausgangspunkt.",
+      "summaryBudget": "Zusammenfassungsbudget",
+      "summaryBudgetBody": "Tokens, die die Gesprächszusammenfassung nutzen darf, bevor ältere Zyklen in Kapitel zusammengefasst werden.",
+      "chapterSize": "Zyklen pro Kapitel",
+      "chapterSizeBody": "Wie viele Zusammenfassungen zu einem Kapitel zusammengefasst werden.",
       "loops": "Rekursive Speicherschleifen",
       "loopsBody": "Sendet Tool-Ergebnisse zurück, bis das Modell done aufruft. Hilft schwächeren Modellen, kostet mehr Token.",
       "loopCap": "Harte Obergrenze für rekursive Schleifen",

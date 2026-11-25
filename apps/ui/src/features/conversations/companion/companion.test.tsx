@@ -25,7 +25,7 @@ const soul = (): CompanionSoulView => {
   return { character_id: "ch1", conversation_id: "c1", config: { ...config, soul: { ...config.soul, essence: "Patient and curious." }, authored_facts: [], relationship_defaults: { closeness: 0.1, trust: 0.1, affection: 0.05, tension: 0 } }, growth: { owner: "conversation", revision: 8, active_count: 1, superseded_count: 0, facts: [fact()] } };
 };
 const item = (id = "m1", patch: Partial<MemoryItemView> = {}): MemoryItemView => ({ id, short_id: id, text: "We went running by the lake.", category: "milestone", origin: "model", pinned: false, temperature: "hot", observed_at: NOW, observed_time_precision: null, token_count: 12, cycle_label: "1-20", ...patch });
-const memory = (): MemoryView => ({ items: [item()], allowed_categories: ["profile", "relationship", "milestone", "boundary", "preference", "routine", "episodic", "emotional_snapshot"], summary: null, status: { run_mode: "auto", interval: 20, messages_since_last_cycle: 11, messages_until_next_cycle: 9, total_conversation_messages: 11, pending_approval_count: null, skipped: false, latest_cycle_status: null, latest_job_id: null, failure: null, paused_reason: null }, revision: 4 });
+const memory = (): MemoryView => ({ items: [item()], allowed_categories: ["profile", "relationship", "milestone", "boundary", "preference", "routine", "episodic", "emotional_snapshot"], summary: null, summary_parts: null, status: { run_mode: "auto", interval: 20, messages_since_last_cycle: 11, messages_until_next_cycle: 9, total_conversation_messages: 11, pending_approval_count: null, skipped: false, latest_cycle_status: null, latest_job_id: null, failure: null, paused_reason: null }, revision: 4 });
 const effect = (patch: Partial<MessageCompanionEffect> = {}): MessageCompanionEffect => ({ status: "ready", summary: null, relationship: { closeness: 0.04, trust: 0.03, affection: null, tension: -0.05, stability: null }, felt: vector({ warmth: 0.12, hurt: -0.08 }), expressed: vector(), blocked: vector(), signals_added: ["relief"], signals_removed: ["distress"], memories_added: ["A reassuring moment."], memories_updated: [], memories_superseded: [], ...patch });
 
 interface World { state: CompanionStateView | null; soul: CompanionSoulView; memory: MemoryView; effect: MessageCompanionEffect | null; settings: ConversationSettingsView; emotion: ThymosStatus; cycles: MemoryCycleView[] }
@@ -237,7 +237,7 @@ describe("companion chat", () => {
   });
 
   it("reuses cycle revert with the companion confirmation copy", async () => {
-    const cycle: MemoryCycleView = { run_id: "r1", job_id: "j1", started_at: NOW, label: "1-20", window_start: 1, window_end: 20, status: "complete", failure: null, summary: "A quiet evening.", actions: [], reverted: false, revertable: true, blocked_by: null };
+    const cycle: MemoryCycleView = { run_id: "r1", job_id: "j1", started_at: NOW, label: "1-20", window_start: 1, window_end: 20, status: "complete", failure: null, summary: "A quiet evening.", summary_steps: [], actions: [], reverted: false, revertable: true, blocked_by: null };
     const app = await open({ path: "/chat/c1/companion?tab=activity", world: { cycles: [cycle] } });
     fireEvent.click(await screen.findByRole("button", { name: /Messages 1 to 20/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Undo this update" }));

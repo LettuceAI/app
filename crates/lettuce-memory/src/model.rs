@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use lettuce_types::{
-    MemoryId, MemoryRevisionId, MemorySpaceId, MessageId, Revision, TimestampMillis,
+    ConversationBranchId, ConversationId, DynamicMemoryRunId, MemoryId, MemoryRevisionId,
+    MemorySpaceId, MemorySummaryUnitId, MessageId, Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -397,6 +398,141 @@ impl MemorySummary {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemorySummaryUnitKind {
+    Cycle,
+    Chapter,
+    Seed,
+    Reset,
+}
+
+impl MemorySummaryUnitKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cycle => "cycle",
+            Self::Chapter => "chapter",
+            Self::Seed => "seed",
+            Self::Reset => "reset",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "cycle" => Some(Self::Cycle),
+            "chapter" => Some(Self::Chapter),
+            "seed" => Some(Self::Seed),
+            "reset" => Some(Self::Reset),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemorySummaryUnitScope {
+    pub space_id: MemorySpaceId,
+    pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemorySummaryUnit {
+    pub id: MemorySummaryUnitId,
+    pub scope: MemorySummaryUnitScope,
+    pub created_by_run_id: DynamicMemoryRunId,
+    pub kind: MemorySummaryUnitKind,
+    pub level: u32,
+    pub origin: MemoryOrigin,
+    pub window_start: u64,
+    pub window_end: u64,
+    pub text: String,
+    pub token_count: u32,
+    pub created_at: TimestampMillis,
+}
+
+impl MemorySummaryUnit {
+    pub fn validate(&self) -> Result<(), MemoryValidationError> {
+        validate_summary_unit_fields(self.kind, self.level, self.window_start, self.window_end, &self.text)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NewMemorySummaryUnit {
+    pub id: MemorySummaryUnitId,
+    pub scope: MemorySummaryUnitScope,
+    pub created_by_run_id: DynamicMemoryRunId,
+    pub kind: MemorySummaryUnitKind,
+    pub level: u32,
+    pub origin: MemoryOrigin,
+    pub window_start: u64,
+    pub window_end: u64,
+    pub text: String,
+    pub token_count: u32,
+    pub created_at: TimestampMillis,
+}
+
+impl NewMemorySummaryUnit {
+    pub fn validate(&self) -> Result<(), MemoryValidationError> {
+        validate_summary_unit_fields(self.kind, self.level, self.window_start, self.window_end, &self.text)
+    }
+
+    #[must_use]
+    pub fn into_unit(self) -> MemorySummaryUnit {
+        MemorySummaryUnit {
+            id: self.id,
+            scope: self.scope,
+            created_by_run_id: self.created_by_run_id,
+            kind: self.kind,
+            level: self.level,
+            origin: self.origin,
+            window_start: self.window_start,
+            window_end: self.window_end,
+            text: self.text,
+            token_count: self.token_count,
+            created_at: self.created_at,
+        }
+    }
+}
+
+fn validate_summary_unit_fields(
+    kind: MemorySummaryUnitKind,
+    level: u32,
+    window_start: u64,
+    window_end: u64,
+    text: &str,
+) -> Result<(), MemoryValidationError> {
+    if window_end < window_start {
+        return Err(MemoryValidationError::InvalidSummaryWindow {
+            reason: "window end is before window start",
+        });
+    }
+    if text.len() > MAX_MEMORY_SUMMARY_BYTES {
+        return Err(MemoryValidationError::SummaryTooLarge);
+    }
+    let is_empty = text.trim().is_empty();
+    if (kind == MemorySummaryUnitKind::Reset) != is_empty {
+        return Err(MemoryValidationError::InvalidSummaryUnit {
+            reason: "reset units must have empty text and other units must be non-empty",
+        });
+    }
+    if kind == MemorySummaryUnitKind::Chapter && level == 0 {
+        return Err(MemoryValidationError::InvalidSummaryUnit {
+            reason: "chapter unit level must be at least one",
+        });
+    }
+    if kind != MemorySummaryUnitKind::Chapter && level != 0 {
+        return Err(MemoryValidationError::InvalidSummaryUnit {
+            reason: "non-chapter unit level must be zero",
+        });
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryPolicy {
@@ -452,6 +588,8 @@ pub enum MemoryValidationError {
     SummaryTooLarge,
     #[error("memory summary window is invalid: {reason}")]
     InvalidSummaryWindow { reason: &'static str },
+    #[error("memory summary unit is invalid: {reason}")]
+    InvalidSummaryUnit { reason: &'static str },
     #[error("memory summary contains a duplicate source message")]
     DuplicateSummarySourceMessage,
     #[error("memory space identity does not match: {reason}")]

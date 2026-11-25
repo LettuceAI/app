@@ -872,7 +872,66 @@
       "cancel": "Batal",
       "save": "Simpan",
       "saved": "Ringkasan disimpan",
-      "cleared": "Ringkasan dibersihkan"
+      "cleared": "Ringkasan dibersihkan",
+      "parts": {
+        "description": "Tersusun dari bagian, satu untuk setiap pembaruan memori",
+        "budget": "Anggaran bagian",
+        "budgetValue": "{{used}} / {{budget}} token",
+        "list": "Bagian ringkasan",
+        "count_other": "{{count}} bagian",
+        "chapters_other": "{{count}} bab",
+        "seed": "Ringkasan awal",
+        "cycle": "Bagian",
+        "chapter": "Bab",
+        "edited": "Diedit olehmu",
+        "pending": "Diterapkan pada pembaruan berikutnya",
+        "seedNote": "Tetap seperti adanya. Tidak digabung ke dalam bab dan tidak dihitung dalam anggaran.",
+        "edit": "Edit",
+        "delete": "Hapus",
+        "deleteTitle": "Hapus bagian ini?",
+        "deleteBody": "Ringkasan tidak lagi menyertakannya. Pesan yang dicakupnya tidak diringkas ulang.",
+        "deleteConfirm": "Hapus bagian",
+        "asText": "Edit sebagai satu teks",
+        "asParts": "Tampilkan bagian",
+        "done": "Selesai",
+        "textHint": "Perubahanmu dicocokkan dengan bagian-bagiannya. Jika teks tidak lagi cocok, teks itu menjadi ringkasan awal.",
+        "empty": "Belum ada bagian. Bagian pertama ditulis pada pembaruan memori berikutnya.",
+        "writeStart": "Tulis ringkasan awal",
+        "overBudget": "Melebihi anggaran. Pembaruan berikutnya menggabungkan bagian sampai muat.",
+        "lead": "Pembaruan memori menambah bagian. Bagian lama digabung menjadi bab agar ringkasan tetap dalam anggaran.",
+        "coverage": "Cakupan ringkasan",
+        "messages_other": "{{count}} pesan",
+        "legend": {
+          "seed": "Ringkasan awal",
+          "chapter": "Bab",
+          "cycle": "Bagian",
+          "unsummarized": "Belum diringkas",
+          "arc": "Alur"
+        },
+        "nextMerge_other": "Penggabungan berikutnya: bagian yang ditandai di bawah digabung saat bagian-bagian melewati {{budget}} token.",
+        "mergesNext": "Digabung berikutnya",
+        "how": {
+          "title": "Cara kerjanya",
+          "update": "Setiap pembaruan memori meringkas pesan barunya menjadi satu bagian.",
+          "merge": "Saat bagian-bagian melewati {{budget}} token, {{size}} bagian terlama digabung menjadi satu bab. Bab juga digabung menjadi alur dengan cara yang sama.",
+          "seed": "Ringkasan awal sudah ada sebelum bagian-bagian, misalnya yang kamu tulis. Ringkasan ini tetap apa adanya dan tidak dihitung dalam anggaran.",
+          "edit": "Edit atau hapus bagian untuk memperbaikinya. Pembaruan berikutnya mengambil perubahanmu dan bab-bab berikutnya mempertahankannya.",
+          "recent": "Pesan yang belum diringkas tetap dibaca model dari riwayat chat."
+        },
+        "showMore": "Tampilkan lebih banyak",
+        "showLess": "Tampilkan lebih sedikit",
+        "arc": "Alur",
+        "arcLevel": "Alur, tingkat {{level}}",
+        "arcs_other": "{{count}} alur",
+        "sources": {
+          "madeFrom_other": "Dibuat dari {{count}} bagian",
+          "replaced_other": "Menggantikan {{count}} bagian",
+          "hide": "Sembunyikan sumber",
+          "note": "Hanya baca. Ini adalah bagian asli yang menjadi dasar bagian ini. Untuk mengubah ringkasan, edit bagian di atas.",
+          "list": "Sumber",
+          "failed": "Sumber tidak dapat dimuat."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Perbarui memori?",
@@ -988,6 +1047,37 @@
         "addBack": "Tambahkan kembali",
         "added": "Memori ditambahkan",
         "addedBack": "Memori ditambahkan kembali"
+      },
+      "steps": {
+        "title": "Ringkasan",
+        "cycle": {
+          "label": "Bagian baru",
+          "body": "Pesan {{from}} sampai {{to}} diringkas menjadi bagian baru"
+        },
+        "chapter": {
+          "label": "Bab",
+          "body_other": "{{count}} bagian yang mencakup pesan {{from}} sampai {{to}} digabung menjadi satu bab"
+        },
+        "edit": {
+          "label": "Editanmu",
+          "body": "Perubahanmu untuk pesan {{from}} sampai {{to}} diambil"
+        },
+        "seedUser": {
+          "label": "Ringkasan awal",
+          "body": "Ringkasanmu menjadi ringkasan awal"
+        },
+        "seedExisting": {
+          "label": "Ringkasan awal",
+          "body": "Ringkasan yang sudah ada menjadi ringkasan awal"
+        },
+        "reset": {
+          "label": "Dibersihkan",
+          "body": "Kamu membersihkan ringkasan, jadi bagian-bagian dimulai lagi"
+        },
+        "arc": {
+          "label": "Alur",
+          "body_other": "{{count}} bagian yang mencakup pesan {{from}} sampai {{to}} digabung menjadi satu alur"
+        }
       }
     },
     "pinnedTab": {

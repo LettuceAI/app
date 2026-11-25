@@ -888,7 +888,73 @@
       "cancel": "İptal",
       "save": "Kaydet",
       "saved": "Özet kaydedildi",
-      "cleared": "Özet temizlendi"
+      "cleared": "Özet temizlendi",
+      "parts": {
+        "description": "Parçalardan oluşur, her bellek güncellemesi bir parça ekler",
+        "budget": "Parça bütçesi",
+        "budgetValue": "{{used}} / {{budget}} token",
+        "list": "Özet parçaları",
+        "count_one": "{{count}} parça",
+        "count_other": "{{count}} parça",
+        "chapters_one": "{{count}} bölüm",
+        "chapters_other": "{{count}} bölüm",
+        "seed": "Başlangıç özeti",
+        "cycle": "Parça",
+        "chapter": "Bölüm",
+        "edited": "Senin düzenlemen",
+        "pending": "Sonraki güncellemede uygulanır",
+        "seedNote": "Olduğu gibi kalır. Bölümlerle birleştirilmez ve bütçeye sayılmaz.",
+        "edit": "Düzenle",
+        "delete": "Sil",
+        "deleteTitle": "Bu parça silinsin mi?",
+        "deleteBody": "Özet artık bu parçayı içermez. Kapsadığı mesajlar yeniden özetlenmez.",
+        "deleteConfirm": "Parçayı sil",
+        "asText": "Tek metin olarak düzenle",
+        "asParts": "Parçaları göster",
+        "done": "Bitti",
+        "textHint": "Değişikliklerin parçalarla eşleştirilir. Metin artık parçalarla eşleşmezse başlangıç özeti olur.",
+        "empty": "Henüz parça yok. İlk parça bir sonraki bellek güncellemesinde yazılır.",
+        "writeStart": "Başlangıç özeti yaz",
+        "overBudget": "Bütçenin üstünde. Sonraki güncellemeler sığana kadar parçaları birleştirir.",
+        "lead": "Bellek güncellemeleri parça ekler. Özet bütçeyi aşmasın diye eski parçalar bölümlerde birleştirilir.",
+        "coverage": "Özetin kapsadığı kısım",
+        "messages_one": "{{count}} mesaj",
+        "messages_other": "{{count}} mesaj",
+        "legend": {
+          "seed": "Başlangıç özeti",
+          "chapter": "Bölüm",
+          "cycle": "Parça",
+          "unsummarized": "Henüz özetlenmedi",
+          "arc": "Kısım"
+        },
+        "nextMerge_one": "Sıradaki birleştirme: parçalar {{budget}} tokeni aşınca aşağıda işaretli parçalar birleştirilir.",
+        "nextMerge_other": "Sıradaki birleştirme: parçalar {{budget}} tokeni aşınca aşağıda işaretli parçalar birleştirilir.",
+        "mergesNext": "Sıradaki birleştirme",
+        "how": {
+          "title": "Nasıl çalışır",
+          "update": "Her bellek güncellemesi yeni mesajlarını tek bir parçada özetler.",
+          "merge": "Parçalar {{budget}} tokeni aşınca en eski {{size}} parça bir bölümde birleştirilir. Bölümler de aynı şekilde kısımlarda birleştirilir.",
+          "seed": "Başlangıç özeti, parçalardan önce var olan özettir; örneğin senin yazdığın. Olduğu gibi kalır ve bütçeye sayılmaz.",
+          "edit": "Bir parçayı düzeltmek için düzenle ya da sil. Sonraki güncelleme değişikliğini alır, sonraki bölümler de korur.",
+          "recent": "Henüz özetlenmemiş mesajları model sohbet geçmişinden okumaya devam eder."
+        },
+        "showMore": "Devamını göster",
+        "showLess": "Daha az göster",
+        "arc": "Kısım",
+        "arcLevel": "Kısım, seviye {{level}}",
+        "arcs_one": "{{count}} kısım",
+        "arcs_other": "{{count}} kısım",
+        "sources": {
+          "madeFrom_one": "{{count}} parçadan oluştu",
+          "madeFrom_other": "{{count}} parçadan oluştu",
+          "replaced_one": "{{count}} parçanın yerini aldı",
+          "replaced_other": "{{count}} parçanın yerini aldı",
+          "hide": "Kaynakları gizle",
+          "note": "Salt okunur. Bu parçanın oluşturulduğu orijinaller. Özeti değiştirmek için yukarıdaki parçayı düzenle.",
+          "list": "Kaynaklar",
+          "failed": "Kaynaklar yüklenemedi."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Hafıza güncellensin mi?",
@@ -1009,6 +1075,39 @@
         "addBack": "Geri ekle",
         "added": "Anı eklendi",
         "addedBack": "Anı geri eklendi"
+      },
+      "steps": {
+        "title": "Özet",
+        "cycle": {
+          "label": "Yeni parça",
+          "body": "{{from}}–{{to}} arası mesajlar yeni bir parçada özetlendi"
+        },
+        "chapter": {
+          "label": "Bölüm",
+          "body_one": "{{from}}–{{to}} arası mesajları kapsayan {{count}} parça tek bir bölümde birleştirildi",
+          "body_other": "{{from}}–{{to}} arası mesajları kapsayan {{count}} parça tek bir bölümde birleştirildi"
+        },
+        "edit": {
+          "label": "Senin düzenlemen",
+          "body": "{{from}}–{{to}} arası mesajlar için yaptığın değişiklik alındı"
+        },
+        "seedUser": {
+          "label": "Başlangıç özeti",
+          "body": "Yazdığın özet başlangıç özeti oldu"
+        },
+        "seedExisting": {
+          "label": "Başlangıç özeti",
+          "body": "Mevcut özet başlangıç özeti oldu"
+        },
+        "reset": {
+          "label": "Temizlendi",
+          "body": "Özeti temizlediğin için parçalar baştan başlıyor"
+        },
+        "arc": {
+          "label": "Kısım",
+          "body_one": "{{from}}–{{to}} arası mesajları kapsayan {{count}} parça tek bir kısımda birleştirildi",
+          "body_other": "{{from}}–{{to}} arası mesajları kapsayan {{count}} parça tek bir kısımda birleştirildi"
+        }
       }
     },
     "pinnedTab": {

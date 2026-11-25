@@ -22,6 +22,7 @@ import {
   type WidgetSlots,
   type WidgetType,
 } from "@/features/conversations";
+import { ferryLongUserSummary, ferryStory, ferryUserSummary, salvageStory } from "./chapterStories";
 
 export const templateIds = [
   "roleplay",
@@ -32,7 +33,9 @@ export const templateIds = [
   "companion_widgets",
 ] as const;
 
-export type TemplateId = (typeof templateIds)[number];
+export const chapterTemplateIds = ["chapters_backlog", "chapters_user_seed", "chapters_large_seed", "chapters_group"] as const;
+
+export type TemplateId = (typeof templateIds)[number] | (typeof chapterTemplateIds)[number];
 
 type Line = readonly [speaker: string | null, text: string];
 
@@ -411,13 +414,13 @@ async function createPersona(api: ApiClient, draft: PersonaDraft_Serialize): Pro
   return saved.id;
 }
 
-async function createGroup(api: ApiClient, name: string, characterIds: string[], companion: boolean): Promise<string> {
+async function createGroup(api: ApiClient, name: string, characterIds: string[], companion: boolean, memoryPolicy: GroupDraft_Serialize["memory_policy"] = "manual"): Promise<string> {
   const base = await api.call("characterDraftDefault", "roleplay");
   const draft: GroupDraft_Serialize = {
     name,
     persona: { kind: "inherit" },
     speaker_selection: "llm",
-    memory_policy: "manual",
+    memory_policy: memoryPolicy,
     disable_character_lorebooks: false,
     time_awareness: false,
     disable_character_notes: false,
@@ -508,6 +511,32 @@ async function group(api: ApiClient, specs: CharacterSpec[], mode: LibraryIntera
   return seed(api, { type: "group", group_id: groupId }, name, lines, Object.fromEntries(specs.map((spec, index) => [spec.nickname.toLowerCase(), ids[index] ?? ""])), companionGroup ? 25 : 4);
 }
 
+async function chapterRoleplay(api: ApiClient, title: string, summary: string | null): Promise<string> {
+  const characterId = await createCharacter(api, "roleplay", corvin);
+  const personaId = await createPersona(api, ilse);
+  const conversationId = await seed(api, { type: "direct", character_id: characterId }, title, ferryStory, { corvin: characterId }, 3);
+  const view = await api.call("conversationSettingsGet", { conversation_id: conversationId });
+  await changeChat(api, conversationId, view, { persona: { type: "set", id: personaId }, memory: { type: "set", mode: "dynamic" } });
+  if (summary) {
+    const memory = await api.call("memoryGet", { conversation_id: conversationId });
+    await api.call("memorySummaryUpdate", {
+      conversation_id: conversationId,
+      summary: { type: "set", text: summary },
+      expected_revision: memory.revision,
+      client_operation_id: crypto.randomUUID(),
+    });
+  }
+  return conversationId;
+}
+
+async function chapterGroup(api: ApiClient): Promise<string> {
+  const ids: string[] = [];
+  for (const spec of crew) ids.push(await createCharacter(api, "roleplay", spec));
+  const name = "Dev Chapter Salvage";
+  const groupId = await createGroup(api, name, ids, false, "dynamic");
+  return seed(api, { type: "group", group_id: groupId }, name, salvageStory, Object.fromEntries(crew.map((spec, index) => [spec.nickname.toLowerCase(), ids[index] ?? ""])), 4);
+}
+
 const templates: Record<TemplateId, (api: ApiClient) => Promise<string>> = {
   roleplay: (api) => roleplay(api, false),
   companion: (api) => companion(api, false),
@@ -515,6 +544,10 @@ const templates: Record<TemplateId, (api: ApiClient) => Promise<string>> = {
   group_companion: (api) => group(api, flatmates, "companion", "Dev Flatmates", flatLines, true),
   roleplay_widgets: (api) => roleplay(api, true),
   companion_widgets: (api) => companion(api, true),
+  chapters_backlog: (api) => chapterRoleplay(api, "Dev chapters, long history", null),
+  chapters_user_seed: (api) => chapterRoleplay(api, "Dev chapters, written summary", ferryUserSummary),
+  chapters_large_seed: (api) => chapterRoleplay(api, "Dev chapters, oversized summary", ferryLongUserSummary),
+  chapters_group: chapterGroup,
 };
 
 /** Creates what the template needs, seeds the chat and returns its conversation id. Whatever was created before a failure stays. */

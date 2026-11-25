@@ -546,7 +546,18 @@
       "group": { "title": "Grup sohbeti", "description": "Geçmişi olan bir grupta üç karakter" },
       "group_companion": { "title": "Yoldaş grup sohbeti", "description": "Geçmişi olan bir yoldaş grubunda Soul sahibi üç yoldaş" },
       "roleplay_widgets": { "title": "Widget'lı rol yapma sohbeti", "description": "Tüm widget'ların sohbetin yanında olduğu rol yapma sohbeti" },
-      "companion_widgets": { "title": "Widget'lı yoldaş sohbeti", "description": "Yoldaş durumu ve bellek dahil tüm widget'ların olduğu yoldaş sohbeti" }
+      "companion_widgets": { "title": "Widget'lı yoldaş sohbeti", "description": "Yoldaş durumu ve bellek dahil tüm widget'ların olduğu yoldaş sohbeti" },
+      "chapters_backlog": { "title": "Bölümler: uzun geçmiş", "description": "Özeti olmayan 42 mesajlık bir feribot hikayesi. Gönderdiğin her mesaj sıradaki altı eski mesajı özetler." },
+      "chapters_user_seed": { "title": "Bölümler: yazılmış özet", "description": "Aynı hikaye, elle yazılmış kısa bir özetle; özet başlangıç noktası olarak korunur." },
+      "chapters_large_seed": { "title": "Bölümler: büyük özet", "description": "Aynı hikaye, test bütçesinden büyük elle yazılmış bir özetle. Sadece yeni döngüler birleştirilir." },
+      "chapters_group": { "title": "Bölümler: grup", "description": "Dynamic memory açık bir grupta 36 mesajlık bir kurtarma ekibi hikayesi." }
+    },
+    "chapters": {
+      "group": "Bölüm özeti testleri",
+      "apply": { "title": "Bölüm test ayarlarını kullan", "description": "Dynamic memory ve bölüm özetlerini 6 mesajlık döngüler, 800 token bütçe ve bölüm başına 2 döngüyle açar. Önce bellek ayarların kaydedilir." },
+      "restore": { "title": "Bellek ayarlarını geri yükle", "description": "Test ayarlarından önce kaydedilen bellek ayarlarını geri koyar." },
+      "applied": "Bölüm test ayarları açık",
+      "restored": "Bellek ayarları geri yüklendi"
     }
   },
   "manage": {
@@ -1452,6 +1463,12 @@
       "enrichment": "Bağlam zenginleştirme",
       "experimental": "Deneysel",
       "enrichmentBody": "Anıları aramak için yalnızca en yeni mesajı değil, son birkaç mesajı da kullanır",
+      "chapterSummaries": "Bölüm özetleri",
+      "chapterSummariesBody": "Her bellek döngüsünü tek başına özetler ve özet bütçesini aştığında eski döngüleri bölümler halinde birleştirir. Mevcut özet başlangıç noktası olarak korunur.",
+      "summaryBudget": "Özet bütçesi",
+      "summaryBudgetBody": "Eski döngüler bölümlere katlanmadan önce sohbet özetinin kullanabileceği token sayısı.",
+      "chapterSize": "Bölüm başına döngü",
+      "chapterSizeBody": "Tek bir bölümde kaç özetin birleştirileceği.",
       "loops": "Özyinelemeli hafıza döngüleri",
       "loopsBody": "Model done çağırana kadar araç sonuçlarını geri gönderir. Daha zayıf modellere yardımcı olur, daha fazla token harcar.",
       "loopCap": "Özyinelemeli döngü üst sınırı",

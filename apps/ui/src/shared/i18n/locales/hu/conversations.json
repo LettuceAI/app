@@ -888,7 +888,73 @@
       "cancel": "Mégse",
       "save": "Mentés",
       "saved": "Összefoglaló mentve",
-      "cleared": "Összefoglaló törölve"
+      "cleared": "Összefoglaló törölve",
+      "parts": {
+        "description": "Részekből áll, memóriafrissítésenként egy",
+        "budget": "Részek kerete",
+        "budgetValue": "{{used}} / {{budget}} token",
+        "list": "Az összefoglaló részei",
+        "count_one": "{{count}} rész",
+        "count_other": "{{count}} rész",
+        "chapters_one": "{{count}} fejezet",
+        "chapters_other": "{{count}} fejezet",
+        "seed": "Kezdő összefoglaló",
+        "cycle": "Rész",
+        "chapter": "Fejezet",
+        "edited": "Te szerkesztetted",
+        "pending": "A következő frissítéskor lép életbe",
+        "seedNote": "Változatlan marad. Nem olvad fejezetbe, és nem számít bele a keretbe.",
+        "edit": "Szerkesztés",
+        "delete": "Törlés",
+        "deleteTitle": "Törlöd ezt a részt?",
+        "deleteBody": "Az összefoglaló többé nem tartalmazza. Az általa lefedett üzeneteket nem foglalja össze újra.",
+        "deleteConfirm": "Rész törlése",
+        "asText": "Szerkesztés egy szövegként",
+        "asParts": "Részek mutatása",
+        "done": "Kész",
+        "textHint": "A módosításaid a részekhez igazodnak. Ha a szöveg már nem egyezik velük, kezdő összefoglaló lesz belőle.",
+        "empty": "Még nincsenek részek. Az első a következő memóriafrissítéskor készül el.",
+        "writeStart": "Kezdő összefoglaló írása",
+        "overBudget": "A kereten felül. A következő frissítések addig vonják össze a részeket, amíg bele nem fér.",
+        "lead": "A memóriafrissítések részeket adnak hozzá. A régi részek fejezetekbe olvadnak, hogy az összefoglaló a kereten belül maradjon.",
+        "coverage": "Mit fed le az összefoglaló",
+        "messages_one": "{{count}} üzenet",
+        "messages_other": "{{count}} üzenet",
+        "legend": {
+          "seed": "Kezdő összefoglaló",
+          "chapter": "Fejezet",
+          "cycle": "Rész",
+          "unsummarized": "Még nincs összefoglalva",
+          "arc": "Ív"
+        },
+        "nextMerge_one": "Következő összevonás: a lent megjelölt részek összeolvadnak, amint a részek meghaladják a(z) {{budget}} tokent.",
+        "nextMerge_other": "Következő összevonás: a lent megjelölt részek összeolvadnak, amint a részek meghaladják a(z) {{budget}} tokent.",
+        "mergesNext": "Következőként összevonva",
+        "how": {
+          "title": "Hogyan működik",
+          "update": "Minden memóriafrissítés egy részben foglalja össze az új üzeneteit.",
+          "merge": "Ha a részek meghaladják a(z) {{budget}} tokent, a {{size}} legrégebbi rész egy fejezetbe olvad. A fejezetek ugyanígy ívekbe olvadnak.",
+          "seed": "A kezdő összefoglaló már a részek előtt létezett, például amit te írtál. Változatlan marad, és nem számít bele a keretbe.",
+          "edit": "Egy részt szerkesztéssel vagy törléssel javíthatsz. A következő frissítés átveszi a módosítást, a későbbi fejezetek pedig megtartják.",
+          "recent": "A még össze nem foglalt üzeneteket a modell továbbra is a csevegés előzményeiből olvassa."
+        },
+        "showMore": "Több",
+        "showLess": "Kevesebb",
+        "arc": "Ív",
+        "arcLevel": "Ív, {{level}}. szint",
+        "arcs_one": "{{count}} ív",
+        "arcs_other": "{{count}} ív",
+        "sources": {
+          "madeFrom_one": "{{count}} részből készült",
+          "madeFrom_other": "{{count}} részből készült",
+          "replaced_one": "{{count}} részt váltott fel",
+          "replaced_other": "{{count}} részt váltott fel",
+          "hide": "Források elrejtése",
+          "note": "Csak olvasható. Ezekből az eredetikből készült ez a rész. Az összefoglaló módosításához a fenti részt szerkeszd.",
+          "list": "Források",
+          "failed": "A forrásokat nem sikerült betölteni."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Frissítsük a memóriát?",
@@ -1009,6 +1075,39 @@
         "addBack": "Visszaadás",
         "added": "Memória hozzáadva",
         "addedBack": "Memória visszaadva"
+      },
+      "steps": {
+        "title": "Összefoglaló",
+        "cycle": {
+          "label": "Új rész",
+          "body": "A(z) {{from}}–{{to}}. üzenetek egy új részben összefoglalva"
+        },
+        "chapter": {
+          "label": "Fejezet",
+          "body_one": "A(z) {{from}}–{{to}}. üzeneteket lefedő {{count}} rész egy fejezetbe olvadt",
+          "body_other": "A(z) {{from}}–{{to}}. üzeneteket lefedő {{count}} rész egy fejezetbe olvadt"
+        },
+        "edit": {
+          "label": "A módosításod",
+          "body": "Átvette a(z) {{from}}–{{to}}. üzenetekhez tett módosításodat"
+        },
+        "seedUser": {
+          "label": "Kezdő összefoglaló",
+          "body": "Az összefoglalód lett a kezdő összefoglaló"
+        },
+        "seedExisting": {
+          "label": "Kezdő összefoglaló",
+          "body": "A meglévő összefoglaló lett a kezdő összefoglaló"
+        },
+        "reset": {
+          "label": "Törölve",
+          "body": "Törölted az összefoglalót, így a részek elölről kezdődnek"
+        },
+        "arc": {
+          "label": "Ív",
+          "body_one": "A(z) {{from}}–{{to}}. üzeneteket lefedő {{count}} rész egy ívbe olvadt",
+          "body_other": "A(z) {{from}}–{{to}}. üzeneteket lefedő {{count}} rész egy ívbe olvadt"
+        }
       }
     },
     "pinnedTab": {

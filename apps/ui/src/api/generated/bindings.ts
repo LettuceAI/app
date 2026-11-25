@@ -300,6 +300,7 @@ export const commands = {
 	memoryPin: (request: MemoryPinRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_pin", { request })),
 	memorySetTemperature: (request: MemoryTemperatureRequest_Deserialize) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_set_temperature", { request })),
 	memorySummaryUpdate: (request: MemorySummaryUpdateRequest) => typedError<MemoryEditResult, ApiError_Serialize>(__TAURI_INVOKE("memory_summary_update", { request })),
+	memorySummaryPartSources: (request: MemorySummaryPartSourcesRequest) => typedError<MemorySummaryPartView[], ApiError_Serialize>(__TAURI_INVOKE("memory_summary_part_sources", { request })),
 	memoryTrigger: (request: MemoryTriggerRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("memory_trigger", { request })),
 	memoryRetry: (request: MemoryRetryRequest) => typedError<JobAccepted, ApiError_Serialize>(__TAURI_INVOKE("memory_retry", { request })),
 	memorySkip: (request: MemorySkipRequest) => typedError<null, ApiError_Serialize>(__TAURI_INVOKE("memory_skip", { request })),
@@ -6713,6 +6714,7 @@ export type MemoryCycleView = {
 	status: MemoryCycleStatus,
 	failure: MemoryFailureCode | null,
 	summary: string | null,
+	summary_steps: MemorySummaryStepView[],
 	actions: MemoryCycleAction[],
 	reverted: boolean,
 	revertable: boolean,
@@ -6862,6 +6864,46 @@ export type MemoryStatusView = {
 
 export type MemorySummaryEdit = { type: "set"; text: string } | { type: "clear" };
 
+export type MemorySummaryPartKind = "seed" | "cycle" | "chapter";
+
+export type MemorySummaryPartSourcesRequest = {
+	conversation_id: string,
+	part_id: string,
+};
+
+export type MemorySummaryPartView = {
+	id: string | null,
+	kind: MemorySummaryPartKind,
+	level: number,
+	origin: MemoryOrigin,
+	message_start: number,
+	message_end: number,
+	text: string,
+	token_count: number | null,
+	pending: boolean,
+	source_count: number,
+};
+
+export type MemorySummaryPartsView = {
+	parts: MemorySummaryPartView[],
+	token_budget: number,
+	chapter_size: number,
+	message_count: number,
+};
+
+export type MemorySummaryStepKind = "seed" | "cycle" | "chapter" | "reset";
+
+export type MemorySummaryStepView = {
+	kind: MemorySummaryStepKind,
+	level: number,
+	origin: MemoryOrigin,
+	message_start: number,
+	message_end: number,
+	merged: number,
+	text: string,
+	token_count: number,
+};
+
 export type MemorySummaryUpdateRequest = {
 	conversation_id: string,
 	summary: MemorySummaryEdit,
@@ -6930,6 +6972,7 @@ export type MemoryView = {
 	items: MemoryItemView[],
 	allowed_categories: MemoryCategory[],
 	summary: MemorySummaryView | null,
+	summary_parts: MemorySummaryPartsView | null,
 	status: MemoryStatusView,
 	revision: number,
 };
@@ -9134,6 +9177,9 @@ export type SettingsDynamicMemorySettings = {
 	recursive_memory_loop_hard_cap: number,
 	structured_fallback_format: SettingsMemoryStructuredFallbackFormat,
 	model_pinning_enabled: boolean,
+	chapter_summaries_enabled: boolean,
+	summary_token_budget: number,
+	summary_chapter_size: number,
 };
 
 export type SettingsEmbeddingSettings = {

@@ -904,7 +904,80 @@
       "cancel": "Cancelar",
       "save": "Guardar",
       "saved": "Resumen guardado",
-      "cleared": "Resumen borrado"
+      "cleared": "Resumen borrado",
+      "parts": {
+        "description": "Hecho de partes, una por cada actualización de memoria",
+        "budget": "Presupuesto de partes",
+        "budgetValue": "{{used}} / {{budget}} tokens",
+        "list": "Partes del resumen",
+        "count_one": "{{count}} parte",
+        "count_many": "{{count}} partes",
+        "count_other": "{{count}} partes",
+        "chapters_one": "{{count}} capítulo",
+        "chapters_many": "{{count}} capítulos",
+        "chapters_other": "{{count}} capítulos",
+        "seed": "Resumen inicial",
+        "cycle": "Parte",
+        "chapter": "Capítulo",
+        "edited": "Editado por ti",
+        "pending": "Se aplica en la próxima actualización",
+        "seedNote": "Se mantiene tal cual. No se combina en capítulos ni cuenta para el presupuesto.",
+        "edit": "Editar",
+        "delete": "Eliminar",
+        "deleteTitle": "¿Eliminar esta parte?",
+        "deleteBody": "El resumen deja de incluirla. Los mensajes que cubría no se vuelven a resumir.",
+        "deleteConfirm": "Eliminar parte",
+        "asText": "Editar como un solo texto",
+        "asParts": "Mostrar partes",
+        "done": "Listo",
+        "textHint": "Tus cambios se asignan a las partes. Si el texto ya no coincide con ellas, se convierte en el resumen inicial.",
+        "empty": "Aún no hay partes. La primera se escribe en la próxima actualización de memoria.",
+        "writeStart": "Escribir un resumen inicial",
+        "overBudget": "Por encima del presupuesto. Las próximas actualizaciones combinan partes hasta que quepa.",
+        "lead": "Las actualizaciones de memoria añaden partes. Las partes antiguas se combinan en capítulos para que el resumen no supere el presupuesto.",
+        "coverage": "Lo que cubre el resumen",
+        "messages_one": "{{count}} mensaje",
+        "messages_many": "{{count}} mensajes",
+        "messages_other": "{{count}} mensajes",
+        "legend": {
+          "seed": "Resumen inicial",
+          "chapter": "Capítulo",
+          "cycle": "Parte",
+          "unsummarized": "Aún sin resumir",
+          "arc": "Arco"
+        },
+        "nextMerge_many": "Próxima combinación: las partes marcadas abajo se combinan cuando las partes superen {{budget}} tokens.",
+        "nextMerge_one": "Próxima combinación: las partes marcadas abajo se combinan cuando las partes superen {{budget}} tokens.",
+        "nextMerge_other": "Próxima combinación: las partes marcadas abajo se combinan cuando las partes superen {{budget}} tokens.",
+        "mergesNext": "Se combina a continuación",
+        "how": {
+          "title": "Cómo funciona",
+          "update": "Cada actualización de memoria resume sus mensajes nuevos en una parte.",
+          "merge": "Cuando las partes superan {{budget}} tokens, las {{size}} partes más antiguas se combinan en un capítulo. Los capítulos se combinan en arcos del mismo modo.",
+          "seed": "Un resumen inicial existía antes de las partes, por ejemplo uno que escribiste tú. Se mantiene tal cual y no cuenta para el presupuesto.",
+          "edit": "Edita o elimina una parte para corregirla. La próxima actualización incorpora tu cambio y los capítulos posteriores lo conservan.",
+          "recent": "Los mensajes que aún no se han resumido el modelo los sigue leyendo del historial del chat."
+        },
+        "showMore": "Ver más",
+        "showLess": "Ver menos",
+        "arc": "Arco",
+        "arcLevel": "Arco, nivel {{level}}",
+        "arcs_one": "{{count}} arco",
+        "arcs_many": "{{count}} arcos",
+        "arcs_other": "{{count}} arcos",
+        "sources": {
+          "madeFrom_many": "Hecho con {{count}} partes",
+          "madeFrom_one": "Hecho con {{count}} partes",
+          "madeFrom_other": "Hecho con {{count}} partes",
+          "replaced_many": "Reemplazó {{count}} partes",
+          "replaced_one": "Reemplazó {{count}} partes",
+          "replaced_other": "Reemplazó {{count}} partes",
+          "hide": "Ocultar fuentes",
+          "note": "Solo lectura. Son los originales con los que se hizo esta parte. Para cambiar el resumen, edita la parte de arriba.",
+          "list": "Fuentes",
+          "failed": "No se pudieron cargar las fuentes."
+        }
+      }
     },
     "status": {
       "approvalTitle": "¿Actualizar la memoria?",
@@ -1030,6 +1103,41 @@
         "addBack": "Volver a añadir",
         "added": "Memoria añadida",
         "addedBack": "Memoria añadida de nuevo"
+      },
+      "steps": {
+        "title": "Resumen",
+        "cycle": {
+          "label": "Parte nueva",
+          "body": "Mensajes {{from}} a {{to}} resumidos en una parte nueva"
+        },
+        "chapter": {
+          "label": "Capítulo",
+          "body_many": "{{count}} partes con los mensajes {{from}} a {{to}} combinadas en un capítulo",
+          "body_one": "{{count}} partes con los mensajes {{from}} a {{to}} combinadas en un capítulo",
+          "body_other": "{{count}} partes con los mensajes {{from}} a {{to}} combinadas en un capítulo"
+        },
+        "edit": {
+          "label": "Tu cambio",
+          "body": "Se incorporó tu cambio para los mensajes {{from}} a {{to}}"
+        },
+        "seedUser": {
+          "label": "Resumen inicial",
+          "body": "Tu resumen pasó a ser el resumen inicial"
+        },
+        "seedExisting": {
+          "label": "Resumen inicial",
+          "body": "El resumen que ya existía pasó a ser el resumen inicial"
+        },
+        "reset": {
+          "label": "Borrado",
+          "body": "Borraste el resumen, así que las partes empiezan de nuevo"
+        },
+        "arc": {
+          "label": "Arco",
+          "body_many": "{{count}} partes con los mensajes {{from}} a {{to}} combinadas en un arco",
+          "body_one": "{{count}} partes con los mensajes {{from}} a {{to}} combinadas en un arco",
+          "body_other": "{{count}} partes con los mensajes {{from}} a {{to}} combinadas en un arco"
+        }
       }
     },
     "pinnedTab": {

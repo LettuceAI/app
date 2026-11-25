@@ -554,7 +554,18 @@
       "group": { "title": "Czat grupowy", "description": "Trzy postacie w grupie z historią" },
       "group_companion": { "title": "Czat grupowy z towarzyszami", "description": "Trzech towarzyszy z Duszami w grupie towarzyszy z historią" },
       "roleplay_widgets": { "title": "Czat fabularny z widżetami", "description": "Czat fabularny ze wszystkimi widżetami obok czatu" },
-      "companion_widgets": { "title": "Czat z towarzyszem z widżetami", "description": "Czat z towarzyszem ze wszystkimi widżetami, także ze stanem towarzysza i pamięcią" }
+      "companion_widgets": { "title": "Czat z towarzyszem z widżetami", "description": "Czat z towarzyszem ze wszystkimi widżetami, także ze stanem towarzysza i pamięcią" },
+      "chapters_backlog": { "title": "Rozdziały: długa historia", "description": "Historia promu z 42 wiadomościami bez podsumowania. Każda wysłana wiadomość podsumowuje kolejne sześć starych." },
+      "chapters_user_seed": { "title": "Rozdziały: napisane podsumowanie", "description": "Ta sama historia z krótkim podsumowaniem napisanym ręcznie, zachowanym jako punkt wyjścia." },
+      "chapters_large_seed": { "title": "Rozdziały: zbyt duże podsumowanie", "description": "Ta sama historia z ręcznym podsumowaniem większym niż budżet testowy. Łączone są tylko nowe cykle." },
+      "chapters_group": { "title": "Rozdziały: grupa", "description": "Historia załogi ratowniczej z 36 wiadomościami w grupie z pamięcią dynamiczną." }
+    },
+    "chapters": {
+      "group": "Testy podsumowań rozdziałów",
+      "apply": { "title": "Użyj ustawień testowych rozdziałów", "description": "Włącza pamięć dynamiczną i podsumowania rozdziałów z cyklami po 6 wiadomości, budżetem 800 tokenów i 2 cyklami na rozdział. Najpierw zapisywane są twoje ustawienia pamięci." },
+      "restore": { "title": "Przywróć ustawienia pamięci", "description": "Przywraca ustawienia pamięci zapisane przed ustawieniami testowymi." },
+      "applied": "Ustawienia testowe rozdziałów są włączone",
+      "restored": "Przywrócono ustawienia pamięci"
     }
   },
   "manage": {
@@ -1475,6 +1486,12 @@
       "enrichment": "Wzbogacanie kontekstu",
       "experimental": "Eksperymentalne",
       "enrichmentBody": "Używa kilku ostatnich wiadomości do wyszukiwania wspomnień, nie tylko najnowszej",
+      "chapterSummaries": "Podsumowania rozdziałów",
+      "chapterSummariesBody": "Podsumowuje każdy cykl pamięci osobno i łączy starsze cykle w rozdziały, gdy podsumowanie przekroczy budżet. Obecne podsumowanie pozostaje punktem wyjścia.",
+      "summaryBudget": "Budżet podsumowania",
+      "summaryBudgetBody": "Liczba tokenów, jaką podsumowanie rozmowy może zużyć przed połączeniem starszych cykli w rozdziały.",
+      "chapterSize": "Cykle na rozdział",
+      "chapterSizeBody": "Ile podsumowań jest łączonych w jeden rozdział.",
       "loops": "Rekurencyjne pętle pamięci",
       "loopsBody": "Odsyła wyniki narzędzi, aż model zgłosi koniec. Pomaga słabszym modelom, zużywa więcej tokenów.",
       "loopCap": "Twardy limit pętli rekurencyjnych",

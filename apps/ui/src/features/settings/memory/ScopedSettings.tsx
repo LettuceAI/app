@@ -96,6 +96,25 @@ export function ScopedSettings({ value, onChange }: { value: Value; onChange: Ch
               trailing={<Switch checked={value.context_enrichment_enabled} onChange={(next) => void set({ context_enrichment_enabled: next })} aria-label={t("memory.advanced.enrichment")} />}
             />
             <ListRow
+              title={<span className="flex items-center gap-2">{t("memory.advanced.chapterSummaries")} <Badge>{t("memory.advanced.experimental")}</Badge></span>}
+              description={t("memory.advanced.chapterSummariesBody")}
+              trailing={<Switch checked={value.chapter_summaries_enabled} onChange={(next) => void set({ chapter_summaries_enabled: next })} aria-label={t("memory.advanced.chapterSummaries")} />}
+            />
+            {value.chapter_summaries_enabled && (
+              <>
+                <ListRow
+                  title={t("memory.advanced.summaryBudget")}
+                  description={t("memory.advanced.summaryBudgetBody")}
+                  trailing={<CommitNumber value={value.summary_token_budget} min={1} max={1048576} step={128} onCommit={(next) => set({ summary_token_budget: next })} />}
+                />
+                <ListRow
+                  title={t("memory.advanced.chapterSize")}
+                  description={t("memory.advanced.chapterSizeBody")}
+                  trailing={<CommitNumber value={value.summary_chapter_size} min={2} max={100} step={1} onCommit={(next) => set({ summary_chapter_size: next })} />}
+                />
+              </>
+            )}
+            <ListRow
               title={t("memory.advanced.loops")}
               description={t("memory.advanced.loopsBody")}
               trailing={<Switch checked={value.recursive_memory_loops} onChange={(next) => void set({ recursive_memory_loops: next })} aria-label={t("memory.advanced.loops")} />}

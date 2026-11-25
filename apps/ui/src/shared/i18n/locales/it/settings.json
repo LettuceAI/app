@@ -550,7 +550,18 @@
       "group": { "title": "Chat di gruppo", "description": "Tre personaggi in un gruppo con cronologia" },
       "group_companion": { "title": "Chat di gruppo di compagni", "description": "Tre compagni con anima in un gruppo di compagni con cronologia" },
       "roleplay_widgets": { "title": "Chat di gioco di ruolo con widget", "description": "La chat di gioco di ruolo con tutti i widget accanto alla chat" },
-      "companion_widgets": { "title": "Chat con compagno e widget", "description": "La chat con compagno con tutti i widget, inclusi stato del compagno e memoria" }
+      "companion_widgets": { "title": "Chat con compagno e widget", "description": "La chat con compagno con tutti i widget, inclusi stato del compagno e memoria" },
+      "chapters_backlog": { "title": "Capitoli: cronologia lunga", "description": "Una storia del traghetto di 42 messaggi senza riassunto. Ogni messaggio inviato riassume i sei vecchi successivi." },
+      "chapters_user_seed": { "title": "Capitoli: riassunto scritto", "description": "La stessa storia con un breve riassunto scritto a mano, mantenuto come punto di partenza." },
+      "chapters_large_seed": { "title": "Capitoli: riassunto troppo grande", "description": "La stessa storia con un riassunto scritto a mano più grande del budget di test. Vengono raggruppati solo i nuovi cicli." },
+      "chapters_group": { "title": "Capitoli: gruppo", "description": "Una storia di 36 messaggi di un equipaggio di recupero in un gruppo con memoria dinamica." }
+    },
+    "chapters": {
+      "group": "Test dei riassunti a capitoli",
+      "apply": { "title": "Usa le impostazioni di test dei capitoli", "description": "Attiva la memoria dinamica e i riassunti a capitoli con cicli di 6 messaggi, un budget di 800 token e 2 cicli per capitolo. Prima vengono salvate le tue impostazioni di memoria." },
+      "restore": { "title": "Ripristina le impostazioni di memoria", "description": "Rimette le impostazioni di memoria salvate prima di quelle di test." },
+      "applied": "Impostazioni di test dei capitoli attive",
+      "restored": "Impostazioni di memoria ripristinate"
     }
   },
   "manage": {
@@ -1463,6 +1474,12 @@
       "enrichment": "Arricchimento del contesto",
       "experimental": "Sperimentale",
       "enrichmentBody": "Usa gli ultimi messaggi per cercare i ricordi, non solo il più recente",
+      "chapterSummaries": "Riassunti a capitoli",
+      "chapterSummariesBody": "Riassume ogni ciclo di memoria separatamente e racchiude i cicli più vecchi in capitoli quando il riassunto supera il budget. Il riassunto attuale viene mantenuto come punto di partenza.",
+      "summaryBudget": "Budget del riassunto",
+      "summaryBudgetBody": "Token che il riassunto della conversazione può usare prima che i cicli più vecchi vengano racchiusi in capitoli.",
+      "chapterSize": "Cicli per capitolo",
+      "chapterSizeBody": "Quanti riassunti vengono uniti in un singolo capitolo.",
       "loops": "Cicli di memoria ricorsivi",
       "loopsBody": "Rimanda indietro i risultati degli strumenti finché il modello chiama done. Aiuta i modelli più deboli, consuma più token.",
       "loopCap": "Limite massimo dei cicli ricorsivi",

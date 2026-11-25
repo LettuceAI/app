@@ -373,6 +373,19 @@ impl<'c, 'conn> Purge<'c, 'conn> {
             ),
             &values,
         )?;
+        self.delete(
+            "memory_summary_unit_inputs",
+            &format!(
+                "(parent_id IN (SELECT id FROM memory_summary_units WHERE {by_owner} OR created_by_run_id IN ({RUNS}))
+                  OR child_id IN (SELECT id FROM memory_summary_units WHERE {by_owner} OR created_by_run_id IN ({RUNS})))"
+            ),
+            &values,
+        )?;
+        self.delete(
+            "memory_summary_units",
+            &format!("({by_owner} OR created_by_run_id IN ({RUNS}))"),
+            &values,
+        )?;
         for table in [
             "dynamic_memory_changed_items",
             "dynamic_memory_duplicate_consolidations",
@@ -869,6 +882,17 @@ pub(crate) fn purge_branch_memory_in(
     purge.delete(
         "dynamic_memory_pending_suffix_rewinds",
         "conversation_id = ?1 AND EXISTS (SELECT 1 FROM conversation_messages message WHERE message.conversation_id = ?1 AND message.branch_id = ?2 AND message.id = json_extract(pending_json, '$.value.tombstone.message_id'))",
+        &values,
+    )?;
+    purge.delete(
+        "memory_summary_unit_inputs",
+        "parent_id IN (SELECT id FROM memory_summary_units WHERE conversation_id = ?1 AND branch_id = ?2)
+         OR child_id IN (SELECT id FROM memory_summary_units WHERE conversation_id = ?1 AND branch_id = ?2)",
+        &values,
+    )?;
+    purge.delete(
+        "memory_summary_units",
+        "conversation_id = ?1 AND branch_id = ?2",
         &values,
     )?;
     purge.memory(None, &spaces)?;

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use chrono::{Datelike, Local, LocalResult, TimeZone, Timelike};
 use lettuce_context::{
     LifecycleStatus, PromptDocument, PromptEntryChatMode, PromptEntryInfoSource, PromptPurpose,
@@ -13,11 +15,13 @@ use lettuce_conversations::{
 use lettuce_jobs::handle::JobHandle;
 use lettuce_memory::{
     DynamicMemoryRunRepository, DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit,
-    MemoryRepository, MemorySummaryRepository,
+    MemoryOrigin, MemoryRepository, MemorySummaryRepository, MemorySummaryUnit,
+    MemorySummaryUnitKind, MemorySummaryUnitRepository, MemorySummaryUnitScope,
+    NewMemorySummaryUnit, plan_summary_adoption, render_summary_units,
 };
 use lettuce_types::{
-    DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId, RequestId,
-    TimestampMillis,
+    DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId,
+    MemorySummaryUnitId, RequestId, TimestampMillis,
 };
 use lettuce_usage::JobUsageLedger;
 use serde_json::json;
@@ -27,6 +31,29 @@ use crate::{
     CompanionMemoryInferenceError, MemoryEmbeddingEngine, cleanup_outcome_replays,
     format_message_timestamp, insert_in_chat_messages, materialize_sources, rendered_message,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SummaryMode {
+    Cumulative,
+    Chapters {
+        token_budget: u32,
+        chapter_size: u32,
+    },
+}
+
+impl SummaryMode {
+    #[must_use]
+    pub const fn from_settings(settings: &lettuce_settings::DynamicMemorySettings) -> Self {
+        if settings.chapter_summaries_enabled {
+            Self::Chapters {
+                token_budget: settings.summary_token_budget,
+                chapter_size: settings.summary_chapter_size,
+            }
+        } else {
+            Self::Cumulative
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompanionMemorySummaryResult {
@@ -66,6 +93,7 @@ impl<
     R: DynamicMemoryRunRepository
         + MemoryRepository
         + MemorySummaryRepository
+        + MemorySummaryUnitRepository
         + ProviderReplayArtifactPort
         + JobUsageLedger
         + crate::generation::runtime_text::RuntimeTextSource
@@ -81,6 +109,7 @@ impl<
         attempt_id: DynamicMemoryAttemptId,
         window_selection: crate::CompanionMemoryWindowSelection,
         prompt: &PromptDocument,
+        mode: SummaryMode,
         handle: &JobHandle,
         stream_sink: Option<RequestId>,
         now: TimestampMillis,
@@ -159,6 +188,30 @@ impl<
         .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
             reason: format!("memory runtime prompt text could not be loaded: {error}"),
         })?;
+        let is_group = aggregate.conversation.kind.is_group();
+        if let SummaryMode::Chapters {
+            token_budget,
+            chapter_size,
+        } = mode
+        {
+            return self
+                .run_chapters(
+                    &run,
+                    &attempt,
+                    &memory,
+                    previous.as_ref(),
+                    &sources,
+                    &runtime_text,
+                    persona_name.as_deref(),
+                    is_group,
+                    token_budget,
+                    chapter_size,
+                    handle,
+                    stream_sink,
+                    now,
+                )
+                .await;
+        }
         let fallback_request = runtime_text
             .render_with("summary_fallback_request", [])
             .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
@@ -172,7 +225,7 @@ impl<
             previous.as_ref().map(|summary| summary.text.as_str()),
             &sources,
             persona_name.as_deref(),
-            aggregate.conversation.kind.is_group(),
+            is_group,
             aggregate.conversation.participants.len(),
             handle,
             stream_sink,
@@ -184,10 +237,7 @@ impl<
         if handle.cancellation_token().is_cancelled() {
             return Err(CompanionMemoryInferenceError::Cancelled);
         }
-        let token_count = self.engine.count_tokens(&text).map_err(|error| match error {
-            crate::EmbeddingGenerationError::Unavailable => CompanionMemoryInferenceError::UnknownTokenCount,
-            crate::EmbeddingGenerationError::Cancelled => CompanionMemoryInferenceError::Cancelled,
-        })?;
+        let token_count = self.count_tokens(&text)?;
         let checkpoint = self
             .repository
             .commit_dynamic_memory_summary(
@@ -196,6 +246,333 @@ impl<
                     attempt_id: attempt.id,
                     expected_memory_revision: memory.revision,
                     text,
+                    token_count,
+                    request_context,
+                    usage,
+                    provider_request_id,
+                },
+                now,
+            )
+            .map_err(CompanionMemoryInferenceError::Run)?;
+        Ok(CompanionMemorySummaryResult {
+            checkpoint,
+            replayed: false,
+        })
+    }
+
+    fn count_tokens(&self, text: &str) -> Result<u32, CompanionMemoryInferenceError> {
+        self.engine.count_tokens(text).map_err(|error| match error {
+            crate::EmbeddingGenerationError::Unavailable => {
+                CompanionMemoryInferenceError::UnknownTokenCount
+            }
+            crate::EmbeddingGenerationError::Cancelled => CompanionMemoryInferenceError::Cancelled,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_chapters(
+        &self,
+        run: &lettuce_memory::DynamicMemoryRun,
+        attempt: &lettuce_memory::DynamicMemoryAttempt,
+        memory: &lettuce_memory::MemorySpaceSnapshot,
+        previous: Option<&lettuce_memory::MemorySummary>,
+        sources: &[crate::companion::companion_memory_inference::MaterializedSource],
+        runtime_text: &crate::generation::runtime_text::RuntimeText,
+        persona_name: Option<&str>,
+        is_group: bool,
+        token_budget: u32,
+        chapter_size: u32,
+        handle: &JobHandle,
+        stream_sink: Option<RequestId>,
+        now: TimestampMillis,
+    ) -> Result<CompanionMemorySummaryResult, CompanionMemoryInferenceError> {
+        let scope = MemorySummaryUnitScope {
+            space_id: run.space_id,
+            conversation_id: run.conversation_id,
+            branch_id: run.branch_id,
+        };
+        let mut active = self
+            .repository
+            .active_summary_units(scope, Some(run.id))
+            .map_err(CompanionMemoryInferenceError::Memory)?;
+
+        if !active.iter().any(|unit| unit.created_by_run_id == run.id) {
+            if let Some(published) = previous {
+                let parts: Vec<MemorySummaryUnit> = active
+                    .iter()
+                    .filter(|unit| unit.kind != MemorySummaryUnitKind::Reset)
+                    .cloned()
+                    .collect();
+                if let Some(adoption) =
+                    plan_summary_adoption(&parts, &published.text, run.summary_window.start)
+                {
+                    let token_count = self.count_tokens(&adoption.text)?;
+                    let inputs: Vec<_> = if adoption.covers_all(parts.len()) {
+                        active.iter().map(|unit| unit.id).collect()
+                    } else {
+                        parts[adoption.start..adoption.end]
+                            .iter()
+                            .map(|unit| unit.id)
+                            .collect()
+                    };
+                    self.repository
+                        .insert_summary_unit(
+                            NewMemorySummaryUnit {
+                                id: MemorySummaryUnitId::new(),
+                                scope,
+                                created_by_run_id: run.id,
+                                kind: adoption.kind,
+                                level: adoption.level,
+                                origin: published.origin,
+                                window_start: adoption.window_start,
+                                window_end: adoption.window_end,
+                                text: adoption.text,
+                                token_count,
+                                created_at: now,
+                            },
+                            &inputs,
+                        )
+                        .map_err(CompanionMemoryInferenceError::Memory)?;
+                    active = self
+                        .repository
+                        .active_summary_units(scope, Some(run.id))
+                        .map_err(CompanionMemoryInferenceError::Memory)?;
+                }
+            } else if active
+                .iter()
+                .any(|unit| unit.kind != MemorySummaryUnitKind::Reset)
+            {
+                let inputs: Vec<_> = active.iter().map(|unit| unit.id).collect();
+                self.repository
+                    .insert_summary_unit(
+                        NewMemorySummaryUnit {
+                            id: MemorySummaryUnitId::new(),
+                            scope,
+                            created_by_run_id: run.id,
+                            kind: MemorySummaryUnitKind::Reset,
+                            level: 0,
+                            origin: MemoryOrigin::Model,
+                            window_start: 0,
+                            window_end: 0,
+                            text: String::new(),
+                            token_count: 0,
+                            created_at: now,
+                        },
+                        &inputs,
+                    )
+                    .map_err(CompanionMemoryInferenceError::Memory)?;
+                active = self
+                    .repository
+                    .active_summary_units(scope, Some(run.id))
+                    .map_err(CompanionMemoryInferenceError::Memory)?;
+            }
+        }
+
+        let has_cycle = active.iter().any(|unit| {
+            unit.created_by_run_id == run.id
+                && matches!(
+                    unit.kind,
+                    MemorySummaryUnitKind::Cycle | MemorySummaryUnitKind::Chapter
+                )
+                && unit.window_end >= run.summary_window.end
+        });
+        let earlier = render_summary_units(&active);
+        let cycle_request = build_cycle_request(
+            run,
+            attempt,
+            runtime_text,
+            (!earlier.trim().is_empty()).then_some(earlier.as_str()),
+            sources,
+            persona_name,
+            is_group,
+            handle,
+            stream_sink,
+            now,
+        )?;
+        let (request_context, usage, provider_request_id) = if has_cycle {
+            (cycle_request.context, None, None)
+        } else {
+            let fallback_request = runtime_text
+                .render_with("summary_cycle_fallback_request", [])
+                .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                    reason: format!(
+                        "cycle summary fallback request could not be rendered: {error}"
+                    ),
+                })?;
+            let (cycle_text, request_context, usage, provider_request_id) = self
+                .infer_summary(cycle_request, fallback_request, handle, now)
+                .await?;
+            if handle.cancellation_token().is_cancelled() {
+                return Err(CompanionMemoryInferenceError::Cancelled);
+            }
+            let cycle_text = validate_summary_text(&cycle_text).map_err(|reason| {
+                CompanionMemoryInferenceError::NoToolCalls {
+                    reason: reason.to_owned(),
+                }
+            })?;
+            let token_count = self.count_tokens(&cycle_text)?;
+            self.repository
+                .insert_summary_unit(
+                    NewMemorySummaryUnit {
+                        id: MemorySummaryUnitId::new(),
+                        scope,
+                        created_by_run_id: run.id,
+                        kind: MemorySummaryUnitKind::Cycle,
+                        level: 0,
+                        origin: MemoryOrigin::Model,
+                        window_start: run.summary_window.start,
+                        window_end: run.summary_window.end,
+                        text: cycle_text,
+                        token_count,
+                        created_at: now,
+                    },
+                    &[],
+                )
+                .map_err(CompanionMemoryInferenceError::Memory)?;
+            active = self
+                .repository
+                .active_summary_units(scope, Some(run.id))
+                .map_err(CompanionMemoryInferenceError::Memory)?;
+            (request_context, usage, provider_request_id)
+        };
+
+        loop {
+            let active_tokens: u64 = active
+                .iter()
+                .filter(|unit| {
+                    matches!(
+                        unit.kind,
+                        MemorySummaryUnitKind::Cycle | MemorySummaryUnitKind::Chapter
+                    )
+                })
+                .map(|unit| u64::from(unit.token_count))
+                .sum();
+            if active_tokens <= u64::from(token_budget) {
+                break;
+            }
+            let Some((level, group_indices)) = select_compaction_group(&active, chapter_size)
+            else {
+                break;
+            };
+            let group: Vec<&MemorySummaryUnit> =
+                group_indices.iter().map(|&idx| &active[idx]).collect();
+            let window_start = group[0].window_start;
+            let window_end = group[group.len() - 1].window_end;
+            let next_level = level.saturating_add(1);
+            let group_tokens: u64 = group.iter().map(|unit| u64::from(unit.token_count)).sum();
+            let word_limit = chapter_word_limit(group_tokens, token_budget);
+            let chapter_fallback_request = runtime_text
+                .render_with(
+                    "summary_chapter_fallback_request",
+                    [(PromptVariable::TargetCount, word_limit.to_string())],
+                )
+                .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                    reason: format!(
+                        "chapter summary fallback request could not be rendered: {error}"
+                    ),
+                })?;
+            let reference = group_indices[0]
+                .checked_sub(1)
+                .and_then(|idx| active.get(idx))
+                .filter(|unit| unit.kind != MemorySummaryUnitKind::Reset)
+                .map(|unit| unit.text.as_str());
+            let chapter_request = match build_chapter_request(
+                run,
+                attempt,
+                runtime_text,
+                reference,
+                &group,
+                next_level,
+                window_start,
+                window_end,
+                word_limit,
+                is_group,
+                handle,
+                stream_sink,
+            ) {
+                Ok(request) => request,
+                Err(error) => {
+                    tracing::warn!(run_id = %run.id, ?error, "chapter summary request build failed");
+                    break;
+                }
+            };
+            let chapter_text = match self
+                .infer_summary(chapter_request, chapter_fallback_request, handle, now)
+                .await
+            {
+                Ok((text, _, _, _)) => text,
+                Err(CompanionMemoryInferenceError::Cancelled) => {
+                    return Err(CompanionMemoryInferenceError::Cancelled);
+                }
+                Err(error) => {
+                    tracing::warn!(run_id = %run.id, ?error, "chapter summary inference failed");
+                    break;
+                }
+            };
+            if handle.cancellation_token().is_cancelled() {
+                return Err(CompanionMemoryInferenceError::Cancelled);
+            }
+            let chapter_text = match validate_summary_text(&chapter_text) {
+                Ok(text) => text,
+                Err(reason) => {
+                    tracing::warn!(run_id = %run.id, reason, "chapter summary validation failed");
+                    break;
+                }
+            };
+            let chapter_tokens = match self.count_tokens(&chapter_text) {
+                Ok(tokens) => tokens,
+                Err(CompanionMemoryInferenceError::Cancelled) => {
+                    return Err(CompanionMemoryInferenceError::Cancelled);
+                }
+                Err(error) => {
+                    tracing::warn!(run_id = %run.id, ?error, "chapter summary token count failed");
+                    break;
+                }
+            };
+            if u64::from(chapter_tokens) >= group_tokens {
+                tracing::warn!(
+                    run_id = %run.id,
+                    chapter_tokens,
+                    group_tokens,
+                    "chapter summary was not shorter than its inputs"
+                );
+                break;
+            }
+            let input_ids: Vec<_> = group.iter().map(|unit| unit.id).collect();
+            self.repository
+                .insert_summary_unit(
+                    NewMemorySummaryUnit {
+                        id: MemorySummaryUnitId::new(),
+                        scope,
+                        created_by_run_id: run.id,
+                        kind: MemorySummaryUnitKind::Chapter,
+                        level: next_level,
+                        origin: MemoryOrigin::Model,
+                        window_start,
+                        window_end,
+                        text: chapter_text,
+                        token_count: chapter_tokens,
+                        created_at: now,
+                    },
+                    &input_ids,
+                )
+                .map_err(CompanionMemoryInferenceError::Memory)?;
+            active = self
+                .repository
+                .active_summary_units(scope, Some(run.id))
+                .map_err(CompanionMemoryInferenceError::Memory)?;
+        }
+
+        let rendered = render_summary_units(&active);
+        let token_count = self.count_tokens(&rendered)?;
+        let checkpoint = self
+            .repository
+            .commit_dynamic_memory_summary(
+                DynamicMemorySummaryCommit {
+                    run_id: run.id,
+                    attempt_id: attempt.id,
+                    expected_memory_revision: memory.revision,
+                    text: rendered,
                     token_count,
                     request_context,
                     usage,
@@ -619,6 +996,322 @@ fn build_summary_request(
     Ok(request)
 }
 
+fn chapter_word_limit(group_tokens: u64, token_budget: u32) -> u64 {
+    let tokens = (group_tokens / 2).min(u64::from(token_budget) / 2).max(1);
+    (tokens * 3 / 4).max(1)
+}
+
+fn select_compaction_group(
+    active: &[MemorySummaryUnit],
+    chapter_size: u32,
+) -> Option<(u32, Vec<usize>)> {
+    let mut by_level: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+    for (index, unit) in active.iter().enumerate() {
+        if matches!(
+            unit.kind,
+            MemorySummaryUnitKind::Cycle | MemorySummaryUnitKind::Chapter
+        ) {
+            by_level.entry(unit.level).or_default().push(index);
+        }
+    }
+    let target = usize::try_from(chapter_size).unwrap_or(usize::MAX).max(2);
+    if let Some((&level, indices)) = by_level.iter().find(|(_, indices)| indices.len() >= target) {
+        return Some((level, indices[..target].to_vec()));
+    }
+    if let Some((&level, indices)) = by_level.iter().find(|(_, indices)| indices.len() >= 2) {
+        return Some((level, indices[..indices.len().min(target)].to_vec()));
+    }
+    let mut compactable: Vec<usize> = by_level.into_values().flatten().collect();
+    compactable.sort_unstable();
+    if let [first, second, ..] = compactable[..] {
+        return Some((
+            active[first].level.max(active[second].level),
+            vec![first, second],
+        ));
+    }
+    None
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_cycle_request(
+    run: &lettuce_memory::DynamicMemoryRun,
+    attempt: &lettuce_memory::DynamicMemoryAttempt,
+    text: &crate::generation::runtime_text::RuntimeText,
+    earlier_summary: Option<&str>,
+    sources: &[crate::companion::companion_memory_inference::MaterializedSource],
+    persona_name: Option<&str>,
+    is_group: bool,
+    handle: &JobHandle,
+    stream_sink: Option<RequestId>,
+    now: TimestampMillis,
+) -> Result<InferenceRequest, CompanionMemoryInferenceError> {
+    if sources.len() != run.source_messages.len() {
+        return Err(CompanionMemoryInferenceError::InvalidPrompt {
+            reason: "materialized sources differ from the run source messages".to_owned(),
+        });
+    }
+    let fragment = |key: &str, variables: Vec<(PromptVariable, String)>| {
+        text.render_with(key, variables)
+            .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                reason: format!("summary prompt fragment {key} could not be rendered: {error}"),
+            })
+    };
+    let group_variant = |direct: &'static str, group: &'static str| {
+        if is_group { group } else { direct }
+    };
+
+    let mut system = fragment("summary_cycle_system", Vec::new())?;
+    if run.time_awareness_enabled {
+        let mut time_values = PromptRenderValues::default();
+        insert_time_values(&mut time_values, now);
+        let time_rules = fragment(
+            "summary_cycle_time_rules",
+            time_values.purpose_values.into_iter().collect(),
+        )?;
+        system.push_str("\n\n");
+        system.push_str(&time_rules);
+    }
+
+    let earlier_label = fragment("summary_cycle_earlier_label", Vec::new())?;
+    let earlier_body = match earlier_summary.filter(|summary| !summary.trim().is_empty()) {
+        Some(summary) => summary.to_owned(),
+        None => fragment("summary_cycle_no_earlier", Vec::new())?,
+    };
+    let transcript_label = fragment("summary_cycle_transcript_label", Vec::new())?;
+    let user_label = fragment("summary_group_user_label", Vec::new())?;
+    let character_label = fragment("summary_group_character_label", Vec::new())?;
+    let output_request = fragment("summary_cycle_output_request", Vec::new())?;
+
+    let mut messages = vec![
+        ProviderNeutralMessage {
+            role: MessageRole::System,
+            parts: vec![ProviderContextPart::Text { text: system }],
+        },
+        ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts: vec![ProviderContextPart::Text {
+                text: format!("{earlier_label}\n{earlier_body}"),
+            }],
+        },
+        ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts: vec![ProviderContextPart::Text {
+                text: transcript_label,
+            }],
+        },
+    ];
+    for source in sources {
+        let content = if is_group {
+            fragment(
+                "summary_group_line",
+                vec![
+                    (
+                        PromptVariable::SpeakerName,
+                        summary_speaker_name(
+                            source.role,
+                            persona_name,
+                            &user_label,
+                            &character_label,
+                        )
+                        .to_owned(),
+                    ),
+                    (PromptVariable::MessageText, source.text.clone()),
+                ],
+            )?
+        } else if run.time_awareness_enabled {
+            let timestamp = format_message_timestamp(source.effective_time);
+            let body = if source.text.is_empty() {
+                timestamp
+            } else {
+                format!("{timestamp} {}", source.text)
+            };
+            summary_direct_content(source.role, persona_name, &body)
+        } else {
+            summary_direct_content(source.role, persona_name, &source.text)
+        };
+        messages.push(ProviderNeutralMessage {
+            role: source.role,
+            parts: vec![ProviderContextPart::Text { text: content }],
+        });
+    }
+    messages.push(ProviderNeutralMessage {
+        role: MessageRole::User,
+        parts: vec![ProviderContextPart::Text {
+            text: output_request,
+        }],
+    });
+    finalize_unit_request(
+        run,
+        messages,
+        sources.len(),
+        GenerationTurnId::from_uuid(Uuid::new_v5(&run.id.as_uuid(), b"summary")),
+        GenerationAttemptId::from_uuid(Uuid::new_v5(&attempt.id.as_uuid(), b"summary")),
+        fragment(
+            group_variant("summary_tool", "summary_tool_group"),
+            Vec::new(),
+        )?,
+        fragment(
+            group_variant("summary_parameter", "summary_parameter_group"),
+            Vec::new(),
+        )?,
+        handle,
+        stream_sink,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_chapter_request(
+    run: &lettuce_memory::DynamicMemoryRun,
+    attempt: &lettuce_memory::DynamicMemoryAttempt,
+    text: &crate::generation::runtime_text::RuntimeText,
+    reference: Option<&str>,
+    group: &[&MemorySummaryUnit],
+    level: u32,
+    window_start: u64,
+    window_end: u64,
+    word_limit: u64,
+    is_group: bool,
+    handle: &JobHandle,
+    stream_sink: Option<RequestId>,
+) -> Result<InferenceRequest, CompanionMemoryInferenceError> {
+    let fragment = |key: &str| {
+        text.render_with(key, [])
+            .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                reason: format!("summary prompt fragment {key} could not be rendered: {error}"),
+            })
+    };
+    let group_variant = |direct: &'static str, group_key: &'static str| {
+        if is_group { group_key } else { direct }
+    };
+
+    let system = fragment("summary_chapter_system")?;
+    let reference_label = fragment("summary_chapter_reference_label")?;
+    let reference_body = match reference.filter(|value| !value.trim().is_empty()) {
+        Some(value) => value.to_owned(),
+        None => fragment("summary_chapter_no_reference")?,
+    };
+    let entries_label = fragment("summary_chapter_entries_label")?;
+    let entries_body = group
+        .iter()
+        .enumerate()
+        .map(|(index, unit)| format!("[{}] {}", index + 1, unit.text))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let output_request = text
+        .render_with(
+            "summary_chapter_output_request",
+            [(PromptVariable::TargetCount, word_limit.to_string())],
+        )
+        .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!(
+                "summary prompt fragment summary_chapter_output_request could not be rendered: {error}"
+            ),
+        })?;
+
+    let messages = vec![
+        ProviderNeutralMessage {
+            role: MessageRole::System,
+            parts: vec![ProviderContextPart::Text { text: system }],
+        },
+        ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts: vec![ProviderContextPart::Text {
+                text: format!("{reference_label}\n{reference_body}"),
+            }],
+        },
+        ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts: vec![ProviderContextPart::Text {
+                text: format!("{entries_label}\n{entries_body}"),
+            }],
+        },
+        ProviderNeutralMessage {
+            role: MessageRole::User,
+            parts: vec![ProviderContextPart::Text {
+                text: output_request,
+            }],
+        },
+    ];
+    let key = format!("summary-chapter:{level}:{window_start}:{window_end}");
+    finalize_unit_request(
+        run,
+        messages,
+        group.len(),
+        GenerationTurnId::from_uuid(Uuid::new_v5(&run.id.as_uuid(), key.as_bytes())),
+        GenerationAttemptId::from_uuid(Uuid::new_v5(&attempt.id.as_uuid(), key.as_bytes())),
+        fragment(group_variant("summary_tool", "summary_tool_group"))?,
+        fragment(group_variant("summary_parameter", "summary_parameter_group"))?,
+        handle,
+        stream_sink,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finalize_unit_request(
+    run: &lettuce_memory::DynamicMemoryRun,
+    messages: Vec<ProviderNeutralMessage>,
+    selected_messages: usize,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    tool_description: String,
+    tool_parameter: String,
+    handle: &JobHandle,
+    stream_sink: Option<RequestId>,
+) -> Result<InferenceRequest, CompanionMemoryInferenceError> {
+    let input_bytes = messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .try_fold(0usize, |total, part| match part {
+            ProviderContextPart::Text { text } => total.checked_add(text.len()),
+            _ => None,
+        })
+        .and_then(|size| u32::try_from(size).ok())
+        .ok_or(CompanionMemoryInferenceError::ContextTooLarge {
+            reason: "prompt text exceeds the byte limit",
+        })?;
+    let mut profile = run.profile.clone();
+    profile.tool_policy = ToolPolicy::Required;
+    profile.output_policy = OutputPolicy::Plain;
+    let request = InferenceRequest {
+        turn_id,
+        attempt_id,
+        operation: GenerationOperation::Send,
+        profile,
+        context: ProviderNeutralContext {
+            messages,
+            attributions: ContextAttributions {
+                usage_snapshot: Some(lettuce_conversations::UsageRecordSnapshot {
+                    operation_kind: Some("summary".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            budget: ContextBudgetReport {
+                selected_messages: u32::try_from(selected_messages).map_err(|_| {
+                    CompanionMemoryInferenceError::ContextTooLarge {
+                        reason: "selected message count does not fit in u32",
+                    }
+                })?,
+                omitted_messages: 0,
+                input_bytes,
+                estimated_input_tokens: input_bytes.saturating_add(3) / 4,
+                truncated: false,
+            },
+        },
+        cancellation: Some(handle.id()),
+        stream_sink,
+        media_grants: Vec::new(),
+        tools: Some(summary_tool_request(tool_description, tool_parameter)),
+        prompt_cache_key: None,
+    };
+    request
+        .validate()
+        .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+            reason: format!("summary request failed validation: {error}"),
+        })?;
+    Ok(request)
+}
+
 fn summary_from_outcome(
     outcome: &InferenceOutcome,
     allow_tool: bool,
@@ -812,8 +1505,73 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        summary_direct_content, summary_from_outcome, summary_speaker_name, validate_summary_text,
+        chapter_word_limit, select_compaction_group, summary_direct_content, summary_from_outcome,
+        summary_speaker_name, validate_summary_text,
     };
+
+    fn unit(
+        kind: lettuce_memory::MemorySummaryUnitKind,
+        level: u32,
+        window: (u64, u64),
+    ) -> lettuce_memory::MemorySummaryUnit {
+        lettuce_memory::MemorySummaryUnit {
+            id: lettuce_types::MemorySummaryUnitId::new(),
+            scope: lettuce_memory::MemorySummaryUnitScope {
+                space_id: lettuce_types::MemorySpaceId::new(),
+                conversation_id: lettuce_types::ConversationId::new(),
+                branch_id: lettuce_types::ConversationBranchId::new(),
+            },
+            created_by_run_id: lettuce_types::DynamicMemoryRunId::new(),
+            kind,
+            level,
+            origin: lettuce_memory::MemoryOrigin::Model,
+            window_start: window.0,
+            window_end: window.1,
+            text: "Part.".into(),
+            token_count: 100,
+            created_at: lettuce_types::TimestampMillis::new(1),
+        }
+    }
+
+    #[test]
+    fn compaction_prefers_a_full_level_then_a_pair_then_the_two_oldest_parts() {
+        use lettuce_memory::MemorySummaryUnitKind::{Chapter, Cycle, Seed};
+        let full = vec![
+            unit(Seed, 0, (0, 0)),
+            unit(Chapter, 1, (0, 12)),
+            unit(Chapter, 1, (12, 24)),
+            unit(Cycle, 0, (24, 30)),
+            unit(Cycle, 0, (30, 36)),
+        ];
+        assert_eq!(select_compaction_group(&full, 2), Some((0, vec![3, 4])));
+        assert_eq!(select_compaction_group(&full, 4), Some((0, vec![3, 4])));
+
+        let pair = vec![
+            unit(Chapter, 1, (0, 12)),
+            unit(Chapter, 1, (12, 24)),
+            unit(Cycle, 0, (24, 30)),
+        ];
+        assert_eq!(select_compaction_group(&pair, 4), Some((1, vec![0, 1])));
+
+        let distinct = vec![
+            unit(Seed, 0, (0, 0)),
+            unit(Chapter, 3, (0, 48)),
+            unit(Chapter, 2, (48, 72)),
+            unit(Chapter, 1, (72, 84)),
+            unit(Cycle, 0, (84, 90)),
+        ];
+        assert_eq!(select_compaction_group(&distinct, 2), Some((3, vec![1, 2])));
+
+        let single = vec![unit(Seed, 0, (0, 0)), unit(Chapter, 3, (0, 48))];
+        assert_eq!(select_compaction_group(&single, 2), None);
+    }
+
+    #[test]
+    fn chapter_word_limit_is_half_the_inputs_capped_by_half_the_budget() {
+        assert_eq!(chapter_word_limit(400, 1536), 150);
+        assert_eq!(chapter_word_limit(4000, 1536), 576);
+        assert_eq!(chapter_word_limit(1, 1536), 1);
+    }
 
     #[test]
     fn summary_speaker_name_uses_persona_for_the_user_side() {
@@ -911,7 +1669,7 @@ mod tests {
 
     #[test]
     fn summary_response_accepts_legacy_tool_or_plain_text() {
-        let summary = "Mira limana ulaştı. ".repeat(500).trim_end().to_owned();
+        let summary = "Mira reached the harbor. ".repeat(500).trim_end().to_owned();
         assert!(summary.len() > 6_000);
         let outcome = |parts, tool_calls| InferenceOutcome {
             provider_response_id: None,
@@ -970,5 +1728,1057 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    mod chapters_tests {
+        use std::collections::VecDeque;
+        use std::sync::{Arc, Mutex};
+
+        use async_trait::async_trait;
+        use lettuce_context::{PromptDocument, PromptRepository};
+        use lettuce_conversations::{
+            ConversationOverviewReader, ConversationReader, FinishReason, InferenceCandidate,
+            InferenceOutcome, InferencePort, InferenceRequest, PortError, ProposedToolCall,
+            ProviderContextPart,
+        };
+        use lettuce_jobs::handle::JobHandle;
+        use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, ResourceClass, SubjectKind};
+        use lettuce_memory::{
+            DynamicMemoryAttemptStatus, DynamicMemoryRunRepository, DynamicMemorySourceMessage,
+            DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryWindow, MemoryOrigin,
+            MemoryRepository, MemorySummary, MemorySummaryChange, MemorySummaryRepository,
+            MemorySummaryUnitKind, MemorySummaryUnitRepository, MemorySummaryUnitScope,
+            NewDynamicMemoryRunAttempt,
+        };
+        use lettuce_types::{
+            ConversationBranchId, ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId,
+            MemorySpaceId, MessageId, TimestampMillis,
+        };
+        use serde_json::json;
+
+        use crate::api::conversations::turns_tests::{open, replied_chat};
+        use crate::api::tests::{Harness as ApiHarness, Reply, harness as api_harness};
+        use crate::companion::companion_memory_summary::build_summary_request;
+        use crate::{
+            BuiltInPromptId, BuiltInPromptService, CompanionMemoryInferenceError,
+            CompanionMemorySummaryCoordinator, CompanionMemoryWindowSelection,
+            EmbeddingGenerationError, MemoryEmbeddingEngine, SummaryMode,
+        };
+
+        struct WordCountEngine;
+
+        impl MemoryEmbeddingEngine for WordCountEngine {
+            fn source_revision(&self) -> &str {
+                "word-count-test"
+            }
+
+            fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+                lettuce_embeddings::EmbeddingDimensions::D64
+            }
+
+            fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError> {
+                Ok(u32::try_from(text.split_whitespace().count()).unwrap_or(u32::MAX))
+            }
+
+            fn embed_memory(
+                &self,
+                _: &lettuce_embeddings::EmbeddingRequest,
+                _: &lettuce_jobs::handle::CancellationToken,
+            ) -> Result<lettuce_embeddings::EmbeddingVector, EmbeddingGenerationError> {
+                panic!("summary tests do not embed")
+            }
+        }
+
+        enum ScriptedReply {
+            Summary(String),
+            Cancelled,
+        }
+
+        struct ScriptedInference {
+            replies: Mutex<VecDeque<ScriptedReply>>,
+            requests: Mutex<Vec<InferenceRequest>>,
+        }
+
+        impl ScriptedInference {
+            fn new(replies: Vec<ScriptedReply>) -> Self {
+                Self {
+                    replies: Mutex::new(replies.into()),
+                    requests: Mutex::new(Vec::new()),
+                }
+            }
+
+            fn requests(&self) -> Vec<InferenceRequest> {
+                self.requests.lock().expect("requests").clone()
+            }
+        }
+
+        #[async_trait]
+        impl InferencePort for ScriptedInference {
+            async fn run(
+                &self,
+                request: InferenceRequest,
+            ) -> Result<InferenceOutcome, PortError> {
+                self.requests.lock().expect("requests").push(request);
+                let reply = self
+                    .replies
+                    .lock()
+                    .expect("replies")
+                    .pop_front()
+                    .expect("scripted reply");
+                match reply {
+                    ScriptedReply::Cancelled => Err(PortError::Cancelled),
+                    ScriptedReply::Summary(text) => Ok(InferenceOutcome {
+                        provider_response_id: None,
+                        candidates: vec![InferenceCandidate {
+                            ordinal: 0,
+                            parts: Vec::new(),
+                            tool_calls: vec![ProposedToolCall {
+                                provider_call_id: Some("call-1".into()),
+                                name: "write_summary".into(),
+                                arguments: json!({ "summary": text }),
+                                raw_arguments: None,
+                                provider_replay: None,
+                            }],
+                            provider_replay: None,
+                            media: Vec::new(),
+                        }],
+                        usage: None,
+                        finish_reason: FinishReason::Stop,
+                        provider_finish_reason: None,
+                        provider_request_id: Some("req-1".into()),
+                        warning_codes: Vec::new(),
+                    }),
+                }
+            }
+        }
+
+        struct Harness {
+            api: ApiHarness,
+            chat: String,
+            conversation_id: ConversationId,
+            branch_id: ConversationBranchId,
+            space_id: MemorySpaceId,
+            summary_prompt: PromptDocument,
+            sources: Vec<DynamicMemorySourceMessage>,
+            next_time: i64,
+        }
+
+        impl Harness {
+            async fn new(tag: &str) -> Self {
+                let api = api_harness(Reply::Text("assistant reply"));
+                let (chat, _) = replied_chat(&api, tag).await;
+                let database = api.context.backend().database();
+                let ids = BuiltInPromptService::new(database)
+                    .expect("prompt service")
+                    .bootstrap(api.context.now())
+                    .expect("bootstrap");
+                let summary_prompt =
+                    PromptRepository::get(database, ids.get(BuiltInPromptId::DynamicSummary))
+                        .expect("prompt lookup")
+                        .expect("summary prompt");
+                let conversation_id: ConversationId = chat.parse().expect("conversation id");
+                let branch_id = ConversationReader::get(database, conversation_id)
+                    .expect("conversation")
+                    .conversation
+                    .active_branch_id;
+                let space_id = MemoryRepository::get_for_branch(database, conversation_id, branch_id)
+                    .expect("memory")
+                    .expect("space")
+                    .id;
+                let view = open(&api, &chat).await;
+                let mut sources = Vec::new();
+                for message in view.messages.items.iter().rev() {
+                    let item = ConversationOverviewReader::timeline_anchor(
+                        database,
+                        conversation_id,
+                        branch_id,
+                        message.id.parse().expect("message id"),
+                    )
+                    .expect("anchor")
+                    .item;
+                    sources.push(DynamicMemorySourceMessage {
+                        message_id: item.message.id,
+                        role: item.message.role,
+                        render_source: item.message.active_render_source,
+                        effective_time: item.message.effective_time,
+                    });
+                }
+                Self {
+                    api,
+                    chat,
+                    conversation_id,
+                    branch_id,
+                    space_id,
+                    summary_prompt,
+                    sources,
+                    next_time: 10_000,
+                }
+            }
+
+            fn database(&self) -> &lettuce_database::Database {
+                self.api.context.backend().database()
+            }
+
+            fn scope(&self) -> MemorySummaryUnitScope {
+                MemorySummaryUnitScope {
+                    space_id: self.space_id,
+                    conversation_id: self.conversation_id,
+                    branch_id: self.branch_id,
+                }
+            }
+
+            fn tick(&mut self) -> TimestampMillis {
+                self.next_time += 100;
+                TimestampMillis::new(self.next_time)
+            }
+
+            fn open_run(
+                &mut self,
+                start: u64,
+                end: u64,
+            ) -> (DynamicMemoryRunId, DynamicMemoryAttemptId, JobHandle) {
+                let at = self.tick();
+                let database = self.database();
+                let job = JobStore::create_or_get(
+                    database,
+                    JobSpec::new(
+                        JobKind::MemoryExtraction,
+                        JobSubject::new(
+                            SubjectKind::Conversation,
+                            format!("{}-{}", self.chat, at.get()),
+                        )
+                        .expect("subject"),
+                        OutcomeRef::Conversation(self.conversation_id),
+                    )
+                    .with_resources(vec![ResourceClass::Cpu]),
+                )
+                .expect("job")
+                .job;
+                let handle = JobHandle::new(job.id);
+                let memory = MemoryRepository::get(database, self.space_id)
+                    .expect("memory")
+                    .expect("space");
+                let run_id = DynamicMemoryRunId::new();
+                let attempt_id = DynamicMemoryAttemptId::new();
+                let admitted = database
+                    .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                        run_id,
+                        attempt_id,
+                        conversation_id: self.conversation_id,
+                        branch_id: self.branch_id,
+                        space_id: self.space_id,
+                        cycle_start_change: None,
+                        starting_memory: memory,
+                        source_messages: self.sources.clone(),
+                        profile: crate::companion::companion_memory_run::tests::profile(),
+                        time_awareness_enabled: false,
+                        supersession_enabled: false,
+                        group_companion_members: Vec::new(),
+                        structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                        summary_window: DynamicMemorySummaryWindow {
+                            message_interval: 2,
+                            start,
+                            end,
+                        },
+                        tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                            lettuce_memory::DynamicMemoryToolOptions {
+                                group: false,
+                                supersession_enabled: false,
+                                require_source_message_id: false,
+                                group_companion: None,
+                            },
+                            &|key| key.to_owned(),
+                        ),
+                        job_id: job.id,
+                        job_attempt: None,
+                        now: at,
+                    })
+                    .expect("admit run");
+                database
+                    .transition_dynamic_memory_attempt(
+                        attempt_id,
+                        admitted.attempt.revision,
+                        DynamicMemoryAttemptStatus::Processing,
+                        None,
+                        at,
+                    )
+                    .expect("transition processing");
+                (run_id, attempt_id, handle)
+            }
+
+            fn publish_checkpoint(&mut self, summary: MemorySummary) {
+                let database = self.database();
+                let memory = MemoryRepository::get(database, self.space_id)
+                    .expect("memory")
+                    .expect("space");
+                MemorySummaryRepository::compare_and_apply_summary(
+                    database,
+                    MemorySummaryChange {
+                        expected_revision: memory.revision,
+                        summary,
+                    },
+                )
+                .expect("publish checkpoint summary");
+            }
+
+            fn publish_summary(&mut self, origin: MemoryOrigin, text: &str) {
+                let at = self.tick();
+                let database = self.database();
+                let memory = MemoryRepository::get(database, self.space_id)
+                    .expect("memory")
+                    .expect("space");
+                let source_ids: Vec<MessageId> = self
+                    .sources
+                    .iter()
+                    .map(|source| source.message_id)
+                    .collect();
+                let (window_start, window_end) = if origin == MemoryOrigin::User {
+                    (0, 0)
+                } else {
+                    (0, u64::try_from(source_ids.len()).expect("len"))
+                };
+                MemorySummaryRepository::compare_and_apply_summary(
+                    database,
+                    MemorySummaryChange {
+                        expected_revision: memory.revision,
+                        summary: MemorySummary {
+                            origin,
+                            space_id: self.space_id,
+                            branch_id: self.branch_id,
+                            text: text.to_owned(),
+                            token_count: Some(WordCountEngine.count_tokens(text).expect("count")),
+                            window_start,
+                            window_end,
+                            source_message_ids: if origin == MemoryOrigin::User {
+                                Vec::new()
+                            } else {
+                                source_ids
+                            },
+                            updated_at: at,
+                        },
+                    },
+                )
+                .expect("publish summary");
+            }
+        }
+
+        fn request_texts(request: &InferenceRequest) -> Vec<String> {
+            request
+                .context
+                .messages
+                .iter()
+                .map(|message| {
+                    message
+                        .parts
+                        .iter()
+                        .filter_map(|part| match part {
+                            ProviderContextPart::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<String>()
+                })
+                .collect()
+        }
+
+        #[tokio::test]
+        async fn cumulative_mode_builds_same_request_as_before() {
+            let mut harness = Harness::new("cumulative").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let (run_id, attempt_id, handle) = harness.open_run(0, count);
+            let now = harness.tick();
+            let database = harness.database();
+
+            let run = database.load_dynamic_memory_run(run_id).expect("run");
+            let attempt = database
+                .load_dynamic_memory_attempt(attempt_id)
+                .expect("attempt");
+            let sources = crate::materialize_sources(database, &run).expect("sources");
+            let runtime_text = crate::generation::runtime_text::RuntimeText::load(
+                database,
+                BuiltInPromptId::MemoryRuntime,
+            )
+            .expect("runtime text");
+            let aggregate = ConversationReader::get(database, harness.conversation_id)
+                .expect("conversation");
+            let persona_name =
+                crate::companion::companion_memory_inference::transcript_persona_name(
+                    &aggregate.conversation,
+                );
+            let expected = build_summary_request(
+                &run,
+                &attempt,
+                &harness.summary_prompt,
+                &runtime_text,
+                None,
+                &sources,
+                persona_name.as_deref(),
+                aggregate.conversation.kind.is_group(),
+                aggregate.conversation.participants.len(),
+                &handle,
+                None,
+                now,
+            )
+            .expect("expected request");
+
+            let inference = Arc::new(ScriptedInference::new(vec![ScriptedReply::Summary(
+                "They greeted each other.".into(),
+            )]));
+            CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                database,
+                database,
+                inference.as_ref(),
+            )
+            .run(
+                run_id,
+                attempt_id,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                SummaryMode::Cumulative,
+                &handle,
+                None,
+                now,
+            )
+            .await
+            .expect("cumulative run");
+
+            let requests = inference.requests();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0], expected);
+        }
+
+        #[tokio::test]
+        async fn chapters_adopts_legacy_published_summary_as_seed() {
+            let mut harness = Harness::new("legacy-seed").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            harness.publish_summary(MemoryOrigin::Model, "Met at the dock at dawn.");
+
+            let (run_id, attempt_id, handle) = harness.open_run(count, count + count);
+            let now = harness.tick();
+            let inference = Arc::new(ScriptedInference::new(vec![ScriptedReply::Summary(
+                "They decided to buy coffee.".into(),
+            )]));
+
+            let result = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run_id,
+                attempt_id,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                SummaryMode::Chapters {
+                    token_budget: 100,
+                    chapter_size: 2,
+                },
+                &handle,
+                None,
+                now,
+            )
+            .await
+            .expect("chapter run");
+
+            assert_eq!(
+                result.checkpoint.summary.text,
+                "Met at the dock at dawn.\n\nThey decided to buy coffee."
+            );
+            let active = harness
+                .database()
+                .active_summary_units(harness.scope(), Some(run_id))
+                .expect("active");
+            assert_eq!(active.len(), 2);
+            assert_eq!(active[0].kind, MemorySummaryUnitKind::Seed);
+            assert_eq!(active[1].kind, MemorySummaryUnitKind::Cycle);
+
+            let requests = inference.requests();
+            let cycle = &requests[0].context.messages;
+            let texts = request_texts(&requests[0]);
+            assert_eq!(cycle.len(), harness.sources.len() + 4);
+            assert!(texts[1].contains("Met at the dock at dawn."));
+            for (message, source) in cycle[3..cycle.len() - 1].iter().zip(&harness.sources) {
+                assert_eq!(message.role, source.role);
+            }
+            assert!(texts.iter().all(|text| !text.contains("[message:")));
+        }
+
+        #[tokio::test]
+        async fn chapters_seed_does_not_count_against_the_budget() {
+            let mut harness = Harness::new("seed-budget").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            harness.publish_summary(
+                MemoryOrigin::Model,
+                "A long legacy summary that alone exceeds the whole budget.",
+            );
+            let mode = SummaryMode::Chapters {
+                token_budget: 8,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("Cycle one words.".into()),
+                ScriptedReply::Summary("Cycle two words.".into()),
+            ]));
+
+            let (run1, att1, h1) = harness.open_run(count, count * 2);
+            let now1 = harness.tick();
+            let res1 = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run1,
+                att1,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h1,
+                None,
+                now1,
+            )
+            .await
+            .expect("run 1");
+            harness.publish_checkpoint(res1.checkpoint.summary);
+
+            let (run2, att2, h2) = harness.open_run(count * 2, count * 3);
+            let now2 = harness.tick();
+            let res = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h2,
+                None,
+                now2,
+            )
+            .await
+            .expect("run 2");
+
+            assert_eq!(inference.requests().len(), 2);
+            assert_eq!(
+                res.checkpoint.summary.text,
+                "A long legacy summary that alone exceeds the whole budget.\n\nCycle one words.\n\nCycle two words."
+            );
+        }
+
+        #[tokio::test]
+        async fn chapters_under_budget_makes_no_chapter_request() {
+            let mut harness = Harness::new("under-budget").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let (run1, att1, handle1) = harness.open_run(0, count);
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("First cycle summary.".into()),
+                ScriptedReply::Summary("Second cycle summary.".into()),
+            ]));
+            let now1 = harness.tick();
+            let res1 = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run1,
+                att1,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                SummaryMode::Chapters {
+                    token_budget: 50,
+                    chapter_size: 2,
+                },
+                &handle1,
+                None,
+                now1,
+            )
+            .await
+            .expect("run 1");
+            harness.publish_checkpoint(res1.checkpoint.summary);
+
+            let (run2, att2, handle2) = harness.open_run(count, count * 2);
+            let now2 = harness.tick();
+            let result = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                SummaryMode::Chapters {
+                    token_budget: 50,
+                    chapter_size: 2,
+                },
+                &handle2,
+                None,
+                now2,
+            )
+            .await
+            .expect("run 2");
+
+            assert_eq!(inference.requests().len(), 2);
+            assert_eq!(
+                result.checkpoint.summary.text,
+                "First cycle summary.\n\nSecond cycle summary."
+            );
+        }
+
+        #[tokio::test]
+        async fn chapters_over_budget_folds_oldest_cycles_into_level_1_chapter() {
+            let mut harness = Harness::new("over-budget").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let mode = SummaryMode::Chapters {
+                token_budget: 10,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("One two three four.".into()),
+                ScriptedReply::Summary("Five six seven eight.".into()),
+                ScriptedReply::Summary("Nine ten eleven twelve.".into()),
+                ScriptedReply::Summary("Combined chapter one.".into()),
+            ]));
+
+            for step in 0..3 {
+                let start = count * step;
+                let end = start + count;
+                let (run_id, attempt_id, handle) = harness.open_run(start, end);
+                let now = harness.tick();
+                let res = CompanionMemorySummaryCoordinator::new(
+                    &WordCountEngine,
+                    harness.database(),
+                    harness.database(),
+                    inference.as_ref(),
+                )
+                .run(
+                    run_id,
+                    attempt_id,
+                    CompanionMemoryWindowSelection::Automatic,
+                    &harness.summary_prompt,
+                    mode,
+                    &handle,
+                    None,
+                    now,
+                )
+                .await
+                .expect("run");
+
+                if step == 2 {
+                    assert_eq!(
+                        res.checkpoint.summary.text,
+                        "Combined chapter one.\n\nNine ten eleven twelve."
+                    );
+                    let active = harness
+                        .database()
+                        .active_summary_units(harness.scope(), Some(run_id))
+                        .expect("active");
+                    assert_eq!(active.len(), 2);
+                    assert_eq!(active[0].kind, MemorySummaryUnitKind::Chapter);
+                    assert_eq!(active[0].level, 1);
+                    assert_eq!((active[0].window_start, active[0].window_end), (0, count * 2));
+                    assert_eq!(active[1].kind, MemorySummaryUnitKind::Cycle);
+                    assert_eq!(
+                        (active[1].window_start, active[1].window_end),
+                        (count * 2, count * 3)
+                    );
+                } else {
+                    harness.publish_checkpoint(res.checkpoint.summary);
+                }
+            }
+            assert_eq!(inference.requests().len(), 4);
+        }
+
+        #[tokio::test]
+        async fn chapters_rejects_non_shorter_chapter_and_publishes_over_budget() {
+            let mut harness = Harness::new("reject-longer").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let mode = SummaryMode::Chapters {
+                token_budget: 5,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("One two three.".into()),
+                ScriptedReply::Summary("Four five six.".into()),
+                ScriptedReply::Summary(
+                    "This chapter output is way longer than six words total.".into(),
+                ),
+            ]));
+
+            let (run1, att1, h1) = harness.open_run(0, count);
+            let now1 = harness.tick();
+            let res1 = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run1,
+                att1,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h1,
+                None,
+                now1,
+            )
+            .await
+            .expect("run 1");
+            harness.publish_checkpoint(res1.checkpoint.summary);
+
+            let (run2, att2, h2) = harness.open_run(count, count * 2);
+            let now2 = harness.tick();
+            let res = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h2,
+                None,
+                now2,
+            )
+            .await
+            .expect("run 2 publishes over budget");
+
+            assert_eq!(
+                res.checkpoint.summary.text,
+                "One two three.\n\nFour five six."
+            );
+        }
+
+        #[tokio::test]
+        async fn chapters_retried_attempt_reuses_stored_cycle_unit() {
+            let mut harness = Harness::new("retry-reuse").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let mode = SummaryMode::Chapters {
+                token_budget: 5,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("One two three.".into()),
+                ScriptedReply::Summary("Four five six.".into()),
+                ScriptedReply::Cancelled,
+                ScriptedReply::Summary("Short chapter.".into()),
+            ]));
+
+            let (run1, att1, h1) = harness.open_run(0, count);
+            let now1 = harness.tick();
+            let res1 = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run1,
+                att1,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h1,
+                None,
+                now1,
+            )
+            .await
+            .expect("run 1");
+            harness.publish_checkpoint(res1.checkpoint.summary);
+
+            let (run2, att2, h2) = harness.open_run(count, count * 2);
+            let now2 = harness.tick();
+            let err = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h2,
+                None,
+                now2,
+            )
+            .await
+            .expect_err("cancelled during chapter");
+            assert!(matches!(err, CompanionMemoryInferenceError::Cancelled));
+            assert_eq!(inference.requests().len(), 3);
+
+            let now3 = harness.tick();
+            let res = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h2,
+                None,
+                now3,
+            )
+            .await
+            .expect("retry succeeds");
+
+            assert_eq!(inference.requests().len(), 4);
+            assert_eq!(res.checkpoint.summary.text, "Short chapter.");
+        }
+
+        #[tokio::test]
+        async fn chapters_user_edit_of_one_part_replaces_only_that_part() {
+            let mut harness = Harness::new("part-edit").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let mode = SummaryMode::Chapters {
+                token_budget: 50,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("First cycle summary.".into()),
+                ScriptedReply::Summary("Second cycle summary.".into()),
+                ScriptedReply::Summary("Third cycle summary.".into()),
+            ]));
+            for (index, (start, end)) in [(0, count), (count, count * 2)].into_iter().enumerate() {
+                let (run, attempt, handle) = harness.open_run(start, end);
+                let now = harness.tick();
+                let result = CompanionMemorySummaryCoordinator::new(
+                    &WordCountEngine,
+                    harness.database(),
+                    harness.database(),
+                    inference.as_ref(),
+                )
+                .run(
+                    run,
+                    attempt,
+                    CompanionMemoryWindowSelection::Automatic,
+                    &harness.summary_prompt,
+                    mode,
+                    &handle,
+                    None,
+                    now,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("run {index}: {error:?}"));
+                harness.publish_checkpoint(result.checkpoint.summary);
+            }
+            harness.publish_summary(
+                MemoryOrigin::User,
+                "First cycle summary, corrected.\n\nSecond cycle summary.",
+            );
+
+            let (run3, att3, handle3) = harness.open_run(count * 2, count * 3);
+            let now3 = harness.tick();
+            let result = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run3,
+                att3,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &handle3,
+                None,
+                now3,
+            )
+            .await
+            .expect("run 3");
+
+            assert_eq!(
+                result.checkpoint.summary.text,
+                "First cycle summary, corrected.\n\nSecond cycle summary.\n\nThird cycle summary."
+            );
+            let active = harness
+                .database()
+                .active_summary_units(harness.scope(), Some(run3))
+                .expect("active");
+            let shape: Vec<_> = active
+                .iter()
+                .map(|unit| (unit.kind, unit.origin, unit.window_start, unit.window_end))
+                .collect();
+            assert_eq!(
+                shape,
+                vec![
+                    (MemorySummaryUnitKind::Cycle, MemoryOrigin::User, 0, count),
+                    (
+                        MemorySummaryUnitKind::Cycle,
+                        MemoryOrigin::Model,
+                        count,
+                        count * 2
+                    ),
+                    (
+                        MemorySummaryUnitKind::Cycle,
+                        MemoryOrigin::Model,
+                        count * 2,
+                        count * 3
+                    ),
+                ]
+            );
+        }
+
+        #[tokio::test]
+        async fn chapters_user_edited_summary_is_adopted_as_user_seed_and_never_compacted() {
+            let mut harness = Harness::new("user-seed").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            harness.publish_summary(MemoryOrigin::User, "User authored foundation text.");
+            let mode = SummaryMode::Chapters {
+                token_budget: 5,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("Cycle one words.".into()),
+                ScriptedReply::Summary("Cycle two words.".into()),
+                ScriptedReply::Summary("Compact chapter.".into()),
+            ]));
+
+            let (run1, att1, h1) = harness.open_run(0, count);
+            let now1 = harness.tick();
+            let res1 = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run1,
+                att1,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h1,
+                None,
+                now1,
+            )
+            .await
+            .expect("run 1");
+            harness.publish_checkpoint(res1.checkpoint.summary);
+
+            let (run2, att2, h2) = harness.open_run(count, count * 2);
+            let now2 = harness.tick();
+            let res = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h2,
+                None,
+                now2,
+            )
+            .await
+            .expect("run 2");
+
+            assert_eq!(
+                res.checkpoint.summary.text,
+                "User authored foundation text.\n\nCompact chapter."
+            );
+            let active = harness
+                .database()
+                .active_summary_units(harness.scope(), Some(run2))
+                .expect("active");
+            assert_eq!(active[0].kind, MemorySummaryUnitKind::Seed);
+            assert_eq!(active[0].origin, MemoryOrigin::User);
+            assert_eq!(active[1].kind, MemorySummaryUnitKind::Chapter);
+
+            let requests = inference.requests();
+            assert_eq!(requests.len(), 3);
+            let chapter_msgs = request_texts(&requests[2]);
+            assert!(chapter_msgs[1].contains("User authored foundation text."));
+            assert!(!chapter_msgs[2].contains("User authored foundation text."));
+            assert!(chapter_msgs[2].contains("[1] Cycle one words."));
+            assert!(chapter_msgs[2].contains("[2] Cycle two words."));
+            assert!(chapter_msgs[3].contains("at most 1 words"));
+        }
+
+        #[tokio::test]
+        async fn chapters_cancellation_during_chapter_request_returns_cancelled() {
+            let mut harness = Harness::new("chapter-cancel").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let mode = SummaryMode::Chapters {
+                token_budget: 4,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("Alpha beta gamma.".into()),
+                ScriptedReply::Summary("Delta epsilon zeta.".into()),
+                ScriptedReply::Cancelled,
+            ]));
+
+            let (run1, att1, h1) = harness.open_run(0, count);
+            let now1 = harness.tick();
+            let res1 = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run1,
+                att1,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h1,
+                None,
+                now1,
+            )
+            .await
+            .expect("run 1");
+            harness.publish_checkpoint(res1.checkpoint.summary);
+
+            let (run2, att2, h2) = harness.open_run(count, count * 2);
+            let now2 = harness.tick();
+            let err = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h2,
+                None,
+                now2,
+            )
+            .await
+            .expect_err("must cancel");
+            assert!(matches!(err, CompanionMemoryInferenceError::Cancelled));
+        }
     }
 }

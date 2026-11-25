@@ -2,7 +2,7 @@ import { useState } from "react";
 import { History, Plus, RotateCcw, Undo2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Accordion, AccordionItem, Badge, Button, cn, confirm, EmptyState, icon, LoadingState, Text } from "@lettuceai/crisp";
-import type { MemoryCycleView, MemoryItemView } from "@/api/generated/bindings";
+import type { MemoryCycleView, MemoryItemView, MemorySummaryStepView } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 import { restorePlan, type RestorePlan } from "./cycle-restore";
 
@@ -58,6 +58,14 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
     }
   };
 
+  const stepKey = (step: MemorySummaryStepView) => {
+    if (step.kind === "reset") return "reset";
+    if (step.kind === "seed") return step.origin === "user" ? "seedUser" : "seedExisting";
+    if (step.origin === "user") return "edit";
+    if (step.kind === "chapter" && step.level >= 2) return "arc";
+    return step.kind;
+  };
+
   const blockedText = (cycle: MemoryCycleView) => {
     const later = cycles.find((entry) => entry.run_id === cycle.blocked_by);
     return later ? t(companion ? "companion.activity.blockedBy" : "memory.activity.blockedBy", { window: windowText(later) }) : t(companion ? "companion.activity.blocked" : "memory.activity.blocked");
@@ -93,7 +101,26 @@ export function ActivityTab({ cycles, hasMore, loadingMore, loading, error, onRe
                 ) : cycle.status === "cancelled" ? (
                   <Text variant="secondary">{t("memory.activity.stopped")}</Text>
                 ) : null}
-                {!failed && !live && cycle.summary && <Text variant="secondary">{cycle.summary}</Text>}
+                {!failed && !live && cycle.summary_steps.length === 0 && cycle.summary && <Text variant="secondary">{cycle.summary}</Text>}
+                {!failed && !live && cycle.summary_steps.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Text variant="hint">{t("memory.activity.steps.title")}</Text>
+                    <ul className="space-y-2" aria-label={t("memory.activity.steps.title")}>
+                      {cycle.summary_steps.map((step, index) => {
+                        const key = stepKey(step);
+                        return (
+                          <li key={index} className="flex gap-2 text-sm">
+                            <span className={cn("w-24 shrink-0 text-fg-3", (key === "chapter" || key === "arc") && "text-accent")}>{t(`memory.activity.steps.${key}.label`)}</span>
+                            <span className="min-w-0 space-y-0.5">
+                              <span className="block text-fg-3">{t(`memory.activity.steps.${key}.body`, { count: step.merged, from: step.message_start, to: step.message_end })}</span>
+                              {step.kind !== "reset" && <span className="block whitespace-pre-wrap text-fg-2">{step.text}</span>}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
                 {cycle.actions.length > 0 && (
                   <ul className="space-y-1.5">
                     {cycle.actions.map((action, index) => {

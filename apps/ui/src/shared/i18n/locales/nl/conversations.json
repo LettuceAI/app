@@ -888,7 +888,73 @@
       "cancel": "Annuleren",
       "save": "Opslaan",
       "saved": "Samenvatting opgeslagen",
-      "cleared": "Samenvatting gewist"
+      "cleared": "Samenvatting gewist",
+      "parts": {
+        "description": "Opgebouwd uit delen, één per geheugenupdate",
+        "budget": "Budget voor delen",
+        "budgetValue": "{{used}} / {{budget}} tokens",
+        "list": "Delen van de samenvatting",
+        "count_one": "{{count}} deel",
+        "count_other": "{{count}} delen",
+        "chapters_one": "{{count}} hoofdstuk",
+        "chapters_other": "{{count}} hoofdstukken",
+        "seed": "Beginsamenvatting",
+        "cycle": "Deel",
+        "chapter": "Hoofdstuk",
+        "edited": "Door jou bewerkt",
+        "pending": "Toegepast bij de volgende update",
+        "seedNote": "Blijft zoals het is. Wordt niet samengevoegd tot hoofdstukken en telt niet mee voor het budget.",
+        "edit": "Bewerken",
+        "delete": "Verwijderen",
+        "deleteTitle": "Dit deel verwijderen?",
+        "deleteBody": "De samenvatting bevat het niet meer. De berichten die het besloeg worden niet opnieuw samengevat.",
+        "deleteConfirm": "Deel verwijderen",
+        "asText": "Bewerken als één tekst",
+        "asParts": "Delen tonen",
+        "done": "Klaar",
+        "textHint": "Je wijzigingen worden aan de delen gekoppeld. Past de tekst er niet meer bij, dan wordt hij de beginsamenvatting.",
+        "empty": "Nog geen delen. Het eerste wordt geschreven bij de volgende geheugenupdate.",
+        "writeStart": "Beginsamenvatting schrijven",
+        "overBudget": "Boven het budget. De volgende updates voegen delen samen tot het past.",
+        "lead": "Geheugenupdates voegen delen toe. Oude delen worden samengevoegd tot hoofdstukken zodat de samenvatting binnen het budget blijft.",
+        "coverage": "Wat de samenvatting dekt",
+        "messages_one": "{{count}} bericht",
+        "messages_other": "{{count}} berichten",
+        "legend": {
+          "seed": "Beginsamenvatting",
+          "chapter": "Hoofdstuk",
+          "cycle": "Deel",
+          "unsummarized": "Nog niet samengevat",
+          "arc": "Boog"
+        },
+        "nextMerge_one": "Volgende samenvoeging: de hieronder gemarkeerde delen worden samengevoegd zodra de delen {{budget}} tokens overschrijden.",
+        "nextMerge_other": "Volgende samenvoeging: de hieronder gemarkeerde delen worden samengevoegd zodra de delen {{budget}} tokens overschrijden.",
+        "mergesNext": "Wordt hierna samengevoegd",
+        "how": {
+          "title": "Hoe het werkt",
+          "update": "Elke geheugenupdate vat zijn nieuwe berichten samen in één deel.",
+          "merge": "Als de delen meer dan {{budget}} tokens worden, worden de {{size}} oudste delen samengevoegd tot een hoofdstuk. Hoofdstukken worden op dezelfde manier samengevoegd tot bogen.",
+          "seed": "Een beginsamenvatting bestond al vóór de delen, bijvoorbeeld een die jij schreef. Die blijft zoals hij is en telt niet mee voor het budget.",
+          "edit": "Bewerk of verwijder een deel om het te verbeteren. De volgende update neemt je wijziging over en latere hoofdstukken behouden die.",
+          "recent": "Berichten die nog niet zijn samengevat, leest het model nog steeds uit de chatgeschiedenis."
+        },
+        "showMore": "Meer tonen",
+        "showLess": "Minder tonen",
+        "arc": "Boog",
+        "arcLevel": "Boog, niveau {{level}}",
+        "arcs_one": "{{count}} boog",
+        "arcs_other": "{{count}} bogen",
+        "sources": {
+          "madeFrom_one": "Gemaakt van {{count}} delen",
+          "madeFrom_other": "Gemaakt van {{count}} delen",
+          "replaced_one": "Verving {{count}} delen",
+          "replaced_other": "Verving {{count}} delen",
+          "hide": "Bronnen verbergen",
+          "note": "Alleen-lezen. Dit zijn de originelen waaruit dit deel is gemaakt. Bewerk het deel hierboven om de samenvatting te wijzigen.",
+          "list": "Bronnen",
+          "failed": "De bronnen konden niet worden geladen."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Geheugen bijwerken?",
@@ -1009,6 +1075,39 @@
         "addBack": "Weer toevoegen",
         "added": "Herinnering toegevoegd",
         "addedBack": "Herinnering weer toegevoegd"
+      },
+      "steps": {
+        "title": "Samenvatting",
+        "cycle": {
+          "label": "Nieuw deel",
+          "body": "Berichten {{from}} tot {{to}} samengevat in een nieuw deel"
+        },
+        "chapter": {
+          "label": "Hoofdstuk",
+          "body_one": "{{count}} delen met de berichten {{from}} tot {{to}} samengevoegd tot één hoofdstuk",
+          "body_other": "{{count}} delen met de berichten {{from}} tot {{to}} samengevoegd tot één hoofdstuk"
+        },
+        "edit": {
+          "label": "Jouw wijziging",
+          "body": "Je wijziging voor de berichten {{from}} tot {{to}} is overgenomen"
+        },
+        "seedUser": {
+          "label": "Beginsamenvatting",
+          "body": "Jouw samenvatting werd de beginsamenvatting"
+        },
+        "seedExisting": {
+          "label": "Beginsamenvatting",
+          "body": "De bestaande samenvatting werd de beginsamenvatting"
+        },
+        "reset": {
+          "label": "Gewist",
+          "body": "Je hebt de samenvatting gewist, dus de delen beginnen opnieuw"
+        },
+        "arc": {
+          "label": "Boog",
+          "body_one": "{{count}} delen met de berichten {{from}} tot {{to}} samengevoegd tot één boog",
+          "body_other": "{{count}} delen met de berichten {{from}} tot {{to}} samengevoegd tot één boog"
+        }
       }
     },
     "pinnedTab": {

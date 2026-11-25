@@ -245,4 +245,72 @@ describe("developer templates", () => {
     expect(runtime.router.state.location.pathname).toBe("/settings/developer");
     expect(screen.queryByText("diagnostic")).toBeNull();
   });
+
+  it("seeds the long ferry story with dynamic memory and a written summary", async () => {
+    const order: string[] = [];
+    const calls = backend(order);
+    const seeds: { lines: unknown[] }[] = [];
+    const patches: { patch: { memory: unknown } }[] = [];
+    const summaries: { summary: unknown; expected_revision: number }[] = [];
+    const seed = calls.devConversationSeed;
+    calls.devConversationSeed = (request) => {
+      seeds.push(request as { lines: unknown[] });
+      return seed!(request);
+    };
+    calls.conversationSettingsUpdate = ((request: { patch: { memory: unknown } }) => {
+      order.push("conversationSettingsUpdate");
+      patches.push(request);
+      return ok({});
+    }) as never;
+    calls.memorySummaryUpdate = ((request: { summary: unknown; expected_revision: number }) => {
+      order.push("memorySummaryUpdate");
+      summaries.push(request);
+      return ok({ revision: 8 });
+    }) as never;
+    const runtime = await mount("/settings/developer", true, calls);
+    fireEvent.click(await row("Chapters: written summary"));
+    await waitFor(() => expect(runtime.router.state.location.pathname).toBe("/chat/chat-1"));
+    expect(order.slice(0, 8)).toEqual([
+      "characterDraftDefault:roleplay",
+      "characterSave",
+      "personaSave",
+      "devConversationSeed",
+      "conversationSettingsGet",
+      "conversationSettingsUpdate",
+      "memoryGet",
+      "memorySummaryUpdate",
+    ]);
+    expect(seeds[0]?.lines).toHaveLength(42);
+    expect(patches[0]?.patch.memory).toEqual({ type: "set", mode: "dynamic" });
+    expect(summaries[0]?.summary).toEqual({ type: "set", text: expect.stringContaining("Hollin") });
+    expect(summaries[0]?.expected_revision).toBe(7);
+  });
+});
+
+describe("chapter test settings", () => {
+  afterEach(() => localStorage.clear());
+
+  it("saves the memory settings, applies the test values and restores them", async () => {
+    const original = { enabled: false, run_mode: "manual", summary_message_interval: 20, chapter_summaries_enabled: false, summary_token_budget: 1536, summary_chapter_size: 4 };
+    const updates: SettingsUpdateRequest_Deserialize[] = [];
+    const view = { ...settingsView(true), global: { developer_mode_enabled: true, dynamic_memory: original, group_dynamic_memory: null } } as unknown as SettingsView;
+    await mount("/settings/developer", true, {
+      settingsGet: () => ok(view),
+      settingsUpdate: (request: SettingsUpdateRequest_Deserialize) => {
+        updates.push(request);
+        return ok(view);
+      },
+    });
+    fireEvent.click(await row("Use chapter test settings"));
+    await waitFor(() => expect(updates).toHaveLength(1));
+    expect(updates[0]?.patch).toEqual({
+      section: "dynamic_memory",
+      value: { enabled: true, run_mode: "auto", summary_message_interval: 6, chapter_summaries_enabled: true, summary_token_budget: 800, summary_chapter_size: 2 },
+    });
+    fireEvent.click(await row("Restore memory settings"));
+    await waitFor(() => expect(updates).toHaveLength(3));
+    expect(updates[1]?.patch).toEqual({ section: "dynamic_memory", value: original });
+    expect(updates[2]?.patch).toEqual({ section: "group_dynamic_memory", value: null });
+    await waitFor(() => expect(screen.queryByText("Restore memory settings")).toBeNull());
+  });
 });

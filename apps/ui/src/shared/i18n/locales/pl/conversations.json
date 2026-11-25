@@ -920,7 +920,87 @@
       "cancel": "Anuluj",
       "save": "Zapisz",
       "saved": "Zapisano podsumowanie",
-      "cleared": "Wyczyszczono podsumowanie"
+      "cleared": "Wyczyszczono podsumowanie",
+      "parts": {
+        "description": "Składa się z części, po jednej na każdą aktualizację pamięci",
+        "budget": "Budżet części",
+        "budgetValue": "{{used}} / {{budget}} tokenów",
+        "list": "Części podsumowania",
+        "count_one": "{{count}} część",
+        "count_few": "{{count}} części",
+        "count_many": "{{count}} części",
+        "count_other": "{{count}} części",
+        "chapters_one": "{{count}} rozdział",
+        "chapters_few": "{{count}} rozdziały",
+        "chapters_many": "{{count}} rozdziałów",
+        "chapters_other": "{{count}} rozdziału",
+        "seed": "Podsumowanie początkowe",
+        "cycle": "Część",
+        "chapter": "Rozdział",
+        "edited": "Edytowane przez ciebie",
+        "pending": "Zastosowane przy następnej aktualizacji",
+        "seedNote": "Zostaje bez zmian. Nie łączy się w rozdziały i nie liczy się do budżetu.",
+        "edit": "Edytuj",
+        "delete": "Usuń",
+        "deleteTitle": "Usunąć tę część?",
+        "deleteBody": "Podsumowanie przestanie ją zawierać. Wiadomości, które obejmowała, nie zostaną ponownie podsumowane.",
+        "deleteConfirm": "Usuń część",
+        "asText": "Edytuj jako jeden tekst",
+        "asParts": "Pokaż części",
+        "done": "Gotowe",
+        "textHint": "Twoje zmiany są dopasowywane do części. Jeśli tekst przestanie do nich pasować, stanie się podsumowaniem początkowym.",
+        "empty": "Nie ma jeszcze części. Pierwsza powstanie przy następnej aktualizacji pamięci.",
+        "writeStart": "Napisz podsumowanie początkowe",
+        "overBudget": "Ponad budżet. Kolejne aktualizacje będą łączyć części, aż się zmieści.",
+        "lead": "Aktualizacje pamięci dodają części. Stare części są łączone w rozdziały, by podsumowanie mieściło się w budżecie.",
+        "coverage": "Co obejmuje podsumowanie",
+        "messages_one": "{{count}} wiadomość",
+        "messages_few": "{{count}} wiadomości",
+        "messages_many": "{{count}} wiadomości",
+        "messages_other": "{{count}} wiadomości",
+        "legend": {
+          "seed": "Podsumowanie początkowe",
+          "chapter": "Rozdział",
+          "cycle": "Część",
+          "unsummarized": "Jeszcze nie podsumowane",
+          "arc": "Wątek"
+        },
+        "nextMerge_few": "Następne łączenie: oznaczone niżej części zostaną połączone, gdy części przekroczą {{budget}} tokenów.",
+        "nextMerge_many": "Następne łączenie: oznaczone niżej części zostaną połączone, gdy części przekroczą {{budget}} tokenów.",
+        "nextMerge_one": "Następne łączenie: oznaczone niżej części zostaną połączone, gdy części przekroczą {{budget}} tokenów.",
+        "nextMerge_other": "Następne łączenie: oznaczone niżej części zostaną połączone, gdy części przekroczą {{budget}} tokenów.",
+        "mergesNext": "Łączone jako następne",
+        "how": {
+          "title": "Jak to działa",
+          "update": "Każda aktualizacja pamięci podsumowuje swoje nowe wiadomości w jednej części.",
+          "merge": "Gdy części przekroczą {{budget}} tokenów, {{size}} najstarszych części łączy się w rozdział. Rozdziały w ten sam sposób łączą się w wątki.",
+          "seed": "Podsumowanie początkowe istniało przed częściami, np. napisane przez ciebie. Zostaje bez zmian i nie liczy się do budżetu.",
+          "edit": "Aby poprawić część, edytuj ją lub usuń. Następna aktualizacja przejmie zmianę, a późniejsze rozdziały ją zachowają.",
+          "recent": "Wiadomości, które nie są jeszcze podsumowane, model nadal czyta z historii czatu."
+        },
+        "showMore": "Pokaż więcej",
+        "showLess": "Pokaż mniej",
+        "arc": "Wątek",
+        "arcLevel": "Wątek, poziom {{level}}",
+        "arcs_one": "{{count}} wątek",
+        "arcs_few": "{{count}} wątki",
+        "arcs_many": "{{count}} wątków",
+        "arcs_other": "{{count}} wątku",
+        "sources": {
+          "madeFrom_few": "Powstało z {{count}} części",
+          "madeFrom_many": "Powstało z {{count}} części",
+          "madeFrom_one": "Powstało z {{count}} części",
+          "madeFrom_other": "Powstało z {{count}} części",
+          "replaced_few": "Zastąpiło {{count}} części",
+          "replaced_many": "Zastąpiło {{count}} części",
+          "replaced_one": "Zastąpiło {{count}} części",
+          "replaced_other": "Zastąpiło {{count}} części",
+          "hide": "Ukryj źródła",
+          "note": "Tylko do odczytu. To oryginały, z których powstała ta część. Aby zmienić podsumowanie, edytuj część powyżej.",
+          "list": "Źródła",
+          "failed": "Nie udało się wczytać źródeł."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Zaktualizować pamięć?",
@@ -1051,6 +1131,43 @@
         "addBack": "Dodaj z powrotem",
         "added": "Dodano wspomnienie",
         "addedBack": "Przywrócono wspomnienie"
+      },
+      "steps": {
+        "title": "Podsumowanie",
+        "cycle": {
+          "label": "Nowa część",
+          "body": "Wiadomości {{from}}–{{to}} podsumowane w nowej części"
+        },
+        "chapter": {
+          "label": "Rozdział",
+          "body_few": "{{count}} części z wiadomościami {{from}}–{{to}} połączono w jeden rozdział",
+          "body_many": "{{count}} części z wiadomościami {{from}}–{{to}} połączono w jeden rozdział",
+          "body_one": "{{count}} części z wiadomościami {{from}}–{{to}} połączono w jeden rozdział",
+          "body_other": "{{count}} części z wiadomościami {{from}}–{{to}} połączono w jeden rozdział"
+        },
+        "edit": {
+          "label": "Twoja zmiana",
+          "body": "Przejęto twoją zmianę dla wiadomości {{from}}–{{to}}"
+        },
+        "seedUser": {
+          "label": "Podsumowanie początkowe",
+          "body": "Twoje podsumowanie stało się podsumowaniem początkowym"
+        },
+        "seedExisting": {
+          "label": "Podsumowanie początkowe",
+          "body": "Istniejące podsumowanie stało się podsumowaniem początkowym"
+        },
+        "reset": {
+          "label": "Wyczyszczono",
+          "body": "Wyczyszczono podsumowanie, więc części zaczynają się od nowa"
+        },
+        "arc": {
+          "label": "Wątek",
+          "body_few": "{{count}} części z wiadomościami {{from}}–{{to}} połączono w jeden wątek",
+          "body_many": "{{count}} części z wiadomościami {{from}}–{{to}} połączono w jeden wątek",
+          "body_one": "{{count}} części z wiadomościami {{from}}–{{to}} połączono w jeden wątek",
+          "body_other": "{{count}} części z wiadomościami {{from}}–{{to}} połączono w jeden wątek"
+        }
       }
     },
     "pinnedTab": {

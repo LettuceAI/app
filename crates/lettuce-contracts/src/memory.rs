@@ -339,10 +339,37 @@ pub struct MemoryCycleView {
     pub status: MemoryCycleStatus,
     pub failure: Option<MemoryFailureCode>,
     pub summary: Option<String>,
+    pub summary_steps: Vec<MemorySummaryStepView>,
     pub actions: Vec<MemoryCycleAction>,
     pub reverted: bool,
     pub revertable: bool,
     pub blocked_by: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemorySummaryStepKind {
+    Seed,
+    Cycle,
+    Chapter,
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemorySummaryStepView {
+    pub kind: MemorySummaryStepKind,
+    pub level: u32,
+    pub origin: MemoryOrigin,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub message_start: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub message_end: u64,
+    pub merged: u32,
+    pub text: String,
+    pub token_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -378,6 +405,52 @@ pub struct MemorySummaryView {
     pub text: String,
     pub origin: MemoryOrigin,
     pub token_count: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemorySummaryPartKind {
+    Seed,
+    Cycle,
+    Chapter,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemorySummaryPartView {
+    pub id: Option<String>,
+    pub kind: MemorySummaryPartKind,
+    pub level: u32,
+    pub origin: MemoryOrigin,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub message_start: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub message_end: u64,
+    pub text: String,
+    pub token_count: Option<u32>,
+    pub pending: bool,
+    pub source_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemorySummaryPartSourcesRequest {
+    pub conversation_id: String,
+    pub part_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemorySummaryPartsView {
+    pub parts: Vec<MemorySummaryPartView>,
+    pub token_budget: u32,
+    pub chapter_size: u32,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub message_count: u64,
 }
 
 #[cfg(test)]
@@ -469,6 +542,7 @@ pub struct MemoryView {
     pub items: Vec<MemoryItemView>,
     pub allowed_categories: Vec<MemoryCategory>,
     pub summary: Option<MemorySummaryView>,
+    pub summary_parts: Option<MemorySummaryPartsView>,
     pub status: MemoryStatusView,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub revision: u64,

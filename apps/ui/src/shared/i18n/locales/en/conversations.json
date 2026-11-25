@@ -888,7 +888,73 @@
       "cancel": "Cancel",
       "save": "Save",
       "saved": "Summary saved",
-      "cleared": "Summary cleared"
+      "cleared": "Summary cleared",
+      "parts": {
+        "description": "Built from parts, one per memory update",
+        "budget": "Parts budget",
+        "budgetValue": "{{used}} / {{budget}} tokens",
+        "list": "Summary parts",
+        "count_one": "{{count}} part",
+        "count_other": "{{count}} parts",
+        "chapters_one": "{{count}} chapter",
+        "chapters_other": "{{count}} chapters",
+        "seed": "Starting summary",
+        "cycle": "Part",
+        "chapter": "Chapter",
+        "edited": "Edited by you",
+        "pending": "Applied at the next update",
+        "seedNote": "Kept as is. It isn't merged into chapters and doesn't count toward the budget.",
+        "edit": "Edit",
+        "delete": "Delete",
+        "deleteTitle": "Delete this part?",
+        "deleteBody": "The summary stops including it. The messages it covered are not summarized again.",
+        "deleteConfirm": "Delete part",
+        "asText": "Edit as one text",
+        "asParts": "Show parts",
+        "done": "Done",
+        "textHint": "Your changes are matched to the parts. If the text no longer matches them, it becomes the starting summary.",
+        "empty": "No parts yet. The first one is written at the next memory update.",
+        "writeStart": "Write a starting summary",
+        "overBudget": "Over the budget. The next updates merge parts until it fits.",
+        "lead": "Memory updates add parts. Old parts are merged into chapters so the summary stays within the budget.",
+        "coverage": "What the summary covers",
+        "messages_one": "{{count}} message",
+        "messages_other": "{{count}} messages",
+        "legend": {
+          "seed": "Starting summary",
+          "chapter": "Chapter",
+          "cycle": "Part",
+          "unsummarized": "Not summarized yet",
+          "arc": "Arc"
+        },
+        "nextMerge_one": "Next merge: the parts marked below are combined once the parts pass {{budget}} tokens.",
+        "nextMerge_other": "Next merge: the parts marked below are combined once the parts pass {{budget}} tokens.",
+        "mergesNext": "Merges next",
+        "how": {
+          "title": "How this works",
+          "update": "Each memory update summarizes its new messages into one part.",
+          "merge": "When the parts pass {{budget}} tokens, the {{size}} oldest parts are merged into a chapter. Chapters are merged into arcs the same way.",
+          "seed": "A starting summary is one that existed before the parts, such as one you wrote. It stays as it is and doesn't count toward the budget.",
+          "edit": "Edit or delete a part to fix it. The next update takes your change in, and later chapters keep it.",
+          "recent": "Messages that aren't summarized yet are still read by the model from the chat history."
+        },
+        "showMore": "Show more",
+        "showLess": "Show less",
+        "arc": "Arc",
+        "arcLevel": "Arc, level {{level}}",
+        "arcs_one": "{{count}} arc",
+        "arcs_other": "{{count}} arcs",
+        "sources": {
+          "madeFrom_one": "Made from {{count}} parts",
+          "madeFrom_other": "Made from {{count}} parts",
+          "replaced_one": "Replaced {{count}} parts",
+          "replaced_other": "Replaced {{count}} parts",
+          "hide": "Hide sources",
+          "note": "Read-only. These are the originals this part was built from. To change the summary, edit the part above.",
+          "list": "Sources",
+          "failed": "The sources couldn't be loaded."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Update memory?",
@@ -1010,6 +1076,39 @@
         "addBack": "Add it back",
         "added": "Memory added",
         "addedBack": "Memory added back"
+      },
+      "steps": {
+        "title": "Summary",
+        "cycle": {
+          "label": "New part",
+          "body": "Summarized messages {{from}} to {{to}} into a new part"
+        },
+        "chapter": {
+          "label": "Chapter",
+          "body_one": "Merged {{count}} parts covering messages {{from}} to {{to}} into one chapter",
+          "body_other": "Merged {{count}} parts covering messages {{from}} to {{to}} into one chapter"
+        },
+        "edit": {
+          "label": "Your edit",
+          "body": "Took in your change for messages {{from}} to {{to}}"
+        },
+        "seedUser": {
+          "label": "Starting summary",
+          "body": "Your summary became the starting summary"
+        },
+        "seedExisting": {
+          "label": "Starting summary",
+          "body": "The summary that was already there became the starting summary"
+        },
+        "reset": {
+          "label": "Cleared",
+          "body": "You cleared the summary, so the parts start over"
+        },
+        "arc": {
+          "label": "Arc",
+          "body_one": "Merged {{count}} parts covering messages {{from}} to {{to}} into one arc",
+          "body_other": "Merged {{count}} parts covering messages {{from}} to {{to}} into one arc"
+        }
       }
     },
     "pinnedTab": {

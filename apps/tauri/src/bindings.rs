@@ -316,6 +316,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::memory::memory_pin,
             commands::memory::memory_set_temperature,
             commands::memory::memory_summary_update,
+            commands::memory::memory_summary_part_sources,
             commands::memory::memory_trigger,
             commands::memory::memory_retry,
             commands::memory::memory_skip,

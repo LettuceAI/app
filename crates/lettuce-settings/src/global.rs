@@ -502,6 +502,24 @@ pub struct DynamicMemorySettings {
     /// Whether memory cycles may pin, unpin or create pinned memories. Pins the
     /// user sets by hand are unaffected.
     pub model_pinning_enabled: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub chapter_summaries_enabled: bool,
+    #[serde(skip_serializing_if = "is_default_summary_token_budget")]
+    pub summary_token_budget: u32,
+    #[serde(skip_serializing_if = "is_default_summary_chapter_size")]
+    pub summary_chapter_size: u32,
+}
+
+const fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+const fn is_default_summary_token_budget(value: &u32) -> bool {
+    *value == 1_536
+}
+
+const fn is_default_summary_chapter_size(value: &u32) -> bool {
+    *value == 4
 }
 
 impl Default for DynamicMemorySettings {
@@ -526,6 +544,9 @@ impl Default for DynamicMemorySettings {
             recursive_memory_loop_hard_cap: 20,
             structured_fallback_format: MemoryStructuredFallbackFormat::Xml,
             model_pinning_enabled: true,
+            chapter_summaries_enabled: false,
+            summary_token_budget: 1_536,
+            summary_chapter_size: 4,
         }
     }
 }

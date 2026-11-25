@@ -550,7 +550,18 @@
       "group": { "title": "Chat de groupe", "description": "Trois personnages dans un groupe avec historique" },
       "group_companion": { "title": "Chat de groupe de compagnons", "description": "Trois compagnons avec une âme dans un groupe de compagnons avec historique" },
       "roleplay_widgets": { "title": "Chat de jeu de rôle avec widgets", "description": "Le chat de jeu de rôle avec tous les widgets à côté du chat" },
-      "companion_widgets": { "title": "Chat de compagnon avec widgets", "description": "Le chat de compagnon avec tous les widgets, dont l'état du compagnon et la mémoire" }
+      "companion_widgets": { "title": "Chat de compagnon avec widgets", "description": "Le chat de compagnon avec tous les widgets, dont l'état du compagnon et la mémoire" },
+      "chapters_backlog": { "title": "Chapitres : long historique", "description": "Une histoire de bac de 42 messages sans résumé. Chaque message envoyé résume les six anciens suivants." },
+      "chapters_user_seed": { "title": "Chapitres : résumé écrit", "description": "La même histoire avec un court résumé écrit à la main, conservé comme point de départ." },
+      "chapters_large_seed": { "title": "Chapitres : résumé trop long", "description": "La même histoire avec un résumé écrit à la main plus grand que le budget de test. Seuls les nouveaux cycles sont regroupés." },
+      "chapters_group": { "title": "Chapitres : groupe", "description": "Une histoire de 36 messages d'un équipage de renflouage dans un groupe avec mémoire dynamique." }
+    },
+    "chapters": {
+      "group": "Tests des résumés par chapitres",
+      "apply": { "title": "Utiliser les réglages de test des chapitres", "description": "Active la mémoire dynamique et les résumés par chapitres avec des cycles de 6 messages, un budget de 800 jetons et 2 cycles par chapitre. Tes réglages de mémoire sont d'abord sauvegardés." },
+      "restore": { "title": "Restaurer les réglages de mémoire", "description": "Remet les réglages de mémoire sauvegardés avant les réglages de test." },
+      "applied": "Réglages de test des chapitres activés",
+      "restored": "Réglages de mémoire restaurés"
     }
   },
   "manage": {
@@ -1463,6 +1474,12 @@
       "enrichment": "Enrichissement du contexte",
       "experimental": "Expérimental",
       "enrichmentBody": "Utilise les derniers messages pour rechercher des souvenirs, pas seulement le plus récent",
+      "chapterSummaries": "Résumés par chapitres",
+      "chapterSummariesBody": "Résume chaque cycle de mémoire séparément et regroupe les cycles plus anciens en chapitres lorsque le résumé dépasse son budget. Le résumé actuel est conservé comme point de départ.",
+      "summaryBudget": "Budget du résumé",
+      "summaryBudgetBody": "Tokens que le résumé de la conversation peut utiliser avant que les anciens cycles ne soient regroupés en chapitres.",
+      "chapterSize": "Cycles par chapitre",
+      "chapterSizeBody": "Nombre de résumés regroupés dans un même chapitre.",
       "loops": "Boucles de mémoire récursives",
       "loopsBody": "Renvoie les résultats des outils jusqu'à ce que le modèle signale la fin. Aide les modèles plus faibles, consomme plus de tokens.",
       "loopCap": "Plafond strict des boucles récursives",

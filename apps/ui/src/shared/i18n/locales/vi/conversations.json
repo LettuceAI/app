@@ -872,7 +872,66 @@
       "cancel": "Hủy",
       "save": "Lưu",
       "saved": "Đã lưu bản tóm tắt",
-      "cleared": "Đã xóa bản tóm tắt"
+      "cleared": "Đã xóa bản tóm tắt",
+      "parts": {
+        "description": "Gồm nhiều phần, mỗi lần cập nhật bộ nhớ thêm một phần",
+        "budget": "Ngân sách các phần",
+        "budgetValue": "{{used}} / {{budget}} token",
+        "list": "Các phần của tóm tắt",
+        "count_other": "{{count}} phần",
+        "chapters_other": "{{count}} chương",
+        "seed": "Tóm tắt ban đầu",
+        "cycle": "Phần",
+        "chapter": "Chương",
+        "edited": "Bạn đã sửa",
+        "pending": "Áp dụng ở lần cập nhật tới",
+        "seedNote": "Giữ nguyên. Không bị gộp vào chương và không tính vào ngân sách.",
+        "edit": "Sửa",
+        "delete": "Xóa",
+        "deleteTitle": "Xóa phần này?",
+        "deleteBody": "Tóm tắt sẽ không còn bao gồm phần này. Các tin nhắn nó bao quát sẽ không được tóm tắt lại.",
+        "deleteConfirm": "Xóa phần",
+        "asText": "Sửa thành một văn bản",
+        "asParts": "Hiện các phần",
+        "done": "Xong",
+        "textHint": "Thay đổi của bạn được khớp với các phần. Nếu văn bản không còn khớp, nó sẽ trở thành tóm tắt ban đầu.",
+        "empty": "Chưa có phần nào. Phần đầu tiên sẽ được viết ở lần cập nhật bộ nhớ tới.",
+        "writeStart": "Viết tóm tắt ban đầu",
+        "overBudget": "Vượt ngân sách. Các lần cập nhật tiếp theo sẽ gộp các phần cho đến khi vừa.",
+        "lead": "Mỗi lần cập nhật bộ nhớ thêm một phần. Các phần cũ được gộp thành chương để tóm tắt nằm trong ngân sách.",
+        "coverage": "Phạm vi tóm tắt",
+        "messages_other": "{{count}} tin nhắn",
+        "legend": {
+          "seed": "Tóm tắt ban đầu",
+          "chapter": "Chương",
+          "cycle": "Phần",
+          "unsummarized": "Chưa được tóm tắt",
+          "arc": "Hồi"
+        },
+        "nextMerge_other": "Lần gộp tiếp theo: các phần được đánh dấu bên dưới sẽ được gộp khi các phần vượt quá {{budget}} token.",
+        "mergesNext": "Gộp tiếp theo",
+        "how": {
+          "title": "Cách hoạt động",
+          "update": "Mỗi lần cập nhật bộ nhớ tóm tắt các tin nhắn mới thành một phần.",
+          "merge": "Khi các phần vượt quá {{budget}} token, {{size}} phần cũ nhất được gộp thành một chương. Các chương cũng được gộp thành hồi theo cách tương tự.",
+          "seed": "Tóm tắt ban đầu là tóm tắt có từ trước khi có các phần, chẳng hạn bạn tự viết. Nó được giữ nguyên và không tính vào ngân sách.",
+          "edit": "Sửa hoặc xóa một phần để chỉnh lại. Lần cập nhật tới sẽ nhận thay đổi của bạn và các chương sau sẽ giữ nó.",
+          "recent": "Những tin nhắn chưa được tóm tắt vẫn được mô hình đọc từ lịch sử trò chuyện."
+        },
+        "showMore": "Xem thêm",
+        "showLess": "Thu gọn",
+        "arc": "Hồi",
+        "arcLevel": "Hồi, cấp {{level}}",
+        "arcs_other": "{{count}} hồi",
+        "sources": {
+          "madeFrom_other": "Tạo từ {{count}} phần",
+          "replaced_other": "Đã thay {{count}} phần",
+          "hide": "Ẩn nguồn",
+          "note": "Chỉ đọc. Đây là các bản gốc tạo nên phần này. Để thay đổi tóm tắt, hãy sửa phần ở trên.",
+          "list": "Nguồn",
+          "failed": "Không tải được nguồn."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Cập nhật bộ nhớ?",
@@ -988,6 +1047,37 @@
         "addBack": "Thêm lại",
         "added": "Đã thêm ký ức",
         "addedBack": "Đã thêm lại ký ức"
+      },
+      "steps": {
+        "title": "Tóm tắt",
+        "cycle": {
+          "label": "Phần mới",
+          "body": "Đã tóm tắt tin nhắn {{from}} đến {{to}} thành một phần mới"
+        },
+        "chapter": {
+          "label": "Chương",
+          "body_other": "Đã gộp {{count}} phần gồm tin nhắn {{from}} đến {{to}} thành một chương"
+        },
+        "edit": {
+          "label": "Bạn đã sửa",
+          "body": "Đã nhận thay đổi của bạn cho tin nhắn {{from}} đến {{to}}"
+        },
+        "seedUser": {
+          "label": "Tóm tắt ban đầu",
+          "body": "Tóm tắt của bạn trở thành tóm tắt ban đầu"
+        },
+        "seedExisting": {
+          "label": "Tóm tắt ban đầu",
+          "body": "Tóm tắt sẵn có trở thành tóm tắt ban đầu"
+        },
+        "reset": {
+          "label": "Đã xóa",
+          "body": "Bạn đã xóa tóm tắt nên các phần bắt đầu lại"
+        },
+        "arc": {
+          "label": "Hồi",
+          "body_other": "Đã gộp {{count}} phần gồm tin nhắn {{from}} đến {{to}} thành một hồi"
+        }
       }
     },
     "pinnedTab": {

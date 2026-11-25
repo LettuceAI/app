@@ -542,7 +542,18 @@
       "group": { "title": "Obrolan grup", "description": "Tiga karakter dalam grup dengan riwayat" },
       "group_companion": { "title": "Obrolan grup pendamping", "description": "Tiga pendamping dengan jiwa dalam grup pendamping dengan riwayat" },
       "roleplay_widgets": { "title": "Obrolan roleplay dengan widget", "description": "Obrolan roleplay dengan semua widget di samping obrolan" },
-      "companion_widgets": { "title": "Obrolan pendamping dengan widget", "description": "Obrolan pendamping dengan semua widget, termasuk status pendamping dan memori" }
+      "companion_widgets": { "title": "Obrolan pendamping dengan widget", "description": "Obrolan pendamping dengan semua widget, termasuk status pendamping dan memori" },
+      "chapters_backlog": { "title": "Bab: riwayat panjang", "description": "Cerita feri 42 pesan tanpa ringkasan. Setiap pesan yang kamu kirim meringkas enam pesan lama berikutnya." },
+      "chapters_user_seed": { "title": "Bab: ringkasan tertulis", "description": "Cerita yang sama dengan ringkasan pendek yang ditulis manual, dipertahankan sebagai titik awal." },
+      "chapters_large_seed": { "title": "Bab: ringkasan terlalu besar", "description": "Cerita yang sama dengan ringkasan manual yang lebih besar dari anggaran uji. Hanya siklus baru yang digabung." },
+      "chapters_group": { "title": "Bab: grup", "description": "Cerita kru penyelamat 36 pesan dalam grup dengan memori dinamis." }
+    },
+    "chapters": {
+      "group": "Uji ringkasan per bab",
+      "apply": { "title": "Gunakan pengaturan uji bab", "description": "Menyalakan memori dinamis dan ringkasan per bab dengan siklus 6 pesan, anggaran 800 token, dan 2 siklus per bab. Pengaturan memorimu disimpan lebih dulu." },
+      "restore": { "title": "Pulihkan pengaturan memori", "description": "Mengembalikan pengaturan memori yang disimpan sebelum pengaturan uji." },
+      "applied": "Pengaturan uji bab aktif",
+      "restored": "Pengaturan memori dipulihkan"
     }
   },
   "manage": {
@@ -1439,6 +1450,12 @@
       "enrichment": "Pengayaan konteks",
       "experimental": "Eksperimental",
       "enrichmentBody": "Menggunakan beberapa pesan terakhir untuk mencari memori, bukan hanya yang terbaru",
+      "chapterSummaries": "Ringkasan bab",
+      "chapterSummariesBody": "Meringkas setiap siklus memori secara terpisah dan menggabungkan siklus yang lebih lama menjadi bab saat ringkasan melampaui anggarannya. Ringkasan saat ini dipertahankan sebagai titik awal.",
+      "summaryBudget": "Anggaran ringkasan",
+      "summaryBudgetBody": "Token yang dapat digunakan ringkasan percakapan sebelum siklus lama digabungkan ke dalam bab.",
+      "chapterSize": "Siklus per bab",
+      "chapterSizeBody": "Berapa banyak ringkasan yang digabungkan menjadi satu bab.",
       "loops": "Pengulangan memori rekursif",
       "loopsBody": "Mengirim hasil alat kembali hingga model memanggil selesai. Membantu model lemah, memakai lebih banyak token.",
       "loopCap": "Batas keras pengulangan rekursif",

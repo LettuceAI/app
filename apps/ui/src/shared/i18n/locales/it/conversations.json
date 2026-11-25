@@ -904,7 +904,80 @@
       "cancel": "Annulla",
       "save": "Salva",
       "saved": "Riepilogo salvato",
-      "cleared": "Riepilogo cancellato"
+      "cleared": "Riepilogo cancellato",
+      "parts": {
+        "description": "Composto da parti, una per ogni aggiornamento della memoria",
+        "budget": "Budget delle parti",
+        "budgetValue": "{{used}} / {{budget}} token",
+        "list": "Parti del riepilogo",
+        "count_one": "{{count}} parte",
+        "count_many": "{{count}} parti",
+        "count_other": "{{count}} parti",
+        "chapters_one": "{{count}} capitolo",
+        "chapters_many": "{{count}} capitoli",
+        "chapters_other": "{{count}} capitoli",
+        "seed": "Riepilogo iniziale",
+        "cycle": "Parte",
+        "chapter": "Capitolo",
+        "edited": "Modificato da te",
+        "pending": "Applicato al prossimo aggiornamento",
+        "seedNote": "Resta così com'è. Non viene unito nei capitoli e non conta nel budget.",
+        "edit": "Modifica",
+        "delete": "Elimina",
+        "deleteTitle": "Eliminare questa parte?",
+        "deleteBody": "Il riepilogo non la include più. I messaggi che copriva non vengono riassunti di nuovo.",
+        "deleteConfirm": "Elimina parte",
+        "asText": "Modifica come un unico testo",
+        "asParts": "Mostra le parti",
+        "done": "Fatto",
+        "textHint": "Le tue modifiche vengono abbinate alle parti. Se il testo non corrisponde più, diventa il riepilogo iniziale.",
+        "empty": "Ancora nessuna parte. La prima viene scritta al prossimo aggiornamento della memoria.",
+        "writeStart": "Scrivi un riepilogo iniziale",
+        "overBudget": "Oltre il budget. I prossimi aggiornamenti uniscono le parti finché non rientra.",
+        "lead": "Gli aggiornamenti della memoria aggiungono parti. Le parti vecchie vengono unite in capitoli perché il riepilogo resti nel budget.",
+        "coverage": "Cosa copre il riepilogo",
+        "messages_one": "{{count}} messaggio",
+        "messages_many": "{{count}} messaggi",
+        "messages_other": "{{count}} messaggi",
+        "legend": {
+          "seed": "Riepilogo iniziale",
+          "chapter": "Capitolo",
+          "cycle": "Parte",
+          "unsummarized": "Non ancora riassunto",
+          "arc": "Arco"
+        },
+        "nextMerge_many": "Prossima unione: le parti segnate qui sotto vengono unite quando le parti superano {{budget}} token.",
+        "nextMerge_one": "Prossima unione: le parti segnate qui sotto vengono unite quando le parti superano {{budget}} token.",
+        "nextMerge_other": "Prossima unione: le parti segnate qui sotto vengono unite quando le parti superano {{budget}} token.",
+        "mergesNext": "Unita per prossima",
+        "how": {
+          "title": "Come funziona",
+          "update": "Ogni aggiornamento della memoria riassume i nuovi messaggi in una parte.",
+          "merge": "Quando le parti superano {{budget}} token, le {{size}} parti più vecchie vengono unite in un capitolo. I capitoli vengono uniti in archi allo stesso modo.",
+          "seed": "Un riepilogo iniziale esisteva prima delle parti, ad esempio uno scritto da te. Resta così com'è e non conta nel budget.",
+          "edit": "Modifica o elimina una parte per correggerla. Il prossimo aggiornamento recepisce la modifica e i capitoli successivi la mantengono.",
+          "recent": "I messaggi non ancora riassunti il modello continua a leggerli dalla cronologia della chat."
+        },
+        "showMore": "Mostra di più",
+        "showLess": "Mostra meno",
+        "arc": "Arco",
+        "arcLevel": "Arco, livello {{level}}",
+        "arcs_one": "{{count}} arco",
+        "arcs_many": "{{count}} archi",
+        "arcs_other": "{{count}} archi",
+        "sources": {
+          "madeFrom_many": "Creata da {{count}} parti",
+          "madeFrom_one": "Creata da {{count}} parti",
+          "madeFrom_other": "Creata da {{count}} parti",
+          "replaced_many": "Ha sostituito {{count}} parti",
+          "replaced_one": "Ha sostituito {{count}} parti",
+          "replaced_other": "Ha sostituito {{count}} parti",
+          "hide": "Nascondi fonti",
+          "note": "Sola lettura. Sono gli originali da cui è stata creata questa parte. Per cambiare il riepilogo, modifica la parte qui sopra.",
+          "list": "Fonti",
+          "failed": "Impossibile caricare le fonti."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Aggiornare la memoria?",
@@ -1030,6 +1103,41 @@
         "addBack": "Aggiungilo di nuovo",
         "added": "Ricordo aggiunto",
         "addedBack": "Ricordo aggiunto di nuovo"
+      },
+      "steps": {
+        "title": "Riepilogo",
+        "cycle": {
+          "label": "Nuova parte",
+          "body": "Messaggi da {{from}} a {{to}} riassunti in una nuova parte"
+        },
+        "chapter": {
+          "label": "Capitolo",
+          "body_many": "{{count}} parti con i messaggi da {{from}} a {{to}} unite in un capitolo",
+          "body_one": "{{count}} parti con i messaggi da {{from}} a {{to}} unite in un capitolo",
+          "body_other": "{{count}} parti con i messaggi da {{from}} a {{to}} unite in un capitolo"
+        },
+        "edit": {
+          "label": "La tua modifica",
+          "body": "Recepita la tua modifica per i messaggi da {{from}} a {{to}}"
+        },
+        "seedUser": {
+          "label": "Riepilogo iniziale",
+          "body": "Il tuo riepilogo è diventato il riepilogo iniziale"
+        },
+        "seedExisting": {
+          "label": "Riepilogo iniziale",
+          "body": "Il riepilogo già presente è diventato il riepilogo iniziale"
+        },
+        "reset": {
+          "label": "Cancellato",
+          "body": "Hai cancellato il riepilogo, quindi le parti ripartono da capo"
+        },
+        "arc": {
+          "label": "Arco",
+          "body_many": "{{count}} parti con i messaggi da {{from}} a {{to}} unite in un arco",
+          "body_one": "{{count}} parti con i messaggi da {{from}} a {{to}} unite in un arco",
+          "body_other": "{{count}} parti con i messaggi da {{from}} a {{to}} unite in un arco"
+        }
       }
     },
     "pinnedTab": {

@@ -888,7 +888,73 @@
       "cancel": "Avbryt",
       "save": "Lagre",
       "saved": "Sammendraget er lagret",
-      "cleared": "Sammendraget er tømt"
+      "cleared": "Sammendraget er tømt",
+      "parts": {
+        "description": "Bygd opp av deler, én per minneoppdatering",
+        "budget": "Budsjett for deler",
+        "budgetValue": "{{used}} / {{budget}} tokens",
+        "list": "Deler av sammendraget",
+        "count_one": "{{count}} del",
+        "count_other": "{{count}} deler",
+        "chapters_one": "{{count}} kapittel",
+        "chapters_other": "{{count}} kapitler",
+        "seed": "Startsammendrag",
+        "cycle": "Del",
+        "chapter": "Kapittel",
+        "edited": "Redigert av deg",
+        "pending": "Brukes ved neste oppdatering",
+        "seedNote": "Beholdes som det er. Slås ikke sammen til kapitler og teller ikke mot budsjettet.",
+        "edit": "Rediger",
+        "delete": "Slett",
+        "deleteTitle": "Slette denne delen?",
+        "deleteBody": "Sammendraget tar den ikke lenger med. Meldingene den dekket, oppsummeres ikke på nytt.",
+        "deleteConfirm": "Slett del",
+        "asText": "Rediger som én tekst",
+        "asParts": "Vis deler",
+        "done": "Ferdig",
+        "textHint": "Endringene dine knyttes til delene. Hvis teksten ikke lenger passer med dem, blir den startsammendraget.",
+        "empty": "Ingen deler ennå. Den første skrives ved neste minneoppdatering.",
+        "writeStart": "Skriv et startsammendrag",
+        "overBudget": "Over budsjettet. De neste oppdateringene slår sammen deler til det passer.",
+        "lead": "Minneoppdateringer legger til deler. Gamle deler slås sammen til kapitler så sammendraget holder seg innenfor budsjettet.",
+        "coverage": "Hva sammendraget dekker",
+        "messages_one": "{{count}} melding",
+        "messages_other": "{{count}} meldinger",
+        "legend": {
+          "seed": "Startsammendrag",
+          "chapter": "Kapittel",
+          "cycle": "Del",
+          "unsummarized": "Ikke oppsummert ennå",
+          "arc": "Bue"
+        },
+        "nextMerge_one": "Neste sammenslåing: delene som er merket nedenfor slås sammen når delene passerer {{budget}} tokens.",
+        "nextMerge_other": "Neste sammenslåing: delene som er merket nedenfor slås sammen når delene passerer {{budget}} tokens.",
+        "mergesNext": "Slås sammen neste",
+        "how": {
+          "title": "Slik fungerer det",
+          "update": "Hver minneoppdatering oppsummerer de nye meldingene sine i én del.",
+          "merge": "Når delene passerer {{budget}} tokens, slås de {{size}} eldste delene sammen til et kapittel. Kapitler slås sammen til buer på samme måte.",
+          "seed": "Et startsammendrag fantes før delene, for eksempel ett du skrev. Det beholdes som det er og teller ikke mot budsjettet.",
+          "edit": "Rediger eller slett en del for å rette den. Neste oppdatering tar med endringen din, og senere kapitler beholder den.",
+          "recent": "Meldinger som ikke er oppsummert ennå, leser modellen fortsatt fra chatloggen."
+        },
+        "showMore": "Vis mer",
+        "showLess": "Vis mindre",
+        "arc": "Bue",
+        "arcLevel": "Bue, nivå {{level}}",
+        "arcs_one": "{{count}} bue",
+        "arcs_other": "{{count}} buer",
+        "sources": {
+          "madeFrom_one": "Laget av {{count}} deler",
+          "madeFrom_other": "Laget av {{count}} deler",
+          "replaced_one": "Erstattet {{count}} deler",
+          "replaced_other": "Erstattet {{count}} deler",
+          "hide": "Skjul kilder",
+          "note": "Skrivebeskyttet. Dette er originalene denne delen ble laget av. Rediger delen over for å endre sammendraget.",
+          "list": "Kilder",
+          "failed": "Kildene kunne ikke lastes inn."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Oppdatere minnet?",
@@ -1009,6 +1075,39 @@
         "addBack": "Legg det til igjen",
         "added": "Minnet er lagt til",
         "addedBack": "Minnet er lagt til igjen"
+      },
+      "steps": {
+        "title": "Sammendrag",
+        "cycle": {
+          "label": "Ny del",
+          "body": "Meldingene {{from}} til {{to}} oppsummert i en ny del"
+        },
+        "chapter": {
+          "label": "Kapittel",
+          "body_one": "{{count}} deler med meldingene {{from}} til {{to}} slått sammen til ett kapittel",
+          "body_other": "{{count}} deler med meldingene {{from}} til {{to}} slått sammen til ett kapittel"
+        },
+        "edit": {
+          "label": "Din endring",
+          "body": "Endringen din for meldingene {{from}} til {{to}} er tatt med"
+        },
+        "seedUser": {
+          "label": "Startsammendrag",
+          "body": "Sammendraget ditt ble startsammendraget"
+        },
+        "seedExisting": {
+          "label": "Startsammendrag",
+          "body": "Det eksisterende sammendraget ble startsammendraget"
+        },
+        "reset": {
+          "label": "Tømt",
+          "body": "Du tømte sammendraget, så delene starter på nytt"
+        },
+        "arc": {
+          "label": "Bue",
+          "body_one": "{{count}} deler med meldingene {{from}} til {{to}} slått sammen til én bue",
+          "body_other": "{{count}} deler med meldingene {{from}} til {{to}} slått sammen til én bue"
+        }
       }
     },
     "pinnedTab": {

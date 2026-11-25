@@ -2691,6 +2691,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         dispatch.attempt.id,
         work.admission.batch.window_selection,
         &summary_prompt,
+        crate::SummaryMode::Cumulative,
         &work.handle,
         None,
         TimestampMillis::new(NOW.get() + 12),

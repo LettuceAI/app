@@ -1,7 +1,7 @@
 use lettuce_types::{
     CompanionEffectId, ConversationBranchId, ConversationId, DynamicMemoryRunId,
-    GenerationAttemptId, GenerationTurnId, MemoryId, MemorySpaceId, MessageId, OperationId,
-    Revision, TimestampMillis,
+    GenerationAttemptId, GenerationTurnId, MemoryId, MemorySpaceId, MemorySummaryUnitId,
+    MessageId, OperationId, Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,8 +14,9 @@ use crate::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
     DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryPendingApproval,
     DynamicMemoryRun, DynamicMemoryRunAttemptAdmission, DynamicMemoryToolCallEvidence, MemoryItem,
-    MemorySpaceSnapshot, MemorySummary, MemoryToolResult, MemoryValidationError,
-    NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
+    MemorySpaceSnapshot, MemorySummary, MemorySummaryUnit, MemorySummaryUnitScope,
+    MemoryToolResult, MemoryValidationError, NewDynamicMemoryAttemptRecovery,
+    NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, NewMemorySummaryUnit,
 };
 
 pub trait DynamicMemoryApprovalRepository: Send + Sync {
@@ -198,6 +199,40 @@ pub trait MemorySummaryRepository: Send + Sync {
         &self,
         change: MemorySummaryChange,
     ) -> Result<MemorySummaryCommit, MemoryRepositoryError>;
+}
+
+pub trait MemorySummaryUnitRepository: Send + Sync {
+    fn active_summary_units(
+        &self,
+        scope: MemorySummaryUnitScope,
+        current_run_id: Option<DynamicMemoryRunId>,
+    ) -> Result<Vec<MemorySummaryUnit>, MemoryRepositoryError>;
+
+    fn insert_summary_unit(
+        &self,
+        unit: NewMemorySummaryUnit,
+        inputs: &[MemorySummaryUnitId],
+    ) -> Result<MemorySummaryUnit, MemoryRepositoryError>;
+
+    fn summary_units_created_by(
+        &self,
+        run_id: DynamicMemoryRunId,
+    ) -> Result<Vec<(MemorySummaryUnit, u32)>, MemoryRepositoryError>;
+
+    fn summary_unit(
+        &self,
+        unit_id: MemorySummaryUnitId,
+    ) -> Result<Option<MemorySummaryUnit>, MemoryRepositoryError>;
+
+    fn summary_unit_inputs(
+        &self,
+        unit_id: MemorySummaryUnitId,
+    ) -> Result<Vec<MemorySummaryUnit>, MemoryRepositoryError>;
+
+    fn summary_unit_input_count(
+        &self,
+        unit_id: MemorySummaryUnitId,
+    ) -> Result<u32, MemoryRepositoryError>;
 }
 
 pub trait MemoryTokenCountRepository: Send + Sync {

@@ -12,6 +12,7 @@ mod repair;
 mod revert;
 mod run;
 mod structured_fallback;
+mod summary_units;
 mod text;
 mod tool;
 
@@ -25,7 +26,8 @@ pub use duplicate_consolidation::*;
 pub use model::{
     DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_ITEMS, MAX_MEMORY_SUMMARY_BYTES,
     MAX_MEMORY_TEXT_BYTES, MemoryCategory, MemoryItem, MemoryOrigin, MemoryPolicy, MemoryShortId,
-    MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score, memory_revision_id,
+    MemorySpaceSnapshot, MemorySummary, MemorySummaryUnit, MemorySummaryUnitKind,
+    MemorySummaryUnitScope, MemoryValidationError, NewMemorySummaryUnit, Score, memory_revision_id,
 };
 pub use port::{
     DynamicMemoryApprovalRepository, DynamicMemoryBackgroundRoundCommit,
@@ -35,8 +37,8 @@ pub use port::{
     DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit, MemoryChangeSet, MemoryRepository,
     MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalAccessReceipt,
     MemoryRetrievalRepository, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
-    MemoryTokenCountRepository, OwedRewindFailure, PendingSuffixRewind,
-    PendingSuffixRewindRepository,
+    MemorySummaryUnitRepository, MemoryTokenCountRepository, OwedRewindFailure,
+    PendingSuffixRewind, PendingSuffixRewindRepository,
 };
 pub use repair::{
     MEMORY_CATEGORIES, MEMORY_REPAIR_TOOL_NAME, MEMORY_REPAIR_TOOL_TEXT_KEYS,
@@ -53,6 +55,7 @@ pub use run::{
     NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
     NewDynamicMemoryToolCall,
 };
+pub use summary_units::{SummaryAdoption, plan_summary_adoption, render_summary_units};
 pub use structured_fallback::{
     StructuredFallbackError, memory_operations_fallback_prompt_key,
     parse_memory_operations_from_text, parse_memory_repairs_from_text,

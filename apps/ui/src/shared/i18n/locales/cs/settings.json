@@ -554,7 +554,18 @@
       "group": { "title": "Skupinový chat", "description": "Tři postavy ve skupině s historií" },
       "group_companion": { "title": "Skupinový chat s parťáky", "description": "Tři parťáci s Dušemi ve skupině s parťáky a s historií" },
       "roleplay_widgets": { "title": "Chat na hrdiny s widgety", "description": "Chat na hrdiny se všemi widgety vedle chatu" },
-      "companion_widgets": { "title": "Chat s parťákem s widgety", "description": "Chat s parťákem se všemi widgety včetně stavu parťáka a paměti" }
+      "companion_widgets": { "title": "Chat s parťákem s widgety", "description": "Chat s parťákem se všemi widgety včetně stavu parťáka a paměti" },
+      "chapters_backlog": { "title": "Kapitoly: dlouhá historie", "description": "Příběh o přívozu se 42 zprávami bez shrnutí. Každá odeslaná zpráva shrne dalších šest starých." },
+      "chapters_user_seed": { "title": "Kapitoly: napsané shrnutí", "description": "Stejný příběh s krátkým ručně psaným shrnutím, které zůstane jako výchozí bod." },
+      "chapters_large_seed": { "title": "Kapitoly: příliš velké shrnutí", "description": "Stejný příběh s ručně psaným shrnutím větším než testovací rozpočet. Slučují se jen nové cykly." },
+      "chapters_group": { "title": "Kapitoly: skupina", "description": "Příběh záchranné posádky se 36 zprávami ve skupině s dynamickou pamětí." }
+    },
+    "chapters": {
+      "group": "Testy shrnutí po kapitolách",
+      "apply": { "title": "Použít testovací nastavení kapitol", "description": "Zapne dynamickou paměť a shrnutí po kapitolách s cykly po 6 zprávách, rozpočtem 800 tokenů a 2 cykly na kapitolu. Nejdřív se uloží tvoje nastavení paměti." },
+      "restore": { "title": "Obnovit nastavení paměti", "description": "Vrátí nastavení paměti uložená před testovacím nastavením." },
+      "applied": "Testovací nastavení kapitol je zapnuté",
+      "restored": "Nastavení paměti obnoveno"
     }
   },
   "manage": {
@@ -1475,6 +1486,12 @@
       "enrichment": "Obohacení kontextu",
       "experimental": "Experimentální",
       "enrichmentBody": "Používá posledních několik zpráv k hledání pamětí, ne jen tu nejnovější",
+      "chapterSummaries": "Souhrny po kapitolách",
+      "chapterSummariesBody": "Shrnuje každý paměťový cyklus zvlášť a při překročení rozpočtu slučuje starší cykly do kapitol. Aktuální souhrn zůstává výchozím bodem.",
+      "summaryBudget": "Rozpočet souhrnu",
+      "summaryBudgetBody": "Počet tokenů, které může souhrn konverzace využít, než se starší cykly sloučí do kapitol.",
+      "chapterSize": "Cykly na kapitolu",
+      "chapterSizeBody": "Kolik souhrnů se sloučí do jedné kapitoly.",
       "loops": "Rekurzivní smyčky paměti",
       "loopsBody": "Posílá výsledky nástrojů zpět, dokud model nezavolá done. Pomáhá slabším modelům, spotřebovává víc tokenů.",
       "loopCap": "Tvrdý limit rekurzivní smyčky",

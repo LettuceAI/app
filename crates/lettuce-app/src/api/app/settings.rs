@@ -132,6 +132,8 @@ fn validate_memory(value: &lettuce_settings::DynamicMemorySettings) -> Result<()
             .min_similarity_basis_points
             .is_some_and(|score| score > 10000)
         || value.summary_message_interval == 0
+        || value.summary_token_budget == 0
+        || value.summary_chapter_size < 2
         || value.retrieval_limit == 0
         || value.max_entries == 0
         || value.hot_memory_token_budget == 0
@@ -729,4 +731,41 @@ fn validate_widget(widget: &dto::SettingsWidgetNode) -> Result<(), ApiError> {
         _ => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{convert, validate_memory};
+
+    #[test]
+    fn chapter_summary_settings_validation_and_contract_round_trip() {
+        let defaults = lettuce_settings::DynamicMemorySettings::default();
+        assert!(!defaults.chapter_summaries_enabled);
+        assert_eq!(defaults.summary_token_budget, 1_536);
+        assert_eq!(defaults.summary_chapter_size, 4);
+        assert!(validate_memory(&defaults).is_ok());
+
+        let raw_defaults = serde_json::to_value(&defaults).expect("serialize defaults");
+        assert!(raw_defaults.get("chapter_summaries_enabled").is_none());
+        assert!(raw_defaults.get("summary_token_budget").is_none());
+        assert!(raw_defaults.get("summary_chapter_size").is_none());
+
+        let dto: lettuce_contracts::SettingsDynamicMemorySettings =
+            convert(defaults.clone(), "dynamic_memory").expect("to contract");
+        let raw_dto = serde_json::to_value(&dto).expect("serialize contract");
+        assert_eq!(raw_dto["chapter_summaries_enabled"], false);
+        assert_eq!(raw_dto["summary_token_budget"], 1_536);
+        assert_eq!(raw_dto["summary_chapter_size"], 4);
+        let back: lettuce_settings::DynamicMemorySettings =
+            convert(dto, "dynamic_memory").expect("from contract");
+        assert_eq!(back, defaults);
+
+        let mut zero_budget = defaults.clone();
+        zero_budget.summary_token_budget = 0;
+        assert!(validate_memory(&zero_budget).is_err());
+
+        let mut small_chapter = defaults;
+        small_chapter.summary_chapter_size = 1;
+        assert!(validate_memory(&small_chapter).is_err());
+    }
 }

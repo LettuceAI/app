@@ -523,6 +523,37 @@ fn attempt_failure(
     }
 }
 
+fn summary_steps(
+    database: &lettuce_database::Database,
+    run_id: DynamicMemoryRunId,
+) -> Result<Vec<dto::MemorySummaryStepView>, ApiError> {
+    use lettuce_memory::{MemoryOrigin, MemorySummaryUnitKind as K, MemorySummaryUnitRepository};
+    Ok(database
+        .summary_units_created_by(run_id)
+        .map_err(super::memory_error)?
+        .into_iter()
+        .map(|(unit, merged)| dto::MemorySummaryStepView {
+            kind: match unit.kind {
+                K::Seed => dto::MemorySummaryStepKind::Seed,
+                K::Cycle => dto::MemorySummaryStepKind::Cycle,
+                K::Chapter => dto::MemorySummaryStepKind::Chapter,
+                K::Reset => dto::MemorySummaryStepKind::Reset,
+            },
+            level: unit.level,
+            origin: match unit.origin {
+                MemoryOrigin::User => dto::MemoryOrigin::User,
+                MemoryOrigin::Model => dto::MemoryOrigin::Model,
+                MemoryOrigin::Import => dto::MemoryOrigin::Import,
+            },
+            message_start: unit.window_start,
+            message_end: unit.window_end,
+            merged,
+            text: unit.text,
+            token_count: unit.token_count,
+        })
+        .collect())
+}
+
 /// The conversation's cycles, newest first, with what each did, why it
 /// failed and whether it can be reverted.
 pub async fn memory_cycles(
@@ -595,6 +626,7 @@ pub async fn memory_cycles(
                             .checkpoint
                             .as_ref()
                             .map(|summary| summary.text.clone()),
+                        summary_steps: summary_steps(database, cycle.run.id)?,
                         actions: cycle_actions(cycle),
                         reverted: cycle.reverted,
                         revertable: !cycle.reverted

@@ -95,10 +95,10 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
     if (ok) toast.success(t("memory.sheet.deleted"));
     return ok;
   });
-  const saveSummary = (text: string | null) => perform(async () => {
+  const saveSummary = (text: string | null, close = true) => perform(async () => {
     const ok = await sharedWrite(`summary:${summarySession}:${text ?? ""}`, (current, operationId) => api.call("memorySummaryUpdate", { conversation_id: conversationId, summary: text === null ? { type: "clear" } : { type: "set", text }, expected_revision: current.revision, client_operation_id: operationId }));
     if (ok) {
-      setSummaryOpen(false);
+      if (close) setSummaryOpen(false);
       toast.success(t(text === null ? "memory.summary.cleared" : "memory.summary.saved"));
     }
     return ok;
@@ -182,7 +182,7 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
   if (state.data) side = <div className="space-y-4">
     {picker}
     {(tab === "activity" || (memoryScope && scopeId === null)) && dynamic && shared.data && <StatusCard api={api} conversationId={conversationId} status={shared.data.status} />}
-    {memoryScope && scopeId === null && shared.data && <SummaryCard companion summary={shared.data.summary} onOpen={openSummary} />}
+    {memoryScope && scopeId === null && shared.data && <SummaryCard companion summary={shared.data.summary} parts={shared.data.summary_parts} onOpen={openSummary} />}
   </div>;
 
   return <CrispStringsProvider locale={i18n.language} strings={{ sheetClose: t("crisp.sheetClose"), dialogClose: t("companion.crisp.close"), searchFieldClear: t("companion.crisp.clearSearch") }}>
@@ -196,7 +196,7 @@ export function GroupCompanionScreen({ api, conversationId, view, tab, onTab, on
       </main>
     </div>
     {memory.data && shown && <MemorySheet key={session} open={target !== null} item={shown.kind === "edit" ? shown.item : null} {...(chosen ? { companionName: chosen.display_name } : {})} categories={(shared.data ?? memory.data).allowed_categories} busy={saving} onClose={() => setTarget(null)} onSave={(draft) => void save(shown.kind === "edit" ? shown.item : null, draft)} onDelete={() => { if (shown.kind === "edit") void remove(shown.item); }} />}
-    {shared.data && <SummarySheet key={summarySession} open={summaryOpen} text={shared.data.summary?.text ?? ""} dynamic={dynamic} busy={saving} onClose={() => setSummaryOpen(false)} onSave={(text) => void saveSummary(text)} onClear={() => void saveSummary(null)} />}
+    {shared.data && <SummarySheet key={summarySession} open={summaryOpen} text={shared.data.summary?.text ?? ""} parts={shared.data.summary_parts} conversationId={conversationId} dynamic={dynamic} busy={saving} onClose={() => setSummaryOpen(false)} onSave={(text, close) => void saveSummary(text, close)} onClear={() => void saveSummary(null)} />}
     <Sheet open={stance !== null} onClose={() => setStance(null)} placement="auto" size="sm" title={shownStance ? t("companion.group.stanceTitle", { from: shownStance.from.display_name, to: shownStance.to.display_name }) : undefined} description={shownStance ? band(shownStance.value) : undefined}>
       {shownStance && <ListGroup>{stanceAxes.map((axis) => {
         const value = shownStance.value[axis] ?? 0;

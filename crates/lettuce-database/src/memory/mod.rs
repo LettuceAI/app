@@ -12,3 +12,4 @@ pub(crate) mod group_note_adapter;
 pub(crate) mod scheduled_note_adapter;
 
 pub(crate) mod memory_read_adapter;
+pub(crate) mod memory_summary_unit_adapter;

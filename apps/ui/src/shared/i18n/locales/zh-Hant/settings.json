@@ -542,7 +542,18 @@
       "group": { "title": "群聊", "description": "一個有歷史的群組，含三個角色" },
       "group_companion": { "title": "夥伴群聊", "description": "一個有歷史的夥伴群組，含三個有靈魂的夥伴" },
       "roleplay_widgets": { "title": "有小工具的角色扮演聊天", "description": "聊天旁放有全部小工具的角色扮演聊天" },
-      "companion_widgets": { "title": "有小工具的夥伴聊天", "description": "放有全部小工具的夥伴聊天，包括夥伴狀態和記憶" }
+      "companion_widgets": { "title": "有小工具的夥伴聊天", "description": "放有全部小工具的夥伴聊天，包括夥伴狀態和記憶" },
+      "chapters_backlog": { "title": "章節：長歷史", "description": "一個沒有摘要的 42 則訊息的渡船故事。你每傳送一則訊息，就會摘要接下來的 6 則舊訊息。" },
+      "chapters_user_seed": { "title": "章節：手寫摘要", "description": "同一個故事，附上一段簡短的手寫摘要，作為起點保留。" },
+      "chapters_large_seed": { "title": "章節：過大的摘要", "description": "同一個故事，附上一段超過測試預算的手寫摘要。只有新週期會被合併。" },
+      "chapters_group": { "title": "章節：群組", "description": "在開啟動態記憶的群組中，一個打撈船員的 36 則訊息故事。" }
+    },
+    "chapters": {
+      "group": "章節摘要測試",
+      "apply": { "title": "使用章節測試設定", "description": "開啟動態記憶與章節摘要：每 6 則訊息一個週期，預算 800 個 token，每章 2 個週期。會先儲存你目前的記憶設定。" },
+      "restore": { "title": "還原記憶設定", "description": "還原使用測試設定之前儲存的記憶設定。" },
+      "applied": "章節測試設定已開啟",
+      "restored": "記憶設定已還原"
     }
   },
   "manage": {
@@ -1439,6 +1450,12 @@
       "enrichment": "上下文擴充",
       "experimental": "實驗性",
       "enrichmentBody": "使用最近幾則訊息搜尋記憶，而不只使用最新一則",
+      "chapterSummaries": "章節摘要",
+      "chapterSummariesBody": "單獨總結每個記憶週期，並在摘要超出預算時將較早的週期摺疊為章節。目前摘要會保留作為起點。",
+      "summaryBudget": "摘要預算",
+      "summaryBudgetBody": "在將較早週期摺疊為章節之前，對話摘要可使用的權杖數。",
+      "chapterSize": "每章週期數",
+      "chapterSizeBody": "摺疊為一個章節的摘要數量。",
       "loops": "遞迴記憶迴圈",
       "loopsBody": "將工具結果傳回，直到模型呼叫 done。有助於較弱的模型，但會消耗更多 token。",
       "loopCap": "遞迴迴圈硬上限",

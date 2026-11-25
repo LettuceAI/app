@@ -888,7 +888,73 @@
       "cancel": "Abbrechen",
       "save": "Speichern",
       "saved": "Zusammenfassung gespeichert",
-      "cleared": "Zusammenfassung gelöscht"
+      "cleared": "Zusammenfassung gelöscht",
+      "parts": {
+        "description": "Aus Teilen aufgebaut, einer pro Speicheraktualisierung",
+        "budget": "Budget für Teile",
+        "budgetValue": "{{used}} / {{budget}} Tokens",
+        "list": "Teile der Zusammenfassung",
+        "count_one": "{{count}} Teil",
+        "count_other": "{{count}} Teile",
+        "chapters_one": "{{count}} Kapitel",
+        "chapters_other": "{{count}} Kapitel",
+        "seed": "Startzusammenfassung",
+        "cycle": "Teil",
+        "chapter": "Kapitel",
+        "edited": "Von dir bearbeitet",
+        "pending": "Wird bei der nächsten Aktualisierung übernommen",
+        "seedNote": "Bleibt unverändert. Wird nicht in Kapitel zusammengefasst und zählt nicht zum Budget.",
+        "edit": "Bearbeiten",
+        "delete": "Löschen",
+        "deleteTitle": "Diesen Teil löschen?",
+        "deleteBody": "Die Zusammenfassung enthält ihn nicht mehr. Die Nachrichten, die er abdeckte, werden nicht erneut zusammengefasst.",
+        "deleteConfirm": "Teil löschen",
+        "asText": "Als einen Text bearbeiten",
+        "asParts": "Teile anzeigen",
+        "done": "Fertig",
+        "textHint": "Deine Änderungen werden den Teilen zugeordnet. Passt der Text nicht mehr zu ihnen, wird er zur Startzusammenfassung.",
+        "empty": "Noch keine Teile. Der erste entsteht bei der nächsten Speicheraktualisierung.",
+        "writeStart": "Startzusammenfassung schreiben",
+        "overBudget": "Über dem Budget. Die nächsten Aktualisierungen fassen Teile zusammen, bis es passt.",
+        "lead": "Speicheraktualisierungen fügen Teile hinzu. Alte Teile werden zu Kapiteln zusammengefasst, damit die Zusammenfassung im Budget bleibt.",
+        "coverage": "Was die Zusammenfassung abdeckt",
+        "messages_one": "{{count}} Nachricht",
+        "messages_other": "{{count}} Nachrichten",
+        "legend": {
+          "seed": "Startzusammenfassung",
+          "chapter": "Kapitel",
+          "cycle": "Teil",
+          "unsummarized": "Noch nicht zusammengefasst",
+          "arc": "Bogen"
+        },
+        "nextMerge_one": "Nächste Zusammenfassung: Die unten markierten Teile werden zusammengefasst, sobald die Teile {{budget}} Tokens überschreiten.",
+        "nextMerge_other": "Nächste Zusammenfassung: Die unten markierten Teile werden zusammengefasst, sobald die Teile {{budget}} Tokens überschreiten.",
+        "mergesNext": "Wird als Nächstes zusammengefasst",
+        "how": {
+          "title": "So funktioniert es",
+          "update": "Jede Speicheraktualisierung fasst ihre neuen Nachrichten in einem Teil zusammen.",
+          "merge": "Überschreiten die Teile {{budget}} Tokens, werden die {{size}} ältesten Teile zu einem Kapitel zusammengefasst. Kapitel werden auf dieselbe Weise zu Bögen zusammengefasst.",
+          "seed": "Eine Startzusammenfassung gab es schon vor den Teilen, etwa eine, die du geschrieben hast. Sie bleibt unverändert und zählt nicht zum Budget.",
+          "edit": "Bearbeite oder lösche einen Teil, um ihn zu korrigieren. Die nächste Aktualisierung übernimmt deine Änderung, und spätere Kapitel behalten sie.",
+          "recent": "Noch nicht zusammengefasste Nachrichten liest das Modell weiterhin aus dem Chatverlauf."
+        },
+        "showMore": "Mehr anzeigen",
+        "showLess": "Weniger anzeigen",
+        "arc": "Bogen",
+        "arcLevel": "Bogen, Ebene {{level}}",
+        "arcs_one": "{{count}} Bogen",
+        "arcs_other": "{{count}} Bögen",
+        "sources": {
+          "madeFrom_one": "Aus {{count}} Teilen erstellt",
+          "madeFrom_other": "Aus {{count}} Teilen erstellt",
+          "replaced_one": "Ersetzt {{count}} Teile",
+          "replaced_other": "Ersetzt {{count}} Teile",
+          "hide": "Quellen ausblenden",
+          "note": "Nur lesbar. Das sind die Originale, aus denen dieser Teil entstand. Um die Zusammenfassung zu ändern, bearbeite den Teil oben.",
+          "list": "Quellen",
+          "failed": "Die Quellen konnten nicht geladen werden."
+        }
+      }
     },
     "status": {
       "approvalTitle": "Speicher aktualisieren?",
@@ -1010,6 +1076,39 @@
         "addBack": "Wieder hinzufügen",
         "added": "Erinnerung hinzugefügt",
         "addedBack": "Erinnerung wieder hinzugefügt"
+      },
+      "steps": {
+        "title": "Zusammenfassung",
+        "cycle": {
+          "label": "Neuer Teil",
+          "body": "Nachrichten {{from}} bis {{to}} in einem neuen Teil zusammengefasst"
+        },
+        "chapter": {
+          "label": "Kapitel",
+          "body_one": "{{count}} Teile mit den Nachrichten {{from}} bis {{to}} zu einem Kapitel zusammengefasst",
+          "body_other": "{{count}} Teile mit den Nachrichten {{from}} bis {{to}} zu einem Kapitel zusammengefasst"
+        },
+        "edit": {
+          "label": "Deine Änderung",
+          "body": "Deine Änderung für die Nachrichten {{from}} bis {{to}} übernommen"
+        },
+        "seedUser": {
+          "label": "Startzusammenfassung",
+          "body": "Deine Zusammenfassung wurde zur Startzusammenfassung"
+        },
+        "seedExisting": {
+          "label": "Startzusammenfassung",
+          "body": "Die vorhandene Zusammenfassung wurde zur Startzusammenfassung"
+        },
+        "reset": {
+          "label": "Geleert",
+          "body": "Du hast die Zusammenfassung geleert, daher beginnen die Teile von vorn"
+        },
+        "arc": {
+          "label": "Bogen",
+          "body_one": "{{count}} Teile mit den Nachrichten {{from}} bis {{to}} zu einem Bogen zusammengefasst",
+          "body_other": "{{count}} Teile mit den Nachrichten {{from}} bis {{to}} zu einem Bogen zusammengefasst"
+        }
       }
     },
     "pinnedTab": {
