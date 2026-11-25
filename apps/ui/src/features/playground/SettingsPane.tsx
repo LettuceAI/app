@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dices } from "lucide-react";
-import { icon, IconButton, Input, ListGroup, ListRowButton, Skeleton, Slider, Switch } from "@lettuceai/crisp";
+import { icon, IconButton, Input, ListGroup, ListRowButton, NumberInput, Skeleton, Slider, Switch } from "@lettuceai/crisp";
 import type { ImageCapabilities } from "@/api/generated/bindings";
 import type { ModelChoice } from "@/entities/model";
 import { editorFields } from "@/entities/model/model-editor-fields";
@@ -21,6 +21,7 @@ interface Range {
 }
 
 const customSize = "custom";
+const defaultChoice = "__default__";
 
 function randomSeed(): number {
   return (crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) % (editorFields.sdSeed.max + 1);
@@ -50,7 +51,7 @@ export function SettingsPane({ choice, loading, failure, capabilities, draft, ba
   const changed = <K extends keyof PlaygroundDraft>(key: K) => draft[key] !== base[key];
   const resetTo = <K extends keyof PlaygroundDraft>(key: K) => () => update({ [key]: base[key] } as Partial<PlaygroundDraft>);
 
-  const slider = <K extends "steps" | "cfg_scale" | "hires_scale" | "hires_steps" | "hires_denoising_strength" | "count">(key: K, label: string, range: Range, fallback = defaultOption) => {
+  const slider = <K extends "steps" | "cfg_scale" | "hires_scale" | "hires_steps" | "hires_denoising_strength">(key: K, label: string, range: Range, fallback = defaultOption) => {
     const value = draft[key];
     return (
       <EditorRow label={label} overridden={changed(key)} onReset={resetTo(key)} resetLabel={reset(label)}>
@@ -87,14 +88,16 @@ export function SettingsPane({ choice, loading, failure, capabilities, draft, ba
         <SelectMenuField
           aria-label={label}
           disabled={disabled}
-          value={value ?? ""}
-          options={[{ value: "", label: empty }, ...options.map((option) => ({ value: option, label: option }))]}
-          onChange={(next) => update({ [key]: next || null } as Partial<PlaygroundDraft>)}
+          value={value ?? defaultChoice}
+          options={[{ value: defaultChoice, label: empty }, ...options.map((option) => ({ value: option, label: option }))]}
+          onChange={(next) => update({ [key]: next && next !== defaultChoice ? next : null } as Partial<PlaygroundDraft>)}
         />
       </EditorRow>
     );
   };
 
+  const batchId = useId();
+  const batchLabel = t("settings.batch");
   const sizes = capabilities?.sizes ?? [];
   const custom = customizing || (draft.size !== null && !sizes.includes(draft.size));
   const sizeLabel = t("settings.size");
@@ -125,15 +128,15 @@ export function SettingsPane({ choice, loading, failure, capabilities, draft, ba
             <EditorRow label={sizeLabel} compact overridden={changed("size")} onReset={() => { setCustomizing(false); update({ size: base.size }); }} resetLabel={reset(sizeLabel)}>
               <SelectMenuField
                 aria-label={sizeLabel}
-                value={custom ? customSize : draft.size ?? ""}
+                value={custom ? customSize : draft.size ?? defaultChoice}
                 options={[
-                  { value: "", label: capabilities.default_size ? `${defaultOption} (${capabilities.default_size})` : defaultOption },
+                  { value: defaultChoice, label: capabilities.default_size ? `${defaultOption} (${capabilities.default_size})` : defaultOption },
                   ...sizes.map((size) => ({ value: size, label: size })),
                   { value: customSize, label: t("settings.customSize") },
                 ]}
                 onChange={(next) => {
                   setCustomizing(next === customSize);
-                  if (next !== customSize) update({ size: next || null });
+                  if (next !== customSize) update({ size: next && next !== defaultChoice ? next : null });
                 }}
               />
             </EditorRow>
@@ -179,7 +182,12 @@ export function SettingsPane({ choice, loading, failure, capabilities, draft, ba
                 </EditorRow>
               </>
             )}
-            {capabilities.max_count > 1 && slider("count", t("settings.batch"), { min: 1, max: capabilities.max_count, step: 1 }, "1")}
+            {capabilities.max_count > 1 && (
+              <EditorRow label={batchLabel} compact overridden={changed("count")} onReset={resetTo("count")} resetLabel={reset(batchLabel)}>
+                <label htmlFor={batchId} className="sr-only">{batchLabel}</label>
+                <NumberInput id={batchId} value={draft.count ?? 1} min={1} max={capabilities.max_count} step={1} onChange={(count) => update({ count })} />
+              </EditorRow>
+            )}
             {capabilities.quality.length > 0 && select("quality", t("settings.quality"), capabilities.quality)}
             {capabilities.styles.length > 0 && select("style", t("settings.style"), capabilities.styles)}
           </ListGroup>
