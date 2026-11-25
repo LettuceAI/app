@@ -299,6 +299,11 @@ const MIGRATION_46: Migration = Migration {
     sql: include_str!("../migrations/0046_memory_summary_units.sql"),
 };
 
+const MIGRATION_47: Migration = Migration {
+    id: 47,
+    sql: include_str!("../migrations/0047_memory_summary_unit_times.sql"),
+};
+
 const MIGRATIONS: &[Migration] = &[
     MIGRATION_1,
     MIGRATION_2,
@@ -346,6 +351,7 @@ const MIGRATIONS: &[Migration] = &[
     MIGRATION_44,
     MIGRATION_45,
     MIGRATION_46,
+    MIGRATION_47,
 ];
 
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;

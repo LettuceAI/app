@@ -1512,6 +1512,7 @@ mod tests {
             "summary_cycle_output_request",
             "summary_cycle_fallback_request",
             "summary_chapter_system",
+            "summary_chapter_time_rules",
             "summary_chapter_reference_label",
             "summary_chapter_no_reference",
             "summary_chapter_entries_label",

@@ -17,7 +17,7 @@ use lettuce_memory::{
     DynamicMemoryRunRepository, DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit,
     MemoryOrigin, MemoryRepository, MemorySummaryRepository, MemorySummaryUnit,
     MemorySummaryUnitKind, MemorySummaryUnitRepository, MemorySummaryUnitScope,
-    NewMemorySummaryUnit, plan_summary_adoption, render_summary_units,
+    NewMemorySummaryUnit, combined_time_range, plan_summary_adoption, render_summary_units,
 };
 use lettuce_types::{
     DynamicMemoryAttemptId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId,
@@ -326,6 +326,8 @@ impl<
                                 origin: published.origin,
                                 window_start: adoption.window_start,
                                 window_end: adoption.window_end,
+                                time_start: adoption.time_start,
+                                time_end: adoption.time_end,
                                 text: adoption.text,
                                 token_count,
                                 created_at: now,
@@ -354,6 +356,8 @@ impl<
                             origin: MemoryOrigin::Model,
                             window_start: 0,
                             window_end: 0,
+                            time_start: None,
+                            time_end: None,
                             text: String::new(),
                             token_count: 0,
                             created_at: now,
@@ -411,6 +415,16 @@ impl<
                 }
             })?;
             let token_count = self.count_tokens(&cycle_text)?;
+            let time_start = run
+                .source_messages
+                .iter()
+                .map(|message| message.effective_time)
+                .min();
+            let time_end = run
+                .source_messages
+                .iter()
+                .map(|message| message.effective_time)
+                .max();
             self.repository
                 .insert_summary_unit(
                     NewMemorySummaryUnit {
@@ -422,6 +436,8 @@ impl<
                         origin: MemoryOrigin::Model,
                         window_start: run.summary_window.start,
                         window_end: run.summary_window.end,
+                        time_start,
+                        time_end,
                         text: cycle_text,
                         token_count,
                         created_at: now,
@@ -489,6 +505,7 @@ impl<
                 is_group,
                 handle,
                 stream_sink,
+                now,
             ) {
                 Ok(request) => request,
                 Err(error) => {
@@ -539,6 +556,8 @@ impl<
                 break;
             }
             let input_ids: Vec<_> = group.iter().map(|unit| unit.id).collect();
+            let (time_start, time_end) = combined_time_range(&group)
+                .map_or((None, None), |(start, end)| (Some(start), Some(end)));
             self.repository
                 .insert_summary_unit(
                     NewMemorySummaryUnit {
@@ -550,6 +569,8 @@ impl<
                         origin: MemoryOrigin::Model,
                         window_start,
                         window_end,
+                        time_start,
+                        time_end,
                         text: chapter_text,
                         token_count: chapter_tokens,
                         created_at: now,
@@ -1173,6 +1194,7 @@ fn build_chapter_request(
     is_group: bool,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
+    now: TimestampMillis,
 ) -> Result<InferenceRequest, CompanionMemoryInferenceError> {
     let fragment = |key: &str| {
         text.render_with(key, [])
@@ -1184,7 +1206,23 @@ fn build_chapter_request(
         if is_group { group_key } else { direct }
     };
 
-    let system = fragment("summary_chapter_system")?;
+    let mut system = fragment("summary_chapter_system")?;
+    if run.time_awareness_enabled {
+        let mut time_values = PromptRenderValues::default();
+        insert_time_values(&mut time_values, now);
+        let time_rules = text
+            .render_with(
+                "summary_chapter_time_rules",
+                time_values.purpose_values.into_iter().collect::<Vec<_>>(),
+            )
+            .map_err(|error| CompanionMemoryInferenceError::InvalidPrompt {
+                reason: format!(
+                    "summary prompt fragment summary_chapter_time_rules could not be rendered: {error}"
+                ),
+            })?;
+        system.push_str("\n\n");
+        system.push_str(&time_rules);
+    }
     let reference_label = fragment("summary_chapter_reference_label")?;
     let reference_body = match reference.filter(|value| !value.trim().is_empty()) {
         Some(value) => value.to_owned(),
@@ -1194,7 +1232,21 @@ fn build_chapter_request(
     let entries_body = group
         .iter()
         .enumerate()
-        .map(|(index, unit)| format!("[{}] {}", index + 1, unit.text))
+        .map(|(index, unit)| {
+            if run.time_awareness_enabled
+                && let (Some(start), Some(end)) = (unit.time_start, unit.time_end)
+            {
+                let start = format_message_timestamp(start);
+                let end = format_message_timestamp(end);
+                if start == end {
+                    format!("[{}] {start} {}", index + 1, unit.text)
+                } else {
+                    format!("[{}] {start} to {end} {}", index + 1, unit.text)
+                }
+            } else {
+                format!("[{}] {}", index + 1, unit.text)
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n\n");
     let output_request = text
@@ -1527,6 +1579,8 @@ mod tests {
             origin: lettuce_memory::MemoryOrigin::Model,
             window_start: window.0,
             window_end: window.1,
+            time_start: None,
+            time_end: None,
             text: "Part.".into(),
             token_count: 100,
             created_at: lettuce_types::TimestampMillis::new(1),
@@ -1735,34 +1789,37 @@ mod tests {
         use std::sync::{Arc, Mutex};
 
         use async_trait::async_trait;
-        use lettuce_context::{PromptDocument, PromptRepository};
+        use lettuce_context::{PromptDocument, PromptRenderValues, PromptRepository};
         use lettuce_conversations::{
-            ConversationOverviewReader, ConversationReader, FinishReason, InferenceCandidate,
-            InferenceOutcome, InferencePort, InferenceRequest, PortError, ProposedToolCall,
-            ProviderContextPart,
+            ContextAttributions, ContextBudgetReport, ConversationOverviewReader,
+            ConversationReader, FinishReason, InferenceCandidate, InferenceOutcome, InferencePort,
+            InferenceRequest, PortError, ProposedToolCall, ProviderContextPart,
+            ProviderNeutralContext,
         };
         use lettuce_jobs::handle::JobHandle;
         use lettuce_jobs::{JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, ResourceClass, SubjectKind};
         use lettuce_memory::{
             DynamicMemoryAttemptStatus, DynamicMemoryRunRepository, DynamicMemorySourceMessage,
-            DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryWindow, MemoryOrigin,
-            MemoryRepository, MemorySummary, MemorySummaryChange, MemorySummaryRepository,
-            MemorySummaryUnitKind, MemorySummaryUnitRepository, MemorySummaryUnitScope,
-            NewDynamicMemoryRunAttempt,
+            DynamicMemoryStructuredFallbackFormat, DynamicMemorySummaryCommit,
+            DynamicMemorySummaryWindow, MemoryOrigin, MemoryRepository, MemorySummary,
+            MemorySummaryChange, MemorySummaryRepository, MemorySummaryUnitKind,
+            MemorySummaryUnitRepository, MemorySummaryUnitScope, NewDynamicMemoryRunAttempt,
+            NewMemorySummaryUnit,
         };
         use lettuce_types::{
             ConversationBranchId, ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId,
-            MemorySpaceId, MessageId, TimestampMillis,
+            MemorySpaceId, MemorySummaryUnitId, MessageId, TimestampMillis,
         };
         use serde_json::json;
 
+        use super::unit;
         use crate::api::conversations::turns_tests::{open, replied_chat};
         use crate::api::tests::{Harness as ApiHarness, Reply, harness as api_harness};
         use crate::companion::companion_memory_summary::build_summary_request;
         use crate::{
             BuiltInPromptId, BuiltInPromptService, CompanionMemoryInferenceError,
             CompanionMemorySummaryCoordinator, CompanionMemoryWindowSelection,
-            EmbeddingGenerationError, MemoryEmbeddingEngine, SummaryMode,
+            EmbeddingGenerationError, MemoryEmbeddingEngine, SummaryMode, format_message_timestamp,
         };
 
         struct WordCountEngine;
@@ -1860,6 +1917,7 @@ mod tests {
             space_id: MemorySpaceId,
             summary_prompt: PromptDocument,
             sources: Vec<DynamicMemorySourceMessage>,
+            time_awareness_enabled: bool,
             next_time: i64,
         }
 
@@ -1911,6 +1969,7 @@ mod tests {
                     space_id,
                     summary_prompt,
                     sources,
+                    time_awareness_enabled: false,
                     next_time: 10_000,
                 }
             }
@@ -1971,7 +2030,7 @@ mod tests {
                         starting_memory: memory,
                         source_messages: self.sources.clone(),
                         profile: crate::companion::companion_memory_run::tests::profile(),
-                        time_awareness_enabled: false,
+                        time_awareness_enabled: self.time_awareness_enabled,
                         supersession_enabled: false,
                         group_companion_members: Vec::new(),
                         structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
@@ -1984,7 +2043,7 @@ mod tests {
                             lettuce_memory::DynamicMemoryToolOptions {
                                 group: false,
                                 supersession_enabled: false,
-                                require_source_message_id: false,
+                                require_source_message_id: self.time_awareness_enabled,
                                 group_companion: None,
                             },
                             &|key| key.to_owned(),
@@ -2779,6 +2838,384 @@ mod tests {
             .await
             .expect_err("must cancel");
             assert!(matches!(err, CompanionMemoryInferenceError::Cancelled));
+        }
+
+        #[tokio::test]
+        async fn chapters_cycle_unit_stores_source_message_time_range() {
+            let mut harness = Harness::new("cycle-range").await;
+            harness.time_awareness_enabled = false;
+            for (index, source) in harness.sources.iter_mut().enumerate() {
+                source.effective_time = TimestampMillis::new(
+                    1_700_000_000_000 + i64::try_from(index).expect("index") * 60_000,
+                );
+            }
+            let expected_start = harness
+                .sources
+                .iter()
+                .map(|source| source.effective_time)
+                .min();
+            let expected_end = harness
+                .sources
+                .iter()
+                .map(|source| source.effective_time)
+                .max();
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let (run_id, attempt_id, handle) = harness.open_run(0, count);
+            let now = harness.tick();
+            let inference = Arc::new(ScriptedInference::new(vec![ScriptedReply::Summary(
+                "Cycle with range.".into(),
+            )]));
+
+            CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run_id,
+                attempt_id,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                SummaryMode::Chapters {
+                    token_budget: 100,
+                    chapter_size: 2,
+                },
+                &handle,
+                None,
+                now,
+            )
+            .await
+            .expect("cycle run");
+
+            let active = harness
+                .database()
+                .active_summary_units(harness.scope(), Some(run_id))
+                .expect("active");
+            assert_eq!(active.len(), 1);
+            assert_eq!(active[0].kind, MemorySummaryUnitKind::Cycle);
+            assert_eq!(active[0].time_start, expected_start);
+            assert_eq!(active[0].time_end, expected_end);
+        }
+
+        #[tokio::test]
+        async fn chapters_chapter_unit_spans_its_inputs_time_range() {
+            let mut harness = Harness::new("chapter-range").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let mode = SummaryMode::Chapters {
+                token_budget: 5,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("Cycle one words here.".into()),
+                ScriptedReply::Summary("Cycle two words here.".into()),
+                ScriptedReply::Summary("Compact chapter.".into()),
+            ]));
+
+            let t1_start = TimestampMillis::new(1_700_000_000_000);
+            let t1_end = TimestampMillis::new(1_700_000_300_000);
+            for (index, source) in harness.sources.iter_mut().enumerate() {
+                source.effective_time = if index == 0 { t1_start } else { t1_end };
+            }
+            let (run1, att1, h1) = harness.open_run(0, count);
+            let now1 = harness.tick();
+            let res1 = CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run1,
+                att1,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h1,
+                None,
+                now1,
+            )
+            .await
+            .expect("run 1");
+            harness.publish_checkpoint(res1.checkpoint.summary);
+
+            let t2_start = TimestampMillis::new(1_700_010_000_000);
+            let t2_end = TimestampMillis::new(1_700_010_600_000);
+            for (index, source) in harness.sources.iter_mut().enumerate() {
+                source.effective_time = if index == 0 { t2_start } else { t2_end };
+            }
+            let (run2, att2, h2) = harness.open_run(count, count * 2);
+            let now2 = harness.tick();
+            CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h2,
+                None,
+                now2,
+            )
+            .await
+            .expect("run 2");
+
+            let active = harness
+                .database()
+                .active_summary_units(harness.scope(), Some(run2))
+                .expect("active");
+            assert_eq!(active.len(), 1);
+            assert_eq!(active[0].kind, MemorySummaryUnitKind::Chapter);
+            assert_eq!(active[0].time_start, Some(t1_start));
+            assert_eq!(active[0].time_end, Some(t2_end));
+        }
+
+        #[tokio::test]
+        async fn chapters_chapter_range_is_none_when_any_input_has_none() {
+            let mut harness = Harness::new("chapter-mixed-range").await;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let mode = SummaryMode::Chapters {
+                token_budget: 5,
+                chapter_size: 2,
+            };
+            let inference = Arc::new(ScriptedInference::new(vec![
+                ScriptedReply::Summary("Cycle two words here.".into()),
+                ScriptedReply::Summary("Compact chapter.".into()),
+            ]));
+
+            let (run1, att1, _h1) = harness.open_run(0, count);
+            let now1 = harness.tick();
+            harness
+                .database()
+                .insert_summary_unit(
+                    NewMemorySummaryUnit {
+                        id: MemorySummaryUnitId::new(),
+                        scope: harness.scope(),
+                        created_by_run_id: run1,
+                        kind: MemorySummaryUnitKind::Cycle,
+                        level: 0,
+                        origin: MemoryOrigin::Model,
+                        window_start: 0,
+                        window_end: count,
+                        time_start: None,
+                        time_end: None,
+                        text: "Legacy cycle words here.".into(),
+                        token_count: 4,
+                        created_at: now1,
+                    },
+                    &[],
+                )
+                .expect("legacy cycle");
+            let memory = MemoryRepository::get(harness.database(), harness.space_id)
+                .expect("memory")
+                .expect("space");
+            let checkpoint = harness
+                .database()
+                .commit_dynamic_memory_summary(
+                    DynamicMemorySummaryCommit {
+                        run_id: run1,
+                        attempt_id: att1,
+                        expected_memory_revision: memory.revision,
+                        text: "Legacy cycle words here.".into(),
+                        token_count: 4,
+                        request_context: ProviderNeutralContext {
+                            messages: Vec::new(),
+                            budget: ContextBudgetReport {
+                                selected_messages: 0,
+                                omitted_messages: 0,
+                                input_bytes: 0,
+                                estimated_input_tokens: 1,
+                                truncated: false,
+                            },
+                            attributions: ContextAttributions::default(),
+                        },
+                        usage: None,
+                        provider_request_id: None,
+                    },
+                    now1,
+                )
+                .expect("commit legacy checkpoint");
+            harness.publish_checkpoint(checkpoint.summary);
+
+            let (run2, att2, h2) = harness.open_run(count, count * 2);
+            let now2 = harness.tick();
+            CompanionMemorySummaryCoordinator::new(
+                &WordCountEngine,
+                harness.database(),
+                harness.database(),
+                inference.as_ref(),
+            )
+            .run(
+                run2,
+                att2,
+                CompanionMemoryWindowSelection::Automatic,
+                &harness.summary_prompt,
+                mode,
+                &h2,
+                None,
+                now2,
+            )
+            .await
+            .expect("run 2");
+
+            let active = harness
+                .database()
+                .active_summary_units(harness.scope(), Some(run2))
+                .expect("active");
+            assert_eq!(active.len(), 1);
+            assert_eq!(active[0].kind, MemorySummaryUnitKind::Chapter);
+            assert_eq!(active[0].time_start, None);
+            assert_eq!(active[0].time_end, None);
+        }
+
+        #[tokio::test]
+        async fn chapters_time_aware_chapter_request_shows_entry_ranges() {
+            let mut harness = Harness::new("chapter-time-aware").await;
+            harness.time_awareness_enabled = true;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let (run_id, attempt_id, handle) = harness.open_run(0, count);
+            let now = TimestampMillis::new(1_700_020_000_000);
+            let database = harness.database();
+            let run = database.load_dynamic_memory_run(run_id).expect("run");
+            let attempt = database
+                .load_dynamic_memory_attempt(attempt_id)
+                .expect("attempt");
+            let runtime_text = crate::generation::runtime_text::RuntimeText::load(
+                database,
+                BuiltInPromptId::MemoryRuntime,
+            )
+            .expect("runtime text");
+
+            let t_a = TimestampMillis::new(1_700_000_000_000);
+            let t_b = TimestampMillis::new(1_700_000_600_000);
+            let t_same_a = TimestampMillis::new(1_700_010_000_000);
+            let t_same_b = TimestampMillis::new(1_700_010_005_000);
+
+            let mut u1 = unit(MemorySummaryUnitKind::Cycle, 0, (0, 6));
+            u1.text = "First stretch.".into();
+            u1.time_start = Some(t_a);
+            u1.time_end = Some(t_b);
+
+            let mut u2 = unit(MemorySummaryUnitKind::Cycle, 0, (6, 12));
+            u2.text = "Same minute stretch.".into();
+            u2.time_start = Some(t_same_a);
+            u2.time_end = Some(t_same_b);
+
+            let mut u3 = unit(MemorySummaryUnitKind::Cycle, 0, (12, 18));
+            u3.text = "Legacy stretch.".into();
+            u3.time_start = None;
+            u3.time_end = None;
+
+            let request = super::super::build_chapter_request(
+                &run,
+                &attempt,
+                &runtime_text,
+                None,
+                &[&u1, &u2, &u3],
+                1,
+                0,
+                18,
+                120,
+                false,
+                &handle,
+                None,
+                now,
+            )
+            .expect("chapter request");
+
+            let texts = request_texts(&request);
+            let expected_system = {
+                let mut system = runtime_text
+                    .render_with("summary_chapter_system", [])
+                    .expect("system");
+                let mut time_values = PromptRenderValues::default();
+                super::super::insert_time_values(&mut time_values, now);
+                let time_rules = runtime_text
+                    .render_with(
+                        "summary_chapter_time_rules",
+                        time_values.purpose_values.into_iter().collect::<Vec<_>>(),
+                    )
+                    .expect("time rules");
+                system.push_str("\n\n");
+                system.push_str(&time_rules);
+                system
+            };
+            assert_eq!(texts[0], expected_system);
+
+            let entries_label = runtime_text
+                .render_with("summary_chapter_entries_label", [])
+                .expect("entries label");
+            let expected_entries = format!(
+                "{entries_label}\n[1] {} to {} First stretch.\n\n[2] {} Same minute stretch.\n\n[3] Legacy stretch.",
+                format_message_timestamp(t_a),
+                format_message_timestamp(t_b),
+                format_message_timestamp(t_same_a),
+            );
+            assert_eq!(texts[2], expected_entries);
+        }
+
+        #[tokio::test]
+        async fn chapters_chapter_request_without_time_awareness_is_unchanged() {
+            let mut harness = Harness::new("chapter-no-time-aware").await;
+            harness.time_awareness_enabled = false;
+            let count = u64::try_from(harness.sources.len()).expect("len");
+            let (run_id, attempt_id, handle) = harness.open_run(0, count);
+            let now = TimestampMillis::new(1_700_020_000_000);
+            let database = harness.database();
+            let run = database.load_dynamic_memory_run(run_id).expect("run");
+            let attempt = database
+                .load_dynamic_memory_attempt(attempt_id)
+                .expect("attempt");
+            let runtime_text = crate::generation::runtime_text::RuntimeText::load(
+                database,
+                BuiltInPromptId::MemoryRuntime,
+            )
+            .expect("runtime text");
+
+            let mut u1 = unit(MemorySummaryUnitKind::Cycle, 0, (0, 6));
+            u1.text = "First stretch.".into();
+            u1.time_start = Some(TimestampMillis::new(1_700_000_000_000));
+            u1.time_end = Some(TimestampMillis::new(1_700_000_600_000));
+
+            let mut u2 = unit(MemorySummaryUnitKind::Cycle, 0, (6, 12));
+            u2.text = "Second stretch.".into();
+            u2.time_start = Some(TimestampMillis::new(1_700_010_000_000));
+            u2.time_end = Some(TimestampMillis::new(1_700_010_600_000));
+
+            let request = super::super::build_chapter_request(
+                &run,
+                &attempt,
+                &runtime_text,
+                None,
+                &[&u1, &u2],
+                1,
+                0,
+                12,
+                120,
+                false,
+                &handle,
+                None,
+                now,
+            )
+            .expect("chapter request");
+
+            let texts = request_texts(&request);
+            let expected_system = runtime_text
+                .render_with("summary_chapter_system", [])
+                .expect("system");
+            let entries_label = runtime_text
+                .render_with("summary_chapter_entries_label", [])
+                .expect("entries label");
+            assert_eq!(texts[0], expected_system);
+            assert_eq!(
+                texts[2],
+                format!("{entries_label}\n[1] First stretch.\n\n[2] Second stretch.")
+            );
         }
     }
 }

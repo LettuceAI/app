@@ -34,6 +34,8 @@ fn parse_unit_row(row: &Row<'_>) -> Result<MemorySummaryUnit, MemoryRepositoryEr
     let text: String = row.get(10).map_err(storage)?;
     let token_count: i64 = row.get(11).map_err(storage)?;
     let created_at: i64 = row.get(12).map_err(storage)?;
+    let time_start: Option<i64> = row.get(13).map_err(storage)?;
+    let time_end: Option<i64> = row.get(14).map_err(storage)?;
 
     let unit = MemorySummaryUnit {
         id: id.parse::<MemorySummaryUnitId>().map_err(storage)?,
@@ -58,6 +60,8 @@ fn parse_unit_row(row: &Row<'_>) -> Result<MemorySummaryUnit, MemoryRepositoryEr
         })?,
         window_start: u64::try_from(window_start).map_err(storage)?,
         window_end: u64::try_from(window_end).map_err(storage)?,
+        time_start: time_start.map(TimestampMillis::new),
+        time_end: time_end.map(TimestampMillis::new),
         text,
         token_count: u32::try_from(token_count).map_err(storage)?,
         created_at: TimestampMillis::new(created_at),
@@ -104,7 +108,7 @@ impl MemorySummaryUnitRepository for Database {
         let query = format!(
             "SELECT u.id, u.space_id, u.conversation_id, u.branch_id, u.created_by_run_id,
                     u.kind, u.level, u.origin, u.window_start, u.window_end,
-                    u.text, u.token_count, u.created_at
+                    u.text, u.token_count, u.created_at, u.time_start, u.time_end
                FROM memory_summary_units u
                JOIN dynamic_memory_runs run ON run.id = u.created_by_run_id
               WHERE u.space_id = ?1
@@ -176,7 +180,7 @@ impl MemorySummaryUnitRepository for Database {
             .query_row(
                 "SELECT id, space_id, conversation_id, branch_id, created_by_run_id,
                         kind, level, origin, window_start, window_end,
-                        text, token_count, created_at
+                        text, token_count, created_at, time_start, time_end
                    FROM memory_summary_units
                   WHERE created_by_run_id = ?1
                     AND kind = ?2
@@ -222,6 +226,8 @@ impl MemorySummaryUnitRepository for Database {
                 && existing.level == unit.level
                 && existing.window_start == unit.window_start
                 && existing.window_end == unit.window_end
+                && existing.time_start == unit.time_start
+                && existing.time_end == unit.time_end
                 && existing_inputs == inputs
             {
                 return Ok(existing);
@@ -234,8 +240,8 @@ impl MemorySummaryUnitRepository for Database {
                 "INSERT INTO memory_summary_units (
                     id, space_id, conversation_id, branch_id, created_by_run_id,
                     kind, level, origin, window_start, window_end,
-                    text, token_count, created_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    text, token_count, created_at, time_start, time_end
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     unit.id.to_string(),
                     unit.scope.space_id.to_string(),
@@ -250,6 +256,8 @@ impl MemorySummaryUnitRepository for Database {
                     unit.text,
                     i64::from(unit.token_count),
                     unit.created_at.get(),
+                    unit.time_start.map(TimestampMillis::get),
+                    unit.time_end.map(TimestampMillis::get),
                 ],
             )
             .map_err(storage)?;
@@ -281,7 +289,7 @@ impl MemorySummaryUnitRepository for Database {
             .prepare(
                 "SELECT u.id, u.space_id, u.conversation_id, u.branch_id, u.created_by_run_id,
                         u.kind, u.level, u.origin, u.window_start, u.window_end,
-                        u.text, u.token_count, u.created_at,
+                        u.text, u.token_count, u.created_at, u.time_start, u.time_end,
                         (SELECT count(*) FROM memory_summary_unit_inputs edge
                           WHERE edge.parent_id = u.id)
                    FROM memory_summary_units u
@@ -294,7 +302,7 @@ impl MemorySummaryUnitRepository for Database {
             .map_err(storage)?;
         let mut units = Vec::new();
         while let Some(row) = rows.next().map_err(storage)? {
-            let inputs: i64 = row.get(13).map_err(storage)?;
+            let inputs: i64 = row.get(15).map_err(storage)?;
             units.push((
                 parse_unit_row(row)?,
                 u32::try_from(inputs).map_err(storage)?,
@@ -312,7 +320,7 @@ impl MemorySummaryUnitRepository for Database {
             .query_row(
                 "SELECT id, space_id, conversation_id, branch_id, created_by_run_id,
                         kind, level, origin, window_start, window_end,
-                        text, token_count, created_at
+                        text, token_count, created_at, time_start, time_end
                    FROM memory_summary_units
                   WHERE id = ?1",
                 params![unit_id.to_string()],
@@ -332,7 +340,7 @@ impl MemorySummaryUnitRepository for Database {
             .prepare(
                 "SELECT u.id, u.space_id, u.conversation_id, u.branch_id, u.created_by_run_id,
                         u.kind, u.level, u.origin, u.window_start, u.window_end,
-                        u.text, u.token_count, u.created_at
+                        u.text, u.token_count, u.created_at, u.time_start, u.time_end
                    FROM memory_summary_unit_inputs edge
                    JOIN memory_summary_units u ON u.id = edge.child_id
                   WHERE edge.parent_id = ?1
@@ -525,6 +533,8 @@ mod tests {
                 origin: MemoryOrigin::Model,
                 window_start: start,
                 window_end: end,
+                time_start: None,
+                time_end: None,
                 text: text.to_owned(),
                 token_count: 25,
                 created_at: TimestampMillis::new(100),
@@ -861,5 +871,68 @@ mod tests {
             .active_summary_units(fixture.scope, Some(run_3))
             .expect("overlaps and gaps stay readable");
         assert_eq!(active, vec![cycle_1, overlapping, gapped]);
+    }
+
+    #[test]
+    fn time_range_round_trips_and_conflicting_retry_range_returns_conflict() {
+        let fixture = Fixture::new();
+        let (run_1, attempt_1) = fixture.insert_run(10, 0, 20);
+        let (run_2, _) = fixture.insert_run(20, 20, 40);
+
+        let mut ranged = fixture.unit(run_1, MemorySummaryUnitKind::Cycle, 0, 0, 20, "Cycle 1");
+        ranged.time_start = Some(TimestampMillis::new(1_700_000_000_000));
+        ranged.time_end = Some(TimestampMillis::new(1_700_000_600_000));
+        let inserted = fixture
+            .database
+            .insert_summary_unit(ranged.clone(), &[])
+            .expect("insert ranged");
+        assert_eq!(
+            inserted.time_start,
+            Some(TimestampMillis::new(1_700_000_000_000))
+        );
+        assert_eq!(
+            inserted.time_end,
+            Some(TimestampMillis::new(1_700_000_600_000))
+        );
+
+        let fetched = fixture
+            .database
+            .summary_unit(inserted.id)
+            .expect("lookup")
+            .expect("present");
+        assert_eq!(fetched, inserted);
+
+        let mut retry_same = fixture.unit(run_1, MemorySummaryUnitKind::Cycle, 0, 0, 20, "Cycle 1");
+        retry_same.time_start = inserted.time_start;
+        retry_same.time_end = inserted.time_end;
+        let replayed = fixture
+            .database
+            .insert_summary_unit(retry_same, &[])
+            .expect("replay same range");
+        assert_eq!(replayed, inserted);
+
+        let mut retry_diff = fixture.unit(run_1, MemorySummaryUnitKind::Cycle, 0, 0, 20, "Cycle 1");
+        retry_diff.time_start = Some(TimestampMillis::new(1_700_000_000_000));
+        retry_diff.time_end = Some(TimestampMillis::new(1_700_000_900_000));
+        assert_eq!(
+            fixture.database.insert_summary_unit(retry_diff, &[]),
+            Err(MemoryRepositoryError::Conflict)
+        );
+
+        fixture.insert_checkpoint(run_1, attempt_1, 1, 15);
+
+        let unranged = fixture
+            .database
+            .insert_summary_unit(
+                fixture.unit(run_2, MemorySummaryUnitKind::Cycle, 0, 20, 40, "Cycle 2"),
+                &[],
+            )
+            .expect("insert unranged");
+        assert_eq!(unranged.time_start, None);
+        assert_eq!(unranged.time_end, None);
+        assert_eq!(
+            fixture.database.summary_unit(unranged.id).expect("lookup"),
+            Some(unranged)
+        );
     }
 }

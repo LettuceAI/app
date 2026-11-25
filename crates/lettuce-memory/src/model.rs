@@ -449,6 +449,8 @@ pub struct MemorySummaryUnit {
     pub origin: MemoryOrigin,
     pub window_start: u64,
     pub window_end: u64,
+    pub time_start: Option<TimestampMillis>,
+    pub time_end: Option<TimestampMillis>,
     pub text: String,
     pub token_count: u32,
     pub created_at: TimestampMillis,
@@ -456,7 +458,15 @@ pub struct MemorySummaryUnit {
 
 impl MemorySummaryUnit {
     pub fn validate(&self) -> Result<(), MemoryValidationError> {
-        validate_summary_unit_fields(self.kind, self.level, self.window_start, self.window_end, &self.text)
+        validate_summary_unit_fields(
+            self.kind,
+            self.level,
+            self.window_start,
+            self.window_end,
+            self.time_start,
+            self.time_end,
+            &self.text,
+        )
     }
 }
 
@@ -471,6 +481,8 @@ pub struct NewMemorySummaryUnit {
     pub origin: MemoryOrigin,
     pub window_start: u64,
     pub window_end: u64,
+    pub time_start: Option<TimestampMillis>,
+    pub time_end: Option<TimestampMillis>,
     pub text: String,
     pub token_count: u32,
     pub created_at: TimestampMillis,
@@ -478,7 +490,15 @@ pub struct NewMemorySummaryUnit {
 
 impl NewMemorySummaryUnit {
     pub fn validate(&self) -> Result<(), MemoryValidationError> {
-        validate_summary_unit_fields(self.kind, self.level, self.window_start, self.window_end, &self.text)
+        validate_summary_unit_fields(
+            self.kind,
+            self.level,
+            self.window_start,
+            self.window_end,
+            self.time_start,
+            self.time_end,
+            &self.text,
+        )
     }
 
     #[must_use]
@@ -492,6 +512,8 @@ impl NewMemorySummaryUnit {
             origin: self.origin,
             window_start: self.window_start,
             window_end: self.window_end,
+            time_start: self.time_start,
+            time_end: self.time_end,
             text: self.text,
             token_count: self.token_count,
             created_at: self.created_at,
@@ -504,12 +526,34 @@ fn validate_summary_unit_fields(
     level: u32,
     window_start: u64,
     window_end: u64,
+    time_start: Option<TimestampMillis>,
+    time_end: Option<TimestampMillis>,
     text: &str,
 ) -> Result<(), MemoryValidationError> {
     if window_end < window_start {
         return Err(MemoryValidationError::InvalidSummaryWindow {
             reason: "window end is before window start",
         });
+    }
+    if kind == MemorySummaryUnitKind::Reset && (time_start.is_some() || time_end.is_some()) {
+        return Err(MemoryValidationError::InvalidSummaryUnit {
+            reason: "reset units have no time range",
+        });
+    }
+    match (time_start, time_end) {
+        (None, None) => {}
+        (Some(start), Some(end)) => {
+            if end < start {
+                return Err(MemoryValidationError::InvalidSummaryUnit {
+                    reason: "summary unit time end is before time start",
+                });
+            }
+        }
+        _ => {
+            return Err(MemoryValidationError::InvalidSummaryUnit {
+                reason: "summary unit time range must have both ends or neither",
+            });
+        }
     }
     if text.len() > MAX_MEMORY_SUMMARY_BYTES {
         return Err(MemoryValidationError::SummaryTooLarge);
@@ -806,5 +850,91 @@ mod tests {
             summary.validate(),
             Err(MemoryValidationError::InvalidSummaryWindow { .. })
         ));
+    }
+
+    #[test]
+    fn summary_unit_time_range_validation() {
+        let make = |kind, text: &str, time_start, time_end| super::NewMemorySummaryUnit {
+            id: lettuce_types::MemorySummaryUnitId::new(),
+            scope: super::MemorySummaryUnitScope {
+                space_id: MemorySpaceId::new(),
+                conversation_id: lettuce_types::ConversationId::new(),
+                branch_id: lettuce_types::ConversationBranchId::new(),
+            },
+            created_by_run_id: lettuce_types::DynamicMemoryRunId::new(),
+            kind,
+            level: 0,
+            origin: crate::MemoryOrigin::Model,
+            window_start: 0,
+            window_end: 4,
+            time_start,
+            time_end,
+            text: text.to_owned(),
+            token_count: 5,
+            created_at: TimestampMillis::new(100),
+        };
+
+        assert_eq!(
+            make(super::MemorySummaryUnitKind::Cycle, "Summary.", None, None).validate(),
+            Ok(())
+        );
+        assert_eq!(
+            make(
+                super::MemorySummaryUnitKind::Cycle,
+                "Summary.",
+                Some(TimestampMillis::new(10)),
+                Some(TimestampMillis::new(10)),
+            )
+            .validate(),
+            Ok(())
+        );
+        assert_eq!(
+            make(
+                super::MemorySummaryUnitKind::Cycle,
+                "Summary.",
+                Some(TimestampMillis::new(10)),
+                None,
+            )
+            .validate(),
+            Err(MemoryValidationError::InvalidSummaryUnit {
+                reason: "summary unit time range must have both ends or neither",
+            })
+        );
+        assert_eq!(
+            make(
+                super::MemorySummaryUnitKind::Cycle,
+                "Summary.",
+                None,
+                Some(TimestampMillis::new(10)),
+            )
+            .validate(),
+            Err(MemoryValidationError::InvalidSummaryUnit {
+                reason: "summary unit time range must have both ends or neither",
+            })
+        );
+        assert_eq!(
+            make(
+                super::MemorySummaryUnitKind::Cycle,
+                "Summary.",
+                Some(TimestampMillis::new(20)),
+                Some(TimestampMillis::new(10)),
+            )
+            .validate(),
+            Err(MemoryValidationError::InvalidSummaryUnit {
+                reason: "summary unit time end is before time start",
+            })
+        );
+        assert_eq!(
+            make(
+                super::MemorySummaryUnitKind::Reset,
+                "",
+                Some(TimestampMillis::new(10)),
+                Some(TimestampMillis::new(20)),
+            )
+            .validate(),
+            Err(MemoryValidationError::InvalidSummaryUnit {
+                reason: "reset units have no time range",
+            })
+        );
     }
 }

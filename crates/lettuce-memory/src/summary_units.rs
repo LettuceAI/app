@@ -1,6 +1,24 @@
+use lettuce_types::TimestampMillis;
+
 use crate::{MemorySummaryUnit, MemorySummaryUnitKind};
 
 const SEPARATOR: &str = "\n\n";
+
+/// The time range covering `units` in order, or `None` when any of them has no range.
+#[must_use]
+pub fn combined_time_range(
+    units: &[&MemorySummaryUnit],
+) -> Option<(TimestampMillis, TimestampMillis)> {
+    let mut start: Option<TimestampMillis> = None;
+    let mut end: Option<TimestampMillis> = None;
+    for unit in units {
+        let (unit_start, unit_end) = (unit.time_start?, unit.time_end?);
+        start = Some(start.map_or(unit_start, |current| current.min(unit_start)));
+        end = Some(end.map_or(unit_end, |current| current.max(unit_end)));
+    }
+    start.zip(end)
+}
+
 #[must_use]
 pub fn render_summary_units(units: &[MemorySummaryUnit]) -> String {
     units
@@ -18,6 +36,8 @@ pub struct SummaryAdoption {
     pub level: u32,
     pub window_start: u64,
     pub window_end: u64,
+    pub time_start: Option<TimestampMillis>,
+    pub time_end: Option<TimestampMillis>,
     pub text: String,
 }
 
@@ -91,6 +111,9 @@ pub fn plan_summary_adoption(
     }
 
     let covered = &parts[start..end];
+    let covered_refs: Vec<&MemorySummaryUnit> = covered.iter().collect();
+    let (time_start, time_end) = combined_time_range(&covered_refs)
+        .map_or((None, None), |(start, end)| (Some(start), Some(end)));
     let rewrites_all = start == 0 && end == count && count > 1;
     let window_end = covered
         .iter()
@@ -110,6 +133,8 @@ pub fn plan_summary_adoption(
             level: 0,
             window_start: 0,
             window_end,
+            time_start,
+            time_end,
             text,
         });
     }
@@ -129,6 +154,8 @@ pub fn plan_summary_adoption(
             .min()
             .unwrap_or(0),
         window_end,
+        time_start,
+        time_end,
         text,
     })
 }
@@ -170,6 +197,8 @@ mod tests {
             origin: MemoryOrigin::Model,
             window_start: window.0,
             window_end: window.1,
+            time_start: None,
+            time_end: None,
             text: text.to_owned(),
             token_count: 1,
             created_at: TimestampMillis::new(1),
@@ -283,5 +312,39 @@ mod tests {
         let plan = plan_summary_adoption(&parts, published, 24).expect("plan");
         assert_eq!((plan.start, plan.end), (0, 1));
         assert_eq!(plan.kind, MemorySummaryUnitKind::Seed);
+    }
+
+    #[test]
+    fn plan_summary_adoption_carries_combined_time_range_and_none_for_legacy_seed() {
+        let mut parts = sample();
+        parts[0].time_start = Some(TimestampMillis::new(1_000));
+        parts[0].time_end = Some(TimestampMillis::new(2_000));
+        parts[1].time_start = Some(TimestampMillis::new(3_000));
+        parts[1].time_end = Some(TimestampMillis::new(4_000));
+        parts[2].time_start = Some(TimestampMillis::new(5_000));
+        parts[2].time_end = Some(TimestampMillis::new(6_000));
+
+        let merged =
+            plan_summary_adoption(&parts, "Chapter one.\n\nCycle three.", 24).expect("merged");
+        assert_eq!(merged.time_start, Some(TimestampMillis::new(1_000)));
+        assert_eq!(merged.time_end, Some(TimestampMillis::new(4_000)));
+
+        let rewritten =
+            plan_summary_adoption(&parts, "Completely rewritten.", 24).expect("rewritten");
+        assert_eq!(rewritten.kind, MemorySummaryUnitKind::Seed);
+        assert_eq!(rewritten.time_start, Some(TimestampMillis::new(1_000)));
+        assert_eq!(rewritten.time_end, Some(TimestampMillis::new(6_000)));
+
+        parts[1].time_start = None;
+        parts[1].time_end = None;
+        let partial =
+            plan_summary_adoption(&parts, "Chapter one.\n\nCycle three.", 24).expect("partial");
+        assert_eq!(partial.time_start, None);
+        assert_eq!(partial.time_end, None);
+
+        let legacy = plan_summary_adoption(&[], "Imported summary.", 40).expect("legacy");
+        assert_eq!(legacy.kind, MemorySummaryUnitKind::Seed);
+        assert_eq!(legacy.time_start, None);
+        assert_eq!(legacy.time_end, None);
     }
 }

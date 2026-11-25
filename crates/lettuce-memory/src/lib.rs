@@ -55,7 +55,9 @@ pub use run::{
     NewDynamicMemoryAttemptRecovery, NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt,
     NewDynamicMemoryToolCall,
 };
-pub use summary_units::{SummaryAdoption, plan_summary_adoption, render_summary_units};
+pub use summary_units::{
+    SummaryAdoption, combined_time_range, plan_summary_adoption, render_summary_units,
+};
 pub use structured_fallback::{
     StructuredFallbackError, memory_operations_fallback_prompt_key,
     parse_memory_operations_from_text, parse_memory_repairs_from_text,
