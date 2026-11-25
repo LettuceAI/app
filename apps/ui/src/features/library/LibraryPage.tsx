@@ -1,7 +1,7 @@
 import { DraftMenu } from "./lorebook-create/DraftMenu";
 import { projectsQuery } from "./data/lorebook-projects";
 import { AssetAudio } from "@/shared/ui/AssetAudio";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   useLocation,
@@ -32,7 +32,7 @@ import { mediaQuery } from "@/api/media-library-query";
 import { mediaName } from "./data/actions";
 import {
   countsQuery,
-  entriesQuery,
+  kindEntriesQuery,
   type Entry,
   type Filter,
   type LibrarySearch,
@@ -112,14 +112,35 @@ export function LibraryPage() {
   const draftCount = projects.data?.length;
   const totals = counts.data;
   const mediaView = filter === "images" || filter === "audio";
-  const entities = useInfiniteQuery({
-    ...entriesQuery(api, mediaView ? "all" : filter, term),
-    enabled: !mediaView,
+  const charactersQuery = useInfiniteQuery({
+    ...kindEntriesQuery(api, "character", term),
+    enabled: filter === "all" || filter === "characters",
+  });
+  const personasQuery = useInfiniteQuery({
+    ...kindEntriesQuery(api, "persona", term),
+    enabled: filter === "all" || filter === "personas",
+  });
+  const lorebooksQuery = useInfiniteQuery({
+    ...kindEntriesQuery(api, "lorebook", term),
+    enabled: filter === "all" || filter === "lorebooks",
   });
   const media = useInfiniteQuery({
     ...mediaQuery(api, filter === "audio" ? "audio" : "image", term),
     enabled: mediaView,
   });
+  const activeEntityQueries = useMemo(
+    () =>
+      filter === "characters"
+        ? [charactersQuery]
+        : filter === "personas"
+          ? [personasQuery]
+          : filter === "lorebooks"
+            ? [lorebooksQuery]
+            : filter === "all"
+              ? [charactersQuery, personasQuery, lorebooksQuery]
+              : [],
+    [filter, charactersQuery, personasQuery, lorebooksQuery],
+  );
   const entries = useMemo(
     () => [
       ...(filter === "all" || filter === "lorebooks"
@@ -142,23 +163,65 @@ export function LibraryPage() {
               }),
             )
         : []),
-      ...(entities.data?.pages.flatMap((page) => page.items) ?? []),
+      ...activeEntityQueries.flatMap((entryQuery) =>
+        entryQuery.data?.pages.flatMap((page) => page.items) ?? [],
+      ),
     ],
-    [entities.data, projects.data, filter, term, t],
+    [activeEntityQueries, projects.data, filter, term, t],
+  );
+  const cachedEntries = useMemo(
+    () =>
+      [charactersQuery, personasQuery, lorebooksQuery].flatMap(
+        (entryQuery) => entryQuery.data?.pages.flatMap((page) => page.items) ?? [],
+      ),
+    [charactersQuery, personasQuery, lorebooksQuery],
   );
   const pictures = useMemo(
     () => media.data?.pages.flatMap((page) => page.items) ?? [],
     [media.data],
   );
-  const result = mediaView ? media : entities;
-  const { hasNextPage, isFetching, isFetchNextPageError, fetchNextPage } = result;
+  const hasNextPage = mediaView
+    ? media.hasNextPage
+    : activeEntityQueries.some((entryQuery) => entryQuery.hasNextPage);
+  const isFetching = mediaView
+    ? media.isFetching
+    : activeEntityQueries.some((entryQuery) => entryQuery.isFetching);
+  const isFetchingNextPage = mediaView
+    ? media.isFetchingNextPage
+    : activeEntityQueries.some((entryQuery) => entryQuery.isFetchingNextPage);
+  const isFetchNextPageError = mediaView
+    ? media.isFetchNextPageError
+    : activeEntityQueries.some((entryQuery) => entryQuery.isFetchNextPageError);
+  const fetchNextPage = useCallback(() => {
+    if (mediaView) return media.fetchNextPage();
+    return Promise.all(
+      activeEntityQueries
+        .filter((entryQuery) => entryQuery.hasNextPage && !entryQuery.isFetching)
+        .map((entryQuery) => entryQuery.fetchNextPage()),
+    );
+  }, [mediaView, media, activeEntityQueries]);
+  const refetchActive = () => {
+    if (mediaView) return media.refetch();
+    const errored = activeEntityQueries.filter((entryQuery) => entryQuery.isError);
+    const targets = errored.length > 0 ? errored : activeEntityQueries;
+    return Promise.all(targets.map((entryQuery) => entryQuery.refetch()));
+  };
   const typing = query.trim() !== term;
   const pending =
-    result.isPending ||
+    (mediaView
+      ? media.isPending
+      : activeEntityQueries.some((entryQuery) => entryQuery.isPending)) ||
     typing ||
     ((filter === "all" || filter === "lorebooks") && projects.isPending);
-  const failed = result.isError && !result.data;
-  const pages = result.data?.pages.length ?? 0;
+  const failed = mediaView
+    ? media.isError && !media.data
+    : activeEntityQueries.some((entryQuery) => entryQuery.isError && !entryQuery.data);
+  const activeError = mediaView
+    ? media.error
+    : activeEntityQueries.find((entryQuery) => entryQuery.isError)?.error;
+  const pages = mediaView
+    ? (media.data?.pages.length ?? 0)
+    : activeEntityQueries.reduce((sum, entryQuery) => sum + (entryQuery.data?.pages.length ?? 0), 0);
   useEffect(() => {
     const end = endRef.current;
     const root = mainRef.current;
@@ -248,7 +311,7 @@ export function LibraryPage() {
   const [retained, setRetained] = useState(active);
   if (active && (active.key !== retained?.key || active.type !== retained?.type))
     setRetained(active);
-  const defaultPersona = entities.data?.pages.find((page) => page.defaultPersona)?.defaultPersona;
+  const defaultPersona = personasQuery.data?.pages.find((page) => page.defaultPersona)?.defaultPersona;
   const options = [
     {
       value: "all" as const,
@@ -292,7 +355,7 @@ export function LibraryPage() {
   const showing = mediaView ? pictures.length : entries.length;
   let body;
   if (failed) {
-    body = <FailureState error={result.error} onRetry={() => void result.refetch()} />;
+    body = <FailureState error={activeError} onRetry={() => void refetchActive()} />;
   } else if (pending) {
     body = <LoadingBody filter={filter} />;
   } else if (showing === 0) {
@@ -405,8 +468,8 @@ export function LibraryPage() {
         {!pending && !failed && (
           <div ref={endRef} className="flex justify-center py-4">
             {isFetchNextPageError ? (
-              <FailureState error={result.error} onRetry={() => void fetchNextPage()} size="sm" />
-            ) : result.isFetchingNextPage ? (
+              <FailureState error={activeError} onRetry={() => void fetchNextPage()} size="sm" />
+            ) : isFetchingNextPage ? (
               <Spinner />
             ) : hasNextPage ? (
               <Button variant="ghost" onClick={() => void fetchNextPage()}>
@@ -431,7 +494,7 @@ export function LibraryPage() {
           key={retained.key}
           api={api}
           item={retained.item}
-          entries={entries}
+          entries={cachedEntries}
           open={active?.type === "media"}
           onClose={close}
         />

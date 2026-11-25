@@ -751,7 +751,7 @@ describe("bounded library loading", () => {
     await screen.findByText("Cassian");
     expect(charactersList).toHaveBeenCalledTimes(1);
     expect(charactersList).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 8, cursor: null }),
+      expect.objectContaining({ limit: 24, cursor: null }),
     );
     expect(mediaList).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("radio", { name: /Images/ }));
@@ -792,9 +792,9 @@ describe("bounded library loading", () => {
       image: null,
     }));
     await act(async () => {
-      runtime.queryClient.setQueryData(["library", "entries", "all", ""], {
+      runtime.queryClient.setQueryData(["library", "entries", "character", ""], {
         pages: [{ items, next: null, defaultPersona: undefined }],
-        pageParams: [{ characters: null, personas: null, lorebooks: null }],
+        pageParams: [null],
       });
     });
     expect(await screen.findByText("Person 0")).toBeTruthy();
@@ -821,7 +821,7 @@ describe("bounded library loading", () => {
         query: "distant",
         cursor: null,
         search_description: true,
-        limit: 8,
+        limit: 24,
       }),
     );
     expect(list.mock.calls.every(([request]) => request.cursor === null)).toBe(true);
@@ -853,5 +853,32 @@ describe("library totals", () => {
     expect(screen.getByRole("radio", { name: /^Images\s*55$/ })).toBeTruthy();
     expect(screen.getByRole("radio", { name: /^Audio\s*80$/ })).toBeTruthy();
     expect(mediaList).not.toHaveBeenCalled();
+  });
+
+  it("reuses cached kind queries when switching from All to Characters, Personas, or Lorebooks", async () => {
+    const charactersList = vi.fn<NonNullable<MockCallHandlers["charactersList"]>>(() =>
+      ok({ items: [character], next_cursor: null }),
+    );
+    const personasList = vi.fn<NonNullable<MockCallHandlers["personasList"]>>(() => ok(personas));
+    const lorebooksList = vi.fn<NonNullable<MockCallHandlers["lorebooksList"]>>(() =>
+      ok({ items: [], next_cursor: null }),
+    );
+    await setup({ charactersList, personasList, lorebooksList });
+    expect(await screen.findByText("Cassian")).toBeTruthy();
+    expect(charactersList).toHaveBeenCalledTimes(1);
+    expect(personasList).toHaveBeenCalledTimes(1);
+    expect(lorebooksList).toHaveBeenCalledTimes(1);
+
+    const filters = screen.getByRole("radiogroup", { name: "Show" });
+    fireEvent.click(within(filters).getByRole("radio", { name: /^Characters/ }));
+    expect(await screen.findByText("Cassian")).toBeTruthy();
+    expect(charactersList).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(filters).getByRole("radio", { name: /^Personas/ }));
+    expect(await screen.findByText("Hunter")).toBeTruthy();
+    expect(personasList).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(filters).getByRole("radio", { name: /^Lorebooks/ }));
+    expect(lorebooksList).toHaveBeenCalledTimes(1);
   });
 });

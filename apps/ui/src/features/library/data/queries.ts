@@ -25,64 +25,27 @@ export type EntryView =
   | { kind: "character"; view: CharacterView_Serialize }
   | { kind: "persona"; view: PersonaView_Serialize }
   | { kind: "lorebook"; view: LorebookView };
-type Cursors = {
-  characters: string | null | false;
-  personas: string | null | false;
-  lorebooks: string | null | false;
-};
 export interface EntryPage {
   items: Entry[];
-  next: Cursors | null;
+  next: string | null;
   defaultPersona: PersonaDefaultView | undefined;
 }
 const libraryPageSize = 24;
 
-export function entriesQuery(api: ApiClient, filter: EntryFilter, query: string) {
+export function kindEntriesQuery(api: ApiClient, kind: EntryKind, query: string) {
   return infiniteQueryOptions({
-    queryKey: [...queryKeys.library.all, "entries", filter, query] as const,
-    initialPageParam: {
-      characters: filter === "all" || filter === "characters" ? null : false,
-      personas: filter === "all" || filter === "personas" ? null : false,
-      lorebooks: filter === "all" || filter === "lorebooks" ? null : false,
-    } as Cursors,
+    queryKey: [...queryKeys.library.all, "entries", kind, query] as const,
+    initialPageParam: null as string | null,
     queryFn: async ({ pageParam }): Promise<EntryPage> => {
-      const limit = filter === "all" ? libraryPageSize / 3 : libraryPageSize;
-      const [characters, personas, lorebooks] = await Promise.all([
-        pageParam.characters === false
-          ? null
-          : api.call("charactersList", {
-              cursor: pageParam.characters,
-              limit,
-              query: query || null,
-              search_description: true,
-            }),
-        pageParam.personas === false
-          ? null
-          : api.call("personasList", {
-              cursor: pageParam.personas,
-              limit,
-              query: query || null,
-              sort: null,
-              search_description: true,
-              search_nickname: true,
-            }),
-        pageParam.lorebooks === false
-          ? null
-          : api.call("lorebooksList", {
-              cursor: pageParam.lorebooks,
-              limit,
-              query: query || null,
-              lifecycle: "active",
-            }),
-      ]);
-      const next: Cursors = {
-        characters: characters?.next_cursor ?? false,
-        personas: personas?.next_cursor ?? false,
-        lorebooks: lorebooks?.next_cursor ?? false,
-      };
-      return {
-        items: [
-          ...(characters?.items ?? []).map(
+      if (kind === "character") {
+        const characters = await api.call("charactersList", {
+          cursor: pageParam,
+          limit: libraryPageSize,
+          query: query || null,
+          search_description: true,
+        });
+        return {
+          items: characters.items.map(
             (item): Entry => ({
               kind: "character",
               id: item.id,
@@ -91,28 +54,52 @@ export function entriesQuery(api: ApiClient, filter: EntryFilter, query: string)
               image: item.avatar?.preview_url ?? item.avatar?.url ?? null,
             }),
           ),
-          ...(personas?.items ?? []).map(
+          next: characters.next_cursor ?? null,
+          defaultPersona: undefined,
+        };
+      }
+      if (kind === "persona") {
+        const personas = await api.call("personasList", {
+          cursor: pageParam,
+          limit: libraryPageSize,
+          query: query || null,
+          sort: null,
+          search_description: true,
+          search_nickname: true,
+        });
+        return {
+          items: personas.items.map(
             (item): Entry => ({
               kind: "persona",
               id: item.id,
               name: item.title,
               description: item.intro?.trim() || item.description,
               image: item.avatar?.preview_url ?? item.avatar?.url ?? null,
-              isDefault: personas?.default_persona.persona_id === item.id,
+              isDefault: personas.default_persona.persona_id === item.id,
             }),
           ),
-          ...(lorebooks?.items ?? []).map(
-            (item): Entry => ({
-              kind: "lorebook",
-              id: item.id,
-              name: item.name,
-              description: "",
-              image: item.icon?.preview_url ?? item.icon?.url ?? null,
-            }),
-          ),
-        ],
-        next: Object.values(next).every((cursor) => cursor === false) ? null : next,
-        defaultPersona: personas?.default_persona,
+          next: personas.next_cursor ?? null,
+          defaultPersona: personas.default_persona,
+        };
+      }
+      const lorebooks = await api.call("lorebooksList", {
+        cursor: pageParam,
+        limit: libraryPageSize,
+        query: query || null,
+        lifecycle: "active",
+      });
+      return {
+        items: lorebooks.items.map(
+          (item): Entry => ({
+            kind: "lorebook",
+            id: item.id,
+            name: item.name,
+            description: "",
+            image: item.icon?.preview_url ?? item.icon?.url ?? null,
+          }),
+        ),
+        next: lorebooks.next_cursor ?? null,
+        defaultPersona: undefined,
       };
     },
     getNextPageParam: (last) => last.next ?? undefined,
