@@ -3,7 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronDown, ChevronUp, Minus, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Chip, cn, CrispStringsProvider, icon, IconButton, motion as presets, Segmented, Skeleton, Textarea } from "@lettuceai/crisp";
-import { DateTime24, DateTime24Panel } from "@/shared/ui/DateTime24";
+import { DateTime24Panel } from "@/shared/ui/DateTime24";
 import type { LibraryWidgetStat_Serialize, TimeChange, TimeMode } from "@/api/generated/bindings";
 import { defaultNotation, diceLabel, quickDice, rollText } from "../data/dice";
 import { datePickerStrings } from "../components/settings/date-picker-strings";
@@ -325,11 +325,7 @@ export function TimeWidget({ node }: { node: Node<"time"> }) {
             />
             {draft && (
               <>
-                {draft.mode === "frozen" ? (
-                  <DateTime24Panel value={draft.anchor} onChange={(anchor) => setDraft({ ...draft, anchor })} locale={i18n.language} disabled={saving} />
-                ) : (
-                  <DateTime24 value={draft.anchor} onChange={(anchor) => setDraft({ ...draft, anchor })} locale={i18n.language} disabled={saving} placeholder={t("settings.time.chooseAnchor")} />
-                )}
+                <DateTime24Panel value={draft.anchor} onChange={(anchor) => setDraft({ ...draft, anchor })} locale={i18n.language} disabled={saving} />
                 <div className="flex items-center justify-end gap-2">
                   <Button variant="ghost" size="sm" disabled={saving} onClick={() => setDraft(null)}>{t("settings.time.cancel")}</Button>
                   <Button size="sm" loading={saving} disabled={saving || !Number.isFinite(draft.anchor.getTime())} onClick={() => void run({ type: "set", mode: draft.mode, anchor_at: draft.anchor.getTime() })}>
