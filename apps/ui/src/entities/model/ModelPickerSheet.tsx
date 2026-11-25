@@ -1,11 +1,11 @@
-import { LayoutGrid, List, Search, SlidersHorizontal } from "lucide-react";
+import type { ReactNode } from "react";
+import { ArrowRight, Check, LayoutGrid, List, Search, SlidersHorizontal } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
-import { cn, icon, Input, LoadingState, Sheet, Switch } from "@lettuceai/crisp";
+import { Chip, cn, icon, Input, Sheet, Skeleton } from "@lettuceai/crisp";
 import type { RemoteModelContract } from "@/api/generated/bindings";
 import { FailureState } from "@/shared/ui/FailureState";
 import { ModelMark } from "./PickerModelMark";
 import { PriceLine } from "./PriceLine";
-import { Row, Rows } from "@/shared/ui/SelectionRows";
 import { formatContext } from "./format";
 import { isFree, modelName, priceOf } from "./remote-models";
 
@@ -34,8 +34,6 @@ export interface ModelPickerSheetProps {
   onUseId: (id: string) => void;
 }
 
-const separator = " · ";
-
 function FreeBadge() {
   const { t } = useTranslation("onboarding");
   return (
@@ -43,10 +41,59 @@ function FreeBadge() {
   );
 }
 
+const skeletonRows = 8;
+
+function ListRow({ selected, onClick, leading, title, detail, meta, trailing }: { selected?: boolean; onClick: () => void; leading: ReactNode; title: ReactNode; detail: ReactNode; meta?: ReactNode; trailing?: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected ?? false}
+      onClick={onClick}
+      className={cn("flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill", selected && "bg-fill")}
+    >
+      {leading}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-base font-medium text-fg">{title}</span>
+        <span className="block truncate font-mono text-xs text-fg-3">{detail}</span>
+      </span>
+      {meta && <span className="shrink-0 text-right text-xs leading-5 tabular-nums text-fg-3">{meta}</span>}
+      {trailing}
+    </button>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <div aria-hidden className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+      {Array.from({ length: skeletonRows }, (_, index) => (
+        <div key={index} className="flex items-center gap-3 px-3 py-2.5">
+          <Skeleton className="h-9 w-9 shrink-0 rounded-lg" />
+          <span className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-4 w-2/5" />
+            <Skeleton className="h-3 w-3/5" />
+          </span>
+          <span className="flex shrink-0 flex-col items-end gap-1.5">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-10" />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ModelPickerSheet(props: ModelPickerSheetProps) {
   const { t, i18n } = useTranslation("onboarding");
   const { phone, shown, query, selectedId, providerKind } = props;
   const trimmed = query.trim();
+  const useIdRow = trimmed && !shown.some((model) => model.id === trimmed) ? (
+    <ListRow
+      onClick={() => props.onUseId(trimmed)}
+      leading={<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-fill-2 text-fg-3"><ArrowRight size={icon.md} /></span>}
+      title={<Trans t={t} i18nKey="model.picker.useId" values={{ id: trimmed }} components={{ mono: <span className="font-mono" /> }} />}
+      detail={<span className="font-sans">{t("model.picker.useIdBody")}</span>}
+    />
+  ) : null;
   const context = (model: RemoteModelContract) =>
     model.context_length === null ? null : formatContext(model.context_length, i18n.language);
 
@@ -67,7 +114,7 @@ export function ModelPickerSheet(props: ModelPickerSheetProps) {
             aria-label={t("model.picker.filter")}
             onClick={props.onOpenFilters}
             className={cn(
-              "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors",
+              "relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors",
               props.activeFilters ? "border-accent/50 bg-accent/15 text-accent" : "border-line-2 bg-fill text-fg-2 hover:bg-fill-2",
             )}
           >
@@ -79,7 +126,7 @@ export function ModelPickerSheet(props: ModelPickerSheetProps) {
             )}
           </button>
           {!phone && (
-            <div role="radiogroup" aria-label={t("model.picker.layout")} className="flex h-10 shrink-0 items-center rounded-xl border border-line-2 bg-fill p-1">
+            <div role="radiogroup" aria-label={t("model.picker.layout")} className="flex h-11 shrink-0 items-center rounded-xl border border-line-2 bg-fill p-1">
               {(
                 [
                   [false, List, "list"],
@@ -94,7 +141,7 @@ export function ModelPickerSheet(props: ModelPickerSheetProps) {
                   aria-label={t(`model.picker.${label}`)}
                   onClick={() => props.onGrid(value)}
                   className={cn(
-                    "flex h-full w-8 items-center justify-center rounded-lg transition-colors",
+                    "flex h-full w-9 items-center justify-center rounded-lg transition-colors",
                     props.grid === value ? "bg-fill-3 text-fg" : "text-fg-3 hover:text-fg-2",
                   )}
                 >
@@ -105,16 +152,16 @@ export function ModelPickerSheet(props: ModelPickerSheetProps) {
           )}
         </div>
         {props.showFree && (
-          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line bg-fill px-3.5 py-2.5">
-            <span className="text-sm text-fg">{t("model.picker.onlyFree")}</span>
-            <Switch checked={props.onlyFree} onChange={props.onOnlyFree} aria-label={t("model.picker.onlyFree")} />
-          </label>
+          <div className="flex flex-wrap gap-2">
+            <Chip selected={props.onlyFree} aria-pressed={props.onlyFree} onClick={() => props.onOnlyFree(!props.onlyFree)}>{t("model.picker.onlyFree")}</Chip>
+          </div>
         )}
         {props.loading ? (
-          <LoadingState label={t("model.picker.loading")} />
+          <div role="status" aria-label={t("model.picker.loading")}><ListSkeleton /></div>
         ) : props.error ? (
           <FailureState error={props.error} onRetry={props.onRetry} size="sm" />
         ) : !phone && props.grid ? (
+          <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
             {shown.map((model) => {
               const price = priceOf(model);
@@ -147,69 +194,44 @@ export function ModelPickerSheet(props: ModelPickerSheetProps) {
               );
             })}
           </div>
+          {useIdRow && <div className="overflow-hidden rounded-xl border border-line">{useIdRow}</div>}
+          </div>
         ) : (
-          <Rows>
-            {shown.map((model) => {
-              const price = priceOf(model);
-              const size = context(model);
-              return (
-                <Row
-                  key={model.id}
-                  selected={selectedId === model.id}
-                  onClick={() => props.onChoose(model)}
-                  leading={<ModelMark modelId={model.id} providerKind={providerKind} />}
-                  title={
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate">{modelName(model)}</span>
-                      {isFree(model) && <FreeBadge />}
-                    </span>
-                  }
-                  description={
-                    phone ? (
-                      <span className="block">
-                        <span className="block truncate font-mono text-sm">{model.id}</span>
-                        <span className="mt-0.5 block text-sm tabular-nums text-fg-3">
-                          {price && !isFree(model) && <PriceLine model={model} />}
-                          {price && !isFree(model) && size && separator}
-                          {size && t("model.contextSuffix", { value: size })}
-                        </span>
+          (shown.length > 0 || useIdRow) && (
+            <div className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+              {shown.map((model) => {
+                const price = priceOf(model);
+                const size = context(model);
+                const selected = selectedId === model.id;
+                return (
+                  <ListRow
+                    key={model.id}
+                    selected={selected}
+                    onClick={() => props.onChoose(model)}
+                    leading={<ModelMark modelId={model.id} providerKind={providerKind} />}
+                    title={
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate">{modelName(model)}</span>
+                        {isFree(model) && <FreeBadge />}
                       </span>
-                    ) : (
-                      <span className="font-mono text-sm">{model.id}</span>
-                    )
-                  }
-                  trailing={
-                    phone ? undefined : (
-                      <span className="shrink-0 text-right text-sm tabular-nums text-fg-2">
-                        {price && (
-                          <>
-                            <PriceLine model={model} />
-                            <br />
-                          </>
-                        )}
-                        <span className="text-fg-3">{size}</span>
-                      </span>
-                    )
-                  }
-                />
-              );
-            })}
-          </Rows>
+                    }
+                    detail={model.id}
+                    meta={(price && !isFree(model)) || size ? (
+                      <>
+                        {price && !isFree(model) && <span className="block text-fg-2"><PriceLine model={model} /></span>}
+                        {size && <span className="block">{t("model.contextSuffix", { value: size })}</span>}
+                      </>
+                    ) : undefined}
+                    trailing={<Check size={icon.md} strokeWidth={2.5} className={cn("shrink-0 text-accent", !selected && "invisible")} />}
+                  />
+                );
+              })}
+              {useIdRow}
+            </div>
+          )
         )}
-        {!props.loading && ((shown.length === 0 && !props.error && !trimmed) || trimmed) && (
-          <Rows>
-            {shown.length === 0 && !props.error && !trimmed && (
-              <p className="px-2 py-6 text-center text-sm text-fg-3">{t("model.picker.none")}</p>
-            )}
-            {trimmed && !shown.some((model) => model.id === trimmed) && (
-              <Row
-                indicator="none"
-                title={<Trans t={t} i18nKey="model.picker.useId" values={{ id: trimmed }} components={{ mono: <span className="font-mono" /> }} />}
-                description={t("model.picker.useIdBody")}
-                onClick={() => props.onUseId(trimmed)}
-              />
-            )}
-          </Rows>
+        {!props.loading && !props.error && shown.length === 0 && !trimmed && (
+          <p className="px-2 py-6 text-center text-sm text-fg-3">{t("model.picker.none")}</p>
         )}
         <p className="text-sm text-fg-3">{t("model.picker.priceNote", { name: props.routeName })}</p>
       </div>
