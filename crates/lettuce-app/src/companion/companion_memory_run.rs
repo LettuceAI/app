@@ -1178,6 +1178,7 @@ pub(crate) mod tests {
                 },
                 selected_model_profile_id: None,
                 update_dynamic_memory_model_on_success: false,
+                chain_follow_up: false,
             },
             job: admitted.job,
             created: admitted.created,

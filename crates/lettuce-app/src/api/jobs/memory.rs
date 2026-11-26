@@ -92,6 +92,14 @@ impl ClaimedJob for ClaimedMemory {
     ) -> Result<(), ApiError> {
         use crate::CompanionFollowUps;
         let worker_id = self.0.claim.claim.worker_id;
+        let follow_up_chunk = {
+            let batch = &self.0.admission.batch;
+            batch.chain_follow_up.then_some((
+                batch.conversation_id,
+                batch.selected_model_profile_id,
+                batch.update_dynamic_memory_model_on_success,
+            ))
+        };
         let output = MemoryJobOutput::new(context.clone()).with_progress(progress);
         let embedding = context.embedding();
         let settled = context
@@ -105,6 +113,40 @@ impl ClaimedJob for ClaimedMemory {
         crate::CompanionFollowUpHost::new(context.backend().database(), context.inference())
             .after_memory(&settled, worker_id, MEMORY_LEASE, context.clock())
             .await;
+        if matches!(settled, crate::CompanionMemorySettledWork::Succeeded { .. })
+            && let Some((conversation_id, model_profile_id, update_default_on_success)) =
+                follow_up_chunk
+        {
+            let queued = context
+                .blocking(move |context| {
+                    let embedding = context.embedding();
+                    match context
+                        .backend()
+                        .companion_memory_host(embedding.as_ref(), context.inference())
+                        .trigger_remaining_chunk_admit(
+                            conversation_id,
+                            model_profile_id,
+                            update_default_on_success,
+                            context.now(),
+                        ) {
+                        Ok(Some(_)) => Ok(true),
+                        Ok(None) => Ok(false),
+                        Err(error) => {
+                            tracing::warn!(
+                                %conversation_id,
+                                %error,
+                                "follow-up memory chunk could not be queued"
+                            );
+                            Ok(false)
+                        }
+                    }
+                })
+                .await
+                .unwrap_or(false);
+            if queued {
+                context.jobs().wake();
+            }
+        }
         Ok(())
     }
 }

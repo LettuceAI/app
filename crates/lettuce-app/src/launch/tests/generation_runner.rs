@@ -10488,3 +10488,340 @@ async fn a_group_memory_run_takes_time_awareness_from_the_conversations_clock() 
             .time_awareness_enabled
     );
 }
+
+#[tokio::test]
+async fn plain_memory_cycles_cover_all_unsummarized_messages_past_the_interval() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let scenario = finalized_dynamic_turn(&backend, "plain-over-interval").await;
+    let aggregate = ConversationReader::get(database, scenario.conversation_id).expect("conv");
+    let user_participant = aggregate
+        .conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::User)
+        .expect("user participant")
+        .id;
+    let sent = lettuce_conversations::ConversationRepository::begin_send(
+        database,
+        &lettuce_conversations::SendConversation {
+            conversation_id: scenario.conversation_id,
+            branch_id: aggregate.conversation.active_branch_id,
+            expected_revision: aggregate.conversation.revision,
+            operation: OperationToken {
+                key: key("plain-over-interval-turn-2"),
+                request_digest: ContentHash::parse("bc".repeat(32)).expect("digest"),
+            },
+            message: lettuce_conversations::MessageDraft {
+                role: MessageRole::User,
+                author_participant_id: Some(user_participant),
+                parts: vec![MessagePart::Text {
+                    text: "Second user message".into(),
+                }],
+                visibility: MessageVisibility::Visible,
+                pinned: false,
+                scene_edited: false,
+            },
+            swap_roles: false,
+        },
+        TimestampMillis::new(1_040),
+    )
+    .expect("second turn send");
+    let next_scenario = Scenario {
+        conversation_id: scenario.conversation_id,
+        turn_id: sent.value.turn.id,
+        attempt_id: sent.value.attempt.id,
+        model: scenario.model.clone(),
+        profile: scenario.profile.clone(),
+        space_id: scenario.space_id,
+    };
+    let next_work = admit_and_claim(database, &next_scenario, 1_045);
+    let next_reply = scripted(vec![text_outcome("plain-over-interval-reply-2", "Second reply", 8, 3)]);
+    ConversationGenerationJobRunner::new(database, &next_reply)
+        .run(
+            &next_work,
+            input(&next_scenario),
+            TimestampMillis::new(1_050),
+        )
+        .await
+        .expect("finalize second turn");
+
+    let auto_admitted = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(database, database)
+        .admit_plain_after_turn(
+            scenario.conversation_id,
+            2,
+            lettuce_memory::DynamicMemoryRunMode::Auto,
+            TimestampMillis::new(1_060),
+        )
+        .expect("auto admission")
+        .expect("due auto batch");
+    assert_eq!(auto_admitted.batch.unsummarized_message_count, 4);
+    assert!(!auto_admitted.batch.chain_follow_up);
+    assert_eq!(
+        auto_admitted
+            .batch
+            .source_messages()
+            .expect("auto source messages")
+            .len(),
+        4
+    );
+    lettuce_jobs::JobStore::append_and_transition(
+        database,
+        lettuce_jobs::JobMutation::RequestCancellation {
+            id: auto_admitted.job.id,
+            reason: CancellationReason::User,
+            at: auto_admitted.job.updated_at,
+        },
+    )
+    .expect("request cancel auto job");
+    lettuce_jobs::JobStore::append_and_transition(
+        database,
+        lettuce_jobs::JobMutation::FinishQueuedCancellation {
+            id: auto_admitted.job.id,
+            at: auto_admitted.job.updated_at,
+        },
+    )
+    .expect("finish cancel auto job");
+
+    let engine = ScenarioEmbeddingEngine;
+    let memory = scripted(vec![
+        call_outcome(
+            "plain-over-interval-summary",
+            "write_summary",
+            serde_json::json!({"summary": "Both turns summarized together."}),
+            (10, 4),
+        ),
+        call_outcome("plain-over-interval-done", "done", serde_json::json!({}), (3, 1)),
+    ]);
+    let host = backend.companion_memory_host(&engine, &memory);
+    let claimed = host
+        .trigger(
+            scenario.conversation_id,
+            None,
+            false,
+            WorkerId::new(),
+            TimestampMillis::new(1_070),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("trigger over-interval cycle")
+        .into_iter()
+        .next()
+        .expect("claimed over-interval work");
+    assert_eq!(claimed.admission.batch.unsummarized_message_count, 4);
+    assert_eq!(
+        claimed
+            .admission
+            .batch
+            .source_messages()
+            .expect("triggered source messages")
+            .len(),
+        4
+    );
+    let settled = host
+        .run_claimed(claimed, CancellationReason::User, TimestampMillis::new(1_075))
+        .await
+        .expect("run over-interval cycle");
+    assert!(matches!(
+        settled,
+        crate::CompanionMemorySettledWork::Succeeded { .. }
+    ));
+    let summary = MemorySummaryRepository::get_summary(
+        database,
+        scenario.space_id.expect("dynamic memory space"),
+    )
+    .expect("summary")
+    .expect("stored summary");
+    assert_eq!(summary.window_start, 0);
+    assert_eq!(summary.window_end, 4);
+}
+
+#[tokio::test]
+async fn plain_memory_cycles_split_large_backlogs_at_twice_the_interval() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let scenario = finalized_dynamic_turn(&backend, "plain-chunked").await;
+    let aggregate = ConversationReader::get(database, scenario.conversation_id).expect("conv");
+    let user_participant = aggregate
+        .conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::User)
+        .expect("user participant")
+        .id;
+
+    for (idx, (prompt, reply)) in [
+        ("Turn two", "Reply two"),
+        ("Turn three", "Reply three"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let current = ConversationReader::get(database, scenario.conversation_id).expect("conv");
+        let sent = lettuce_conversations::ConversationRepository::begin_send(
+            database,
+            &lettuce_conversations::SendConversation {
+                conversation_id: scenario.conversation_id,
+                branch_id: current.conversation.active_branch_id,
+                expected_revision: current.conversation.revision,
+                operation: OperationToken {
+                    key: key(&format!("plain-chunked-turn-{idx}")),
+                    request_digest: ContentHash::parse(format!("{:02x}", 0xc0 + idx).repeat(32))
+                        .expect("digest"),
+                },
+                message: lettuce_conversations::MessageDraft {
+                    role: MessageRole::User,
+                    author_participant_id: Some(user_participant),
+                    parts: vec![MessagePart::Text { text: prompt.into() }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+                swap_roles: false,
+            },
+            TimestampMillis::new(1_040 + (idx as i64) * 20),
+        )
+        .expect("send turn");
+        let next_scenario = Scenario {
+            conversation_id: scenario.conversation_id,
+            turn_id: sent.value.turn.id,
+            attempt_id: sent.value.attempt.id,
+            model: scenario.model.clone(),
+            profile: scenario.profile.clone(),
+            space_id: scenario.space_id,
+        };
+        let next_work = admit_and_claim(
+            database,
+            &next_scenario,
+            1_045 + (idx as i64) * 20,
+        );
+        let next_reply = scripted(vec![text_outcome(
+            &format!("plain-chunked-reply-{idx}"),
+            reply,
+            8,
+            3,
+        )]);
+        ConversationGenerationJobRunner::new(database, &next_reply)
+            .run(
+                &next_work,
+                input(&next_scenario),
+                TimestampMillis::new(1_050 + (idx as i64) * 20),
+            )
+            .await
+            .expect("finalize turn");
+    }
+
+    let engine = ScenarioEmbeddingEngine;
+    let memory = scripted(vec![
+        call_outcome(
+            "plain-chunked-summary-1",
+            "write_summary",
+            serde_json::json!({"summary": "First four messages."}),
+            (10, 4),
+        ),
+        call_outcome("plain-chunked-done-1", "done", serde_json::json!({}), (3, 1)),
+        call_outcome(
+            "plain-chunked-summary-2",
+            "write_summary",
+            serde_json::json!({"summary": "All six messages."}),
+            (10, 4),
+        ),
+        call_outcome("plain-chunked-done-2", "done", serde_json::json!({}), (3, 1)),
+    ]);
+    let host = backend.companion_memory_host(&engine, &memory);
+
+    let first = host
+        .trigger(
+            scenario.conversation_id,
+            None,
+            false,
+            WorkerId::new(),
+            TimestampMillis::new(1_100),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("trigger first chunk")
+        .into_iter()
+        .next()
+        .expect("claimed first chunk");
+    assert_eq!(first.admission.batch.unsummarized_message_count, 6);
+    assert_eq!(
+        first.admission.batch.window_selection,
+        crate::CompanionMemoryWindowSelection::Automatic
+    );
+    assert_eq!(
+        first
+            .admission
+            .batch
+            .source_messages()
+            .expect("first chunk sources")
+            .len(),
+        4
+    );
+    let settled_first = host
+        .run_claimed(first, CancellationReason::User, TimestampMillis::new(1_105))
+        .await
+        .expect("run first chunk");
+    assert!(matches!(
+        settled_first,
+        crate::CompanionMemorySettledWork::Succeeded { .. }
+    ));
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    let first_summary = MemorySummaryRepository::get_summary(database, space_id)
+        .expect("summary after first chunk")
+        .expect("stored first summary");
+    assert_eq!((first_summary.window_start, first_summary.window_end), (0, 4));
+
+    let second_admission = host
+        .trigger_remaining_chunk_admit(
+            scenario.conversation_id,
+            None,
+            false,
+            TimestampMillis::new(1_110),
+        )
+        .expect("queue second chunk")
+        .expect("second chunk admitted");
+    assert_eq!(second_admission.batch.unsummarized_message_count, 2);
+    assert_eq!(
+        second_admission
+            .batch
+            .source_messages()
+            .expect("second chunk sources")
+            .len(),
+        2
+    );
+    let second = crate::CompanionMemoryDispatchCoordinator::new(database, database)
+        .claim_admissions(
+            vec![second_admission],
+            WorkerId::new(),
+            TimestampMillis::new(1_111),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("claim second chunk")
+        .pop()
+        .expect("claimed second chunk");
+    let settled_second = host
+        .run_claimed(second, CancellationReason::User, TimestampMillis::new(1_115))
+        .await
+        .expect("run second chunk");
+    assert!(matches!(
+        settled_second,
+        crate::CompanionMemorySettledWork::Succeeded { .. }
+    ));
+    let second_summary = MemorySummaryRepository::get_summary(database, space_id)
+        .expect("summary after second chunk")
+        .expect("stored second summary");
+    assert_eq!((second_summary.window_start, second_summary.window_end), (4, 6));
+
+    assert!(
+        host.trigger_remaining_chunk_admit(
+            scenario.conversation_id,
+            None,
+            false,
+            TimestampMillis::new(1_120),
+        )
+        .expect("check third chunk")
+        .is_none()
+    );
+}

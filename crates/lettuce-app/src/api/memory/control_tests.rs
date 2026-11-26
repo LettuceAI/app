@@ -1928,6 +1928,7 @@ async fn the_store_admits_one_active_memory_job_per_conversation() {
                 source: PostTurnMemorySource::Messages(messages.clone()),
                 selected_model_profile_id: None,
                 update_dynamic_memory_model_on_success: false,
+                chain_follow_up: false,
             },
         )
     };

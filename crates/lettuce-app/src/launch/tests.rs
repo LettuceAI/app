@@ -3548,6 +3548,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         },
         selected_model_profile_id: Some(failed_model_id),
         update_dynamic_memory_model_on_success: true,
+        chain_follow_up: false,
     };
     let failure_handle = JobHandle::new(failure_job_id);
     let failed = terminal

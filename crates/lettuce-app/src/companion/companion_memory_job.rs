@@ -52,6 +52,8 @@ pub struct CompanionPostTurnMemoryBatch {
     pub source: PostTurnMemorySource,
     pub selected_model_profile_id: Option<ModelProfileId>,
     pub update_dynamic_memory_model_on_success: bool,
+    #[serde(default)]
+    pub chain_follow_up: bool,
 }
 
 impl CompanionPostTurnMemoryBatch {
@@ -465,9 +467,10 @@ impl<
             }
             DynamicMemoryRunMode::Auto => {}
         }
-        let Some(effects) = ready_effect_prefix(effects, summary_message_interval) else {
+        if unsummarized_message_count < u64::from(summary_message_interval) {
             return Ok(None);
-        };
+        }
+        let effects = capped_effect_prefix(effects, max_cycle_messages(summary_message_interval));
         for effect in &effects {
             if self
                 .effects
@@ -482,6 +485,7 @@ impl<
             conversation_id,
             branch_id,
             summary_message_interval,
+            CompanionMemoryWindowSelection::Automatic,
             CompanionMemoryWindowSelection::Automatic,
             unsummarized_message_count,
             PostTurnMemorySource::CompanionEffects {
@@ -630,18 +634,15 @@ impl<
             return Ok(None);
         }
         let unsummarized_message_count = effect_message_count(&effects);
-        let (effects, source_effect_offset) = match window_selection {
-            CompanionMemoryWindowSelection::Automatic => (
-                forced_effect_prefix(effects, summary_message_interval)
-                    .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the effects do not cover a whole interval for the automatic window".to_owned() })?,
-                0,
-            ),
-            CompanionMemoryWindowSelection::Recent => {
-                let source_effect_offset = recent_effect_offset(&effects, summary_message_interval)
-                    .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "the effects do not cover the recent window".to_owned() })?;
-                (effects, source_effect_offset)
-            }
+        let total_effects = effects.len();
+        let effects = capped_effect_prefix(effects, max_cycle_messages(summary_message_interval));
+        let key_window_selection = window_selection;
+        let window_selection = if effects.len() < total_effects {
+            CompanionMemoryWindowSelection::Automatic
+        } else {
+            window_selection
         };
+        let source_effect_offset = 0;
         let branch_id = self
             .effects
             .branch_for_effect(effects[0].id)
@@ -661,6 +662,7 @@ impl<
             branch_id,
             summary_message_interval,
             window_selection,
+            key_window_selection,
             unsummarized_message_count,
             PostTurnMemorySource::CompanionEffects {
                 effects,
@@ -706,8 +708,9 @@ impl<
     }
 
     /// A forced cycle for plain conversations: the run mode is ignored, and
-    /// the window is the most recent interval-sized slice of the dialogue,
-    /// already summarized messages included, even when nothing is new.
+    /// the window covers every unsummarized message (or the most recent
+    /// interval-sized slice when fewer than an interval remain, already
+    /// summarized messages included, even when nothing is new).
     pub fn trigger_plain_and_admit(
         &self,
         conversation_id: ConversationId,
@@ -726,6 +729,29 @@ impl<
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
             false,
+            false,
+        )
+    }
+
+    pub fn trigger_remaining_plain_and_admit(
+        &self,
+        conversation_id: ConversationId,
+        summary_message_interval: u32,
+        selected_model_profile_id: Option<ModelProfileId>,
+        update_dynamic_memory_model_on_success: bool,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    where
+        R: ConversationReader
+            + lettuce_memory::MemoryRepository
+            + lettuce_memory::MemorySummaryRepository,
+    {
+        self.trigger_recent_messages_and_admit(
+            conversation_id,
+            summary_message_interval,
+            selected_model_profile_id,
+            update_dynamic_memory_model_on_success,
+            false,
+            true,
         )
     }
 
@@ -758,6 +784,7 @@ impl<
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
             true,
+            false,
         )
     }
 
@@ -768,6 +795,7 @@ impl<
         selected_model_profile_id: Option<ModelProfileId>,
         update_dynamic_memory_model_on_success: bool,
         companion: bool,
+        unsummarized_only: bool,
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     where
         R: ConversationReader
@@ -819,16 +847,37 @@ impl<
             return Ok(None);
         }
         let unsummarized = messages.len().saturating_sub(cursor);
+        if unsummarized_only && unsummarized == 0 {
+            return Ok(None);
+        }
         let unsummarized_message_count = u64::try_from(unsummarized)
             .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch { reason: "unsummarized message count does not fit in u64".to_owned() })?;
-        let source_count = interval.min(messages.len());
+        let max_cycle = interval.saturating_mul(2);
+        let (window_selection, source_messages) = if unsummarized > max_cycle {
+            (
+                CompanionMemoryWindowSelection::Automatic,
+                messages[cursor..cursor + max_cycle].to_vec(),
+            )
+        } else if unsummarized_only {
+            (
+                CompanionMemoryWindowSelection::Automatic,
+                messages[cursor..].to_vec(),
+            )
+        } else {
+            let source_count = unsummarized.max(interval).min(messages.len());
+            (
+                CompanionMemoryWindowSelection::Recent,
+                messages[messages.len() - source_count..].to_vec(),
+            )
+        };
         let admitted = self.admit_selected(
             conversation_id,
             branch_id,
             summary_message_interval,
+            window_selection,
             CompanionMemoryWindowSelection::Recent,
             unsummarized_message_count,
-            PostTurnMemorySource::Messages(messages[messages.len() - source_count..].to_vec()),
+            PostTurnMemorySource::Messages(source_messages),
             None,
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
@@ -936,13 +985,15 @@ impl<
                 .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
             return Ok(None);
         }
+        let chunk_size = unsummarized.min(interval.saturating_mul(2));
         let admitted = self.admit_selected(
             conversation_id,
             branch_id,
             summary_message_interval,
             CompanionMemoryWindowSelection::Automatic,
+            CompanionMemoryWindowSelection::Automatic,
             unsummarized_message_count,
-            PostTurnMemorySource::Messages(messages[cursor..cursor + interval].to_vec()),
+            PostTurnMemorySource::Messages(messages[cursor..cursor + chunk_size].to_vec()),
             None,
             None,
             false,
@@ -994,6 +1045,7 @@ impl<
             branch_id,
             summary_message_interval,
             CompanionMemoryWindowSelection::Automatic,
+            CompanionMemoryWindowSelection::Automatic,
             unsummarized_message_count,
             PostTurnMemorySource::CompanionEffects {
                 effects,
@@ -1013,6 +1065,7 @@ impl<
         branch_id: ConversationBranchId,
         summary_message_interval: u32,
         window_selection: CompanionMemoryWindowSelection,
+        key_window_selection: CompanionMemoryWindowSelection,
         unsummarized_message_count: u64,
         source: PostTurnMemorySource,
         rewind_operation_id: Option<OperationId>,
@@ -1038,7 +1091,7 @@ impl<
             conversation_id,
             branch_id,
             summary_message_interval,
-            window_selection,
+            key_window_selection,
             rewind_operation_id,
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
@@ -1067,7 +1120,7 @@ impl<
             }
         }
         let mut idempotency_key = idempotency_key;
-        let forced = window_selection == CompanionMemoryWindowSelection::Recent;
+        let forced = key_window_selection == CompanionMemoryWindowSelection::Recent;
         while let Some(ended) = jobs.iter().find(|job| {
             job.idempotency_key.as_ref() == Some(&idempotency_key)
                 && job.is_terminal()
@@ -1086,6 +1139,19 @@ impl<
         {
             return Ok(None);
         }
+        let covered = match &source {
+            PostTurnMemorySource::CompanionEffects {
+                effects,
+                source_effect_offset,
+                ..
+            } => effects
+                .get(*source_effect_offset..)
+                .map_or(0, effect_message_count),
+            PostTurnMemorySource::Messages(messages) => {
+                u64::try_from(messages.len()).unwrap_or(u64::MAX)
+            }
+        };
+        let chain_follow_up = forced && unsummarized_message_count > covered;
         let batch = CompanionPostTurnMemoryBatch {
             conversation_id,
             branch_id,
@@ -1096,6 +1162,7 @@ impl<
             source,
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
+            chain_follow_up,
         };
         let spec = job_spec(conversation_id, idempotency_key)?;
         let result = match self.operation {
@@ -1242,68 +1309,32 @@ fn retry_idempotency_key(
         })
 }
 
-fn recent_effect_offset(
-    effects: &[CompanionTurnEffect],
-    summary_message_interval: u32,
-) -> Option<usize> {
-    let target = u64::from(summary_message_interval);
-    let mut message_count = 0_u64;
-    for start in (0..effects.len()).rev() {
-        message_count += if effects[start].user_message_id.is_some() {
-            2
-        } else {
-            1
-        };
-        if message_count >= target {
-            return Some(start);
-        }
-    }
-    (!effects.is_empty()).then_some(0)
+const fn max_cycle_messages(summary_message_interval: u32) -> u64 {
+    (summary_message_interval as u64).saturating_mul(2)
 }
 
-fn forced_effect_prefix(
+fn capped_effect_prefix(
     effects: Vec<CompanionTurnEffect>,
-    summary_message_interval: u32,
-) -> Option<Vec<CompanionTurnEffect>> {
-    if effects.is_empty() {
-        return None;
-    }
-    let target = u64::from(summary_message_interval);
+    max_messages: u64,
+) -> Vec<CompanionTurnEffect> {
     let mut message_count = 0_u64;
-    let mut prefix = Vec::new();
+    let mut selected = Vec::new();
     for effect in effects {
-        message_count += if effect.user_message_id.is_some() {
+        let count = if effect.user_message_id.is_some() {
             2
         } else {
             1
         };
-        prefix.push(effect);
-        if message_count >= target {
+        if !selected.is_empty() && message_count.saturating_add(count) > max_messages {
+            break;
+        }
+        message_count = message_count.saturating_add(count);
+        selected.push(effect);
+        if message_count >= max_messages {
             break;
         }
     }
-    Some(prefix)
-}
-
-fn ready_effect_prefix(
-    effects: Vec<CompanionTurnEffect>,
-    summary_message_interval: u32,
-) -> Option<Vec<CompanionTurnEffect>> {
-    let target = u64::from(summary_message_interval);
-    let mut message_count = 0_u64;
-    let mut end = 0;
-    for effect in &effects {
-        message_count += if effect.user_message_id.is_some() {
-            2
-        } else {
-            1
-        };
-        end += 1;
-        if message_count >= target {
-            return Some(effects.into_iter().take(end).collect());
-        }
-    }
-    None
+    selected
 }
 
 pub(crate) fn job_spec(
@@ -1618,6 +1649,7 @@ mod tests {
             },
             selected_model_profile_id: None,
             update_dynamic_memory_model_on_success: false,
+            chain_follow_up: false,
         };
         assert_eq!(
             batch.source_messages(),
@@ -1650,6 +1682,7 @@ mod tests {
             ]),
             selected_model_profile_id: None,
             update_dynamic_memory_model_on_success: false,
+            chain_follow_up: false,
         };
         assert!(matches!(
             database
@@ -1672,7 +1705,7 @@ mod tests {
     }
 
     #[test]
-    fn discovery_admits_the_oldest_ready_prefix_exactly_once() {
+    fn discovery_admits_all_ready_effects_in_one_cycle_and_blocks_overlap() {
         let effects = Effects::default();
         let jobs = InMemoryJobStore::new();
         let first_conversation = ConversationId::new();
@@ -1869,19 +1902,42 @@ mod tests {
     }
 
     #[test]
-    fn cadence_waits_below_interval_and_keeps_boundary_effect_whole() {
+    fn cadence_waits_below_interval_and_admits_all_pending_effects_above_interval() {
+        let effects = Effects::default();
+        let jobs = InMemoryJobStore::new();
         let conversation_id = ConversationId::new();
         let first = effect(conversation_id, 10);
         let second = effect(conversation_id, 20);
-        assert!(ready_effect_prefix(vec![first.clone(), second.clone()], 5).is_none());
+        let third = effect(conversation_id, 30);
+        effects.replace(vec![first.clone(), second.clone()]);
+        let coordinator = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &jobs);
+        assert!(
+            coordinator
+                .discover_and_admit_for_conversation(
+                    conversation_id,
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    5,
+                    DynamicMemoryRunMode::Auto,
+                    TimestampMillis::new(25),
+                )
+                .expect("below interval")
+                .is_none()
+        );
 
-        let ready = ready_effect_prefix(vec![first.clone(), second], 3).expect("ready prefix");
-        assert_eq!(ready.len(), 2);
-        assert_eq!(ready[0].id, first.id);
-
-        let boundary = ready_effect_prefix(vec![first], 1).expect("whole effect");
-        assert_eq!(boundary.len(), 1);
-        assert!(boundary[0].user_message_id.is_some());
+        effects.replace(vec![first.clone(), second.clone(), third.clone()]);
+        let ready = coordinator
+            .discover_and_admit_for_conversation(
+                conversation_id,
+                MAX_COMPANION_POST_TURN_EFFECTS,
+                4,
+                DynamicMemoryRunMode::Auto,
+                TimestampMillis::new(35),
+            )
+            .expect("above interval")
+            .expect("all pending effects admitted");
+        assert_eq!(ready.batch.unsummarized_message_count, 6);
+        assert_eq!(ready.batch.effects(), [first, second, third]);
+        assert_eq!(source_effect_offset(&ready.batch), 0);
     }
 
     #[test]
@@ -2066,11 +2122,13 @@ mod tests {
         let group_jobs = InMemoryJobStore::new();
         let first_group = effect(group_conversation, 10);
         let second_group = effect(group_conversation, 20);
+        let third_group = effect(group_conversation, 30);
+        let fourth_group = effect(group_conversation, 40);
         group_effects.replace(vec![
             first_group.clone(),
             second_group.clone(),
-            effect(group_conversation, 30),
-            effect(group_conversation, 40),
+            third_group.clone(),
+            fourth_group.clone(),
         ]);
         let group = CompanionPostTurnMemoryAdmissionCoordinator::new(&group_effects, &group_jobs);
         let admitted = group
@@ -2084,7 +2142,10 @@ mod tests {
             .expect("group admission");
         assert_eq!(admitted.batch.unsummarized_message_count, 8);
         assert_eq!(source_effect_offset(&admitted.batch), 0);
-        assert_eq!(admitted.batch.effects(), [first_group, second_group]);
+        assert_eq!(
+            admitted.batch.effects(),
+            [first_group, second_group, third_group]
+        );
     }
 
     #[test]
@@ -2247,11 +2308,13 @@ mod tests {
                 .expect("approval"),
             skipped
         );
+        let first = effect(conversation_id, 10);
+        let second = effect(conversation_id, 20);
         let third = effect(conversation_id, 30);
         let fourth = effect(conversation_id, 40);
         effects.replace(vec![
-            effect(conversation_id, 10),
-            effect(conversation_id, 20),
+            first.clone(),
+            second.clone(),
             third.clone(),
             fourth.clone(),
         ]);
@@ -2289,11 +2352,11 @@ mod tests {
             .expect("forced admission");
         assert_eq!(
             admitted.batch.window_selection,
-            CompanionMemoryWindowSelection::Recent
+            CompanionMemoryWindowSelection::Automatic
         );
         assert_eq!(admitted.batch.unsummarized_message_count, 8);
-        assert_eq!(admitted.batch.effects().len(), 4);
-        assert_eq!(source_effect_offset(&admitted.batch), 2);
+        assert_eq!(admitted.batch.effects().len(), 3);
+        assert_eq!(source_effect_offset(&admitted.batch), 0);
         assert_eq!(
             admitted
                 .batch
@@ -2302,7 +2365,7 @@ mod tests {
                 .skip(source_effect_offset(&admitted.batch))
                 .map(|effect| effect.id)
                 .collect::<Vec<_>>(),
-            [third.id, fourth.id]
+            [first.id, second.id, third.id]
         );
         assert_eq!(
             effects
