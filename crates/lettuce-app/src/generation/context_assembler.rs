@@ -367,24 +367,52 @@ where
                 })
                 .map_err(runtime_text_error)
         };
-        let key_lines = request
+        // Show the observed note whenever time awareness is on, in groups too.
+        let observed = request.prompt_runtime.time_awareness_enabled;
+        let mut key_lines = request
             .memory
             .as_ref()
-            .map(|memory| memory_lines(&memory.key_memories, !group))
+            .map(|memory| memory_lines(&memory.key_memories, observed))
             .transpose()?
             .unwrap_or_default();
-        let perspective_lines = request
+        let mut perspective_lines = request
             .memory
             .as_ref()
-            .map(|memory| memory_lines(&memory.perspective_memories, !group))
+            .map(|memory| memory_lines(&memory.perspective_memories, observed))
             .transpose()?
             .unwrap_or_default();
-        let private_lines = request
+        let mut private_lines = request
             .memory
             .as_ref()
-            .map(|memory| memory_lines(&memory.private_memories, !group))
+            .map(|memory| memory_lines(&memory.private_memories, observed))
             .transpose()?
             .unwrap_or_default();
+        // One ordering note, before the first non-empty memory bin; time awareness
+        // picks the wording. Only dynamic memory ranks by relevance, so the note is
+        // confined to it; manual/legacy memory lists items in storage order.
+        // `memory_text` only loads when memories exist.
+        if request.prompt_runtime.dynamic_memory_enabled
+            && let Some(text) = memory_text.as_ref()
+        {
+            let hint = text
+                .render_with(
+                    if observed {
+                        "memory_ordering_timed"
+                    } else {
+                        "memory_ordering_plain"
+                    },
+                    [],
+                )
+                .map_err(runtime_text_error)?;
+            if !hint.is_empty() {
+                for lines in [&mut key_lines, &mut perspective_lines, &mut private_lines] {
+                    if !lines.is_empty() {
+                        *lines = format!("{hint}\n{lines}");
+                        break;
+                    }
+                }
+            }
+        }
         let memory_summary = request
             .memory
             .as_ref()

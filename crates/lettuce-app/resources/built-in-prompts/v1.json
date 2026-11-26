@@ -5862,6 +5862,34 @@
           "promptEntryPayload": null
         },
         {
+          "key": "memory_ordering_timed",
+          "name": "Ordering note (time aware)",
+          "role": "system",
+          "content": "Memories within each section are ordered by estimated relevance to the current situation, not by time.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "memory_ordering_plain",
+          "name": "Ordering note",
+          "role": "system",
+          "content": "Memories within each section are ordered by estimated relevance to the current situation.",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
           "key": "memory_observed",
           "name": "Observation note",
           "role": "system",

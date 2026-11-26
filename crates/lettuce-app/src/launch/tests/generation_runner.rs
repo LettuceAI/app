@@ -3515,7 +3515,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         assert_eq!(
             system_texts,
             [
-                "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor."
+                "# Key Memories\nImportant facts to remember in this conversation:\nMemories within each section are ordered by estimated relevance to the current situation.\n- Mira prefers tea by the harbor."
             ]
         );
         assert!(requests[0].context.messages.iter().any(|message| {
@@ -3724,8 +3724,6 @@ fn request_system_texts(inference: &ScriptedInference) -> Vec<String> {
 
 #[tokio::test]
 async fn bundled_default_prompt_renders_only_retrieved_memories_in_a_dynamic_direct_chat() {
-    use chrono::TimeZone;
-
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     enable_retrieval_only_dynamic_memory(backend.database());
     let scenario = direct_scenario(backend.database(), true, "bundled-dynamic", true, false);
@@ -3748,14 +3746,10 @@ async fn bundled_default_prompt_renders_only_retrieved_memories_in_a_dynamic_dir
         backend.database(),
         scenario.space_id.expect("dynamic memory space"),
     );
-    let observed = chrono::Local
-        .timestamp_millis_opt(1_000)
-        .single()
-        .expect("local observation time")
-        .format("%Y-%m-%d %H:%M");
-    let key_memories = format!(
-        "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor. (observed {observed}, just now)"
-    );
+    // Time awareness is off: no observed note, and the ordering note omits ", not by time".
+    let key_memories =
+        "# Key Memories\nImportant facts to remember in this conversation:\nMemories within each section are ordered by estimated relevance to the current situation.\n- Mira prefers tea by the harbor."
+            .to_string();
     let assert_retrieved_only = |system_texts: &[String]| {
         assert!(
             system_texts
@@ -3958,7 +3952,7 @@ async fn dynamic_group_chats_keep_retrieved_key_memories_without_observation_not
     let system_texts = request_system_texts(&inference);
     assert!(
         system_texts.iter().any(|text| text.contains(
-            "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor."
+            "# Key Memories\nImportant facts to remember in this conversation:\nMemories within each section are ordered by estimated relevance to the current situation.\n- Mira prefers tea by the harbor."
         )),
         "{system_texts:?}"
     );
@@ -3966,6 +3960,64 @@ async fn dynamic_group_chats_keep_retrieved_key_memories_without_observation_not
         system_texts.iter().all(|text| !text.contains("(observed ")
             && !text.contains("Relevant memories")
             && !text.contains("northern lighthouse")),
+        "{system_texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn time_aware_group_chats_annotate_retrieved_key_memories_with_observation_notes() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    enable_retrieval_only_dynamic_memory(backend.database());
+    let (scenario, _) = group_scenario_with(
+        &backend,
+        "group-dynamic-time",
+        lettuce_characters::SpeakerSelection::Heuristic,
+        false,
+        "Remember tea.",
+        |group| group.memory_policy = MemoryPolicy::Dynamic,
+    );
+    enable_time_awareness(
+        backend.database(),
+        scenario.conversation_id,
+        "group-dynamic-time-clock",
+    );
+    let space = MemoryRepository::get_for_branch(
+        backend.database(),
+        scenario.conversation_id,
+        lettuce_conversations::ConversationReader::get(
+            backend.database(),
+            scenario.conversation_id,
+        )
+        .expect("conversation branch")
+        .conversation
+        .active_branch_id,
+    )
+    .expect("group memory space")
+    .expect("group memory exists");
+    seed_retrieved_and_hot_memories(backend.database(), space.id);
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "group-dynamic-time-response",
+        "Ada nods.",
+        9,
+        3,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("run a time-aware dynamic group turn");
+    let system_texts = request_system_texts(&inference);
+    assert!(
+        system_texts.iter().any(|text| text.contains(&format!(
+            "# Key Memories\nImportant facts to remember in this conversation:\nMemories within each section are ordered by estimated relevance to the current situation, not by time.\n- Mira prefers tea by the harbor. (observed {}, just now)",
+            observed_note(1_000)
+        ))),
         "{system_texts:?}"
     );
 }
@@ -4008,10 +4060,10 @@ async fn dynamic_direct_continuation_sends_only_the_retrieved_memories_as_key_me
         backend.database(),
         scenario.space_id.expect("dynamic memory space"),
     );
-    let key_memories = format!(
-        "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor. (observed {}, just now)",
-        observed_note(1_000)
-    );
+    // Time awareness is off: no observed note, and the ordering note omits ", not by time".
+    let key_memories =
+        "# Key Memories\nImportant facts to remember in this conversation:\nMemories within each section are ordered by estimated relevance to the current situation.\n- Mira prefers tea by the harbor."
+            .to_string();
     let engine = ScenarioEmbeddingEngine;
     let work = admit_and_claim(backend.database(), &scenario, 1_015);
     let inference = scripted(vec![text_outcome(
@@ -4135,11 +4187,11 @@ async fn dynamic_companion_chat_fills_its_continuity_section_with_only_the_retri
         continuity[0].starts_with("# Relationship Continuity\n"),
         "{system_texts:?}"
     );
+    // Time awareness is off: no observed note, and the ordering note omits ", not by time".
     assert!(
-        continuity[0].ends_with(&format!(
-            "\n\n## Key Memories\nUnless a memory explicitly describes a third-party relationship, interpret relationship, boundary, preference, profile, routine, plan, and milestone memories as continuity between Ada and Traveller.\n- Mira prefers tea by the harbor. (observed {}, just now)\n\n## Relevant Lore",
-            observed_note(1_000)
-        )),
+        continuity[0].ends_with(
+            "\n\n## Key Memories\nUnless a memory explicitly describes a third-party relationship, interpret relationship, boundary, preference, profile, routine, plan, and milestone memories as continuity between Ada and Traveller.\nMemories within each section are ordered by estimated relevance to the current situation.\n- Mira prefers tea by the harbor.\n\n## Relevant Lore"
+        ),
         "{system_texts:?}"
     );
     assert!(
@@ -4264,6 +4316,13 @@ async fn empty_dynamic_retrieval_keeps_the_bundled_heading_without_a_fallback_bl
         );
         assert!(
             bundled.iter().all(|text| !text.contains("Mira")),
+            "{bundled:?}"
+        );
+        // No memories means no ordering note either.
+        assert!(
+            bundled
+                .iter()
+                .all(|text| !text.contains("ordered by estimated relevance")),
             "{bundled:?}"
         );
         let custom =
@@ -4461,7 +4520,7 @@ async fn calibrated_retrieval_embeds_missing_vectors_and_falls_back_only_when_un
     assert_eq!(
         system_texts,
         [
-            "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor."
+            "# Key Memories\nImportant facts to remember in this conversation:\nMemories within each section are ordered by estimated relevance to the current situation.\n- Mira prefers tea by the harbor."
         ]
     );
     let (system_texts, selected, _) = calibrated_retrieval("eidos-set", Some(5_000)).await;
@@ -4475,7 +4534,7 @@ async fn calibrated_retrieval_embeds_missing_vectors_and_falls_back_only_when_un
     assert_eq!(
         system_texts,
         [
-            "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor."
+            "# Key Memories\nImportant facts to remember in this conversation:\nMemories within each section are ordered by estimated relevance to the current situation.\n- Mira prefers tea by the harbor."
         ]
     );
 }

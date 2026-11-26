@@ -5675,6 +5675,15 @@ async fn a_manual_memory_send_adds_the_relevant_memories_block_like_legacy() {
     assert!(manual.contains(block));
     let (_, dynamic) = assembled_prompt_with_text(&database, request(true)).await;
     assert!(!dynamic.contains(block));
+    // The ordering note is confined to dynamic (relevance-ranked) memory.
+    assert!(
+        !manual.contains("ordered by estimated relevance"),
+        "{manual}"
+    );
+    assert!(
+        dynamic.contains("ordered by estimated relevance"),
+        "{dynamic}"
+    );
 }
 
 #[tokio::test]
